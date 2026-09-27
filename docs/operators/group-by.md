@@ -67,6 +67,12 @@ with **integer division truncating toward zero**. This is a direct port of Flink
 the non-null count using Flink's exact decimal division — a 38-significant-digit quotient then
 **HALF_UP** rescale — reporting `DECIMAL(38, max(6, s))`, `findAvgAggType`'s result type.
 
+The DISTINCT map representations and benchmark method are described under
+[typed DISTINCT multiplicities](../optimizations/aggregate-specialization-fast-paths.md#typed-distinct-multiplicities).
+Integer, decimal and string key specialization preserves the existing scalar snapshot and
+persistent-element encoding, including exact decimal metadata and string bytes; it does not
+expand the DISTINCT admission gates.
+
 ### FIRST_VALUE, LAST_VALUE and SINGLE_VALUE
 
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
@@ -82,6 +88,15 @@ a retraction removes the oldest matching occurrence, including when values repea
 Arrow batches. Removing every contributing value yields NULL, and removing the last
 record deletes the group. Results depend on arrival order, so SQL parity fixtures use a
 controlled source rather than asserting equal results from independently reordered inputs.
+
+Ordered aggregate state now resides inline in the existing per-aggregate storage, avoiding a
+separate allocation for every group; dynamic strings and retraction queues remain accounted
+against the task memory budget. Checkpoint representation and aggregate semantics are unchanged.
+
+An immediate group with one unfiltered SINGLE_VALUE emits directly from its accumulator
+without a duplicate cached result or temporary tuple vector. A later touch reconstructs
+the preceding result from that accumulator. Filtered and mixed aggregates retain their cache;
+mini-batch emission and snapshot formats are unchanged.
 
 SINGLE_VALUE counts every element, including NULL. Zero elements yield NULL; one element
 yields that value. A second element raises Flink's `TableRuntimeException` with the same
@@ -387,10 +402,26 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 | Two-phase TIME | 0.552 | 0.690 | 0.800x |
 | Two-phase BOOLEAN | 0.560 | 0.625 | 0.896x |
 
-Single-phase DATE and BOOLEAN are approximately tied with Flink on this workload; TIME and
-all two-phase cases are slower. These additions reuse the existing typed multiset and ordered
-value state to extend native pipeline coverage. They do not establish a standalone aggregate
-speedup; reducing per-row scalar materialization remains a separate optimization opportunity.
+This baseline predates single-destination exchange forwarding and typed running extrema.
+Insert-only DATE/TIME/BOOLEAN MIN/MAX now retains one typed extreme in both local and global
+state; retracting input retains counted state. At twenty million rows, single-phase native
+medians are 2.861/2.847/2.807 s versus Flink's 3.835/3.860/3.721 s. Two-phase native medians
+are 4.544/4.330/4.263 s versus Flink's 5.070/4.943/4.749 s. See the
+[optimization ledger](../optimizations/aggregate-specialization-fast-paths.md) for profiling,
+before/after measurements, trial ranges and checkpoint compatibility. This establishes MIN/MAX
+performance for the measured workloads; other aggregate functions need separate measurements.
+
+`GroupedValueBenchmark` accepts `-Dgrouped.value.types=TIME,BOOLEAN` for first/last and
+`-Dgrouped.value.single=true` for SINGLE_VALUE, which assigns each row its own key.
+The default first/last workload remains BIGINT/STRING; all these measurements use one phase.
+The [output allocation optimization](../optimizations/aggregate-specialization-fast-paths.md)
+removes a temporary tuple vector per emitted update. On the downstream integration branch,
+TIME/BOOLEAN first/last now beats Flink at twenty million rows and is approximately tied at
+two million. This branch independently measures two-million-row TIME/BOOLEAN first/last at
+0.573/0.551 s versus Flink 0.613/0.573 s after the shared transpose optimization.
+SINGLE_VALUE at 500,000 unique keys now measures 0.373/0.328 s for TIME/BOOLEAN versus
+Flink 0.402/0.363 s; independent repeats and one-million-row trials also beat the matched
+controls. The ledger records before/after controls, configurations, and trial ranges.
 
 ### Two-phase DISTINCT type coverage
 

@@ -21,7 +21,7 @@ final class TextTimeBenchmarkInputs {
       case "tt_decimal", "tt_unix_time" -> "n";
       case "tt_decimal_array" -> "a";
       case "tt_json_array" -> "a";
-      case "tt_timestamp" -> "ts";
+      case "tt_timestamp", "tt_timestamp_ltz" -> "ts";
       default -> "s";
     };
   }
@@ -35,6 +35,7 @@ final class TextTimeBenchmarkInputs {
       case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
       case "tt_json_array" -> "ARRAY<STRING>";
       case "tt_timestamp" -> "TIMESTAMP(9)";
+      case "tt_timestamp_ltz" -> "TIMESTAMP_LTZ(9)";
       default -> "STRING";
     };
   }
@@ -129,6 +130,14 @@ final class TextTimeBenchmarkInputs {
               .map(i -> Row.of(isNull(i, nullEvery) ? null : i % 2 == 0))
               .returns(Types.ROW_NAMED(new String[] {"b"}, Types.BOOLEAN)),
           Schema.newBuilder().column("b", DataTypes.BOOLEAN()).build());
+    } else if (input.equals("tt_timestamp_ltz")) {
+      tables.createTemporaryView(
+          "inputs",
+          env.fromSequence(0, rows - 1)
+              .map(i -> Row.of(isNull(i, nullEvery) ? null
+                  : java.time.Instant.ofEpochSecond(i - rows / 2, 123456789)))
+              .returns(Types.ROW_NAMED(new String[] {"ts"}, Types.INSTANT)),
+          Schema.newBuilder().column("ts", DataTypes.TIMESTAMP_LTZ(9)).build());
     } else if (input.equals("tt_timestamp")) {
       LocalDateTime[] values = {
         LocalDateTime.of(1969, 12, 31, 23, 59, 59, 987654321),

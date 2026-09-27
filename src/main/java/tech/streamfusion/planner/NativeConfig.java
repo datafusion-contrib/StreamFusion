@@ -142,6 +142,16 @@ public final class NativeConfig {
     return Long.parseLong(value("streamfusion.exchange.coalesceLatencyMs", "50"));
   }
 
+  /** Maximum rows in a row-to-Arrow batch, captured in the serialized operator configuration. */
+  public static int transposeBatchRows(ReadableConfig config) {
+    String key = "streamfusion.transpose.batchRows";
+    int rows =
+        config.getOptional(ConfigOptions.key(key).intType().noDefaultValue())
+            .orElseGet(() -> Integer.parseInt(System.getProperty(key, "1024")));
+    if (rows <= 0) throw new IllegalArgumentException(key + " must be positive");
+    return rows;
+  }
+
   /**
    * The latency backstop for a partial row-to-Arrow batch, in milliseconds
    * ({@code streamfusion.transpose.flushLatencyMs}, default 50; 0 or less disables the timer).

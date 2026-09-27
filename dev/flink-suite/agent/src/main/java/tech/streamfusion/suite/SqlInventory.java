@@ -16,6 +16,11 @@ import java.util.UUID;
 public final class SqlInventory {
   public static final String MARKER = "StreamFusion SQL inventory: ";
   private static Scope active;
+  private static final Map<Object, OperatorBinding> OPERATORS = new java.util.WeakHashMap<>();
+  private static final java.util.Set<String> FINISHED_JOBS = new java.util.HashSet<>();
+  private static final Map<Object, Map<String, Object>> PLANNER_CONTEXTS =
+      new java.util.WeakHashMap<>();
+  private static final Map<Object, Map<String, Object>> PLANNERS = new java.util.WeakHashMap<>();
 
   private SqlInventory() {}
 
@@ -35,7 +40,14 @@ public final class SqlInventory {
     active.data.put("plans", active.plans);
     active.data.put("sql", active.sql);
     active.data.put("translations", active.translations);
+    active.data.put("translation_details", active.translationDetails);
     active.data.put("operation_failures", active.failures);
+    active.data.put("native_work", active.nativeWork);
+    active.data.put("execution_contracts", active.contracts);
+    active.data.put("jobs", active.jobs);
+    active.data.put("unattributed_native_work", active.unattributedWork);
+    active.data.put("unmatched_native_jobs", active.unmatchedJobs);
+    active.data.put("unmatched_job_results", active.unmatchedResults);
     System.out.println(MARKER + active.id);
   }
 
@@ -44,17 +56,215 @@ public final class SqlInventory {
     if (active == null || !active.data.get("junit_id").equals(call(identifier, "getUniqueId"))) {
       throw new AssertionError("Missing or mismatched SQL inventory invocation");
     }
+    snapshotJobs(active);
     active.data.put("junit_status", call(result, "getStatus").toString());
     active.data.put("junit_failure", call(result, "getThrowable").toString());
     Files.createDirectories(directory());
     Files.writeString(
         directory().resolve(active.id + ".json"), json(active.data) + "\n", StandardCharsets.UTF_8);
     System.out.println(MARKER + active.id);
+    FINISHED_JOBS.addAll(active.jobs.keySet());
+    FINISHED_JOBS.addAll(active.workByJob.keySet());
+    FINISHED_JOBS.addAll(active.applicationStatuses.keySet());
+    OPERATORS.values().removeIf(binding -> binding.scope() == active);
     active = null;
   }
 
-  public static synchronized void planner(Object context, boolean unmodified) throws Exception {
+  public static synchronized Object submitting() {
+    return submitting(new Object[0]);
+  }
+
+  public static synchronized Object submitting(Object[] arguments) {
+    if (active == null) return null;
+    Map<String, Object> graph = new LinkedHashMap<>();
+    for (Object argument : arguments) {
+      if (argument == null
+          || !argument
+              .getClass()
+              .getName()
+              .equals("org.apache.flink.streaming.api.graph.StreamGraph")) continue;
+      try {
+        Map<String, Object> pipeline = active.pipelines.get(argument);
+        if (pipeline != null) graph.putAll(pipeline);
+        graph.put("job_type", call(argument, "getJobType").toString());
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        for (Object node : (Iterable<?>) call(argument, "getStreamNodes")) {
+          Map<String, Object> entry = new LinkedHashMap<>();
+          entry.put("id", call(node, "getId"));
+          entry.put("name", call(node, "getOperatorName"));
+          entry.put("parallelism", call(node, "getParallelism"));
+          List<Object> inputs = new ArrayList<>();
+          for (Object edge : (List<?>) call(node, "getInEdges"))
+            inputs.add(call(edge, "getSourceId"));
+          entry.put("inputs", inputs);
+          Object factory = call(node, "getOperatorFactory");
+          if (factory != null) {
+            entry.put("factory", factory.getClass().getName());
+            try {
+              entry.put("operator_class", operatorClass(factory));
+            } catch (ReflectiveOperationException | RuntimeException unavailable) {
+              entry.put("operator_class_error", unavailable.toString());
+            }
+          }
+          nodes.add(entry);
+        }
+        nodes.sort(java.util.Comparator.comparingInt(node -> ((Number) node.get("id")).intValue()));
+        graph.put("nodes", nodes);
+      } catch (ReflectiveOperationException | RuntimeException unavailable) {
+        graph.put("observation_error", unavailable.toString());
+      }
+    }
+    return new Submission(active, graph);
+  }
+
+  private record Submission(Scope owner, Map<String, Object> graph) {}
+
+  static String operatorClass(Object factory) throws ReflectiveOperationException {
+    if (factory
+        .getClass()
+        .getName()
+        .equals("org.apache.flink.table.runtime.operators.CodeGenOperatorFactory")) {
+      return call(call(factory, "getGeneratedClass"), "getClassName").toString();
+    }
+    Method type = factory.getClass().getMethod("getStreamOperatorClass", ClassLoader.class);
+    type.setAccessible(true);
+    return ((Class<?>) type.invoke(factory, Thread.currentThread().getContextClassLoader()))
+        .getName();
+  }
+
+  public static synchronized void submitted(Object token, Object client, Throwable failure)
+      throws Exception {
+    if (!(token instanceof Submission submission) || submission.owner() != active) return;
+    if (failure != null) {
+      failed("executeAsync", failure);
+      return;
+    }
+    if (client == null) return;
+    String job = call(client, "getJobID").toString();
+    if (active.jobs.containsKey(job)) {
+      if (!submission.graph().isEmpty())
+        active.jobs.get(job).putIfAbsent("graph", submission.graph());
+      return;
+    }
+    active.jobs.put(job, new LinkedHashMap<>(Map.of("status", "SUBMITTED")));
+    if (!submission.graph().isEmpty()) active.jobs.get(job).put("graph", submission.graph());
+    try {
+      var result =
+          (java.util.concurrent.CompletableFuture<?>) call(client, "getJobExecutionResult");
+      active.jobResults.put(job, result);
+      active.jobStatuses.put(
+          job, result.handle((ignored, error) -> client).thenCompose(SqlInventory::jobStatus));
+    } catch (ReflectiveOperationException | ClassCastException unavailable) {
+      active.jobs.get(job).put("status", "UNAVAILABLE");
+      active.jobs.get(job).put("failure", unavailable.toString());
+    }
+  }
+
+  private static java.util.concurrent.CompletableFuture<Object> jobStatus(Object client) {
+    try {
+      return ((java.util.concurrent.CompletableFuture<?>) call(client, "getJobStatus"))
+          .thenApply(status -> java.util.Objects.requireNonNull(status, "Missing job status"));
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      return java.util.concurrent.CompletableFuture.failedFuture(unavailable);
+    }
+  }
+
+  private static void snapshotJobs(Scope scope) {
+    scope.applicationStatuses.forEach(
+        (job, statuses) -> {
+          if (scope.jobs.containsKey(job)) {
+            scope.jobs.get(job).put("application_statuses", new ArrayList<>(statuses));
+          } else {
+            scope.unmatchedResults.put(job, new ArrayList<>(statuses));
+          }
+        });
+    scope.workByJob.forEach(
+        (job, work) -> {
+          if (scope.jobs.containsKey(job)) scope.jobs.get(job).put("native_work", work);
+          else scope.unmatchedJobs.put(job, work);
+        });
+    scope.jobStatuses.forEach(
+        (job, status) -> {
+          if (!status.isDone()) return;
+          try {
+            scope.jobs.get(job).put("job_status", status.join().toString());
+          } catch (java.util.concurrent.CompletionException
+              | java.util.concurrent.CancellationException error) {
+            scope.jobs.get(job).put("job_status_error", error.toString());
+          }
+        });
+    scope.jobResults.forEach(
+        (job, completion) -> {
+          if (!completion.isDone()) return;
+          Map<String, Object> observation = scope.jobs.get(job);
+          try {
+            completion.join();
+            observation.put("status", "SUCCEEDED");
+          } catch (java.util.concurrent.CompletionException
+              | java.util.concurrent.CancellationException error) {
+            Throwable cause = error;
+            while (cause.getCause() != null) cause = cause.getCause();
+            observation.put("status", "RESULT_FAILED");
+            observation.put("failure", cause.toString());
+          }
+        });
+  }
+
+  private record OperatorBinding(Scope scope, String job) {}
+
+  public static synchronized void jobResult(Object result) {
     if (active == null) return;
+    try {
+      String job = call(result, "getJobId").toString();
+      if (FINISHED_JOBS.contains(job)) return;
+      String status = call(result, "getApplicationStatus").toString();
+      active.applicationStatuses
+          .computeIfAbsent(job, unused -> new java.util.LinkedHashSet<>())
+          .add(status);
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      failed("jobResult", unavailable);
+    }
+  }
+
+  public static synchronized void opened(Object operator) {
+    if (active == null) return;
+    String job = null;
+    try {
+      Object group = call(operator, "getMetricGroup");
+      Object id = ((Map<?, ?>) call(group, "getAllVariables")).get("<job_id>");
+      if (id != null) job = id.toString();
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      // Some existing writer callbacks have no operator metric group. Keep their work
+      // visible, but never invent a job association from the currently active invocation.
+    }
+    if (job != null && FINISHED_JOBS.contains(job)) return;
+    OPERATORS.putIfAbsent(operator, new OperatorBinding(active, job));
+  }
+
+  public static synchronized boolean tracked(Object operator) {
+    OperatorBinding binding = OPERATORS.get(operator);
+    return active != null && binding != null && binding.scope() == active;
+  }
+
+  public static synchronized void completed(Object operator, int rows) {
+    if (rows <= 0 || !tracked(operator)) return;
+    String name = operator.getClass().getSimpleName();
+    active.nativeWork.merge(name, (long) rows, Long::sum);
+    String job = OPERATORS.get(operator).job();
+    Map<String, Long> work =
+        job == null
+            ? active.unattributedWork
+            : active.workByJob.computeIfAbsent(job, unused -> new java.util.TreeMap<>());
+    work.merge(name, (long) rows, Long::sum);
+  }
+
+  public static synchronized void contract(String recordId, String test, String variant) {
+    if (active != null)
+      active.contracts.add(Map.of("record_id", recordId, "test", test, "variant", variant));
+  }
+
+  public static synchronized void planner(Object context, boolean unmodified) throws Exception {
+    if (directory() == null) return;
     Object config = call(context, "getTableConfig");
     ClassLoader loader = context.getClass().getClassLoader();
     Class<?> optionType =
@@ -64,7 +274,14 @@ public final class SqlInventory {
             .getField("RUNTIME_MODE")
             .get(null);
     Object mode = config.getClass().getMethod("get", optionType).invoke(config, modeOption);
-    active.planners.add(Map.of("mode", mode.toString(), "unmodified", unmodified));
+    Map<String, Object> observation = Map.of("mode", mode.toString(), "unmodified", unmodified);
+    PLANNER_CONTEXTS.put(context, observation);
+    if (active != null) active.planners.add(observation);
+  }
+
+  public static synchronized void plannerCreated(Object context, Object planner) {
+    var observation = PLANNER_CONTEXTS.get(context);
+    if (observation != null && planner != null) PLANNERS.put(planner, observation);
   }
 
   public static synchronized void plan(Object scan, Object roots) throws Exception {
@@ -141,15 +358,140 @@ public final class SqlInventory {
     if (active != null) active.sql.add(Map.of("method", method, "statement", statement));
   }
 
-  public static synchronized void translating(Object planner) {
+  public static synchronized Object translating(Object planner) {
     if (active != null) {
       active.translationDepth++;
       active.translations.add(planner.getClass().getName());
+      var detail = new LinkedHashMap<String, Object>();
+      detail.put("id", active.translationDetails.size());
+      detail.put("planner", planner.getClass().getName());
+      var configuration = PLANNERS.get(planner);
+      if (configuration != null) detail.put("planner_configuration", configuration);
+      active.translationDetails.add(detail);
+      return new Translation(active, detail, active.plans.size(), new IdentityHashMap<>());
+    }
+    return null;
+  }
+
+  private record Translation(
+      Scope owner,
+      Map<String, Object> detail,
+      int firstPlan,
+      IdentityHashMap<Object, Boolean> roots) {}
+
+  public static synchronized void translated(Object token, Object outputs, Throwable failure) {
+    if (!(token instanceof Translation translation) || translation.owner() != active) return;
+    active.translationDepth--;
+    translation.detail().put("status", failure == null ? "TRANSLATED" : "FAILED");
+    translation
+        .detail()
+        .put(
+            "plan_indices",
+            java.util.stream.IntStream.range(translation.firstPlan(), active.plans.size())
+                .boxed()
+                .toList());
+    if (failure == null && outputs instanceof List<?> roots) {
+      for (Object root : roots) {
+        translation.roots().put(root, true);
+        active.transformations.computeIfAbsent(root, unused -> new ArrayList<>()).add(translation);
+      }
+      translation.detail().put("root_count", roots.size());
     }
   }
 
-  public static synchronized void translated() {
-    if (active != null) active.translationDepth--;
+  public static synchronized void pipeline(Object inputs, Object graph) {
+    if (active == null || graph == null || !(inputs instanceof List<?> roots)) return;
+    var present = new IdentityHashMap<Object, Boolean>();
+    roots.forEach(root -> present.put(root, true));
+    var selected = new java.util.LinkedHashSet<Translation>();
+    boolean complete = !roots.isEmpty();
+    for (Object root : roots) {
+      var matches = active.transformations.get(root);
+      if (matches == null || matches.size() != 1) complete = false;
+      else selected.add(matches.get(0));
+    }
+    for (Translation translation : selected) {
+      if (!present.keySet().containsAll(translation.roots().keySet())) complete = false;
+    }
+    active.pipelines.put(
+        graph,
+        Map.of(
+            "sql_translation_ids",
+            selected.stream().map(t -> t.detail().get("id")).toList(),
+            "sql_translation_complete",
+            complete));
+  }
+
+  public static synchronized void generatedPipeline(Object inputs, Object graph) {
+    if (active == null || graph == null || !(inputs instanceof List<?> roots)) return;
+    var edges = new IdentityHashMap<Object, List<?>>();
+    var ancestors = new IdentityHashMap<Object, Boolean>();
+    var pending = new java.util.ArrayDeque<Object>(roots);
+    try {
+      while (!pending.isEmpty()) {
+        Object node = pending.removeFirst();
+        if (edges.containsKey(node)) continue;
+        var children = (List<?>) call(node, "getInputs");
+        edges.put(node, children);
+        for (Object child : children) {
+          ancestors.put(child, true);
+          pending.addLast(child);
+        }
+      }
+      var selected = new java.util.LinkedHashSet<Translation>();
+      var reached = new IdentityHashMap<Object, Boolean>();
+      var covered = new IdentityHashMap<Object, Boolean>();
+      boolean complete = true;
+      int terminals = 0;
+      for (Object root : roots) {
+        if (ancestors.containsKey(root)) continue;
+        terminals++;
+        complete &= coversTranslation(root, edges, selected, reached, covered);
+      }
+      for (Translation translation : selected) {
+        if (!reached.keySet().containsAll(translation.roots().keySet())) complete = false;
+      }
+      active.pipelines.put(
+          graph,
+          Map.of(
+              "sql_translation_ids",
+              selected.stream().map(t -> t.detail().get("id")).toList(),
+              "sql_translation_complete",
+              complete && terminals > 0,
+              "sql_translation_link_kind",
+              "transformation_inputs"));
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      active.pipelines.put(
+          graph,
+          Map.of(
+              "sql_translation_complete", false, "sql_translation_error", unavailable.toString()));
+    }
+  }
+
+  private static boolean coversTranslation(
+      Object node,
+      IdentityHashMap<Object, List<?>> edges,
+      java.util.Set<Translation> selected,
+      IdentityHashMap<Object, Boolean> reached,
+      IdentityHashMap<Object, Boolean> covered) {
+    if (covered.containsKey(node)) return covered.get(node);
+    covered.put(node, false);
+    var matches = active.transformations.get(node);
+    if (matches != null) {
+      if (matches.size() != 1) return false;
+      selected.add(matches.get(0));
+      reached.put(node, true);
+      covered.put(node, true);
+      return true;
+    }
+    var children = edges.get(node);
+    boolean complete = children != null && !children.isEmpty();
+    if (children != null) {
+      for (Object child : children)
+        complete &= coversTranslation(child, edges, selected, reached, covered);
+    }
+    covered.put(node, complete);
+    return complete;
   }
 
   public static synchronized void failed(String operation, Throwable failure) {
@@ -169,7 +511,7 @@ public final class SqlInventory {
     return path == null || path.isBlank() ? null : Path.of(path);
   }
 
-  private static Object call(Object value, String name) throws Exception {
+  private static Object call(Object value, String name) throws ReflectiveOperationException {
     Method method = value.getClass().getMethod(name);
     method.setAccessible(true);
     return method.invoke(value);
@@ -204,7 +546,21 @@ public final class SqlInventory {
     final List<Object> plans = new ArrayList<>();
     final List<Object> sql = new ArrayList<>();
     final List<String> translations = new ArrayList<>();
+    final List<Object> translationDetails = new ArrayList<>();
+    final IdentityHashMap<Object, List<Translation>> transformations = new IdentityHashMap<>();
+    final IdentityHashMap<Object, Map<String, Object>> pipelines = new IdentityHashMap<>();
     final List<Object> failures = new ArrayList<>();
+    final Map<String, Long> nativeWork = new java.util.TreeMap<>();
+    final Map<String, Long> unattributedWork = new java.util.TreeMap<>();
+    final Map<String, Map<String, Long>> workByJob = new java.util.TreeMap<>();
+    final Map<String, Map<String, Long>> unmatchedJobs = new java.util.TreeMap<>();
+    final List<Object> contracts = new ArrayList<>();
+    final Map<String, Map<String, Object>> jobs = new LinkedHashMap<>();
+    final Map<String, java.util.concurrent.CompletableFuture<?>> jobResults = new LinkedHashMap<>();
+    final Map<String, java.util.Set<String>> applicationStatuses = new LinkedHashMap<>();
+    final Map<String, List<String>> unmatchedResults = new LinkedHashMap<>();
+    final Map<String, java.util.concurrent.CompletableFuture<?>> jobStatuses =
+        new LinkedHashMap<>();
     int translationDepth;
   }
 }
