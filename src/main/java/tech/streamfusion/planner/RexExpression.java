@@ -1081,7 +1081,9 @@ final class RexExpression {
       return emitItem(call);
     }
     if ("COALESCE".equals(functionName)) {
-      if (!RexUtil.isDeterministic(call) || containsScalarUdf(call)) {
+      if (!RexUtil.isDeterministic(call)
+          || containsScalarUdf(call)
+          || requiresRowShortCircuit(call)) {
         return emitHostExpression(call, true);
       }
       return emitCoalesceAsCase(call.getOperands());
@@ -1091,7 +1093,8 @@ final class RexExpression {
       if (call.getOperands().size() != 3) return reject("IF requires three operands");
       boolean supportedType = switch (call.getType().getSqlTypeName()) {
         case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, REAL, DOUBLE, DECIMAL,
-            CHAR, VARCHAR, DATE, TIME, TIMESTAMP, BINARY, VARBINARY -> true;
+            CHAR, VARCHAR, DATE, TIME, TIMESTAMP, TIMESTAMP_WITH_LOCAL_TIME_ZONE,
+            BINARY, VARBINARY -> true;
         default -> false;
       };
       if (!supportedType) return reject("IF requires a verified scalar result type");

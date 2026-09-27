@@ -19,6 +19,13 @@ by ownership transfer: the serializer parks the batch in a process-global handle
 
 Each producing split subtask owns its parked handles. Failed or canceled task teardown closes that
 owner's unclaimed batches, while normal completion leaves records available for downstream drain.
+A released batch leaves a lightweight cancellation marker: a consumer that was already reading its
+queued handle throws Flink's `CancelTaskException`, preserving the producer's original failure.
+Foreign-process tokens, unknown handles and repeated claims still fail as invalid handoffs. Markers
+retain no Arrow buffers and disappear when claimed or when Flink releases the job's classloader,
+after its tasks have released their classloader leases. The same job-release hook closes any
+remaining unclaimed batches. This separates immediate buffer cleanup from metadata lifetime;
+producer teardown alone is too early to forget a handle that a consumer can still read.
 
 ## When it's planned
 

@@ -77,7 +77,7 @@ public final class SharedFlinkCluster
   @Override
   public void afterEach(ExtensionContext context) throws Exception {
     cluster.afterEach(context);
-    assertNativeMemoryReleased(context);
+    assertNativeMemoryReleased(context.getDisplayName());
   }
 
   /**
@@ -86,31 +86,35 @@ public final class SharedFlinkCluster
    * memory the JVM's tooling cannot see), and the shared Arrow FFI allocator must hold zero bytes
    * (a nonzero balance is an unclosed {@code VectorSchemaRoot} or a dropped C Data release
    * callback, in either transfer direction — imports are registered as foreign allocations).
+   * The task pool must also release every reservation, including native state outside Arrow.
    *
    * <p>Task cleanup can trail the job result by a moment (source fetcher threads close
    * asynchronously), so the check polls briefly before failing; when clean it costs one JNI call per loaded library.
    */
-  private static void assertNativeMemoryReleased(ExtensionContext context)
-      throws InterruptedException {
+  static void assertNativeMemoryReleased(String scenario) throws InterruptedException {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
     String handles = NativeExtensionLoader.liveNativeHandles();
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
-    while ((!handles.isEmpty() || allocated != 0) && System.nanoTime() < deadline) {
+    long reserved = TaskOffHeapMemory.reservedBytes();
+    while ((!handles.isEmpty() || allocated != 0 || reserved != 0) && System.nanoTime() < deadline) {
       // Records a failed job dropped in flight are freed by the ArrowBatch cleaner backstop, which
       // only runs once a GC notices they are unreachable — nudge it rather than waiting one out.
       System.gc();
       Thread.sleep(20);
       handles = NativeExtensionLoader.liveNativeHandles();
       allocated = NativeAllocator.SHARED.getAllocatedMemory();
+      reserved = TaskOffHeapMemory.reservedBytes();
     }
-    if (!handles.isEmpty() || allocated != 0) {
+    if (!handles.isEmpty() || allocated != 0 || reserved != 0) {
       throw new AssertionError(
           "native memory outstanding after "
-              + context.getDisplayName()
+              + scenario
               + ": live native handles ["
               + handles
               + "], Arrow allocator holds "
               + allocated
+              + " bytes, task pool reserves "
+              + reserved
               + " bytes\n"
               + NativeAllocator.SHARED.toVerboseString());
     }
