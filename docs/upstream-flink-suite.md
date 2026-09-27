@@ -246,6 +246,13 @@ missing and ambiguous matches stay explicitly incomplete. These links are scoped
 invocation and are not inferred from which plan was recorded most recently. They are retained for
 full-fallback and deliberately unmodified route classification, which remain pending.
 
+Direct DataStream submission also records links at stream-graph generation. The observer follows
+transformation inputs from terminal roots and requires every input path to reach an observed SQL
+translation root. Sources outside those roots, ambiguous origins, partial multi-root translations,
+cycles and observation errors keep the link incomplete. Successful links record
+`sql_translation_link_kind=transformation_inputs`; this permits downstream DataStream wrappers
+without assuming that unrelated branches came from SQL.
+
 Native callbacks with a Flink job metric ID accumulate under that job, including callbacks
 that arrive before submission returns its client. At invocation completion, matching jobs
 receive their `native_work`; unknown job IDs remain in `unmatched_native_jobs`. Callbacks
@@ -312,8 +319,9 @@ to both its job ID and existing exact contract witness, with no unassociated wor
 graph retains both Arrow transposes. The conservative runtime classifier reports `mixed` because
 it includes Flink source conversion, sink constraint enforcement and output conversion as host
 operators; the existing native contract remains satisfied. This fixture submits its converted
-DataStream directly, bypassing SQL executor pipeline creation, so no translation-to-job link is
-claimed for it. Direct DataStream linkage and finer boundary classification remain pending.
+DataStream directly, bypassing SQL executor pipeline creation. A rerun verifies a complete link
+to translation 0 through `transformation_inputs`, while preserving the same three job-associated
+native rows. Finer boundary classification remains pending.
 
 Outside the declared contracts, cases without the runtime evidence above remain
 unclassified. The artifact does not infer routes from test class names or JUnit outcomes.

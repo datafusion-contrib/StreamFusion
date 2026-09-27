@@ -382,6 +382,78 @@ public final class SqlInventory {
             complete));
   }
 
+  public static synchronized void generatedPipeline(Object inputs, Object graph) {
+    if (active == null || graph == null || !(inputs instanceof List<?> roots)) return;
+    var edges = new IdentityHashMap<Object, List<?>>();
+    var ancestors = new IdentityHashMap<Object, Boolean>();
+    var pending = new java.util.ArrayDeque<Object>(roots);
+    try {
+      while (!pending.isEmpty()) {
+        Object node = pending.removeFirst();
+        if (edges.containsKey(node)) continue;
+        var children = (List<?>) call(node, "getInputs");
+        edges.put(node, children);
+        for (Object child : children) {
+          ancestors.put(child, true);
+          pending.addLast(child);
+        }
+      }
+      var selected = new java.util.LinkedHashSet<Translation>();
+      var reached = new IdentityHashMap<Object, Boolean>();
+      var covered = new IdentityHashMap<Object, Boolean>();
+      boolean complete = true;
+      int terminals = 0;
+      for (Object root : roots) {
+        if (ancestors.containsKey(root)) continue;
+        terminals++;
+        complete &= coversTranslation(root, edges, selected, reached, covered);
+      }
+      for (Translation translation : selected) {
+        if (!reached.keySet().containsAll(translation.roots().keySet())) complete = false;
+      }
+      active.pipelines.put(
+          graph,
+          Map.of(
+              "sql_translation_ids",
+              selected.stream().map(t -> t.detail().get("id")).toList(),
+              "sql_translation_complete",
+              complete && terminals > 0,
+              "sql_translation_link_kind",
+              "transformation_inputs"));
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      active.pipelines.put(
+          graph,
+          Map.of(
+              "sql_translation_complete", false, "sql_translation_error", unavailable.toString()));
+    }
+  }
+
+  private static boolean coversTranslation(
+      Object node,
+      IdentityHashMap<Object, List<?>> edges,
+      java.util.Set<Translation> selected,
+      IdentityHashMap<Object, Boolean> reached,
+      IdentityHashMap<Object, Boolean> covered) {
+    if (covered.containsKey(node)) return covered.get(node);
+    covered.put(node, false);
+    var matches = active.transformations.get(node);
+    if (matches != null) {
+      if (matches.size() != 1) return false;
+      selected.add(matches.get(0));
+      reached.put(node, true);
+      covered.put(node, true);
+      return true;
+    }
+    var children = edges.get(node);
+    boolean complete = children != null && !children.isEmpty();
+    if (children != null) {
+      for (Object child : children)
+        complete &= coversTranslation(child, edges, selected, reached, covered);
+    }
+    covered.put(node, complete);
+    return complete;
+  }
+
   public static synchronized void failed(String operation, Throwable failure) {
     if (active != null && failure != null) {
       String message = failure.toString();

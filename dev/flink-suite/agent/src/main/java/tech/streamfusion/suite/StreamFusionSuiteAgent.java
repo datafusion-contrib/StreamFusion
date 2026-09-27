@@ -93,6 +93,10 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(Advice.to(RecordSqlPipeline.class).on(named("createPipeline"))))
+        .type(named("org.apache.flink.streaming.api.graph.StreamGraphGenerator"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordGeneratedPipeline.class).on(named("generate"))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -307,6 +311,14 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.Argument(0) Object inputs, @Advice.Return Object graph) {
       SqlInventory.pipeline(inputs, graph);
+    }
+  }
+
+  public static final class RecordGeneratedPipeline {
+    @Advice.OnMethodExit
+    static void exit(
+        @Advice.FieldValue("transformations") Object inputs, @Advice.Return Object graph) {
+      SqlInventory.generatedPipeline(inputs, graph);
     }
   }
 

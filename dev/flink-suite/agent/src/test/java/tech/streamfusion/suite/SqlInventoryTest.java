@@ -313,6 +313,49 @@ class SqlInventoryTest {
   }
 
   @Test
+  void linksDirectDataStreamWrappersButRejectsAnUnrelatedSource() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var env =
+          org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+              .getExecutionEnvironment();
+      env.getConfig().disableClosureCleaner();
+      var converted =
+          env.fromElements(1, 2)
+              .map(value -> value + 1)
+              .returns(org.apache.flink.api.common.typeinfo.Types.INT);
+      converted.addSink(new org.apache.flink.streaming.api.functions.sink.DiscardingSink<>());
+      var inputs = new java.util.ArrayList<>(env.getTransformations());
+      var graph = env.getStreamGraph();
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object translation = SqlInventory.translating(this);
+      SqlInventory.translated(translation, List.of(converted.getTransformation()), null);
+      SqlInventory.generatedPipeline(inputs, graph);
+      SqlInventory.submitted(
+          SqlInventory.submitting(new Object[] {graph}),
+          new JobClient("direct", java.util.concurrent.CompletableFuture.completedFuture(null)),
+          null);
+      inputs.add(env.fromElements(9).getTransformation());
+      SqlInventory.generatedPipeline(inputs, graph);
+      SqlInventory.submitted(
+          SqlInventory.submitting(new Object[] {graph}),
+          new JobClient("unrelated", java.util.concurrent.CompletableFuture.completedFuture(null)),
+          null);
+      SqlInventory.finished(identifier, new Result());
+      try (var files = Files.list(directory)) {
+        String json = Files.readString(files.findFirst().orElseThrow());
+        assertTrue(json.contains("\"sql_translation_link_kind\":\"transformation_inputs\""), json);
+        assertTrue(json.contains("\"sql_translation_complete\":true"), json);
+        assertTrue(json.contains("\"sql_translation_complete\":false"), json);
+        assertTrue(!json.contains("sql_translation_error"), json);
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  @Test
   void associatesEarlyOperatorWorkByJobIdAndRejectsLateOpenings() throws Exception {
     System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
     try {
