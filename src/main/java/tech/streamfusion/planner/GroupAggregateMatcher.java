@@ -82,10 +82,10 @@ final class GroupAggregateMatcher {
       // any type the row admits; SUM(DISTINCT x) adds a running sum folded as values enter/leave the
       // set (same value types as plain SUM, gated below); MIN/MAX(DISTINCT x) are semantically the
       // plain MIN/MAX — the extreme of the live values ignores multiplicity — so they run as such.
-      // AVG(DISTINCT) falls back (its count-of-distinct division isn't modelled).
+      // Exact AVG(DISTINCT) divides the running sum by the number of live distinct values.
       if (call.isDistinct()) {
-        if (call.getArgList().size() != 1 || kind == WindowAggregateMatcher.KIND_AVG) {
-          return "GROUP BY: DISTINCT is native for COUNT/SUM/MIN/MAX only";
+        if (call.getArgList().size() != 1) {
+          return "GROUP BY: DISTINCT requires exactly one argument";
         }
         if (kind == WindowAggregateMatcher.KIND_COUNT) {
           continue;
@@ -105,6 +105,9 @@ final class GroupAggregateMatcher {
           // and the result casts back to the input type; for DECIMAL(p, s), the sum is SUM's
           // DECIMAL(38, s) accumulator and the emit divides with Flink's exact decimal division,
           // reporting DECIMAL(38, max(6, s)) — findAvgAggType's derivation.
+          if (call.isDistinct() && !isIntegerType(valueType) && valueType != SqlTypeName.DECIMAL) {
+            return "GROUP BY: AVG(DISTINCT) requires an integer or DECIMAL value";
+          }
           if (!isAvgType(valueType) && valueType != SqlTypeName.DECIMAL) {
             return "GROUP BY: AVG over an unsupported value type";
           }
@@ -175,6 +178,8 @@ final class GroupAggregateMatcher {
   /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
   private static final int KIND_SUM_DISTINCT = 9;
 
+  static final int KIND_AVG_DISTINCT = 17;
+
   /**
    * Native kinds 10/11: MIN/MAX over an insert-only input. No retraction can ever arrive, so the
    * state is a plain running extreme — one scalar in the main row — instead of the retractable
@@ -212,6 +217,8 @@ final class GroupAggregateMatcher {
         kind = KIND_COUNT_DISTINCT;
       } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_SUM) {
         kind = KIND_SUM_DISTINCT;
+      } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_AVG) {
+        kind = KIND_AVG_DISTINCT;
       }
       // MIN/MAX(DISTINCT) stay their plain kinds: the extreme ignores multiplicity either way.
       // Over an insert-only input a numeric MIN/MAX needs no retractable multiset at all.

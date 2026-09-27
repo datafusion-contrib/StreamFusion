@@ -1,6 +1,104 @@
 use super::*;
 
 #[test]
+fn group_distinct_average_restores_sum_and_duplicate_retractions() {
+    for (code, low, high, average) in [
+        (
+            5,
+            ScalarValue::Int8(Some(-3)),
+            ScalarValue::Int8(Some(2)),
+            ScalarValue::Int8(Some(0)),
+        ),
+        (
+            0,
+            ScalarValue::Int64(Some(-3)),
+            ScalarValue::Int64(Some(2)),
+            ScalarValue::Int64(Some(0)),
+        ),
+        (
+            4002,
+            ScalarValue::Decimal128(Some(-300), 20, 2),
+            ScalarValue::Decimal128(Some(200), 20, 2),
+            ScalarValue::Decimal128(Some(-500_000), 38, 6),
+        ),
+    ] {
+        let null = null_scalar(&low.data_type());
+        let mut agg = GroupAggregator::new(vec![17], vec![code], vec![1], vec![0], true);
+        let result = agg
+            .update(
+                &group_scalar_changelog(
+                    vec![low.clone(), low.clone(), high.clone(), null],
+                    vec![0; 4],
+                ),
+                0,
+            )
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            average
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![17],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &agg.snapshot(),
+            0,
+        );
+        let retract = group_scalar_changelog(vec![low], vec![3]);
+        assert_eq!(restored.update(&retract, 0).unwrap().num_rows(), 0);
+        let result = restored.update(&retract, 0).unwrap();
+        let expected = if code == 4002 {
+            ScalarValue::Decimal128(Some(2_000_000), 38, 6)
+        } else {
+            high
+        };
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn group_distinct_average_checkpoint_preserves_decimal_overflow() {
+    let large = 9 * 10i128.pow(37);
+    let scalar = |v| ScalarValue::Decimal128(v, 38, 0);
+    let mut agg = GroupAggregator::new(vec![17, 3], vec![5800, 0], vec![1, -1], vec![0], true);
+    agg.update(
+        &group_scalar_changelog(
+            vec![
+                scalar(Some(large)),
+                scalar(Some(large - 1)),
+                scalar(Some(-large)),
+                scalar(Some(-large + 1)),
+            ],
+            vec![0; 4],
+        ),
+        0,
+    )
+    .unwrap();
+    let mut restored = GroupAggregator::restore(
+        vec![17, 3],
+        vec![5800, 0],
+        vec![1, -1],
+        vec![0],
+        true,
+        &agg.snapshot(),
+        0,
+    );
+    let result = restored
+        .update(&group_scalar_changelog(vec![scalar(Some(7))], vec![0]), 0)
+        .unwrap();
+    assert_eq!(
+        ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+        ScalarValue::Decimal128(None, 38, 6)
+    );
+    assert_eq!(values(&result, 2).last(), Some(&5));
+}
+
+#[test]
 fn group_distinct_typed_partials_restore_then_merge_duplicates() {
     let timestamp = |nanos| {
         ScalarValue::Struct(Arc::new(streamfusion_bridge::timestamp::timestamp_array([
@@ -8221,6 +8319,95 @@ mod rocksdb_group_multisets {
         ];
         for batch in &bundles {
             assert_parity(&mut rocks, &mut control, batch, 0);
+        }
+    }
+
+    #[test]
+    fn distinct_average_migrates_and_checkpoints_sum_and_membership() {
+        let large = 9 * 10i128.pow(37);
+        for (code, low, high, third) in [
+            (
+                5,
+                ScalarValue::Int8(Some(-3)),
+                ScalarValue::Int8(Some(2)),
+                ScalarValue::Int8(Some(7)),
+            ),
+            (
+                0,
+                ScalarValue::Int64(Some(-3)),
+                ScalarValue::Int64(Some(2)),
+                ScalarValue::Int64(Some(7)),
+            ),
+            (
+                5800,
+                ScalarValue::Decimal128(Some(large), 38, 0),
+                ScalarValue::Decimal128(Some(large - 1), 38, 0),
+                ScalarValue::Decimal128(Some(-large), 38, 0),
+            ),
+        ] {
+            let make =
+                || GroupAggregator::new(vec![17, 3], vec![code, 0], vec![1, -1], vec![0], true);
+            let codec = || {
+                GroupStateCodec::new(
+                    vec![17, 3],
+                    vec![low.data_type(), DataType::Int64],
+                    vec![1, -1],
+                    vec![-1; 2],
+                )
+            };
+            let mut memory = make();
+            memory
+                .update(
+                    &group_scalar_changelog(
+                        vec![low.clone(), low.clone(), high.clone(), third],
+                        vec![0; 4],
+                    ),
+                    0,
+                )
+                .unwrap();
+            let partitions = memory
+                .snapshot_partitions(128, &[-1])
+                .into_values()
+                .collect::<Vec<_>>();
+            let store =
+                RocksGroupStore::create(store_config("distinct-average-import", 0), codec())
+                    .unwrap();
+            let mut rocks = make().with_backend(store);
+            rocks.import_partitions(&partitions, 0).unwrap();
+            let snapshot = snapshot_dir("distinct-average");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("distinct-average-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            let partitions = rocks
+                .canonical_partitions()
+                .unwrap()
+                .into_values()
+                .collect::<Vec<_>>();
+            let mut exported = GroupAggregator::restore_partitions(
+                vec![17, 3],
+                vec![code, 0],
+                vec![1, -1],
+                vec![0],
+                true,
+                &partitions,
+                0,
+            );
+            for value in [low.clone(), low, high] {
+                let batch = group_scalar_changelog(vec![value], vec![3]);
+                rocks.store_mut().set_clock(0);
+                let expected = memory.update(&batch, 0).unwrap();
+                assert_eq!(rocks.update(&batch, 0).unwrap(), expected);
+                assert_eq!(exported.update(&batch, 0).unwrap(), expected);
+            }
         }
     }
 

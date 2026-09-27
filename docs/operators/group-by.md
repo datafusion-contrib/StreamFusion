@@ -34,6 +34,17 @@ at that value; a retraction after overflow starts it at the negated value. NULL 
 the accumulator unchanged. This rule also applies after restore and to filtered SUMs.
 Decimal AVG has a separate accumulator whose overflow stays NULL.
 
+Single-phase `AVG(DISTINCT)` admits TINYINT, SMALLINT, INT, BIGINT and DECIMAL. A value folds
+into the existing widened AVG accumulator only on its first occurrence and retracts only
+when its last occurrence leaves the distinct set. The denominator counts distinct non-NULL
+values. Integer results retain their input width and truncate toward zero; decimal results
+retain Flink's DECIMAL(38, max(6, input-scale)) type and rounding. FILTER, changelog inputs,
+empty/all-NULL groups, state TTL, and checkpoint restoration use the existing grouped path.
+The running sum and distinct count are checkpointed directly alongside membership so restore
+does not refold an overflow-sensitive decimal sum in map order. Both memory and typed RocksDB
+state retain this contract, including migrations between the two. Floating AVG DISTINCT and
+all two-phase AVG DISTINCT plans still fall back.
+
 `TINYINT` and `SMALLINT` `SUM`/`MIN`/`MAX` retain their input width, including the local
 partials of an insert-only two-phase plan. SUM wraps on overflow at 8 or 16 bits rather
 than widening to BIGINT. Single-phase retractions subtract at the same width; MIN/MAX
@@ -259,7 +270,8 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 
 - A UDAF (no native path for arbitrary user aggregation logic).
 - `AVG`/`SUM`/`MIN`/`MAX` over a value type outside [Type support](#type-support)'s ✓ set.
-- `AVG(DISTINCT)` and DISTINCT FIRST_VALUE/LAST_VALUE/SINGLE_VALUE. (`COUNT(DISTINCT x)` keeps a per-key
+- `AVG(DISTINCT)` over FLOAT/DOUBLE, and DISTINCT FIRST_VALUE/LAST_VALUE/SINGLE_VALUE.
+  (`COUNT(DISTINCT x)` keeps a per-key
   value set; `SUM(DISTINCT x)` adds a running sum folded as values enter/leave it; `MIN`/`MAX
   (DISTINCT)` run as their plain, multiplicity-blind forms.)
 - An approximate aggregate.
@@ -400,7 +412,7 @@ repeated values across flushes, independently filtered/shared views, all-NULL gr
 input, and global aggregation. Native restore tests checkpoint the merged distinct state,
 then merge duplicate and new values without losing multiplicities or decimal result scale.
 This extends the existing insert-only split; retracting two-phase DISTINCT still falls back.
-The remaining AVG DISTINCT and ordered-value gaps are tracked in
+The remaining two-phase AVG DISTINCT and ordered-value gaps are tracked in
 [#231](https://github.com/datafusion-contrib/StreamFusion/issues/231).
 
 Two-phase SUM DISTINCT over DECIMAL precision 20–38 remains on Flink. Decimal overflow can
@@ -429,4 +441,34 @@ optimization in #246.
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dtest=DistinctAggregateBenchmark -Ddistinct.rows=2000000 \
   -Ddistinct.warmup=2 -Ddistinct.runs=5
+```
+
+### Single-phase DISTINCT averages
+
+Runtime-source checks compare resolved types and complete ordered changelogs for integer and
+DECIMAL(20,2) AVG DISTINCT, including duplicate removals, UPDATE_BEFORE/UPDATE_AFTER pairs,
+filtered instances, group deletion/recreation, empty/global results and all-NULL groups.
+A precision-38 decimal probe verifies that overflow remains NULL after later cancellation.
+The new cases and existing grouped/count-distinct suites pass on both released Flink lines:
+32 cases on 2.2.1; 31 passed and one host-capability skip on 1.18.1. Native checks cover raw
+sum/membership restoration, duplicate retractions, sticky decimal overflow, typed RocksDB
+checkpoint/reopen, and memory↔RocksDB canonical-partition migration.
+
+The existing `DistinctAggregateBenchmark` accepts `-Ddistinct.average=true` to compare
+single-phase AVG DISTINCT over TINYINT, BIGINT and DECIMAL(20,2), retaining runtime rows,
+both row/Arrow transposes and the rowwise sink. The default benchmark still measures the
+previous two-phase COUNT/SUM DISTINCT type extension.
+
+On Intel Core i7-12650H, Linux/WSL, JDK 17 and Flink 2.2.1 (2026-09-27), release+mimalloc
+measured two million rows across 64 keys, with 127 TINYINT, 1,024 BIGINT and 128 decimal
+values per key and NULLs every seventh row. Two warmups and five measured runs alternate
+engine order. Median elapsed time was **6.421 s for Flink and 2.810 s for native (2.285x)**.
+Flink trials ranged from 6.346–6.591 s; native trials ranged from 2.769–2.964 s. The baseline
+routes this unsupported AVG DISTINCT query entirely to Flink. These are workload-specific
+whole-job results, including the unchanged row/Arrow perimeter, and precede #246's typed maps.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=DistinctAggregateBenchmark -Ddistinct.average=true \
+  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5
 ```
