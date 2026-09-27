@@ -23,7 +23,6 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.data.ArrayData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.TimestampData;
-import org.apache.flink.util.Preconditions;
 
 import org.apache.arrow.vector.ValueVector;
 
@@ -42,10 +41,11 @@ public abstract class TimestampWriter<T> extends ArrowFieldWriter<T> {
     // ------------------------------------------------------------------------------------------
 
     protected final int precision;
+    private final TimestampAccessor accessor;
 
     private TimestampWriter(ValueVector valueVector, int precision) {
         super(valueVector);
-        Preconditions.checkState(TimestampAccessor.isTimestamp(valueVector));
+        accessor = new TimestampAccessor(valueVector);
         this.precision = precision;
     }
 
@@ -55,7 +55,7 @@ public abstract class TimestampWriter<T> extends ArrowFieldWriter<T> {
 
     @Override
     public void doWrite(T in, int ordinal) {
-        TimestampAccessor.set(getValueVector(), getCount(), isNullAt(in, ordinal) ? null : readTimestamp(in, ordinal));
+        accessor.set(getCount(), isNullAt(in, ordinal) ? null : readTimestamp(in, ordinal));
     }
 
     // ------------------------------------------------------------------------------------------

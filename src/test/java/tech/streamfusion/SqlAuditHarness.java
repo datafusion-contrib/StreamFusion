@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -169,8 +168,7 @@ final class SqlAuditHarness {
         result(spec.comparison(), runs.nativeRun().rows()),
         runs.toString());
     if (!spec.golden().isEmpty()) {
-      Map<List<Object>, Long> expected = new HashMap<>();
-      spec.golden().forEach(row -> expected.merge(row, 1L, Long::sum));
+      Map<List<Object>, Long> expected = NativeParity.multiset(spec.golden());
       assertEquals(
           expected,
           spec.comparison() == Comparison.KEYED_FIRST_FIELD
@@ -185,7 +183,7 @@ final class SqlAuditHarness {
       case MATERIALIZED -> materialized(rows);
       case KEYED_FIRST_FIELD -> keyed(rows);
       case ORDERED_CHANGELOG -> rows;
-      case KINDED_MULTISET -> rows.stream().sorted(Comparator.comparing(Object::toString)).toList();
+      case KINDED_MULTISET -> NativeParity.multiset(rows);
     };
   }
 
@@ -209,7 +207,7 @@ final class SqlAuditHarness {
     return result;
   }
 
-  private static Map<List<Object>, Long> materialized(List<List<Object>> rows) {
+  static Map<List<Object>, Long> materialized(List<List<Object>> rows) {
     Map<List<Object>, Long> result = new HashMap<>();
     for (var row : rows) {
       long delta =
@@ -243,11 +241,12 @@ final class SqlAuditHarness {
     return record;
   }
 
-  private static Map<String, Object> outcome(NativeFailureParity.Outcome outcome) {
+  static Map<String, Object> outcome(NativeFailureParity.Outcome outcome) {
     Map<String, Object> record = new LinkedHashMap<>();
     record.put("success", outcome.failure() == null);
     record.put("phase", outcome.phase().name());
     record.put("rowCount", outcome.rows().size());
+    record.put("resultTypes", outcome.resultTypes());
     record.put("rowKinds", outcome.rows().stream().map(row -> row.get(0)).distinct().toList());
     record.put("substitutions", outcome.substitutions());
     record.put("operators", outcome.operatorTypes());
