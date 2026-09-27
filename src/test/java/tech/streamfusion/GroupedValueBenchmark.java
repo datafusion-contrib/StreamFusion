@@ -20,12 +20,17 @@ class GroupedValueBenchmark {
   private static final long ROWS = Long.getLong("grouped.value.rows", 2_000_000L);
   private static final int WARMUP = Integer.getInteger("grouped.value.warmup", 2);
   private static final int RUNS = Integer.getInteger("grouped.value.runs", 5);
+  private static final boolean DISTINCT = Boolean.getBoolean("grouped.value.distinct");
   private static final String SQL =
-      "INSERT INTO sink SELECT k, FIRST_VALUE(v), LAST_VALUE(v) FROM inputs GROUP BY k";
+      "INSERT INTO sink SELECT k, FIRST_VALUE("
+          + (DISTINCT ? "DISTINCT " : "")
+          + "v), LAST_VALUE("
+          + (DISTINCT ? "DISTINCT " : "")
+          + "v) FROM inputs GROUP BY k";
 
   @Test
   void groupedValues() throws Exception {
-    for (boolean string : new boolean[] {false, true}) {
+    for (boolean string : (DISTINCT ? new boolean[] {true} : new boolean[] {false, true})) {
       String plan = NativePlanner.explain(environment(string), SQL);
       if (!plan.contains("NativeColumnarGroupAggregate")
           || !plan.contains("RowDataToArrow")
@@ -51,8 +56,9 @@ class GroupedValueBenchmark {
       double nativeTime = median(times[1]);
       System.out.printf(
           Locale.ROOT,
-          "[grouped-value] string=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx "
+          "[grouped-value] distinct=%s string=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx "
               + "flink_trials=%s native_trials=%s%n",
+          DISTINCT,
           string,
           ROWS,
           host,

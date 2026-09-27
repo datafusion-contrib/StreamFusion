@@ -554,7 +554,7 @@ fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType) -> ScalarV
 impl GroupAggState {
     fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
-            12..=16 => Self::Ordered(Box::new(OrderedValueState::new(kind, value_type))),
+            12..=16 | 19 | 20 => Self::Ordered(Box::new(OrderedValueState::new(kind, value_type))),
             1 => GroupAggState::Extremes {
                 is_min: true,
                 counts: BTreeMap::new(),
@@ -923,7 +923,7 @@ impl GroupAggState {
     /// main row; a SUM(DISTINCT) refolds each element into its running sum either way.
     fn import_multiset_entry(&mut self, value: ScalarValue, count: i64) {
         match self {
-            Self::Ordered(state) => state.append_restored(value),
+            Self::Ordered(state) => state.restore_entry(value, count),
             GroupAggState::Extremes {
                 is_min,
                 counts,
@@ -2390,10 +2390,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     GroupAggState::Ordered(ordered) => {
                         state_columns[i].push(ordered.snapshot_value());
                         non_null_columns[i].push(ordered.count());
-                        for value in ordered.entries() {
+                        for (value, count) in ordered.entries() {
                             multiset_keys[i].push(&key.0);
                             multiset_values[i].push(value.clone());
-                            multiset_counts[i].push(1);
+                            multiset_counts[i].push(count);
                         }
                     }
                     GroupAggState::Running { agg, non_null } => {
@@ -2471,7 +2471,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         for i in 0..num_agg {
             // Kinds 10/11 write their (always empty) side batch too, so the frame layout matches
             // the retractable representation and a blob round-trips across the two.
-            if matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18) {
+            if matches!(
+                self.kinds[i],
+                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20
+            ) {
                 let mut f = vec![Field::new("binary_key", DataType::Binary, false)];
                 let mut c: Vec<ArrayRef> = vec![Arc::new(
                     arrow::array::BinaryArray::from_iter_values(multiset_keys[i].iter().copied()),
@@ -2675,7 +2678,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // One side batch per MIN/MAX or DISTINCT aggregate: BinaryRow key, value, count.
         let mut frame = 1;
         for i in 0..num_agg {
-            if !matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18) {
+            if !matches!(
+                self.kinds[i],
+                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20
+            ) {
                 continue;
             }
             let side = &batches[frame];
