@@ -80,10 +80,15 @@ This retains Flink's branch casts, call counts and code-generation evaluation or
 user-defined function named IF retains its own implementation. Unsupported children retain
 the existing admission rules. SQL parity tests cover exact numerics, strings, temporal and
 binary values, nullable conditions, nested expressions, errors and multiple batches.
-The admitted result types are BOOLEAN, numeric, character, DATE, TIME, plain TIMESTAMP and binary.
+The admitted result types are BOOLEAN, numeric, character, DATE, TIME, TIMESTAMP,
+TIMESTAMP_LTZ and binary.
 BOOLEAN branches preserve TRUE/FALSE/NULL conditions, nullable results, nested predicates and
-unselected failing branches across batches. TIMESTAMP_LTZ and complex result types retain fallback because their IF overloads
-are not registered by the released Flink code generator.
+unselected failing branches across batches. TIMESTAMP_LTZ uses the same selection paths:
+matching branch types select native timestamp values, while mixed precisions retain Flink's
+generated branch casts. Its regression matrix covers precisions 0/3/6/9 in UTC,
+Asia/Shanghai and America/Los_Angeles, pre-epoch fractions, DST transitions, nullable and
+nested selections, unselected/selected errors, empty filtered batches and native Calc work
+across 5,003 rows. Complex IF result types retain fallback.
 
 The release benchmark below measures this coverage change against the previous full Flink
 fallback, using `ScalarFunctionBenchmark` on Apple Silicon/JDK 17 with mimalloc,
