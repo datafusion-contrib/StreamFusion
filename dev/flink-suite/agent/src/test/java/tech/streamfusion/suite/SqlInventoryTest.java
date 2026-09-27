@@ -19,14 +19,14 @@ class SqlInventoryTest {
     Identifier identifier = new Identifier();
     try {
       SqlInventory.started(identifier);
-      SqlInventory.translating(this);
+      Object translation = SqlInventory.translating(this);
       SqlInventory.plan(
           new Scan(),
           List.of(
               new StreamPhysicalNativeCalc(),
               new StreamPhysicalSink(false),
               new StreamPhysicalSink(true)));
-      SqlInventory.translated();
+      SqlInventory.translated(translation, List.of(new Object()), null);
       SqlInventory.finished(identifier, new Result());
       try (var paths = Files.list(directory)) {
         String json = Files.readString(paths.findFirst().orElseThrow());
@@ -267,12 +267,33 @@ class SqlInventoryTest {
       var graph = env.getStreamGraph();
       var identifier = new Identifier();
       SqlInventory.started(identifier);
+      Object firstRoot = new Object();
+      Object secondRoot = new Object();
+      Object translation = SqlInventory.translating(this);
+      SqlInventory.translated(translation, List.of(firstRoot, secondRoot), null);
+      SqlInventory.pipeline(List.of(firstRoot, secondRoot), graph);
       Object outer = SqlInventory.submitting();
       Object inner = SqlInventory.submitting(new Object[] {graph});
       var client =
           new JobClient("graph-job", java.util.concurrent.CompletableFuture.completedFuture(null));
       SqlInventory.submitted(inner, client, null);
       SqlInventory.submitted(outer, client, null);
+      for (var inputs : List.of(List.of(firstRoot), List.of(new Object()))) {
+        SqlInventory.pipeline(inputs, graph);
+        SqlInventory.submitted(
+            SqlInventory.submitting(new Object[] {graph}),
+            new JobClient(
+                "incomplete-" + inputs.get(0).hashCode(),
+                java.util.concurrent.CompletableFuture.completedFuture(null)),
+            null);
+      }
+      Object duplicate = SqlInventory.translating(this);
+      SqlInventory.translated(duplicate, List.of(firstRoot), null);
+      SqlInventory.pipeline(List.of(firstRoot, secondRoot), graph);
+      SqlInventory.submitted(
+          SqlInventory.submitting(new Object[] {graph}),
+          new JobClient("ambiguous", java.util.concurrent.CompletableFuture.completedFuture(null)),
+          null);
       SqlInventory.finished(identifier, new Result());
       try (var paths = Files.list(directory)) {
         String json = Files.readString(paths.findFirst().orElseThrow());
@@ -281,6 +302,10 @@ class SqlInventoryTest {
         assertTrue(json.contains("\"parallelism\":2"), json);
         assertTrue(json.contains("\"status\":\"SUCCEEDED\""), json);
         assertTrue(!json.contains("observation_error"), json);
+        assertTrue(json.contains("\"sql_translation_complete\":true"), json);
+        assertTrue(json.contains("\"sql_translation_ids\":[0]"), json);
+        assertTrue(json.contains("\"root_count\":2"), json);
+        assertTrue(json.split("\"sql_translation_complete\":false", -1).length == 4, json);
       }
     } finally {
       System.clearProperty("streamfusion.flink-suite.sql-inventory");

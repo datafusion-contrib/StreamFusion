@@ -237,6 +237,15 @@ These snapshots describe the submitted graph, not proof that each node processed
 For Flink's generated operator factories, the observer reads the generated class name directly;
 it does not request class loading, which would trigger source compilation during observation.
 
+`translation_details` retains each translation's planner class, outcome, physical-plan indices
+and returned root count alongside the original planner-name list. Pipeline creation matches the
+actual transformation objects against those returned roots. The submitted graph records
+`sql_translation_ids` and `sql_translation_complete`; completeness requires every pipeline input
+to have one observed origin and every root of each selected translation to be included. Partial,
+missing and ambiguous matches stay explicitly incomplete. These links are scoped to the current
+invocation and are not inferred from which plan was recorded most recently. They are retained for
+full-fallback and deliberately unmodified route classification, which remain pending.
+
 Native callbacks with a Flink job metric ID accumulate under that job, including callbacks
 that arrive before submission returns its client. At invocation completion, matching jobs
 receive their `native_work`; unknown job IDs remain in `unmatched_native_jobs`. Callbacks

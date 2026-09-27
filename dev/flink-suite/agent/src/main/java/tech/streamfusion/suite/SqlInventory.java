@@ -37,6 +37,7 @@ public final class SqlInventory {
     active.data.put("plans", active.plans);
     active.data.put("sql", active.sql);
     active.data.put("translations", active.translations);
+    active.data.put("translation_details", active.translationDetails);
     active.data.put("operation_failures", active.failures);
     active.data.put("native_work", active.nativeWork);
     active.data.put("execution_contracts", active.contracts);
@@ -78,6 +79,8 @@ public final class SqlInventory {
               .getName()
               .equals("org.apache.flink.streaming.api.graph.StreamGraph")) continue;
       try {
+        Map<String, Object> pipeline = active.pipelines.get(argument);
+        if (pipeline != null) graph.putAll(pipeline);
         graph.put("job_type", call(argument, "getJobType").toString());
         List<Map<String, Object>> nodes = new ArrayList<>();
         for (Object node : (Iterable<?>) call(argument, "getStreamNodes")) {
@@ -317,15 +320,66 @@ public final class SqlInventory {
     if (active != null) active.sql.add(Map.of("method", method, "statement", statement));
   }
 
-  public static synchronized void translating(Object planner) {
+  public static synchronized Object translating(Object planner) {
     if (active != null) {
       active.translationDepth++;
       active.translations.add(planner.getClass().getName());
+      var detail = new LinkedHashMap<String, Object>();
+      detail.put("id", active.translationDetails.size());
+      detail.put("planner", planner.getClass().getName());
+      active.translationDetails.add(detail);
+      return new Translation(active, detail, active.plans.size(), new IdentityHashMap<>());
+    }
+    return null;
+  }
+
+  private record Translation(
+      Scope owner,
+      Map<String, Object> detail,
+      int firstPlan,
+      IdentityHashMap<Object, Boolean> roots) {}
+
+  public static synchronized void translated(Object token, Object outputs, Throwable failure) {
+    if (!(token instanceof Translation translation) || translation.owner() != active) return;
+    active.translationDepth--;
+    translation.detail().put("status", failure == null ? "TRANSLATED" : "FAILED");
+    translation
+        .detail()
+        .put(
+            "plan_indices",
+            java.util.stream.IntStream.range(translation.firstPlan(), active.plans.size())
+                .boxed()
+                .toList());
+    if (failure == null && outputs instanceof List<?> roots) {
+      for (Object root : roots) {
+        translation.roots().put(root, true);
+        active.transformations.computeIfAbsent(root, unused -> new ArrayList<>()).add(translation);
+      }
+      translation.detail().put("root_count", roots.size());
     }
   }
 
-  public static synchronized void translated() {
-    if (active != null) active.translationDepth--;
+  public static synchronized void pipeline(Object inputs, Object graph) {
+    if (active == null || graph == null || !(inputs instanceof List<?> roots)) return;
+    var present = new IdentityHashMap<Object, Boolean>();
+    roots.forEach(root -> present.put(root, true));
+    var selected = new java.util.LinkedHashSet<Translation>();
+    boolean complete = !roots.isEmpty();
+    for (Object root : roots) {
+      var matches = active.transformations.get(root);
+      if (matches == null || matches.size() != 1) complete = false;
+      else selected.add(matches.get(0));
+    }
+    for (Translation translation : selected) {
+      if (!present.keySet().containsAll(translation.roots().keySet())) complete = false;
+    }
+    active.pipelines.put(
+        graph,
+        Map.of(
+            "sql_translation_ids",
+            selected.stream().map(t -> t.detail().get("id")).toList(),
+            "sql_translation_complete",
+            complete));
   }
 
   public static synchronized void failed(String operation, Throwable failure) {
@@ -380,6 +434,9 @@ public final class SqlInventory {
     final List<Object> plans = new ArrayList<>();
     final List<Object> sql = new ArrayList<>();
     final List<String> translations = new ArrayList<>();
+    final List<Object> translationDetails = new ArrayList<>();
+    final IdentityHashMap<Object, List<Translation>> transformations = new IdentityHashMap<>();
+    final IdentityHashMap<Object, Map<String, Object>> pipelines = new IdentityHashMap<>();
     final List<Object> failures = new ArrayList<>();
     final Map<String, Long> nativeWork = new java.util.TreeMap<>();
     final Map<String, Long> unattributedWork = new java.util.TreeMap<>();

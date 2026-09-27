@@ -89,6 +89,10 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(Advice.to(RecordTranslation.class).on(named("translate"))))
+        .type(named("org.apache.flink.table.planner.delegation.DefaultExecutor"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordSqlPipeline.class).on(named("createPipeline"))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -285,14 +289,24 @@ public final class StreamFusionSuiteAgent {
 
   public static final class RecordTranslation {
     @Advice.OnMethodEnter
-    static void enter(@Advice.This Object planner) {
-      SqlInventory.translating(planner);
+    static Object enter(@Advice.This Object planner) {
+      return SqlInventory.translating(planner);
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class)
-    static void exit(@Advice.Thrown Throwable failure) {
+    static void exit(
+        @Advice.Enter Object token,
+        @Advice.Return Object outputs,
+        @Advice.Thrown Throwable failure) {
       SqlInventory.failed("translate", failure);
-      SqlInventory.translated();
+      SqlInventory.translated(token, outputs, failure);
+    }
+  }
+
+  public static final class RecordSqlPipeline {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(0) Object inputs, @Advice.Return Object graph) {
+      SqlInventory.pipeline(inputs, graph);
     }
   }
 
