@@ -686,6 +686,9 @@ fi
 
 SUMMARY_ARGS=("${REPORT_ROOT}" --contracts "${CONTRACT_FILE}" --native-reports "${NATIVE_REPORT_ROOT}" --process-exit "${TEST_STATUS}"
   --audit-output "${DIAGNOSTIC_ROOT}/execution-audit.json")
+if [[ -n "${SQL_INVENTORY_CONFIG}" ]]; then
+  SUMMARY_ARGS+=(--sql-inventory "${DIAGNOSTIC_ROOT}/sql-inventory" --flink-line "${FLINK_LINE}")
+fi
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
   SUMMARY_ARGS+=(--maven-result "${DIAGNOSTIC_ROOT}/maven-result.tsv")
   if [[ "${FLINK_LINE}" == "2.2" ]]; then

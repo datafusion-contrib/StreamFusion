@@ -196,8 +196,8 @@ unclassified. This is the audit denominator, not an overall acceleration percent
 Validated evidence retains the fixture selector, per-operator native input counts, expected
 contract and recorded fallback reasons. Routes distinguish native work, mixed native work plus
 recorded fallback, full fallback, and unclassified evidence. Counts are explicitly evidence-record
-counts: parameterized XML cases and witness files share method-level totals but do not have a
-common invocation identifier, so the artifact does not invent one-to-one matches. A satisfied
+counts when SQL inventory is disabled: parameterized XML cases and witness files then share
+only method-level totals, so the artifact does not invent one-to-one matches. A satisfied
 individual record cannot override stale/duplicate evidence or a failed overall summary.
 
 When SQL inventory collection is enabled, raw invocation JSON now also contains `native_work`:
@@ -209,10 +209,20 @@ requirement and existing instrumented-operator coverage; an empty map is not pro
 
 The inventory's `execution_contracts` entries link each written witness filename (`record_id`)
 and its test/fixture selector to the inventory's exact invocation UUID. The legacy four-field
-TSV format remains unchanged. Joining these links into `execution-audit.json`, classifying all
-observed routes and enforcing completeness across declared scopes remain part of #168; the
-current published inventory remains a planning/admission report. Agent tests verify these new
-collection and linkage paths with synthetic callbacks, not additional upstream SQL coverage.
+TSV format remains unchanged. When SQL inventory is enabled, the runner passes it and the
+released Flink line to the summary, which joins witnesses to `execution-audit.json` by the
+invocation marker and report/case index. Parameterized method suffixes are normalized for
+contract lookup while each invocation retains its full identity. Every executed contracted
+case needs exactly one matching test/fixture witness; duplicate, missing, stale or unmatched
+links fail the summary. Witness row counts cannot exceed the enclosing invocation's observed
+work. Skipped cases need no fabricated identity. The join publishes exact associations only
+when all links validate, and retains uncontracted row observations without yet assigning them
+a route.
+
+For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
+Broader route classification and supported-scope completeness remain part of #168; the
+published inventory remains a planning/admission report. Agent and Python tests verify the
+collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
 
 Outside the declared contracts, passing cases remain unclassified. The artifact does not infer
 batch-only, deliberately unmodified, scan-only or host-failure routes from class names or JUnit

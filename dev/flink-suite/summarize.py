@@ -186,6 +186,8 @@ def main() -> int:
     parser.add_argument("--process-exit", type=int, default=0)
     parser.add_argument("--maven-result", type=pathlib.Path)
     parser.add_argument("--audit-output", type=pathlib.Path)
+    parser.add_argument("--sql-inventory", type=pathlib.Path)
+    parser.add_argument("--flink-line", choices=("2.2", "1.18"))
     args = parser.parse_args()
 
     audit = empty_audit()
@@ -241,20 +243,23 @@ def main() -> int:
                 (kind for kind in ("skipped", "failure", "error") if case.find(kind) is not None),
                 "passed",
             )
+            method_key = case_key.split("(", 1)[0].split("[", 1)[0]
+            contract_test = case_key if case_key in contracts else method_key if method_key in contracts else None
             audit["testcases"].append({
                 "test": case_key,
                 "report": str(report.relative_to(args.reports)),
                 "case_index": case_index,
                 "outcome": outcome,
-                "contracted": case_key in contracts,
+                "contracted": contract_test is not None,
+                "contract_test": contract_test,
                 "expected_failure": outcome == "failure" and case_key in args.xfail,
             })
             if case.find("skipped") is None:
                 executed_tests[case_key] += 1
                 executed_methods[case_key.split("(", 1)[0].split("[", 1)[0]] += 1
                 executed_classes[class_name] += 1
-                if case_key in contracts:
-                    executed[case_key] += 1
+                if contract_test is not None:
+                    executed[contract_test] += 1
             problem = case.find("failure")
             kind = "failure"
             if problem is None:
@@ -280,6 +285,14 @@ def main() -> int:
     proved, fallback, execution_problems = check_execution(
         args.native_reports, executed, contracts, audit["execution_evidence"]
     )
+    if args.sql_inventory:
+        try:
+            if not args.flink_line:
+                raise ValueError("--sql-inventory requires --flink-line")
+            import execution_inventory
+            execution_inventory.attach(audit, args.reports, args.sql_inventory, args.flink_line)
+        except (ValueError, KeyError, TypeError, OSError, ET.ParseError) as failure:
+            execution_problems.append(f"Invalid invocation execution join: {failure}")
     required = set(contracts) if args.require_all_contracts else set()
     if args.require_contract_classes:
         classes = set(args.require_contract_classes.read_text().splitlines())

@@ -136,6 +136,84 @@ class ExecutionAuditTest(unittest.TestCase):
         self.assertEqual(137, audit["summary"]["result_exit"])
         self.assertTrue(any("Maven/process" in p for p in audit["validation_problems"]))
 
+    def inventory(self, *observations):
+        import uuid
+        directory = self.root / "inventory"
+        directory.mkdir(exist_ok=True)
+        tree = ET.parse(self.reports / "TEST-fixture.xml")
+        for case, observation in zip(tree.getroot().findall("testcase"), observations, strict=True):
+            if observation is None:
+                continue
+            identity = str(uuid.uuid4())
+            record = dict(schema_version=1, flink_line="2.2", invocation_id=identity,
+                          junit_id="junit-" + identity, display_name=case.get("name"),
+                          planners=[], plans=[], translations=[], sql=[], operation_failures=[],
+                          **observation)
+            (directory / (identity + ".json")).write_text(json.dumps(record))
+            ET.SubElement(case, "system-out").text = "StreamFusion SQL inventory: " + identity
+        tree.write(self.reports / "TEST-fixture.xml")
+        return ["--sql-inventory", str(directory), "--flink-line", "2.2"]
+
+    def observation(self, name, count=7, variant="*"):
+        return dict(native_work={"NativeCalcOperator": count},
+                    execution_contracts=[dict(record_id=name, test=self.CALC, variant=variant)])
+
+    def test_parameterized_cases_join_exact_witnesses(self):
+        self.cases((self.CALC + "[1]", "passed"), (self.CALC + "[2]", "passed"))
+        self.record("first", self.CALC, "NativeCalcOperator=7")
+        self.record("second", self.CALC, "NativeCalcOperator=9")
+        args = self.inventory(self.observation("first"), self.observation("second", 9))
+        status, audit = self.run_audit(*args)
+        self.assertEqual(0, status, audit["validation_problems"])
+        self.assertEqual("exact_junit_invocation", audit["scope"]["evidence_granularity"])
+        self.assertEqual(2, audit["summary"]["contracted_executed"])
+        for index, record in enumerate(audit["execution_evidence"]):
+            self.assertEqual(index, record["case_index"])
+            self.assertEqual(audit["testcases"][index]["invocation_id"], record["invocation_id"])
+
+    def test_duplicate_links_cannot_satisfy_two_invocations(self):
+        self.cases((self.CALC, "passed"), (self.CALC, "passed"))
+        self.record("first", self.CALC, "NativeCalcOperator=7")
+        self.record("second", self.CALC, "NativeCalcOperator=7")
+        args = self.inventory(self.observation("first"), self.observation("first"))
+        status, audit = self.run_audit(*args)
+        self.assertEqual(1, status)
+        self.assertTrue(any("Duplicate or missing linked witness" in p for p in audit["validation_problems"]))
+        self.assertTrue(all("invocation_id" not in row for row in audit["execution_evidence"]))
+
+    def test_bad_link_or_work_fails_closed(self):
+        for observation in [self.observation("absent"), self.observation("native", 1),
+                            self.observation("native", variant="wrong"),
+                            self.observation("native", count=True), {},
+                            dict(native_work={}, execution_contracts=[])]:
+            with self.subTest(observation=observation):
+                import shutil
+                shutil.rmtree(self.root / "inventory", ignore_errors=True)
+                self.cases((self.CALC, "passed"))
+                self.record("native", self.CALC, "NativeCalcOperator=7")
+                status, audit = self.run_audit(*self.inventory(observation))
+                self.assertEqual(1, status)
+                self.assertTrue(any("Invalid invocation execution join" in p for p in audit["validation_problems"]))
+
+    def test_malformed_inventory_still_writes_failed_audit(self):
+        self.cases(("Uncontracted#query", "passed"))
+        args = self.inventory(dict(native_work={}, execution_contracts=[]))
+        path = next((self.root / "inventory").glob("*.json"))
+        path.write_text("[]")
+        status, audit = self.run_audit(*args)
+        self.assertEqual(1, status)
+        self.assertEqual("failed", audit["status"])
+        self.assertTrue(any("Wrong schema" in p for p in audit["validation_problems"]))
+
+    def test_uncontracted_work_is_retained_without_inventing_route_or_skip_evidence(self):
+        self.cases(("Uncontracted#query", "passed"), ("Skipped#query", "skipped"))
+        args = self.inventory(dict(native_work={"NativeCalcOperator": 3}, execution_contracts=[]), None)
+        status, audit = self.run_audit(*args)
+        self.assertEqual(0, status)
+        self.assertEqual({"NativeCalcOperator": 3}, audit["testcases"][0]["native_input_rows"])
+        self.assertEqual("", audit["testcases"][1]["invocation_id"])
+        self.assertEqual("unclassified", audit["scope"]["outside_contract_scope"])
+
 
 if __name__ == "__main__":
     unittest.main()

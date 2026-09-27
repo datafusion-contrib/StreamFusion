@@ -255,7 +255,7 @@ def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime
     records = {}
     for path in sorted(evidence.glob('*.json')):
         record = json.loads(path.read_text())
-        if record.get('schema_version') != 1 or record.get('flink_line') != line:
+        if not isinstance(record, dict) or record.get('schema_version') != 1 or record.get('flink_line') != line:
             raise ValueError(f'Wrong schema or Flink line: {path}')
         key = record['invocation_id']
         if key in records or path.stem != key:
@@ -310,6 +310,8 @@ def collect(reports: Path, evidence: Path, line: str, suite_name: str = 'runtime
                 'sql': record['sql'], 'plans': record['plans'], 'operation_failures': record['operation_failures'],
                 'planners': record['planners'], 'translations': record['translations'],
                 'junit_source': record.get('source', ''), 'junit_status': record.get('junit_status', ''),
+                'native_work': record.get('native_work'),
+                'execution_contracts': record.get('execution_contracts'),
             })
     if not rows:
         raise ValueError('No upstream JUnit cases found')
@@ -329,7 +331,7 @@ def write(rows: list[dict], output: Path, revision: str) -> None:
                'labels_passed': dict(Counter(r['label'] for r in rows if r['outcome'] == 'passed')),
                'categories_passed': dict(Counter(r['category'] for r in rows if r['outcome'] == 'passed'))}
     (output / 'inventory.json').write_text(json.dumps({'schema_version': 1, 'summary': summary, 'tests': rows}, indent=2) + '\n')
-    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures', 'planners', 'translations', 'query_verdicts')]
+    fields = [key for key in rows[0] if key not in ('sql', 'plans', 'operation_failures', 'planners', 'translations', 'query_verdicts', 'native_work', 'execution_contracts')]
     with (output / 'inventory.csv').open('w', newline='', encoding='utf-8', errors='backslashreplace') as stream:
         writer = csv.DictWriter(stream, fields, extrasaction='ignore')
         writer.writeheader()
