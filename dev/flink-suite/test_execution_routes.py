@@ -71,6 +71,39 @@ class RuntimeRoutesTest(unittest.TestCase):
         failure.update(status='RESULT_FAILED', job_status='FAILED')
         self.assertEqual('host_failure', self.classify({'success': success, 'failure': failure}))
 
+    def test_authoritative_job_result_survives_archived_status_lookup(self):
+        job = self.job([self.SOURCE, self.MAP, self.SINK])
+        job.update(status='RESULT_FAILED', application_statuses=['FAILED'],
+                   job_status_error='JobNotFoundException')
+        self.assertEqual('host_failure', self.classify({'failed': job}))
+        for statuses in (['CANCELED'], ['UNKNOWN'], ['SUCCEEDED'], ['FAILED', 'SUCCEEDED']):
+            with self.subTest(statuses=statuses):
+                job['application_statuses'] = statuses
+                self.assertEqual('unclassified', self.classify({'failed': job}))
+        job['application_statuses'] = ['FAILED']
+        for status in ('FINISHED', 'CANCELED', 'SUSPENDED'):
+            job['job_status'] = status
+            self.assertEqual('unclassified', self.classify({'failed': job}))
+        job['status'] = 'SUCCEEDED'
+        job.pop('job_status')
+        self.assertEqual('unclassified', self.classify({'failed': job}))
+
+    def test_unmatched_results_and_malformed_statuses_cannot_establish_a_route(self):
+        job = self.job([self.SOURCE, self.SINK])
+        row = dict(outcome='passed', native_work={}, jobs={'job': job},
+                   unattributed_native_work={}, unmatched_native_jobs={},
+                   unmatched_job_results={'missing': ['FAILED']})
+        self.assertEqual('unclassified', routes.classify(row, routes.validate_partition(row)))
+        for unmatched in ({'job': ['FAILED']}, {'missing': []}, {'missing': ['invented']}, []):
+            row['unmatched_job_results'] = unmatched
+            with self.assertRaises(ValueError):
+                routes.validate_partition(row)
+        row['unmatched_job_results'] = {}
+        for statuses in ([], 'FAILED', ['FAILED', 'FAILED'], [1]):
+            job['application_statuses'] = statuses
+            with self.assertRaises(ValueError):
+                routes.validate_partition(row)
+
     def test_generated_classes_require_the_released_flink_factory_identity(self):
         job = self.job([self.SOURCE, 'BatchExecCalc$2', self.SINK])
         job['graph']['job_type'] = 'BATCH'

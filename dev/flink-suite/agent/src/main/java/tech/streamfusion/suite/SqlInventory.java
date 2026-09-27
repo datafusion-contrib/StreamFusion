@@ -47,6 +47,7 @@ public final class SqlInventory {
     active.data.put("jobs", active.jobs);
     active.data.put("unattributed_native_work", active.unattributedWork);
     active.data.put("unmatched_native_jobs", active.unmatchedJobs);
+    active.data.put("unmatched_job_results", active.unmatchedResults);
     System.out.println(MARKER + active.id);
   }
 
@@ -64,6 +65,7 @@ public final class SqlInventory {
     System.out.println(MARKER + active.id);
     FINISHED_JOBS.addAll(active.jobs.keySet());
     FINISHED_JOBS.addAll(active.workByJob.keySet());
+    FINISHED_JOBS.addAll(active.applicationStatuses.keySet());
     OPERATORS.values().removeIf(binding -> binding.scope() == active);
     active = null;
   }
@@ -168,6 +170,14 @@ public final class SqlInventory {
   }
 
   private static void snapshotJobs(Scope scope) {
+    scope.applicationStatuses.forEach(
+        (job, statuses) -> {
+          if (scope.jobs.containsKey(job)) {
+            scope.jobs.get(job).put("application_statuses", new ArrayList<>(statuses));
+          } else {
+            scope.unmatchedResults.put(job, new ArrayList<>(statuses));
+          }
+        });
     scope.workByJob.forEach(
         (job, work) -> {
           if (scope.jobs.containsKey(job)) scope.jobs.get(job).put("native_work", work);
@@ -201,6 +211,20 @@ public final class SqlInventory {
   }
 
   private record OperatorBinding(Scope scope, String job) {}
+
+  public static synchronized void jobResult(Object result) {
+    if (active == null) return;
+    try {
+      String job = call(result, "getJobId").toString();
+      if (FINISHED_JOBS.contains(job)) return;
+      String status = call(result, "getApplicationStatus").toString();
+      active.applicationStatuses
+          .computeIfAbsent(job, unused -> new java.util.LinkedHashSet<>())
+          .add(status);
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      failed("jobResult", unavailable);
+    }
+  }
 
   public static synchronized void opened(Object operator) {
     if (active == null) return;
@@ -533,6 +557,8 @@ public final class SqlInventory {
     final List<Object> contracts = new ArrayList<>();
     final Map<String, Map<String, Object>> jobs = new LinkedHashMap<>();
     final Map<String, java.util.concurrent.CompletableFuture<?>> jobResults = new LinkedHashMap<>();
+    final Map<String, java.util.Set<String>> applicationStatuses = new LinkedHashMap<>();
+    final Map<String, List<String>> unmatchedResults = new LinkedHashMap<>();
     final Map<String, java.util.concurrent.CompletableFuture<?>> jobStatuses =
         new LinkedHashMap<>();
     int translationDepth;

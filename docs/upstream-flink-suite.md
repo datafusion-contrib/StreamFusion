@@ -272,10 +272,17 @@ every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` f
 and a complete partition with
 no native work. Pending results, graph observation errors, unknown operator classes and older
 inventories without counter partitions remain `unclassified`. A host-failure route requires
-at least one exceptional result with an explicit
-`FAILED` job status, resolved Flink operator classes in every submitted batch/streaming graph,
+at least one exceptional execution result with an explicit `FAILED` job status or a matching
+Flink `JobResult` application status of `FAILED`, resolved Flink operator classes in every submitted batch/streaming graph,
 no native work, and all other jobs either successful or similarly confirmed failed. Cancelled,
-suspended or pending jobs cannot establish this route.
+suspended or pending jobs cannot establish this route. The agent observes `JobResult` before
+its conversion to an execution result, preserving the authoritative outcome even after an archived
+job's status lookup becomes unavailable. Results join by job ID, including those observed before
+submission returns. Repeated outcomes are deduplicated; conflicting outcomes, a successful result
+paired with a failed application status, or contradictory terminal job statuses stay unclassified.
+Unmatched results remain in `unmatched_job_results` and prevent invocation classification. Malformed
+status lists and overlapping submitted/unmatched identities fail validation. Finished-invocation
+job IDs cannot contribute results to a later invocation.
 
 For streaming native routes, every job must succeed and every native operator type in its graph
 must have positive, job-associated work. The initial explicit type list covers Calc, Filter,
@@ -331,7 +338,7 @@ wrong routes, unclassified evidence and invalid/wrong-line scopes fail the summa
 embeds every requirement and the matched invocation identities, while retaining all other cases
 in its complete denominator.
 
-The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require the six
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require the seven
 verified runtime variants described below. Run them with:
 
 ```sh
@@ -339,14 +346,19 @@ FLINK_VERSION=2.2.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 FLINK_VERSION=1.18.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 ```
 
-The option selects the five upstream methods, enables fresh SQL inventory collection/reporting,
+The option selects the six upstream methods, enables fresh SQL inventory collection/reporting,
 and applies the appropriate scope automatically. Add `FLINK_SUITE_REUSE_BUILD=true` after a
 compatible suite build. A custom `FLINK_SUITE_TEST` selection must still satisfy every required
 variant; omitted variants fail. The audit option requires the runtime suite and cannot be combined
 with runtime sharding. The commands retain complete reports, inventory and the execution audit
-under the suite workspace; requiring these scopes in CI remains pending.
+under the suite workspace. CI runs the audit before the first runtime shard on each released
+line, reusing that worker's restored build. It uploads audit evidence before the full shard can
+replace reports. Audit failure fails the worker and the final upstream gate; no extra runners or
+shared-build downloads are added.
 Both bundled commands have been verified against the unchanged released suites: each reports
-eight passed cases, all six required variants matched, and two unclassified early returns.
+nine passed cases, all seven required variants matched, and two unclassified early returns.
+The added batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes the host-failure
+route while its expected exception remains a passing upstream test.
 
 Broader route classification and verified upstream scopes remain part of #168; the
 published inventory remains a planning/admission report. Agent and Python tests verify the

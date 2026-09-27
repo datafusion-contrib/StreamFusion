@@ -11,6 +11,17 @@ def work_counts(value):
     return value
 
 
+APPLICATION_STATUSES = {'SUCCEEDED', 'FAILED', 'CANCELED', 'UNKNOWN'}
+
+
+def application_statuses(value):
+    if (not isinstance(value, list) or not value
+            or any(not isinstance(status, str) or status not in APPLICATION_STATUSES for status in value)
+            or len(set(value)) != len(value)):
+        raise ValueError('invalid application-status observations')
+    return value
+
+
 def validate_partition(row):
     """Older inventories lack the partition; they cannot establish a runtime route."""
     unattributed = row.get('unattributed_native_work')
@@ -25,7 +36,16 @@ def validate_partition(row):
         if not isinstance(job, str) or not job or job in jobs:
             raise ValueError('invalid or duplicated unmatched job identity')
         total.update(work_counts(counts))
+    unmatched_results = row.get('unmatched_job_results', {})
+    if not isinstance(unmatched_results, dict):
+        raise ValueError('invalid unmatched job results')
+    for job, statuses in unmatched_results.items():
+        if not isinstance(job, str) or not job or job in jobs:
+            raise ValueError('invalid or duplicated unmatched result identity')
+        application_statuses(statuses)
     for result in jobs.values():
+        if 'application_statuses' in result:
+            application_statuses(result['application_statuses'])
         total.update(work_counts(result.get('native_work', {})))
     if dict(total) != row['native_work']:
         raise ValueError('job-work partition differs from invocation native work')
@@ -152,11 +172,19 @@ def linked_fallback_reasons(row, result):
 
 def job_route(result, row=None):
     graph = result.get('graph')
+    applications = result.get('application_statuses', [])
+    if len(applications) > 1:
+        return 'unclassified'
+    failed_result = applications == ['FAILED']
+    job_status = result.get('job_status')
     confirmed_failure = (result['status'] == 'RESULT_FAILED'
-                         and result.get('job_status') == 'FAILED'
-                         and not result.get('job_status_error'))
+                         and (not applications or failed_result)
+                         and ((job_status == 'FAILED' and not result.get('job_status_error'))
+                              or (failed_result and job_status not in
+                                  ('FINISHED', 'CANCELED', 'SUSPENDED'))))
     if not confirmed_failure and (result['status'] != 'SUCCEEDED'
-                                 or result.get('job_status') in ('FAILED', 'CANCELED', 'SUSPENDED')):
+                                 or (applications and applications != ['SUCCEEDED'])
+                                 or job_status in ('FAILED', 'CANCELED', 'SUSPENDED')):
         return 'unclassified'
     if not isinstance(graph, dict):
         return 'unclassified'
@@ -210,7 +238,7 @@ def classify(row, partition_valid):
         return 'skipped'
     jobs = row.get('jobs')
     if (not partition_valid or not jobs or row.get('unattributed_native_work')
-            or row.get('unmatched_native_jobs')):
+            or row.get('unmatched_native_jobs') or row.get('unmatched_job_results')):
         return 'unclassified'
     routes = {job_route(result, row) for result in jobs.values()}
     if 'unclassified' in routes:

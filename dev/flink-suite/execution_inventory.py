@@ -62,6 +62,7 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
                     translation_details=row.get('translation_details'),
                     unattributed_native_work=row.get('unattributed_native_work'),
                     unmatched_native_jobs=row.get('unmatched_native_jobs'),
+                    unmatched_job_results=row.get('unmatched_job_results'),
                     runtime_fallback_reasons={
                         job: execution_routes.linked_fallback_reasons(row, result)
                         for job, result in (row.get('jobs') or {}).items()

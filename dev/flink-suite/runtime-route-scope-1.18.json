@@ -37,6 +37,12 @@
       "display_name": "testSelectStarFromNestedTable",
       "count": 1,
       "route": "scan_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.TableSinkITCase#testCollectSinkConfiguration",
+      "display_name": "testCollectSinkConfiguration()",
+      "count": 1,
+      "route": "host_failure"
     }
   ]
 }
