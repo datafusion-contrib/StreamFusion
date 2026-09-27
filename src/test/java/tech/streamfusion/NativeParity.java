@@ -215,6 +215,25 @@ final class NativeParity {
 
   /** Java arrays compare by identity; compare binary and collection outputs by content. */
   static Object comparableValue(Object value) {
+    if (value instanceof Map<?, ?> map) {
+      Map<Object, Object> values = new HashMap<>();
+      map.forEach((key, element) -> values.put(comparableValue(key), comparableValue(element)));
+      return values;
+    }
+    if (value instanceof Row row) {
+      Row values = Row.copy(row);
+      var names = row.getFieldNames(false);
+      if (names == null) {
+        for (int i = 0; i < row.getArity(); i++) {
+          values.setField(i, comparableValue(row.getField(i)));
+        }
+      } else {
+        for (String name : names) {
+          values.setField(name, comparableValue(row.getField(name)));
+        }
+      }
+      return values;
+    }
     if (value instanceof byte[] bytes) {
       return HexFormat.of().formatHex(bytes);
     }
