@@ -449,6 +449,35 @@ are 4.544/4.330/4.263 s versus Flink's 5.070/4.943/4.749 s. See the
 before/after measurements, trial ranges and checkpoint compatibility. This establishes MIN/MAX
 performance for the measured workloads; other aggregate functions need separate measurements.
 
+`GroupedValueBenchmark` also accepts `-Dgrouped.value.types=TIME,BOOLEAN` and
+`-Dgrouped.value.twoPhase=false` to measure the temporal/Boolean single-phase coverage.
+The default types remain BIGINT/STRING for first/last and STRING for DISTINCT or SINGLE_VALUE;
+SINGLE_VALUE still defaults to two phases unless overridden. SINGLE_VALUE assigns each input
+its own key so the workload satisfies its cardinality contract.
+
+On the Intel Core i7-12650H Linux/WSL host, JDK 17 and Flink 2.2.1, release+mimalloc,
+2026-09-27, two warmups and five alternating measured trials give the following medians
+and trial ranges. Both transposes and the rowwise sink are included, at parallelism one.
+
+| Single-phase workload | Rows | Flink seconds | Native seconds |
+|---|---:|---:|---:|
+| TIME first/last | 2,000,000 | 0.647 (0.605–0.653) | 0.706 (0.654–0.757) |
+| BOOLEAN first/last | 2,000,000 | 0.639 (0.606–0.669) | 0.664 (0.650–0.668) |
+| TIME single | 200,000 | 0.225 (0.183–0.256) | 0.224 (0.219–0.250) |
+| BOOLEAN single | 200,000 | 0.204 (0.173–0.238) | 0.208 (0.173–0.213) |
+
+These first/last workloads remain slower than Flink and need optimization. The single-value
+results overlap substantially and do not establish a speedup. MIN/MAX improvements do not
+establish performance readiness for these functions.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=GroupedValueBenchmark -Dgrouped.value.types=TIME,BOOLEAN \
+  -Dgrouped.value.twoPhase=false -Dgrouped.value.rows=2000000 \
+  -Dgrouped.value.warmup=2 -Dgrouped.value.runs=5
+# For SINGLE_VALUE, add -Dgrouped.value.single=true and use -Dgrouped.value.rows=200000.
+```
+
 ### Two-phase DISTINCT type coverage
 
 Runtime-source regressions assert both native local/global operators for COUNT DISTINCT over
