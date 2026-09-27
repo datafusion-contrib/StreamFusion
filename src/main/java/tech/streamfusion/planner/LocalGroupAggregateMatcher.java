@@ -1,6 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.RowDataArrowConverter;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
@@ -11,6 +10,7 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import scala.collection.Seq;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Recognizes the local half of a two-phase non-windowed {@code GROUP BY}: a stateless per-batch
@@ -89,15 +89,16 @@ final class LocalGroupAggregateMatcher {
         }
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        SqlTypeName partialType = outputType.getFieldList().get(offset).getType().getSqlTypeName();
+        RelDataType partial = outputType.getFieldList().get(offset).getType();
+        SqlTypeName partialType = partial.getSqlTypeName();
         offset++;
         if (kind == WindowAggregateMatcher.KIND_COUNT) {
           if (partialType != SqlTypeName.BIGINT || !supportedDistinctValueType(valueType)) {
             return false;
           }
         } else if (kind == WindowAggregateMatcher.KIND_SUM) {
-          if (!GroupAggregateMatcher.isIntegerType(valueType)
-              || partialType != valueType) {
+          if (!supportedDistinctSumPartial(
+              inputType.getFieldList().get(call.getArgList().get(0)).getType(), partial)) {
             return false;
           }
         } else {
@@ -164,6 +165,12 @@ final class LocalGroupAggregateMatcher {
       }
       if (isTimestampExtreme(kind, valueType)) {
         if (partialType != valueType || partialRel.getPrecision() != valueRel.getPrecision()) {
+          return false;
+        }
+        continue;
+      }
+      if (isTemporalBooleanExtreme(kind, valueType)) {
+        if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(partialRel, valueRel)) {
           return false;
         }
         continue;
@@ -250,6 +257,8 @@ final class LocalGroupAggregateMatcher {
       case CHAR:
       case VARCHAR:
       case DECIMAL:
+      case BOOLEAN:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
         return true;
       default:
         return false;
@@ -288,6 +297,16 @@ final class LocalGroupAggregateMatcher {
         && partial.getScale() == value.getScale();
   }
 
+  static boolean supportedDistinctSumPartial(RelDataType value, RelDataType partial) {
+    return (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+            && partial.getSqlTypeName() == value.getSqlTypeName())
+        || (value.getSqlTypeName() == SqlTypeName.DECIMAL
+            // Even the sum of every positive distinct unscaled value fits DECIMAL(38) at p <= 19.
+            // Wider domains can overflow differently as the host/native maps enumerate values.
+            && value.getPrecision() <= 19
+            && isWidenedDecimal(partial, value));
+  }
+
   /** The declared type of an AVG's widened sum partial, or null if the value type isn't admitted. */
   private static SqlTypeName widenedSumType(SqlTypeName valueType) {
     switch (valueType) {
@@ -309,6 +328,13 @@ final class LocalGroupAggregateMatcher {
   static boolean isStringExtreme(int kind, SqlTypeName valueType) {
     return (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
         && (valueType == SqlTypeName.CHAR || valueType == SqlTypeName.VARCHAR);
+  }
+
+  static boolean isTemporalBooleanExtreme(int kind, SqlTypeName valueType) {
+    return (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
+        && (valueType == SqlTypeName.DATE
+            || valueType == SqlTypeName.TIME
+            || valueType == SqlTypeName.BOOLEAN);
   }
 
   static boolean isTimestampExtreme(int kind, SqlTypeName valueType) {
@@ -393,7 +419,7 @@ final class LocalGroupAggregateMatcher {
       if (call.isDistinct()) {
         // The distinct set is keyed by the value itself, so its code carries the value's own type.
         codes.add(
-            WindowAggregateMatcher.typeCode(
+            GroupAggregateMatcher.retainedValueTypeCode(
                 inputType.getFieldList().get(call.getArgList().get(0)).getType()));
       } else if (kind == WindowAggregateMatcher.KIND_AVG) {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
@@ -408,7 +434,10 @@ final class LocalGroupAggregateMatcher {
         codes.add(0);
       } else {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
-        codes.add(WindowAggregateMatcher.typeCode(valueRel));
+        codes.add(
+            isTemporalBooleanExtreme(kind, valueRel.getSqlTypeName())
+                ? GroupAggregateMatcher.retainedValueTypeCode(valueRel)
+                : WindowAggregateMatcher.typeCode(valueRel));
       }
     }
     if (countStarInserted(agg)) {
@@ -451,7 +480,8 @@ final class LocalGroupAggregateMatcher {
 
   static String unsupportedReason(StreamPhysicalLocalGroupAggregate agg) {
     return "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/double/decimal values with no"
-        + " widening of the partial, or AVG over any AvgAggFunction numeric, and"
+        + " widening of the partial, MIN/MAX over string/date/time/boolean/timestamp,"
+        + " or AVG over any AvgAggFunction numeric, and"
         + " bigint/int/string/boolean/date/timestamp/decimal grouping keys";
   }
 }

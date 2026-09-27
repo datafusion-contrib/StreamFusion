@@ -60,10 +60,12 @@ batches do not evaluate projections. Existing two-argument LIKE keeps its curren
 ## COALESCE
 
 `COALESCE` retains the first non-NULL operand without evaluating it again. When an operand
-contains a scalar UDF or a volatile expression, the complete COALESCE expression uses Flink's
+contains a scalar UDF, a volatile expression, or a known potentially failing native expression
+(such as a strict STRING-to-INT cast), the complete COALESCE expression uses Flink's
 generated code through the existing columnar JVM bridge. This preserves call counts, nullable
 results and Flink's evaluation of later operands inside native Calc, including failures from
-operands hoisted by host code generation. Pure expressions retain their
+operands hoisted by host code generation. This includes casts hoisted from later operands
+even when an earlier operand is non-NULL. Other pure expressions retain their
 existing native CASE lowering. Runtime tests cover INT/STRING stateful UDFs, predicates, nested
 expressions, seeded random calls and multiple batches, including NOT NULL output constraints.
 
@@ -80,10 +82,31 @@ This retains Flink's branch casts, call counts and code-generation evaluation or
 user-defined function named IF retains its own implementation. Unsupported children retain
 the existing admission rules. SQL parity tests cover exact numerics, strings, temporal and
 binary values, nullable conditions, nested expressions, errors and multiple batches.
-The admitted result types are BOOLEAN, numeric, character, DATE, TIME, plain TIMESTAMP and binary.
+The admitted result types are BOOLEAN, numeric, character, DATE, TIME, TIMESTAMP,
+TIMESTAMP_LTZ and binary.
 BOOLEAN branches preserve TRUE/FALSE/NULL conditions, nullable results, nested predicates and
-unselected failing branches across batches. TIMESTAMP_LTZ and complex result types retain fallback because their IF overloads
-are not registered by the released Flink code generator.
+unselected failing branches across batches. TIMESTAMP_LTZ uses the same selection paths:
+matching branch types select native timestamp values, while mixed precisions retain Flink's
+generated branch casts. Its regression matrix covers precisions 0/3/6/9 in UTC,
+Asia/Shanghai and America/Los_Angeles, pre-epoch fractions, DST transitions, nullable and
+nested selections, unselected/selected errors, empty filtered batches and native Calc work
+across 5,003 rows. Complex IF result types retain fallback.
+
+The TIMESTAMP_LTZ release benchmark on Linux x86-64 (Intel i7-12650H, JDK 17,
+released Flink 2.2.1, mimalloc) uses 2,000,000 runtime rows, NULL every seventh row,
+parallelism 1, two warmups and five interleaved measurements per engine. The source
+emits rows and the sink is `blackhole`; the harness asserts native Calc and both transposes.
+
+| TIMESTAMP_LTZ(9) workload | Flink median (s) | Native median (s) | Flink/native |
+| --- | ---: | ---: | ---: |
+| Identity control | 0.277110 | 0.963528 | 0.288x |
+| `IF(ts IS NULL, CAST(TO_TIMESTAMP_LTZ(0,3) AS TIMESTAMP_LTZ(9)), ts)` | 0.292844 | 1.008045 | 0.291x |
+
+These standalone row-fed measurements show no speedup. The similar identity-control cost
+supports retaining this small admission extension for native pipeline composition, with no
+new timestamp evaluator or buffer-ownership machinery. Reproduce with `ScalarFunctionBenchmark`,
+`-Pbench`, `-Dscalar.functions=IF_TIMESTAMP_LTZ`, `-Dscalar.rows=2000000`,
+`-Dscalar.nullEvery=7`, `-Dscalar.warmup=2`, and `-Dscalar.runs=5`, setting `SF_BENCHMARK=true`.
 
 The release benchmark below measures this coverage change against the previous full Flink
 fallback, using `ScalarFunctionBenchmark` on Apple Silicon/JDK 17 with mimalloc,
@@ -695,8 +718,37 @@ and Java overflow behavior, including ABS of the minimum INT/BIGINT value. Adjac
 host expressions fuse before crossing the Arrow boundary. These are host-evaluated functions
 inside a columnar native Calc, not pure-Rust kernels.
 
-DECIMAL FLOOR/CEIL retain fallback: the released-host collection path has unverified decimal
-precision behavior. Existing floating-point gates and decimal TRUNCATE/ROUND kernels are unchanged.
+DECIMAL FLOOR/CEIL/CEILING run inside verified scalar consumers using one fused generated
+expression, so the intermediate decimal does not cross Arrow before its consumer executes.
+This covers STRING and integral casts, predicates, nested selections, and DECIMAL results whose
+precision is normalized by a non-identity cast, exact arithmetic or Flink's IF branch casts.
+Precision 12/18/19/20/38, positive/negative/exact/NULL values, large precision-38 values,
+selected and unselected failures, empty filtered batches and native work over 5,003 rows
+are covered by the runtime regressions.
+
+Direct rounded DECIMAL results and decimal-preserving consumers such as ABS or COALESCE retain
+fallback: Flink's FLOOR/CEIL return a decimal with value-dependent precision, which can fail the
+released host's binary-writer precision assertion. Normalizing it at an Arrow boundary would hide
+that host behavior. The same gate applies to whole-Calc generated execution, including JSON
+compositions. Collection and ROW consumers of DECIMAL FLOOR/CEIL remain outside the verified
+scalar boundary. Existing floating-point gates and decimal TRUNCATE/ROUND kernels are unchanged.
+
+Release+mimalloc measurements on Linux x86-64 (Intel i7-12650H, JDK 17, Flink 2.2.1),
+with two million runtime rows, NULL every seventh row, parallelism 1, two warmups and
+five interleaved measurements per engine, include the row source, blackhole sink and
+both asserted transposes:
+
+| DECIMAL(38,9) workload | Flink median (s) | Native median (s) | Flink/native |
+| --- | ---: | ---: | ---: |
+| Identity control | 0.276592 | 0.578956 | 0.478x |
+| `CAST(FLOOR(n) AS STRING)` | 0.600918 | 1.028703 | 0.584x |
+| `CAST(CEIL(n) AS STRING)` | 0.621295 | 1.035432 | 0.600x |
+
+These standalone projections are slower than Flink. The extension retains columnar pipeline
+composition using the existing JVM evaluator; no standalone speedup is claimed. Reproduce with
+`ScalarFunctionBenchmark`, `SF_BENCHMARK=true`, `-Pbench`,
+`-Dscalar.functions=DECIMAL_FLOOR_STRING,DECIMAL_CEIL_STRING`, `-Dscalar.rows=2000000`,
+`-Dscalar.nullEvery=7`, `-Dscalar.warmup=2`, and `-Dscalar.runs=5`.
 
 ### Decimal ROUND, TRUNCATE and literals
 

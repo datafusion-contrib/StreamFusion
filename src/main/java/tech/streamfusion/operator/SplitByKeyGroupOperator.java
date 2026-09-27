@@ -64,6 +64,9 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
     handleOwner = ArrowBatchHandles.newOwner();
+    long owner = handleOwner;
+    getRuntimeContext().registerUserCodeClassLoaderReleaseHookIfAbsent(
+        "streamfusion-arrow-handles-" + owner, () -> ArrowBatchHandles.forgetOwner(owner));
     elapsedCompute = getMetricGroup().counter("elapsed_compute");
     repartTime = getMetricGroup().counter("repart_time");
     encodeTime = getMetricGroup().counter("encode_time");
@@ -91,6 +94,21 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
     inputBatches.inc();
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     VectorSchemaRoot in = element.getValue().root();
+    if (!recoverable && parallelism == 1) {
+      try {
+        if (in.getRowCount() == 0) {
+          in.close();
+        } else {
+          // Any key group routes to the sole channel. Aligned recovery restores keyed state,
+          // whereas unaligned recovery still needs the per-key-group fragments below.
+          ColumnarRecordMetrics.emit(
+              output, getMetricGroup(), new ArrowBatch(in, 0, handleOwner, encodeTime::inc));
+        }
+      } finally {
+        elapsedCompute.inc(System.nanoTime() - computeStarted);
+      }
+      return;
+    }
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     long handle;
