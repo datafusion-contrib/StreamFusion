@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Set;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -41,7 +40,6 @@ public class PrunedTransposeBenchmark {
   static final String QUERY = "SELECT id + 1 AS id, amount FROM src WHERE id >= 0";
 
   @Test
-  @SuppressWarnings("unchecked")
   void copyAllocationAndRetainedPayload() throws Exception {
     var mx =
         (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
@@ -60,8 +58,6 @@ public class PrunedTransposeBenchmark {
                         "unused_bytes", org.apache.flink.table.api.DataTypes.BYTES()))
                 .getLogicalType();
     RowType pruned = new RowType(source.getFields().subList(0, 2));
-    var buffer = RowDataToArrowOperator.class.getDeclaredField("buffer");
-    buffer.setAccessible(true);
     for (boolean binary : new boolean[] {false, true}) {
       for (int bytes : new int[] {0, 1024, 65536}) {
         var rows = new ReusingWideRows(source, binary, bytes);
@@ -73,16 +69,14 @@ public class PrunedTransposeBenchmark {
           try (var harness = new OneInputStreamOperatorTestHarness<RowData, ArrowBatch>(operator)) {
             harness.setup(new ArrowBatchSerializer());
             harness.open();
+            long beforeArrow = tech.streamfusion.operator.NativeAllocator.SHARED.getAllocatedMemory();
             long before = mx.getThreadAllocatedBytes(thread);
             for (int i = 0; i < 512; i++)
               harness.processElement(new StreamRecord<>(rows.map((long) i)));
             long used = mx.getThreadAllocatedBytes(thread) - before;
             if (trial >= 0) allocated += used;
-            retained = 0;
-            for (RowData row : (List<RowData>) buffer.get(operator)) {
-              if (row.getArity() == 4)
-                retained += row.getString(2).toBytes().length + row.getBinary(3).length;
-            }
+            retained = tech.streamfusion.operator.NativeAllocator.SHARED.getAllocatedMemory()
+                - beforeArrow;
             harness.endInput();
             for (Object record : harness.getOutput()) {
               if (record instanceof StreamRecord<?> stream)
@@ -91,7 +85,7 @@ public class PrunedTransposeBenchmark {
           }
         }
         System.out.printf(
-            "PRUNED_COPY binary=%s bytes=%d allocatedBytesPerRow=%.1f retainedUnusedBytes=%d%n",
+            "PRUNED_ENTRY binary=%s bytes=%d allocatedBytesPerRow=%.1f retainedArrowBytes=%d%n",
             binary, bytes, allocated / (5.0 * 512), retained);
       }
     }

@@ -109,10 +109,14 @@ final class GroupAggregateMatcher {
             return "GROUP BY: AVG over an unsupported value type";
           }
         } else if (kind == KIND_MIN || kind == KIND_MAX) {
-          // MIN/MAX keep a value multiset; admit the running numerics, DECIMAL, and strings (ordered
-          // byte-lexicographically, matching Flink's BinaryStringData comparison).
-          if (!isRunningType(valueType) && valueType != SqlTypeName.DECIMAL
-              && !isStringType(valueType) && !isTimestampType(valueType)) {
+          // MIN/MAX retain typed values in a multiset, including temporal and Boolean values.
+          if (!isRunningType(valueType)
+              && valueType != SqlTypeName.DECIMAL
+              && !isStringType(valueType)
+              && !isTimestampType(valueType)
+              && valueType != SqlTypeName.DATE
+              && valueType != SqlTypeName.TIME
+              && valueType != SqlTypeName.BOOLEAN) {
             return "GROUP BY: MIN/MAX over an unsupported value type";
           }
         } else if (!isRunningType(valueType) && valueType != SqlTypeName.DECIMAL) {
@@ -133,6 +137,8 @@ final class GroupAggregateMatcher {
           CHAR,
           VARCHAR,
           DATE,
+          TIME,
+          BOOLEAN,
           TIMESTAMP,
           TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
           true;
@@ -172,8 +178,8 @@ final class GroupAggregateMatcher {
   /**
    * Native kinds 10/11: MIN/MAX over an insert-only input. No retraction can ever arrive, so the
    * state is a plain running extreme — one scalar in the main row — instead of the retractable
-   * value multiset (and, on the RocksDB backend, no companion element table). Only the numeric
-   * types the running fold covers map; decimal and string extremes keep the multiset kinds.
+   * value multiset (and, on the RocksDB backend, no companion element table). Numeric, DATE, TIME and
+   * BOOLEAN running folds use these kinds; other value types keep the multiset kinds.
    */
   static final int KIND_MIN_APPEND = 10;
 
@@ -181,7 +187,10 @@ final class GroupAggregateMatcher {
 
   /** Whether an insert-only MIN/MAX over this value type can run as a plain running extreme. */
   static boolean runningExtremeType(SqlTypeName type) {
-    return isRunningType(type);
+    return isRunningType(type)
+        || type == SqlTypeName.DATE
+        || type == SqlTypeName.TIME
+        || type == SqlTypeName.BOOLEAN;
   }
 
   private static final int KIND_MIN = WindowAggregateMatcher.KIND_MIN;
@@ -273,6 +282,14 @@ final class GroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < codes.length; i++) {
       AggregateCall call = aggCalls.apply(i);
+      if (!call.getArgList().isEmpty()
+          && switch (call.getAggregation().getKind()) {
+            case MIN, MAX, FIRST_VALUE, LAST_VALUE, SINGLE_VALUE -> true;
+            default -> false;
+          }) {
+        codes[i] =
+            retainedValueTypeCode(inputType.getFieldList().get(call.getArgList().get(0)).getType());
+      }
       if (call.isDistinct()
           && !call.getArgList().isEmpty()
           && WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind())
@@ -284,6 +301,14 @@ final class GroupAggregateMatcher {
       }
     }
     return codes;
+  }
+
+  static int retainedValueTypeCode(RelDataType type) {
+    return switch (type.getSqlTypeName()) {
+      case TIME -> 9;
+      case BOOLEAN -> 10;
+      default -> WindowAggregateMatcher.typeCode(type);
+    };
   }
 
   static int[] keyColumns(StreamPhysicalGroupAggregate agg) {

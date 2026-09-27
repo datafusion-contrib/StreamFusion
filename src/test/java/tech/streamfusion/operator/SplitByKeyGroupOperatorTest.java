@@ -38,6 +38,8 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.ColumnarKeyGroupPartitioner;
 
 class SplitByKeyGroupOperatorTest {
@@ -60,10 +62,10 @@ class SplitByKeyGroupOperatorTest {
     return row;
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(ints = {1, 4})
   @SuppressWarnings("unchecked")
-  void splitsABatchIntoKeyGroupTaggedSubBatches() throws Exception {
-    int channels = 4;
+  void splitsABatchIntoKeyGroupTaggedSubBatches(int channels) throws Exception {
     int maxParallelism = KeyGroupRangeAssignment.computeDefaultMaxParallelism(channels);
     int n = 500;
     try (BufferAllocator allocator = new RootAllocator();
@@ -125,10 +127,10 @@ class SplitByKeyGroupOperatorTest {
     }
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(ints = {1, 2})
   @SuppressWarnings("unchecked")
-  void recoverableSplitEmitsOneOrderedFragmentPerKeyGroup() throws Exception {
-    int channels = 2;
+  void recoverableSplitEmitsOneOrderedFragmentPerKeyGroup(int channels) throws Exception {
     int maxParallelism = 128;
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
@@ -164,6 +166,22 @@ class SplitByKeyGroupOperatorTest {
       for (ArrowBatch fragment : fragments.values()) {
         fragment.root().close();
       }
+    }
+  }
+
+  @Test
+  void singleChannelConsumesAnEmptyBatchWithoutEmitting() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
+            new OneInputStreamOperatorTestHarness<>(
+                new SplitByKeyGroupOperator(new int[] {0}, new int[] {-1}, 128, 1),
+                new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      VectorSchemaRoot empty = RowDataArrowConverter.write(List.of(), SCHEMA, allocator);
+      harness.processElement(new StreamRecord<>(new ArrowBatch(empty)));
+      assertTrue(harness.getOutput().isEmpty());
+      assertEquals(0, allocator.getAllocatedMemory());
     }
   }
 

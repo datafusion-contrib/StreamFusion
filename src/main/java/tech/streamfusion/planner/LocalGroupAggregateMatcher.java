@@ -1,6 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.RowDataArrowConverter;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
@@ -11,6 +10,7 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import scala.collection.Seq;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Recognizes the local half of a two-phase non-windowed {@code GROUP BY}: a stateless per-batch
@@ -168,6 +168,12 @@ final class LocalGroupAggregateMatcher {
         }
         continue;
       }
+      if (isTemporalBooleanExtreme(kind, valueType)) {
+        if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(partialRel, valueRel)) {
+          return false;
+        }
+        continue;
+      }
       if (!GroupAggregateMatcher.isRunningType(valueType) || partialType != valueType) {
         return false;
       }
@@ -311,6 +317,13 @@ final class LocalGroupAggregateMatcher {
         && (valueType == SqlTypeName.CHAR || valueType == SqlTypeName.VARCHAR);
   }
 
+  static boolean isTemporalBooleanExtreme(int kind, SqlTypeName valueType) {
+    return (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
+        && (valueType == SqlTypeName.DATE
+            || valueType == SqlTypeName.TIME
+            || valueType == SqlTypeName.BOOLEAN);
+  }
+
   static boolean isTimestampExtreme(int kind, SqlTypeName valueType) {
     return (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
         && GroupAggregateMatcher.isTimestampType(valueType);
@@ -408,7 +421,10 @@ final class LocalGroupAggregateMatcher {
         codes.add(0);
       } else {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
-        codes.add(WindowAggregateMatcher.typeCode(valueRel));
+        codes.add(
+            isTemporalBooleanExtreme(kind, valueRel.getSqlTypeName())
+                ? GroupAggregateMatcher.retainedValueTypeCode(valueRel)
+                : WindowAggregateMatcher.typeCode(valueRel));
       }
     }
     if (countStarInserted(agg)) {
@@ -451,7 +467,8 @@ final class LocalGroupAggregateMatcher {
 
   static String unsupportedReason(StreamPhysicalLocalGroupAggregate agg) {
     return "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/double/decimal values with no"
-        + " widening of the partial, or AVG over any AvgAggFunction numeric, and"
+        + " widening of the partial, MIN/MAX over string/date/time/boolean/timestamp,"
+        + " or AVG over any AvgAggFunction numeric, and"
         + " bigint/int/string/boolean/date/timestamp/decimal grouping keys";
   }
 }

@@ -1,5 +1,203 @@
 use super::*;
 
+fn group_scalar_changelog(values: Vec<ScalarValue>, kinds: Vec<i8>) -> RecordBatch {
+    let len = values.len();
+    let array = ScalarValue::iter_to_array(values).unwrap();
+    RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key0", DataType::Int64, false),
+            Field::new("value0", array.data_type().clone(), true),
+            Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1; len])),
+            array,
+            Arc::new(Int8Array::from(kinds)),
+        ],
+    )
+    .unwrap()
+}
+
+fn temporal_boolean_values() -> Vec<(i64, ScalarValue, ScalarValue)> {
+    vec![
+        (
+            8,
+            ScalarValue::Date32(Some(-3653)),
+            ScalarValue::Date32(Some(19782)),
+        ),
+        (
+            9,
+            ScalarValue::Time32Millisecond(Some(1)),
+            ScalarValue::Time32Millisecond(Some(86_399_999)),
+        ),
+        (
+            10,
+            ScalarValue::Boolean(Some(false)),
+            ScalarValue::Boolean(Some(true)),
+        ),
+    ]
+}
+
+#[test]
+fn group_temporal_boolean_extrema_restore_multiplicity_nulls_and_ttl() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let mut agg = GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true);
+        let out = agg
+            .update(
+                &group_scalar_changelog(
+                    vec![high.clone(), low.clone(), low.clone(), null.clone()],
+                    vec![0; 4],
+                ),
+                0,
+            )
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(out.column(1), out.num_rows() - 1).unwrap(),
+            low
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(out.column(2), out.num_rows() - 1).unwrap(),
+            high
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![1, 2],
+            vec![code; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &agg.snapshot(),
+            0,
+        );
+        let retract = group_scalar_changelog(vec![low.clone()], vec![3]);
+        assert_eq!(restored.update(&retract, 0).unwrap().num_rows(), 0);
+        let changed = restored.update(&retract, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 1).unwrap(),
+            high
+        );
+        let changed = restored
+            .update(&group_scalar_changelog(vec![high.clone()], vec![3]), 0)
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 1).unwrap(),
+            null
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(2), 1).unwrap(),
+            null
+        );
+        assert_eq!(
+            row_kinds(
+                &restored
+                    .update(&group_scalar_changelog(vec![null], vec![3]), 0)
+                    .unwrap()
+            ),
+            vec![3]
+        );
+        let mut ttl = GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true)
+            .with_state_ttl(100);
+        ttl.update(&group_scalar_changelog(vec![low], vec![0]), 1)
+            .unwrap();
+        let fresh = ttl
+            .update(&group_scalar_changelog(vec![high.clone()], vec![0]), 101)
+            .unwrap();
+        assert_eq!(row_kinds(&fresh), vec![0]);
+        assert_eq!(
+            ScalarValue::try_from_array(fresh.column(1), 0).unwrap(),
+            high
+        );
+    }
+}
+
+#[test]
+fn group_temporal_boolean_ordered_values_restore_arrival_order() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let mut agg = GroupAggregator::new(vec![15, 16], vec![code; 2], vec![1; 2], vec![0], true);
+        agg.update(
+            &group_scalar_changelog(
+                vec![high.clone(), low.clone(), high.clone(), null],
+                vec![0; 4],
+            ),
+            0,
+        )
+        .unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![15, 16],
+            vec![code; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &agg.snapshot(),
+            0,
+        );
+        let changed = restored
+            .update(&group_scalar_changelog(vec![high.clone()], vec![3]), 0)
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 1).unwrap(),
+            low
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(2), 1).unwrap(),
+            high
+        );
+    }
+}
+
+#[test]
+fn group_temporal_boolean_append_value_ttl_and_single_null_cardinality() {
+    for (code, low, high) in temporal_boolean_values() {
+        let mut ordered =
+            GroupAggregator::new(vec![12, 13], vec![code; 2], vec![1; 2], vec![0], true)
+                .with_state_ttl(100);
+        ordered
+            .update(&group_scalar_changelog(vec![low], vec![0]), 1)
+            .unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![12, 13],
+            vec![code; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &ordered.snapshot(),
+            0,
+        )
+        .with_state_ttl(100);
+        let fresh = restored
+            .update(&group_scalar_changelog(vec![high.clone()], vec![0]), 101)
+            .unwrap();
+        assert_eq!(row_kinds(&fresh), vec![0]);
+        assert_eq!(
+            ScalarValue::try_from_array(fresh.column(1), 0).unwrap(),
+            high
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(fresh.column(2), 0).unwrap(),
+            high
+        );
+        let null = ScalarValue::try_from(&high.data_type()).unwrap();
+        let mut single = GroupAggregator::new(vec![14], vec![code], vec![1], vec![0], true);
+        single
+            .update(&group_scalar_changelog(vec![null.clone()], vec![0]), 0)
+            .unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![14],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &single.snapshot(),
+            0,
+        );
+        let error = restored
+            .update(&group_scalar_changelog(vec![null], vec![0]), 0)
+            .unwrap_err();
+        assert!(error.to_string().contains("received more than one element"));
+    }
+}
+
 fn group_timestamp_changelog(values: Vec<Option<i128>>, kinds: Vec<i8>) -> RecordBatch {
     use streamfusion_bridge::timestamp::{timestamp_array, timestamp_type, TimestampValue};
     RecordBatch::try_new(
@@ -2091,32 +2289,34 @@ fn session_state_partitions_and_restores_by_flink_key_group() {
 
 #[test]
 fn group_state_over_budget_fails_and_deletes_release() {
-    // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
-    let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(1 << 20)
+    for kind in [0, 14, 15, 16] {
+        // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
+        let mut agg = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
+            0,
+        )
         .unwrap();
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
-        0,
-    )
-    .unwrap();
-    assert!(agg.memory.state_bytes > 0);
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
-        0,
-    )
-    .unwrap();
-    assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
+        assert!(agg.memory.state_bytes > 0);
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
+            0,
+        )
+        .unwrap();
+        assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
 
-    let mut tight = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(128)
-        .unwrap();
-    let keys: Vec<i64> = (0..100).collect();
-    let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
-    let err = tight
-        .update(&group_changelog(keys, values, vec![0; 100]), 0)
-        .unwrap_err();
-    assert!(err.to_string().contains("task off-heap"), "{err}");
+        let mut tight = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(128)
+            .unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
+        let err = tight
+            .update(&group_changelog(keys, values, vec![0; 100]), 0)
+            .unwrap_err();
+        assert!(err.to_string().contains("task off-heap"), "{err}");
+    }
 }
 
 #[test]
@@ -3337,6 +3537,105 @@ fn local_group_extremes_preserve_append_only_and_retracting_results() {
     let out = retracting.flush();
     assert_eq!(values(&out, 1), vec![10]);
     assert_eq!(values(&out, 2), vec![10]);
+}
+
+#[test]
+fn local_temporal_boolean_extrema_preserve_types_nulls_and_retractions() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let make = || {
+            LocalGroupAggregator::new(
+                vec![1, 2],
+                vec![code; 2],
+                vec![1; 2],
+                vec![],
+                vec![0],
+                vec![],
+            )
+        };
+        let batch = group_scalar_changelog(
+            vec![
+                null.clone(),
+                high.clone(),
+                low.clone(),
+                low.clone(),
+                null.clone(),
+            ],
+            vec![0; 5],
+        )
+        .project(&[0, 1])
+        .unwrap();
+        for split in 1..5 {
+            let mut local = make();
+            local.update(&batch.slice(0, split)).unwrap();
+            local.update(&batch.slice(split, 5 - split)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), low);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+            local.update(&batch.slice(0, 1)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), null);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), null);
+        }
+        let mut local = make();
+        local
+            .update(&group_scalar_changelog(
+                vec![
+                    high.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                ],
+                vec![0, 0, 0, 3, 3],
+            ))
+            .unwrap();
+        let out = local.flush();
+        assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), high);
+        assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+    }
+}
+
+#[test]
+fn temporal_boolean_running_extrema_restore_typed_and_multiset_state() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        for previous_kinds in [vec![1, 2], vec![10, 11]] {
+            let mut previous =
+                GroupAggregator::new(previous_kinds, vec![code; 2], vec![1; 2], vec![0], true);
+            let mut running =
+                GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            for values in [vec![null.clone()], vec![high.clone(), high.clone()]] {
+                let input = group_scalar_changelog(values.clone(), vec![0; values.len()]);
+                assert_eq!(
+                    previous.update(&input, 0).unwrap(),
+                    running.update(&input, 0).unwrap()
+                );
+                let parts = previous
+                    .snapshot_partitions(128, &[-1])
+                    .into_values()
+                    .collect::<Vec<_>>();
+                let mut restored = GroupAggregator::restore_partitions(
+                    vec![10, 11],
+                    vec![code; 2],
+                    vec![1; 2],
+                    vec![0],
+                    true,
+                    &parts,
+                    0,
+                );
+                let probe = group_scalar_changelog(
+                    vec![low.clone(), high.clone(), null.clone()],
+                    vec![0; 3],
+                );
+                assert_eq!(
+                    restored.update(&probe, 0).unwrap(),
+                    running.update(&probe, 0).unwrap()
+                );
+                previous.update(&probe, 0).unwrap();
+            }
+        }
+    }
 }
 
 #[test]
@@ -8202,6 +8501,96 @@ mod rocksdb_group_multisets {
             ],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn group_temporal_boolean_extrema_rocks_checkpoint_preserves_values() {
+        for (code, low, high) in temporal_boolean_values() {
+            let types = vec![low.data_type(); 2];
+            if code == 9 {
+                assert!(!crate::state::rocks_store::rocks_group_supported(
+                    &[1, 2],
+                    &types,
+                    &types
+                ));
+                continue;
+            }
+            let make =
+                || GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true);
+            let codec = || GroupStateCodec::new(vec![1, 2], types.clone(), vec![1; 2], vec![-1; 2]);
+            let store = RocksGroupStore::create(store_config("temporal-bool", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let seed =
+                group_scalar_changelog(vec![high.clone(), low.clone(), low.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let snapshot = snapshot_dir("temporal-bool");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("temporal-bool-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            for value in [low.clone(), low, high] {
+                assert_parity(
+                    &mut rocks,
+                    &mut memory,
+                    &group_scalar_changelog(vec![value], vec![3]),
+                    0,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn temporal_boolean_running_extrema_rocks_checkpoint_preserves_types() {
+        for (code, low, high) in temporal_boolean_values() {
+            let types = vec![low.data_type(); 2];
+            if code == 9 {
+                assert!(!crate::state::rocks_store::rocks_group_supported(
+                    &[10, 11],
+                    &types,
+                    &types
+                ));
+                continue;
+            }
+            let make =
+                || GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            let codec =
+                || GroupStateCodec::new(vec![10, 11], types.clone(), vec![1; 2], vec![-1; 2]);
+            let store = RocksGroupStore::create(store_config("typed-running", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let null = ScalarValue::try_from(&low.data_type()).unwrap();
+            let seed =
+                group_scalar_changelog(vec![null.clone(), high.clone(), high.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let snapshot = snapshot_dir("typed-running");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("typed-running-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            assert_parity(
+                &mut rocks,
+                &mut memory,
+                &group_scalar_changelog(vec![low, high, null], vec![0; 3]),
+                0,
+            );
+        }
     }
 
     #[test]
