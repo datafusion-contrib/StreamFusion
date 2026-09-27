@@ -128,7 +128,7 @@ semantics; host/native agreement alone is insufficient for those cases.
 ## Combined stateful recovery matrix
 
 `StatefulRecoveryMatrixTest` begins the bounded matrix in
-[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 52 cases
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 56 cases
 include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
 and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
 NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
@@ -177,6 +177,19 @@ diagnostic during row evaluation; these are expected failures, not successful em
 comparisons. The report records the expected outcome separately from routing. Both restored
 offsets and zero active sources are asserted for the failing native executions as well.
 
+Four additional GROUP BY cases run in private local deployments with 4 MiB or 8 MiB of
+TaskManager task off-heap memory, on both state backends. A per-job setting submitted to
+the shared test cluster would not change that cluster's process budget, so the tests assert
+the executed pool capacity as well as the requested configuration. These cases retain the
+same long strings, two restores, five-row physical limit and three-row logical mini-batches.
+
+Every matrix case reuses the suite's native cleanup check after execution. It waits briefly
+for asynchronous cleanup and requires no live native handles, zero Arrow allocator bytes
+and zero task off-heap reservations; all three observations are recorded alongside source
+cleanup. The shared check now also enforces zero task reservations after other test cases.
+Both normal completion and the two expected decimal failures pass these checks. The check
+measures live ownership/reservations, not whether the native allocator returns pages to the OS.
+
 Each case independently checks materialized results against known answers, resolved result
 types, the required native operator plan, both restored offsets and failure injections, completed
 checkpoint evidence, and zero active sources after collection. Route assertions cannot
@@ -195,16 +208,16 @@ Add `-Pflink-1.18` for the other released dependency line. The matrix writes
 `streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
 result comparison, result types, native plan, fallback reasons and recovery observations,
 even when a validation assertion fails. CI retains this file with the existing portable SQL
-audit artifact. All 52 recovery cases (44 native successes, six explicit fallbacks and two expected native
+audit artifact. All 56 recovery cases (48 native successes, six explicit fallbacks and two expected native
 failures), four transpose-configuration tests and 38 portable-audit regressions pass on each
-of Flink 2.2.1 and 1.18.1 (94 tests per release).
+of Flink 2.2.1 and 1.18.1 (98 tests per release).
 
 The required matrix runs each row below with memory and native RocksDB state, at parallelism
 1. Arrow row limits and Flink logical mini-batch sizes are independent:
 
 | Operator / keys | Arrow row limit / logical mini-batch rows (0 means disabled) |
 | --- | --- |
-| GROUP BY / INT | 1024/0, 1/0, 5/3, 64/3 |
+| GROUP BY / INT | 1024/0, 1/0, 5/3, 64/3; extra 5/3 cases with 4 MiB and 8 MiB budgets |
 | GROUP BY / BIGINT | 1024/0 |
 | Updating JOIN / INT | 1024/0, 1/3, 5/0, 64/3 |
 | Top-N / INT, TIMESTAMP(9) or TIMESTAMP_LTZ(9) ordering | 5/3 in each of the three zones |
@@ -218,7 +231,6 @@ flushes determine the tested bundles. A separate serialized-operator test checks
 emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
 The default row limit remains 1024 for other jobs.
 
-Rescaling in both directions, task-budget variants, allocator/task cleanup on failed and
-cancelled runs and a larger explicit
+Rescaling in both directions, cancelled-run cleanup and a larger explicit
 stress profile remain in #250. Passing these cases does not establish those combinations
 or cross-version state compatibility.

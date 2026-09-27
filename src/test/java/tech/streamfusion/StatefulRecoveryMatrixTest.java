@@ -19,21 +19,25 @@ import org.junit.jupiter.params.provider.CsvSource;
 class StatefulRecoveryMatrixTest {
   private static final Map<String, Map<String, Object>> RESULTS = new java.util.TreeMap<>();
 
-  @ParameterizedTest(name = "group-bigint={0}-rocks={1}-arrow={2}-mini={3}")
+  @ParameterizedTest(name = "group-bigint={0}-rocks={1}-arrow={2}-mini={3}-budget={4}")
   @CsvSource({
-    "false,false,1024,0",
-    "true,false,1024,0",
-    "false,true,1024,0",
-    "true,true,1024,0",
-    "false,false,1,0",
-    "false,false,5,3",
-    "false,false,64,3",
-    "false,true,1,0",
-    "false,true,5,3",
-    "false,true,64,3"
+    "false,false,1024,0,0",
+    "true,false,1024,0,0",
+    "false,true,1024,0,0",
+    "true,true,1024,0,0",
+    "false,false,1,0,0",
+    "false,false,5,3,0",
+    "false,false,64,3,0",
+    "false,true,1,0,0",
+    "false,true,5,3,0",
+    "false,true,64,3,0",
+    "false,false,5,3,4194304",
+    "false,true,5,3,4194304",
+    "false,false,5,3,8388608",
+    "false,true,5,3,8388608"
   })
   void groupedTypesAcrossTwoRestores(
-      boolean bigKey, boolean rocks, int batchRows, int miniBatchRows) {
+      boolean bigKey, boolean rocks, int batchRows, int miniBatchRows, long budgetBytes) {
     String text = "long-string-".repeat(1024);
     List<Row> input = new ArrayList<>();
     input.add(row(bigKey, RowKind.INSERT, 1, "1.25", text));
@@ -61,7 +65,9 @@ class StatefulRecoveryMatrixTest {
             .column("text_value", DataTypes.STRING())
             .build();
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
-    try (var recovery = new PortableSqlRecovery(backend, input, type, schema, true, 4, 8)) {
+    try (var recovery =
+        new PortableSqlRecovery(backend, input, type, schema, true, 4, 8)
+            .withTaskOffHeapBytes(budgetBytes)) {
       var runs =
           NativeFailureParity.run(
               () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
@@ -525,7 +531,15 @@ class StatefulRecoveryMatrixTest {
                   runs.nativeRun().fallbackReasons().toString());
             }
           },
-          recovery::verifyRepeatedRecovery);
+          recovery::verifyRepeatedRecovery,
+          () -> SharedFlinkCluster.assertNativeMemoryReleased(id),
+          () -> {
+            if (recovery.taskOffHeapBytes() > 0)
+              assertEquals(
+                  recovery.taskOffHeapBytes(),
+                  tech.streamfusion.operator.TaskOffHeapMemory.capacityBytes(),
+                  "executed task budget");
+          });
       passed = true;
     } finally {
       Map<String, Object> configuration =
@@ -546,11 +560,29 @@ class StatefulRecoveryMatrixTest {
                   "exchangeCoalesceRows",
                   0));
       configuration.put("timeZone", "UTC");
+      configuration.put("requestedTaskOffHeapBytes", recovery.taskOffHeapBytes());
+      configuration.put(
+          "observedNativePoolCapacityBytes",
+          tech.streamfusion.operator.TaskOffHeapMemory.capacityBytes());
       configuration.putAll(settings);
       RESULTS.put(
-          id + "-arrow" + batchRows + "-mini" + miniBatchRows,
+          id
+              + "-arrow"
+              + batchRows
+              + "-mini"
+              + miniBatchRows
+              + "-budget"
+              + recovery.taskOffHeapBytes(),
           Map.of(
               "passed", passed,
+              "cleanup",
+                  Map.of(
+                      "taskReservedBytes",
+                      tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes(),
+                      "arrowAllocatedBytes",
+                      tech.streamfusion.operator.NativeAllocator.SHARED.getAllocatedMemory(),
+                      "liveNativeHandles",
+                      NativeExtensionLoader.liveNativeHandles()),
               "expectedRoute", expectedRoute.name(),
               "expectedOutcome", expectedFailure ? "ROW_EVALUATION_FAILURE" : "MATERIALIZED_PARITY",
               "configuration", configuration,

@@ -36,6 +36,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
   private final int[] boundaries;
   private final boolean changelog;
   private Map<Integer, Long> watermarks = Map.of();
+  private long taskOffHeapBytes;
   private final List<String> runIds = new java.util.ArrayList<>();
 
   PortableSqlRecovery() {
@@ -80,6 +81,17 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     return this;
   }
 
+  PortableSqlRecovery withTaskOffHeapBytes(long bytes) {
+    if (!runIds.isEmpty() || bytes < 0)
+      throw new IllegalArgumentException("configure a nonnegative budget before execution");
+    taskOffHeapBytes = bytes;
+    return this;
+  }
+
+  long taskOffHeapBytes() {
+    return taskOffHeapBytes;
+  }
+
   static final class Proof {
     final AtomicBoolean failed = new AtomicBoolean();
     final AtomicInteger restoredOffset = new AtomicInteger(-1);
@@ -106,10 +118,23 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     PROOFS.put(runId, new Proof());
     Configuration config = new Configuration();
     config.setString("state.backend.type", stateBackend);
+    if (taskOffHeapBytes > 0)
+      config.set(
+          org.apache.flink.configuration.TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
+          new org.apache.flink.configuration.MemorySize(taskOffHeapBytes));
     config.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
     config.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, boundaries.length);
     config.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofMillis(10));
-    var env = StreamExecutionEnvironment.getExecutionEnvironment(config);
+    StreamExecutionEnvironment env;
+    if (taskOffHeapBytes > 0) {
+      // The shared test cluster owns its TaskManager configuration; use a private deployment
+      // when the scenario must change that process-wide budget.
+      config.set(org.apache.flink.configuration.DeploymentOptions.TARGET, "local");
+      config.set(org.apache.flink.configuration.DeploymentOptions.ATTACHED, true);
+      env = new StreamExecutionEnvironment(config);
+    } else {
+      env = StreamExecutionEnvironment.getExecutionEnvironment(config);
+    }
     env.setParallelism(1);
     env.enableCheckpointing(50);
     var table = StreamTableEnvironment.create(env);
