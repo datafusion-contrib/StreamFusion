@@ -466,9 +466,14 @@ and trial ranges. Both transposes and the rowwise sink are included, at parallel
 | TIME single | 200,000 | 0.225 (0.183–0.256) | 0.224 (0.219–0.250) |
 | BOOLEAN single | 200,000 | 0.204 (0.173–0.238) | 0.208 (0.173–0.213) |
 
-These first/last workloads remain slower than Flink and need optimization. The single-value
-results overlap substantially and do not establish a speedup. MIN/MAX improvements do not
-establish performance readiness for these functions.
+These measurements precede the output-vector allocation optimization. The updated first/last
+path measures 5.474/5.436 s for TIME/BOOLEAN at twenty million rows, versus matched Flink
+5.885/5.620 s; at two million rows it is approximately tied (native 0.655/0.630 s versus
+Flink 0.658/0.638 s). See the [optimization ledger](../optimizations/aggregate-specialization-fast-paths.md)
+for native before/after controls and trial ranges. SINGLE_VALUE remains a performance blocker:
+at 500,000 unique keys, a longer control with three warmups and nine alternating trials
+measures native TIME/BOOLEAN at 0.422/0.416 s versus Flink 0.354/0.348 s. The original
+shorter single-value results overlap and establish no speedup.
 
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \

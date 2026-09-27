@@ -1,7 +1,7 @@
 # Aggregate specialization fast paths
 
-**Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX, and mini-batch group-aggregate
-`DISTINCT` (q15/q16/q17-shaped queries)
+**Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX, immediate grouped output,
+and mini-batch group-aggregate `DISTINCT` (q15/q16/q17-shaped queries)
 
 Two of the local aggregate's hot leaves were paying for generality their actual input doesn't need:
 an insert-only MIN/MAX carrying full retraction support, and a `DISTINCT` accumulator boxing every
@@ -62,6 +62,66 @@ the existing direct RocksDB row codec; TIME retains its existing raw snapshot fa
 Retracting SQL controls retain counted state. The native suite passes 587 tests (one ignored),
 and the temporal/Boolean, timestamp and grouped-value SQL suites pass 92 tests on Flink 2.2.1
 and 75 on Flink 1.18.1 (17 documented host limitations skipped).
+
+## Immediate changelog output shares the tuple allocation with its cache
+
+The immediate aggregate constructs its current tuple to compare with the previous output.
+Previously, emitting a change cloned that whole vector into the last-output cache, then moved
+its cells into column output buffers. It now clones cells directly into those buffers and moves
+the existing tuple vector into the cache. This removes one temporary vector allocation and
+free per emitted insert/update, retaining the same scalar copies, previous-value ownership,
+NULLs, update-before policy and TTL-driven emissions. Mini-batch output is unchanged.
+
+A twenty-million-row TIME/BOOLEAN FIRST_VALUE/LAST_VALUE CPU profile found 628 leaf samples
+in vector cloning under aggregate update, alongside 392 scalar reads and 442 scalar-size calls.
+The optimization targets the vector allocation identified by that profile. Timings below use
+unprofiled release+mimalloc jobs, both row/Arrow transposes and a rowwise sink.
+
+Twenty-million-row FIRST_VALUE/LAST_VALUE medians and five-trial ranges:
+
+| Type / engine | Before (s) | After (s) |
+|---|---:|---:|
+| TIME native | 6.243 (6.222–6.282) | 5.474 (5.437–5.582) |
+| TIME Flink | 5.935 (5.863–6.116) | 5.885 (5.869–5.947) |
+| BOOLEAN native | 5.869 (5.857–5.877) | 5.436 (5.386–5.461) |
+| BOOLEAN Flink | 5.641 (5.600–5.710) | 5.620 (5.563–5.789) |
+
+Native time falls 12.3% for TIME and 7.4% for BOOLEAN, while the Flink controls remain nearly
+flat. An independent optimized run measured native TIME/BOOLEAN at 5.650/5.497 s versus
+Flink 5.784/5.615 s. At two million rows, optimized TIME/BOOLEAN medians are 0.655/0.630 s
+versus Flink 0.658/0.638 s; the smaller workloads are approximately tied.
+
+Configuration: Intel Core i7-12650H Linux/WSL, JDK 17, Flink 2.2.1, 2026-09-27,
+release+mimalloc, 64 groups, one-eighth NULLs, parallelism one, two warmups and five
+alternating measured trials. The source, SQL and exchange settings are unchanged.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=GroupedValueBenchmark -Dgrouped.value.types=TIME,BOOLEAN \
+  -Dgrouped.value.twoPhase=false -Dgrouped.value.rows=20000000 \
+  -Dgrouped.value.warmup=2 -Dgrouped.value.runs=5
+```
+
+Existing first/last controls at two million rows show BIGINT essentially flat (native
+0.682 → 0.680 s, ranges 0.670–0.700 → 0.678–0.684 s) and STRING improving
+(1.073 → 1.025 s, ranges 1.058–1.078 → 1.016–1.044 s). Flink BIGINT controls are
+0.599 → 0.636 s and STRING controls 0.955 → 0.930 s. These existing workloads still
+trail Flink on this host; the shared change does not establish a general first/last speedup.
+
+SINGLE_VALUE uses one key per row to obey its cardinality contract. An initial 500,000-row
+five-trial check had broad overlapping ranges, including a 5% higher BOOLEAN native median.
+A longer control with three warmups and nine alternating trials did not reproduce that
+regression: native TIME/BOOLEAN medians changed from 0.495/0.463 to 0.422/0.416 s.
+Native ranges were 0.407–0.535/0.418–0.531 s before and 0.394–0.480/0.389–0.494 s after.
+Flink controls changed from 0.370/0.315 to 0.354/0.348 s (after ranges
+0.302–0.530/0.324–0.371 s). Despite the native improvement, SINGLE_VALUE remains slower
+than Flink and is a separate performance blocker. The first/last improvement does not
+establish readiness for all temporal aggregate functions.
+
+Validation: 587 native tests pass (one ignored). Grouped-value, temporal/Boolean, DISTINCT
+average and decimal merge-order SQL checks pass 82 tests on Flink 2.2.1 and 65 on Flink 1.18.1
+with 17 documented host-limit skips. These cover retracting output, typed NULLs, cardinality
+errors and order-sensitive decimal behavior as well as insert-only cases.
 
 ## Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache
 
