@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn wide_decimal_local_flush_reserves_temporary_memory_before_draining() {
+    let batch = group_scalar_changelog(
+        (0..96)
+            .map(|v| ScalarValue::Decimal128(Some(v), 38, 0))
+            .collect(),
+        vec![0; 96],
+    );
+    let mut local =
+        LocalGroupAggregator::new(vec![9], vec![5800], vec![1], vec![], vec![0], vec![0])
+            .with_memory_budget(1 << 20)
+            .unwrap();
+    local.update(&batch).unwrap();
+    let tight_budget = local.memory.state_bytes as i64 + 1024;
+    let mut local = local.with_memory_budget(tight_budget).unwrap();
+    let retained = local.memory.state_bytes;
+    assert!(matches!(
+        local.try_flush(),
+        Err(DataFusionError::ResourcesExhausted(_))
+    ));
+    assert_eq!(local.memory.state_bytes, retained);
+    // Denied scratch memory leaves the bundle intact and releases the temporary reservation.
+    let mut local = local.with_memory_budget(1 << 20).unwrap();
+    let output = local.try_flush().unwrap();
+    assert_eq!(output.num_rows(), 1);
+    assert_eq!(
+        ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+        ScalarValue::Decimal128(Some(4560), 38, 0)
+    );
+    let view = output
+        .column(2)
+        .as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .unwrap();
+    assert_eq!(view.value_length(0), 96);
+    assert_eq!(local.memory.state_bytes, 0);
+    assert_eq!(local.try_flush().unwrap().num_rows(), 0);
+}
+
+#[test]
 fn wide_decimal_distinct_sum_checkpoint_preserves_overflow_without_refolding() {
     let large = 9 * 10i128.pow(37);
     for inputs in [vec![large, large - 3], vec![large, large - 3, -large]] {

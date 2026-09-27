@@ -137,6 +137,10 @@ impl DecimalMapOrder {
         })
     }
 
+    pub(super) fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub(super) fn bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.buckets.capacity() * std::mem::size_of::<Bucket>()

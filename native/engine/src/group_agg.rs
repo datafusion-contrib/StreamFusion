@@ -863,6 +863,18 @@ impl GroupAggState {
         }
     }
 
+    fn decimal_distinct_count(&self, value: &ScalarValue) -> i64 {
+        let set = match self {
+            Self::Distinct { set, .. } => set,
+            Self::DistinctRunning { counts, .. } => counts,
+            _ => unreachable!("decimal membership on a non-distinct aggregate"),
+        };
+        match set {
+            DistinctSet::Scalar(counts, _) => counts.get(value).copied().unwrap_or(0),
+            _ => unreachable!("decimal membership uses scalar keys"),
+        }
+    }
+
     /// The BIGINT fast path of {@link retract_distinct}.
     fn retract_distinct_i64(&mut self, value: i64) {
         match self {
@@ -3364,14 +3376,41 @@ impl LocalGroupAggregator {
     /// right schema. Each distinct view column carries its bundle set's (value, count) entries as a
     /// list of structs — the wire form of Flink's serialized MapView partial — for the global to
     /// merge with multiplicities.
+    #[cfg(test)]
     pub(crate) fn flush(&mut self) -> RecordBatch {
+        self.try_flush().expect("local aggregate flush")
+    }
+
+    pub(crate) fn try_flush(&mut self) -> Result<RecordBatch, DataFusionError> {
+        let mut temporary = self.memory.temporary_reservation();
+        if let Some(reservation) = temporary
+            .as_mut()
+            .filter(|_| !self.decimal_view_groups.is_empty())
+        {
+            let mut entries = 0usize;
+            let mut copy_peak = 0usize;
+            for entry in self.states.values().chain(self.scalar_states.values()) {
+                if let Some(orders) = &entry.decimal_orders {
+                    for (order, sources) in orders.iter().zip(&self.decimal_view_groups) {
+                        entries += order.len() * sources.len();
+                        // One copied order at a time: node growth, old/new bucket arrays and
+                        // resize partition vectors fit within four retained order footprints.
+                        copy_peak = copy_peak.max(order.bytes() * 4);
+                    }
+                }
+            }
+            if copy_peak > 0 {
+                // Bound geometric vector growth plus simultaneous scalar and Arrow output.
+                let output = entries * 4 * (std::mem::size_of::<ScalarValue>() + 32)
+                    + (self.order.len() + 1) * self.distinct_view_sources.len() * 8;
+                reservation.try_grow(copy_peak + output)?;
+            }
+        }
         let order = std::mem::take(&mut self.order);
         let states = std::mem::take(&mut self.states);
         let scalar_states = std::mem::take(&mut self.scalar_states);
         let key_batches = std::mem::take(&mut self.key_batches);
         let scalar_key_mode = self.scalar_key_mode.take().unwrap_or(false);
-        self.memory.set(0);
-        self.memory.account_shrink();
         let mut fields = key_fields(&self.key_types);
         let mut columns: Vec<ArrayRef> = if scalar_key_mode {
             let keys: Vec<GroupKey> = order
@@ -3437,20 +3476,11 @@ impl LocalGroupAggregator {
                     let DataType::Decimal128(precision, scale) = value_type else {
                         unreachable!()
                     };
-                    let membership: HashMap<Option<i128>, i64> = entry.states[source]
-                        .distinct_entries()
-                        .into_iter()
-                        .map(|(value, count)| {
-                            let ScalarValue::Decimal128(value, _, _) = value else {
-                                unreachable!()
-                            };
-                            (value, count)
-                        })
-                        .collect();
                     let transported = entry.decimal_orders.as_ref().unwrap()[group].copied();
                     for value in transported.iter() {
-                        counts.push(membership.get(&value).copied().unwrap_or(0));
-                        values.push(ScalarValue::Decimal128(value, *precision, *scale));
+                        let scalar = ScalarValue::Decimal128(value, *precision, *scale);
+                        counts.push(entry.states[source].decimal_distinct_count(&scalar));
+                        values.push(scalar);
                     }
                 } else {
                     for (value, count) in entry.states[source].distinct_entries() {
@@ -3485,12 +3515,16 @@ impl LocalGroupAggregator {
         // count-only partial represented entirely by the downstream record-count contract). Arrow
         // cannot infer its row count from an empty column list, so preserve the number of groups
         // explicitly instead of rejecting the batch.
-        RecordBatch::try_new_with_options(
+        let output = RecordBatch::try_new_with_options(
             Arc::new(Schema::new(fields)),
             columns,
             &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(order.len())),
         )
-        .expect("failed to build local group-by partial batch")
+        .expect("failed to build local group-by partial batch");
+        drop((states, scalar_states, key_batches, order));
+        self.memory.set(0);
+        self.memory.account_shrink();
+        Ok(output)
     }
 }
 
@@ -3623,10 +3657,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushLocalGroupAggregator<'
     out_array_address: jlong,
     out_schema_address: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
+    crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut LocalGroupAggregator) };
-        let result = aggregator.flush();
-        export_record_batch(result, out_array_address, out_schema_address);
+        match aggregator.try_flush() {
+            Ok(result) => export_record_batch(result, out_array_address, out_schema_address),
+            Err(error) => throw_group_update_error(&mut env, error),
+        }
     })
 }
 

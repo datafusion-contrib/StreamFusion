@@ -99,10 +99,16 @@ and duplicate retractions. The shared persistent test now covers SUM as well as 
 raw import, RocksDB checkpoint/reopen, canonical export and subsequent retractions. The
 native suite passes 572 tests with one ignored.
 
-Before admission,
-account for temporary view-copy allocations during flush (the existing local flush releases
-retained-state accounting before constructing output) and validate the actual transport route
-end to end. Local integration alone is not sufficient for native decimal parity.
+Local flush now retains state accounting until its input containers are dropped, and reserves
+a conservative scratch bound before draining wide-decimal bundles. The bound covers one
+serializer-order copy (including resize working space) and simultaneous scalar/Arrow view
+output. Direct membership lookup removes the extra copied membership map. Reservation failure
+leaves the original bundle intact and follows the existing JNI memory-error path. This follows
+Comet's fallible reservation pattern (`native/core/src/execution/memory_pools/unified_pool.rs`).
+A tight-budget regression verifies failure before draining and successful retry with a larger
+budget. With this change, 573 native tests pass (one ignored). The actual transport route
+must still be validated end to end; local integration alone
+is not sufficient for native decimal parity.
 
 For multi-key SQL validation, also check local group emission order: Flink's bundle holds
 keys in a HashMap and emits that map's entries, while the native local currently emits
