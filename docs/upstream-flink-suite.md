@@ -248,7 +248,8 @@ counts and requires the associated, unmatched and unattributed counters to sum e
 invocation total. An unmatched job ID cannot also appear among submitted jobs. Invalid partitions
 fail the join before it publishes any exact case associations.
 
-The separate `runtime_route` field currently recognizes `skipped`, `batch_host_only` and `host_failure`.
+The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `scan_only`,
+`batch_host_only` and `host_failure`; unresolved evidence remains `unclassified`.
 Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
 every job, resolved Flink operator classes for every graph node, and a complete partition with
 no native work. Pending results, graph observation errors, unknown operator classes and older
@@ -256,9 +257,24 @@ inventories without counter partitions remain `unclassified`. A host-failure rou
 at least one exceptional result with an explicit
 `FAILED` job status, resolved Flink operator classes in every submitted batch/streaming graph,
 no native work, and all other jobs either successful or similarly confirmed failed. Cancelled,
-suspended or pending jobs cannot establish this route. Successful streaming or mixed-mode
-invocations remain unclassified. These are execution observations, independent of JUnit success
-and existing contract verdicts; they do not replace the published planning/admission labels.
+suspended or pending jobs cannot establish this route.
+
+For streaming native routes, every job must succeed and every native operator type in its graph
+must have positive, job-associated work. The initial explicit type list covers Calc, Filter,
+synchronous/asynchronous lookup join, columnar group aggregate, updating join, Top-N and global
+window aggregate. Unsupported native types and counters for types absent from the graph remain
+unclassified. Sources, sinks, row/Arrow transposes and columnar key-group routing are permitted
+boundaries. Other resolved Flink operators alongside native work produce `mixed`. These counts
+establish work per operator type and job, not per individual graph node or subtask.
+
+`scan_only` requires a successful streaming graph containing both source and sink operators,
+with every node in the explicit StreamSource/SourceOperator/StreamSink/CollectSinkOperator/
+SinkWriterOperator list and no native work. Generic maps, generated converters and unknown
+classes do not establish scan-only execution. Multiple native/scan-only/mixed jobs roll up to
+`mixed` when their routes differ. Pending or unclassified jobs and any unattributed/unmatched
+native work keep the entire invocation unclassified. Batch/streaming mixtures remain unclassified.
+These are execution observations, independent of JUnit success and existing contract verdicts;
+they do not replace the published planning/admission labels.
 
 For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
 Add repeatable `--require-runtime-route-prefix <class#method-prefix>` options to declare the
@@ -272,9 +288,9 @@ Broader route classification and verified upstream scopes remain part of #168; t
 published inventory remains a planning/admission report. Agent and Python tests verify the
 collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
 
-Outside the declared contracts, cases without the batch or host-failure evidence above remain
+Outside the declared contracts, cases without the runtime evidence above remain
 unclassified. The artifact does not infer routes from test class names or JUnit outcomes.
-Deliberately unmodified and scan-only classifications and broader per-invocation collection remain
+Deliberately unmodified and full-fallback classifications and broader per-invocation collection remain
 [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168). Agent unit-test output is
 outside the suite's report/evidence directories and contributes no SQL cases. The summary writes
 failed artifacts for missing or malformed reports/evidence and retains process failures; an
