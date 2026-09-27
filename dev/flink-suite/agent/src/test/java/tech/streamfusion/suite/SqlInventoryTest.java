@@ -200,6 +200,45 @@ class SqlInventoryTest {
   }
 
   @Test
+  void distinguishesFailedJobsFromCancelledAndUnavailableStatusRequests() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object scope = SqlInventory.submitting();
+      for (String status : List.of("FAILED", "CANCELED", "unavailable", "pending")) {
+        SqlInventory.submitted(
+            scope,
+            new JobClient(
+                status,
+                java.util.concurrent.CompletableFuture.failedFuture(
+                    new IllegalStateException("result request failed"))) {
+              @Override
+              public java.util.concurrent.CompletableFuture<?> getJobStatus() {
+                if (status.equals("unavailable"))
+                  return java.util.concurrent.CompletableFuture.failedFuture(
+                      new IllegalStateException("status request failed"));
+                if (status.equals("pending")) return new java.util.concurrent.CompletableFuture<>();
+                return java.util.concurrent.CompletableFuture.completedFuture(status);
+              }
+            },
+            null);
+      }
+      SqlInventory.finished(identifier, new Result());
+      try (var files = Files.list(directory)) {
+        String json = Files.readString(files.findFirst().orElseThrow());
+        assertTrue(json.contains("\"job_status\":\"FAILED\""));
+        assertTrue(json.contains("\"job_status\":\"CANCELED\""));
+        assertTrue(json.contains("\"job_status_error\":"));
+        assertTrue(json.contains("status request failed"));
+        assertTrue(json.contains("\"pending\":{\"status\":\"RESULT_FAILED\",\"failure\":"));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  @Test
   void attachesReleasedFlinkGraphToItsSubmittedJob() throws Exception {
     System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
     try {
@@ -336,6 +375,10 @@ class SqlInventoryTest {
 
     public java.util.concurrent.CompletableFuture<?> getJobExecutionResult() {
       return result;
+    }
+
+    public java.util.concurrent.CompletableFuture<?> getJobStatus() {
+      return new java.util.concurrent.CompletableFuture<>();
     }
   }
 

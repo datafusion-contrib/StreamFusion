@@ -316,6 +316,22 @@ class ExecutionAuditTest(unittest.TestCase):
                 self.assertTrue(any("work" in problem or "job identity" in problem
                                     for problem in audit["validation_problems"]))
 
+    def test_host_failure_requires_failed_job_status_and_resolved_host_graph(self):
+        for job_status, route in (("FAILED", "host_failure"), ("CANCELED", "unclassified"),
+                                  ("RUNNING", "unclassified"), (None, "unclassified")):
+            with self.subTest(job_status=job_status):
+                self.cases(("Host#query", "passed"))
+                record = self.batch_observation()
+                job = record["jobs"]["batch-job"]
+                job.update(status="RESULT_FAILED", job_status=job_status)
+                job["graph"]["job_type"] = "STREAMING"
+                for path in (self.root / "inventory").glob("*.json"):
+                    path.unlink()
+                args = self.inventory(record)
+                status, audit = self.run_audit(*args)
+                self.assertEqual(0, status)
+                self.assertEqual(route, audit["testcases"][0]["runtime_route"])
+
 
 if __name__ == "__main__":
     unittest.main()

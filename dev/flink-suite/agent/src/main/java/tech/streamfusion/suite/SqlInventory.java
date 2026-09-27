@@ -130,11 +130,23 @@ public final class SqlInventory {
     active.jobs.put(job, new LinkedHashMap<>(Map.of("status", "SUBMITTED")));
     if (!submission.graph().isEmpty()) active.jobs.get(job).put("graph", submission.graph());
     try {
-      active.jobResults.put(
-          job, (java.util.concurrent.CompletableFuture<?>) call(client, "getJobExecutionResult"));
+      var result =
+          (java.util.concurrent.CompletableFuture<?>) call(client, "getJobExecutionResult");
+      active.jobResults.put(job, result);
+      active.jobStatuses.put(
+          job, result.handle((ignored, error) -> client).thenCompose(SqlInventory::jobStatus));
     } catch (ReflectiveOperationException | ClassCastException unavailable) {
       active.jobs.get(job).put("status", "UNAVAILABLE");
       active.jobs.get(job).put("failure", unavailable.toString());
+    }
+  }
+
+  private static java.util.concurrent.CompletableFuture<Object> jobStatus(Object client) {
+    try {
+      return ((java.util.concurrent.CompletableFuture<?>) call(client, "getJobStatus"))
+          .thenApply(status -> java.util.Objects.requireNonNull(status, "Missing job status"));
+    } catch (ReflectiveOperationException | RuntimeException unavailable) {
+      return java.util.concurrent.CompletableFuture.failedFuture(unavailable);
     }
   }
 
@@ -143,6 +155,16 @@ public final class SqlInventory {
         (job, work) -> {
           if (scope.jobs.containsKey(job)) scope.jobs.get(job).put("native_work", work);
           else scope.unmatchedJobs.put(job, work);
+        });
+    scope.jobStatuses.forEach(
+        (job, status) -> {
+          if (!status.isDone()) return;
+          try {
+            scope.jobs.get(job).put("job_status", status.join().toString());
+          } catch (java.util.concurrent.CompletionException
+              | java.util.concurrent.CancellationException error) {
+            scope.jobs.get(job).put("job_status_error", error.toString());
+          }
         });
     scope.jobResults.forEach(
         (job, completion) -> {
@@ -359,6 +381,8 @@ public final class SqlInventory {
     final List<Object> contracts = new ArrayList<>();
     final Map<String, Map<String, Object>> jobs = new LinkedHashMap<>();
     final Map<String, java.util.concurrent.CompletableFuture<?>> jobResults = new LinkedHashMap<>();
+    final Map<String, java.util.concurrent.CompletableFuture<?>> jobStatuses =
+        new LinkedHashMap<>();
     int translationDepth;
   }
 }

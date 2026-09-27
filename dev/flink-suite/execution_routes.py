@@ -38,16 +38,26 @@ def classify(row, partition_valid):
     jobs = row.get('jobs')
     if not partition_valid or not jobs or row['native_work']:
         return 'unclassified'
+    failed = False
+    all_batch = True
     for result in jobs.values():
         graph = result.get('graph')
-        if result['status'] != 'SUCCEEDED' or not isinstance(graph, dict):
+        confirmed_failure = (result['status'] == 'RESULT_FAILED'
+                             and result.get('job_status') == 'FAILED'
+                             and not result.get('job_status_error'))
+        if not confirmed_failure and (result['status'] != 'SUCCEEDED'
+                                     or result.get('job_status') in ('FAILED', 'CANCELED', 'SUSPENDED')):
             return 'unclassified'
+        if not isinstance(graph, dict):
+            return 'unclassified'
+        failed |= confirmed_failure
         nodes = graph.get('nodes')
-        if graph.get('job_type') != 'BATCH' or graph.get('observation_error') or not nodes:
+        if graph.get('job_type') not in ('BATCH', 'STREAMING') or graph.get('observation_error') or not nodes:
             return 'unclassified'
+        all_batch &= graph['job_type'] == 'BATCH'
         if not isinstance(nodes, list) or any(
                 not isinstance(node, dict) or node.get('operator_class_error')
                 or not isinstance(node.get('operator_class'), str)
                 or not node['operator_class'].startswith('org.apache.flink.') for node in nodes):
             return 'unclassified'
-    return 'batch_host_only'
+    return 'host_failure' if failed else 'batch_host_only' if all_batch else 'unclassified'

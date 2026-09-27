@@ -225,7 +225,11 @@ returning after its originating invocation ended cannot attach to the next case.
 completion the observer samples the job-result futures without blocking: `SUCCEEDED` means a
 completed result, `SUBMITTED` means the future is still pending, `RESULT_FAILED` preserves an
 exceptional/cancelled result request, and `UNAVAILABLE` records a client that cannot expose it.
-A failed result request alone is not labelled a failed host job. The raw inventory and joined
+A failed result request alone is not labelled a failed host job. After a result future completes,
+the observer requests the client's job status asynchronously and samples that future at invocation
+completion as `job_status`. Pending status requests do not delay the test; failed requests remain
+`job_status_error` observations. This distinguishes an explicit `FAILED` job status from cancelled
+jobs and result/status retrieval failures. The raw inventory and joined
 audit retain these observations separately from JUnit outcomes and native work. Submission
 snapshots attach the stream graph's job type, node names, parallelism, operator factories and
 declared operator classes to that job ID. Reflection failures remain explicit observations.
@@ -242,13 +246,17 @@ counts and requires the associated, unmatched and unattributed counters to sum e
 invocation total. An unmatched job ID cannot also appear among submitted jobs. Invalid partitions
 fail the join before it publishes any exact case associations.
 
-The separate `runtime_route` field currently recognizes `skipped` and `batch_host_only`.
+The separate `runtime_route` field currently recognizes `skipped`, `batch_host_only` and `host_failure`.
 Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
 every job, resolved Flink operator classes for every graph node, and a complete partition with
-no native work. Pending/exceptional results, graph observation errors, unknown operator classes,
-mixed batch/streaming submissions and older inventories without counter partitions remain
-`unclassified`. These are execution observations, independent of JUnit success and existing
-contract verdicts; they do not replace the published planning/admission labels.
+no native work. Pending results, graph observation errors, unknown operator classes and older
+inventories without counter partitions remain `unclassified`. A host-failure route requires
+at least one exceptional result with an explicit
+`FAILED` job status, resolved Flink operator classes in every submitted batch/streaming graph,
+no native work, and all other jobs either successful or similarly confirmed failed. Cancelled,
+suspended or pending jobs cannot establish this route. Successful streaming or mixed-mode
+invocations remain unclassified. These are execution observations, independent of JUnit success
+and existing contract verdicts; they do not replace the published planning/admission labels.
 
 For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
 Add repeatable `--require-runtime-route-prefix <class#method-prefix>` options to declare the
@@ -262,9 +270,9 @@ Broader route classification and verified upstream scopes remain part of #168; t
 published inventory remains a planning/admission report. Agent and Python tests verify the
 collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
 
-Outside the declared contracts, cases without the completed batch evidence above remain
-unclassified. The artifact does not infer deliberately unmodified, scan-only or host-failure routes from test class names or JUnit
-outcomes. Those classifications and broader per-invocation collection remain
+Outside the declared contracts, cases without the batch or host-failure evidence above remain
+unclassified. The artifact does not infer routes from test class names or JUnit outcomes.
+Deliberately unmodified and scan-only classifications and broader per-invocation collection remain
 [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168). Agent unit-test output is
 outside the suite's report/evidence directories and contributes no SQL cases. The summary writes
 failed artifacts for missing or malformed reports/evidence and retains process failures; an
