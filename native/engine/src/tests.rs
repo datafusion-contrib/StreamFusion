@@ -1,5 +1,80 @@
 use super::*;
 
+#[test]
+fn group_distinct_typed_partials_restore_then_merge_duplicates() {
+    let timestamp = |nanos| {
+        ScalarValue::Struct(Arc::new(streamfusion_bridge::timestamp::timestamp_array([
+            Some(streamfusion_bridge::timestamp::TimestampValue::from_nanos(nanos).unwrap()),
+        ])))
+    };
+    for (kind, code, low, high, first, both) in [
+        (
+            7,
+            10,
+            ScalarValue::Boolean(Some(false)),
+            ScalarValue::Boolean(Some(true)),
+            ScalarValue::Int64(Some(1)),
+            ScalarValue::Int64(Some(2)),
+        ),
+        (
+            7,
+            7,
+            timestamp(-1),
+            timestamp(1),
+            ScalarValue::Int64(Some(1)),
+            ScalarValue::Int64(Some(2)),
+        ),
+        (
+            9,
+            3902,
+            ScalarValue::Decimal128(Some(-103), 19, 2),
+            ScalarValue::Decimal128(Some(214), 19, 2),
+            ScalarValue::Decimal128(Some(-103), 38, 2),
+            ScalarValue::Decimal128(Some(111), 38, 2),
+        ),
+    ] {
+        let mut local =
+            LocalGroupAggregator::new(vec![kind], vec![code], vec![1], vec![], vec![0], vec![0]);
+        let mut global = GroupAggregator::new(vec![kind], vec![code], vec![1], vec![0], true)
+            .with_distinct_view_columns(vec![2]);
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        local
+            .update(&group_scalar_changelog(
+                vec![low.clone(), low.clone(), null],
+                vec![0; 3],
+            ))
+            .unwrap();
+        let partial = local.flush();
+        let result = global.update(&partial, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            first
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![kind],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &global.snapshot(),
+            0,
+        )
+        .with_distinct_view_columns(vec![2]);
+        local
+            .update(&group_scalar_changelog(vec![low.clone()], vec![0]))
+            .unwrap();
+        assert_eq!(restored.update(&local.flush(), 0).unwrap().num_rows(), 0);
+        local
+            .update(&group_scalar_changelog(vec![high, low], vec![0; 2]))
+            .unwrap();
+        let result = restored.update(&local.flush(), 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            both
+        );
+    }
+}
+
 fn group_scalar_changelog(values: Vec<ScalarValue>, kinds: Vec<i8>) -> RecordBatch {
     let len = values.len();
     let array = ScalarValue::iter_to_array(values).unwrap();

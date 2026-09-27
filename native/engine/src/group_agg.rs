@@ -1,6 +1,7 @@
 use crate::*;
 
 mod distinct;
+use distinct::{DistinctColumn, DistinctValues};
 mod ordered_value;
 pub(crate) use distinct::DistinctSet;
 use ordered_value::{is_ordered_value, OrderedValueState};
@@ -490,25 +491,6 @@ impl GroupAggState {
         }
     }
 
-    /// The BIGINT fast path of {@link accumulate_distinct}: the value comes straight off the Int64
-    /// array, no scalar is built.
-    fn accumulate_distinct_i64(&mut self, value: i64) {
-        match self {
-            GroupAggState::Distinct { set, live } => {
-                if set.add_i64(value) {
-                    *live += 1;
-                }
-            }
-            GroupAggState::DistinctRunning { counts, agg, live } => {
-                if counts.add_i64(value) {
-                    agg.fold(Num::I64(value));
-                    *live += 1;
-                }
-            }
-            _ => unreachable!("accumulate_distinct on a non-distinct aggregate"),
-        }
-    }
-
     /// Removes one occurrence; the value leaves the distinct set when its last occurrence is retracted
     /// (which is also when a distinct SUM's running aggregate retracts it).
     fn retract_distinct(&mut self, value: ScalarValue) {
@@ -521,86 +503,6 @@ impl GroupAggState {
             GroupAggState::DistinctRunning { counts, agg, live } => {
                 if counts.remove_scalar(&value) {
                     agg.retract(distinct_num(&value));
-                    *live -= 1;
-                }
-            }
-            _ => unreachable!("retract_distinct on a non-distinct aggregate"),
-        }
-    }
-
-    /// Folds one (value, count) entry of a local bundle's distinct view into the merged set — the
-    /// two-phase merge of {@link accumulate_distinct}. A value newly entering the merged set also
-    /// folds once into a distinct SUM's running aggregate, exactly as the per-row path does. The
-    /// two-phase distinct input is insert-only (the local's bundle is append-only), so there is no
-    /// retracting counterpart.
-    fn merge_distinct(&mut self, value: ScalarValue, count: i64) {
-        match self {
-            GroupAggState::Distinct { set, live } => {
-                if set.add_scalar_n(value, count) {
-                    *live += 1;
-                }
-            }
-            GroupAggState::DistinctRunning { counts, agg, live } => {
-                let num = distinct_num(&value);
-                if counts.add_scalar_n(value, count) {
-                    agg.fold(num);
-                    *live += 1;
-                }
-            }
-            _ => unreachable!("distinct merge on a non-distinct aggregate"),
-        }
-    }
-
-    /// The BIGINT fast path of {@link merge_distinct}.
-    fn merge_distinct_i64(&mut self, value: i64, count: i64) {
-        match self {
-            GroupAggState::Distinct { set, live } => {
-                if set.add_i64_n(value, count) {
-                    *live += 1;
-                }
-            }
-            GroupAggState::DistinctRunning { counts, agg, live } => {
-                if counts.add_i64_n(value, count) {
-                    agg.fold(Num::I64(value));
-                    *live += 1;
-                }
-            }
-            _ => unreachable!("distinct merge on a non-distinct aggregate"),
-        }
-    }
-
-    fn change_distinct_string(&mut self, value: &str, retract: bool, count: i64) {
-        match self {
-            GroupAggState::Distinct { set, live } => {
-                if set.change_string(value, retract, count) {
-                    *live += if retract { -1 } else { 1 };
-                }
-            }
-            _ => unreachable!("strings only support COUNT DISTINCT"),
-        }
-    }
-
-    /// The live (value, multiplicity) pairs of a distinct aggregate's set — the local half reads
-    /// these to emit its bundle's distinct view column.
-    fn distinct_entries(&self) -> Vec<(ScalarValue, i64)> {
-        match self {
-            GroupAggState::Distinct { set, .. } => set.scalar_entries(),
-            GroupAggState::DistinctRunning { counts, .. } => counts.scalar_entries(),
-            _ => unreachable!("distinct entries on a non-distinct aggregate"),
-        }
-    }
-
-    /// The BIGINT fast path of {@link retract_distinct}.
-    fn retract_distinct_i64(&mut self, value: i64) {
-        match self {
-            GroupAggState::Distinct { set, live } => {
-                if set.remove_i64(value) {
-                    *live -= 1;
-                }
-            }
-            GroupAggState::DistinctRunning { counts, agg, live } => {
-                if counts.remove_i64(value) {
-                    agg.retract(Num::I64(value));
                     *live -= 1;
                 }
             }
@@ -1617,6 +1519,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 })
             })
             .collect();
+        let view_values: Vec<_> = view_cols
+            .iter()
+            .map(|view| view.map(|(_, values, _)| DistinctColumn::new(values)))
+            .collect();
         // Per aggregate, the value column index for a COUNT(DISTINCT) (kind 7) or SUM(DISTINCT)
         // (kind 9), else None — the single-phase per-row fold; view-merged aggregates take the
         // list path above instead. Captured before the per-row loop so the loop body reads no
@@ -1627,16 +1533,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     .then_some(self.value_columns[i] as usize)
             })
             .collect();
-        // The BIGINT fast path per distinct aggregate: fold the primitive straight off the array
-        // (no per-row ScalarValue). Present exactly when the value column is Int64.
-        let distinct_i64_cols: Vec<Option<&Int64Array>> = (0..num_agg)
-            .map(|i| {
-                distinct_cols[i].and_then(|c| batch.column(c).as_any().downcast_ref::<Int64Array>())
-            })
-            .collect();
-        let distinct_string_cols: Vec<Option<&arrow::array::StringArray>> = distinct_cols
+        // Downcast DISTINCT inputs once per batch.
+        let distinct_columns: Vec<_> = distinct_cols
             .iter()
-            .map(|c| c.and_then(|c| batch.column(c).as_any().downcast_ref()))
+            .map(|c| c.map(|c| DistinctColumn::new(batch.column(c))))
             .collect();
         let ordered_columns: Vec<Option<usize>> = self
             .kinds
@@ -1853,66 +1753,20 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     // Two-phase distinct merge: fold the local bundle's (value, count) entries into
                     // the per-key set with multiplicities. The partials are insert-only, so a
                     // retracting row kind cannot reach this path.
-                    if let Some((list, values, counts)) = view_cols[i] {
+                    if let Some((list, _values, counts)) = view_cols[i] {
                         assert!(!retract, "distinct view partials are insert-only");
                         let start = list.value_offsets()[row] as usize;
                         let end = list.value_offsets()[row + 1] as usize;
-                        if let Some(ints) = values.as_any().downcast_ref::<Int64Array>() {
-                            for e in start..end {
-                                state.aggs[i].merge_distinct_i64(ints.value(e), counts.value(e));
-                            }
-                        } else if let Some(strings) =
-                            values.as_any().downcast_ref::<arrow::array::StringArray>()
-                        {
-                            for e in start..end {
-                                state.aggs[i].change_distinct_string(
-                                    strings.value(e),
-                                    false,
-                                    counts.value(e),
-                                );
-                            }
-                        } else {
-                            for e in start..end {
-                                let scalar = ScalarValue::try_from_array(values, e)
-                                    .expect("distinct view value scalar");
-                                state.aggs[i].merge_distinct(scalar, counts.value(e));
+                        let column = view_values[i].as_ref().expect("distinct view reader");
+                        for e in start..end {
+                            if counts.value(e) > 0 {
+                                column.update(&mut state.aggs[i], e, false, counts.value(e));
                             }
                         }
                         continue;
                     }
-                    // COUNT(DISTINCT x) (kind 7) folds the value itself, not a Num — read its scalar
-                    // (skipping nulls, which DISTINCT ignores) and add/remove it from the value set.
-                    if let Some(col_idx) = distinct_cols[i] {
-                        if let Some(ints) = distinct_i64_cols[i] {
-                            if !ints.is_null(row) {
-                                if retract {
-                                    state.aggs[i].retract_distinct_i64(ints.value(row));
-                                } else {
-                                    state.aggs[i].accumulate_distinct_i64(ints.value(row));
-                                }
-                            }
-                            continue;
-                        }
-                        if let Some(strings) = distinct_string_cols[i] {
-                            if !strings.is_null(row) {
-                                state.aggs[i].change_distinct_string(
-                                    strings.value(row),
-                                    retract,
-                                    1,
-                                );
-                            }
-                            continue;
-                        }
-                        let column = batch.column(col_idx);
-                        if !column.is_null(row) {
-                            let scalar = ScalarValue::try_from_array(column, row)
-                                .expect("distinct value scalar");
-                            if retract {
-                                state.aggs[i].retract_distinct(scalar);
-                            } else {
-                                state.aggs[i].accumulate_distinct(scalar);
-                            }
-                        }
+                    if let Some(column) = &distinct_columns[i] {
+                        column.update(&mut state.aggs[i], row, retract, 1);
                         continue;
                     }
                     match &value_columns[i] {
@@ -2719,18 +2573,13 @@ impl LocalGroupAggregator {
         let key_batch = self.key_batches.len();
         let mut retained_key_batch = false;
         // Distinct aggregates (kind 7/9) fold the value itself into their per-bundle set, not a Num;
-        // a BIGINT value column takes the primitive fast path.
+        // typed column readers avoid per-row scalar materialization.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| matches!(self.kinds[i], 7 | 9).then_some(self.value_columns[i] as usize))
             .collect();
-        let distinct_i64_cols: Vec<Option<&Int64Array>> = (0..num_agg)
-            .map(|i| {
-                distinct_cols[i].and_then(|c| batch.column(c).as_any().downcast_ref::<Int64Array>())
-            })
-            .collect();
-        let distinct_string_cols: Vec<Option<&arrow::array::StringArray>> = distinct_cols
+        let distinct_columns: Vec<_> = distinct_cols
             .iter()
-            .map(|c| c.and_then(|c| batch.column(c).as_any().downcast_ref()))
+            .map(|c| c.map(|c| DistinctColumn::new(batch.column(c))))
             .collect();
         // Per aggregate, a nonnumeric MIN/MAX value column — folded as a scalar
         // into typed running state for insert-only inputs, or the Extremes multiset otherwise.
@@ -2863,33 +2712,8 @@ impl LocalGroupAggregator {
                     }
                     continue;
                 }
-                if let Some(col_idx) = distinct_cols[i] {
-                    if let Some(ints) = distinct_i64_cols[i] {
-                        if !ints.is_null(row) {
-                            if retract {
-                                entry.states[i].retract_distinct_i64(ints.value(row));
-                            } else {
-                                entry.states[i].accumulate_distinct_i64(ints.value(row));
-                            }
-                        }
-                        continue;
-                    }
-                    if let Some(strings) = distinct_string_cols[i] {
-                        if !strings.is_null(row) {
-                            entry.states[i].change_distinct_string(strings.value(row), retract, 1);
-                        }
-                        continue;
-                    }
-                    let column = batch.column(col_idx);
-                    if !column.is_null(row) {
-                        let scalar = ScalarValue::try_from_array(column, row)
-                            .expect("distinct value scalar");
-                        if retract {
-                            entry.states[i].retract_distinct(scalar);
-                        } else {
-                            entry.states[i].accumulate_distinct(scalar);
-                        }
-                    }
+                if let Some(column) = &distinct_columns[i] {
+                    column.update(&mut entry.states[i], row, retract, 1);
                     continue;
                 }
                 match &cols[i] {
@@ -2989,25 +2813,25 @@ impl LocalGroupAggregator {
             let value_type = &self.value_types[source];
             let mut offsets: Vec<i32> = Vec::with_capacity(order.len() + 1);
             offsets.push(0);
-            let mut values: Vec<ScalarValue> = Vec::new();
+            let mut values = DistinctValues::new(value_type);
             let mut counts: Vec<i64> = Vec::new();
             for key in &order {
                 let entry = match key {
                     LocalGroupKey::Byte(key) => &states[key],
                     LocalGroupKey::Scalar(key) => &scalar_states[key],
                 };
-                for (value, count) in entry.states[source].distinct_entries() {
-                    values.push(value);
-                    counts.push(count);
-                }
-                offsets.push(values.len() as i32);
+                let set = match &entry.states[source] {
+                    GroupAggState::Distinct { set, .. } => set,
+                    GroupAggState::DistinctRunning { counts, .. } => counts,
+                    _ => unreachable!("distinct view state"),
+                };
+                values.append(set, &mut counts);
+                offsets.push(counts.len() as i32);
             }
+            let values = values.finish();
             let entries = arrow::array::StructArray::new(
                 distinct_entry_fields(value_type),
-                vec![
-                    scalars_to_array(values, value_type),
-                    Arc::new(Int64Array::from(counts)),
-                ],
+                vec![values, Arc::new(Int64Array::from(counts))],
                 None,
             );
             let list = arrow::array::ListArray::new(
