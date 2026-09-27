@@ -1,21 +1,26 @@
-# Zero-copy exit transpose
+# Avoid redundant copies at the exit transpose
 
 **Applies to:** the Arrow→RowData exit transpose
 
-## What it is
+The exit transpose reads a reusable `ColumnarRowData` view while the Arrow batch remains open.
+With Flink object reuse disabled, the runtime's `CopyingChainingOutput` deep-copies this view
+synchronously before delivering it to the next operator. Network outputs serialize it
+synchronously. The transpose can therefore emit the view directly in this mode without making
+an additional intermediate copy.
 
-The Arrow→RowData exit transpose used to deep-copy and box every field, because the Arrow batch
-was closed immediately after conversion. It now emits a reusable lazy `ColumnarRowData` view over
-the Arrow vectors instead — the same columnar→row model Spark/Comet use — keeping the batch open
-through the whole emit loop (`5a12f2d`).
+With object reuse enabled, chained outputs do not copy. The transpose supplies an owned
+`RowDataSerializer` copy for each emitted row so a host operator can retain it after the Arrow
+batch closes. Enabling object reuse never permits an Arrow-backed view to escape its batch's
+lifetime. Branches receive their normal Flink ownership semantics in either mode.
 
-## Why it works
+This follows the lazy columnar-row conversion used by Comet while respecting Flink's distinct
+chained-output contract. Tests retain rows containing nested strings and binary values after
+batch closure with object reuse both enabled and disabled. The benchmark keeps the application's
+object-reuse setting unchanged for both engines.
 
-A lazy row view reads fields from the still-open Arrow vectors on demand instead of materializing
-and boxing every field up front. Combined with Flink object reuse enabled — a standard production
-setting, applied to both sides of the benchmark — this removes the per-row allocation and copy that
-used to dominate the exit path.
+The earlier unconditional borrowed-view implementation reported roughly doubled native q0
+throughput (`713a0a3`), but that historical result predates the owned-row requirement for
+object-reuse-enabled consumers and is not a claim about the current implementation.
 
-## Measured
-
-Native q0 roughly doubled (`713a0a3`).
+Current end-to-end measurements and the isolated entry/exit steps are recorded in the
+[row-major transpose ledger](row-major-transpose.md#end-to-end-ownership-copy-measurements).
