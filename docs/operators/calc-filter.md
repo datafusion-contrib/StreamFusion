@@ -591,6 +591,9 @@ the DECIMAL forms below, still fall back. Bare encoders without table configurat
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
 
+Boolean TRY_CAST regression coverage also verifies native routing in ordinary projections,
+filter predicates and CASE consumers, including strings that parse to NULL.
+
 ### Temporal TRY_CAST
 
 `TRY_CAST` from STRING/VARCHAR/CHAR to DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ
