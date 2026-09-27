@@ -45,7 +45,9 @@ is diagnostic and is no longer an exact sum of individual write durations.
 
 ## End-to-end ownership-copy measurements
 
-A Linux x86-64/Core i7-12650H diagnostic uses JDK 17, released Flink 2.2.1, release+mimalloc,
+These scalar measurements were collected on [PR #263](https://github.com/datafusion-contrib/StreamFusion/pull/263),
+revision `bd0b85cc`; reproducing the scalar command below requires that revision's TRY_CAST
+benchmark fixtures. A Linux x86-64/Core i7-12650H diagnostic uses JDK 17, released Flink 2.2.1, release+mimalloc,
 2M runtime rows, parallelism one, a 2 GiB heap, two warmups and five alternating host/native
 trials. Both row/Arrow transposes and the row source/sink remain included; object reuse stays
 at its default disabled setting for both engines. The timestamp query includes the separately

@@ -335,8 +335,8 @@ on the 7.6 GB machine. Each cell gives median and trial range in seconds.
 
 The one-million-key native medians improve 7.2% for TIME and 5.9% for BOOLEAN and beat their
 matched Flink controls. At 500,000 keys, STRING improves 16.4% and beats Flink; TIME improves
-5.2%, while BOOLEAN is flat. TIME/BOOLEAN at that smaller size still trail Flink by about 8%,
-so these results do not close the remaining temporal SINGLE_VALUE performance gap.
+5.2%, while BOOLEAN is flat. At this earlier stage, TIME/BOOLEAN at that smaller size trailed Flink by about 8%.
+The shared-boundary measurements below revisit that gap.
 
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
@@ -365,7 +365,71 @@ the unchanged default heap setting because their retained keyed state is small.
 An independent final-build one-million-key repeat measured native TIME/BOOLEAN at
 0.658/0.625 s (ranges 0.588–0.720/0.611–0.742 s), versus matched Flink
 0.713/0.711 s (0.641–0.933/0.584–0.831 s). This confirms the benefit at that size
-without changing the unfavorable 500,000-key result.
+without changing the then-unfavorable 500,000-key result.
 
 Validation: the final path passes 567 native tests (one ignored), 59 grouped-value/temporal/
 columnar SQL controls on Flink 2.2.1, and 42 on Flink 1.18.1 (17 documented host skips).
+
+## Shared boundary ownership improvements
+
+The row/Arrow boundaries now [write directly into owned buffers and avoid a redundant exit
+copy](row-major-transpose.md#direct-writes-at-the-streaming-boundary). Buffer allocation and
+finalization remain timed exactly; sampled write timing removes the per-row clock bottleneck.
+These changes preserve the typed accumulators, snapshots, filters and retraction rules above.
+
+The following final-branch measurements use release+mimalloc, Flink 2.2.1/JDK 17,
+i7-12650H Linux/WSL, parallelism one, a matched 2 GiB heap, both transposes and a rowwise sink.
+SINGLE_VALUE uses one unique key per input row and one-eighth NULLs, with five warmups and
+nine alternating trials. Each cell gives median and full trial range in seconds.
+
+| SINGLE_VALUE workload | Native | Flink | Flink/native |
+| --- | ---: | ---: | ---: |
+| 500k / TIME | 0.373 (0.340–0.473) | 0.402 (0.321–0.449) | 1.077x |
+| 500k / BOOLEAN | 0.328 (0.302–0.497) | 0.363 (0.333–0.451) | 1.106x |
+| 500k / STRING | 0.409 (0.346–0.474) | 0.412 (0.375–0.503) | 1.007x |
+| 1000k / TIME | 0.610 (0.590–0.738) | 0.719 (0.585–0.886) | 1.180x |
+| 1000k / BOOLEAN | 0.632 (0.589–0.715) | 0.718 (0.611–0.795) | 1.137x |
+
+An independent 500k-key repeat, after the MIN/MAX controls, measured:
+
+| SINGLE_VALUE workload | Native | Flink | Flink/native |
+| --- | ---: | ---: | ---: |
+| 500k / TIME | 0.340 (0.321–0.407) | 0.401 (0.328–0.575) | 1.181x |
+| 500k / BOOLEAN | 0.333 (0.315–0.380) | 0.365 (0.301–0.568) | 1.097x |
+
+The new TIME/BOOLEAN medians beat their matched Flink controls at both cardinalities and in the
+smaller-workload repeat. Compared with the earlier 500k direct-emission native medians
+(0.362/0.365 s), the repeat reaches 0.340/0.333 s. The first TIME run was 0.373 s, and host
+controls also moved, so the full ranges and both runs remain visible rather than attributing
+every difference to the code change. The STRING control is effectively tied with Flink in this
+run. Existing unsupported-mode gates remain unchanged.
+
+FIRST_VALUE/LAST_VALUE at 2M rows and 64 keys use the same 2 GiB cap and five-warmup,
+nine-trial method:
+
+| FIRST/LAST workload | Native | Flink | Flink/native |
+| --- | ---: | ---: | ---: |
+| 2000k / TIME | 0.573 (0.564–0.589) | 0.613 (0.605–0.623) | 1.069x |
+| 2000k / BOOLEAN | 0.551 (0.545–0.563) | 0.573 (0.559–0.583) | 1.039x |
+
+Fresh MIN/MAX controls use 2M rows, 64 keys, two warmups and five alternating trials;
+two-phase cases retain 1,024-row bundles:
+
+| Phase / type | Native median (range), s | Flink median (range), s | Flink/native |
+| --- | ---: | ---: | ---: |
+| one / DATE | 0.352 (0.343–0.385) | 0.434 (0.421–0.444) | 1.232x |
+| one / TIME | 0.346 (0.338–0.352) | 0.429 (0.425–0.440) | 1.240x |
+| one / BOOLEAN | 0.340 (0.336–0.345) | 0.417 (0.402–0.431) | 1.226x |
+| two / DATE | 0.462 (0.462–0.470) | 0.579 (0.566–0.583) | 1.252x |
+| two / TIME | 0.441 (0.431–0.453) | 0.557 (0.548–0.559) | 1.262x |
+| two / BOOLEAN | 0.437 (0.429–0.440) | 0.548 (0.534–0.561) | 1.255x |
+
+All six current MIN/MAX controls and both FIRST/LAST controls beat their matched Flink medians.
+These measurements cover the listed schemas, sizes and cardinalities, including their unfavorable
+historical results above; they are not a claim about every aggregation workload.
+
+The final merged-base tree passes 88 focused grouped-aggregate, transpose and ownership checks
+on Flink 2.2.1; Flink 1.18.1 passes 71 with the same 17 documented host-capability skips.
+The native source is unchanged from the 567-test validated direct-emission implementation;
+a forced release rebuild reproduces its saved library hash. Hosted CI must validate the exact
+PR head before merge.
