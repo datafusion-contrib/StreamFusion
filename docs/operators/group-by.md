@@ -490,6 +490,9 @@ The new cases and existing grouped/count-distinct suites pass on both released F
 32 cases on 2.2.1; 31 passed and one host-capability skip on 1.18.1. Native checks cover raw
 sum/membership restoration, duplicate retractions, sticky decimal overflow, typed RocksDB
 checkpoint/reopen, and memory↔RocksDB canonical-partition migration.
+The current integrated branch passes 573 native tests (one ignored). Its focused DISTINCT SQL
+suites pass 54 cases on Flink 2.2.1 and 53 on Flink 1.18.1, with one documented host-capability
+skip on 1.18.
 
 The existing `DistinctAggregateBenchmark` accepts `-Ddistinct.average=true` to compare
 single-phase AVG DISTINCT over TINYINT, BIGINT and DECIMAL(20,2), retaining runtime rows,
@@ -504,8 +507,17 @@ Flink trials ranged from 6.346–6.591 s; native trials ranged from 2.769–2.96
 routes this unsupported AVG DISTINCT query entirely to Flink. These are workload-specific
 whole-job results, including the unchanged row/Arrow perimeter, and precede #246's typed maps.
 
+After integrating the typed-column DISTINCT path and shared transpose optimizations, the
+same 2M-row workload with an explicit 2 GiB heap measures **2.609 s native versus 6.574 s
+Flink (2.519x)**. Native trials range 2.596–2.633 s and Flink trials 6.554–6.616 s; all other
+configuration above is unchanged. The explicit heap setting makes this a fresh matched-resource
+comparison rather than a claimed isolated speedup over the earlier run.
+At 5M rows with the same configuration, native measures **6.399 s (6.354–6.508) versus
+Flink 16.267 s (16.054–16.322), 2.542x**. The native advantage persists as the input grows.
+
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dtest=DistinctAggregateBenchmark -Ddistinct.average=true \
-  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5
+  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5 \
+  -Dsf.extraJvmArgs=-Xmx2g
 ```
