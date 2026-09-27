@@ -17,3 +17,18 @@ inputs, a 3.39x operator-level speedup. Two clean 2-million-event exactly-once K
 StreamFusion at 1.338 and 1.429 seconds versus Flink at 1.363 and 1.623 seconds respectively. The
 whole-job variance is larger than the expected Calc gain, so this is not presented as a new
 end-to-end headline result.
+
+## Deferred-copy investigation
+
+The investigation for [#249](https://github.com/datafusion-contrib/StreamFusion/issues/249)
+measured local substring gathering after projection pruning. It cut isolated allocations and
+copying substantially, but the release end-to-end grid did not establish a reliable speedup;
+a controlled repeat improved substring time 2.7% while the unchanged control improved 1.4%.
+The extra execution path was rejected. Calc retains the pruned filtering path described above.
+
+The [decision and measurements](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/249-deferred-calc-filtering.md)
+record the microbenchmark, full selectivity/payload grid, controlled repeat and reopening criteria.
+The `calc_selection` Criterion diagnostic and `CalcSelectionBenchmark` whole-job harness remain
+for reproduction. The investigation also found a COALESCE failure-parity gap; known fallible
+operands now use the existing generated Flink evaluator, as documented on the
+[Calc coverage page](../operators/calc-filter.md).

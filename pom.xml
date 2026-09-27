@@ -814,6 +814,22 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+            <id>stateful-recovery-stress</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <streamfusion.test.recoveryStress>true</streamfusion.test.recoveryStress>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Build and load the production native library. The allocator feature is part of the
              measured default: it removes the cross-thread allocation bottleneck in the native
              Kafka path and also reduces native state churn. -->

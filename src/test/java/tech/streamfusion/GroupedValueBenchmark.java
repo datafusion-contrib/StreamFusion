@@ -21,17 +21,23 @@ class GroupedValueBenchmark {
   private static final int WARMUP = Integer.getInteger("grouped.value.warmup", 2);
   private static final int RUNS = Integer.getInteger("grouped.value.runs", 5);
   private static final boolean DISTINCT = Boolean.getBoolean("grouped.value.distinct");
+  private static final boolean SINGLE = Boolean.getBoolean("grouped.value.single");
   private static final String SQL =
-      "INSERT INTO sink SELECT k, FIRST_VALUE("
-          + (DISTINCT ? "DISTINCT " : "")
-          + "v), LAST_VALUE("
-          + (DISTINCT ? "DISTINCT " : "")
-          + "v) FROM inputs GROUP BY k";
+      SINGLE
+          ? "INSERT INTO sink SELECT k, SINGLE_VALUE(v) FROM inputs GROUP BY k"
+          : "INSERT INTO sink SELECT k, FIRST_VALUE("
+              + (DISTINCT ? "DISTINCT " : "")
+              + "v), LAST_VALUE("
+              + (DISTINCT ? "DISTINCT " : "")
+              + "v) FROM inputs GROUP BY k";
 
   @Test
   void groupedValues() throws Exception {
-    for (boolean string : (DISTINCT ? new boolean[] {true} : new boolean[] {false, true})) {
-      String plan = NativePlanner.explain(environment(string), SQL);
+    if (DISTINCT && SINGLE) throw new IllegalArgumentException("Select DISTINCT first/last or SINGLE_VALUE");
+    for (String type :
+        System.getProperty("grouped.value.types", SINGLE || DISTINCT ? "STRING" : "BIGINT,STRING")
+            .split(",")) {
+      String plan = NativePlanner.explain(environment(type), SQL);
       if (!plan.contains("NativeColumnarGroupAggregate")
           || !plan.contains("RowDataToArrow")
           || !plan.contains("ArrowToRowData")) {
@@ -41,7 +47,7 @@ class GroupedValueBenchmark {
       for (int trial = 0; trial < WARMUP + RUNS; trial++) {
         for (int turn = 0; turn < 2; turn++) {
           int engine = (trial + turn) % 2;
-          TableEnvironment table = environment(string);
+          TableEnvironment table = environment(type);
           PhysicalPlanScan scan = engine == 1 ? NativePlanner.install(table) : null;
           long start = System.nanoTime();
           table.executeSql(SQL).await();
@@ -56,10 +62,11 @@ class GroupedValueBenchmark {
       double nativeTime = median(times[1]);
       System.out.printf(
           Locale.ROOT,
-          "[grouped-value] distinct=%s string=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx "
-              + "flink_trials=%s native_trials=%s%n",
+          "[grouped-value] distinct=%s single=%s type=%s rows=%d Flink=%.6fs"
+              + " Native=%.6fs ratio=%.3fx flink_trials=%s native_trials=%s%n",
           DISTINCT,
-          string,
+          SINGLE,
+          type,
           ROWS,
           host,
           nativeTime,
@@ -76,31 +83,50 @@ class GroupedValueBenchmark {
     return sorted.length % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
   }
 
-  private static TableEnvironment environment(boolean string) {
+  private static TableEnvironment environment(String type) {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
-    var dataType = string ? DataTypes.STRING() : DataTypes.BIGINT();
+    var dataType =
+        switch (type) {
+          case "STRING" -> DataTypes.STRING();
+          case "BIGINT" -> DataTypes.BIGINT();
+          case "TIME" -> DataTypes.TIME(3);
+          case "BOOLEAN" -> DataTypes.BOOLEAN();
+          default ->
+              throw new IllegalArgumentException("Unknown grouped.value.types entry: " + type);
+        };
+    var valueType =
+        switch (type) {
+          case "STRING" -> Types.STRING;
+          case "TIME" -> Types.LOCAL_TIME;
+          case "BOOLEAN" -> Types.BOOLEAN;
+          default -> Types.LONG;
+        };
     table.createTemporaryView(
         "inputs",
         env.fromSequence(0, ROWS - 1)
             .map(
                 i ->
                     Row.of(
-                        (int) (i % 64),
-                        i / 64 % 8 == 0 ? null : string ? "value-" + (i % 1024) : i % 1024))
-            .returns(
-                Types.ROW_NAMED(
-                    new String[] {"k", "v"}, Types.INT, string ? Types.STRING : Types.LONG)),
+                        SINGLE ? i.intValue() : (int) (i % 64),
+                        i / 64 % 8 == 0
+                            ? null
+                            : switch (type) {
+                              case "STRING" -> "value-" + (i % 1024);
+                              case "TIME" -> java.time.LocalTime.ofNanoOfDay(i % 1024 * 1_000_000);
+                              case "BOOLEAN" -> i / 64 % 2 == 0;
+                              default -> i % 1024;
+                            }))
+            .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.INT, valueType)),
         Schema.newBuilder().column("k", DataTypes.INT()).column("v", dataType).build());
-    String type = dataType.getLogicalType().asSerializableString();
+    String sqlType = dataType.getLogicalType().asSerializableString();
     table.executeSql(
         "CREATE TABLE sink (k INT, first_v "
-            + type
-            + ", last_v "
-            + type
+            + sqlType
+            + (SINGLE ? "" : ", last_v " + sqlType)
             + ") WITH ('connector' = 'blackhole')");
     return table;
   }
