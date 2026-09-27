@@ -56,7 +56,45 @@ BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
 }
 
 
-def job_route(result):
+def linked_fallback_reasons(row, result):
+    graph = result.get('graph', {})
+    ids = graph.get('sql_translation_ids')
+    details = row.get('translation_details')
+    plans = row.get('plans')
+    if (graph.get('sql_translation_complete') is not True or not isinstance(ids, list) or not ids
+            or any(type(identity) is not int or identity < 0 for identity in ids)
+            or len(set(ids)) != len(ids) or not isinstance(details, list) or not isinstance(plans, list)):
+        return []
+    reasons = []
+    for identity in ids:
+        matches = [detail for detail in details if isinstance(detail, dict)
+                   and type(detail.get('id')) is int and detail['id'] == identity]
+        if len(matches) != 1 or matches[0].get('status') != 'TRANSLATED':
+            return []
+        if type(matches[0].get('root_count')) is not int or matches[0]['root_count'] <= 0:
+            return []
+        indices = matches[0].get('plan_indices')
+        if (not isinstance(indices, list) or not indices
+                or any(type(index) is not int or not 0 <= index < len(plans) for index in indices)
+                or len(set(indices)) != len(indices)):
+            return []
+        for index in indices:
+            plan = plans[index]
+            if not isinstance(plan, dict) or plan.get('during_translation') is not True:
+                return []
+            roots = plan.get('roots')
+            fallback = plan.get('fallback_reasons')
+            if (not isinstance(roots, list) or not roots
+                    or any(not isinstance(root, dict) or type(root.get('native_operators')) is not int
+                           or root['native_operators'] != 0 for root in roots)
+                    or not isinstance(fallback, list) or not fallback
+                    or any(not isinstance(reason, str) or not reason.strip() for reason in fallback)):
+                return []
+            reasons.extend(fallback)
+    return list(dict.fromkeys(reasons))
+
+
+def job_route(result, row=None):
     graph = result.get('graph')
     confirmed_failure = (result['status'] == 'RESULT_FAILED'
                          and result.get('job_status') == 'FAILED'
@@ -96,6 +134,8 @@ def job_route(result):
         return 'batch_host_only'
     if classes <= SOURCE_OPERATORS | SINK_OPERATORS and classes & SOURCE_OPERATORS and classes & SINK_OPERATORS:
         return 'scan_only'
+    if row is not None and linked_fallback_reasons(row, result):
+        return 'full_fallback'
     return 'host_only'
 
 
@@ -106,15 +146,17 @@ def classify(row, partition_valid):
     if (not partition_valid or not jobs or row.get('unattributed_native_work')
             or row.get('unmatched_native_jobs')):
         return 'unclassified'
-    routes = {job_route(result) for result in jobs.values()}
+    routes = {job_route(result, row) for result in jobs.values()}
     if 'unclassified' in routes:
         return 'unclassified'
     if routes == {'host_only'}:
         return 'unclassified'
     if len(routes) == 1:
         return routes.pop()
-    if routes <= {'native', 'mixed', 'scan_only'}:
+    if routes <= {'full_fallback', 'scan_only'}:
+        return 'full_fallback'
+    if routes <= {'native', 'mixed', 'scan_only', 'full_fallback'}:
         return 'mixed'
-    if 'host_failure' in routes and routes <= {'host_failure', 'batch_host_only', 'scan_only', 'host_only'}:
+    if 'host_failure' in routes and routes <= {'host_failure', 'batch_host_only', 'scan_only', 'host_only', 'full_fallback'}:
         return 'host_failure'
     return 'unclassified'

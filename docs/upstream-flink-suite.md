@@ -243,8 +243,8 @@ actual transformation objects against those returned roots. The submitted graph 
 `sql_translation_ids` and `sql_translation_complete`; completeness requires every pipeline input
 to have one observed origin and every root of each selected translation to be included. Partial,
 missing and ambiguous matches stay explicitly incomplete. These links are scoped to the current
-invocation and are not inferred from which plan was recorded most recently. They are retained for
-full-fallback and deliberately unmodified route classification, which remain pending.
+invocation and are not inferred from which plan was recorded most recently. Full-fallback routes
+use these links; deliberately unmodified route classification remains pending.
 
 Direct DataStream submission also records links at stream-graph generation. The observer follows
 transformation inputs from terminal roots and requires every input path to reach an observed SQL
@@ -264,7 +264,7 @@ counts and requires the associated, unmatched and unattributed counters to sum e
 invocation total. An unmatched job ID cannot also appear among submitted jobs. Invalid partitions
 fail the join before it publishes any exact case associations.
 
-The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `scan_only`,
+The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `full_fallback`, `scan_only`,
 `batch_host_only` and `host_failure`; unresolved evidence remains `unclassified`.
 Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
 every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` for every graph node,
@@ -293,6 +293,14 @@ native work keep the entire invocation unclassified. Batch/streaming mixtures re
 These are execution observations, independent of JUnit success and existing contract verdicts;
 they do not replace the published planning/admission labels.
 
+`full_fallback` requires a successful host-only streaming job with a complete translation link.
+Every linked translation must have succeeded, and every referenced physical-plan observation
+must come from translation, contain only host roots and record nonempty fallback reasons.
+Missing, duplicate or invalid translation identities, absent reasons, EXPLAIN-only plans and
+native plan roots cannot establish this route. `runtime_fallback_reasons` retains the validated
+reasons by job ID. Native and full-fallback jobs in the same invocation produce `mixed`; a
+full-fallback job alongside a scan-only job remains full fallback.
+
 For direct summary calls, use `--sql-inventory <directory> --flink-line 2.2` (or `1.18`).
 Add repeatable `--require-runtime-route-prefix <class#method-prefix>` options to declare the
 scope that must have classified runtime evidence. Every matching parameterized case must be
@@ -312,6 +320,9 @@ translation-to-pipeline link, zero native work and a `batch_host_only` route. Th
 summary check passes. Its source-conversion and Calc nodes use generated names without a package
 prefix; their Flink factory establishes host origin. This is one batch execution check, not
 native SQL coverage or a claim that the entire batch suite has been audited.
+The same unchanged test and required scope also pass on Flink 1.18.1: one successful batch
+invocation and complete translation link. Its separate job-status request was unavailable;
+that error remains visible and does not replace the completed execution result.
 
 The unchanged Flink 2.2.1 `stream.sql.CalcITCase#testLongProjectionList` also passes its explicit
 runtime audit scope: one invocation, one successful job and three native Calc input rows matched
@@ -322,10 +333,21 @@ operators; the existing native contract remains satisfied. This fixture submits 
 DataStream directly, bypassing SQL executor pipeline creation. A rerun verifies a complete link
 to translation 0 through `transformation_inputs`, while preserving the same three job-associated
 native rows. Finer boundary classification remains pending.
+The same streaming contract and required scope pass on Flink 1.18.1 with one invocation, three
+job-associated native rows and a complete direct-submission translation link.
+
+The unchanged Flink 2.2.1 `stream.table.CalcITCase#testInlineScalarFunction` verifies full
+fallback for both HEAP and ROCKSDB variants: two passed invocations and two completed host jobs,
+each linked to `Calc: unsupported function/operator: AS`, with zero native work. Both the existing
+fallback contracts and the required runtime route prefix pass.
+The same two variants and required route prefix pass on Flink 1.18.1 with the same reason.
+Those two invocations have no legacy method contract on 1.18; their runtime classification comes
+from completed job and linked translation evidence. Across these three selected methods the
+runtime denominator is four passed invocations per released line, not the full upstream suite.
 
 Outside the declared contracts, cases without the runtime evidence above remain
 unclassified. The artifact does not infer routes from test class names or JUnit outcomes.
-Deliberately unmodified and full-fallback classifications and broader per-invocation collection remain
+Deliberately unmodified classification and broader per-invocation collection remain
 [#168](https://github.com/datafusion-contrib/StreamFusion/issues/168). Agent unit-test output is
 outside the suite's report/evidence directories and contributes no SQL cases. The summary writes
 failed artifacts for missing or malformed reports/evidence and retains process failures; an

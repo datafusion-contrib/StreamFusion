@@ -147,8 +147,8 @@ class ExecutionAuditTest(unittest.TestCase):
             identity = str(uuid.uuid4())
             record = dict(schema_version=1, flink_line="2.2", invocation_id=identity,
                           junit_id="junit-" + identity, display_name=case.get("name"),
-                          planners=[], plans=[], translations=[], sql=[], operation_failures=[],
-                          **observation)
+                          planners=[], plans=[], translations=[], sql=[], operation_failures=[])
+            record.update(observation)
             (directory / (identity + ".json")).write_text(json.dumps(record))
             ET.SubElement(case, "system-out").text = "StreamFusion SQL inventory: " + identity
         tree.write(self.reports / "TEST-fixture.xml")
@@ -243,6 +243,43 @@ class ExecutionAuditTest(unittest.TestCase):
                     unmatched_native_jobs={}, jobs={"batch-job": {"status": "SUCCEEDED",
                     "graph": {"job_type": "BATCH", "nodes": [{"operator_class":
                     "org.apache.flink.streaming.api.operators.StreamMap"}]}}})
+
+    def test_full_fallback_requires_reasons_from_the_submitted_translation(self):
+        self.cases(("Fallback#query", "passed"))
+        record = self.batch_observation()
+        record['jobs']['batch-job']['graph'].update(
+            job_type='STREAMING', sql_translation_complete=True, sql_translation_ids=[0])
+        reason = 'Calc: unsupported function/operator: AS'
+        record.update(translation_details=[dict(id=0, status='TRANSLATED', root_count=1, plan_indices=[0])],
+                      plans=[dict(during_translation=True, substitutions=0, operators=[],
+                                  roots=[dict(native_operators=0, operators=['StreamPhysicalCalc'])],
+                                  fallback_reasons=[reason])])
+        args = self.inventory(record)
+        status, audit = self.run_audit(*args, '--require-runtime-route-prefix', 'Fallback#')
+        self.assertEqual(0, status)
+        self.assertEqual('full_fallback', audit['testcases'][0]['runtime_route'])
+        self.assertEqual({'batch-job': [reason]}, audit['testcases'][0]['runtime_fallback_reasons'])
+        path = next((self.root / 'inventory').glob('*.json'))
+        raw = json.loads(path.read_text())
+        for change in (
+                lambda r: r['jobs']['batch-job']['graph'].update(sql_translation_complete=False),
+                lambda r: r['jobs']['batch-job']['graph'].update(sql_translation_ids=[1]),
+                lambda r: r['jobs']['batch-job']['graph'].update(sql_translation_ids=[0, 0]),
+                lambda r: r['translation_details'][0].update(status='FAILED'),
+                lambda r: r['translation_details'][0].update(root_count=0),
+                lambda r: r['translation_details'][0].update(plan_indices=[1]),
+                lambda r: r['translation_details'][0].update(plan_indices=[0, 0]),
+                lambda r: r['plans'][0].update(during_translation=False),
+                lambda r: r['plans'][0].update(fallback_reasons=[]),
+                lambda r: r['plans'][0]['roots'][0].update(native_operators=1)):
+            import copy
+            modified = copy.deepcopy(raw)
+            change(modified)
+            path.write_text(json.dumps(modified))
+            status, audit = self.run_audit(*args, '--require-runtime-route-prefix', 'Fallback#')
+            self.assertEqual(1, status)
+            self.assertEqual('unclassified', audit['testcases'][0]['runtime_route'])
+            self.assertEqual({}, audit['testcases'][0]['runtime_fallback_reasons'])
 
     def test_completed_batch_route_has_exact_denominator_and_explicit_scope(self):
         self.cases(("Batch#query[heap]", "passed"), ("Skipped#query", "skipped"),

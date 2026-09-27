@@ -61,6 +61,10 @@ def attach(audit: dict, reports: Path, inventory: Path, line: str) -> None:
                     translation_details=row.get('translation_details'),
                     unattributed_native_work=row.get('unattributed_native_work'),
                     unmatched_native_jobs=row.get('unmatched_native_jobs'),
+                    runtime_fallback_reasons={
+                        job: execution_routes.linked_fallback_reasons(row, result)
+                        for job, result in (row.get('jobs') or {}).items()
+                        if execution_routes.job_route(result, row) == 'full_fallback'},
                     runtime_route=execution_routes.classify(row, partition_valid))
         for witness in bound:
             witness.update(invocation_id=row['invocation_id'], report=row['report'],
