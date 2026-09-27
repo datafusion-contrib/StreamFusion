@@ -114,3 +114,30 @@ For multi-key SQL validation, also check local group emission order: Flink's bun
 keys in a HashMap and emits that map's entries, while the native local currently emits
 first-appearance order. This can change which partials share a count-triggered global
 bundle. A single-key fixture cannot prove the complete buffered contract for multiple keys.
+
+## End-to-end group emission probe
+
+A temporary widening of the two local admission predicates to precision 38 ran separate
+SUM DISTINCT and AVG DISTINCT queries with COUNT(*) through both native stages on released
+Flink 2.2.1. Unshuffled arrivals passed for (key count, bundle size) pairs (1,3), (1,5),
+(1,64), (7,3), (7,5), (7,64), (2,5), (3,5), (7,17). Each group received three repetitions
+of [9e37, 9e37-3, -9e37, NULL]; latency was one hour to isolate count-triggered bundles.
+
+Shuffling the rows with Java Random seeds 0 through 7 for (2,5), (3,5), (7,17), (17,31)
+failed 14 of 32 parameter cases, comparing collapsed final results, not just output order.
+For example, (2,5,1) returned SUM 9e37-3 for one host group but -9e37 natively.
+
+A diagnostic native flush sorted the first-appearance INT groups by their released-compatible
+BinaryRow hash spread (`h ^ (h >>> 16)`) and final HashMap bucket index, retaining arrival order
+within a bucket. Capacity started at 16 and doubled at 75% occupancy. With only that change,
+all 32 shuffled cases passed, each checking SUM and AVG separately. This establishes local
+group emission as an observable part of the global decimal merge contract. The diagnostic
+sort and widened gate were then removed: sorting final buckets is insufficient for collision
+trees and has not established the full key-type contract. Implement the complete ordering
+model before admission; do not replace the native Arrow key encoding with BinaryRow bytes.
+
+`FlinkWideDecimalGroupOrderSqlHarnessTest` retains four failing configurations as fallback
+regressions with runtime input and explicit local/global host-plan assertions. They can become
+native parity regressions when the ordering implementation is complete. A combined SUM+AVG
+query over the same decimal argument rewrites to DISTINCT SUM0 in this host and was excluded
+from the isolated transport probe because that aggregate form already falls back.
