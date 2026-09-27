@@ -317,6 +317,30 @@ case fails the summary and retains the failed artifact. The artifact records the
 and `testcases_by_runtime_route` counts over the complete JUnit denominator, including skips
 and cases outside the selected scope. Contract-scope counts remain separate.
 
+Use `--runtime-route-scope <json>` to require exact fixture variants instead of entire method
+prefixes. The versioned scope declares a Flink line and cases with canonical `test` method,
+exact JUnit `display_name`, positive `count` and expected `route`. Missing or duplicate variants,
+wrong routes, unclassified evidence and invalid/wrong-line scopes fail the summary. The audit
+embeds every requirement and the matched invocation identities, while retaining all other cases
+in its complete denominator.
+
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require the five
+verified runtime variants described below. Run them with:
+
+```sh
+FLINK_VERSION=2.2.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
+FLINK_VERSION=1.18.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
+```
+
+The option selects the four upstream methods, enables fresh SQL inventory collection/reporting,
+and applies the appropriate scope automatically. Add `FLINK_SUITE_REUSE_BUILD=true` after a
+compatible suite build. A custom `FLINK_SUITE_TEST` selection must still satisfy every required
+variant; omitted variants fail. The audit option requires the runtime suite and cannot be combined
+with runtime sharding. The commands retain complete reports, inventory and the execution audit
+under the suite workspace; requiring these scopes in CI remains pending.
+Both bundled commands have been verified against the unchanged released suites: each reports
+seven passed cases, all five required variants matched, and two unclassified early returns.
+
 Broader route classification and verified upstream scopes remain part of #168; the
 published inventory remains a planning/admission report. Agent and Python tests verify the
 collection/linkage paths with synthetic observations, not additional upstream SQL coverage.

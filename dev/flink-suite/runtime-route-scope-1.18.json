@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "flink_line": "1.18",
+  "cases": [
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar",
+      "display_name": "testSelectStar()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLongProjectionList",
+      "display_name": "testLongProjectionList",
+      "count": 1,
+      "route": "mixed"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testInlineScalarFunction",
+      "display_name": "testInlineScalarFunction[StateBackend=HEAP]",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testInlineScalarFunction",
+      "display_name": "testInlineScalarFunction[StateBackend=ROCKSDB]",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.api.TableEnvironmentITCase#testFromToDataStreamAndExecuteSql",
+      "display_name": "testFromToDataStreamAndExecuteSql[StreamTableEnvironment:isStream=true]",
+      "count": 1,
+      "route": "unmodified_plan"
+    }
+  ]
+}

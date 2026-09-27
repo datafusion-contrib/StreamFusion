@@ -302,6 +302,26 @@ class ExecutionAuditTest(unittest.TestCase):
         self.assertEqual(1, status)
         self.assertEqual('unclassified', audit['testcases'][0]['runtime_route'])
 
+    def test_variant_scope_is_enforced_in_the_summary_artifact(self):
+        self.cases(('Batch#query', 'passed'), ('Batch#query', 'passed'))
+        selected = self.batch_observation()
+        selected['display_name'] = 'selected'
+        args = self.inventory(selected, dict(native_work={}, execution_contracts=[], display_name='other'))
+        scope = self.root / 'scope.json'
+        requirement = dict(test='Batch#query', display_name='selected', count=1, route='batch_host_only')
+        scope.write_text(json.dumps(dict(schema_version=1, flink_line='2.2', cases=[requirement])))
+        status, audit = self.run_audit(*args, '--runtime-route-scope', str(scope))
+        self.assertEqual(0, status)
+        self.assertEqual(1, len(audit['scope']['runtime_route_scope']['selected_cases']))
+        self.assertEqual(2, audit['summary']['tests'])
+        status, audit = self.run_audit('--runtime-route-scope', str(scope))
+        self.assertEqual(1, status)
+        self.assertTrue(any('requires --sql-inventory' in p for p in audit['validation_problems']))
+        scope.write_text('[]')
+        status, audit = self.run_audit(*args, '--runtime-route-scope', str(scope))
+        self.assertEqual(1, status)
+        self.assertEqual('failed', audit['status'])
+
     def test_completed_batch_route_has_exact_denominator_and_explicit_scope(self):
         self.cases(("Batch#query[heap]", "passed"), ("Skipped#query", "skipped"),
                    ("Other#query", "passed"))

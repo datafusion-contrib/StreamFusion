@@ -61,6 +61,23 @@ readonly UNSHADED_BRIDGE_POM="${SUITE_ROOT}/flink-table-calcite-bridge-${FLINK_V
 readonly UNSHADED_SQL_PARSER_JAR="${SUITE_ROOT}/flink-sql-parser-${FLINK_VERSION}-unshaded.jar"
 readonly UNSHADED_SQL_PARSER_POM="${SUITE_ROOT}/flink-sql-parser-${FLINK_VERSION}-effective.pom"
 readonly SUITE_MODE="${1:-runtime}"
+RUNTIME_AUDIT_SCOPE=""
+if [[ "${FLINK_SUITE_RUNTIME_AUDIT:-false}" == "true" ]]; then
+  if [[ "${SUITE_MODE}" != "runtime" ]]; then
+    echo "FLINK_SUITE_RUNTIME_AUDIT requires the runtime suite." >&2
+    exit 2
+  fi
+  RUNTIME_AUDIT_SCOPE="${REPO_ROOT}/dev/flink-suite/runtime-route-scope-${FLINK_LINE}.json"
+  if [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
+    FLINK_SUITE_TEST="$(python3 - "${RUNTIME_AUDIT_SCOPE}" <<'PYTHON'
+import json, sys
+scope = json.load(open(sys.argv[1]))
+print(','.join(dict.fromkeys(case['test'] for case in scope['cases'])))
+PYTHON
+)" || exit $?
+  fi
+fi
+readonly RUNTIME_AUDIT_SCOPE
 if [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then
   case "${FLINK_SUITE_SHARD}" in
     1|2|3|4) ;;
@@ -81,7 +98,7 @@ readonly CONTRACT_FILE="${AGENT_ROOT}/src/main/resources/native-execution${CONTR
 readonly NATIVE_REPORT_ROOT="${SUITE_ROOT}/native-execution/${SUITE_MODE}"
 readonly DIAGNOSTIC_ROOT="${SUITE_ROOT}/diagnostics/${SUITE_MODE}"
 SQL_INVENTORY_CONFIG=""
-if [[ "${FLINK_SUITE_SQL_INVENTORY:-false}" == "true" ]]; then
+if [[ "${FLINK_SUITE_SQL_INVENTORY:-false}" == "true" || -n "${RUNTIME_AUDIT_SCOPE}" ]]; then
   SQL_INVENTORY_CONFIG="-Dstreamfusion.flink-suite.sql-inventory=${DIAGNOSTIC_ROOT}/sql-inventory"
 fi
 readonly FLINK_MODULE_CONFIG="${SQL_INVENTORY_CONFIG} -Dstreamfusion.flink-suite.native-rocksdb=${NATIVE_STATE_SUITE} -Dstreamfusion.flink-suite.flink-line=${FLINK_LINE} -Duser.timezone=UTC -Djava.library.path=${STREAMFUSION_BUILD_ROOT}/native/target/debug --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Djunit.platform.reflection.search.useLegacySemantics=true -javaagent:${AGENT_JAR}"
@@ -481,7 +498,7 @@ readonly STREAMFUSION_CLASSPATH
 echo "Running the upstream Flink ${SUITE_MODE} suite with StreamFusion enabled..."
 mkdir -p "${NATIVE_REPORT_ROOT}"
 mkdir -p "${DIAGNOSTIC_ROOT}"
-if [[ "${FLINK_SUITE_SQL_INVENTORY:-false}" == "true" ]]; then
+if [[ -n "${SQL_INVENTORY_CONFIG}" ]]; then
   mkdir -p "${DIAGNOSTIC_ROOT}/sql-inventory"
   find "${DIAGNOSTIC_ROOT}/sql-inventory" -type f -name '*.json' -delete
 fi
@@ -640,7 +657,7 @@ fi
 readonly TEST_STATUS=$?
 
 INVENTORY_STATUS=0
-if [[ "${FLINK_SUITE_SQL_INVENTORY:-false}" == "true" ]]; then
+if [[ -n "${SQL_INVENTORY_CONFIG}" ]]; then
   python3 "${REPO_ROOT}/dev/flink-suite/sql_inventory.py" \
     --reports "${REPORT_ROOT}" --evidence "${DIAGNOSTIC_ROOT}/sql-inventory" \
     --line "${FLINK_LINE}" --suite "${SUITE_MODE}" \
@@ -688,6 +705,9 @@ SUMMARY_ARGS=("${REPORT_ROOT}" --contracts "${CONTRACT_FILE}" --native-reports "
   --audit-output "${DIAGNOSTIC_ROOT}/execution-audit.json")
 if [[ -n "${SQL_INVENTORY_CONFIG}" ]]; then
   SUMMARY_ARGS+=(--sql-inventory "${DIAGNOSTIC_ROOT}/sql-inventory" --flink-line "${FLINK_LINE}")
+fi
+if [[ -n "${RUNTIME_AUDIT_SCOPE}" ]]; then
+  SUMMARY_ARGS+=(--runtime-route-scope "${RUNTIME_AUDIT_SCOPE}")
 fi
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
   SUMMARY_ARGS+=(--maven-result "${DIAGNOSTIC_ROOT}/maven-result.tsv")

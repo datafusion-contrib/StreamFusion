@@ -189,6 +189,7 @@ def main() -> int:
     parser.add_argument("--sql-inventory", type=pathlib.Path)
     parser.add_argument("--flink-line", choices=("2.2", "1.18"))
     parser.add_argument("--require-runtime-route-prefix", action="append", default=[])
+    parser.add_argument("--runtime-route-scope", type=pathlib.Path)
     args = parser.parse_args()
 
     audit = empty_audit()
@@ -295,6 +296,15 @@ def main() -> int:
         except (ValueError, KeyError, TypeError, OSError, ET.ParseError) as failure:
             execution_problems.append(f"Invalid invocation execution join: {failure}")
     audit["scope"]["required_runtime_route_prefixes"] = args.require_runtime_route_prefix
+    if args.runtime_route_scope:
+        try:
+            if not args.sql_inventory:
+                raise ValueError("--runtime-route-scope requires --sql-inventory")
+            import execution_scope
+            execution_problems.extend(execution_scope.validate(
+                audit, args.runtime_route_scope, args.flink_line))
+        except (ValueError, TypeError, OSError) as failure:
+            execution_problems.append(f"Invalid runtime route scope: {failure}")
     for prefix in args.require_runtime_route_prefix:
         selected = [case for case in audit["testcases"] if case["test"].startswith(prefix)]
         if not prefix or not selected:
