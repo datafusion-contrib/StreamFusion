@@ -78,6 +78,49 @@ class FlinkDistinctAverageSqlHarnessTest {
         retract, "SELECT AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT d) FROM src WHERE k < 0");
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT CAST(d AS DECIMAL(19,2))),"
+            + " COUNT(*) FROM src GROUP BY k",
+        "SELECT k, AVG(DISTINCT b), COUNT(DISTINCT b), SUM(DISTINCT b), AVG(t), COUNT(DISTINCT t)"
+            + " FROM src GROUP BY k",
+        "SELECT k, AVG(DISTINCT t) FILTER (WHERE keep), AVG(DISTINCT t) FILTER (WHERE NOT keep),"
+            + " AVG(DISTINCT CAST(d AS DECIMAL(19,2))) FILTER (WHERE keep), COUNT(*) FROM src GROUP"
+            + " BY k",
+        "SELECT AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT CAST(d AS DECIMAL(19,2))) FROM src",
+        "SELECT AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT CAST(d AS DECIMAL(19,2))) FROM src"
+            + " WHERE k < 0"
+      })
+  void twoPhaseAveragesMergeDistinctViews(String sql) throws Exception {
+    Supplier<TableEnvironment> source = () -> twoPhaseEnvironment(false);
+    String plan = NativePlanner.explain(source.get(), sql);
+    assertTrue(plan.contains("NativeColumnarLocalGroupAggregate"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+    NativeParity.assertChangelogParity(source, sql);
+  }
+
+  @org.junit.jupiter.api.Test
+  void twoPhaseWideDecimalAndRetractingDistinctKeepFallback() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        () -> twoPhaseEnvironment(false),
+        "SELECT k, AVG(DISTINCT d) FROM src GROUP BY k",
+        "DECIMAL precision <= 19");
+    NativeParity.assertFallbackReasonContains(
+        () -> twoPhaseEnvironment(true),
+        "SELECT k, AVG(DISTINCT b) FROM src GROUP BY k",
+        "retracting merge admits COUNT and AVG only");
+  }
+
+  private static TableEnvironment twoPhaseEnvironment(boolean retract) {
+    var table = environment(retract, 6);
+    table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+    table.getConfig().set("table.exec.mini-batch.enabled", "true");
+    table.getConfig().set("table.exec.mini-batch.allow-latency", "100 ms");
+    table.getConfig().set("table.exec.mini-batch.size", "5");
+    return table;
+  }
+
   private static void compare(boolean retract, String sql) throws Exception {
     Supplier<TableEnvironment> source = () -> environment(retract);
     String plan = NativePlanner.explain(source.get(), sql);
@@ -86,6 +129,10 @@ class FlinkDistinctAverageSqlHarnessTest {
   }
 
   private static TableEnvironment environment(boolean retract) {
+    return environment(retract, 1);
+  }
+
+  private static TableEnvironment environment(boolean retract, int repetitions) {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
@@ -99,6 +146,10 @@ class FlinkDistinctAverageSqlHarnessTest {
                 row(RowKind.INSERT, 1, 9, 3L, "9.04", true),
                 Row.of(1, null, null, null, null),
                 Row.of(2, null, null, null, true)));
+    if (!retract && repetitions > 1) {
+      var seed = new ArrayList<>(rows);
+      for (int i = 1; i < repetitions; i++) rows.addAll(seed);
+    }
     if (retract)
       rows.addAll(
           List.of(

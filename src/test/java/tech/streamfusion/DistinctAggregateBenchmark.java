@@ -21,10 +21,12 @@ class DistinctAggregateBenchmark {
   private static final int WARMUP = Integer.getInteger("distinct.warmup", 2);
   private static final int RUNS = Integer.getInteger("distinct.runs", 5);
   private static final boolean AVERAGE = Boolean.getBoolean("distinct.average");
+  private static final boolean TWO_PHASE =
+      Boolean.parseBoolean(System.getProperty("distinct.twoPhase", Boolean.toString(!AVERAGE)));
   private static final String SQL =
       AVERAGE
           ? "INSERT INTO sink SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT amount) FROM"
-                + " src GROUP BY k"
+              + " src GROUP BY k"
           : "INSERT INTO sink SELECT k, COUNT(DISTINCT b), COUNT(DISTINCT ts),"
               + " SUM(DISTINCT amount) FROM src GROUP BY k";
 
@@ -34,7 +36,7 @@ class DistinctAggregateBenchmark {
     if (!plan.contains("NativeColumnarGroupAggregate")
         || !plan.contains("RowDataToArrow")
         || !plan.contains("ArrowToRowData")
-        || !AVERAGE && !plan.contains("NativeColumnarLocalGroupAggregate")) {
+        || TWO_PHASE && !plan.contains("NativeColumnarLocalGroupAggregate")) {
       throw new IllegalStateException("Expected native aggregation and both transposes: " + plan);
     }
     double[][] times = new double[2][RUNS];
@@ -54,9 +56,10 @@ class DistinctAggregateBenchmark {
     }
     System.out.printf(
         Locale.ROOT,
-        "[distinct-aggregate] average=%s rows=%d Flink=%.6fs Native=%.6fs flink_trials=%s"
-            + " native_trials=%s%n",
+        "[distinct-aggregate] average=%s two_phase=%s rows=%d Flink=%.6fs Native=%.6fs"
+            + " flink_trials=%s native_trials=%s%n",
         AVERAGE,
+        TWO_PHASE,
         ROWS,
         median(times[0]),
         median(times[1]),
@@ -76,8 +79,8 @@ class DistinctAggregateBenchmark {
     var table = StreamTableEnvironment.create(env);
     table
         .getConfig()
-        .set("table.optimizer.agg-phase-strategy", AVERAGE ? "ONE_PHASE" : "TWO_PHASE");
-    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(!AVERAGE));
+        .set("table.optimizer.agg-phase-strategy", TWO_PHASE ? "TWO_PHASE" : "ONE_PHASE");
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(TWO_PHASE));
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
     table.getConfig().set("table.exec.mini-batch.size", "1024");
     table.createTemporaryView(
@@ -118,7 +121,7 @@ class DistinctAggregateBenchmark {
                 .column("k", DataTypes.INT())
                 .column("t", DataTypes.TINYINT())
                 .column("b", DataTypes.BIGINT())
-                .column("amount", DataTypes.DECIMAL(20, 2))
+                .column("amount", DataTypes.DECIMAL(TWO_PHASE ? 19 : 20, 2))
                 .build()
             : Schema.newBuilder()
                 .column("k", DataTypes.INT())

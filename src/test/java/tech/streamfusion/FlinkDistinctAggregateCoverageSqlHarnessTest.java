@@ -20,6 +20,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDistinctAggregateCoverageSqlHarnessTest {
+  @org.junit.jupiter.api.Test
+  void ordinaryAverageBeforeDistinctKeepsViewOffsets() throws Exception {
+    compare(
+        9,
+        "SELECT k, AVG(amount), COUNT(DISTINCT ts), SUM(DISTINCT amount),"
+            + " COUNT(DISTINCT b) FROM src GROUP BY k");
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {20, 38})
   void wideDecimalDistinctSumKeepsHostMergeOrder(int precision) throws Exception {

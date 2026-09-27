@@ -63,7 +63,7 @@ final class GlobalGroupAggregateMatcher {
                   && kind != WindowAggregateMatcher.KIND_AVG))) {
         return "global group aggregate: a retracting merge admits COUNT and AVG only";
       }
-      // COUNT/SUM(DISTINCT x): the merge folds the local bundles' (value, count) view entries into
+      // COUNT/SUM/AVG(DISTINCT x): the merge folds the local bundles' (value, count) view entries into
       // the per-key distinct set — the positional partial (the bundle's count/sum) is carried but
       // not consumed, exactly as the host's distinct merge re-accumulates from the view. The value
       // type comes from the ORIGINAL local input (the call's args point into it). Same scope as the
@@ -73,13 +73,14 @@ final class GlobalGroupAggregateMatcher {
           return "global group aggregate: a distinct merge must have exactly one argument";
         }
         RelDataType value =
-            agg.localAggInputRowType()
-                .getFieldList()
-                .get(call.getArgList().get(0))
-                .getType();
+            agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType();
+        int width = kind == WindowAggregateMatcher.KIND_AVG ? 2 : 1;
+        if (offset + width > inputType.getFieldCount())
+          return "global group aggregate: incomplete distinct partials";
         RelDataType partial = inputType.getFieldList().get(offset).getType();
+        RelDataType count = width == 2 ? inputType.getFieldList().get(offset + 1).getType() : null;
         SqlTypeName partialType = partial.getSqlTypeName();
-        offset++;
+        offset += width;
         boolean countDistinct =
             kind == WindowAggregateMatcher.KIND_COUNT
                 && partialType == SqlTypeName.BIGINT
@@ -87,9 +88,19 @@ final class GlobalGroupAggregateMatcher {
         boolean sumDistinct =
             kind == WindowAggregateMatcher.KIND_SUM
                 && LocalGroupAggregateMatcher.supportedDistinctSumPartial(value, partial);
-        if (!countDistinct && !sumDistinct) {
+        RelDataType result = agg.getRowType().getFieldList().get(grouping.length + i).getType();
+        boolean averageDistinct =
+            kind == WindowAggregateMatcher.KIND_AVG
+                && LocalGroupAggregateMatcher.supportedDistinctAveragePartials(
+                    value, partial, count)
+                && (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+                    ? result.getSqlTypeName() == value.getSqlTypeName()
+                    : result.getSqlTypeName() == SqlTypeName.DECIMAL
+                        && result.getPrecision() == 38
+                        && result.getScale() == Math.max(6, value.getScale()));
+        if (!countDistinct && !sumDistinct && !averageDistinct) {
           return "global group aggregate: distinct merges are COUNT (over set-carriable value"
-              + " types) and SUM (over integers or DECIMAL precision <= 19)";
+              + " types) and SUM/AVG (over integers or DECIMAL precision <= 19)";
         }
         continue;
       }
@@ -240,12 +251,12 @@ final class GlobalGroupAggregateMatcher {
     return columns;
   }
 
-  /** Per-aggregate count-partial column for an AVG merge, -1 otherwise. */
+  /** Count-partial column for an ordinary AVG merge; DISTINCT merges read their view instead. */
   static int[] countColumns(StreamPhysicalGlobalGroupAggregate agg) {
     int[] columns = new int[agg.aggCalls().size()];
     int offset = agg.grouping().length;
     for (int i = 0; i < columns.length; i++) {
-      columns[i] = spanOf(agg, i) == 2 ? offset + 1 : -1;
+      columns[i] = spanOf(agg, i) == 2 && !agg.aggCalls().apply(i).isDistinct() ? offset + 1 : -1;
       offset += spanOf(agg, i);
     }
     return columns;
@@ -302,7 +313,7 @@ final class GlobalGroupAggregateMatcher {
 
   /**
    * Merge kinds: COUNT merges by summing its partial counts; AVG keeps the ordinary AVG state; a
-   * distinct COUNT/SUM keeps the distinct-set state (kind 7/9) fed from its view column.
+   * distinct COUNT/SUM/AVG keeps its distinct-set state fed from the view column.
    */
   static int[] kinds(StreamPhysicalGlobalGroupAggregate agg) {
     RelDataType inputType = agg.getInput().getRowType();
@@ -315,7 +326,9 @@ final class GlobalGroupAggregateMatcher {
         kinds[i] =
             kind == WindowAggregateMatcher.KIND_COUNT
                 ? LocalGroupAggregateMatcher.KIND_COUNT_DISTINCT
-                : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
+                : kind == WindowAggregateMatcher.KIND_AVG
+                    ? GroupAggregateMatcher.KIND_AVG_DISTINCT
+                    : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
       } else {
         // A MIN/MAX merge is only admitted without retraction (see unsupportedReason), so a
         // numeric one always runs as the plain running extreme — no retractable multiset.
