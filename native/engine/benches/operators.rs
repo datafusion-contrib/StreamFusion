@@ -17,6 +17,8 @@ use streamfusion::bench::{
     Normalize, Over, RetractTopN, Session, Tumbling, UniqueUpdatingJoin, WindowJoin,
 };
 
+mod typed_distinct;
+
 const ROWS: usize = 4096;
 
 fn single_i64(name: &str, values: Vec<i64>) -> RecordBatch {
@@ -1261,6 +1263,7 @@ criterion_group!(
     bench_local_group_by_logical_bundle,
     bench_local_group_by_extremes,
     bench_local_group_by_multi_distinct,
+    typed_distinct::bench_typed_distinct,
     bench_json_decode,
     bench_session_keyed,
     bench_over,
