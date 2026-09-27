@@ -447,7 +447,7 @@ repeated values across flushes, independently filtered/shared views, all-NULL gr
 input, and global aggregation. Native restore tests checkpoint the merged distinct state,
 then merge duplicate and new values without losing multiplicities or decimal result scale.
 This extends the existing insert-only split; retracting two-phase DISTINCT still falls back.
-The remaining wider-decimal two-phase AVG DISTINCT and ordered-value gaps are tracked in
+The remaining wider-decimal two-phase SUM/AVG DISTINCT gap is tracked in
 [#231](https://github.com/datafusion-contrib/StreamFusion/issues/231).
 
 Two-phase SUM/AVG DISTINCT over DECIMAL precision 20–38 remains on Flink. Decimal overflow can
@@ -456,7 +456,12 @@ A DECIMAL(38,0) runtime probe with `9e37`, `9e37 - 1`, and `-9e37` produced diff
 results in eight of twelve trials before the wider admission was removed. For precision at
 most 19, even the sum of every positive distinct unscaled value is below `5e37`; negative
 values have the same bound, so all subset sums fit DECIMAL(38) regardless of iteration order.
-The DECIMAL(20,2) two-phase case from #231 remains part of the open coverage gap.
+The DECIMAL(20,2) two-phase case from #231 remains part of the open coverage gap. A released-host
+regression also demonstrates that copying/serializing the same membership map can change
+its iteration order and overflow result. Flink's global stage first unions local views in
+a temporary map, then merges that map at bundle flush; immediate per-view folding is not
+equivalent for wide decimals. Matching only the local view order is insufficient. These
+ordering and buffering contracts must be preserved before widening the admission gate.
 
 The eight new SQL cases pass on Flink 2.2.1 and 1.18.1, along with the existing two-phase
 suite (28 cases on 2.2.1; 27 passed and one released-host capability skip on 1.18.1).
