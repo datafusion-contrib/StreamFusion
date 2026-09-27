@@ -406,6 +406,10 @@ public final class NativeUdf {
       }
       try (VectorSchemaRoot out = resultRoot(udf, rows)) {
         FieldVector result = out.getFieldVectors().get(0);
+        var timestampWriter =
+            udf.returnType == TYPE_TIMESTAMP_DATA
+                ? new tech.streamfusion.arrow.TimestampAccessor(result)
+                : null;
         var rowWriter =
             udf.returnType == TYPE_ROW
                 ? tech.streamfusion.arrow.ArrowConversion.createRowDataArrowWriter(
@@ -415,13 +419,16 @@ public final class NativeUdf {
                 : null;
         var rowResult =
             rowWriter == null ? null : new org.apache.flink.table.data.GenericRowData(1);
-        // Each argument column is materialized once with a monomorphic typed loop; reading value
-        // by value inside the row loop instead put a megamorphic isNull/type dispatch per (row,
-        // arg) on the hot path — 14% of q21's parity run in the vector interface calls alone.
-        Object[][] columns = new Object[arity][];
+        // Generated evaluators accept a borrowed Arrow row. Reflective UDFs retain their typed
+        // column loops: per-value vector dispatch previously cost 14% of q21's parity run.
+        tech.streamfusion.arrow.ArrowReader generatedReader =
+            udf.generated == null ? null
+                : tech.streamfusion.arrow.ArrowConversion.createArrowReader(
+                    in, org.apache.flink.table.types.logical.RowType.of(udf.generated.argumentTypes()));
+        Object[][] columns = generatedReader == null ? new Object[arity][] : null;
         tech.streamfusion.arrow.ArrowReader argumentReader = null;
         org.apache.flink.table.types.logical.LogicalType[] argumentTypes = null;
-        for (int a = 0; a < arity; a++) {
+        for (int a = 0; generatedReader == null && a < arity; a++) {
           if (udf.argTypes[a] == TYPE_INTERNAL) {
             if (argumentReader == null) {
               argumentTypes = ((InternalArguments) udf.function).argumentTypes();
@@ -454,7 +461,7 @@ public final class NativeUdf {
           Object value;
           if (udf.generated != null) {
             try {
-              value = udf.generated.evalColumns(columns, row);
+              value = udf.generated.evalRow(generatedReader.read(row));
             } catch (Throwable failure) {
               // Use the same exception handover as reflective calls, including checked failures.
               throw new InvocationTargetException(failure);
@@ -469,7 +476,9 @@ public final class NativeUdf {
             }
             value = udf.eval.invoke(udf.function, invokeArgs);
           }
-          if (rowWriter == null) {
+          if (timestampWriter != null) {
+            timestampWriter.set(row, (org.apache.flink.table.data.TimestampData) value);
+          } else if (rowWriter == null) {
             writeValue(result, udf.returnType, row, value);
           } else {
             rowResult.setField(0, value);
