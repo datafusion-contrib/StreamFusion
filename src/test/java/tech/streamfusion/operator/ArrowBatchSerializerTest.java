@@ -92,6 +92,66 @@ class ArrowBatchSerializerTest {
   }
 
   @Test
+  void ipcFramesLeaveFollowingRecordsUnreadIncludingLegacyFrames() throws Exception {
+    ArrowBatchSerializer serializer = new ArrowBatchSerializer();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      DataOutputSerializer encoded = new DataOutputSerializer(256);
+      serializer.serialize(
+          new ArrowBatch(RowDataArrowConverter.write(List.of(row(5, 6)), SCHEMA, allocator), 7),
+          encoded);
+      byte[] tagged = encoded.getCopyOfBuffer();
+      DataOutputSerializer records = new DataOutputSerializer(256);
+      // The legacy wire shape starts at the IPC length, after the tag and key group.
+      records.write(tagged, 8, tagged.length - 8);
+      records.write(tagged);
+      records.writeInt(0x12345678);
+      DataInputDeserializer input = new DataInputDeserializer(records.getCopyOfBuffer());
+      for (int keyGroup : new int[] {-1, 7}) {
+        ArrowBatch batch = serializer.deserialize(input);
+        assertEquals(keyGroup, batch.keyGroup());
+        try (VectorSchemaRoot root = batch.root()) {
+          assertEquals(5, RowDataArrowConverter.read(root, SCHEMA).get(0).getLong(0));
+        }
+      }
+      assertEquals(0x12345678, input.readInt());
+    }
+  }
+
+  @Test
+  void serializerReuseResetsGrowingAndShrinkingPayloads() throws Exception {
+    ArrowBatchSerializer serializer = new ArrowBatchSerializer();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      DataOutputSerializer output = new DataOutputSerializer(256);
+      for (int size : new int[] {1, 100_000, 2}) {
+        List<RowData> rows =
+            java.util.stream.IntStream.range(0, size).mapToObj(i -> row(size, i)).toList();
+        serializer.serialize(
+            new ArrowBatch(RowDataArrowConverter.write(rows, SCHEMA, allocator)), output);
+      }
+      DataInputDeserializer input = new DataInputDeserializer(output.getCopyOfBuffer());
+      for (int size : new int[] {1, 100_000, 2}) {
+        try (VectorSchemaRoot root = serializer.deserialize(input).root()) {
+          List<RowData> rows = RowDataArrowConverter.read(root, SCHEMA);
+          assertEquals(size, rows.size());
+          assertEquals(size, rows.get(0).getLong(0));
+          assertEquals(size - 1, rows.get(size - 1).getInt(1));
+        }
+      }
+    }
+  }
+
+  @Test
+  void truncatedIpcCannotReadIntoTheNextFrame() throws Exception {
+    DataOutputSerializer bytes = new DataOutputSerializer(32);
+    bytes.writeInt(1);
+    bytes.writeByte(0);
+    bytes.writeInt(0x12345678);
+    DataInputDeserializer input = new DataInputDeserializer(bytes.getCopyOfBuffer());
+    assertThrows(Exception.class, () -> new ArrowBatchSerializer().deserialize(input));
+    assertEquals(0x12345678, input.readInt());
+  }
+
+  @Test
   void zeroCopyHandsTheSameBatchAcrossTheWire() throws Exception {
     ArrowBatchSerializer serializer = new ArrowBatchSerializer(true);
     try (BufferAllocator allocator = new RootAllocator()) {

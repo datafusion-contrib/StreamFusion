@@ -70,3 +70,44 @@ watermark until all of its key-group fragments arrive.
 
 Partitioner copies retain their configured channel count. This is required by Flink 1.18's
 recovery filter, which sets up a partitioner before copying it and uses that copy directly.
+
+
+## Avoid full-payload heap copies in IPC transport
+
+The IPC serializer writes its serialization buffer directly to Flink's output view,
+avoiding `ByteArrayOutputStream.toByteArray()` and its full-payload copy. A serializer
+instance reuses that heap buffer after a successful write, starting at 4 KiB and
+retaining at most 1 MiB of capacity. Oversized or failed writes discard the buffer.
+Only encoded heap storage is reused; the input Arrow root still closes after encoding.
+This follows Comet's exposed/reusable shuffle serialization buffer pattern, with a
+retention limit because Flink duplicates serializers across edges.
+
+The reader exposes the framed input directly to Arrow instead of first allocating
+and filling a complete payload byte array. Reads cannot cross the declared frame
+length, and the remaining end-of-stream marker is consumed before returning a batch.
+The stream does not own or close Flink's input view. Legacy frames, key-group tags,
+ordered recovery metadata and process-local handle frames keep their wire formats.
+
+A matched 20M-row wide-AVG diagnostic isolates removal of payload copies before
+buffer reuse: native median 15.199 s (15.097–15.279) becomes 14.886 s
+(14.814–15.034), about 2.1% less time. Flink controls are 13.452 s in both runs
+(ranges 13.313–13.511 and 13.290–13.764). This uses release+mimalloc, JDK 17,
+Flink 2.2.1, Core i7-12650H/Linux, 2 GiB heap, parallelism one, 64 keys,
+1024-row mini-batches, two warmups and five alternating engine trials, both
+transposes and row source/sink. The improvement leaves native slower than Flink.
+
+With bounded output-buffer reuse as well, the same sustained diagnostic measures
+14.524 s native (14.449–14.831) against 13.408 s Flink (13.286–13.463).
+That is about 4.4% less native time than the matched 15.199 s baseline, but
+still 8.3% slower than Flink. No process-local exchange handles are enabled.
+
+At 2M rows, the final COUNT/SUM diagnostic measures 1.434 s native
+(1.407–1.454) versus 1.440 s Flink (1.367–1.469), effectively tied within
+variation. The earlier matched-resource native baseline was 1.469 s. This
+short-run result does not erase the sustained wide-AVG deficit above.
+
+Validation runs 48 serializer, coalescing, key-group routing/reassembly, recovery
+and decimal SQL checks on each released Flink line (2.2.1 and 1.18.1). They
+cover consecutive legacy/tagged frames, truncated-frame isolation, growing and
+shrinking payloads beyond the reuse limit, and aligned/unaligned checkpoint
+recovery with rescaling in both directions. All pass without skips.
