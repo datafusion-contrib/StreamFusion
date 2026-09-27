@@ -186,6 +186,10 @@ def main() -> int:
     parser.add_argument("--process-exit", type=int, default=0)
     parser.add_argument("--maven-result", type=pathlib.Path)
     parser.add_argument("--audit-output", type=pathlib.Path)
+    parser.add_argument("--sql-inventory", type=pathlib.Path)
+    parser.add_argument("--flink-line", choices=("2.2", "1.18"))
+    parser.add_argument("--require-runtime-route-prefix", action="append", default=[])
+    parser.add_argument("--runtime-route-scope", type=pathlib.Path)
     args = parser.parse_args()
 
     audit = empty_audit()
@@ -241,20 +245,23 @@ def main() -> int:
                 (kind for kind in ("skipped", "failure", "error") if case.find(kind) is not None),
                 "passed",
             )
+            method_key = case_key.split("(", 1)[0].split("[", 1)[0]
+            contract_test = case_key if case_key in contracts else method_key if method_key in contracts else None
             audit["testcases"].append({
                 "test": case_key,
                 "report": str(report.relative_to(args.reports)),
                 "case_index": case_index,
                 "outcome": outcome,
-                "contracted": case_key in contracts,
+                "contracted": contract_test is not None,
+                "contract_test": contract_test,
                 "expected_failure": outcome == "failure" and case_key in args.xfail,
             })
             if case.find("skipped") is None:
                 executed_tests[case_key] += 1
                 executed_methods[case_key.split("(", 1)[0].split("[", 1)[0]] += 1
                 executed_classes[class_name] += 1
-                if case_key in contracts:
-                    executed[case_key] += 1
+                if contract_test is not None:
+                    executed[contract_test] += 1
             problem = case.find("failure")
             kind = "failure"
             if problem is None:
@@ -280,6 +287,31 @@ def main() -> int:
     proved, fallback, execution_problems = check_execution(
         args.native_reports, executed, contracts, audit["execution_evidence"]
     )
+    if args.sql_inventory:
+        try:
+            if not args.flink_line:
+                raise ValueError("--sql-inventory requires --flink-line")
+            import execution_inventory
+            execution_inventory.attach(audit, args.reports, args.sql_inventory, args.flink_line)
+        except (ValueError, KeyError, TypeError, OSError, ET.ParseError) as failure:
+            execution_problems.append(f"Invalid invocation execution join: {failure}")
+    audit["scope"]["required_runtime_route_prefixes"] = args.require_runtime_route_prefix
+    if args.runtime_route_scope:
+        try:
+            if not args.sql_inventory:
+                raise ValueError("--runtime-route-scope requires --sql-inventory")
+            import execution_scope
+            execution_problems.extend(execution_scope.validate(
+                audit, args.runtime_route_scope, args.flink_line))
+        except (ValueError, TypeError, OSError) as failure:
+            execution_problems.append(f"Invalid runtime route scope: {failure}")
+    for prefix in args.require_runtime_route_prefix:
+        selected = [case for case in audit["testcases"] if case["test"].startswith(prefix)]
+        if not prefix or not selected:
+            execution_problems.append(f"No testcases match required runtime route prefix {prefix!r}")
+        for case in selected:
+            if case.get("runtime_route", "unclassified") == "unclassified":
+                execution_problems.append(f"{case['test']}: required runtime route is unclassified")
     required = set(contracts) if args.require_all_contracts else set()
     if args.require_contract_classes:
         classes = set(args.require_contract_classes.read_text().splitlines())
@@ -383,6 +415,9 @@ def main() -> int:
         "unclassified_outside_contract_scope": sum(executed_tests.values()) - sum(executed.values()),
         "evidence_records": len(audit["execution_evidence"]),
         "satisfied_evidence_records_by_route": dict(sorted(valid_routes.items())),
+        "testcases_by_runtime_route": dict(sorted(Counter(
+            case.get("runtime_route", "unclassified") for case in audit["testcases"]
+        ).items())),
         "process_exit": args.process_exit,
         "result_exit": result,
     }

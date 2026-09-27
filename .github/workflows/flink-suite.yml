@@ -131,6 +131,27 @@ jobs:
             --root ".flink-suite/${{ matrix.line }}" --version "${{ matrix.version }}" \
             --archive upstream-build.tar.zst
           rm upstream-build.tar.zst
+      - name: Require declared runtime audit routes
+        if: ${{ matrix.shard == '1' && !inputs.sql_inventory }}
+        env:
+          FLINK_VERSION: ${{ matrix.version }}
+          FLINK_SUITE_REUSE_COMMON_BUILD: 'true'
+          FLINK_SUITE_RUNTIME_AUDIT: 'true'
+        run: |
+          set -o pipefail
+          bin/flink-suite.sh runtime 2>&1 | tee upstream-runtime-audit.log
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && matrix.shard == '1' && !inputs.sql_inventory }}
+        with:
+          name: runtime-audit-${{ matrix.line }}-${{ github.sha }}
+          path: |
+            upstream-runtime-audit.log
+            .flink-suite/**/native-execution/
+            .flink-suite/**/diagnostics/
+            .flink-suite/**/sql-inventory/
+            .flink-suite/**/target/surefire-reports/
+          include-hidden-files: true
+          retention-days: 7
       - name: Run unchanged upstream suite with StreamFusion
         env:
           FLINK_VERSION: ${{ matrix.version }}
