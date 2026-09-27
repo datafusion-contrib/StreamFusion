@@ -222,7 +222,8 @@ serialization, lifecycle and exceptions use the same task binding as other scala
 
 This complete-row path executes on the JVM, including sibling expressions. It admits only
 inputs and outputs supported by the scalar bridge: primitive numeric/boolean, character,
-VARBINARY, DECIMAL, date/time/timestamp and interval values. Collection and nested ROW inputs
+BINARY/VARBINARY, DECIMAL, date/time/timestamp and interval values. Fixed BINARY result
+projections use this row path to retain their declared Arrow width. Collection and nested ROW inputs
 or outputs still fall back, as do unsupported UDF signatures and specialized functions. Temporal
 columns and builtin expressions are supported here; temporal **user-function signatures** retain
 the restriction above. The path preserves columnar operator boundaries and avoids a separate
@@ -583,9 +584,56 @@ through JNI. Successful results and NULL-on-error policies match as well.
 Integer formatting uses canonical decimal text, including signed minima and zero.
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
-Flink. Other TRY_CAST pairs, except the DECIMAL forms below, still fall back. Bare encoders without table configuration
+Flink. Other TRY_CAST pairs, except the binary and DECIMAL forms below, still fall back. Bare encoders without table configuration
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
+
+### Binary casts and fixed-width generated expressions
+
+CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
+run through Flink-generated evaluation. Default-mode BINARY(n) zero-pads or truncates
+raw bytes to exactly n bytes; VARBINARY(n) only truncates. Character inputs use their
+UTF-8 bytes, including embedded zeros and multibyte sequences cut at a byte boundary.
+NULLs and declared result types are preserved. Failures in the operand expression still
+propagate; CASE and filters suppress unselected failing expressions.
+
+Generated expressions can read fixed-size Arrow binary vectors through the existing
+batch callback. Fixed BINARY result projections use the declared row schema to produce
+fixed-size Arrow binary columns, so default-mode results can feed another native operator,
+including grouping. Fixed BINARY nested inside ARRAY/ROW callback arguments or results
+remains outside this whitelist. This does not widen user-defined function signature admission.
+
+Legacy casts leave the input byte length unchanged even when the SQL result declares
+BINARY(n). Their final projections use the existing variable-binary representation, as
+Flink 1.18 ENCODE does. Fused scalar consumers and row sinks preserve all bytes; a legacy
+fixed-width result crossing another operator boundary or entering a native columnar sink
+falls back before execution. The reported reason starts with `legacy binary variable bytes`.
+
+Runtime-source tests cover widths 1/2/4/16, NULLs, zero padding, truncation, non-text bytes,
+typed literals, ELT selection, short-circuiting, and 5,003-row inputs. Bridge tests cover
+sliced fixed/variable vectors, output ownership after input closure, and allocator balance.
+
+Release+mimalloc measurements on Flink 2.2.1/JDK 17, Linux x86_64 (Core i7-12650H),
+use 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
+trials. The harness requires NativeCalc and both row/Arrow transposes. Median seconds:
+
+| Query | Flink | Native island | Flink/native |
+|---|---:|---:|---:|
+| String identity (264-byte payload) | 0.825 | 1.194 | 0.691x |
+| BINARY(16) identity | 0.323 | 0.536 | 0.603x |
+| TRY_CAST string to BINARY(16) | 0.840 | 1.852 | 0.454x |
+| Dynamic ELT over BINARY(16) | 0.335 | 0.682 | 0.491x |
+
+These standalone cases are slower than stock Flink. The change extends existing generated
+expression machinery so binary expressions can compose within a native island; it does
+not claim an isolated speedup or add a separate execution engine.
+
+```bash
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=TRY_STRING_TO_FIXED_BINARY,ELT_FIXED_BINARY \
+  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
+```
 
 ### DECIMAL TRY_CAST
 
@@ -798,7 +846,7 @@ Integer and character inputs are admitted. All four signed integer widths preser
 Character strings and binary columns are encoded as padded RFC 4648 Base64 without line wrapping.
 Strings use their UTF-8 bytes; binary inputs preserve every byte, including invalid UTF-8.
 Both overloads share the direct-output encoder. Empty input stays empty and NULL propagates.
-VARBINARY literals are native; fixed-size BINARY literals retain the literal encoder's fallback.
+VARBINARY and fixed-size BINARY literals are native, including typed NULLs.
 
 `FROM_BASE64` accepts character and binary inputs through Flink-generated evaluation. Invalid
 encoding raises the same host exception; empty input and NULL retain their host results. Decoded
@@ -814,7 +862,7 @@ and Unicode classification, including non-nullable FALSE for NULL and empty inpu
 
 ### UNHEX
 
-Character inputs produce BYTES. Either hex letter case is accepted; invalid bytes, whitespace, `0x` prefixes, and non-ASCII digits return NULL. Empty input produces empty bytes. Flink validates but discards an odd leading digit, emitting zero: `UNHEX('A') = 00`, `UNHEX('ABC') = 00 BC`. Folded VARBINARY constants carry bytes directly as typed binary literals, including empty values and NULLs; fixed-size BINARY literals retain the existing fallback.
+Character inputs produce BYTES. Either hex letter case is accepted; invalid bytes, whitespace, `0x` prefixes, and non-ASCII digits return NULL. Empty input produces empty bytes. Flink validates but discards an odd leading digit, emitting zero: `UNHEX('A') = 00`, `UNHEX('ABC') = 00 BC`. Folded binary constants carry bytes directly as typed binary literals, including fixed BINARY values and typed NULLs.
 
 ### GREATEST
 
@@ -858,7 +906,8 @@ Column trim sets fall back for the same Flink representation-dependent behavior 
 
 The binary-result overload also runs through Flink-generated code. Dynamic INT indices retain
 one-based selection, out-of-range NULLs and NULL operands. Multiple binary result columns retain
-independent byte arrays across rows and batches.
+independent byte arrays across rows and batches. Fixed-length BINARY arguments and results
+are admitted alongside BYTES; embedded zero/high bytes stay binary throughout the callback.
 
 An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
 

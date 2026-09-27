@@ -333,9 +333,14 @@ final class RexExpression {
   private static CalcEncoding tryEncodeCalc(Calc calc) {
     RexExpression encoder = forCalc(calc);
     boolean supported = encoder.emitCalc(calc);
-    if (supported && !encoder.rowFusion && encoder.requiresCalcRowOrder(calc.getProgram())) {
+    if (supported && !encoder.rowFusion
+        && (encoder.requiresCalcRowOrder(calc.getProgram())
+            || calc.getProgram().getProjectList().stream()
+                .anyMatch(ref -> ref.getType().getSqlTypeName() == SqlTypeName.BINARY
+                    && !(calc.getProgram().expandLocalRef(ref) instanceof RexInputRef)))) {
       // Preserve native admission before selecting a different evaluation schedule. A fresh
       // encoder must not retain descriptors or pools from the column-at-a-time attempt.
+      // Fixed BINARY results use the row's declared schema rather than a variable binary UDF result.
       encoder = forCalc(calc);
       supported = encoder.emitRowCalc(calc);
     }
@@ -514,11 +519,14 @@ final class RexExpression {
   private static int rowCalcTypeCode(RelDataType type) {
     boolean nested =
         switch (type.getSqlTypeName()) {
-          case ARRAY -> rowCalcTypeCode(type.getComponentType()) >= 0;
+          case ARRAY -> type.getComponentType().getSqlTypeName() != SqlTypeName.BINARY
+              && rowCalcTypeCode(type.getComponentType()) >= 0;
           case MAP -> SqlTypeFamily.CHARACTER.contains(type.getKeyType())
               && SqlTypeFamily.CHARACTER.contains(type.getValueType());
           case ROW ->
-              type.getFieldList().stream().allMatch(field -> rowCalcTypeCode(field.getType()) >= 0);
+              type.getFieldList().stream().allMatch(field ->
+                  field.getType().getSqlTypeName() != SqlTypeName.BINARY
+                      && rowCalcTypeCode(field.getType()) >= 0);
           default -> false;
         };
     return nested ? tech.streamfusion.operator.NativeUdf.TYPE_INTERNAL : hostCastTypeCode(type);
@@ -590,10 +598,10 @@ final class RexExpression {
             && JsonStringIdentity.containsBinaryString(projection)) {
           return reject("binary-backed STRING requires a final scalar projection");
         }
-        if (LegacyBinaryResults.variableResult(projection))
+        if (LegacyBinaryResults.variableResult(projection, Boolean.TRUE.equals(legacyCastBehaviour)))
           variableBinaryProjections.add(projections.size());
         if (rowCalcTypeCode(projection.getType()) < 0
-            && !LegacyBinaryResults.variableResult(projection))
+            && !LegacyBinaryResults.variableResult(projection, Boolean.TRUE.equals(legacyCastBehaviour)))
           return reject("row-fused UDF output type is not supported: " + projection.getType());
         projections.add(projection.accept(remap));
       }
@@ -915,6 +923,7 @@ final class RexExpression {
           strings.add(value);
           return true;
         }
+      case BINARY:
       case VARBINARY:
         {
           org.apache.calcite.avatica.util.ByteString value =
@@ -2154,6 +2163,11 @@ final class RexExpression {
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST;
     SqlTypeName source = sourceType.getSqlTypeName();
     SqlTypeName targetType = resultType.getSqlTypeName();
+    if (SqlTypeFamily.BINARY.contains(resultType)
+        && (SqlTypeFamily.CHARACTER.contains(sourceType)
+            || SqlTypeFamily.BINARY.contains(sourceType))) {
+      return emitHostExpression(call, true);
+    }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
     if ((source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)
@@ -2289,6 +2303,9 @@ final class RexExpression {
    * carry.
    */
   private static int hostCastTypeCode(RelDataType type) {
+    if (type.getSqlTypeName() == SqlTypeName.BINARY) {
+      return tech.streamfusion.operator.NativeUdf.TYPE_BINARY;
+    }
     int temporal = temporalTypeCode(type);
     if (temporal >= 0) {
       return temporal;

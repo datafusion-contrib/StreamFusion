@@ -38,7 +38,7 @@ class FlinkLegacyEncodeSqlHarnessTest {
     NativeParity.assertFallbackReasonContains(
         FlinkLegacyEncodeSqlHarnessTest::environment,
         "SELECT ENCODE(s,c), COUNT(*) FROM src GROUP BY ENCODE(s,c)",
-        "legacy ENCODE variable bytes");
+        "legacy binary variable bytes");
   }
 
   @Test

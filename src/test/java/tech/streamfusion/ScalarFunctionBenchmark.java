@@ -70,6 +70,8 @@ class ScalarFunctionBenchmark {
           new Query("BTRIM_DYNAMIC", "text", "BTRIM(s, LEFT(s, 1))", "STRING"),
           new Query("IS_ALPHA", "text", "IS_ALPHA(s)", "BOOLEAN"),
           new Query("STARTSWITH_BINARY", "tt_bytes", "STARTSWITH(b,b)", "BOOLEAN"),
+          new Query("TRY_STRING_TO_FIXED_BINARY", "text", "TRY_CAST(s AS BINARY(16))", "BINARY(16)"),
+          new Query("ELT_FIXED_BINARY", "tt_fixed_bytes", "ELT(n,b,X'00112233445566778899AABBCCDDEEFF')", "BINARY(16)"),
           new Query("REGEXP_EXTRACT_ALL", "text", "REGEXP_EXTRACT_ALL(s, '(a)', 1)", "ARRAY<STRING>"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
