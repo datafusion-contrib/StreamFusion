@@ -24,6 +24,11 @@ serialized operator configuration rather than process-global state before a stab
   (two branches scanning the same native source normally collapse into one read); restores one
   source per branch. Flink's `table.optimizer.reuse-source-enabled=false` and
   `table.optimizer.reuse-sub-plan-enabled=false` also disable native source sharing.
+- **`streamfusion.transpose.batchRows`** (default 1024) — maximum rows buffered by each
+  row-to-Arrow boundary. Must be positive. Read from the job's Flink configuration at planning
+  time and serialized into the operator; the same-named JVM property is a fallback. Watermarks,
+  checkpoints, end-of-input and the latency timer can flush a smaller batch. This does not set
+  Flink's logical mini-batch size or the post-exchange coalescer's target size.
 - **`-Dstreamfusion.exchange.zeroCopyLocal=...`** — vouch for a single-TaskManager deployment so the
   columnar exchange can hand off batches by ownership transfer instead of Arrow IPC on a same-process
   edge. See [Zero-copy local shuffle](optimizations/zero-copy-local-shuffle.md).

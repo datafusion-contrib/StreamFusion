@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -25,7 +24,8 @@ final class NativeFailureParity {
   enum Route { HOST, NATIVE, FALLBACK, UNPLANNED }
 
   record Outcome(List<List<Object>> rows, Exception failure, Phase phase, Route route,
-      List<String> fallbackReasons, List<String> operatorTypes, int substitutions) {
+      List<String> fallbackReasons, List<String> operatorTypes, int substitutions,
+      List<String> resultTypes, String plan) {
     @Override
     public String toString() {
       return "Outcome[phase=" + phase + ", route=" + route + ", cause=" + rootCause()
@@ -58,14 +58,20 @@ final class NativeFailureParity {
     void assertSuccess(Route nativeRoute) {
       assertEquals(null, host.failure(), this::toString);
       assertEquals(null, nativeRun.failure(), this::toString);
-      assertEquals(sorted(host.rows()), sorted(nativeRun.rows()), this::toString);
+      assertEquals(NativeParity.multiset(host.rows()), NativeParity.multiset(nativeRun.rows()),
+          this::toString);
       assertEquals(nativeRoute, nativeRun.route(), this::toString);
     }
   }
 
   static Comparison run(Supplier<TableEnvironment> environment, String sql) {
-    Outcome host = execute(environment, sql, false);
-    Outcome nativeRun = execute(environment, sql, true);
+    return run(environment, environment, sql);
+  }
+
+  static Comparison run(Supplier<TableEnvironment> hostEnvironment,
+      Supplier<TableEnvironment> nativeEnvironment, String sql) {
+    Outcome host = execute(hostEnvironment, sql, false);
+    Outcome nativeRun = execute(nativeEnvironment, sql, true);
     return new Comparison(host, nativeRun);
   }
 
@@ -75,12 +81,16 @@ final class NativeFailureParity {
     Phase phase = Phase.SETUP;
     Exception failure = null;
     TableResult result = null;
+    List<String> resultTypes = List.of();
+    String plan = "";
     try {
       TableEnvironment table = environment.get();
       if (nativeRun) scan = NativePlanner.install(table);
       phase = Phase.PLANNING;
       var query = table.sqlQuery(sql);
-      query.explain();
+      resultTypes = query.getResolvedSchema().getColumnDataTypes().stream()
+          .map(Object::toString).toList();
+      plan = query.explain();
       phase = Phase.SUBMISSION;
       result = query.execute();
       phase = Phase.COLLECTION;
@@ -111,7 +121,7 @@ final class NativeFailureParity {
     return new Outcome(rows, failure, phase, route,
         scan == null ? List.of() : List.copyOf(scan.fallbackReasons()),
         scan == null ? List.of() : List.copyOf(scan.operatorTypes()),
-        scan == null ? 0 : scan.substitutions());
+        scan == null ? 0 : scan.substitutions(), resultTypes, plan);
   }
 
   static Exception terminalFailure(CompletableFuture<?> completion, Exception collectionFailure) {
@@ -148,11 +158,6 @@ final class NativeFailureParity {
     return observed;
   }
 
-  private static List<List<Object>> sorted(List<List<Object>> rows) {
-    List<List<Object>> copy = new ArrayList<>(rows);
-    copy.sort(Comparator.comparing(Object::toString));
-    return copy;
-  }
 
   private NativeFailureParity() {}
 }
