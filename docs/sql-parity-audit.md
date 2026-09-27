@@ -128,7 +128,7 @@ semantics; host/native agreement alone is insufficient for those cases.
 ## Combined stateful recovery matrix
 
 `StatefulRecoveryMatrixTest` begins the bounded matrix in
-[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 42 cases
+[#250](https://github.com/datafusion-contrib/StreamFusion/issues/250). Its current 52 cases
 include INT/BIGINT group keys with DECIMAL(20,2) SUM and STRING COUNT DISTINCT, using memory
 and the native RocksDB backend. Twelve changelog records include duplicate 12-KiB strings,
 NULLs, removal of the final duplicate, group deletion and recreation. The reference executes
@@ -163,6 +163,20 @@ backends. Those four cases still execute the full value/type and repeated-recove
 require the specific fallback reason, and assert that the native window operator is absent.
 The evidence records expected routing independently of the comparison result.
 
+Ten Calc-before-GROUP-BY cases exercise INT-to-BIGINT boundary keys, STRING-to-DECIMAL(20,2)
+rounding, whitespace, NULLs, Unicode distinct values and retractions across two restores.
+The first two source rows are filtered out: the one-row Arrow variants therefore exercise
+Calc batches with no surviving rows. Malformed values on filtered rows must never affect
+the aggregate. Six cases run native Calc and aggregation with independent physical/logical
+batch sizes. Two relational STRING-filter variants retain the representation-sensitive
+ordering fallback and still verify the known recovered result.
+
+The remaining two Calc cases deliberately overflow an ordinary STRING-to-DECIMAL cast after
+the second restore. Both engines must raise `NumberFormatException` with the overflow
+diagnostic during row evaluation; these are expected failures, not successful empty-result
+comparisons. The report records the expected outcome separately from routing. Both restored
+offsets and zero active sources are asserted for the failing native executions as well.
+
 Each case independently checks materialized results against known answers, resolved result
 types, the required native operator plan, both restored offsets and failure injections, completed
 checkpoint evidence, and zero active sources after collection. Route assertions cannot
@@ -181,9 +195,9 @@ Add `-Pflink-1.18` for the other released dependency line. The matrix writes
 `streamfusion-runtime/target/sql-audit/stateful-recovery.json`, including configuration,
 result comparison, result types, native plan, fallback reasons and recovery observations,
 even when a validation assertion fails. CI retains this file with the existing portable SQL
-audit artifact. All 42 recovery cases (38 native and four explicit fallbacks), four transpose-configuration
-tests and 38 portable-audit regressions pass on each of Flink 2.2.1 and 1.18.1 (84 tests per
-release).
+audit artifact. All 52 recovery cases (44 native successes, six explicit fallbacks and two expected native
+failures), four transpose-configuration tests and 38 portable-audit regressions pass on each
+of Flink 2.2.1 and 1.18.1 (94 tests per release).
 
 The required matrix runs each row below with memory and native RocksDB state, at parallelism
 1. Arrow row limits and Flink logical mini-batch sizes are independent:
@@ -195,6 +209,7 @@ The required matrix runs each row below with memory and native RocksDB state, at
 | Updating JOIN / INT | 1024/0, 1/3, 5/0, 64/3 |
 | Top-N / INT, TIMESTAMP(9) or TIMESTAMP_LTZ(9) ordering | 5/3 in each of the three zones |
 | TUMBLE / TIMESTAMP(3) or TIMESTAMP_LTZ(3) event time | 5/0 in each zone; LTZ outside UTC expects fallback |
+| Calc → GROUP BY / INT-to-BIGINT keys | 1/0, 5/3, 64/3 native; 1/3 string fallback; 1/0 expected overflow failure |
 
 The job-scoped `streamfusion.transpose.batchRows` option controls physical row-to-Arrow
 batches. Post-exchange coalescing is disabled in these cases so it cannot recombine the
@@ -203,7 +218,7 @@ flushes determine the tested bundles. A separate serialized-operator test checks
 emission sizes for limits 1, 5 and 64, including a partial batch flushed by a watermark.
 The default row limit remains 1024 for other jobs.
 
-Dedicated Calc conversion/filtering cases, rescaling in both
-directions, task-budget variants, failed/cancelled-run cleanup and a larger explicit
+Rescaling in both directions, task-budget variants, allocator/task cleanup on failed and
+cancelled runs and a larger explicit
 stress profile remain in #250. Passing these cases does not establish those combinations
 or cross-version state compatibility.

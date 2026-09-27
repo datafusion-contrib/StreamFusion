@@ -360,6 +360,94 @@ class StatefulRecoveryMatrixTest {
     }
   }
 
+  @ParameterizedTest(name = "calc-rocks={0}-arrow={1}-mini={2}-stringFallback={3}-overflow={4}")
+  @CsvSource({
+    "false,1,0,false,false",
+    "false,5,3,false,false",
+    "false,64,3,false,false",
+    "true,1,0,false,false",
+    "true,5,3,false,false",
+    "true,64,3,false,false",
+    "false,1,3,true,false",
+    "true,1,3,true,false",
+    "false,1,0,false,true",
+    "true,1,0,false,true"
+  })
+  void filteredConversionsAcrossTwoRestores(
+      boolean rocks, int batchRows, int miniBatchRows, boolean stringFallback, boolean overflow) {
+    int max = Integer.MAX_VALUE, min = Integer.MIN_VALUE;
+    String large = "999999999999999999.994", unicode = "é🙂";
+    List<Row> input =
+        List.of(
+            Row.of(max, "not-number", "discarded", false),
+            Row.of(min, "not-number", "discarded", false),
+            Row.of(max, large, "same", true),
+            Row.of(max, "0.01", "same", true),
+            Row.ofKind(RowKind.DELETE, max, large, "same", true),
+            Row.of(min, "-2147483648.005", unicode, true),
+            Row.of(max, null, null, true),
+            Row.of(min, "garbage", null, false),
+            Row.ofKind(RowKind.DELETE, max, "0.01", "same", true),
+            Row.of(max, overflow ? "999999999999999999.995" : null, "value-overflow", true),
+            Row.ofKind(RowKind.UPDATE_BEFORE, min, "-2147483648.005", unicode, true),
+            Row.ofKind(RowKind.UPDATE_AFTER, min, " 1.235 ", unicode, true),
+            Row.of(min, "-0.005", unicode, true),
+            Row.of(max, "discarded", null, false),
+            Row.of(min, "bad", null, false),
+            Row.of(min, null, null, true));
+    var type =
+        Types.ROW_NAMED(
+            new String[] {"k", "amount", "text_value", "keep_row"},
+            Types.INT,
+            Types.STRING,
+            Types.STRING,
+            Types.BOOLEAN);
+    var schema =
+        Schema.newBuilder()
+            .column("k", DataTypes.INT())
+            .column("amount", DataTypes.STRING())
+            .column("text_value", DataTypes.STRING())
+            .column("keep_row", DataTypes.BOOLEAN())
+            .build();
+    String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
+    try (var recovery = new PortableSqlRecovery(backend, input, type, schema, true, 4, 8)) {
+      var runs =
+          NativeFailureParity.run(
+              () -> configure(recovery.uninterrupted(), batchRows, miniBatchRows),
+              () -> configure(recovery.get(), batchRows, miniBatchRows),
+              "SELECT converted_key, SUM(converted_amount), COUNT(DISTINCT text_value), COUNT(*)"
+                  + " FROM (SELECT CAST(k AS BIGINT) AS converted_key, CAST(amount AS"
+                  + " DECIMAL(20,2)) AS converted_amount, text_value FROM recovery_input WHERE"
+                  + " keep_row"
+                  + (stringFallback ? " AND text_value < 'z'" : "")
+                  + ") GROUP BY converted_key");
+      Map<List<Object>, Long> expected = new java.util.HashMap<>();
+      expected.put(java.util.Arrays.asList((long) max, null, 1L, stringFallback ? 1L : 2L), 1L);
+      if (!stringFallback) expected.put(List.of((long) min, new BigDecimal("1.23"), 1L, 3L), 1L);
+      verify(
+          recovery,
+          runs,
+          expected,
+          "calc-"
+              + (rocks ? "rocksdb" : "memory")
+              + (stringFallback ? "-string-fallback" : overflow ? "-overflow" : "-native"),
+          backend,
+          batchRows,
+          miniBatchRows,
+          List.of(4, 8),
+          "NativeColumnarGroupAggregate",
+          Map.of(
+              "expectedFallback",
+              stringFallback
+                  ? "Flink string ordering depends on its Java or serialized representation"
+                  : "",
+              "requiredOperators",
+              List.of("NativeCalc", "NativeColumnarGroupAggregate"),
+              "expectedFailure",
+              overflow ? "decimal-overflow" : ""));
+    }
+  }
+
   private static void verify(
       PortableSqlRecovery recovery,
       NativeFailureParity.Comparison runs,
@@ -399,19 +487,37 @@ class StatefulRecoveryMatrixTest {
         expectedFallback.isEmpty()
             ? NativeFailureParity.Route.NATIVE
             : NativeFailureParity.Route.FALLBACK;
+    boolean expectedFailure =
+        settings.getOrDefault("expectedFailure", "").equals("decimal-overflow");
     boolean passed = false;
     try {
       assertAll(
-          () -> assertNull(runs.host().failure(), runs.toString()),
-          () -> assertNull(runs.nativeRun().failure(), runs.toString()),
-          () -> assertEquals(expected, SqlAuditHarness.materialized(runs.host().rows())),
-          () -> assertEquals(expected, SqlAuditHarness.materialized(runs.nativeRun().rows())),
+          () -> {
+            if (expectedFailure)
+              runs.assertFailure(
+                  NumberFormatException.class,
+                  "Overflow.",
+                  NativeFailureParity.Phase.ROW_EVALUATION,
+                  expectedRoute);
+            else
+              assertAll(
+                  () -> assertNull(runs.host().failure(), runs.toString()),
+                  () -> assertNull(runs.nativeRun().failure(), runs.toString()),
+                  () -> assertEquals(expected, SqlAuditHarness.materialized(runs.host().rows())),
+                  () ->
+                      assertEquals(
+                          expected, SqlAuditHarness.materialized(runs.nativeRun().rows())));
+          },
           () -> assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes()),
           () -> assertEquals(expectedRoute, runs.nativeRun().route()),
           () -> {
-            if (expectedFallback.isEmpty())
-              assertTrue(runs.nativeRun().plan().contains(operator), runs.nativeRun().plan());
-            else {
+            if (expectedFallback.isEmpty()) {
+              var required =
+                  (List<?>) settings.getOrDefault("requiredOperators", List.of(operator));
+              for (Object name : required)
+                assertTrue(
+                    runs.nativeRun().plan().contains(name.toString()), runs.nativeRun().plan());
+            } else {
               assertFalse(runs.nativeRun().plan().contains(operator), runs.nativeRun().plan());
               assertTrue(
                   runs.nativeRun().fallbackReasons().stream()
@@ -446,6 +552,7 @@ class StatefulRecoveryMatrixTest {
           Map.of(
               "passed", passed,
               "expectedRoute", expectedRoute.name(),
+              "expectedOutcome", expectedFailure ? "ROW_EVALUATION_FAILURE" : "MATERIALIZED_PARITY",
               "configuration", configuration,
               "host", SqlAuditHarness.outcome(runs.host()),
               "native", SqlAuditHarness.outcome(runs.nativeRun()),
