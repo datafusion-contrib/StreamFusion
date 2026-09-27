@@ -1410,6 +1410,48 @@ fn staged_group_change_bytes(key: &ByteKey, old: &Option<Vec<ScalarValue>>) -> u
         + old.as_ref().map_or(0, |values| scalar_row_bytes(values))
 }
 
+struct DecimalViewBuffer {
+    order: DecimalMapOrder,
+    counts: HashMap<i128, i64>,
+}
+
+impl DecimalViewBuffer {
+    fn new(scale: i8) -> Self {
+        Self {
+            order: DecimalMapOrder::new(scale),
+            counts: HashMap::default(),
+        }
+    }
+
+    fn merge(&mut self, value: Option<i128>, count: i64) {
+        self.order.insert_optional(value);
+        if let Some(value) = value {
+            if count > 0 {
+                *self.counts.entry(value).or_default() += count;
+            }
+        }
+    }
+
+    fn bytes(&self) -> usize {
+        let buckets = if self.counts.capacity() == 0 {
+            0
+        } else {
+            (self.counts.capacity() * 8).div_ceil(7).next_power_of_two()
+        };
+        std::mem::size_of::<Self>() + self.order.bytes() - std::mem::size_of::<DecimalMapOrder>()
+            + buckets * (std::mem::size_of::<(i128, i64)>() + 1)
+    }
+}
+
+fn decimal_buffers_bytes(buffers: &[Option<DecimalViewBuffer>]) -> usize {
+    buffers.len() * std::mem::size_of::<Option<DecimalViewBuffer>>()
+        + buffers
+            .iter()
+            .flatten()
+            .map(|buffer| buffer.bytes() - std::mem::size_of::<DecimalViewBuffer>())
+            .sum::<usize>()
+}
+
 /// Non-windowed `GROUP BY` aggregation over a changelog. Holds per-key state — no windows, no
 /// watermark — and processes a batch in input order like the host's per-record aggregate, so the
 /// emitted change sequence matches byte for byte. Each row's `RowKind` (carried on `$row_kind$`)
@@ -1468,6 +1510,7 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     staged_changes: HashMap<ByteKey, StagedGroupChange>,
     staged_key_batches: Vec<RecordBatch>,
     staged_bytes: usize,
+    decimal_views: HashMap<ByteKey, Vec<Option<DecimalViewBuffer>>>,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -1566,6 +1609,7 @@ impl GroupAggregator {
             staged_changes: HashMap::default(),
             staged_key_batches: Vec::new(),
             staged_bytes: 0,
+            decimal_views: HashMap::default(),
             filter_columns,
             count_columns,
             distinct_view_columns,
@@ -1617,6 +1661,7 @@ impl GroupAggregator {
             staged_changes: self.staged_changes,
             staged_key_batches: self.staged_key_batches,
             staged_bytes: self.staged_bytes,
+            decimal_views: self.decimal_views,
             memory: self.memory,
         }
     }
@@ -1768,6 +1813,23 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .begin_batch(batch, &self.key_columns, &self.key_timestamp_precisions)?;
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
+        let wide_views: Vec<Option<(u8, i8)>> = self
+            .kinds
+            .iter()
+            .enumerate()
+            .map(|(i, kind)| match self.value_types[i] {
+                DataType::Decimal128(p, scale)
+                    if p > 19 && matches!(kind, 9 | 17) && self.distinct_view_columns[i] >= 0 =>
+                {
+                    Some((p, scale))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            self.mini_batch || wide_views.iter().all(Option::is_none),
+            "wide decimal DISTINCT merge requires a logical mini-batch"
+        );
         // `None` is a COUNT(*) aggregate (no argument column): it counts every row. A present column
         // counts/folds only non-null rows, matching the host's COUNT(col)/SUM null handling.
         let value_columns: Vec<Option<ValueColumn>> = (0..num_agg)
@@ -2015,6 +2077,37 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     },
                 );
             }
+            for (i, metadata) in wide_views.iter().enumerate() {
+                let Some((_, scale)) = metadata else {
+                    continue;
+                };
+                assert!(!retract, "wide decimal views are insert-only");
+                let (list, values, counts) = view_cols[i].expect("wide decimal membership view");
+                let values = values
+                    .as_any()
+                    .downcast_ref::<Decimal128Array>()
+                    .expect("decimal membership");
+                if !self.decimal_views.contains_key(key) {
+                    let owned = ByteKey::from(key);
+                    let buffers = (0..num_agg).map(|_| None).collect::<Vec<_>>();
+                    staged_delta += byte_key_bytes(key) + decimal_buffers_bytes(&buffers);
+                    self.decimal_views.insert(owned, buffers);
+                }
+                let buffers = self.decimal_views.get_mut(key).unwrap();
+                let before = buffers[i].as_ref().map_or(0, |buffer| {
+                    buffer.bytes() - std::mem::size_of::<DecimalViewBuffer>()
+                });
+                let buffer = buffers[i].get_or_insert_with(|| DecimalViewBuffer::new(*scale));
+                for entry in
+                    list.value_offsets()[row] as usize..list.value_offsets()[row + 1] as usize
+                {
+                    buffer.merge(
+                        (!values.is_null(entry)).then(|| values.value(entry)),
+                        counts.value(entry),
+                    );
+                }
+                staged_delta += buffer.bytes() - std::mem::size_of::<DecimalViewBuffer>() - before;
+            }
             {
                 let state = if exists {
                     self.store.get_mut(key).expect("key present")
@@ -2082,14 +2175,23 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     // retracting row kind cannot reach this path.
                     if let Some((list, values, counts)) = view_cols[i] {
                         assert!(!retract, "distinct view partials are insert-only");
+                        if wide_views[i].is_some() {
+                            continue;
+                        }
                         let start = list.value_offsets()[row] as usize;
                         let end = list.value_offsets()[row + 1] as usize;
                         if let Some(ints) = values.as_any().downcast_ref::<Int64Array>() {
                             for e in start..end {
+                                if ints.is_null(e) || counts.value(e) <= 0 {
+                                    continue;
+                                }
                                 state.aggs[i].merge_distinct_i64(ints.value(e), counts.value(e));
                             }
                         } else {
                             for e in start..end {
+                                if values.is_null(e) || counts.value(e) <= 0 {
+                                    continue;
+                                }
                                 let scalar = ScalarValue::try_from_array(values, e)
                                     .expect("distinct view value scalar");
                                 state.aggs[i].merge_distinct(scalar, counts.value(e));
@@ -2298,7 +2400,38 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // Staged keys were all written this bundle, so none can be expired here; a TTL shorter
         // than the bundle interval is degenerate and still only delays expiry to the next touch.
         let ttl_on = self.ttl_ms > 0 && self.ttl_emit_unchanged;
+        let mut decimal_views = std::mem::take(&mut self.decimal_views);
         for key in order {
+            if let Some(buffers) = decimal_views.remove(&key) {
+                let state = self
+                    .store
+                    .get_mut(&key.0)
+                    .expect("staged decimal key remains resident");
+                let before = if self.memory.tracking() {
+                    group_key_state_bytes(state)
+                } else {
+                    0
+                };
+                for (i, buffer) in buffers.into_iter().enumerate() {
+                    if let Some(buffer) = buffer {
+                        let DataType::Decimal128(precision, scale) = self.value_types[i] else {
+                            unreachable!()
+                        };
+                        for value in buffer.order.iter().flatten() {
+                            if let Some(&count) = buffer.counts.get(&value) {
+                                state.aggs[i].merge_distinct(
+                                    ScalarValue::Decimal128(Some(value), precision, scale),
+                                    count,
+                                );
+                            }
+                        }
+                    }
+                }
+                if self.memory.tracking() {
+                    self.memory
+                        .record(group_key_state_bytes(state) as isize - before as isize);
+                }
+            }
             let staged = &changes[&key];
             let new = self
                 .store

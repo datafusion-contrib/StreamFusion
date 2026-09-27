@@ -82,10 +82,17 @@ inserted before/inside/after zero-hash collision trees and duplicate NULL insert
 
 The native local regression checks shared filters, NULLs, duplicate multiplicity, scalar
 and Arrow key paths, physical batch splits, flush/reset, and tracked memory release. The
-full native suite passes 570 tests with one ignored.
+local integration passed 570 native tests with one ignored.
 
-Next, integrate the global temporary membership union, including zero-count/NULL ordering
-entries. Do not fold those entries into durable DISTINCT membership. Before admission,
+The global stage now unions wide-decimal views per logical bundle and folds the resulting
+map order into durable state at flush. Zero-count and NULL keys affect temporary order but
+never enter durable DISTINCT membership. The direct regression uses singleton views whose
+arrival order avoids overflow but whose union order overflows: SUM becomes -9e37 and AVG
+stays NULL. Repeated bundles preserve membership and release their accounted buffer memory;
+a shared-filter regression also verifies COUNT ignores ordering-only entries.
+
+Before admission, preserve wide SUM's running value in raw checkpoints: the existing SUM
+restore refolds membership, which can change an overflow-sensitive result. Also,
 account for temporary view-copy allocations during flush (the existing local flush releases
 retained-state accounting before constructing output) and validate the actual transport route
 end to end. Local integration alone is not sufficient for native decimal parity.

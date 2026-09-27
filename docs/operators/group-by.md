@@ -464,8 +464,11 @@ equivalent for wide decimals. Matching only the local view order is insufficient
 ordering and buffering contracts must be preserved before widening the admission gate. The
 native local-view ordering model is checked against 55 shared released-host fixtures covering
 resizes, collision trees, copies, NULLs and duplicate insertions. Local shared filters retain
-the same union order with zero-count entries for inactive values. Integration with the buffered
-global merge remains pending, and the planner gate is unchanged.
+the same union order with zero-count entries for inactive values. The native global stage now
+buffers those views and folds their temporary-map order at the logical bundle boundary;
+regressions cover overflow, shared filters, duplicate bundles and retained-memory release.
+Wide SUM checkpoint state, transient flush allocations and multi-key transport/bundle ordering
+still need verification before admission. The planner gate is unchanged.
 
 The eight new SQL cases pass on Flink 2.2.1 and 1.18.1, along with the existing two-phase
 suite (28 cases on 2.2.1; 27 passed and one released-host capability skip on 1.18.1).

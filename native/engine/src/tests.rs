@@ -1,6 +1,67 @@
 use super::*;
 
 #[test]
+fn wide_decimal_global_views_union_before_folding_at_bundle_flush() {
+    let large = 9 * 10i128.pow(37);
+    for kind in [9, 17] {
+        let (local_kinds, views) = if kind == 9 {
+            (vec![9], vec![2])
+        } else {
+            (vec![18, 7], vec![3])
+        };
+        let mut local = LocalGroupAggregator::new(
+            local_kinds.clone(),
+            vec![5800; local_kinds.len()],
+            vec![1; local_kinds.len()],
+            vec![],
+            vec![0],
+            vec![0],
+        );
+        let mut global = GroupAggregator::new(vec![kind], vec![5800], vec![1], vec![0], true)
+            .with_distinct_view_columns(views)
+            .with_mini_batch()
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        // Singleton local views arrive in an order that would avoid overflow if folded eagerly.
+        for value in [Some(large), Some(-large), Some(large - 3), None] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(value, 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            assert_eq!(global.update(&local.flush(), 0).unwrap().num_rows(), 0);
+        }
+        let staged_bytes = global.memory.state_bytes;
+        assert!(staged_bytes > 0);
+        let output = global.flush_mini_batch().unwrap();
+        assert_eq!(output.num_rows(), 1);
+        if kind == 9 {
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+                ScalarValue::Decimal128(Some(-large), 38, 0)
+            );
+        } else {
+            assert!(output.column(1).is_null(0));
+        }
+        let resident_bytes = global.memory.state_bytes;
+        assert!(resident_bytes < staged_bytes);
+        // A fresh bundle sees durable membership, including the keys involved in overflow.
+        for value in [large, large - 3, -large] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            global.update(&local.flush(), 0).unwrap();
+        }
+        assert_eq!(global.flush_mini_batch().unwrap().num_rows(), 0);
+        assert_eq!(global.memory.state_bytes, resident_bytes);
+    }
+}
+
+#[test]
 fn wide_decimal_local_views_share_order_and_keep_filtered_zero_entries() {
     let large = 9 * 10i128.pow(37);
     let batch = RecordBatch::try_new(
@@ -77,6 +138,18 @@ fn wide_decimal_local_views_share_order_and_keep_filtered_zero_entries() {
             );
             assert_eq!(counts.values().as_ref(), expected_counts.as_slice());
         }
+        let mut global =
+            GroupAggregator::new(vec![7, 9, 9], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+                .with_distinct_view_columns(vec![4, 5, 6])
+                .with_mini_batch();
+        global.update(&output, 0).unwrap();
+        let merged = global.flush_mini_batch().unwrap();
+        assert_eq!(values(&merged, 1), vec![3]);
+        assert_eq!(
+            ScalarValue::try_from_array(merged.column(2), 0).unwrap(),
+            ScalarValue::Decimal128(Some(0), 38, 0)
+        );
+        assert!(merged.column(3).is_null(0));
         local.update(&batch.slice(1, 1)).unwrap();
         let fresh = local.flush();
         let view = fresh
