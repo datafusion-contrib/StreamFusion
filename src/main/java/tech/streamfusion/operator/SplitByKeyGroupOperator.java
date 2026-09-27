@@ -64,6 +64,9 @@ public class SplitByKeyGroupOperator extends FlinkStreamOperator<ArrowBatch>
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
     handleOwner = ArrowBatchHandles.newOwner();
+    long owner = handleOwner;
+    getRuntimeContext().registerUserCodeClassLoaderReleaseHookIfAbsent(
+        "streamfusion-arrow-handles-" + owner, () -> ArrowBatchHandles.forgetOwner(owner));
     elapsedCompute = getMetricGroup().counter("elapsed_compute");
     repartTime = getMetricGroup().counter("repart_time");
     encodeTime = getMetricGroup().counter("encode_time");
