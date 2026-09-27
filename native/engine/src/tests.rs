@@ -1,6 +1,109 @@
 use super::*;
 
 #[test]
+fn wide_decimal_distinct_sum_checkpoint_preserves_overflow_without_refolding() {
+    let large = 9 * 10i128.pow(37);
+    for inputs in [vec![large, large - 3], vec![large, large - 3, -large]] {
+        let mut memory = GroupAggregator::new(vec![9], vec![5800], vec![1], vec![0], true);
+        memory
+            .update(
+                &group_scalar_changelog(
+                    inputs
+                        .iter()
+                        .map(|&v| ScalarValue::Decimal128(Some(v), 38, 0))
+                        .collect(),
+                    vec![0; inputs.len()],
+                ),
+                0,
+            )
+            .unwrap();
+        let mut frames = read_framed(&memory.snapshot());
+        // Side-table order is not accumulator order: make a refold produce the wrong sum.
+        let side = &frames[1];
+        let values = side
+            .column(1)
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap();
+        let mut rows = (0..side.num_rows() as u32).collect::<Vec<_>>();
+        rows.sort_by_key(|&row| {
+            let value = values.value(row as usize);
+            if value == large {
+                0
+            } else if value < 0 {
+                1
+            } else {
+                2
+            }
+        });
+        let rows = arrow::array::UInt32Array::from(rows);
+        frames[1] = RecordBatch::try_new(
+            side.schema(),
+            side.columns()
+                .iter()
+                .map(|column| arrow::compute::take(column, &rows, None).unwrap())
+                .collect(),
+        )
+        .unwrap();
+        if inputs.len() == 3 {
+            let mut legacy = frames.clone();
+            let fields = legacy[0]
+                .schema()
+                .fields()
+                .iter()
+                .map(|field| field.as_ref().clone().with_metadata(Default::default()))
+                .collect::<Vec<_>>();
+            let mut columns = legacy[0].columns().to_vec();
+            columns[2] = Arc::new(
+                Decimal128Array::from(vec![None::<i128>])
+                    .with_precision_and_scale(38, 0)
+                    .unwrap(),
+            );
+            columns[3] = Arc::new(Int64Array::from(vec![0]));
+            legacy[0] = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+            let mut restored = GroupAggregator::restore(
+                vec![9],
+                vec![5800],
+                vec![1],
+                vec![0],
+                true,
+                &write_framed(&legacy),
+                0,
+            );
+            let output = restored
+                .update(
+                    &group_scalar_changelog(vec![ScalarValue::Decimal128(Some(7), 38, 0)], vec![0]),
+                    0,
+                )
+                .unwrap();
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(1), 1).unwrap(),
+                ScalarValue::Decimal128(Some(large + 4), 38, 0)
+            );
+        }
+        let mut restored = GroupAggregator::restore(
+            vec![9],
+            vec![5800],
+            vec![1],
+            vec![0],
+            true,
+            &write_framed(&frames),
+            0,
+        );
+        for (value, kind) in [(large, 0), (7, 0), (large, 3), (large, 3)] {
+            let batch = group_scalar_changelog(
+                vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                vec![kind],
+            );
+            assert_eq!(
+                restored.update(&batch, 0).unwrap(),
+                memory.update(&batch, 0).unwrap()
+            );
+        }
+    }
+}
+
+#[test]
 fn wide_decimal_global_views_union_before_folding_at_bundle_flush() {
     let large = 9 * 10i128.pow(37);
     for kind in [9, 17] {
@@ -8666,9 +8769,9 @@ mod rocksdb_group_multisets {
     }
 
     #[test]
-    fn distinct_average_migrates_and_checkpoints_sum_and_membership() {
+    fn distinct_running_migrates_and_checkpoints_sum_and_membership() {
         let large = 9 * 10i128.pow(37);
-        for (code, low, high, third) in [
+        for (kind, (code, low, high, third)) in [
             (
                 5,
                 ScalarValue::Int8(Some(-3)),
@@ -8687,12 +8790,15 @@ mod rocksdb_group_multisets {
                 ScalarValue::Decimal128(Some(large - 1), 38, 0),
                 ScalarValue::Decimal128(Some(-large), 38, 0),
             ),
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|case| [9, 17].into_iter().map(move |kind| (kind, case.clone())))
+        {
             let make =
-                || GroupAggregator::new(vec![17, 3], vec![code, 0], vec![1, -1], vec![0], true);
+                || GroupAggregator::new(vec![kind, 3], vec![code, 0], vec![1, -1], vec![0], true);
             let codec = || {
                 GroupStateCodec::new(
-                    vec![17, 3],
+                    vec![kind, 3],
                     vec![low.data_type(), DataType::Int64],
                     vec![1, -1],
                     vec![-1; 2],
@@ -8736,7 +8842,7 @@ mod rocksdb_group_multisets {
                 .into_values()
                 .collect::<Vec<_>>();
             let mut exported = GroupAggregator::restore_partitions(
-                vec![17, 3],
+                vec![kind, 3],
                 vec![code, 0],
                 vec![1, -1],
                 vec![0],

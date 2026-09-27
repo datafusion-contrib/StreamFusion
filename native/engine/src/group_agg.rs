@@ -2573,8 +2573,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         }
                     }
                     GroupAggState::DistinctRunning { counts, agg, live } => {
-                        // Decimal AVG overflow depends on arrival order, not set iteration order.
-                        if self.kinds[i] == 17 {
+                        // Wide decimal SUM and AVG overflow depends on arrival order.
+                        if self.kinds[i] == 17 || self.wide_distinct_sum(i) {
                             state_columns[i].push(agg.emit());
                             non_null_columns[i].push(*live);
                         } else {
@@ -2598,11 +2598,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         fields.push(Field::new("records", DataType::Int64, false));
         columns.push(Arc::new(Int64Array::from(records)));
         for i in 0..num_agg {
-            fields.push(Field::new(
-                format!("state{i}"),
-                self.state_types[i].clone(),
-                true,
-            ));
+            let mut field = Field::new(format!("state{i}"), self.state_types[i].clone(), true);
+            if self.wide_distinct_sum(i) {
+                field = field.with_metadata(std::collections::HashMap::from([(
+                    "streamfusion.distinct-running-state".to_owned(),
+                    "1".to_owned(),
+                )]));
+            }
+            fields.push(field);
             columns.push(scalars_to_array(
                 std::mem::take(&mut state_columns[i]),
                 &self.state_types[i],
@@ -2751,11 +2754,14 @@ impl GroupAggregator {
 }
 
 impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
+    fn wide_distinct_sum(&self, i: usize) -> bool {
+        self.kinds[i] == 9 && matches!(self.value_types[i], DataType::Decimal128(p, _) if p > 19)
+    }
+
     /// Decodes one raw key-group snapshot blob into the backing store through the state seam, so
     /// the same decode serves the memory rebuild and the typed persistent import.
     fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
         let num_agg = self.kinds.len();
-        let average_distinct: Vec<_> = self.kinds.iter().map(|&kind| kind == 17).collect();
         let batches = read_framed(bytes);
         if batches.is_empty() {
             return;
@@ -2765,6 +2771,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // stamps every group with the restore time — a full retention from now, Flink's
         // enable-TTL migration — instead of 0, which would expire everything on first touch.
         let main = &batches[0];
+        let preserved_distinct: Vec<_> = (0..num_agg)
+            .map(|i| {
+                self.kinds[i] == 17
+                    || (self.wide_distinct_sum(i)
+                        && main
+                            .schema()
+                            .field(2 + 2 * i)
+                            .metadata()
+                            .get("streamfusion.distinct-running-state")
+                            .is_some_and(|version| version == "1"))
+            })
+            .collect();
         let write_timestamps = (main.num_columns() > 2 + 2 * num_agg).then(|| {
             assert_eq!(
                 main.schema().field(2 + 2 * num_agg).name(),
@@ -2801,17 +2819,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             .value(row),
                     );
                 }
-                if average_distinct[i] {
+                if preserved_distinct[i] {
                     if let GroupAggState::DistinctRunning { agg, live, .. } = &mut state.aggs[i] {
                         agg.restore_value(
                             &ScalarValue::try_from_array(main.column(2 + 2 * i), row)
-                                .expect("distinct average sum"),
+                                .expect("distinct running sum"),
                         );
                         *live = main
                             .column(3 + 2 * i)
                             .as_any()
                             .downcast_ref::<Int64Array>()
-                            .expect("distinct average count")
+                            .expect("distinct running count")
                             .value(row);
                     }
                 }
@@ -2851,7 +2869,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let key = keys.value(row);
                 let value = ScalarValue::try_from_array(values, row).expect("multiset value");
                 if let Some(state) = self.store.get_mut(key) {
-                    if average_distinct[i] {
+                    if preserved_distinct[i] {
                         if let GroupAggState::DistinctRunning { counts: set, .. } =
                             &mut state.aggs[i]
                         {

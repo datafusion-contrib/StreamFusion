@@ -91,8 +91,15 @@ arrival order avoids overflow but whose union order overflows: SUM becomes -9e37
 stays NULL. Repeated bundles preserve membership and release their accounted buffer memory;
 a shared-filter regression also verifies COUNT ignores ordering-only entries.
 
-Before admission, preserve wide SUM's running value in raw checkpoints: the existing SUM
-restore refolds membership, which can change an overflow-sensitive result. Also,
+Wide SUM raw checkpoints now preserve the running value and live count, marked by Arrow
+field metadata `streamfusion.distinct-running-state=1`. Legacy unmarked SUM frames retain
+their old refold behavior; current AVG snapshots remain compatible. A regression permutes
+membership side-table rows to prove recovery does not refold them, including NULL overflow
+and duplicate retractions. The shared persistent test now covers SUM as well as AVG through
+raw import, RocksDB checkpoint/reopen, canonical export and subsequent retractions. The
+native suite passes 572 tests with one ignored.
+
+Before admission,
 account for temporary view-copy allocations during flush (the existing local flush releases
 retained-state accounting before constructing output) and validate the actual transport route
 end to end. Local integration alone is not sufficient for native decimal parity.

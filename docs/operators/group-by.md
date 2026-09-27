@@ -467,8 +467,10 @@ resizes, collision trees, copies, NULLs and duplicate insertions. Local shared f
 the same union order with zero-count entries for inactive values. The native global stage now
 buffers those views and folds their temporary-map order at the logical bundle boundary;
 regressions cover overflow, shared filters, duplicate bundles and retained-memory release.
-Wide SUM checkpoint state, transient flush allocations and multi-key transport/bundle ordering
-still need verification before admission. The planner gate is unchanged.
+Wide SUM checkpoints preserve the running sum and live count independently of membership
+order, including NULL after overflow. Recovery tests cover raw snapshots, RocksDB import,
+checkpoint/reopen and export. Transient flush allocations and multi-key transport/bundle
+ordering still need verification before admission. The planner gate is unchanged.
 
 The eight new SQL cases pass on Flink 2.2.1 and 1.18.1, along with the existing two-phase
 suite (28 cases on 2.2.1; 27 passed and one released-host capability skip on 1.18.1).
