@@ -163,8 +163,12 @@ set travels as a trailing view column — its distinct `(value, count)` entries 
 structs, the Arrow form of Flink's serialized `MapView` partial — and the global folds the entries
 into its per-key distinct state with multiplicities, so a value repeating across bundles counts
 once. Scope: `COUNT(DISTINCT)` over bigint/int/smallint/tinyint/float/double/string/decimal,
-`SUM(DISTINCT)` over bigint/int/smallint/tinyint (the merge folds in set-iteration order, so
-order-sensitive float/double sums stay on the host).
+BOOLEAN and TIMESTAMP_LTZ; `SUM(DISTINCT)` over bigint/int/smallint/tinyint and DECIMAL
+with precision at most 19.
+Decimal sum partials must be DECIMAL(38, input-scale), while the distinct view preserves each
+input value's original precision and scale. Boolean and timestamp views retain their Arrow
+value types, including fractional timestamp nanoseconds. The merge folds in set-iteration
+order, so order-sensitive float/double sums stay on the host.
 
 **Per-aggregate `FILTER (WHERE …)` rides the split too**, on plain and distinct aggregates alike:
 the predicate is a boolean column the local gates every fold on, so the merge stays filter-blind.
@@ -270,8 +274,10 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 - A SUM/MIN/MAX value type outside bigint/int/smallint/tinyint/double/decimal (MIN/MAX also admit
   strings, DATE, TIME, BOOLEAN and timestamps), or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal.
-- A `COUNT(DISTINCT)` value type outside bigint/int/smallint/tinyint/float/double/string/decimal,
-  or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint; `MIN`/`MAX`/`AVG` over `DISTINCT`.
+- A `COUNT(DISTINCT)` value type outside bigint/int/smallint/tinyint/float/double/string/decimal/
+  BOOLEAN/TIMESTAMP_LTZ, or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint/DECIMAL;
+  DECIMAL input precision above 19 or sum partials with a different scale/precision other than 38;
+  `MIN`/`MAX`/`AVG` over `DISTINCT`.
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
 - A retracting input with any aggregate other than plain COUNT/AVG.
@@ -385,3 +391,42 @@ Single-phase DATE and BOOLEAN are approximately tied with Flink on this workload
 all two-phase cases are slower. These additions reuse the existing typed multiset and ordered
 value state to extend native pipeline coverage. They do not establish a standalone aggregate
 speedup; reducing per-row scalar materialization remains a separate optimization opportunity.
+
+### Two-phase DISTINCT type coverage
+
+Runtime-source regressions assert both native local/global operators for COUNT DISTINCT over
+BOOLEAN and TIMESTAMP_LTZ(3/9), and SUM DISTINCT over DECIMAL(19,2). Five-row bundles cover
+repeated values across flushes, independently filtered/shared views, all-NULL groups, empty
+input, and global aggregation. Native restore tests checkpoint the merged distinct state,
+then merge duplicate and new values without losing multiplicities or decimal result scale.
+This extends the existing insert-only split; retracting two-phase DISTINCT still falls back.
+The remaining AVG DISTINCT and ordered-value gaps are tracked in
+[#231](https://github.com/datafusion-contrib/StreamFusion/issues/231).
+
+Two-phase SUM DISTINCT over DECIMAL precision 20–38 remains on Flink. Decimal overflow can
+reset SUM to NULL, and a later addition restarts it, making map iteration order observable.
+A DECIMAL(38,0) runtime probe with `9e37`, `9e37 - 1`, and `-9e37` produced different host/native
+results in eight of twelve trials before the wider admission was removed. For precision at
+most 19, even the sum of every positive distinct unscaled value is below `5e37`; negative
+values have the same bound, so all subset sums fit DECIMAL(38) regardless of iteration order.
+The DECIMAL(20,2) two-phase case from #231 remains part of the open coverage gap.
+
+The eight new SQL cases pass on Flink 2.2.1 and 1.18.1, along with the existing two-phase
+suite (28 cases on 2.2.1; 27 passed and one released-host capability skip on 1.18.1).
+
+A release+mimalloc diagnostic on Intel Core i7-12650H, Linux/WSL, JDK 17, Flink 2.2.1
+(2026-09-27) combines the three newly admitted aggregate forms over two million runtime rows,
+64 keys, 128 timestamp/decimal values per key, and NULLs every seventh row. It uses
+1,024-row bundles, two warmups and five measured runs in alternating engine order, and asserts
+both native aggregate stages and both row/Arrow transposes with a rowwise blackhole sink.
+Median elapsed time was **1.400 s for Flink and 4.563 s for native (0.307x)**. Native trials
+ranged from 4.449–4.625 s; Flink trials ranged from 1.379–1.526 s. This is a coverage extension
+using existing state and view handling; the standalone workload is substantially slower,
+and no performance improvement is claimed. The run precedes the separate typed-DISTINCT-map
+optimization in #246.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=DistinctAggregateBenchmark -Ddistinct.rows=2000000 \
+  -Ddistinct.warmup=2 -Ddistinct.runs=5
+```

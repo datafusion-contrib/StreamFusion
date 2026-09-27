@@ -67,30 +67,29 @@ final class GlobalGroupAggregateMatcher {
       // the per-key distinct set — the positional partial (the bundle's count/sum) is carried but
       // not consumed, exactly as the host's distinct merge re-accumulates from the view. The value
       // type comes from the ORIGINAL local input (the call's args point into it). Same scope as the
-      // local half: COUNT over the set-carriable types, SUM over exact integer arithmetic only.
+      // local half: COUNT over the set-carriable types, SUM over exact integer/decimal arithmetic.
       if (call.isDistinct()) {
         if (call.getArgList().size() != 1) {
           return "global group aggregate: a distinct merge must have exactly one argument";
         }
-        SqlTypeName valueType =
+        RelDataType value =
             agg.localAggInputRowType()
                 .getFieldList()
                 .get(call.getArgList().get(0))
-                .getType()
-                .getSqlTypeName();
-        SqlTypeName partialType = inputType.getFieldList().get(offset).getType().getSqlTypeName();
+                .getType();
+        RelDataType partial = inputType.getFieldList().get(offset).getType();
+        SqlTypeName partialType = partial.getSqlTypeName();
         offset++;
         boolean countDistinct =
             kind == WindowAggregateMatcher.KIND_COUNT
                 && partialType == SqlTypeName.BIGINT
-                && LocalGroupAggregateMatcher.supportedDistinctValueType(valueType);
+                && LocalGroupAggregateMatcher.supportedDistinctValueType(value.getSqlTypeName());
         boolean sumDistinct =
             kind == WindowAggregateMatcher.KIND_SUM
-                && GroupAggregateMatcher.isIntegerType(valueType)
-                && partialType == valueType;
+                && LocalGroupAggregateMatcher.supportedDistinctSumPartial(value, partial);
         if (!countDistinct && !sumDistinct) {
           return "global group aggregate: distinct merges are COUNT (over set-carriable value"
-              + " types) and SUM (over integers)";
+              + " types) and SUM (over integers or DECIMAL precision <= 19)";
         }
         continue;
       }
@@ -268,7 +267,7 @@ final class GlobalGroupAggregateMatcher {
         // The distinct set is keyed by the original value (the call's args point into the local's
         // input row), so its code carries that value's own type.
         codes.add(
-            WindowAggregateMatcher.typeCode(
+            GroupAggregateMatcher.retainedValueTypeCode(
                 agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType()));
       } else if (spanOf(agg, i) == 2) {
         // An AVG state is typed by its final result — except decimal, whose state is the sum

@@ -89,15 +89,16 @@ final class LocalGroupAggregateMatcher {
         }
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        SqlTypeName partialType = outputType.getFieldList().get(offset).getType().getSqlTypeName();
+        RelDataType partial = outputType.getFieldList().get(offset).getType();
+        SqlTypeName partialType = partial.getSqlTypeName();
         offset++;
         if (kind == WindowAggregateMatcher.KIND_COUNT) {
           if (partialType != SqlTypeName.BIGINT || !supportedDistinctValueType(valueType)) {
             return false;
           }
         } else if (kind == WindowAggregateMatcher.KIND_SUM) {
-          if (!GroupAggregateMatcher.isIntegerType(valueType)
-              || partialType != valueType) {
+          if (!supportedDistinctSumPartial(
+              inputType.getFieldList().get(call.getArgList().get(0)).getType(), partial)) {
             return false;
           }
         } else {
@@ -256,6 +257,8 @@ final class LocalGroupAggregateMatcher {
       case CHAR:
       case VARCHAR:
       case DECIMAL:
+      case BOOLEAN:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
         return true;
       default:
         return false;
@@ -292,6 +295,16 @@ final class LocalGroupAggregateMatcher {
     return partial.getSqlTypeName() == SqlTypeName.DECIMAL
         && partial.getPrecision() == 38
         && partial.getScale() == value.getScale();
+  }
+
+  static boolean supportedDistinctSumPartial(RelDataType value, RelDataType partial) {
+    return (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+            && partial.getSqlTypeName() == value.getSqlTypeName())
+        || (value.getSqlTypeName() == SqlTypeName.DECIMAL
+            // Even the sum of every positive distinct unscaled value fits DECIMAL(38) at p <= 19.
+            // Wider domains can overflow differently as the host/native maps enumerate values.
+            && value.getPrecision() <= 19
+            && isWidenedDecimal(partial, value));
   }
 
   /** The declared type of an AVG's widened sum partial, or null if the value type isn't admitted. */
@@ -406,7 +419,7 @@ final class LocalGroupAggregateMatcher {
       if (call.isDistinct()) {
         // The distinct set is keyed by the value itself, so its code carries the value's own type.
         codes.add(
-            WindowAggregateMatcher.typeCode(
+            GroupAggregateMatcher.retainedValueTypeCode(
                 inputType.getFieldList().get(call.getArgList().get(0)).getType()));
       } else if (kind == WindowAggregateMatcher.KIND_AVG) {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
