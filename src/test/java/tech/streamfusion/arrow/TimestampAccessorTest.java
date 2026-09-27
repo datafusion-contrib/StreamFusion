@@ -51,6 +51,29 @@ class TimestampAccessorTest {
   }
 
   @Test
+  void cachedTimestampWriterSurvivesGrowthAndReset() {
+    try (BufferAllocator allocator = new RootAllocator();
+        StructVector vector = (StructVector) TimestampAccessor.field("ts", true).createVector(allocator)) {
+      vector.setInitialCapacity(2);
+      vector.allocateNew();
+      var writer = TimestampWriter.forArray(vector, 9);
+      var reader = new TimestampAccessor(vector);
+      for (int pass = 0; pass < 2; pass++) {
+        for (int row = 0; row < 8193; row++) {
+          TimestampData value = row % 7 == 0 ? null : TimestampData.fromEpochMillis(-row, row % 1_000_000);
+          writer.write(new org.apache.flink.table.data.GenericArrayData(new TimestampData[] {value}), 0);
+        }
+        writer.finish();
+        for (int row = 0; row < 8193; row++) {
+          assertEquals(row % 7 == 0, reader.isNull(row));
+          if (row % 7 != 0) assertEquals(TimestampData.fromEpochMillis(-row, row % 1_000_000), reader.getTimestamp(row));
+        }
+        writer.reset();
+      }
+    }
+  }
+
+  @Test
   void primitiveWriterReportsOverflowInsteadOfWrapping() {
     try (BufferAllocator allocator = new RootAllocator();
         TimeStampVector vector = (TimeStampVector) new Field("ts",

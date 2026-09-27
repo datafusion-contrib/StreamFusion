@@ -453,11 +453,17 @@ both native aggregate stages and both row/Arrow transposes with a rowwise blackh
 Median elapsed time was **1.400 s for Flink and 4.563 s for native (0.307x)**. Native trials
 ranged from 4.449–4.625 s; Flink trials ranged from 1.379–1.526 s. This is a coverage extension
 using existing state and view handling; the standalone workload is substantially slower,
-and no performance improvement is claimed. The run precedes the separate typed-DISTINCT-map
-optimization in #246.
+and no performance improvement was established by that baseline. It predates typed maps,
+column readers and direct partial-view builders. The current implementation specializes BOOLEAN
+and full-range timestamp membership as well as the existing primitive maps, and caches the
+transpose timestamp layout. See the [optimization ledger](../optimizations/aggregate-specialization-fast-paths.md)
+for current comparisons and validation. With the same two-million-row workload and an explicit
+2 GiB heap, the optimized native median is **1.186 s versus Flink 1.416 s**. At twenty million
+rows, native is **11.199 s versus Flink 12.235 s**; both comparisons retain the row source/sink,
+transposes, and both aggregate stages.
 
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dtest=DistinctAggregateBenchmark -Ddistinct.rows=2000000 \
-  -Ddistinct.warmup=2 -Ddistinct.runs=5
+  -Ddistinct.warmup=2 -Ddistinct.runs=5 -Dsf.extraJvmArgs=-Xmx2g
 ```

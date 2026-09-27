@@ -157,12 +157,25 @@ on [Memory accounting designed off the hot path](memory-accounting-off-hot-path.
 
 ## Typed DISTINCT multiplicities
 
-Non-windowed DISTINCT sets specialize BIGINT, INT, SMALLINT, TINYINT, DECIMAL and STRING
-keys. Integer maps retain their exact width; decimal maps store unscaled i128 keys with
+Non-windowed DISTINCT sets specialize BIGINT, INT, SMALLINT, TINYINT, DECIMAL, BOOLEAN,
+TIMESTAMP and STRING keys. Integer maps retain their exact width; decimal maps store unscaled i128 keys with
 precision and scale on the map. STRING probes borrow UTF-8 bytes from the Arrow array in
 single-phase, local and global-merge folds. A duplicate does not allocate an owned string;
 new live entries and newly journaled elements own their bytes. Equality remains byte exact,
 without case folding or Unicode normalization. AHash remains the hash implementation.
+
+CPU profiling of the downstream DISTINCT coverage stack identified repeated one-row timestamp
+struct cloning, scalar comparison/construction/hashing, and repeated timestamp vector-layout
+lookups at the transpose. The same paths occur in the BOOLEAN/TIMESTAMP_LTZ/DECIMAL(19)
+COUNT/SUM workload. The implementation below applies those profiled optimizations to that
+narrower coverage independently of wide-decimal merge ordering.
+
+Fixed-width DISTINCT inputs are downcast once per batch and update typed multiplicities directly
+in both local and global aggregate stages. Timestamp keys use full-range i128 nanoseconds;
+the output remains the existing millisecond-plus-fraction Arrow struct. Local partial views
+append typed keys and counts directly into Arrow builders, avoiding intermediate scalar vectors.
+The transpose timestamp writer also caches its validated child vectors across rows and resets,
+following Comet's per-field writer pattern. These changes preserve the existing Arrow view schema.
 
 All representations share multiplicity updates, last-occurrence deletion and journal handling.
 Snapshots and persistent element journals still serialize typed scalar values with the same
@@ -170,6 +183,39 @@ encoding. Restore does not journal an already persisted entry; blob import does.
 value type promotes the map to the generic scalar representation, preserving live counts and
 pending journal entries. FLOAT/DOUBLE and complex types retain generic scalar keys and their
 existing equality rules. Admission gates are unchanged.
+
+The combined two-phase COUNT DISTINCT BOOLEAN/TIMESTAMP_LTZ(9) plus SUM DISTINCT
+DECIMAL(19,2) query now beats the matched Flink control at both measured sizes. These runs
+use release+mimalloc, JDK 17, Flink 2.2.1, Intel Core i7-12650H on Linux/WSL, parallelism 1,
+an explicit 2 GiB heap, 64 groups, 128 timestamp/decimal values per group, NULL every seventh
+row, and 1,024-row bundles. Each comparison has two warmups and five alternating measured
+trials. The runtime row source, rowwise blackhole sink, both transposes, and both native
+aggregate stages remain in the measured plan. The date is 2026-09-27.
+
+| Rows / implementation | Flink median (range), s | Native median (range), s |
+| --- | ---: | ---: |
+| 2M, current main optimizations before column specialization | 1.401 (1.368–1.457) | 4.202 (4.096–4.247) |
+| 2M, typed column readers and direct partial views | 1.416 (1.374–1.441) | 1.186 (1.179–1.227) |
+| 20M, typed column readers and direct partial views | 12.235 (12.082–12.458) | 11.199 (11.156–11.611) |
+
+The two-million-row native elapsed time falls 71.8% from the matched-resource native
+baseline. Compared with Flink, native takes 16.2% less time at 2M rows and 8.5% less at 20M.
+These measurements concern precision-19 SUM; wider decimals and DISTINCT AVG require their
+own parity and performance validation.
+
+Validation passes 570 native tests (one ignored), including timestamp range/nanoseconds,
+multiplicity, checkpoint/journal and promoted-key view coverage. The focused DISTINCT SQL
+and timestamp accessor suite passes 59 cases on Flink 2.2.1 and 58 on Flink 1.18.1, with
+one documented released-host capability skip on 1.18. Cached writer tests cover vector growth
+and reset with NULL and negative-epoch values.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=DistinctAggregateBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5 \
+  -Dsf.extraJvmArgs=-Xmx2g
+# Repeat with -Ddistinct.rows=20000000 for the sustained comparison.
+```
 
 `typed_distinct` in the native operator benchmark measures single-phase and local COUNT DISTINCT
 for all specialized types with input-domain sizes 4 and 256 per group, 16 groups and one-seventh
