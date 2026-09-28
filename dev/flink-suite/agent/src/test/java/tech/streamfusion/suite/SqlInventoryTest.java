@@ -483,6 +483,56 @@ class SqlInventoryTest {
     }
   }
 
+  @Test
+  void applicationResultsRemainAssociatedAndLateCallbacksAreIgnored() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      SqlInventory.jobResult(new ApplicationResult("observed-result", "FAILED"));
+      SqlInventory.jobResult(new ApplicationResult("observed-result", "FAILED"));
+      SqlInventory.jobResult(new ApplicationResult("orphan-result", "CANCELED"));
+      SqlInventory.submitted(
+          SqlInventory.submitting(),
+          new JobClient("observed-result", java.util.concurrent.CompletableFuture.failedFuture(
+              new IllegalStateException("expected failure"))), null);
+      SqlInventory.finished(identifier, new Result());
+      SqlInventory.started(identifier);
+      SqlInventory.jobResult(new ApplicationResult("observed-result", "FAILED"));
+      SqlInventory.jobResult(new ApplicationResult("orphan-result", "CANCELED"));
+      SqlInventory.finished(identifier, new Result());
+      try (var paths = Files.list(directory)) {
+        var reports = paths.map(path -> {
+          try {
+            return Files.readString(path);
+          } catch (java.io.IOException failure) {
+            throw new java.io.UncheckedIOException(failure);
+          }
+        }).toList();
+        org.junit.jupiter.api.Assertions.assertEquals(2, reports.size());
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+            reports.stream().filter(json -> json.contains("\"application_statuses\":[\"FAILED\"]")).count());
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+            reports.stream().filter(json -> json.contains(
+                "\"unmatched_job_results\":{\"orphan-result\":[\"CANCELED\"]}")).count());
+        assertTrue(reports.stream().anyMatch(json -> json.contains("\"jobs\":{}")
+            && json.contains("\"unmatched_job_results\":{}")));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  public record ApplicationResult(String job, String status) {
+    public String getJobId() {
+      return job;
+    }
+
+    public String getApplicationStatus() {
+      return status;
+    }
+  }
+
   public static class JobClient {
     private final String id;
     private final java.util.concurrent.CompletableFuture<?> result;

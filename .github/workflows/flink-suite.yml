@@ -22,8 +22,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: upstream-flink-suite-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: upstream-flink-suite-${{ github.ref }}-${{ inputs.sql_inventory && inputs.inventory_scope || 'tests' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   suite-matrix:
@@ -32,30 +32,13 @@ jobs:
     outputs:
       suites: ${{ steps.select.outputs.suites }}
     steps:
+      - uses: actions/checkout@v6
       - id: select
         env:
           INVENTORY: ${{ inputs.sql_inventory || false }}
           SCOPE: ${{ inputs.inventory_scope || 'all' }}
         run: |
-          python3 - <<'PYTHON'
-          import json, os
-          suites = ['runtime', 'formats', 'parquet', 'orc', 'kafka', 'paimon', 'delta', 'state']
-          if os.environ['INVENTORY'] == 'true':
-              if os.environ['SCOPE'] == 'runtime':
-                  suites = ['runtime']
-              elif os.environ['SCOPE'] == 'connectors':
-                  suites = ['formats', 'parquet', 'orc', 'kafka', 'paimon', 'delta']
-          matrix = []
-          for line, version in [('2.2', '2.2.1'), ('1.18', '1.18.1')]:
-              for suite in suites:
-                  if suite == 'delta' and line == '1.18':
-                      continue
-                  for shard in range(1, 5) if suite == 'runtime' else ['']:
-                      label = f'{suite}-{shard}' if shard else suite
-                      matrix.append(dict(line=line, version=version, suite=suite, shard=shard, label=label))
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('suites=' + json.dumps({'include': matrix}) + '\n')
-          PYTHON
+          python3 dev/flink-suite/suite_matrix.py >> "$GITHUB_OUTPUT"
 
   prepare:
     name: Prepare upstream build (Flink ${{ matrix.line }})
@@ -74,6 +57,7 @@ jobs:
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
       - uses: actions/setup-java@v4
+        id: java
         with:
           distribution: temurin
           java-version: "17"
@@ -85,6 +69,11 @@ jobs:
           key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ matrix.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh') }}
           restore-keys: |
             upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ matrix.version }}-
+      - name: Cache the compiled pinned Flink checkout
+        uses: actions/cache@v4
+        with:
+          path: .flink-suite/${{ matrix.line }}/flink-${{ matrix.version }}
+          key: upstream-classes-ubuntu2404-${{ runner.arch }}-${{ steps.java.outputs.version }}-${{ matrix.version }}-${{ hashFiles('bin/flink-suite.sh', 'dev/flink-suite/settings.xml', '.github/workflows/flink-suite.yml') }}
       - uses: dtolnay/rust-toolchain@1.94.0
       - uses: Swatinem/rust-cache@v2
         with:
@@ -93,6 +82,7 @@ jobs:
       - name: Build Flink and StreamFusion once
         env:
           FLINK_VERSION: ${{ matrix.version }}
+          FLINK_SUITE_BUILD_THREADS: 1C
         run: |
           set -o pipefail
           bin/flink-suite.sh prepare 2>&1 | tee upstream-prepare.log
@@ -141,21 +131,47 @@ jobs:
             --root ".flink-suite/${{ matrix.line }}" --version "${{ matrix.version }}" \
             --archive upstream-build.tar.zst
           rm upstream-build.tar.zst
+      - name: Require declared runtime audit routes
+        if: ${{ matrix.shard == '1' && !inputs.sql_inventory }}
+        env:
+          FLINK_VERSION: ${{ matrix.version }}
+          FLINK_SUITE_REUSE_COMMON_BUILD: 'true'
+          FLINK_SUITE_RUNTIME_AUDIT: 'true'
+        run: |
+          set -o pipefail
+          bin/flink-suite.sh runtime 2>&1 | tee upstream-runtime-audit.log
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && matrix.shard == '1' && !inputs.sql_inventory }}
+        with:
+          name: runtime-audit-${{ matrix.line }}-${{ github.sha }}
+          path: |
+            upstream-runtime-audit.log
+            .flink-suite/**/native-execution/
+            .flink-suite/**/diagnostics/
+            .flink-suite/**/sql-inventory/
+            .flink-suite/**/target/surefire-reports/
+          include-hidden-files: true
+          retention-days: 7
       - name: Run unchanged upstream suite with StreamFusion
         env:
           FLINK_VERSION: ${{ matrix.version }}
+          SUITES: ${{ matrix.suites }}
           FLINK_SUITE_REUSE_COMMON_BUILD: 'true'
           FLINK_SUITE_SHARD: ${{ matrix.shard }}
           FLINK_SUITE_SQL_INVENTORY: ${{ inputs.sql_inventory || false }}
         run: |
           set -o pipefail
-          bin/flink-suite.sh "${{ matrix.suite }}" 2>&1 | tee upstream-suite.log
+          suite_status=0
+          for suite in $SUITES; do
+            bin/flink-suite.sh "$suite" 2>&1 | tee "upstream-${suite}.log" || suite_status=1
+          done
+          exit "$suite_status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: upstream-flink-${{ matrix.line }}-${{ matrix.label }}-${{ github.sha }}
           path: |
-            upstream-suite.log
+            upstream-*.log
             .flink-suite/**/native-execution/
             .flink-suite/**/diagnostics/
             .flink-suite/**/sql-inventory/
@@ -163,7 +179,7 @@ jobs:
           include-hidden-files: true
           retention-days: 7
       - uses: actions/upload-artifact@v4
-        if: matrix.suite == 'runtime'
+        if: matrix.shard != ''
         with:
           name: runtime-coverage-${{ matrix.line }}-${{ matrix.shard }}
           path: |
@@ -172,26 +188,6 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
-
-  runtime-coverage:
-    name: Complete runtime coverage (Flink ${{ matrix.line }})
-    if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
-    needs: upstream-suite
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        line: ['2.2', '1.18']
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v5
-        with:
-          pattern: runtime-coverage-${{ matrix.line }}-*
-          path: runtime-coverage
-      - name: Require every runtime shard and parameterized invocation
-        run: |
-          python3 dev/flink-suite/runtime_shards.py aggregate \
-            --plan "runtime-coverage/runtime-coverage-${{ matrix.line }}-1/runtime-shards.json" \
-            --reports runtime-coverage
 
   legacy-delta-audit:
     if: ${{ !inputs.sql_inventory }}
@@ -221,12 +217,38 @@ jobs:
 
   all-tests:
     name: All upstream integration tests
-    if: ${{ always() && !inputs.sql_inventory }}
-    needs: [suite-matrix, prepare, upstream-suite, runtime-coverage, legacy-delta-audit]
+    if: ${{ always() }}
+    needs: [suite-matrix, prepare, upstream-suite, legacy-delta-audit]
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Require every upstream suite to succeed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: jq -e 'length > 0 and all(.[]; .result == "success")' <<< "$NEEDS_JSON"
+          INVENTORY: ${{ inputs.sql_inventory || false }}
+        run: |
+          jq -e --arg inventory "$INVENTORY" '
+            length > 0 and all(to_entries[];
+              .value.result == "success" or
+              ($inventory == "true" and .key == "legacy-delta-audit" and .value.result == "skipped"))
+          ' <<< "$NEEDS_JSON"
+      - uses: actions/checkout@v6
+        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+      - uses: actions/download-artifact@v5
+        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+        with:
+          pattern: runtime-coverage-2.2-*
+          path: runtime-coverage/2.2
+      - uses: actions/download-artifact@v5
+        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+        with:
+          pattern: runtime-coverage-1.18-*
+          path: runtime-coverage/1.18
+      - name: Require every runtime shard and parameterized invocation on both lines
+        if: ${{ !inputs.sql_inventory || inputs.inventory_scope != 'connectors' }}
+        run: |
+          for line in 2.2 1.18; do
+            python3 dev/flink-suite/runtime_shards.py aggregate \
+              --plan "runtime-coverage/$line/runtime-coverage-$line-1/runtime-shards.json" \
+              --reports "runtime-coverage/$line"
+          done

@@ -1081,7 +1081,9 @@ final class RexExpression {
       return emitItem(call);
     }
     if ("COALESCE".equals(functionName)) {
-      if (!RexUtil.isDeterministic(call) || containsScalarUdf(call)) {
+      if (!RexUtil.isDeterministic(call)
+          || containsScalarUdf(call)
+          || requiresRowShortCircuit(call)) {
         return emitHostExpression(call, true);
       }
       return emitCoalesceAsCase(call.getOperands());

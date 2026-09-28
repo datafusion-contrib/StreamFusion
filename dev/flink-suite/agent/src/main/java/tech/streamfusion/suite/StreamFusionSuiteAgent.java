@@ -97,6 +97,10 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(Advice.to(RecordGeneratedPipeline.class).on(named("generate"))))
+        .type(named("org.apache.flink.runtime.jobmaster.JobResult"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordJobResult.class).on(named("toJobExecutionResult"))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -155,6 +159,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeAsyncLookupJoinOperator",
                 "tech.streamfusion.operator.NativeFilterOperator",
                 "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
@@ -162,7 +167,8 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) -> {
               builder = builder.visit(Advice.to(BindNativeExecution.class).on(named("open")));
-              if (type.getName().endsWith("NativeColumnarGroupAggregateOperator")) {
+              if (type.getName().endsWith("NativeColumnarGroupAggregateOperator")
+                  || type.getName().endsWith("NativeColumnarLocalGroupAggregateOperator")) {
                 return builder.visit(Advice.to(RecordNativeBatch.class).on(named("update")));
               }
               if (type.getName().endsWith("NativeColumnarTopNOperator")) {
@@ -319,6 +325,13 @@ public final class StreamFusionSuiteAgent {
     static void exit(
         @Advice.FieldValue("transformations") Object inputs, @Advice.Return Object graph) {
       SqlInventory.generatedPipeline(inputs, graph);
+    }
+  }
+
+  public static final class RecordJobResult {
+    @Advice.OnMethodEnter
+    static void enter(@Advice.This Object result) {
+      SqlInventory.jobResult(result);
     }
   }
 

@@ -170,6 +170,7 @@ class ExecutionAuditTest(unittest.TestCase):
         for index, record in enumerate(audit["execution_evidence"]):
             self.assertEqual(index, record["case_index"])
             self.assertEqual(audit["testcases"][index]["invocation_id"], record["invocation_id"])
+            self.assertEqual(record['variant'], audit['testcases'][index]['execution_contract_variant'])
 
     def test_duplicate_links_cannot_satisfy_two_invocations(self):
         self.cases((self.CALC, "passed"), (self.CALC, "passed"))
@@ -368,6 +369,24 @@ class ExecutionAuditTest(unittest.TestCase):
                 status, audit = self.run_audit(*args)
                 self.assertEqual(0, status)
                 self.assertEqual("unclassified", audit["testcases"][0]["runtime_route"])
+
+    def test_unmatched_application_results_survive_inventory_join(self):
+        self.cases(("Batch#query", "passed"))
+        record = self.batch_observation()
+        record['unmatched_job_results'] = {'unsubmitted': ['FAILED']}
+        args = self.inventory(record)
+        status, audit = self.run_audit(*args)
+        self.assertEqual(0, status)
+        case = audit['testcases'][0]
+        self.assertEqual('unclassified', case['runtime_route'])
+        self.assertEqual(record['unmatched_job_results'], case['unmatched_job_results'])
+        path = next((self.root / 'inventory').glob('*.json'))
+        raw = json.loads(path.read_text())
+        raw['unmatched_job_results'] = {'batch-job': ['FAILED']}
+        path.write_text(json.dumps(raw))
+        status, audit = self.run_audit(*args)
+        self.assertEqual(1, status)
+        self.assertNotIn('runtime_route', audit['testcases'][0])
 
     def test_invalid_job_partition_fails_without_publishing_partial_join(self):
         self.cases(("Batch#query", "passed"))

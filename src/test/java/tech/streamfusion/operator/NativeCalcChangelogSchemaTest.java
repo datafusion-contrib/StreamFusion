@@ -1,6 +1,7 @@
 package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +13,8 @@ import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class NativeCalcChangelogSchemaTest {
   private static final RowType TYPE = RowType.of(new IntType());
@@ -58,11 +61,12 @@ class NativeCalcChangelogSchemaTest {
     }
   }
 
-  @Test
-  void transposeRetainsUnexpectedRetractionsAcrossBatchBoundaries() throws Exception {
+  @ParameterizedTest
+  @ValueSource(ints = {1, 3, 8})
+  void transposeRetainsUnexpectedRetractionsAcrossBatchBoundaries(int batchSize) throws Exception {
     try (var harness =
         new OneInputStreamOperatorTestHarness<RowData, ArrowBatch>(
-            new RowDataToArrowOperator(TYPE, 1, false, null))) {
+            new RowDataToArrowOperator(TYPE, batchSize, false, null))) {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
       List<RowKind> expected =
@@ -77,11 +81,17 @@ class NativeCalcChangelogSchemaTest {
         row.setRowKind(kind);
         harness.processElement(new StreamRecord<>(row));
       }
+      harness.endInput();
       List<RowKind> actual = new ArrayList<>();
       for (Object record : harness.getOutput()) {
         if (record instanceof StreamRecord<?>) {
           try (var root = ((ArrowBatch) ((StreamRecord<?>) record).getValue()).root()) {
-            actual.add(RowDataArrowConverter.read(root, TYPE).get(0).getRowKind());
+            var rows = RowDataArrowConverter.read(root, TYPE);
+            for (int i = 0; i < rows.size(); i++) {
+              actual.add(rows.get(i).getRowKind());
+              var kinds = root.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
+              if (kinds != null) assertFalse(kinds.isNull(i));
+            }
           }
         }
       }

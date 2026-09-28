@@ -21,8 +21,9 @@ import org.apache.flink.table.types.logical.RowType;
 public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
 
-  private static final int BATCH_SIZE = 1024;
   private static final String TRANSFORMATION = "row-to-arrow";
+
+  private final int batchRows;
 
   private final RowType rowType;
   private final boolean carryRowKind;
@@ -42,6 +43,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
         Collections.singletonList(inputProperty),
         rowType,
         description);
+    this.batchRows = NativeConfig.transposeBatchRows(tableConfig);
     this.rowType = rowType;
     this.carryRowKind = carryRowKind;
     this.sourceType = sourceType;
@@ -56,7 +58,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
-        new RowDataToArrowOperator(rowType, BATCH_SIZE, carryRowKind, sourceType),
+        new RowDataToArrowOperator(rowType, batchRows, carryRowKind, sourceType),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

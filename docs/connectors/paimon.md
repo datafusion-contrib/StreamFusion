@@ -998,7 +998,8 @@ The release build keeps native execution within upstream's short SQL deadlines.
 The runner records per-test SQL/planner inventory, Flink diagnostics, and Surefire
 reports under `streamfusion-paimon1/target`. `SF_PAIMON1_STOCK=true` reruns the same
 tests without the planner agent; `SF_PAIMON1_TESTS` selects a narrower class/method
-set using Surefire syntax.
+set using Surefire syntax. The dedicated compatibility workflow also tracks shared
+Arrow, codec, and upstream-agent changes and retains the test evidence.
 
 The selected upstream coverage includes append and primary-key tables, dynamic
 buckets, partial updates, first-row and field aggregation, input/lookup/full
@@ -1011,7 +1012,8 @@ field defaults after merging, floating-point edge values, and historical timesta
 ### Release benchmark
 
 `LegacyPaimonBenchmark` compares stock Paimon, the previous StreamFusion fallback,
-and the new adapter on identical data. Local measurements below used JDK 17,
+and the new adapter on identical data. Local measurements on 2026-09-28 include
+the shared boundary and aggregate changes through main `0b7243c3`, and used JDK 17,
 Flink 1.18.1, Paimon 1.0.0, release Rust with mimalloc, one task, two JVM CPUs,
 a 1.5 GiB test heap, 4,096-row Arrow batches, and a 32 MiB writer buffer.
 Each configuration has one warmup and three measurements with rotating engine order.
@@ -1029,19 +1031,19 @@ row counts and value checksums, and assert the intended physical operators.
 
 | Format | Input rows | Sink | Stock ms | Previous fallback ms | Native ms |
 |---|---:|---|---:|---:|---:|
-| Parquet | 200K | Append | 181.98 [171.38, 241.62] | 219.70 [214.96, 296.84] | 155.56 [155.47, 170.60] |
-| Parquet | 200K | Primary key | 206.05 [200.86, 210.53] | 251.86 [245.77, 278.91] | 198.15 [186.79, 198.44] |
-| Parquet | 1M | Append | 700.25 [697.46, 730.45] | 880.20 [876.43, 960.33] | 523.55 [510.19, 536.96] |
-| Parquet | 1M | Primary key | 859.22 [820.83, 933.96] | 1043.60 [1011.97, 1093.36] | 649.48 [632.12, 734.82] |
-| ORC | 200K | Append | 182.00 [175.32, 185.33] | 222.98 [222.39, 232.37] | 172.62 [167.80, 302.63] |
-| ORC | 200K | Primary key | 208.06 [200.81, 211.75] | 254.76 [242.60, 300.73] | 212.45 [188.31, 216.64] |
-| ORC | 1M | Append | 669.17 [602.77, 673.52] | 805.23 [800.94, 908.04] | 572.99 [543.60, 640.48] |
-| ORC | 1M | Primary key | 820.86 [794.24, 861.81] | 981.73 [955.25, 1148.11] | 712.40 [637.97, 732.34] |
+| Parquet | 200K | Append | 191.07 [180.38, 295.06] | 220.07 [211.91, 274.07] | 148.84 [135.13, 158.87] |
+| Parquet | 200K | Primary key | 221.96 [206.20, 224.80] | 231.49 [217.94, 250.73] | 184.31 [182.43, 186.62] |
+| Parquet | 1M | Append | 703.70 [694.16, 706.15] | 730.81 [724.68, 794.95] | 462.32 [448.61, 465.81] |
+| Parquet | 1M | Primary key | 867.37 [825.96, 874.78] | 907.30 [875.65, 1017.15] | 585.28 [584.12, 652.56] |
+| ORC | 200K | Append | 194.52 [181.04, 207.76] | 241.62 [203.64, 308.95] | 160.28 [154.80, 162.94] |
+| ORC | 200K | Primary key | 211.62 [210.50, 218.51] | 225.05 [222.79, 240.72] | 195.06 [182.23, 196.06] |
+| ORC | 1M | Append | 688.03 [626.36, 706.33] | 668.46 [656.55, 760.22] | 473.58 [456.77, 489.15] |
+| ORC | 1M | Primary key | 887.53 [883.98, 890.52] | 934.06 [890.45, 962.84] | 599.32 [583.64, 646.66] |
 
-At 1M input rows the native sinks improve over stock by 1.15–1.34× and over the
-previous fallback by 1.38–1.68×. Small jobs are startup-sensitive: ORC's 200K
-primary-key median is 2% slower than stock, with overlapping ranges. These results
-do not establish a win for every job size or table configuration.
+At 1M input rows the native sinks improve over stock by 1.45–1.52× and over the
+previous fallback by 1.41–1.58×. At 200K rows, the improvements over stock range
+from 1.08× to 1.28×. These small jobs are startup-sensitive; the ranges matter,
+and these results do not establish a win for every job size or configuration.
 
 The source SQL query is `SELECT COUNT(*), SUM(v), SUM(CHAR_LENGTH(label)) FROM t`
 over the same committed append files for all engines. Its timer includes planning,
@@ -1054,12 +1056,13 @@ on the new path.
 
 | Format, 1M rows | Stock ms | Previous fallback ms | Native ms |
 |---|---:|---:|---:|
-| Parquet | 588.54 [502.07, 592.71] | 677.27 [586.80, 683.62] | 225.27 [222.35, 373.59] |
-| ORC | 591.90 [583.16, 716.62] | 643.74 [593.57, 724.00] | 375.06 [369.73, 378.47] |
+| Parquet | 588.63 [499.18, 588.88] | 548.02 [544.83, 556.08] | 372.40 [226.00, 372.73] |
+| ORC | 585.81 [551.87, 737.50] | 549.34 [399.10, 552.98] | 371.40 [225.39, 374.94] |
 
-This complete SQL source pipeline improves by 2.61× for Parquet and 1.58× for ORC
-against stock, and 3.01× / 1.72× against the previous fallback. These are local
-snapshot-to-result measurements, not sustained tailing throughput.
+This complete SQL source pipeline improves by 1.58× for both formats against
+stock, and 1.47–1.48× against the previous fallback. These are local
+snapshot-to-result measurements, not sustained tailing throughput. Startup and
+result collection contribute substantially to the subsecond times and their range.
 
 A separate reader diagnostic selects all three columns but sums only `v`, without
 a SQL job. Stock consumes Paimon rows directly, the previous boundary copies stock
@@ -1071,18 +1074,22 @@ string values unmaterialized while the native reader constructs Arrow arrays.
 
 | Format | Input rows | Read | Stock ms | Previous boundary ms | Native ms |
 |---|---:|---|---:|---:|---:|
-| Parquet | 200K | Append | 9.66 [9.26, 9.82] | 38.80 [37.52, 42.30] | 9.45 [8.25, 10.49] |
-| Parquet | 200K | Primary key | 1.88 [1.83, 2.58] | 5.01 [4.24, 12.54] | 1.30 [1.16, 1.33] |
-| Parquet | 1M | Append | 29.08 [25.06, 29.43] | 129.45 [128.40, 145.78] | 30.24 [28.85, 33.40] |
-| Parquet | 1M | Primary key | 7.54 [7.46, 7.87] | 23.08 [23.06, 27.30] | 5.84 [5.76, 6.32] |
-| ORC | 200K | Append | 3.75 [3.61, 3.93] | 32.10 [31.07, 34.82] | 4.90 [4.67, 5.13] |
-| ORC | 200K | Primary key | 1.55 [1.50, 1.61] | 4.24 [4.01, 4.35] | 1.34 [1.28, 1.35] |
-| ORC | 1M | Append | 14.80 [14.42, 14.83] | 130.94 [126.00, 136.36] | 19.10 [17.17, 20.84] |
-| ORC | 1M | Primary key | 4.21 [4.12, 4.77] | 19.73 [19.51, 23.06] | 4.01 [3.93, 4.05] |
+| Parquet | 200K | Append | 8.57 [8.35, 10.04] | 31.66 [29.61, 44.29] | 10.40 [8.63, 11.07] |
+| Parquet | 200K | Primary key | 1.74 [1.67, 2.01] | 4.25 [4.11, 8.03] | 1.38 [1.19, 1.57] |
+| Parquet | 1M | Append | 29.61 [26.28, 31.56] | 127.97 [117.22, 178.71] | 29.68 [29.53, 31.33] |
+| Parquet | 1M | Primary key | 7.70 [7.49, 8.75] | 20.31 [19.99, 24.97] | 5.50 [4.00, 5.60] |
+| ORC | 200K | Append | 3.73 [3.54, 4.02] | 37.92 [35.28, 43.38] | 4.60 [4.57, 4.89] |
+| ORC | 200K | Primary key | 1.29 [1.03, 1.36] | 4.37 [4.36, 4.45] | 1.12 [0.89, 1.18] |
+| ORC | 1M | Append | 15.07 [11.16, 16.93] | 122.57 [109.31, 152.25] | 18.05 [17.12, 18.58] |
+| ORC | 1M | Primary key | 4.40 [4.22, 4.44] | 17.83 [17.38, 18.05] | 4.01 [2.58, 4.29] |
 
-The full-width ORC append reader is 29–31% slower than direct stock row consumption;
-Parquet's 1M append median is 4% slower. These unfavorable results are retained.
-A diagnostic using the existing projection pushdown to read only `v` measured ORC
+The full-width ORC append reader is 20–23% slower than direct stock row consumption;
+Parquet's 200K append median is 21% slower, while its 1M median is approximately equal.
+These unfavorable results are retained. The earlier adapter revision `f94255a1`
+measured a 29–31% raw ORC deficit and a 2% small ORC primary-key sink deficit;
+the tables above supersede those measurements after integrating main's boundary work.
+A diagnostic at the earlier revision using the existing projection pushdown to read
+only `v` measured ORC
 1M append at 8.18 [5.02, 8.37] ms stock, 40.64 [34.03, 52.17] ms previous boundary,
 and 7.34 [6.79, 9.13] ms native. The overlapping ranges do not establish a reliable
 raw-reader win. For 100K deduplicated keys, the same projection measured
