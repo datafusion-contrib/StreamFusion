@@ -59,9 +59,19 @@ These measurements cover MIN/MAX, not every temporal aggregate function or paral
 Regression tests import both typed running snapshots and previous multiset snapshots, then
 continue folding lower and higher values across restored partitions. DATE and BOOLEAN use
 the existing direct RocksDB row codec; TIME retains its existing raw snapshot fallback.
-Retracting SQL controls retain counted state. The native suite passes 587 tests (one ignored),
-and the temporal/Boolean, timestamp and grouped-value SQL suites pass 92 tests on Flink 2.2.1
-and 75 on Flink 1.18.1 (17 documented host limitations skipped).
+Retracting SQL controls retain counted state. The port onto the temporal coverage branch passes 567 native tests (one ignored),
+91 SQL/exchange checks on Flink 2.2.1, and 74 on Flink 1.18.1 (17 documented host skips).
+Downstream integration also passes 587 native tests (one ignored), with 92 temporal/Boolean,
+timestamp and grouped-value SQL cases on Flink 2.2.1 and 75 on Flink 1.18.1
+(17 documented host limitations skipped).
+
+The temporal branch was measured separately after porting the optimization, with the same
+configuration at two million rows. Single-phase DATE/TIME/BOOLEAN Flink/native medians are
+0.484/0.346, 0.482/0.335 and 0.451/0.333 s; two-phase medians are 0.589/0.507,
+0.557/0.487 and 0.546/0.475 s. Native five-trial ranges are respectively 0.338–0.362,
+0.325–0.339, 0.325–0.340, 0.495–0.527, 0.482–0.489 and 0.466–0.476 s.
+Flink ranges are 0.470–0.608, 0.438–0.575, 0.432–0.500, 0.580–0.594,
+0.546–0.586 and 0.536–0.609 s. All six measured MIN/MAX cases beat their matched controls.
 
 ## Immediate changelog output shares the tuple allocation with its cache
 
@@ -118,10 +128,16 @@ Flink controls changed from 0.370/0.315 to 0.354/0.348 s (after ranges
 than Flink and is a separate performance blocker. The first/last improvement does not
 establish readiness for all temporal aggregate functions.
 
-Validation: 587 native tests pass (one ignored). Grouped-value, temporal/Boolean, DISTINCT
+Validation on the downstream integration branch: 587 native tests pass (one ignored). Grouped-value, temporal/Boolean, DISTINCT
 average and decimal merge-order SQL checks pass 82 tests on Flink 2.2.1 and 65 on Flink 1.18.1
 with 17 documented host-limit skips. These cover retracting output, typed NULLs, cardinality
 errors and order-sensitive decimal behavior as well as insert-only cases.
+
+The temporal-coverage branch independently passes 567 native tests (one ignored), 59 focused
+SQL checks on Flink 2.2.1 and 42 on Flink 1.18.1 (17 host-limit skips). Its two-million-row
+TIME/BOOLEAN first/last medians are 0.605/0.617 s versus matched Flink 0.659/0.637 s,
+with the same source and measurement configuration. Native ranges are 0.593–0.675 and
+0.607–0.621 s; Flink ranges are 0.639–0.768 and 0.598–0.642 s.
 
 ## Group-aggregate DISTINCT folds primitives; the changelog emit reads its cache
 
@@ -141,12 +157,25 @@ on [Memory accounting designed off the hot path](memory-accounting-off-hot-path.
 
 ## Typed DISTINCT multiplicities
 
-Non-windowed DISTINCT sets specialize BIGINT, INT, SMALLINT, TINYINT, DECIMAL and STRING
-keys. Integer maps retain their exact width; decimal maps store unscaled i128 keys with
+Non-windowed DISTINCT sets specialize BIGINT, INT, SMALLINT, TINYINT, DECIMAL, BOOLEAN,
+TIMESTAMP and STRING keys. Integer maps retain their exact width; decimal maps store unscaled i128 keys with
 precision and scale on the map. STRING probes borrow UTF-8 bytes from the Arrow array in
 single-phase, local and global-merge folds. A duplicate does not allocate an owned string;
 new live entries and newly journaled elements own their bytes. Equality remains byte exact,
 without case folding or Unicode normalization. AHash remains the hash implementation.
+
+CPU profiling of the downstream DISTINCT coverage stack identified repeated one-row timestamp
+struct cloning, scalar comparison/construction/hashing, and repeated timestamp vector-layout
+lookups at the transpose. The same paths occur in the BOOLEAN/TIMESTAMP_LTZ/DECIMAL(19)
+COUNT/SUM workload. The implementation below applies those profiled optimizations to that
+narrower coverage independently of wide-decimal merge ordering.
+
+Fixed-width DISTINCT inputs are downcast once per batch and update typed multiplicities directly
+in both local and global aggregate stages. Timestamp keys use full-range i128 nanoseconds;
+the output remains the existing millisecond-plus-fraction Arrow struct. Local partial views
+append typed keys and counts directly into Arrow builders, avoiding intermediate scalar vectors.
+The transpose timestamp writer also caches its validated child vectors across rows and resets,
+following Comet's per-field writer pattern. These changes preserve the existing Arrow view schema.
 
 All representations share multiplicity updates, last-occurrence deletion and journal handling.
 Snapshots and persistent element journals still serialize typed scalar values with the same
@@ -154,6 +183,60 @@ encoding. Restore does not journal an already persisted entry; blob import does.
 value type promotes the map to the generic scalar representation, preserving live counts and
 pending journal entries. FLOAT/DOUBLE and complex types retain generic scalar keys and their
 existing equality rules. Admission gates are unchanged.
+
+The combined two-phase COUNT DISTINCT BOOLEAN/TIMESTAMP_LTZ(9) plus SUM DISTINCT
+DECIMAL(19,2) query now beats the matched Flink control at both measured sizes. These runs
+use release+mimalloc, JDK 17, Flink 2.2.1, Intel Core i7-12650H on Linux/WSL, parallelism 1,
+an explicit 2 GiB heap, 64 groups, 128 timestamp/decimal values per group, NULL every seventh
+row, and 1,024-row bundles. Each comparison has two warmups and five alternating measured
+trials. The runtime row source, rowwise blackhole sink, both transposes, and both native
+aggregate stages remain in the measured plan. The date is 2026-09-27.
+
+| Rows / implementation | Flink median (range), s | Native median (range), s |
+| --- | ---: | ---: |
+| 2M, current main optimizations before column specialization | 1.401 (1.368–1.457) | 4.202 (4.096–4.247) |
+| 2M, typed column readers and direct partial views | 1.416 (1.374–1.441) | 1.186 (1.179–1.227) |
+| 20M, typed column readers and direct partial views | 12.235 (12.082–12.458) | 11.199 (11.156–11.611) |
+
+The two-million-row native elapsed time falls 71.8% from the matched-resource native
+baseline. Compared with Flink, native takes 16.2% less time at 2M rows and 8.5% less at 20M.
+These measurements concern precision-19 SUM; wider decimals and DISTINCT AVG require their
+own parity and performance validation.
+
+Validation passes 570 native tests (one ignored), including timestamp range/nanoseconds,
+multiplicity, checkpoint/journal and promoted-key view coverage. The focused DISTINCT SQL
+and timestamp accessor suite passes 59 cases on Flink 2.2.1 and 58 on Flink 1.18.1, with
+one documented released-host capability skip on 1.18. Cached writer tests cover vector growth
+and reset with NULL and negative-epoch values.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=DistinctAggregateBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Ddistinct.rows=2000000 -Ddistinct.warmup=2 -Ddistinct.runs=5 \
+  -Dsf.extraJvmArgs=-Xmx2g
+# Repeat with -Ddistinct.rows=20000000 for the sustained comparison.
+```
+
+The single-phase exact AVG DISTINCT extension uses the same typed membership transitions
+with the existing integer/decimal AVG accumulators. A 2M-row TINYINT/BIGINT/DECIMAL(20,2)
+comparison after integration measures **2.609 s native (2.596–2.633) versus 6.574 s Flink
+(6.554–6.616), 2.519x**. It uses the hardware, release builds, 2 GiB heap, parallelism, warmups,
+and alternating trials above, with mini-batching disabled, 64 groups, domains 127/1,024/128,
+and NULL every seventh row. Both transposes and the rowwise source/sink remain present.
+The pre-feature planner routes this query to Flink. This validates the complete integrated
+path; it does not isolate any one optimization's contribution.
+At 5M rows with the same configuration, native measures **6.399 s (6.354–6.508) versus
+Flink 16.267 s (16.054–16.322), 2.542x**. The native advantage persists as the input grows.
+
+The split AVG DISTINCT extension also benefits from the integrated typed column path. It
+uses TINYINT/BIGINT/DECIMAL(19,2), the same domains and NULL distribution, two native stages,
+and 1,024-row bundles. With the same explicit 2 GiB heap and repeated-trial method, 2M rows
+measure **1.275 s native (1.269–1.405) versus 1.609 s Flink (1.487–1.629)**. At 20M rows,
+native measures **12.071 s (12.030–12.261) versus Flink 13.511 s (13.449–13.566)**, taking
+20.8% and 10.7% less elapsed time. Both transposes and the rowwise source/sink remain measured.
+This resolves the original slower split-average workload; wide-decimal sums/averages retain
+their separate ordering and performance requirements. Select this workload with
+`-Ddistinct.average=true -Ddistinct.twoPhase=true` on `DistinctAggregateBenchmark`.
 
 `typed_distinct` in the native operator benchmark measures single-phase and local COUNT DISTINCT
 for all specialized types with input-domain sizes 4 and 256 per group, 16 groups and one-seventh
@@ -427,8 +510,8 @@ on the 7.6 GB machine. Each cell gives median and trial range in seconds.
 
 The one-million-key native medians improve 7.2% for TIME and 5.9% for BOOLEAN and beat their
 matched Flink controls. At 500,000 keys, STRING improves 16.4% and beats Flink; TIME improves
-5.2%, while BOOLEAN is flat. TIME/BOOLEAN at that smaller size still trail Flink by about 8%,
-so these results do not close the remaining temporal SINGLE_VALUE performance gap.
+5.2%, while BOOLEAN is flat. At this earlier stage, TIME/BOOLEAN at that smaller size trailed Flink by about 8%.
+The shared-boundary measurements below revisit that gap.
 
 ```sh
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
@@ -457,7 +540,7 @@ the unchanged default heap setting because their retained keyed state is small.
 An independent final-build one-million-key repeat measured native TIME/BOOLEAN at
 0.658/0.625 s (ranges 0.588–0.720/0.611–0.742 s), versus matched Flink
 0.713/0.711 s (0.641–0.933/0.584–0.831 s). This confirms the benefit at that size
-without changing the unfavorable 500,000-key result.
+without changing the then-unfavorable 500,000-key result.
 
 Validation: the final path passes 567 native tests (one ignored), 59 grouped-value/temporal/
 columnar SQL controls on Flink 2.2.1, and 42 on Flink 1.18.1 (17 documented host skips).
@@ -565,3 +648,67 @@ The 2M-row COUNT/SUM control is 1.395 s native (1.363–1.408) against
 1.401 s Flink (1.362–1.440), effectively tied. Focused SQL validation passes
 70 cases on Flink 2.2.1; Flink 1.18.1 passes 56 with 14 documented
 host-capability skips. Decimal ordering and DISTINCT AVG checks pass on both.
+
+## Shared boundary ownership improvements
+
+The row/Arrow boundaries now [write directly into owned buffers and avoid a redundant exit
+copy](row-major-transpose.md#direct-writes-at-the-streaming-boundary). Buffer allocation and
+finalization remain timed exactly; sampled write timing removes the per-row clock bottleneck.
+These changes preserve the typed accumulators, snapshots, filters and retraction rules above.
+
+The following final-branch measurements use release+mimalloc, Flink 2.2.1/JDK 17,
+i7-12650H Linux/WSL, parallelism one, a matched 2 GiB heap, both transposes and a rowwise sink.
+SINGLE_VALUE uses one unique key per input row and one-eighth NULLs, with five warmups and
+nine alternating trials. Each cell gives median and full trial range in seconds.
+
+| SINGLE_VALUE workload | Native | Flink | Flink/native |
+| --- | ---: | ---: | ---: |
+| 500k / TIME | 0.373 (0.340–0.473) | 0.402 (0.321–0.449) | 1.077x |
+| 500k / BOOLEAN | 0.328 (0.302–0.497) | 0.363 (0.333–0.451) | 1.106x |
+| 500k / STRING | 0.409 (0.346–0.474) | 0.412 (0.375–0.503) | 1.007x |
+| 1000k / TIME | 0.610 (0.590–0.738) | 0.719 (0.585–0.886) | 1.180x |
+| 1000k / BOOLEAN | 0.632 (0.589–0.715) | 0.718 (0.611–0.795) | 1.137x |
+
+An independent 500k-key repeat, after the MIN/MAX controls, measured:
+
+| SINGLE_VALUE workload | Native | Flink | Flink/native |
+| --- | ---: | ---: | ---: |
+| 500k / TIME | 0.340 (0.321–0.407) | 0.401 (0.328–0.575) | 1.181x |
+| 500k / BOOLEAN | 0.333 (0.315–0.380) | 0.365 (0.301–0.568) | 1.097x |
+
+The new TIME/BOOLEAN medians beat their matched Flink controls at both cardinalities and in the
+smaller-workload repeat. Compared with the earlier 500k direct-emission native medians
+(0.362/0.365 s), the repeat reaches 0.340/0.333 s. The first TIME run was 0.373 s, and host
+controls also moved, so the full ranges and both runs remain visible rather than attributing
+every difference to the code change. The STRING control is effectively tied with Flink in this
+run. Existing unsupported-mode gates remain unchanged.
+
+FIRST_VALUE/LAST_VALUE at 2M rows and 64 keys use the same 2 GiB cap and five-warmup,
+nine-trial method:
+
+| FIRST/LAST workload | Native | Flink | Flink/native |
+| --- | ---: | ---: | ---: |
+| 2000k / TIME | 0.573 (0.564–0.589) | 0.613 (0.605–0.623) | 1.069x |
+| 2000k / BOOLEAN | 0.551 (0.545–0.563) | 0.573 (0.559–0.583) | 1.039x |
+
+Fresh MIN/MAX controls use 2M rows, 64 keys, two warmups and five alternating trials;
+two-phase cases retain 1,024-row bundles:
+
+| Phase / type | Native median (range), s | Flink median (range), s | Flink/native |
+| --- | ---: | ---: | ---: |
+| one / DATE | 0.352 (0.343–0.385) | 0.434 (0.421–0.444) | 1.232x |
+| one / TIME | 0.346 (0.338–0.352) | 0.429 (0.425–0.440) | 1.240x |
+| one / BOOLEAN | 0.340 (0.336–0.345) | 0.417 (0.402–0.431) | 1.226x |
+| two / DATE | 0.462 (0.462–0.470) | 0.579 (0.566–0.583) | 1.252x |
+| two / TIME | 0.441 (0.431–0.453) | 0.557 (0.548–0.559) | 1.262x |
+| two / BOOLEAN | 0.437 (0.429–0.440) | 0.548 (0.534–0.561) | 1.255x |
+
+All six current MIN/MAX controls and both FIRST/LAST controls beat their matched Flink medians.
+These measurements cover the listed schemas, sizes and cardinalities, including their unfavorable
+historical results above; they are not a claim about every aggregation workload.
+
+The final merged-base tree passes 88 focused grouped-aggregate, transpose and ownership checks
+on Flink 2.2.1; Flink 1.18.1 passes 71 with the same 17 documented host-capability skips.
+The native source is unchanged from the 567-test validated direct-emission implementation;
+a forced release rebuild reproduces its saved library hash. Hosted CI must validate the exact
+PR head before merge.

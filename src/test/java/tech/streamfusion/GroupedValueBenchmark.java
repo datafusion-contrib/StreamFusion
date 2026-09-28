@@ -35,6 +35,7 @@ class GroupedValueBenchmark {
 
   @Test
   void groupedValues() throws Exception {
+    if (DISTINCT && SINGLE) throw new IllegalArgumentException("Select DISTINCT first/last or SINGLE_VALUE");
     for (String type :
         System.getProperty("grouped.value.types", DISTINCT || SINGLE ? "STRING" : "BIGINT,STRING")
             .split(",")) {

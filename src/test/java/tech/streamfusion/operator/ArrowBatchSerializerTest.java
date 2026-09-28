@@ -206,8 +206,10 @@ class ArrowBatchSerializerTest {
       long liveHandle = ArrowBatchHandles.register(new ArrowBatch(liveRoot, 1, liveOwner));
 
       assertEquals(1, ArrowBatchHandles.releaseOwner(failedOwner));
+      assertEquals(0, ArrowBatchHandles.releaseOwner(failedOwner));
+      assertEquals(1, ArrowBatchHandles.inFlight());
       assertThrows(
-          IllegalStateException.class,
+          org.apache.flink.runtime.execution.CancelTaskException.class,
           () ->
               ArrowBatchHandles.claim(
                   ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, failedHandle));
@@ -215,6 +217,53 @@ class ArrowBatchSerializerTest {
           ArrowBatchHandles.claim(
               ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, liveHandle);
       live.root().close();
+      assertThrows(IllegalStateException.class,
+          () -> ArrowBatchHandles.claim(
+              ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, failedHandle));
+      ArrowBatchHandles.forgetOwner(failedOwner);
+      ArrowBatchHandles.forgetOwner(liveOwner);
+    }
+  }
+
+  @Test
+  void jobReleaseForgetsUnconsumedCancellationMarkers() throws Exception {
+    long owner = ArrowBatchHandles.newOwner();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot root = RowDataArrowConverter.write(List.of(row(1L, 10)), SCHEMA, allocator);
+      long handle = ArrowBatchHandles.register(new ArrowBatch(root, 0, owner));
+      ArrowBatchHandles.releaseOwner(owner);
+      assertEquals(0, allocator.getAllocatedMemory());
+      ArrowBatchHandles.forgetOwner(owner);
+      assertThrows(IllegalStateException.class,
+          () -> ArrowBatchHandles.claim(ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, handle));
+    }
+  }
+
+  @Test
+  void claimedBatchSurvivesProducerAndJobCleanup() throws Exception {
+    long owner = ArrowBatchHandles.newOwner();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot root = RowDataArrowConverter.write(List.of(row(1L, 10)), SCHEMA, allocator);
+      long handle = ArrowBatchHandles.register(new ArrowBatch(root, 0, owner));
+      ArrowBatch claimed = ArrowBatchHandles.claim(
+          ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, handle);
+      assertEquals(0, ArrowBatchHandles.releaseOwner(owner));
+      ArrowBatchHandles.forgetOwner(owner);
+      assertSame(root, claimed.root());
+      assertEquals(1, root.getRowCount());
+      root.close();
+      assertEquals(0, allocator.getAllocatedMemory());
+    }
+  }
+
+  @Test
+  void jobReleaseClosesBatchesThatWereNeverClaimed() throws Exception {
+    long owner = ArrowBatchHandles.newOwner();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot root = RowDataArrowConverter.write(List.of(row(1L, 10)), SCHEMA, allocator);
+      ArrowBatchHandles.register(new ArrowBatch(root, 0, owner));
+      ArrowBatchHandles.forgetOwner(owner);
+      assertEquals(0, allocator.getAllocatedMemory());
     }
   }
 

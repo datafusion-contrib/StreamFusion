@@ -2960,8 +2960,8 @@ impl LocalGroupAggregator {
         });
         let key_batch = self.key_batches.len();
         let mut retained_key_batch = false;
-        // Distinct aggregates fold the value itself into their per-bundle set, not a Num;
-        // a BIGINT value column takes the primitive fast path.
+        // Distinct aggregates fold values into per-bundle multiplicities.
+        // Typed column readers avoid per-row scalar materialization.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
                 matches!(self.kinds[i], 7 | 9 | 17 | 18).then_some(self.value_columns[i] as usize)

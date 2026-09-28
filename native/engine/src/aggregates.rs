@@ -1082,6 +1082,20 @@ impl RunningAgg {
             };
             return Self::new(8, &sum_type);
         }
+        if matches!(kind, 10 | 11)
+            && matches!(
+                value_type,
+                DataType::Date32
+                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                    | DataType::Boolean
+            )
+        {
+            return TypedExtreme {
+                value: None,
+                is_min: kind == 10,
+                data_type: value_type.clone(),
+            };
+        }
         if kind == 3 || kind == 7 {
             return Count(0); // COUNT and COUNT(DISTINCT) both report a bigint count
         }
