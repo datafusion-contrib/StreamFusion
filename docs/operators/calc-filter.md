@@ -1451,8 +1451,17 @@ Same input and boundary rules as LPAD, with padding appended on the right. Dynam
 Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. Numeric separator overloads use Flink-generated code and interpret the integer as a character code. BIGINT indices with character separators fall back.
 
 Generated scalar helpers keep operand computations within the same Flink evaluator, retaining
-intermediate StringData representation. This also preserves the released host's failure for a
-computed empty trim set instead of silently changing it through a string conversion.
+intermediate StringData representation. For a computed empty trim set, Flink 2.2.1 can throw
+an arithmetic exception while the empty value is binary-only, but succeeds after its Java string
+has been decoded and cached. The shared empty-string singleton makes this depend on prior use in
+the JVM. Native evaluation preserves the host representation and matches either outcome; parity
+checks compare the live host outcome rather than assuming that every computed empty set fails.
+A separate regression check uses a fresh empty value to verify both representation states.
+Regular correctness-test forks use `-XX:-OmitStackTraceInFastThrow` so repeated implicit
+exceptions retain the messages and stack frames needed to compare their evaluation phase.
+Without it, HotSpot can turn the same arithmetic failure into a stackless exception with no
+message after warmup, creating a second test-order dependency. The `bench` profile leaves
+this test-only setting empty and retains normal JVM exception optimization.
 
 ### Temporal parsing, extraction and rounding
 
