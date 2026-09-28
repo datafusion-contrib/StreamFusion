@@ -239,7 +239,7 @@ pub(crate) fn build_expr(
         }
         // A JVM UDF node: `arg` indexes the long pool at [udf id, return-type code]; the children are the
         // argument expressions. Builds a JvmUdf scalar function that upcalls the JVM per batch.
-        17 | 38 => {
+        17 | 38 | 41 => {
             let id = longs[arg] as i32;
             let row_result = kinds[node] == 38;
             let return_type = if row_result {
@@ -265,12 +265,11 @@ pub(crate) fn build_expr(
                     cursor,
                 ));
             }
-            datafusion::logical_expr::ScalarUDF::new_from_impl(JvmUdf::new(
-                id,
-                return_type,
-                row_result,
-            ))
-            .call(children)
+            let mut function = JvmUdf::new(id, return_type, row_result);
+            if kinds[node] == 41 {
+                function.decimal_round_text = Some(longs[arg + 2] != 0);
+            }
+            datafusion::logical_expr::ScalarUDF::new_from_impl(function).call(children)
         }
         // Preserve the legacy literal encoding used by native timestamp arithmetic. The generated
         // temporal evaluator uses kind 24 for its signed millisecond interval arguments instead.
@@ -1906,6 +1905,7 @@ pub(crate) struct JvmUdf {
     return_type: DataType,
     signature: datafusion::logical_expr::Signature,
     row_result: bool,
+    decimal_round_text: Option<bool>,
 }
 
 impl JvmUdf {
@@ -1914,6 +1914,7 @@ impl JvmUdf {
             id,
             return_type,
             row_result,
+            decimal_round_text: None,
             signature: datafusion::logical_expr::Signature::variadic_any(if row_result {
                 datafusion::logical_expr::Volatility::Volatile
             } else {
@@ -1948,6 +1949,13 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         } else {
             ColumnarValue::values_to_arrays(&args.args)?
         };
+        if let Some(truncate) = self.decimal_round_text {
+            if let Some(output) =
+                crate::flink_functions::decimal_round_text::evaluate(&arrays, truncate)
+            {
+                return Ok(ColumnarValue::Array(output));
+            }
+        }
         // Pack the argument columns into one batch (arg0..argN-1) to hand across the boundary at once.
         let fields: Vec<Field> = arrays
             .iter()
