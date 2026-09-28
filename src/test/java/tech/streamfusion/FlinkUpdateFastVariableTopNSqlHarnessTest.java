@@ -99,7 +99,12 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
         query(bound, true, false),
         "changing update-fast bounds require disabled state TTL");
     NativeParity.assertFallbackReasonContains(
-        () -> environment(true),
+        () -> {
+          var table = environment(true);
+          // Count-triggered bundles must propose the same first bound in both host jobs.
+          table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+          return table;
+        },
         query(bound, true, false),
         "changing bounds require unchanged upstream mini-batch changelog order");
   }
