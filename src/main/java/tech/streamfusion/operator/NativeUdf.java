@@ -415,13 +415,17 @@ public final class NativeUdf {
                 : null;
         var rowResult =
             rowWriter == null ? null : new org.apache.flink.table.data.GenericRowData(1);
-        // Each argument column is materialized once with a monomorphic typed loop; reading value
-        // by value inside the row loop instead put a megamorphic isNull/type dispatch per (row,
-        // arg) on the hot path — 14% of q21's parity run in the vector interface calls alone.
-        Object[][] columns = new Object[arity][];
+        // String arguments retain Java-backed StringData comparison and identity semantics.
+        // Other generated arguments borrow the imported batch until evaluation completes.
+        tech.streamfusion.arrow.ArrowReader generatedReader =
+            udf.generated == null || Arrays.stream(udf.argTypes).anyMatch(type -> type == TYPE_STRING)
+                ? null
+                : tech.streamfusion.arrow.ArrowConversion.createArrowReader(
+                    in, org.apache.flink.table.types.logical.RowType.of(udf.generated.argumentTypes()));
+        Object[][] columns = generatedReader == null ? new Object[arity][] : null;
         tech.streamfusion.arrow.ArrowReader argumentReader = null;
         org.apache.flink.table.types.logical.LogicalType[] argumentTypes = null;
-        for (int a = 0; a < arity; a++) {
+        for (int a = 0; generatedReader == null && a < arity; a++) {
           if (udf.argTypes[a] == TYPE_INTERNAL) {
             if (argumentReader == null) {
               argumentTypes = ((InternalArguments) udf.function).argumentTypes();
@@ -454,7 +458,9 @@ public final class NativeUdf {
           Object value;
           if (udf.generated != null) {
             try {
-              value = udf.generated.evalColumns(columns, row);
+              value = generatedReader == null
+                  ? udf.generated.evalColumns(columns, row)
+                  : udf.generated.evalRow(generatedReader.read(row));
             } catch (Throwable failure) {
               // Use the same exception handover as reflective calls, including checked failures.
               throw new InvocationTargetException(failure);
