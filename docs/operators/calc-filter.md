@@ -1560,6 +1560,9 @@ Flink 2.2.1 (2026-09-27): two million numeric runtime rows, one-seventh NULLs, p
 two warmups and five measured runs in alternating engine order. The matched numeric identity
 control, both Arrow transposes and a rowwise blackhole sink remain in the measured path.
 
+The original measurements below are historical. A subsequent [CPU-profile investigation](../optimizations/host-exact-builtins-upcall.md#exact-floating-math-remaining-performance-limits) tested borrowed inputs, primitive batch evaluation and simplified rounding. None established a whole-job improvement; the prototypes were removed and this work remains draft.
+
+
 | Expression | Flink median (s) | Native median (s) | Flink/native ratio |
 |---|---:|---:|---:|
 | Numeric identity | 0.293 | 0.429 | 0.685x |
