@@ -1076,11 +1076,12 @@ impl RunningAgg {
             return Count(0); // COUNT and COUNT(DISTINCT) both report a bigint count
         }
         // SUM(DISTINCT) (kind 9) runs a plain SUM inside its distinct set (GroupAggState wraps it);
-        // its running/result/state types are exactly SUM's. Kinds 10/11 are MIN/MAX over an
+        // AVG(DISTINCT), kind 17, similarly wraps AVG. Kinds 10/11 are MIN/MAX over an
         // insert-only input: no retraction can ever arrive, so they run as the plain single-value
         // extremes instead of the retractable multiset.
         let kind = match kind {
             9 => 0,
+            17 => 4, // AVG(DISTINCT) wraps the ordinary widened sum/count state.
             10 => 1,
             11 => 2,
             kind => kind,

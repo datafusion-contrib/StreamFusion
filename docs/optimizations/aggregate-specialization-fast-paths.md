@@ -217,6 +217,17 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
 # Repeat with -Ddistinct.rows=20000000 for the sustained comparison.
 ```
 
+The single-phase exact AVG DISTINCT extension uses the same typed membership transitions
+with the existing integer/decimal AVG accumulators. A 2M-row TINYINT/BIGINT/DECIMAL(20,2)
+comparison after integration measures **2.609 s native (2.596–2.633) versus 6.574 s Flink
+(6.554–6.616), 2.519x**. It uses the hardware, release builds, 2 GiB heap, parallelism, warmups,
+and alternating trials above, with mini-batching disabled, 64 groups, domains 127/1,024/128,
+and NULL every seventh row. Both transposes and the rowwise source/sink remain present.
+The pre-feature planner routes this query to Flink. This validates the complete integrated
+path; it does not isolate any one optimization's contribution.
+At 5M rows with the same configuration, native measures **6.399 s (6.354–6.508) versus
+Flink 16.267 s (16.054–16.322), 2.542x**. The native advantage persists as the input grows.
+
 `typed_distinct` in the native operator benchmark measures single-phase and local COUNT DISTINCT
 for all specialized types with input-domain sizes 4 and 256 per group, 16 groups and one-seventh
 NULLs. The BIGINT cases are controls for the existing specialization; strings use 8- and
