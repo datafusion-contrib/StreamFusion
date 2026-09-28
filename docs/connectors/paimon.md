@@ -3,6 +3,7 @@
 **Status:** experimental. The optional `streamfusion-paimon` module accelerates streaming
 `SELECT` reads and `INSERT INTO` jobs on Paimon **append-only tables** and **primary-key tables with fixed,
 dynamic, or postpone buckets** on the published Paimon `2.0.0` Flink 2.2 connector.
+The separate [Paimon 1.0.0 adapter](#paimon-100-on-flink-118) targets Flink 1.18.
 Paimon keeps every table-level responsibility:
 schema and catalog, bucket assignment rules, sequence numbering rules, file rolling, statistics,
 manifests, snapshots, commits, and compaction. StreamFusion replaces the per-row shuffle in front
@@ -944,3 +945,162 @@ empty strings for optional filters and the explicit `full` batch-compaction stra
 argument annotations and null argument conversion that Flink 1.18 cannot interpret. Batch mode
 is explicit in the table configuration because 1.18 constructs the procedure’s execution
 environment from that configuration.
+
+## Paimon 1.0.0 on Flink 1.18
+
+The `paimon1` profile builds a separate `streamfusion-paimon1-flink1.18` adapter
+against the released Paimon **1.0.0** connector. Build it together with `flink-1.18`;
+the build rejects other Flink lines. Install this adapter instead of the Paimon 2.0
+adapter, alongside `paimon-flink-1.18-1.0.0.jar` and the selected StreamFusion
+Parquet/ORC modules. Keep the same `01-streamfusion-paimon.jar` classpath ordering.
+The two adapters must not be installed together.
+
+The adapter shares native codecs, Arrow batch routing, and merge kernels with the
+2.0 integration. Its build stages shared Java sources and overlays the classes whose
+released APIs changed. The artifacts deliberately use the same package names: choose
+one at deployment rather than mixing incompatible Paimon APIs in one classloader. Java uses the 1.0 append topology, writer memory pools, file
+metadata, hash indexes, commit messages, and checkpoint lifecycle. Streaming
+splits containing before-files retain Java's reverse-row-kind reader. Postpone
+buckets and newer coordinator/partition-routing modes do not exist in this release.
+External log systems retain the stock source and sink.
+Numeric aggregation preserves 1.0's wrapping integer arithmetic and empty-accumulator
+product retractions; the 2.0 adapter keeps its checked arithmetic. ORC timestamp
+writes reproduce 1.0's historical `java.sql.Timestamp` calendar conversion for both
+TIMESTAMP and TIMESTAMP_LTZ, while retaining timestamp-instant physical storage for LTZ.
+Field defaults retain the stock source because Paimon 1.0 applies them on reads,
+after merging and schema evolution. Paimon 1.0 has no
+writer-metadata handoff; native Parquet floating bounds are omitted conservatively
+so NaNs cannot cause files to be incorrectly pruned.
+
+The profile is opt-in and pins **1.0.0**, not the broader 1.x release family. The
+source and sink admission rules above apply, with the release differences listed
+here. Batch SQL keeps Paimon's planner and writer. Unsupported combinations keep
+the stock connector; passing upstream tests does not imply every query is native.
+
+### Reproducing compatibility checks
+
+Use JDK 17 and the released Flink 1.18.1 dependencies selected by `flink-1.18`:
+
+```bash
+mvn -Pflink-1.18,paimon1 -pl streamfusion-paimon1 -am \
+  -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest' \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
+bin/paimon1-suite.sh -Pbench
+```
+
+The upstream runner loads the published `paimon-flink-common:1.0.0` test JAR,
+plus two unchanged Flink-1.18-specific tests extracted from the checksum-pinned
+`release-1.0.0` source archive. It uses the existing planner agent to install
+StreamFusion; upstream SQL, expected rows, assertions, and timeouts stay unchanged.
+All production Paimon code comes from canonical released Maven artifacts.
+The release build keeps native execution within upstream's short SQL deadlines.
+The runner records per-test SQL/planner inventory, Flink diagnostics, and Surefire
+reports under `streamfusion-paimon1/target`. `SF_PAIMON1_STOCK=true` reruns the same
+tests without the planner agent; `SF_PAIMON1_TESTS` selects a narrower class/method
+set using Surefire syntax.
+
+The selected upstream coverage includes append and primary-key tables, dynamic
+buckets, partial updates, first-row and field aggregation, input/lookup/full
+compaction changelogs, schema evolution and filter pushdown, composite partitioned
+keys, and savepoint/job recovery. It is a targeted SQL suite, not all Paimon tests.
+Dedicated stock/native twins additionally check Parquet and ORC across repeated
+commits, managed writer memory, read/restore offsets, before-file retractions,
+field defaults after merging, floating-point edge values, and historical timestamps.
+
+### Release benchmark
+
+`LegacyPaimonBenchmark` compares stock Paimon, the previous StreamFusion fallback,
+and the new adapter on identical data. Local measurements below used JDK 17,
+Flink 1.18.1, Paimon 1.0.0, release Rust with mimalloc, one task, two JVM CPUs,
+a 1.5 GiB test heap, 4,096-row Arrow batches, and a 32 MiB writer buffer.
+Each configuration has one warmup and three measurements with rotating engine order.
+Times are **median [minimum, maximum]**, not best-of-run throughput claims.
+
+The row-fed sink query writes `(BIGINT id, BIGINT v, STRING label)` using
+`INSERT INTO t SELECT id, v + 1, label FROM input_rows`. Labels have 100 distinct
+values. Primary-key tables have one bucket and 10% distinct keys; append tables
+use unaware buckets. Both use `write-only=true`. Timers include SQL execution,
+startup, input generation, conversions, JNI, routing, merge, encoding and commit;
+plan inspection and final stock-reader verification are outside the timer.
+Compaction and distributed checkpoint throughput are not measured. The previous
+fallback keeps native computation but disables the native sink. All runs check
+row counts and value checksums, and assert the intended physical operators.
+
+| Format | Input rows | Sink | Stock ms | Previous fallback ms | Native ms |
+|---|---:|---|---:|---:|---:|
+| Parquet | 200K | Append | 181.98 [171.38, 241.62] | 219.70 [214.96, 296.84] | 155.56 [155.47, 170.60] |
+| Parquet | 200K | Primary key | 206.05 [200.86, 210.53] | 251.86 [245.77, 278.91] | 198.15 [186.79, 198.44] |
+| Parquet | 1M | Append | 700.25 [697.46, 730.45] | 880.20 [876.43, 960.33] | 523.55 [510.19, 536.96] |
+| Parquet | 1M | Primary key | 859.22 [820.83, 933.96] | 1043.60 [1011.97, 1093.36] | 649.48 [632.12, 734.82] |
+| ORC | 200K | Append | 182.00 [175.32, 185.33] | 222.98 [222.39, 232.37] | 172.62 [167.80, 302.63] |
+| ORC | 200K | Primary key | 208.06 [200.81, 211.75] | 254.76 [242.60, 300.73] | 212.45 [188.31, 216.64] |
+| ORC | 1M | Append | 669.17 [602.77, 673.52] | 805.23 [800.94, 908.04] | 572.99 [543.60, 640.48] |
+| ORC | 1M | Primary key | 820.86 [794.24, 861.81] | 981.73 [955.25, 1148.11] | 712.40 [637.97, 732.34] |
+
+At 1M input rows the native sinks improve over stock by 1.15–1.34× and over the
+previous fallback by 1.38–1.68×. Small jobs are startup-sensitive: ORC's 200K
+primary-key median is 2% slower than stock, with overlapping ranges. These results
+do not establish a win for every job size or table configuration.
+
+The source SQL query is `SELECT COUNT(*), SUM(v), SUM(CHAR_LENGTH(label)) FROM t`
+over the same committed append files for all engines. Its timer includes planning,
+startup, decode, conversions, native computation where enabled, and collecting the
+complete initial-snapshot aggregate. Job cancellation follows the timer. All three
+aggregates must match. This uses one-phase aggregation with a 4,096-row mini-batch
+and 10 ms allowed latency. The previous fallback disables the native source but
+keeps native computation. Plan assertions require the native source and aggregate
+on the new path.
+
+| Format, 1M rows | Stock ms | Previous fallback ms | Native ms |
+|---|---:|---:|---:|
+| Parquet | 588.54 [502.07, 592.71] | 677.27 [586.80, 683.62] | 225.27 [222.35, 373.59] |
+| ORC | 591.90 [583.16, 716.62] | 643.74 [593.57, 724.00] | 375.06 [369.73, 378.47] |
+
+This complete SQL source pipeline improves by 2.61× for Parquet and 1.58× for ORC
+against stock, and 3.01× / 1.72× against the previous fallback. These are local
+snapshot-to-result measurements, not sustained tailing throughput.
+
+A separate reader diagnostic selects all three columns but sums only `v`, without
+a SQL job. Stock consumes Paimon rows directly, the previous boundary copies stock
+rows into owned storage and transposes them to Arrow, and native consumes Arrow.
+The same native-written files are used for each engine. Primary-key reads return
+10% of the input count after deduplication. This retains native decode/JNI costs
+but does not represent equal work for unused columns: stock row access can leave
+string values unmaterialized while the native reader constructs Arrow arrays.
+
+| Format | Input rows | Read | Stock ms | Previous boundary ms | Native ms |
+|---|---:|---|---:|---:|---:|
+| Parquet | 200K | Append | 9.66 [9.26, 9.82] | 38.80 [37.52, 42.30] | 9.45 [8.25, 10.49] |
+| Parquet | 200K | Primary key | 1.88 [1.83, 2.58] | 5.01 [4.24, 12.54] | 1.30 [1.16, 1.33] |
+| Parquet | 1M | Append | 29.08 [25.06, 29.43] | 129.45 [128.40, 145.78] | 30.24 [28.85, 33.40] |
+| Parquet | 1M | Primary key | 7.54 [7.46, 7.87] | 23.08 [23.06, 27.30] | 5.84 [5.76, 6.32] |
+| ORC | 200K | Append | 3.75 [3.61, 3.93] | 32.10 [31.07, 34.82] | 4.90 [4.67, 5.13] |
+| ORC | 200K | Primary key | 1.55 [1.50, 1.61] | 4.24 [4.01, 4.35] | 1.34 [1.28, 1.35] |
+| ORC | 1M | Append | 14.80 [14.42, 14.83] | 130.94 [126.00, 136.36] | 19.10 [17.17, 20.84] |
+| ORC | 1M | Primary key | 4.21 [4.12, 4.77] | 19.73 [19.51, 23.06] | 4.01 [3.93, 4.05] |
+
+The full-width ORC append reader is 29–31% slower than direct stock row consumption;
+Parquet's 1M append median is 4% slower. These unfavorable results are retained.
+A diagnostic using the existing projection pushdown to read only `v` measured ORC
+1M append at 8.18 [5.02, 8.37] ms stock, 40.64 [34.03, 52.17] ms previous boundary,
+and 7.34 [6.79, 9.13] ms native. The overlapping ranges do not establish a reliable
+raw-reader win. For 100K deduplicated keys, the same projection measured
+3.40 [3.30, 3.51] / 8.94 [8.59, 9.11] / 1.03 [0.98, 1.04] ms.
+The adapter's source benefit is demonstrated in the complete SQL pipeline above;
+it should not be interpreted as universal superiority of Arrow over row access.
+
+Reproduce each format and size separately, without concurrent test/build jobs:
+
+```bash
+SF_PAIMON1_BENCHMARK=true SF_PAIMON1_BENCH_ROWS=1000000 \
+SF_PAIMON_FILE_FORMAT=parquet SF_PAIMON1_SQL_SOURCE_BENCHMARK=true \
+  mvn -Pflink-1.18,paimon1,bench -pl streamfusion-paimon1 -am \
+  -Dsf.testForks=1 -Dtest=LegacyPaimonBenchmark \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  '-Dsf.extraJvmArgs=-Xmx1536m -XX:ActiveProcessorCount=2' test
+```
+
+Use `SF_PAIMON_FILE_FORMAT=orc` and `SF_PAIMON1_BENCH_ROWS=200000` for the other
+configurations. `SF_PAIMON1_SOURCE_PROJECT_VALUE=true` selects the additional
+projection diagnostic. The default reader diagnostic keeps all columns.

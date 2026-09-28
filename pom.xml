@@ -878,6 +878,12 @@
         <!-- Paimon is optional for the same reason: only deployments that write Paimon tables install
              its connector and the StreamFusion format plug-in. Published artifacts only. -->
         <profile>
+            <id>paimon1</id>
+            <modules>
+                <module>streamfusion-paimon1</module>
+            </modules>
+        </profile>
+        <profile>
             <id>paimon</id>
             <modules>
                 <module>streamfusion-paimon</module>

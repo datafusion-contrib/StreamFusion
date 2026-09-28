@@ -1,6 +1,7 @@
 //! Paimon level-0 reducers. Like paimon-rust's sort_merge and pick-value aggregators, unchanged
 //! cells retain indices into Arrow columns. Only arithmetic and concatenation materialize values.
-//! The reducer shortcut, field iteration, and retract behavior follow released Java Paimon 2.0.
+//! The reducer shortcut and field iteration follow released Java Paimon 2.0.
+//! The legacy adapter selects released 1.0 numeric overflow and retraction semantics.
 use super::*;
 #[cfg(test)]
 use arrow::array::Float64Array;
@@ -59,6 +60,8 @@ pub(super) struct FieldOptions {
     distinct: bool,
     #[serde(default)]
     host: bool,
+    #[serde(default)]
+    legacy_numeric: bool,
 }
 
 impl Options {
@@ -211,7 +214,10 @@ impl<'a> Reducer<'a> {
                 continue;
             }
             if partial && retract && !grouped {
-                assert!(self.options.remove_on_delete, "Partial update cannot accept delete records without ignore-delete, remove-record-on-delete or sequence groups");
+                assert!(
+                    self.options.remove_on_delete,
+                    "Partial update cannot accept delete records without ignore-delete, remove-record-on-delete or sequence groups"
+                );
                 continue;
             }
             let mut processed = vec![false; self.kind_column];
@@ -443,9 +449,26 @@ fn aggregate(
         match function {
             "primary-key" => return input,
             "last_value" => return Cell::Null,
-            "last_non_null_value" => return if input.is_null() { accumulator } else { Cell::Null },
-            "sum" | "product" => return numeric(function, &accumulator, &input, column, true),
-            _ => panic!("Aggregate function '{function}' does not support retraction; configure fields.<field>.ignore-retract=true"),
+            "last_non_null_value" => {
+                return if input.is_null() {
+                    accumulator
+                } else {
+                    Cell::Null
+                };
+            }
+            "sum" | "product" => {
+                return numeric(
+                    function,
+                    &accumulator,
+                    &input,
+                    column,
+                    true,
+                    field.legacy_numeric,
+                );
+            }
+            _ => panic!(
+                "Aggregate function '{function}' does not support retraction; configure fields.<field>.ignore-retract=true"
+            ),
         }
     }
     match function {
@@ -465,7 +488,14 @@ fn aggregate(
                 accumulator
             }
         }
-        "sum" | "product" => numeric(function, &accumulator, &input, column, false),
+        "sum" | "product" => numeric(
+            function,
+            &accumulator,
+            &input,
+            column,
+            false,
+            field.legacy_numeric,
+        ),
         "min" | "max" => {
             if accumulator.is_null() {
                 return input;
@@ -549,12 +579,13 @@ fn numeric(
     input: &Cell,
     column: &ArrayRef,
     retract: bool,
+    legacy: bool,
 ) -> Cell {
     if input.is_null() {
         return accumulator.clone();
     }
     if accumulator.is_null() && (!retract || function == "product") {
-        return if retract {
+        return if retract && !legacy {
             accumulator.clone()
         } else {
             input.clone()
@@ -565,6 +596,15 @@ fn numeric(
     macro_rules! integer {
         ($variant:ident, $a:expr, $b:expr) => {{
             let a = $a.unwrap_or(0);
+            // Paimon 1.0 uses Java primitive arithmetic; 2.0 checks overflow.
+            if legacy {
+                return Cell::Value(ScalarValue::$variant(Some(match (function, retract) {
+                    ("sum", false) => a.wrapping_add($b),
+                    ("sum", true) => a.wrapping_sub($b),
+                    ("product", false) => a.wrapping_mul($b),
+                    _ => a.wrapping_div($b),
+                })));
+            }
             let value = match (function, retract) {
                 ("sum", false) => a.checked_add($b),
                 ("sum", true) => a.checked_sub($b),
@@ -663,6 +703,61 @@ fn decimal_product(a: i128, b: i128, precision: u8, scale: i8, retract: bool) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_numeric_wraps_while_current_numeric_checks_overflow() {
+        macro_rules! check {
+            ($variant:ident, $type:ty) => {{
+                let column: ArrayRef = Arc::new(arrow::array::Int32Array::from(vec![0]));
+                let cell = |v| Cell::Value(ScalarValue::$variant(Some(v)));
+                let max = <$type>::MAX;
+                let min = <$type>::MIN;
+                for (function, a, b, retract, expected) in [
+                    ("sum", max, 1, false, min),
+                    ("sum", min, 1, true, max),
+                    ("product", max, 2, false, -2),
+                    ("product", min, -1, true, min),
+                ] {
+                    assert_eq!(
+                        numeric(function, &cell(a), &cell(b), &column, retract, true)
+                            .scalar(&column),
+                        ScalarValue::$variant(Some(expected))
+                    );
+                    assert!(
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| numeric(
+                            function,
+                            &cell(a),
+                            &cell(b),
+                            &column,
+                            retract,
+                            false
+                        )))
+                        .is_err()
+                    );
+                }
+                assert_eq!(
+                    numeric("product", &Cell::Null, &cell(5), &column, true, true).scalar(&column),
+                    ScalarValue::$variant(Some(5))
+                );
+                assert!(numeric("product", &Cell::Null, &cell(5), &column, true, false).is_null());
+                assert!(
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| numeric(
+                        "product",
+                        &cell(5),
+                        &cell(0),
+                        &column,
+                        true,
+                        true
+                    )))
+                    .is_err()
+                );
+            }};
+        }
+        check!(Int8, i8);
+        check!(Int16, i16);
+        check!(Int32, i32);
+        check!(Int64, i64);
+    }
 
     #[test]
     fn decimal_products_round_half_up_check_precision_and_require_exact_division() {
