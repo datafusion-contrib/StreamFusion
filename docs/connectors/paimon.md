@@ -1009,6 +1009,16 @@ Dedicated stock/native twins additionally check Parquet and ORC across repeated
 commits, managed writer memory, read/restore offsets, before-file retractions,
 field defaults after merging, floating-point edge values, and historical timestamps.
 
+Validation on 2026-09-28 passed all **242 selected upstream cases** in one release
+run, with no failures, errors, or skips, plus **89 dedicated 1.0 cases** and
+**97 core SQL/boundary checks**. The final upstream inventory contains native-source
+job graphs in 37 invocations and native-writer graphs in 28; runtime logs confirm
+native bundle and level-0 writes. Other cases exercise stock batch execution or
+supported fallbacks. Dedicated read counters additionally verify native file reads.
+All 83 selected Paimon 2.0 regressions also pass on the merged code. The Rust
+arithmetic regression distinguishes 1.0 wrapping from 2.0 overflow checks; release
+packaging verifies the native payload and provided 1.0.0 dependency.
+
 ### Release benchmark
 
 `LegacyPaimonBenchmark` compares stock Paimon, the previous StreamFusion fallback,
@@ -1016,6 +1026,7 @@ and the new adapter on identical data. Local measurements on 2026-09-28 include
 the shared boundary and aggregate changes through main `0b7243c3`, and used JDK 17,
 Flink 1.18.1, Paimon 1.0.0, release Rust with mimalloc, one task, two JVM CPUs,
 a 1.5 GiB test heap, 4,096-row Arrow batches, and a 32 MiB writer buffer.
+The `bench` profile disables local zero-copy exchange, retaining serialization costs.
 Each configuration has one warmup and three measurements with rotating engine order.
 Times are **median [minimum, maximum]**, not best-of-run throughput claims.
 
