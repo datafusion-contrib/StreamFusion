@@ -1,10 +1,14 @@
 package tech.streamfusion;
 
 import static org.apache.flink.table.api.DataTypes.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.table.data.binary.BinaryStringData;
+import org.apache.flink.table.data.binary.BinaryStringDataUtil;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 
@@ -27,10 +31,27 @@ class FlinkDynamicTrimSqlHarnessTest {
   }
 
   @Test
-  void computedEmptySetRetainsTheReleasedHostFailure() throws Exception {
+  void computedEmptySetMatchesTheReleasedHostRepresentation() throws Exception {
+    var comparison = NativeFailureParity.run(this::environment,
+        "SELECT BTRIM(s,LEFT(c,1)) FROM src");
+    if (comparison.host().failure() == null) {
+      comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+    } else {
+      comparison.assertFailure(ArithmeticException.class, "/ by zero",
+          NativeFailureParity.Phase.ROW_EVALUATION, NativeFailureParity.Route.NATIVE);
+    }
+    BinaryStringData.EMPTY_UTF8.toString();
     NativeFailureParity.run(this::environment, "SELECT BTRIM(s,LEFT(c,1)) FROM src")
-        .assertFailure(ArithmeticException.class, "/ by zero", NativeFailureParity.Phase.ROW_EVALUATION,
-            NativeFailureParity.Route.NATIVE);
+        .assertSuccess(NativeFailureParity.Route.NATIVE);
+  }
+
+  @Test
+  void releasedHostEmptyTrimBehaviorDependsOnDecodedRepresentation() {
+    var source = BinaryStringData.fromString("abc");
+    var empty = BinaryStringData.fromBytes(new byte[0]);
+    assertThrows(ArithmeticException.class, () -> BinaryStringDataUtil.trim(source, empty));
+    assertEquals("", empty.toString());
+    assertEquals("abc", BinaryStringDataUtil.trim(source, empty).toString());
   }
 
   @Test

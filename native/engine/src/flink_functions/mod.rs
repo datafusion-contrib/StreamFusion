@@ -13,6 +13,7 @@ pub(crate) mod calendar;
 pub(crate) mod clock;
 pub(crate) mod decimal;
 pub(crate) mod decimal_float;
+pub(crate) mod decimal_round_text;
 pub(crate) mod decode;
 pub(crate) mod encode;
 pub(crate) mod from_unixtime;
