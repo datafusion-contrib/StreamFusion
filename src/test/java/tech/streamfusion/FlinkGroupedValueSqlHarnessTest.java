@@ -30,6 +30,9 @@ class FlinkGroupedValueSqlHarnessTest {
         "DECIMAL(20,3)",
         "STRING",
         "DATE",
+        "TIME(0)",
+        "TIME(3)",
+        "BOOLEAN",
         "TIMESTAMP(9)",
         "TIMESTAMP_LTZ(3)"
       })
@@ -48,6 +51,9 @@ class FlinkGroupedValueSqlHarnessTest {
         "DECIMAL(20,3)",
         "STRING",
         "DATE",
+        "TIME(0)",
+        "TIME(3)",
+        "BOOLEAN",
         "TIMESTAMP(9)",
         "TIMESTAMP_LTZ(3)"
       })
@@ -75,10 +81,17 @@ class FlinkGroupedValueSqlHarnessTest {
         "DECIMAL(20,3)",
         "STRING",
         "DATE",
+        "TIME(0)",
+        "TIME(3)",
+        "BOOLEAN",
         "TIMESTAMP(9)",
         "TIMESTAMP_LTZ(3)"
       })
   void singleValuePreservesOneElementIncludingNull(String type) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        !type.startsWith("TIME(")
+            || tech.streamfusion.compat.FlinkTestCapabilities.CAST_TIME_SINGLE_VALUE,
+        "Flink 1.18 casts TIME to TIME(0), but SINGLE_VALUE infers TIME(3)");
     compare(() -> environment(type, false), "SELECT id, SINGLE_VALUE(v) FROM src GROUP BY id");
     compare(() -> environment(type, true), "SELECT id, SINGLE_VALUE(v) FROM src GROUP BY id");
     compare(() -> environment(type, false), "SELECT SINGLE_VALUE(v) FROM src WHERE id < 0");
@@ -196,6 +209,8 @@ class FlinkGroupedValueSqlHarnessTest {
   private static String value(String type, int value) {
     return switch (type) {
       case "DATE" -> "2020-01-" + value;
+      case "TIME(0)", "TIME(3)" -> "12:34:" + value + ".123";
+      case "BOOLEAN" -> value == 20 ? "false" : "true";
       case "TIMESTAMP(9)" -> "2020-01-01 00:00:" + value + ".123456789";
       default -> Integer.toString(value);
     };

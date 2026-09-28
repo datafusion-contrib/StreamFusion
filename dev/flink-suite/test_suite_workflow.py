@@ -44,6 +44,20 @@ class SuiteWorkflowTest(unittest.TestCase):
                     for suite in suites.split():
                         self.assertEqual(f"report-{suite}\n", (root / f"upstream-{suite}.log").read_text())
 
+    def test_runtime_audit_failure_survives_log_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "bin").mkdir()
+            runner = root / "bin/flink-suite.sh"
+            runner.write_text('#!/bin/bash\necho "audit-$1"\nexit "$AUDIT_STATUS"\n')
+            runner.chmod(0o755)
+            for status in (0, 17):
+                result = subprocess.run(
+                    ["bash", "-e", "-c", command("Require declared runtime audit routes")],
+                    cwd=root, env={**os.environ, "AUDIT_STATUS": str(status)}, capture_output=True)
+                self.assertEqual(status, result.returncode, result.stderr)
+                self.assertEqual("audit-runtime\n", (root / "upstream-runtime-audit.log").read_text())
+
     def test_combined_coverage_gate_requires_all_shards_on_each_line(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
