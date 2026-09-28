@@ -1519,6 +1519,11 @@ has been decoded and cached. The shared empty-string singleton makes this depend
 the JVM. Native evaluation preserves the host representation and matches either outcome; parity
 checks compare the live host outcome rather than assuming that every computed empty set fails.
 A separate regression check uses a fresh empty value to verify both representation states.
+Regular correctness-test forks use `-XX:-OmitStackTraceInFastThrow` so repeated implicit
+exceptions retain the messages and stack frames needed to compare their evaluation phase.
+Without it, HotSpot can turn the same arithmetic failure into a stackless exception with no
+message after warmup, creating a second test-order dependency. The `bench` profile leaves
+this test-only setting empty and retains normal JVM exception optimization.
 
 ### Temporal parsing, extraction and rounding
 
