@@ -14,6 +14,11 @@ The RowData→Arrow entry converter used to fill column-major, growing each Arro
 `setSafe` as rows arrived. It was rewritten row-major into vectors pre-sized to the row count —
 the same shape as Comet's `ArrowWriter` (`64528e7`).
 
+Insert-only inputs omit the hidden Arrow row-kind column until a non-insert record
+actually arrives. If a source advertises insert-only output but emits a retraction,
+the transpose retains that row kind and carries the column on subsequent batches.
+This matches Flink's runtime forwarding and keeps deletes visible downstream.
+
 ## Measured
 
 354 → 265 µs per 4096-row batch.

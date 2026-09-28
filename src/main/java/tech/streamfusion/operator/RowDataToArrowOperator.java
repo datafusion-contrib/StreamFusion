@@ -32,6 +32,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
   private final boolean carryRowKind;
   private final RowType sourceType;
 
+  private transient boolean writeRowKind;
   private transient BufferAllocator allocator;
   private transient List<RowData> buffer;
   private transient PrunedRowData projector;
@@ -56,6 +57,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     buffer = new ArrayList<>(batchSize);
+    writeRowKind = carryRowKind;
     inputSerializer = new RowDataSerializer(rowType);
     flushLatencyMs = NativeConfig.transposeFlushLatencyMs();
     flushDeadline = Long.MIN_VALUE;
@@ -73,6 +75,10 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     // a deep copy rather than retaining the caller's mutable view.
     boolean wasEmpty = buffer.isEmpty();
     numInputRows.inc();
+    // Preserve an actual retract even when a source advertised insert-only output.
+    if (!writeRowKind && element.getValue().getRowKind() != org.apache.flink.types.RowKind.INSERT) {
+      writeRowKind = true;
+    }
     if (projector == null) {
       buffer.add(inputSerializer.copy(element.getValue()));
     } else {
@@ -134,7 +140,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
       return;
     }
     long started = System.nanoTime();
-    VectorSchemaRoot root = RowDataArrowConverter.write(buffer, rowType, allocator, carryRowKind);
+    VectorSchemaRoot root = RowDataArrowConverter.write(buffer, rowType, allocator, writeRowKind);
     conversionTime.inc(System.nanoTime() - started);
     numOutputBatches.inc();
     ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(root));
