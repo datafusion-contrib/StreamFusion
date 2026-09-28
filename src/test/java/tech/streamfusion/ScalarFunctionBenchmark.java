@@ -40,13 +40,21 @@ class ScalarFunctionBenchmark {
   private static final String ENGINE =
       System.getProperty("scalar.engine", "both").toLowerCase(Locale.ROOT);
 
-  private record Query(String name, String input, String expression, String outputType) {
+  private record Query(
+      String name, String input, String expression, String outputType, String groupBy) {
+    Query(String name, String input, String expression, String outputType) {
+      this(name, input, expression, outputType, "");
+    }
+
     Query(String name, String input, String expression) {
       this(name, input, expression, input.equals("numbers") ? "BIGINT" : "STRING");
     }
 
     String sql() {
-      return "INSERT INTO sink SELECT " + expression + ", TRUE FROM inputs";
+      return "INSERT INTO sink SELECT "
+          + expression
+          + ", TRUE FROM inputs"
+          + (groupBy.isEmpty() ? "" : " GROUP BY " + groupBy);
     }
 
     String ddl() {
@@ -75,9 +83,27 @@ class ScalarFunctionBenchmark {
           new Query("BTRIM_DYNAMIC", "text", "BTRIM(s, LEFT(s, 1))", "STRING"),
           new Query("IS_ALPHA", "text", "IS_ALPHA(s)", "BOOLEAN"),
           new Query("STARTSWITH_BINARY", "tt_bytes", "STARTSWITH(b,b)", "BOOLEAN"),
-          new Query("TRY_STRING_TO_FIXED_BINARY", "text", "TRY_CAST(s AS BINARY(16))", "BINARY(16)"),
-          new Query("ELT_FIXED_BINARY", "tt_fixed_bytes", "ELT(n,b,X'00112233445566778899AABBCCDDEEFF')", "BINARY(16)"),
-          new Query("REGEXP_EXTRACT_ALL", "text", "REGEXP_EXTRACT_ALL(s, '(a)', 1)", "ARRAY<STRING>"),
+          new Query(
+              "TRY_FIXED_BINARY_GROUPED_COUNT",
+              "text",
+              "COUNT(*)",
+              "BIGINT",
+              "TRY_CAST(s AS BINARY(16))"),
+          new Query(
+              "ELT_FIXED_BINARY_GROUPED_COUNT",
+              "tt_fixed_bytes",
+              "COUNT(*)",
+              "BIGINT",
+              "ELT(n,b,X'00112233445566778899AABBCCDDEEFF')"),
+          new Query(
+              "TRY_STRING_TO_FIXED_BINARY", "text", "TRY_CAST(s AS BINARY(16))", "BINARY(16)"),
+          new Query(
+              "ELT_FIXED_BINARY",
+              "tt_fixed_bytes",
+              "ELT(n,b,X'00112233445566778899AABBCCDDEEFF')",
+              "BINARY(16)"),
+          new Query(
+              "REGEXP_EXTRACT_ALL", "text", "REGEXP_EXTRACT_ALL(s, '(a)', 1)", "ARRAY<STRING>"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),
@@ -685,8 +711,17 @@ class ScalarFunctionBenchmark {
 
   private static void assertPlan(Query query) {
     TableEnvironment tables = environment(query.input());
+    if (!query.groupBy().isEmpty()) {
+      tables.getConfig().set("table.exec.mini-batch.enabled", "true");
+      tables.getConfig().set("table.exec.mini-batch.allow-latency", "5 s");
+      tables.getConfig().set("table.exec.mini-batch.size", "1024");
+    }
     tables.executeSql(query.ddl());
     String plan = NativePlanner.explain(tables, query.sql());
+    if (!query.groupBy().isEmpty() && !plan.contains("NativeColumnarGroupAggregate")) {
+      throw new IllegalStateException(
+          "Grouped binary query must execute native aggregation: " + plan);
+    }
     if (!plan.contains("NativeCalc")
         || !plan.contains("RowDataToArrow")
         || !plan.contains("ArrowToRowData")) {
@@ -697,6 +732,11 @@ class ScalarFunctionBenchmark {
 
   private static double run(Query query, boolean useNative) throws Exception {
     TableEnvironment tables = environment(query.input());
+    if (!query.groupBy().isEmpty()) {
+      tables.getConfig().set("table.exec.mini-batch.enabled", "true");
+      tables.getConfig().set("table.exec.mini-batch.allow-latency", "5 s");
+      tables.getConfig().set("table.exec.mini-batch.size", "1024");
+    }
     tables.executeSql(query.ddl());
     PhysicalPlanScan scan = useNative ? NativePlanner.install(tables) : null;
     long start = System.nanoTime();

@@ -94,6 +94,27 @@ class FlinkFixedBinarySqlHarnessTest {
         "SELECT " + failing + " FROM src WHERE id < 0");
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void fixedBinaryExpressionsComposeWithGroupedCounts(boolean selection) throws Exception {
+    if (selection) tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
+    java.util.function.Supplier<TableEnvironment> source =
+        () -> {
+          var table = selection ? binary() : strings(false);
+          table.getConfig().set("table.exec.mini-batch.enabled", "true");
+          table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+          table.getConfig().set("table.exec.mini-batch.size", "32");
+          return table;
+        };
+    String key = selection ? "ELT(n,b,p)" : "TRY_CAST(s AS BINARY(4))";
+    String sql = "SELECT " + key + ", COUNT(*) FROM src GROUP BY " + key;
+    NativeParity.assertParity(source, sql);
+    String plan = tech.streamfusion.planner.NativePlanner.explain(source.get(), sql);
+    org.junit.jupiter.api.Assertions.assertTrue(
+        plan.contains("NativeColumnarGroupAggregate"), plan);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeCalc"), plan);
+  }
+
   private TableEnvironment binary() {
     List<Row> samples = List.of(
         Row.of(new byte[] {0, (byte) 255}, new byte[] {(byte) 128, 0}, 1),

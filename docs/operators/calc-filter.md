@@ -637,6 +637,12 @@ Runtime-source tests cover widths 1/2/4/16, NULLs, zero padding, truncation, non
 typed literals, ELT selection, short-circuiting, and 5,003-row inputs. Bridge tests cover
 sliced fixed/variable vectors, output ownership after input closure, and allocator balance.
 
+[Low-cardinality grouped-count measurements](../optimizations/scalar-function-kernels.md#binary-keys-composed-with-grouped-counts)
+show 19–35% less native time at 2M rows and 22–26% less at 5M for binary-cast and
+ELT keys, retaining both transposes. These composed workloads are faster than Flink;
+standalone projections and identity controls remain slower. This does not establish
+a speedup for arbitrary binary projections or high-cardinality grouping.
+
 The original callback-only release+mimalloc measurements on Flink 2.2.1/JDK 17,
 Linux x86_64 (Core i7-12650H), use 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
 trials. The harness requires NativeCalc and both row/Arrow transposes. Median seconds:
