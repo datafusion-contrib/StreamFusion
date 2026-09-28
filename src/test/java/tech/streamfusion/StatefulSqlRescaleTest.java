@@ -2,9 +2,14 @@ package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -279,24 +284,65 @@ class StatefulSqlRescaleTest {
   private static Map<String, Long> materialized(Path directory) throws Exception {
     Map<String, Long> rows = new TreeMap<>();
     if (!Files.exists(directory)) return rows;
-    try (var paths = Files.walk(directory)) {
-      for (Path path :
-          paths
-              .filter(Files::isRegularFile)
-              .filter(p -> !p.getFileName().toString().startsWith("."))
-              .toList()) {
-        for (String line : Files.readAllLines(path)) {
-          int separator = line.indexOf('|');
-          String kind = line.substring(0, separator);
-          rows.merge(
-              line.substring(separator + 1),
-              kind.equals("+I") || kind.equals("+U") ? 1L : -1L,
-              Long::sum);
-        }
-      }
-    }
+    Files.walkFileTree(directory, committedOutputReader(rows));
     rows.values().removeIf(count -> count == 0);
     return rows;
+  }
+
+  private static SimpleFileVisitor<Path> committedOutputReader(Map<String, Long> rows) {
+    return new SimpleFileVisitor<>() {
+      @Override
+      public FileVisitResult visitFile(Path path, BasicFileAttributes attributes)
+          throws IOException {
+        if (attributes.isRegularFile() && !path.getFileName().toString().startsWith(".")) {
+          for (String line : Files.readAllLines(path)) {
+            int separator = line.indexOf('|');
+            String kind = line.substring(0, separator);
+            rows.merge(
+                line.substring(separator + 1),
+                kind.equals("+I") || kind.equals("+U") ? 1L : -1L,
+                Long::sum);
+          }
+        }
+        return FileVisitResult.CONTINUE;
+      }
+
+      @Override
+      public FileVisitResult visitFileFailed(Path path, IOException failure) throws IOException {
+        String name = path.getFileName().toString();
+        if (failure instanceof NoSuchFileException
+            && name.startsWith(".part-")
+            && name.contains(".inprogress.")) {
+          return FileVisitResult.CONTINUE;
+        }
+        throw failure;
+      }
+    };
+  }
+
+  @org.junit.jupiter.api.Test
+  void outputTraversalOnlyIgnoresMissingInProgressParts(@TempDir Path directory) throws Exception {
+    var reader = committedOutputReader(new TreeMap<>());
+    Path temporary = directory.resolve(".part-writer-0.inprogress.checkpoint");
+    assertEquals(
+        FileVisitResult.CONTINUE,
+        reader.visitFileFailed(temporary, new NoSuchFileException(temporary.toString())));
+    var committedFailure = new NoSuchFileException(directory.resolve("part-writer-0").toString());
+    assertSame(
+        committedFailure,
+        assertThrows(
+            IOException.class,
+            () -> reader.visitFileFailed(directory.resolve("part-writer-0"), committedFailure)));
+    var accessFailure = new java.nio.file.AccessDeniedException(temporary.toString());
+    assertSame(
+        accessFailure,
+        assertThrows(IOException.class, () -> reader.visitFileFailed(temporary, accessFailure)));
+
+    Path bucket = Files.createDirectories(directory.resolve("bucket"));
+    Files.writeString(bucket.resolve("part-0"), "+I|value\n+U|other\n");
+    Files.writeString(bucket.resolve("part-1"), "-D|value\n+I|kept\n");
+    Files.writeString(temporary, "uncommitted bytes must not be read");
+    assertEquals(Map.of("other", 1L, "kept", 1L), materialized(directory));
   }
 
   @org.junit.jupiter.api.AfterAll
