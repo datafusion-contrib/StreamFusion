@@ -1,6 +1,6 @@
 # Host-exact builtins over the same upcall, with a faster pure-Rust opt-in
 
-**Applies to:** REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts
+**Applies to:** REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts, DOUBLE TRUNCATE
 
 Builtins whose Rust implementation can diverge from the JVM's — REGEXP_EXTRACT (regex dialects),
 UPPER/LOWER (locale case folding), DATE_FORMAT/EXTRACT over `TIMESTAMP_LTZ` (time-zone database
@@ -71,6 +71,7 @@ and `-Dsf.extraJvmArgs=-Xmx2g`. The retained implementation still uses released 
 
 ### Composition with grouped integer sums
 
+These composition measurements precede the bounded DOUBLE shortcut below.
 A September 28 follow-up retains the exact callback and uses the generated fixed-width
 exit projection described in [the transpose ledger](zero-copy-exit-transpose.md).
 At 2M rows, standalone TAN still takes 0.430s native versus 0.311s Flink, COSH
@@ -141,3 +142,57 @@ measurements with `ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
 `-Dscalar.functions=TAN_GROUPED_SUM,COSH_GROUPED_SUM,FLOAT_TRUNCATE_GROUPED_SUM`,
 `-Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5`; repeat with
 `-Dscalar.rows=5000000` for the larger run.
+
+
+### Bounded DOUBLE TRUNCATE
+
+Independently emitted DOUBLE TRUNCATE calls use the existing scalar bridge with a
+bounded arithmetic shortcut. The shortcut preserves the released Flink 1.18/2.2
+contract: `BigDecimal.valueOf(value)`, conversion to DECIMAL(38,18), truncation toward
+zero at the requested scale, then conversion back to DOUBLE. FLOAT, integral and
+DECIMAL overloads, and expressions fused for rowwise failure ordering, retain their
+existing evaluators. No JVM/Arrow ownership or JNI protocol changes are required.
+
+The fast domain is `1 <= abs(value) <= 1e9` and `-6 <= scale <= 6`. At these magnitudes,
+the shortest decimal representation followed by scale-18 rounding lies strictly
+between the adjacent binary floating-point values. Multiply those neighboring values
+by an exactly represented power of ten for nonnegative scales, or divide for negative
+scales, and round the bounds outward once more. If both bounds truncate toward zero
+to the same integer, monotonicity proves that Flink's decimal value truncates to that
+integer too. Otherwise the helper calls Flink. The domain keeps the integer below
+2^53 and each power of ten exact; positive-scale division correctly rounds the decimal
+result to DOUBLE, while negative-scale multiplication produces an exactly represented
+integer. Zero returns positive zero, as decimal conversion requires. Nonfinite values,
+smaller/larger magnitudes, extreme scales and ambiguous decimal grid points all use
+released Flink evaluation, including its exceptions.
+
+A differential unit test compares 99,098 random, boundary-neighbor and special-value
+cases against the released implementation, including exception classes/messages and
+raw result bits. The helper's NULL behavior, 109 exact-math SQL cases and 70 Calc
+regressions pass on each released line: 181 tests per version. An independent larger
+probe also compared 790,098 cases per line before integration.
+
+Release+mimalloc, JDK17/Flink2.2.1, Core i7-12650H, parallelism one, 2 GiB heap,
+default 1,024-row batches, two warmups and five alternating trials retain the row source,
+row sink and both transposes. The query remains
+`TRUNCATE(CAST(n AS DOUBLE) / 7E0, CAST(n % 4 AS INT))`, with runtime input and no injected
+NULLs. Complete-job medians and observed ranges, seconds:
+
+| Implementation | Rows | Native median (range) | Flink median (range) |
+| --- | ---: | ---: | ---: |
+| Previous generated evaluator | 2M | 0.905 (0.889–0.932) | 0.830 (0.815–0.859) |
+| Bounded helper | 2M | 0.434 (0.424–0.436) | 0.839 (0.834–0.845) |
+| Bounded helper | 5M | 0.961 (0.951–0.973) | 1.980 (1.968–1.985) |
+
+The two-million-row run uses 52% less native time than the freshly measured previous
+implementation and 48% less than Flink; the five-million-row run uses 51% less than
+Flink. Trial ranges are disjoint. Identity controls remain slower: 0.300s native versus
+0.231s Flink at 2M, and 0.632s versus 0.467s at 5M. TAN (0.428s versus 0.309s) and COSH
+(0.411s versus 0.299s) also remain slower in the same 2M run. These limits keep the wider
+exact-math PR draft; the shortcut establishes a DOUBLE TRUNCATE win for this workload,
+not a general speedup for all magnitudes, scales or floating math.
+
+[Raw trials](../benchmarks/bounded-double-truncate-2026-09-28.csv) include the previous
+implementation, both engines and unfavorable controls. Reproduce with the existing
+`ScalarFunctionBenchmark#individualFunctions` release command above and
+`-Dscalar.functions=FLOAT_TRUNCATE_EXACT`; the historical benchmark name uses DOUBLE input.

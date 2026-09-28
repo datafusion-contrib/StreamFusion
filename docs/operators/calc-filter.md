@@ -1547,9 +1547,15 @@ overloads, including integer and DECIMAL operands, use the selected released Fli
 own conversions and math functions. This preserves deterministic last-bit results, signed
 zero, NaN, infinities, domain results and NULL behavior.
 
-Non-DECIMAL ROUND and INT/BIGINT/FLOAT/DOUBLE TRUNCATE use the same generated path,
-including runtime INT scales. FLOAT/DOUBLE ROUND retains Flink's BigDecimal-based HALF_UP
-semantics; TRUNCATE retains its decimal conversion and rounding-toward-zero behavior.
+Non-DECIMAL ROUND and INT/BIGINT/FLOAT TRUNCATE use the same generated path,
+including runtime INT scales. Independently emitted DOUBLE TRUNCATE uses an exact
+[bounded shortcut](../optimizations/host-exact-builtins-upcall.md#bounded-double-truncate):
+for magnitudes from 1 through 1e9 and scales -6 through 6, outward-rounded bounds must
+prove the same truncated decimal integer before arithmetic replaces decimal conversion.
+Ambiguous boundaries, other values/scales, and row-fused expressions retain Flink's
+implementation. NULLs, failure ordering and declared types are unchanged. FLOAT/DOUBLE
+ROUND retains Flink's BigDecimal-based HALF_UP semantics; every TRUNCATE path preserves
+Flink's decimal rounding-toward-zero result.
 TINYINT/SMALLINT TRUNCATE falls back: released Flink generates an invalid narrowing
 assignment for these signatures, and the stock job also fails during initialization.
 Non-finite values that fail in Flink fail on the native route with the same root exception.

@@ -1003,6 +1003,15 @@ final class RexExpression {
       strings.add(unixTimeFormat);
       return emit(call.getOperands().get(0));
     }
+    if (call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE
+        && call.getType().getSqlTypeName() == SqlTypeName.DOUBLE
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DOUBLE
+        && (call.getOperands().size() == 1
+            || call.getOperands().size() == 2
+                && call.getOperands().get(1).getType().getSqlTypeName() == SqlTypeName.INTEGER)) {
+      return emitExactDoubleTruncate(call);
+    }
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
       return emitHostExpression(call, false);
     }
@@ -2652,6 +2661,31 @@ final class RexExpression {
         org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(node.getType()));
     codes.add(code);
     return reference;
+  }
+
+  private boolean emitExactDoubleTruncate(RexCall call) {
+    Method eval;
+    try {
+      eval = ExactDoubleTruncateFunction.class.getMethod("eval", Double.class, Integer.class);
+    } catch (ReflectiveOperationException failure) {
+      return reject("exact DOUBLE TRUNCATE unavailable: " + failure.getMessage());
+    }
+    int result = tech.streamfusion.operator.NativeUdf.TYPE_DOUBLE;
+    int index =
+        addUdf(
+            tech.streamfusion.operator.NativeUdf.Descriptor.forFunction(
+                new ExactDoubleTruncateFunction(),
+                eval,
+                new int[] {result, tech.streamfusion.operator.NativeUdf.TYPE_INT},
+                result));
+    add(KIND_UDF, longs.size(), 2);
+    longs.add((long) index);
+    longs.add((long) result);
+    if (!emit(call.getOperands().get(0))) return false;
+    if (call.getOperands().size() == 2) return emit(call.getOperands().get(1));
+    add(KIND_LIT_INT, longs.size(), 0);
+    longs.add(0L);
+    return true;
   }
 
   /** Emits a host-exact cast as a JVM-upcall node running Flink's own {@code CastExecutor}. */
