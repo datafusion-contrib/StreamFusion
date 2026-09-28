@@ -186,8 +186,8 @@ final class GroupAggregateMatcher {
   /**
    * Native kinds 10/11: MIN/MAX over an insert-only input. No retraction can ever arrive, so the
    * state is a plain running extreme — one scalar in the main row — instead of the retractable
-   * value multiset (and, on the RocksDB backend, no companion element table). Only the numeric
-   * types the running fold covers map; decimal and string extremes keep the multiset kinds.
+   * value multiset (and, on the RocksDB backend, no companion element table). Numeric, DATE, TIME and
+   * BOOLEAN running folds use these kinds; other value types keep the multiset kinds.
    */
   static final int KIND_MIN_APPEND = 10;
 
@@ -195,7 +195,10 @@ final class GroupAggregateMatcher {
 
   /** Whether an insert-only MIN/MAX over this value type can run as a plain running extreme. */
   static boolean runningExtremeType(SqlTypeName type) {
-    return isRunningType(type);
+    return isRunningType(type)
+        || type == SqlTypeName.DATE
+        || type == SqlTypeName.TIME
+        || type == SqlTypeName.BOOLEAN;
   }
 
   private static final int KIND_MIN = WindowAggregateMatcher.KIND_MIN;

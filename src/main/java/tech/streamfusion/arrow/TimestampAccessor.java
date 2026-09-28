@@ -82,12 +82,15 @@ public final class TimestampAccessor {
 
   /** Writes both components without changing the logical precision or range. */
   public static void set(ValueVector vector, int row, TimestampData value) {
-    if (isComponentTimestamp(vector.getField())) {
+    new TimestampAccessor(vector).set(row, value);
+  }
+
+  /** Reuses the validated layout and child vectors across rows and buffer resets. */
+  public void set(int row, TimestampData value) {
+    if (primitive == null) {
+      millis.setSafe(row, value == null ? 0 : value.getMillisecond());
+      nanos.setSafe(row, value == null ? 0 : value.getNanoOfMillisecond());
       StructVector struct = (StructVector) vector;
-      ((BigIntVector) struct.getChild("millis"))
-          .setSafe(row, value == null ? 0 : value.getMillisecond());
-      ((IntVector) struct.getChild("nano_of_milli"))
-          .setSafe(row, value == null ? 0 : value.getNanoOfMillisecond());
       if (value == null) {
         struct.setNull(row);
       } else {
@@ -95,21 +98,20 @@ public final class TimestampAccessor {
       }
       return;
     }
-    TimeStampVector target = (TimeStampVector) vector;
-    if (value == null) { target.setNull(row); return; }
-    long millis = value.getMillisecond();
-    long fraction = value.getNanoOfMillisecond();
+    if (value == null) { primitive.setNull(row); return; }
+    long milliseconds = value.getMillisecond();
+    int fraction = value.getNanoOfMillisecond();
     long encoded;
-    switch (((ArrowType.Timestamp) vector.getField().getType()).getUnit()) {
-      case SECOND: encoded = Math.floorDiv(millis, 1000L); break;
-      case MILLISECOND: encoded = millis; break;
+    switch (unit) {
+      case SECOND: encoded = Math.floorDiv(milliseconds, 1000L); break;
+      case MILLISECOND: encoded = milliseconds; break;
       case MICROSECOND:
-        encoded = TimestampConversion.toMicros(millis, (int) fraction);
+        encoded = TimestampConversion.toMicros(milliseconds, fraction);
         break;
       case NANOSECOND: encoded = TimestampConversion.toNanos(value); break;
       default: throw new IllegalArgumentException("Unsupported timestamp unit");
     }
-    target.setSafe(row, encoded);
+    primitive.setSafe(row, encoded);
   }
 
   public TimestampAccessor(ValueVector vector) {

@@ -67,3 +67,7 @@ harness = false
 [[bench]]
 name = "scalar_functions"
 harness = false
+
+[[bench]]
+name = "calc_selection"
+harness = false

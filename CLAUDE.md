@@ -99,6 +99,31 @@ add those improvements to our commit message. If our benchmarks don't improve, w
 the feature is worth it, or if it is the precursor to more optimizations. We also need to confirm compatibility with
 existing Flink results.
 
+### Performance requirements for new features
+
+Correctness and native coverage alone do not make a feature accelerated. Design new operators, expressions,
+and type support to outperform stock Flink on representative workloads, and validate that expectation as part
+of implementation. Compare against both stock Flink and the previous StreamFusion behavior; improving our own
+baseline is insufficient if the new native path still loses to Flink. The regressions called out in
+[PR #272](https://github.com/datafusion-contrib/StreamFusion/pull/272#issuecomment-5855682052) and
+[PR #275](https://github.com/datafusion-contrib/StreamFusion/pull/275#issuecomment-5855677481) illustrate why
+passing parity tests is only one part of completing a feature.
+
+Use release builds, identical queries/data/resources, warmup, and repeated measurements. Include representative
+sizes, cardinalities, and types for the feature, and retain all production conversion, JNI, and state costs in
+the measured path. Verify that the intended native operators actually execute. Report stock Flink and native
+results, variability, and the benchmark configuration in the PR and relevant documentation; include measured
+improvements in the commit message. Distinguish startup-dominated results from sustained processing performance
+without discarding unfavorable end-to-end results.
+
+When a native path is slower, profile and optimize the bottleneck before treating the acceleration work as
+complete. Examine batch execution, allocation/copying, row conversions, JNI calls, and aggregate/state layout
+rather than assuming Rust or Arrow is inherently faster. Do not quietly enable a known slower path by default
+or dismiss a regression as coverage work. If a slower implementation is necessary groundwork for later
+optimization, obtain explicit maintainer agreement on the tradeoff, document its measured limits and follow-up
+issue, and keep stock Flink as the default for the affected cases until the tradeoff is accepted or performance
+is demonstrated.
+
 The `readme.md` is a **lean landing page**, not the full spec. Keep it to: what we accelerate (a short prose
 overview, not a per-operator chart), where we take inspiration from, the headline Nexmark benchmark table, how to
 run and configure, related work, and the license. It must NOT enumerate every accelerated operator with its terms,

@@ -2644,32 +2644,34 @@ fn session_state_partitions_and_restores_by_flink_key_group() {
 
 #[test]
 fn group_state_over_budget_fails_and_deletes_release() {
-    // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
-    let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(1 << 20)
+    for kind in [0, 14, 15, 16] {
+        // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
+        let mut agg = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
+            0,
+        )
         .unwrap();
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
-        0,
-    )
-    .unwrap();
-    assert!(agg.memory.state_bytes > 0);
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
-        0,
-    )
-    .unwrap();
-    assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
+        assert!(agg.memory.state_bytes > 0);
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
+            0,
+        )
+        .unwrap();
+        assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
 
-    let mut tight = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(128)
-        .unwrap();
-    let keys: Vec<i64> = (0..100).collect();
-    let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
-    let err = tight
-        .update(&group_changelog(keys, values, vec![0; 100]), 0)
-        .unwrap_err();
-    assert!(err.to_string().contains("task off-heap"), "{err}");
+        let mut tight = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(128)
+            .unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
+        let err = tight
+            .update(&group_changelog(keys, values, vec![0; 100]), 0)
+            .unwrap_err();
+        assert!(err.to_string().contains("task off-heap"), "{err}");
+    }
 }
 
 #[test]
@@ -3890,6 +3892,105 @@ fn local_group_extremes_preserve_append_only_and_retracting_results() {
     let out = retracting.flush();
     assert_eq!(values(&out, 1), vec![10]);
     assert_eq!(values(&out, 2), vec![10]);
+}
+
+#[test]
+fn local_temporal_boolean_extrema_preserve_types_nulls_and_retractions() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let make = || {
+            LocalGroupAggregator::new(
+                vec![1, 2],
+                vec![code; 2],
+                vec![1; 2],
+                vec![],
+                vec![0],
+                vec![],
+            )
+        };
+        let batch = group_scalar_changelog(
+            vec![
+                null.clone(),
+                high.clone(),
+                low.clone(),
+                low.clone(),
+                null.clone(),
+            ],
+            vec![0; 5],
+        )
+        .project(&[0, 1])
+        .unwrap();
+        for split in 1..5 {
+            let mut local = make();
+            local.update(&batch.slice(0, split)).unwrap();
+            local.update(&batch.slice(split, 5 - split)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), low);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+            local.update(&batch.slice(0, 1)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), null);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), null);
+        }
+        let mut local = make();
+        local
+            .update(&group_scalar_changelog(
+                vec![
+                    high.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                ],
+                vec![0, 0, 0, 3, 3],
+            ))
+            .unwrap();
+        let out = local.flush();
+        assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), high);
+        assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+    }
+}
+
+#[test]
+fn temporal_boolean_running_extrema_restore_typed_and_multiset_state() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        for previous_kinds in [vec![1, 2], vec![10, 11]] {
+            let mut previous =
+                GroupAggregator::new(previous_kinds, vec![code; 2], vec![1; 2], vec![0], true);
+            let mut running =
+                GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            for values in [vec![null.clone()], vec![high.clone(), high.clone()]] {
+                let input = group_scalar_changelog(values.clone(), vec![0; values.len()]);
+                assert_eq!(
+                    previous.update(&input, 0).unwrap(),
+                    running.update(&input, 0).unwrap()
+                );
+                let parts = previous
+                    .snapshot_partitions(128, &[-1])
+                    .into_values()
+                    .collect::<Vec<_>>();
+                let mut restored = GroupAggregator::restore_partitions(
+                    vec![10, 11],
+                    vec![code; 2],
+                    vec![1; 2],
+                    vec![0],
+                    true,
+                    &parts,
+                    0,
+                );
+                let probe = group_scalar_changelog(
+                    vec![low.clone(), high.clone(), null.clone()],
+                    vec![0; 3],
+                );
+                assert_eq!(
+                    restored.update(&probe, 0).unwrap(),
+                    running.update(&probe, 0).unwrap()
+                );
+                previous.update(&probe, 0).unwrap();
+            }
+        }
+    }
 }
 
 #[test]
@@ -8397,6 +8498,81 @@ mod rocksdb_group_multisets {
 
     // The multisets survive a native checkpoint and a fresh store opened from it.
     #[test]
+    fn typed_distinct_counts_survive_memory_and_rocks_restore() {
+        for (code, value) in [
+            (0, ScalarValue::Int64(Some(i64::MAX))),
+            (2, ScalarValue::Int32(Some(i32::MIN))),
+            (4, ScalarValue::Int16(Some(i16::MIN))),
+            (5, ScalarValue::Int8(Some(i8::MIN))),
+            (
+                4002,
+                ScalarValue::Decimal128(Some(-12345678901234567890), 20, 2),
+            ),
+            (3, ScalarValue::Utf8(Some("a\0中😀".repeat(80)))),
+        ] {
+            let make = || GroupAggregator::new(vec![7], vec![code], vec![1], vec![0], true);
+            let codec =
+                || GroupStateCodec::new(vec![7], vec![value.data_type()], vec![1], vec![-1]);
+            let batch = |values: Vec<ScalarValue>, kinds: Vec<i8>| {
+                let len = values.len();
+                RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("k", DataType::Int64, false),
+                        Field::new("v", value.data_type(), true),
+                        Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+                    ])),
+                    vec![
+                        Arc::new(Int64Array::from(vec![1; len])),
+                        ScalarValue::iter_to_array(values).unwrap(),
+                        Arc::new(Int8Array::from(kinds)),
+                    ],
+                )
+                .unwrap()
+            };
+            let store =
+                RocksGroupStore::create(store_config("typed-distinct", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let null = ScalarValue::try_from(&value.data_type()).unwrap();
+            let seed = batch(vec![value.clone(), value.clone(), null.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let mut restored = GroupAggregator::restore(
+                vec![7],
+                vec![code],
+                vec![1],
+                vec![0],
+                true,
+                &memory.snapshot(),
+                0,
+            );
+            let snapshot = snapshot_dir("typed-distinct");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("typed-distinct-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            for probe in [
+                batch(vec![value.clone()], vec![3]),
+                batch(vec![value.clone()], vec![3]),
+                batch(vec![null], vec![3]),
+                batch(vec![value.clone()], vec![0]),
+            ] {
+                let expected = memory.update(&probe, 0).unwrap();
+                assert_eq!(restored.update(&probe, 0).unwrap(), expected);
+                rocks.store_mut().set_clock(0);
+                assert_eq!(rocks.update(&probe, 0).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
     fn multiset_aggregates_survive_checkpoint_and_reopen() {
         let mut rocks = rocks_agg("restart", 0);
         let mut memory = memory_agg(0);
@@ -8813,6 +8989,51 @@ mod rocksdb_group_multisets {
                     0,
                 );
             }
+        }
+    }
+
+    #[test]
+    fn temporal_boolean_running_extrema_rocks_checkpoint_preserves_types() {
+        for (code, low, high) in temporal_boolean_values() {
+            let types = vec![low.data_type(); 2];
+            if code == 9 {
+                assert!(!crate::state::rocks_store::rocks_group_supported(
+                    &[10, 11],
+                    &types,
+                    &types
+                ));
+                continue;
+            }
+            let make =
+                || GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            let codec =
+                || GroupStateCodec::new(vec![10, 11], types.clone(), vec![1; 2], vec![-1; 2]);
+            let store = RocksGroupStore::create(store_config("typed-running", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let null = ScalarValue::try_from(&low.data_type()).unwrap();
+            let seed =
+                group_scalar_changelog(vec![null.clone(), high.clone(), high.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let snapshot = snapshot_dir("typed-running");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("typed-running-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            assert_parity(
+                &mut rocks,
+                &mut memory,
+                &group_scalar_changelog(vec![low, high, null], vec![0; 3]),
+                0,
+            );
         }
     }
 
