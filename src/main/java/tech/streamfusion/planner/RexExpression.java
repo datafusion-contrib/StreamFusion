@@ -126,7 +126,7 @@ final class RexExpression {
   private final List<String> strings = new ArrayList<>();
   // Unary functions whose native (Rust) result can differ from the host's JVM result — locale case
   // folding and non-correctly-rounded transcendental math — keyed to their native op code. Admitted
-  // only under the allowIncompatible flag (see NativeConfig); otherwise they fall back.
+  // only under the allowIncompatible flag (see NativeConfig); defaults use exact JVM evaluation.
   private static final Map<String, Integer> INCOMPATIBLE_UNARY =
       Map.ofEntries(
           Map.entry("UPPER", 50),
@@ -1003,6 +1003,15 @@ final class RexExpression {
       strings.add(unixTimeFormat);
       return emit(call.getOperands().get(0));
     }
+    if (call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE
+        && call.getType().getSqlTypeName() == SqlTypeName.DOUBLE
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DOUBLE
+        && (call.getOperands().size() == 1
+            || call.getOperands().size() == 2
+                && call.getOperands().get(1).getType().getSqlTypeName() == SqlTypeName.INTEGER)) {
+      return emitExactDoubleTruncate(call);
+    }
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
       return emitHostExpression(call, false);
     }
@@ -1340,7 +1349,7 @@ final class RexExpression {
     }
     // Functions whose native result can differ from the host — locale case folding (UPPER/LOWER)
     // and
-    // last-ULP transcendental math. They fall back unless the allowIncompatible flag opts them in.
+    // last-ULP transcendental math. Their Rust implementations require allowIncompatible.
     Integer incompatUnaryOp =
         INCOMPATIBLE_UNARY.get(functionName);
     if (incompatUnaryOp != null) {
@@ -2423,7 +2432,17 @@ final class RexExpression {
     return switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
       case "ABS", "SIGN" -> exact;
       case "FLOOR", "CEIL", "CEILING" -> integral && call.getOperands().size() == 1;
-      case "TRUNCATE" -> integral;
+      case "TRUNCATE" ->
+          integral || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(call.getOperands().get(0).getType());
+      case "ROUND" ->
+          input != SqlTypeName.DECIMAL
+              && SqlTypeFamily.NUMERIC.contains(call.getOperands().get(0).getType())
+              && !NativeConfig.allowsIncompatible("ROUND");
+      case "EXP", "LN", "LOG10", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN" ->
+          SqlTypeFamily.NUMERIC.contains(call.getOperands().get(0).getType())
+              && !NativeConfig.allowsIncompatible(call.getOperator().getName());
+      case "COSH", "SINH", "TANH", "COT", "ATAN2", "DEGREES", "RADIANS", "LOG", "LOG2" ->
+          SqlTypeFamily.NUMERIC.contains(call.getOperands().get(0).getType());
       case "TRY_CAST" -> input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
       case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
       case "REGEXP_EXTRACT_ALL", "STR_TO_MAP" -> true;
@@ -2642,6 +2661,31 @@ final class RexExpression {
         org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(node.getType()));
     codes.add(code);
     return reference;
+  }
+
+  private boolean emitExactDoubleTruncate(RexCall call) {
+    Method eval;
+    try {
+      eval = ExactDoubleTruncateFunction.class.getMethod("eval", Double.class, Integer.class);
+    } catch (ReflectiveOperationException failure) {
+      return reject("exact DOUBLE TRUNCATE unavailable: " + failure.getMessage());
+    }
+    int result = tech.streamfusion.operator.NativeUdf.TYPE_DOUBLE;
+    int index =
+        addUdf(
+            tech.streamfusion.operator.NativeUdf.Descriptor.forFunction(
+                new ExactDoubleTruncateFunction(),
+                eval,
+                new int[] {result, tech.streamfusion.operator.NativeUdf.TYPE_INT},
+                result));
+    add(KIND_UDF, longs.size(), 2);
+    longs.add((long) index);
+    longs.add((long) result);
+    if (!emit(call.getOperands().get(0))) return false;
+    if (call.getOperands().size() == 2) return emit(call.getOperands().get(1));
+    add(KIND_LIT_INT, longs.size(), 0);
+    longs.add(0L);
+    return true;
   }
 
   /** Emits a host-exact cast as a JVM-upcall node running Flink's own {@code CastExecutor}. */
@@ -3509,11 +3553,8 @@ final class RexExpression {
   private boolean emitIncompatibleUnary(RexCall call, int op) {
     String name = call.getOperator().getName();
     if (!NativeConfig.allowsIncompatible(name)) {
-      // UPPER/LOWER have an exact default: route to the host's own case folding via a JVM upcall,
-      // so
-      // they run natively and byte-identically without the flag. The transcendental math ops
-      // (last-ULP
-      // divergence) have no such cheap exact path, so they still fall back unless opted in.
+      // Exact numeric calls are handled by the generated-expression path before this point.
+      // Case folding uses the host's BinaryStringData implementation.
       if (op == 50) {
         return emitStringCaseJvm(call, "upper");
       }

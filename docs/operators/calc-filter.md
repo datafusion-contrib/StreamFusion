@@ -664,8 +664,9 @@ expressions; see [temporal functions](temporal-functions.md).
 ### Exact unary and integral functions
 
 Integer and DECIMAL unary minus, ABS and SIGN execute Flink's generated expression code through
-the existing batch JVM bridge. Integral FLOOR, CEIL and TRUNCATE use the same path, including
-per-row TRUNCATE positions. This retains resolved widths, decimal precision/scale, NULL handling,
+the existing batch JVM bridge. Integral FLOOR/CEIL and INT/BIGINT TRUNCATE use the same path,
+including per-row TRUNCATE positions. TINYINT/SMALLINT TRUNCATE retains the host compilation
+failure described under exact floating math below. This retains resolved widths, decimal precision/scale, NULL handling,
 and Java overflow behavior, including ABS of the minimum INT/BIGINT value. Adjacent supported
 host expressions fuse before crossing the Arrow boundary. These are host-evaluated functions
 inside a columnar native Calc, not pure-Rust kernels.
@@ -715,7 +716,7 @@ use Flink's own decimal rounding through the existing columnar JVM upcall, so ex
 scale/range exceptions match the host instead of being silently clamped to zero. These calls
 remain inside native Calc, but fall back when nested under AND/OR to preserve row short-circuiting.
 CASE can skip an unselected failing branch. Runtime scale columns and BIGINT scale arguments
-retain an explicit planner fallback; float/double ROUND keeps its existing compatibility gate.
+retain an explicit planner fallback. Non-DECIMAL ROUND uses the exact generated path described below.
 Flink 2.2.1 itself can fail when a runtime scale changes the returned DecimalData precision;
 the regression suite preserves the resulting binary-writer assertion failure through fallback.
 
@@ -724,8 +725,8 @@ kernel with rounding toward zero. Positive, zero and negative positions preserve
 resolved precision/scale and NULL behavior; a position at or above the source scale retains
 the input value. Positions below -38 use Flink's generated expression through the columnar
 callback, including its extreme-scale errors. They retain the same AND/OR short-circuit
-restriction as ROUND. Integer and floating-point inputs are not admitted for TRUNCATE;
-Flink 2.2.1 rejects nonliteral TRUNCATE positions during validation. SQL tests cover
+restriction as ROUND. INT/BIGINT and floating-point TRUNCATE use the exact generated path below,
+including runtime INT positions. Decimal SQL tests cover
 precision 38, multiple batches, filters, CASE, COALESCE and aggregate consumers, including
 projections that combine and nest truncation with DECIMAL-to-FLOAT/DOUBLE casts.
 
@@ -1537,16 +1538,65 @@ into one generated expression. The surrounding operator remains columnar; the po
 itself executes on the JVM. The Rust alternative remains available under
 `streamfusion.expression.POWER.allowIncompatible=true` or the blanket flag.
 
-## Opt-in math
+## Exact floating math
 
-**Off by default, native only under `-Dstreamfusion.expression.<NAME>.allowIncompatible=true`** (or
-the blanket flag): `EXP`, `LN`, `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `LOG10`
-(last-ULP libm divergence from Java's `Math`), and float/double `ROUND` (`BigDecimal`-based
-rounding in Flink vs. binary-float rounding natively).
+EXP, LN, LOG10, SIN, COS, TAN, ASIN, ACOS, ATAN, COSH, SINH, TANH, COT, ATAN2,
+DEGREES, RADIANS, LOG (one or two arguments) and LOG2 run inside native Calc by default
+through Flink-generated evaluation in the existing batch JVM bridge. Resolved numeric
+overloads, including integer and DECIMAL operands, use the selected released Flink line's
+own conversions and math functions. This preserves deterministic last-bit results, signed
+zero, NaN, infinities, domain results and NULL behavior.
 
-These remaining functions fall back to Flink by default and only run natively once you've opted
-in and accepted the (typically last-bit) divergence. POWER's generated JVM path does not widen
-their admission.
+Non-DECIMAL ROUND and INT/BIGINT/FLOAT TRUNCATE use the same generated path,
+including runtime INT scales. Independently emitted DOUBLE TRUNCATE uses an exact
+[bounded shortcut](../optimizations/host-exact-builtins-upcall.md#bounded-double-truncate):
+for magnitudes from 1 through 1e9 and scales -6 through 6, outward-rounded bounds must
+prove the same truncated decimal integer before arithmetic replaces decimal conversion.
+Ambiguous boundaries, other values/scales, and row-fused expressions retain Flink's
+implementation. NULLs, failure ordering and declared types are unchanged. FLOAT/DOUBLE
+ROUND retains Flink's BigDecimal-based HALF_UP semantics; every TRUNCATE path preserves
+Flink's decimal rounding-toward-zero result.
+TINYINT/SMALLINT TRUNCATE falls back: released Flink generates an invalid narrowing
+assignment for these signatures, and the stock job also fails during initialization.
+Non-finite values that fail in Flink fail on the native route with the same root exception.
+Supported surrounding expressions fuse into the generated evaluator, preserving CASE and
+filter short-circuiting for unselected failing calls. DECIMAL ROUND/TRUNCATE keep their
+separate admission rules above.
+
+These are JVM-evaluated functions inside a columnar operator. Existing Rust alternatives for
+EXP, LN, SIN, COS, TAN, ASIN, ACOS, ATAN, LOG10 and floating ROUND remain opt-in through
+`-Dstreamfusion.expression.<NAME>.allowIncompatible=true` or the blanket flag. Those paths
+can differ from Java Math at the last bit, or from Flink's decimal-based floating rounding;
+the flags are unnecessary for exact default execution. The new COSH/SINH/TANH/COT/ATAN2,
+DEGREES/RADIANS/LOG/LOG2 paths always use generated evaluation.
+
+Release+mimalloc diagnostic on an Intel Core i7-12650H under Linux/WSL, JDK 17,
+Flink 2.2.1 (2026-09-27): two million numeric runtime rows, one-seventh NULLs, parallelism 1,
+two warmups and five measured runs in alternating engine order. The matched numeric identity
+control, both Arrow transposes and a rowwise blackhole sink remain in the measured path.
+
+A [grouped integer-SUM benchmark](../optimizations/host-exact-builtins-upcall.md#composition-with-grouped-integer-sums) shows 16–24% less native elapsed time than Flink at 2M and 5M rows for TAN, COSH and floating TRUNCATE, retaining both transposes. This gain applies to those composed queries; standalone math remains slower. A separate admission ablation confirms that these compositions previously fell back entirely to Flink and were slower than the current native plans. Grouped nullable/extreme-value parity cases pass on Flink 1.18 and 2.2.
+
+The original measurements below are historical. A subsequent [CPU-profile investigation](../optimizations/host-exact-builtins-upcall.md#exact-floating-math-remaining-performance-limits) tested borrowed inputs, primitive batch evaluation and simplified rounding. None established a whole-job improvement; the prototypes were removed and this work remains draft.
+
+
+| Expression | Flink median (s) | Native median (s) | Flink/native ratio |
+|---|---:|---:|---:|
+| Numeric identity | 0.293 | 0.429 | 0.685x |
+| Exact TAN | 0.367 | 0.643 | 0.571x |
+| Exact COSH | 0.337 | 0.534 | 0.631x |
+| DOUBLE TRUNCATE with runtime INT scale | 0.782 | 0.939 | 0.833x |
+
+These standalone queries are slower than Flink. The generated path is retained to keep exact
+math inside larger native pipelines using the existing bridge; it introduces no new operator
+or boundary. It does not establish a floating-math speedup. Reproduce with:
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=ScalarFunctionBenchmark \
+  -Dscalar.functions=TAN_EXACT,COSH_EXACT,FLOAT_TRUNCATE_EXACT \
+  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
+```
 
 ## Literal/arity guards
 
