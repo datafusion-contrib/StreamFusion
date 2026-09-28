@@ -320,7 +320,11 @@ final class TextTimeBenchmarkInputs {
                 "{\"user\":{\"active\":false}" + members + ",\"padding\":\"" + text[1] + "\"}"
               };
             }
+            case "tt_date_noncanonical" -> new String[] {"2000-2-29", "1969-1-2"};
+            case "tt_time_noncanonical" -> new String[] {"12:34:56.1", "23:59:59.12"};
+            case "tt_timestamp_noncanonical" -> new String[] {"2024-02-30 00:00:00", "2024-02-29 24:00:00"};
             case "tt_date_text" -> new String[] {"2000-02-29", "1969-12-31"};
+            case "tt_time_text" -> new String[] {"12:34:56.789", "23:59:59.001"};
             case "tt_timestamp_text" -> new String[] {"2000-02-29 12:34:56", "1969-12-31 23:59:59"};
             default -> throw new IllegalArgumentException("Unknown text/time input: " + input);
           };

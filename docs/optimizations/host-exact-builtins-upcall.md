@@ -28,17 +28,21 @@ See [the temporal contract](../operators/temporal-functions.md) and
 ## Canonical timestamp TRY_CAST
 
 Profiles of STRING-to-TIMESTAMP TRY_CAST identify Flink's general `DateTimeFormatter` field maps
-as a major cost after caching Arrow timestamp writers. A standalone TRY_CAST of a direct input
-now recognizes the exact ASCII `yyyy-MM-dd HH:mm:ss[.fraction]` subset, with years 1–9999 and
-1–9 fractional digits. It builds a validated `LocalDateTime`, truncates the fraction to the
-declared precision, and uses Flink's same `TimestampData` conversion. TIMESTAMP_LTZ uses the same
-session `TimeZone` and `atZone` conversion, including DST gaps and overlaps.
+as a major cost after caching Arrow timestamp writers. Standalone temporal TRY_CAST recognizes
+verified ASCII forms before falling back to the released parser: DATE with four-digit years
+and one- or two-digit month/day fields, and TIMESTAMP with `yyyy-MM-dd HH:mm:ss[.fraction]`,
+years 1–9999 and 1–9 fractional digits. Timestamp parsing preserves Flink's SMART clamping of
+days 29–31 and next-day normalization of zero-fraction `24:00:00`. Components are checked before
+constructing Java time objects, avoiding an exception followed by a second parse for these forms.
+TIMESTAMP_LTZ retains the session `TimeZone` and `atZone` conversion, including DST transitions.
 
 This is a fast path inside the existing batch callback, so JNI and both perimeter transposes
-remain. An unrecognized value continues through the original generated TRY_CAST; this preserves
-Flink's optional fields, noncanonical widths, SMART date resolution, and malformed-input policy.
-Only a direct input reference is read speculatively. Nested calls and complete-row evaluators
-retain their original generated code and evaluation order.
+remain. In modern cast mode, composed character children retain generated evaluation exactly
+once, outside the parser's failure handler; legacy mode only speculates on direct timestamp
+inputs. Unrecognized text uses the released parser. Complete-row evaluators retain original generated code. TIME recognizes `HH:mm:ss` with
+optional 1–3 fractional digits, then applies the released version's logical-type precision rule.
+SQL parity exposed why calling only the low-level parser was insufficient: Flink 2.2 truncates
+to the converted logical type's precision, while 1.18 preserves parsed milliseconds.
 
 Differential tests compare all precisions 0–9 in four zones over deterministic random dates,
 the timestamp range limits, pre-epoch fractions, and DST transitions. SQL tests additionally
@@ -71,3 +75,50 @@ Repeating the same workload with `-Dscalar.nullEvery=7` gives TIMESTAMP 0.817 s 
 (range 0.800–0.861) versus 3.002 s Flink (2.965–3.027), and TIMESTAMP_LTZ 0.830 s native
 (0.817–0.848) versus 3.053 s Flink (3.049–3.080): 3.68x for both. The nullable identity
 control is 0.633 s native / 0.391 s Flink. Both runs preserve the original input generator.
+
+### Composed expressions and SMART normalization
+
+A follow-up profile attributed 18.5% of DATE samples to general parsing. Expanding the
+benchmark also exposed a timestamp regression: SMART-normalized dates first threw in the
+speculative parser, then ran Flink's general parser. Recognizing those forms directly removes
+both costs. The following September 27, 2026 run uses the same machine, released versions,
+2M rows, 2 GiB heap, two warmups and five alternating trials described above. Default batch
+size is 1,024, with no injected NULLs. Median complete-job seconds:
+
+| Query | Previous native | Updated native (range) | Stock Flink (range) |
+| --- | ---: | ---: | ---: |
+| Direct DATE | 0.756 | 0.610 (0.607–0.621) | 0.608 (0.596–0.619) |
+| DATE of TRIM | 0.925 | 0.735 (0.725–0.747) | 0.768 (0.765–0.772) |
+| TIMESTAMP of TRIM | 3.796 | 0.862 (0.852–0.883) | 3.674 (3.611–3.699) |
+| Unpadded DATE | 0.748 | 0.615 (0.610–0.620) | 0.582 (0.581–0.603) |
+| SMART-normalized TIMESTAMP | 7.298 | 0.724 (0.715–0.727) | 3.575 (3.544–3.624) |
+
+Composed and SMART-normalized timestamps take 77.3% and 90.1% less native time than before,
+and outperform Flink by 4.26x and 4.94x. Direct DATE is tied and unpadded DATE remains slower;
+these results do not establish an across-the-board temporal speedup. The source-matched
+identity medians span 0.465–0.477 native and 0.380–0.405 Flink. Boolean also remains slower:
+a separate 20M-row length-dispatch experiment measured 3.497s native versus 3.402s Flink;
+control drift did not establish an improvement, so that kernel change was withdrawn.
+The PR remains draft pending the remaining performance blockers.
+
+Fixtures alternate `2000-2-29` / `1969-1-2` for unpadded dates and
+`2024-02-30 00:00:00` / `2024-02-29 24:00:00` for SMART timestamps. Run
+`ScalarFunctionBenchmark#individualFunctions` with
+`-Dscalar.functions=TRY_STRING_TO_DATE,TRY_DATE_COMPOSED,TRY_TIMESTAMP_COMPOSED,TRY_DATE_NONCANONICAL,TRY_TIMESTAMP_NONCANONICAL`
+and the same row/warmup/run settings above. Both transposes, JNI and the row sink remain included.
+
+After applying each released Flink line's TIME precision rule, the same isolated 2M-row method
+measures the following. Earlier native measurements used generated TIME conversion:
+
+| TIME query | Previous native | Updated native (range) | Stock Flink (range) |
+| --- | ---: | ---: | ---: |
+| Direct TIME | 0.788 | 0.609 (0.604–0.629) | 0.630 (0.622–0.644) |
+| TIME of TRIM | 0.951 | 0.750 (0.734–0.754) | 0.780 (0.773–0.789) |
+| One-/two-digit fractions | 0.790 | 0.621 (0.613–0.627) | 0.637 (0.632–0.646) |
+
+Native time decreases 21–23%, with only a small lead over Flink. Identity controls are
+0.472/0.477s native and 0.391/0.385s Flink. Reproduce using
+`-Dscalar.functions=TRY_STRING_TO_TIME,TRY_TIME_COMPOSED,TRY_TIME_NONCANONICAL`.
+These results preserve the SQL output, including Flink 2.2's truncation of fractions; they do
+not compare only the raw parser. The 91 parser/SQL checks pass on each released Flink line,
+including composed children, stateful child evaluation, malformed text, legacy mode and zones.

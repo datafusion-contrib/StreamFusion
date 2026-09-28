@@ -619,16 +619,21 @@ filter predicates and CASE consumers, including strings that parse to NULL.
 
 ### Temporal TRY_CAST
 
-Standalone TIMESTAMP/TIMESTAMP_LTZ TRY_CAST of a direct character input has an exact fast path
-inside the existing JVM batch callback for `yyyy-MM-dd HH:mm:ss` with an optional 1–9 digit
-fraction. It validates the calendar/time fields, truncates to the declared precision, and uses
-the same Java local-time and zone conversion as Flink. All other formats, invalid dates, year
-zero, and SMART-resolver cases execute the original generated Flink conversion. Composed child
-expressions also retain generated evaluation so speculative parsing cannot duplicate their
-effects or errors. See [timestamp parsing measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
+Standalone DATE, TIME and TIMESTAMP/TIMESTAMP_LTZ TRY_CAST use verified parsing fast paths
+inside the existing JVM batch callback. DATE accepts four-digit years and one- or two-digit
+month/day fields. TIMESTAMP accepts `yyyy-MM-dd HH:mm:ss` with an optional 1–9 digit fraction,
+including Flink's SMART normalization of days 29–31 and zero-fraction `24:00:00`. The result
+retains the declared precision and the same Java local-time and zone conversion as Flink.
+Other formats and year zero use the released Flink parser. Modern-mode composed character
+children execute their generated code exactly once, outside the conversion failure handler.
+Legacy mode retains generated DATE conversion and only the direct-input timestamp fast path.
+TIME recognizes `HH:mm:ss` with optional 1–3 fractional digits and applies the released
+version's logical-type precision rule: Flink 2.2 truncates while 1.18 preserves parsed milliseconds.
+Complete-row evaluators retain Flink's generated conversion. See
+[temporal parsing measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
 
 `TRY_CAST` from STRING/VARCHAR/CHAR to DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ
-uses the existing columnar callback, with the exact timestamp subset above and Flink's
+uses the existing columnar callback, with the exact temporal subsets above and Flink's
 generated conversion for other cases. Malformed text and rejected conversions return NULL;
 errors in the input expression still propagate. Flink 1.18.1 accepts `24:00:00` as an internal TIME but throws
 `DateTimeException` during external collection; native execution preserves that failure.

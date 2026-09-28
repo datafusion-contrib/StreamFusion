@@ -91,6 +91,8 @@ public final class FlinkExpressionFunction extends ScalarFunction
     var context = new Context(config, classLoader);
     var generator = new ExprCodeGenerator(context, false);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
+    String temporal = temporalBody(expression, generator, context, config);
+    if (temporal != null) return new Body(context, temporal, null);
     var result = generator.generateExpression(expression);
     return new Body(
         context,
@@ -104,6 +106,36 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + (binaryStringResult ? ".toBytes()" : "")
             + ";\n",
         null);
+  }
+
+  private static String temporalBody(RexNode expression, ExprCodeGenerator generator,
+      Context context, ReadableConfig config) {
+    if (!(expression instanceof RexCall call)
+        || call.getOperator() != FlinkSqlOperatorTable.TRY_CAST
+        || call.getOperands().size() != 1
+        || !SqlTypeFamily.CHARACTER.contains(call.getOperands().get(0).getType())
+        || config.get(org.apache.flink.table.api.config.ExecutionConfigOptions
+            .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR).isEnabled()) return null;
+    SqlTypeName type = call.getType().getSqlTypeName();
+    String method;
+    String suffix = "";
+    if (type == SqlTypeName.DATE) method = "tryDate";
+    else if (type == SqlTypeName.TIME) {
+      method = "tryTime";
+      var logical = (org.apache.flink.table.types.logical.TimeType)
+          org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(call.getType());
+      suffix = ", " + logical.getPrecision();
+    } else if (type == SqlTypeName.TIMESTAMP || type == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      method = "tryTimestamp";
+      suffix = ", " + call.getType().getPrecision() + ", "
+          + (type == SqlTypeName.TIMESTAMP ? "null" : context.addReusableSessionTimeZone());
+    } else return null;
+    var input = generator.generateExpression(call.getOperands().get(0));
+    // Child evaluation stays outside TRY_CAST's parser failure handler and executes exactly once.
+    return context.reuseInputUnboxingCode() + input.code()
+        + "\nif (" + input.nullTerm() + ") return null;\nreturn "
+        + CanonicalTemporalParser.class.getCanonicalName() + "." + method + "("
+        + input.resultTerm() + suffix + ");\n";
   }
 
   private static String canonicalTimestampPrefix(RexNode expression, Context context) {
@@ -125,7 +157,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
     // effects or errors. Unrecognized values continue through the original generated TRY_CAST.
     return "if (!input.isNullAt(" + input.getIndex() + ")) {\n"
         + "org.apache.flink.table.data.TimestampData sfCanonicalTimestamp = "
-        + CanonicalTimestampParser.class.getCanonicalName() + ".parse(input.getString("
+        + CanonicalTemporalParser.class.getCanonicalName() + ".parse(input.getString("
         + input.getIndex() + "), " + call.getType().getPrecision() + ", " + zone + ");\n"
         + "if (sfCanonicalTimestamp != null) return sfCanonicalTimestamp;\n}\n";
   }

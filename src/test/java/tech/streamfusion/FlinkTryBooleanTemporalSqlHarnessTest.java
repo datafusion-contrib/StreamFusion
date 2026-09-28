@@ -30,6 +30,7 @@ class FlinkTryBooleanTemporalSqlHarnessTest {
   private static final String[] VALUES = {
       "true", "FALSE", "t", "f", "yes", "NO", "1", "0", " true", "false ", "",
       "bad", "tr\u0000ue", "\u662f", null,
+      "2000-2-29", "1969-1-2", "12:34:56.1", "23:59:59.12",
       "2024-02-29", "2023-02-29", "2024-13-01", "0001-01-01", "9999-12-31",
       "10000-01-01", "-0001-01-01", "12:34:56.123456789", "00:00:00", "23:59:59.999",
       "12:60:00", "1969-12-31 23:59:59.999999999",
@@ -46,6 +47,29 @@ class FlinkTryBooleanTemporalSqlHarnessTest {
             "TIMESTAMP(0)", "TIMESTAMP(3)", "TIMESTAMP(6)", "TIMESTAMP(9)",
             "TIMESTAMP_LTZ(0)", "TIMESTAMP_LTZ(3)", "TIMESTAMP_LTZ(6)", "TIMESTAMP_LTZ(9)")
             .map(type -> Arguments.of(type, zone)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("temporalTypesAndZones")
+  void directAndComposedTemporalFastPathsMatchReleasedFlink(String type, String zone) throws Exception {
+    for (String input : List.of("s", "TRIM(s)")) {
+      BuiltinFunctionParity.assertParity(() -> environment(zone, false),
+          "SELECT TRY_CAST(" + input + " AS " + type + ") FROM src");
+    }
+  }
+
+  @Test
+  void composedTemporalCastEvaluatesItsStatefulChildOnce() throws Exception {
+    BuiltinFunctionParity.assertParity(() -> {
+      var table = environment("UTC", false);
+      table.createTemporarySystemFunction("marked_text", MarkedText.class);
+      return table;
+    }, "SELECT TRY_CAST(marked_text(s) AS DATE) FROM src");
+  }
+
+  public static final class MarkedText extends org.apache.flink.table.functions.ScalarFunction {
+    private int calls;
+    public String eval(String text) { return ++calls % 2 == 0 ? "2000-02-29" : text; }
   }
 
   @ParameterizedTest
