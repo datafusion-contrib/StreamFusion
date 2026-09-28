@@ -9,6 +9,8 @@ use datafusion::common::{cast::as_primitive_array, exec_err, Result};
 use datafusion::logical_expr::{ScalarUDF, Volatility};
 use std::sync::Arc;
 
+pub(crate) mod binary_cast;
+pub(crate) mod binary_elt;
 pub(crate) mod calendar;
 pub(crate) mod clock;
 pub(crate) mod decimal;

@@ -103,6 +103,8 @@ final class RexExpression {
   private static final int KIND_DECIMAL_FLOAT = 37;
   // Whole-row JVM evaluation; long pool [udf id, output Arrow schema string index].
   private static final int KIND_ROW_UDF = 38;
+  private static final int KIND_BINARY_CAST = 39;
+  private static final int KIND_BINARY_ELT = 40;
   // A typed NULL carries a one-field Arrow IPC schema in the string pool.
   private static final int KIND_LIT_TYPED_NULL = 31;
   // Fused exact arithmetic: payload is the declared result precision*100 + scale; two children.
@@ -335,9 +337,7 @@ final class RexExpression {
     boolean supported = encoder.emitCalc(calc);
     if (supported && !encoder.rowFusion
         && (encoder.requiresCalcRowOrder(calc.getProgram())
-            || calc.getProgram().getProjectList().stream()
-                .anyMatch(ref -> ref.getType().getSqlTypeName() == SqlTypeName.BINARY
-                    && !(calc.getProgram().expandLocalRef(ref) instanceof RexInputRef)))) {
+            || encoder.requiresFixedBinaryRow(calc.getProgram()))) {
       // Preserve native admission before selecting a different evaluation schedule. A fresh
       // encoder must not retain descriptors or pools from the column-at-a-time attempt.
       // Fixed BINARY results use the row's declared schema rather than a variable binary UDF result.
@@ -352,6 +352,19 @@ final class RexExpression {
       supported = encoder.emitRowCalc(calc);
     }
     return new CalcEncoding(encoder, supported);
+  }
+
+  private boolean requiresFixedBinaryRow(RexProgram program) {
+    for (int i = 0; i < program.getProjectList().size(); i++) {
+      if (program.getProjectList().get(i).getType().getSqlTypeName() != SqlTypeName.BINARY) continue;
+      int root = projectionRoots.get(i);
+      int kind = kinds.get(root);
+      if (kind == KIND_INPUT_REF
+          || kind == KIND_BINARY_CAST && payload.get(root) < 0
+          || kind == KIND_BINARY_ELT && payload.get(root) > 0) continue;
+      return true;
+    }
+    return false;
   }
 
   private boolean requiresCalcRowOrder(RexProgram program) {
@@ -1012,6 +1025,15 @@ final class RexExpression {
       strings.add(unixTimeFormat);
       return emit(call.getOperands().get(0));
     }
+    if ("ELT".equals(call.getOperator().getName())
+        && SqlTypeFamily.BINARY.contains(call.getType())
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.INTEGER
+        && call.getOperands().stream().noneMatch(this::requiresRowShortCircuit)) {
+      add(KIND_BINARY_ELT, call.getType().getSqlTypeName() == SqlTypeName.BINARY
+          ? call.getType().getPrecision() : 0, call.getOperands().size());
+      for (RexNode operand : call.getOperands()) if (!emit(operand)) return false;
+      return true;
+    }
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
       return emitHostExpression(call, false);
     }
@@ -1219,6 +1241,9 @@ final class RexExpression {
       return emitEncoding(call, 105, true, true);
     }
     if ("TO_BASE64".equals(functionName)) {
+      if (call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BINARY) {
+        return emitHostExpression(call, true);
+      }
       if (call.getOperands().size() == 1
           && call.getOperands().get(0).getType().getSqlTypeName().getFamily()
               == SqlTypeFamily.BINARY) {
@@ -2174,7 +2199,12 @@ final class RexExpression {
     if (SqlTypeFamily.BINARY.contains(resultType)
         && (SqlTypeFamily.CHARACTER.contains(sourceType)
             || SqlTypeFamily.BINARY.contains(sourceType))) {
-      return emitHostExpression(call, true);
+      if (legacyCastBehaviour == null || requiresRowShortCircuit(call.getOperands().get(0))) {
+        return emitHostExpression(call, true);
+      }
+      int length = legacyCastBehaviour ? 0 : resultType.getPrecision();
+      add(KIND_BINARY_CAST, targetType == SqlTypeName.BINARY ? -length : length, 1);
+      return emit(call.getOperands().get(0));
     }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);

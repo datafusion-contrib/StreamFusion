@@ -70,6 +70,14 @@ class FlinkFixedBinarySqlHarnessTest {
   }
 
   @Test
+  void binarySelectionPreservesFailingIndexEvaluation() {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
+    NativeFailureParity.run(this::binary, "SELECT ELT(1 / (n - n), b, p) FROM src")
+        .assertFailure(ArithmeticException.class, "zero", NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
+  }
+
+  @Test
   void conversionDoesNotCatchInputFailures() {
     NativeFailureParity.run(() -> strings(false),
         "SELECT TRY_CAST(CAST(1 / (id - id) AS STRING) AS BINARY(4)) FROM src")

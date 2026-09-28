@@ -157,3 +157,41 @@ SF_BENCHMARK=true mvn -B -ntp -pl streamfusion-runtime -am test -Pbench \
   -Dscalar.functions=STRING_TO_INT,INT_TO_STRING \
   -Dscalar.output=target/integer-string-casts.csv
 ```
+
+
+## Binary casts and selection
+
+Binary casts and INT-indexed binary ELT operate on Arrow byte arrays. Casts truncate bytes,
+zero-pad BINARY, and retain unpadded VARBINARY/legacy results. ELT copies only the selected
+value into the output, preserving selected NULLs and out-of-range NULLs. Fixed results carry
+their declared Arrow width, so the planner need not generate a whole Java Calc merely to
+materialize that width. Flink evaluation remains responsible for expressions whose operands
+can fail in ways requiring its rowwise evaluation order; fixed-binary TO_BASE64 retains its
+verified generated path.
+
+The previous cast decoded Arrow UTF-8 into a Java string and encoded it back into bytes.
+A 20-second async-profiler CPU recording attributed 45% of samples to stacks containing
+Flink's UTF-8 encoder, including both source conversion and callback work. The native cast
+removes the callback conversion while retaining the source transpose. Released Flink's
+StringToBinaryCastRule/BinaryToBinaryCastRule and EltFunction define the byte and index contracts.
+The batch ownership model follows Comet's import/evaluate/export bridge; no ownership protocol changes.
+
+Release+mimalloc, Core i7-12650H/Linux, JDK17/Flink2.2.1, 2 GiB heap, parallelism 1,
+2M runtime rows, 264-byte text, no NULL injection, 1,024-row batches, two warmups and five
+alternating trials. Row source, row sink and both transposes remain measured. Seconds:
+
+| Query | Previous native median | Optimized native median (range) | Flink median (range) |
+|---|---:|---:|---:|
+| String to BINARY(16) | 1.748 | 0.969 (0.953–0.975) | 0.881 (0.857–0.889) |
+| BINARY(16) ELT | 0.565 | 0.438 (0.431–0.440) | 0.312 (0.312–0.321) |
+
+Native elapsed time improves 44.6% and 22.4%, respectively. Both remain slower than Flink;
+these results do not establish merge readiness under the performance requirement. The same-run
+identity controls are 1.012s native / 0.875s Flink for text and 0.407s / 0.314s for fixed binary.
+The previous-run Flink medians were 0.906s and 0.330s; control variation does not explain the
+large cast improvement but limits conclusions about small differences.
+
+Reproduce with `ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
+`-Dscalar.functions=TRY_STRING_TO_FIXED_BINARY,ELT_FIXED_BINARY`, `-Dscalar.rows=2000000`,
+`-Dscalar.nullEvery=0`, `-Dscalar.warmup=2`, `-Dscalar.runs=5`,
+`-Dsf.extraJvmArgs=-Xmx2g`, and `SF_BENCHMARK=true`.

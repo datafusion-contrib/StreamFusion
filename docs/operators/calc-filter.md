@@ -614,15 +614,16 @@ for the release benchmark against the previous host-cast path.
 ### Binary casts and fixed-width generated expressions
 
 CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
-run through Flink-generated evaluation. Default-mode BINARY(n) zero-pads or truncates
+use a native byte-copy kernel when their operands do not require Flink's rowwise error handling.
+Default-mode BINARY(n) zero-pads or truncates
 raw bytes to exactly n bytes; VARBINARY(n) only truncates. Character inputs use their
 UTF-8 bytes, including embedded zeros and multibyte sequences cut at a byte boundary.
 NULLs and declared result types are preserved. Failures in the operand expression still
 propagate; CASE and filters suppress unselected failing expressions.
 
 Generated expressions can read fixed-size Arrow binary vectors through the existing
-batch callback. Fixed BINARY result projections use the declared row schema to produce
-fixed-size Arrow binary columns, so default-mode results can feed another native operator,
+batch callback. Native casts and binary ELT produce their declared fixed-size Arrow columns directly.
+Other fixed BINARY result projections use the generated row's declared schema, so default-mode results can feed another native operator,
 including grouping. Fixed BINARY nested inside ARRAY/ROW callback arguments or results
 remains outside this whitelist. This does not widen user-defined function signature admission.
 
@@ -636,8 +637,8 @@ Runtime-source tests cover widths 1/2/4/16, NULLs, zero padding, truncation, non
 typed literals, ELT selection, short-circuiting, and 5,003-row inputs. Bridge tests cover
 sliced fixed/variable vectors, output ownership after input closure, and allocator balance.
 
-Release+mimalloc measurements on Flink 2.2.1/JDK 17, Linux x86_64 (Core i7-12650H),
-use 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
+The original callback-only release+mimalloc measurements on Flink 2.2.1/JDK 17,
+Linux x86_64 (Core i7-12650H), use 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
 trials. The harness requires NativeCalc and both row/Arrow transposes. Median seconds:
 
 | Query | Flink | Native island | Flink/native |
@@ -647,9 +648,9 @@ trials. The harness requires NativeCalc and both row/Arrow transposes. Median se
 | TRY_CAST string to BINARY(16) | 0.840 | 1.852 | 0.454x |
 | Dynamic ELT over BINARY(16) | 0.335 | 0.682 | 0.491x |
 
-These standalone cases are slower than stock Flink. The change extends existing generated
-expression machinery so binary expressions can compose within a native island; it does
-not claim an isolated speedup or add a separate execution engine.
+Those callback-only standalone cases are slower than stock Flink. The native kernels remove
+the callback for the admitted casts and selections; their current measurements and remaining
+performance gap are recorded in the [kernel ledger](../optimizations/scalar-function-kernels.md#binary-casts-and-selection).
 
 ```bash
 SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
@@ -956,10 +957,11 @@ Column trim sets fall back for the same Flink representation-dependent behavior 
 
 ### ELT
 
-The binary-result overload also runs through Flink-generated code. Dynamic INT indices retain
+The binary-result overload uses a native columnar selector. Dynamic INT indices retain
 one-based selection, out-of-range NULLs and NULL operands. Multiple binary result columns retain
 independent byte arrays across rows and batches. Fixed-length BINARY arguments and results
-are admitted alongside BYTES; embedded zero/high bytes stay binary throughout the callback.
+are admitted alongside BYTES; embedded zero/high bytes remain binary. Expressions requiring
+Flink's rowwise exception or shared-function ordering retain the generated callback.
 
 An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
 
