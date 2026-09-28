@@ -15,7 +15,10 @@ WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/flink-suite.
 
 
 def command(name):
-    lines = WORKFLOW.read_text().splitlines()
+    path = WORKFLOW
+    if name in ("Run unchanged upstream suite with StreamFusion", "Require declared runtime audit routes"):
+        path = WORKFLOW.with_name("flink-suite-line.yml")
+    lines = path.read_text().splitlines()
     start = lines.index("      - name: " + name)
     start = next(i for i in range(start, len(lines)) if lines[i] == "        run: |") + 1
     end = start
@@ -86,7 +89,7 @@ class SuiteWorkflowTest(unittest.TestCase):
                     report.write_text(saved)
 
     def test_final_gate_rejects_failed_cancelled_and_unexpected_skipped_jobs(self):
-        dependencies = ("suite-matrix", "prepare", "upstream-suite", "legacy-delta-audit")
+        dependencies = ("upstream-line", "legacy-delta-audit")
         for inventory in (False, True):
             for dependency in dependencies:
                 for state in ("success", "failure", "cancelled", "skipped"):

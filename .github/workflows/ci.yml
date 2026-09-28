@@ -27,6 +27,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run native test suite
         working-directory: native
@@ -56,13 +57,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # A cold debug build of the native library (DataFusion + Arrow) plus the
-      # Maven repository outgrows the runner's default free
-      # space; drop the preinstalled toolchains we never touch.
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
+        run: python3 bin/ci-free-disk.py
 
       - uses: actions/setup-java@v4
         with:
@@ -77,6 +73,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_check_flink_suite_classpath.py'
           python3 -m unittest discover -s bin -p 'test_check_native_glibc.py'
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
+          python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
         if: matrix.line == '1.18'
@@ -89,6 +86,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Builds the debug native library through the Maven exec hook, then runs the
       # full JUnit suite. The Kafka decode harnesses use Testcontainers, which the
@@ -138,9 +136,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
+        run: python3 bin/ci-free-disk.py
 
       - uses: actions/setup-java@v4
         with:
@@ -153,6 +149,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run optional lake module suite
         env:
@@ -178,12 +175,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # The release native payload, Maven repository, and Docker image need more than the runner's
-      # default free space. This is intentionally the same cleanup as the Java test jobs.
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
+        run: python3 bin/ci-free-disk.py
 
       - uses: actions/setup-java@v4
         with:
@@ -196,7 +189,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ubuntu-22.04-glibc-2.35
-          workspaces: native
+          workspaces: native -> target/release-staging
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Host-only is still a production Linux/x86_64 release (including mimalloc); cross-platform
       # manifest assembly is covered by the release builder, but does not belong on this smoke path.
@@ -212,6 +206,24 @@ jobs:
         run: >
           mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-image-it verify
           -Dstreamfusion.image.name=streamfusion-flink:image-it
+
+      - name: Package qualified Flink 1.18 payloads
+        if: matrix.line == '1.18'
+        run: bin/package-release.sh --flink-line 1.18
+
+      - name: Execute the packaged loader and mixed-line identity tests
+        if: matrix.line == '1.18'
+        run: >
+          mvn -B -ntp -Pflink-1.18,universal -pl streamfusion-loader -am test
+          -Dtest=FlinkPayloadIdentityTest,StreamFusionPlannerLoaderTest
+          -Dsurefire.failIfNoSpecifiedTests=false
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.line == '1.18'
+        with:
+          name: flink1.18-optimized-linux-payloads
+          path: target/release/streamfusion-flink1.18-*-bin.tar.gz*
+          if-no-files-found: error
 
   module-tests:
     name: ${{ matrix.name }} module tests (debug native build)
@@ -288,9 +300,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
+        run: python3 bin/ci-free-disk.py
 
       - uses: actions/setup-java@v4
         with:
@@ -303,6 +313,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check the standalone native package
         working-directory: native
@@ -313,47 +324,10 @@ jobs:
           mvn -B -ntp ${{ matrix.profile }} -pl streamfusion-runtime test
           -Dgroups="${{ matrix.tag }}"
 
-  flink118-artifacts:
-    name: Flink 1.18 qualified artifacts and loader
-    runs-on: ubuntu-22.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v6
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-      - uses: dtolnay/rust-toolchain@1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ubuntu-22.04-glibc-2.35
-          workspaces: native
-      - name: Build and validate qualified optimized payloads
-        run: |
-          bin/build-release.sh --host-only --flink-line 1.18
-          bin/check-artifacts.sh --host-only --flink-line 1.18
-          bin/package-release.sh --flink-line 1.18
-      - name: Execute the packaged loader and mixed-line identity tests
-        run: >
-          mvn -B -ntp -Pflink-1.18,universal -pl streamfusion-loader -am test
-          -Dtest=FlinkPayloadIdentityTest,StreamFusionPlannerLoaderTest
-          -Dsurefire.failIfNoSpecifiedTests=false
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flink1.18-optimized-linux-payloads
-          path: target/release/streamfusion-flink1.18-*-bin.tar.gz*
-          if-no-files-found: error
-
   all-tests:
     name: All CI tests
     if: ${{ always() }}
-    needs: [native-tests, java-tests, lake-module-tests, image-integration, module-tests, flink118-artifacts]
+    needs: [native-tests, java-tests, lake-module-tests, image-integration, module-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
