@@ -14,7 +14,6 @@ import org.apache.paimon.flink.FlinkRowData;
 import org.apache.paimon.flink.FlinkRowWrapper;
 import org.apache.paimon.flink.LogicalTypeConversion;
 import org.apache.paimon.mergetree.compact.aggregate.FieldAggregator;
-import org.apache.paimon.mergetree.compact.aggregate.factory.FieldAggregatorFactory;
 import org.apache.paimon.types.DataField;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
@@ -26,7 +25,7 @@ public final class PaimonFieldAggregator {
   private final InternalRow.FieldGetter getter;
 
   PaimonFieldAggregator(DataField field, String function, CoreOptions options) {
-    aggregate = FieldAggregatorFactory.create(field.type(), field.name(), function, options);
+    aggregate = PaimonVersion.fieldAggregator(field.type(), field.name(), function, options);
     type =
         LogicalTypeConversion.toLogicalType(
             new org.apache.paimon.types.RowType(

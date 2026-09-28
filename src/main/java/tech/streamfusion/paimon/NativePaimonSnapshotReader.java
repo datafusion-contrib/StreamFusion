@@ -19,7 +19,6 @@ import org.apache.paimon.mergetree.compact.IntervalPartition;
 import org.apache.paimon.mergetree.compact.PartialUpdateMergeFunction;
 import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.table.FileStoreTable;
-import org.apache.paimon.table.PrimaryKeyFileStoreTable;
 import org.apache.paimon.table.PrimaryKeyTableUtils;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.RowType;
@@ -65,7 +64,8 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
       PartialUpdateMergeFunction.factory(
           options.toConfiguration(), table.rowType(), table.primaryKeys());
     }
-    if (!(table instanceof PrimaryKeyFileStoreTable)
+    if (!PaimonVersion.hasKeyValueStore(table)
+        || PaimonVersion.hasBeforeFiles(split)
         || split.isStreaming()
         || split.rawConvertible()
         || (table.bucketMode() != BucketMode.HASH_FIXED
@@ -105,9 +105,7 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
       if (orcTimestampOrderingRisk(file, new RowType(keys))) return null;
     }
     List<List<SortedRun>> sections =
-        new IntervalPartition(
-                split.dataFiles(), ((PrimaryKeyFileStoreTable) table).store().newKeyComparator())
-            .partition();
+        new IntervalPartition(split.dataFiles(), PaimonVersion.keyComparator(table)).partition();
     for (List<SortedRun> section : sections) {
       if (section.size() > options.sortSpillThreshold()) {
         return null;
@@ -189,10 +187,7 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
     return new NativePaimonFileReader(
         PaimonCodecs.reader(
             file.fileFormat(),
-            table
-                .coreOptions()
-                .toConfiguration()
-                .get(org.apache.paimon.format.OrcOptions.ORC_TIMESTAMP_LTZ_LEGACY_TYPE)),
+            PaimonVersion.legacyOrcTimestamp(table.coreOptions().toConfiguration())),
         table.fileIO(),
         new Path(file.externalPath().orElse(split.bucketPath() + "/" + file.fileName())),
         file.fileSize(),

@@ -12,7 +12,10 @@ query back to Flink, not just that node.
 
 `Calc` is also one of the changelog-aware operators (alongside `GROUP BY`, the regular join, a CDC
 source, `UNION ALL`, `Expand`, and changelog normalize) exempt from the insert-only guard — a
-retracting/updating input doesn't disqualify it by itself.
+retracting/updating input doesn't disqualify it by itself. A union may alternate insert-only Arrow
+batches and batches carrying a row-kind column; Calc caches each schema separately and preserves
+those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
+retractions received from a source that advertised insert-only output.
 
 The rest of this page is the exact admission list: what's unconditionally native, what's native by
 default via a JVM upcall (and why that's not a fallback), what's opt-in, and what's a straight
