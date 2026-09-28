@@ -84,6 +84,8 @@ public final class FlinkExpressionFunction extends ScalarFunction
       ClassLoader classLoader,
       boolean binaryStringResult) {
     var context = new Context(config, classLoader);
+    String decimalCode = decimalRoundingText(expression);
+    if (decimalCode != null) return new Body(context, decimalCode, null);
     var generator = new ExprCodeGenerator(context, false);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
     var result = generator.generateExpression(expression);
@@ -98,6 +100,26 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + (binaryStringResult ? ".toBytes()" : "")
             + ";\n",
         null);
+  }
+
+  private static String decimalRoundingText(RexNode expression) {
+    if (!(expression instanceof org.apache.calcite.rex.RexCall cast)
+        || cast.getKind() != org.apache.calcite.sql.SqlKind.CAST
+        || cast.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.VARCHAR
+        || cast.getType().getPrecision() != Integer.MAX_VALUE
+        || !(cast.getOperands().get(0) instanceof org.apache.calcite.rex.RexCall round)
+        || (round.getOperator() != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
+            && round.getOperator() != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
+        || round.getOperands().size() != 2
+        || !(round.getOperands().get(0) instanceof org.apache.calcite.rex.RexInputRef value)
+        || !(round.getOperands().get(1) instanceof org.apache.calcite.rex.RexInputRef scale)
+        || value.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.DECIMAL
+        || scale.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.INTEGER) return null;
+    return "return " + DecimalRounding.class.getCanonicalName() + ".text(input, "
+        + value.getIndex() + ", " + scale.getIndex() + ", " + value.getType().getPrecision()
+        + ", " + value.getType().getScale() + ", "
+        + (round.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
+        + ");\n";
   }
 
   private static Body rowBody(
@@ -207,6 +229,11 @@ public final class FlinkExpressionFunction extends ScalarFunction
   public Object evalColumns(Object[][] columns, int row) throws Exception {
     for (int i = 0; i < columns.length; i++) setArgument(i, columns[i][row]);
     return evaluator.eval(input);
+  }
+
+  /** The imported Arrow batch owns this row for the duration of synchronous evaluation. */
+  public Object evalRow(RowData row) throws Exception {
+    return evaluator.eval(row);
   }
 
   private void setArgument(int position, Object value) {

@@ -761,7 +761,7 @@ kernel with rounding toward zero. Positive, zero and negative positions preserve
 resolved precision/scale and NULL behavior; a position at or above the source scale retains
 the input value. Positions below -38 use Flink's generated expression through the columnar
 callback, including its extreme-scale errors. They retain the same AND/OR short-circuit
-restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above.
+restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above. A standalone STRING cast of ROUND/TRUNCATE on direct decimal and INT columns uses equivalent single-step rounding, with released-function fallback for extreme negative positions. Other compositions retain generated evaluation. [Current measurements](../optimizations/udf-columnar-upcall.md#decimal-runtime-scale-consumers) improve our baseline but remain slower than Flink.
 Integer TRUNCATE inputs use the generated path described under exact numeric functions;
 floating-point inputs retain their existing admission restrictions. SQL tests cover
 precision 38, multiple batches, filters, CASE, COALESCE and aggregate consumers, including

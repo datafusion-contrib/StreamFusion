@@ -69,3 +69,35 @@ SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
   -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
   -Dscalar.functions=ENCODE_DYNAMIC,DECODE_DYNAMIC -Dscalar.unicode=true -Dscalar.nullEvery=7
 ```
+
+## Decimal runtime-scale consumers
+
+A release CPU profile of `CAST(ROUND(d, scale_column) AS STRING)` attributed about 40% of
+inclusive samples to the scalar callback and about 10% to decimal Arrow access. Generated
+expressions without character arguments now read a borrowed Arrow row during the synchronous
+callback, avoiding temporary argument columns. Character arguments retain materialization to
+preserve Java string semantics. Wide decimals retain their existing `BigDecimal` directly
+instead of converting through an unscaled byte array and a second `BigInteger`.
+
+For a standalone STRING cast of ROUND/TRUNCATE with direct decimal and INT column arguments,
+a single `setScale` replaces Flink's two decimal-point shifts around rounding. The result keeps
+Flink's dynamic precision and scale; extreme negative positions still call the released function.
+Other expression shapes retain generated evaluation and its ordering.
+
+Linux x86-64 Core i7-12650H, JDK 17, Flink 2.2.1, release+mimalloc, 2 GiB heap,
+2M runtime rows, parallelism one, default 1,024-row batches, no injected NULLs, two warmups
+and five alternating trials per engine; both row/Arrow transposes and the row sink remain.
+Median complete-job seconds (updated range in parentheses):
+
+| Expression | Previous native | Updated native | Stock Flink |
+| --- | ---: | ---: | ---: |
+| Runtime ROUND to STRING | 1.056 | 0.938 (0.930–0.963) | 0.685 (0.665–0.690) |
+| Runtime TRUNCATE to STRING | 1.048 | 0.936 (0.933–0.957) | 0.674 (0.665–0.681) |
+
+Native time decreases 11.2% and 10.7%, but both remain slower than Flink and the PR remains
+draft. Identity controls were 0.531 native / 0.311 Flink before and 0.466 / 0.305 after;
+that drift means the whole-job improvement cannot all be attributed to decimal arithmetic.
+Reproduce with `ScalarFunctionBenchmark#individualFunctions`,
+`-Dscalar.functions=DECIMAL_ROUND_RUNTIME_STRING,DECIMAL_TRUNCATE_RUNTIME_STRING`,
+`-Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5` under `-Pbench` with
+`SF_BENCHMARK=true` and `-Dsf.extraJvmArgs=-Xmx2g`.
