@@ -714,18 +714,44 @@ Positions from -38 upward use a prepared native decimal kernel. More negative li
 use Flink's own decimal rounding through the existing columnar JVM upcall, so extreme BigDecimal
 scale/range exceptions match the host instead of being silently clamped to zero. These calls
 remain inside native Calc, but fall back when nested under AND/OR to preserve row short-circuiting.
-CASE can skip an unselected failing branch. Runtime scale columns and BIGINT scale arguments
-retain an explicit planner fallback; float/double ROUND keeps its existing compatibility gate.
-Flink 2.2.1 itself can fail when a runtime scale changes the returned DecimalData precision;
-the regression suite preserves the resulting binary-writer assertion failure through fallback.
+CASE can skip an unselected failing branch. BIGINT scale arguments retain an explicit
+planner fallback; float/double ROUND keeps its existing compatibility gate.
+
+Runtime INT scales for ROUND and TRUNCATE run inside native Calc when a verified scalar
+consumer encloses the rounding. A standalone STRING cast on direct decimal and INT columns
+uses native batch rounding and per-row decimal formatting; a batch with non-NULL positions
+below -38 uses the existing Flink evaluator. Other complete expressions use Flink-generated
+evaluation, so integer casts, comparisons, predicates, nested rounding, CASE/COALESCE and
+explicit decimal normalization see the original runtime precision and scale. Arithmetic,
+nonidentity DECIMAL casts and IF can normalize the result before it crosses Arrow.
+Negative/NULL scales, scale expansion, precision 38, input errors and AND/OR/CASE
+short-circuiting retain released Flink behavior. Positions at or above the input scale
+leave the input unchanged; extreme negative positions can throw BigDecimal's scale errors.
+
+Direct runtime-scale DECIMAL outputs, decimal-preserving selections/sign operations, and
+complex outputs remain on Flink. Its serializer can reinterpret the internal unscaled
+integer using the declared scale: for DECIMAL(20,3) `123.456` and scale 2, direct ROUND and
+TRUNCATE collect as `12.346` and `12.345`, while their STRING consumers yield `123.46` and
+`123.45`. Scale 1 changes the internal precision and triggers the host binary-writer
+assertion with assertions enabled. Tests preserve both behaviors through explicit fallback,
+including when a JSON expression would otherwise select complete-row generation.
+
+A release+mimalloc comparison of the direct STRING consumers on Flink 2.2.1/JDK 17,
+with two million row-fed records, measured native ROUND at 0.634 s versus Flink's 0.690 s,
+and native TRUNCATE at 0.635 s versus 0.694 s. At five million rows, ROUND measured
+1.458 s versus 1.605 s and TRUNCATE 1.463 s versus 1.576 s. Both transposes and the row sink
+remain in these measurements. These results apply to the direct decimal/INT column shape; composed
+expressions retain generated evaluation. See the [method, variability and prior implementation
+comparison](../optimizations/udf-columnar-upcall.md#decimal-runtime-scale-consumers).
 
 `TRUNCATE(decimal_column[, literal_integer_scale])` uses the same native fixed-width
 kernel with rounding toward zero. Positive, zero and negative positions preserve Flink's
 resolved precision/scale and NULL behavior; a position at or above the source scale retains
 the input value. Positions below -38 use Flink's generated expression through the columnar
 callback, including its extreme-scale errors. They retain the same AND/OR short-circuit
-restriction as ROUND. Integer and floating-point inputs are not admitted for TRUNCATE;
-Flink 2.2.1 rejects nonliteral TRUNCATE positions during validation. SQL tests cover
+restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above. A standalone STRING cast of ROUND/TRUNCATE on direct decimal and INT columns uses native batch rounding and formatting, with released-function fallback for batches containing extreme negative positions. Other compositions retain generated evaluation. The direct STRING consumer measurements above include the full native island.
+Integer TRUNCATE inputs use the generated path described under exact numeric functions;
+floating-point inputs retain their existing admission restrictions. SQL tests cover
 precision 38, multiple batches, filters, CASE, COALESCE and aggregate consumers, including
 projections that combine and nest truncation with DECIMAL-to-FLOAT/DOUBLE casts.
 
@@ -1451,8 +1477,17 @@ Same input and boundary rules as LPAD, with padding appended on the right. Dynam
 Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. Numeric separator overloads use Flink-generated code and interpret the integer as a character code. BIGINT indices with character separators fall back.
 
 Generated scalar helpers keep operand computations within the same Flink evaluator, retaining
-intermediate StringData representation. This also preserves the released host's failure for a
-computed empty trim set instead of silently changing it through a string conversion.
+intermediate StringData representation. For a computed empty trim set, Flink 2.2.1 can throw
+an arithmetic exception while the empty value is binary-only, but succeeds after its Java string
+has been decoded and cached. The shared empty-string singleton makes this depend on prior use in
+the JVM. Native evaluation preserves the host representation and matches either outcome; parity
+checks compare the live host outcome rather than assuming that every computed empty set fails.
+A separate regression check uses a fresh empty value to verify both representation states.
+Regular correctness-test forks use `-XX:-OmitStackTraceInFastThrow` so repeated implicit
+exceptions retain the messages and stack frames needed to compare their evaluation phase.
+Without it, HotSpot can turn the same arithmetic failure into a stackless exception with no
+message after warmup, creating a second test-order dependency. The `bench` profile leaves
+this test-only setting empty and retains normal JVM exception optimization.
 
 ### Temporal parsing, extraction and rounding
 

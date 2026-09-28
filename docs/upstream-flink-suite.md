@@ -604,6 +604,17 @@ by closing an uninitialized stock compactor in Flink's operator harness. These r
 can pass their row assertions and hit that cleanup race while cancelling their conflicting compaction
 jobs, killing the class's shared TaskManager and stranding subsequent tests. A separate JVM contains
 that upstream fixture failure without changing the test, its random options, or its assertions.
+The three streaming failure-injection cases, `testNoChangelogProducerStreamingRandom`,
+`testFullCompactionChangelogProducerStreamingRandom` and
+`testLookupChangelogProducerStreamingRandom`, also run separately. In
+[the #273 Paimon run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36411039663/job/108907928301),
+an injected `FailingFileIO.ArtificialException` escaped stock `MergeTreeWriter.close()`
+through `TableWriteOperator.close()`. Flink treated the cleanup failure as fatal and stopped
+TaskManager #0. Later jobs had no resources; the class JVM timed out roughly 28 minutes after
+the initial failure. The final report listed 237 passed tests but had no completed report for
+the timed-out class. Isolation preserves the original failed test and its diagnostics while
+preventing that lost TaskManager from blocking unrelated tests. It does not fix or suppress
+the upstream cleanup failure, disable failure injection, or retry random outcomes.
 All invocations' reports contribute to the result and native execution checks; any Maven
 failure remains blocking, including a process timeout without a finished JUnit report.
 Explicit `FLINK_SUITE_TEST` selectors keep their requested grouping for diagnosis.

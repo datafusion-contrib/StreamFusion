@@ -12,6 +12,20 @@ import tech.streamfusion.arrow.vectors.ArrowDecimalColumnVector;
 
 class DecimalAccessorTest {
   @Test
+  void wideReconstructionPreservesUnscaledValueAndOverflowContract() {
+    for (String text : java.util.List.of("0.000", "-9999999999999999999.25", "123456789012345678901234567890.12345678")) {
+      BigDecimal value = new BigDecimal(text);
+      for (int scale : new int[] {0, 2, 18}) {
+        for (int precision : new int[] {19, 38}) {
+          assertEquals(
+              DecimalData.fromUnscaledBytes(value.unscaledValue().toByteArray(), precision, scale),
+              DecimalAccessor.fromInternalValue(value, precision, scale));
+        }
+      }
+    }
+  }
+
+  @Test
   void compactRoundingCarrySurvivesArrowAndInternalReconstruction() {
     try (var allocator = new RootAllocator();
         var vector = new DecimalVector("d", allocator, 5, 2)) {
