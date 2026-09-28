@@ -163,7 +163,9 @@ SF_BENCHMARK=true mvn -B -ntp -pl streamfusion-runtime -am test -Pbench \
 
 Binary casts and INT-indexed binary ELT operate on Arrow byte arrays. Casts truncate bytes,
 zero-pad BINARY, and retain unpadded VARBINARY/legacy results. ELT copies only the selected
-value into the output, preserving selected NULLs and out-of-range NULLs. Fixed results carry
+value into the output, preserving selected NULLs and out-of-range NULLs. Fixed and variable
+binary inputs are borrowed directly during selection, avoiding a full fixed-to-variable
+conversion of every input column. The existing result cast still enforces the declared width. Fixed results carry
 their declared Arrow width, so the planner need not generate a whole Java Calc merely to
 materialize that width. Flink evaluation remains responsible for expressions whose operands
 can fail in ways requiring its rowwise evaluation order; fixed-binary TO_BASE64 retains its
@@ -195,3 +197,17 @@ Reproduce with `ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
 `-Dscalar.functions=TRY_STRING_TO_FIXED_BINARY,ELT_FIXED_BINARY`, `-Dscalar.rows=2000000`,
 `-Dscalar.nullEvery=0`, `-Dscalar.warmup=2`, `-Dscalar.runs=5`,
 `-Dsf.extraJvmArgs=-Xmx2g`, and `SF_BENCHMARK=true`.
+
+A later ELT CPU profile (20 seconds per engine) attributed 2.4% of native samples to
+fixed-to-variable binary conversion of input columns and 1.7% to the result conversion.
+Removing the input conversions reduces the native ELT median from 0.420s (0.412–0.424)
+to 0.399s (0.393–0.403), a 4.9% reduction with non-overlapping ranges. The matched Flink
+control stays at 0.308s (previous 0.307–0.320, candidate 0.301–0.316). Both runs include the
+[generated binary exit](zero-copy-exit-transpose.md#binary-output-measurements), so this
+comparison isolates the additional input-copy removal. Native ELT still trails Flink by
+about 30%; this is a partial optimization, not evidence that the PR is ready to merge.
+The unchanged cast measures 0.926s native / 0.856s Flink. Identity controls remain unfavorable:
+text 1.008s / 0.883s and fixed binary 0.374s / 0.308s. Configuration is unchanged from the
+2M-row comparison above. [Raw trials](../benchmarks/scalar-binary-exit-2026-09-28.csv) include
+both the exit-only and borrowed-input runs. Native tests cover mixed fixed/variable inputs,
+slices, empty values, NULLs and invalid indexes.
