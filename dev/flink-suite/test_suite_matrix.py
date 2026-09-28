@@ -34,6 +34,19 @@ class SuiteMatrixTest(unittest.TestCase):
         self.assertEqual(Counter({k: v for k, v in full.items() if k[1] not in ("runtime", "state")}),
                          self.cases(True, "connectors"))
 
+    def test_per_line_matrices_preserve_all_scopes_without_cross_line_dependencies(self):
+        for inventory in (False, True):
+            for scope in ('all', 'runtime', 'connectors'):
+                combined = []
+                for line in ('2.2', '1.18'):
+                    entries = matrix(inventory, scope, line)['include']
+                    self.assertTrue(entries)
+                    self.assertTrue(all(entry['line'] == line for entry in entries))
+                    combined.extend(entries)
+                self.assertEqual(matrix(inventory, scope)['include'], combined)
+        with self.assertRaises(ValueError):
+            matrix(line='2.1')
+
     def test_unknown_scope_is_rejected(self):
         with self.assertRaises(ValueError):
             matrix(True, "typo")
