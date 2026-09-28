@@ -67,3 +67,57 @@ establish acceleration. Reproduce with `ScalarFunctionBenchmark#individualFuncti
 `-Dscalar.functions=TAN_EXACT,COSH_EXACT,FLOAT_TRUNCATE_EXACT`,
 `-Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5`, `SF_BENCHMARK=true`, `-Pbench`
 and `-Dsf.extraJvmArgs=-Xmx2g`. The retained implementation still uses released generated math.
+
+
+### Composition with grouped integer sums
+
+A September 28 follow-up retains the exact callback and uses the generated fixed-width
+exit projection described in [the transpose ledger](zero-copy-exit-transpose.md).
+At 2M rows, standalone TAN still takes 0.430s native versus 0.311s Flink, COSH
+0.419s versus 0.304s, and floating TRUNCATE 0.917s versus 0.857s. A fresh TAN CPU
+profile attributes 18.1% of native samples inclusively to the callback and 10.5% to
+exit conversion; the input operator's 40.0% includes downstream execution and cannot
+be added to those figures. Reusing callback vector roots and preallocating numeric
+input writes did not establish a repeatable whole-job gain and were removed.
+
+Composing each expression with an integer SUM over 64 groups gives the native
+aggregate enough work to amortize the callback and perimeter costs. These are
+additional scalar-harness queries; the Nexmark harness is unchanged. Both engines
+use identical mini-batch settings (1,024 rows, five-second maximum latency), a row
+source and row sink. Plan assertions require NativeCalc, NativeColumnarGroupAggregate,
+and both transposes. The same release+mimalloc, JDK 17, Flink 2.2.1, 2 GiB heap,
+parallelism one, two warmups and five alternating trials apply. No NULLs are injected
+in the timing data. Medians and observed trial ranges, in seconds:
+
+| Query | Rows | Native median (range) | Flink median (range) |
+| --- | ---: | ---: | ---: |
+| TAN grouped SUM | 2M | 0.586 (0.582–0.616) | 0.734 (0.721–0.891) |
+| COSH grouped SUM | 2M | 0.573 (0.567–0.580) | 0.712 (0.678–0.720) |
+| Floating TRUNCATE grouped SUM | 2M | 1.060 (1.055–1.070) | 1.259 (1.248–1.268) |
+| TAN grouped SUM | 5M | 1.313 (1.310–1.349) | 1.722 (1.711–1.763) |
+| COSH grouped SUM | 5M | 1.306 (1.303–1.311) | 1.631 (1.600–1.648) |
+| Floating TRUNCATE grouped SUM | 5M | 2.549 (2.530–2.566) | 3.036 (2.988–3.060) |
+| Numeric identity control | 2M | 0.301 (0.292–0.351) | 0.230 (0.226–0.245) |
+| Numeric identity control | 5M | 0.633 (0.615–0.674) | 0.464 (0.455–0.594) |
+
+The expressions are `SUM(CAST(f(n) * 1000 AS BIGINT))`, grouped by
+`MOD(ABS(n), 64)`, where `f(n)` is `TAN(CAST(n AS DOUBLE))`,
+`COSH(CAST(n % 20 AS DOUBLE))`, or
+`TRUNCATE(CAST(n AS DOUBLE) / 7E0, CAST(n % 4 AS INT))`.
+The integer cast avoids nondeterministic floating-point SUM reassociation.
+Separate grouped parity cases cover nullable inputs and extreme values on both
+Flink 1.18 and 2.2, with deterministic count-based mini-batch boundaries.
+
+These composed workloads use 16–24% less elapsed time than stock Flink, with
+nonoverlapping observed ranges. This is a pipeline result, not a standalone math
+speedup or a measured comparison with the previous StreamFusion fallback behavior.
+That before/after comparison and the standalone performance gap remain outstanding;
+the PR remains draft. The identity controls also remain slower than Flink.
+
+[Raw measured trials](../benchmarks/exact-math-composition-2026-09-28.csv) retain
+both engines and the unfavorable standalone/control results. Reproduce grouped
+measurements with `ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
+`SF_BENCHMARK=true`, `-Dsf.extraJvmArgs=-Xmx2g`,
+`-Dscalar.functions=TAN_GROUPED_SUM,COSH_GROUPED_SUM,FLOAT_TRUNCATE_GROUPED_SUM`,
+`-Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5`; repeat with
+`-Dscalar.rows=5000000` for the larger run.

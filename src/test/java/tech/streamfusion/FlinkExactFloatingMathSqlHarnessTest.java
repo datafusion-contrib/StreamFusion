@@ -194,6 +194,25 @@ class FlinkExactFloatingMathSqlHarnessTest {
     compare(source, "SELECT id FROM src WHERE id <> 0 AND " + call + " > 0", "NativeFilter");
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"TAN(x)", "COSH(x)", "TRUNCATE(x, n)"})
+  void exactMathComposesWithGroupedIntegerSums(String expression) throws Exception {
+    Supplier<TableEnvironment> source =
+        () -> {
+          var table = input(false);
+          table.getConfig().set("table.exec.mini-batch.enabled", "true");
+          table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+          table.getConfig().set("table.exec.mini-batch.size", "32");
+          return table;
+        };
+    String sql =
+        "SELECT MOD(id, 4), SUM(CAST("
+            + expression
+            + " * 1000 AS BIGINT)) FROM src GROUP BY MOD(id, 4)";
+    compare(source, sql, "NativeColumnarGroupAggregate");
+    assertTrue(NativePlanner.explain(source.get(), sql).contains("NativeCalc"));
+  }
+
   private static void compare(Supplier<TableEnvironment> source, String sql) throws Exception {
     compare(source, sql, "NativeCalc");
   }
