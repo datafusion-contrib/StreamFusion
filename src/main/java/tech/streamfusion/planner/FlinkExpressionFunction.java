@@ -102,7 +102,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
         null);
   }
 
-  private static String decimalRoundingText(RexNode expression) {
+  static org.apache.calcite.rex.RexCall decimalRoundingTextCall(RexNode expression) {
     if (!(expression instanceof org.apache.calcite.rex.RexCall cast)
         || cast.getKind() != org.apache.calcite.sql.SqlKind.CAST
         || cast.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.VARCHAR
@@ -115,6 +115,14 @@ public final class FlinkExpressionFunction extends ScalarFunction
         || !(round.getOperands().get(1) instanceof org.apache.calcite.rex.RexInputRef scale)
         || value.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.DECIMAL
         || scale.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.INTEGER) return null;
+    return round;
+  }
+
+  private static String decimalRoundingText(RexNode expression) {
+    var round = decimalRoundingTextCall(expression);
+    if (round == null) return null;
+    var value = (org.apache.calcite.rex.RexInputRef) round.getOperands().get(0);
+    var scale = (org.apache.calcite.rex.RexInputRef) round.getOperands().get(1);
     return "return " + DecimalRounding.class.getCanonicalName() + ".text(input, "
         + value.getIndex() + ", " + scale.getIndex() + ", " + value.getType().getPrecision()
         + ", " + value.getType().getScale() + ", "

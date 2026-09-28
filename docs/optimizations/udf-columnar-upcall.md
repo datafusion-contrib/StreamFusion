@@ -80,25 +80,46 @@ preserve Java string semantics. Wide decimals retain their existing `BigDecimal`
 instead of converting through an unscaled byte array and a second `BigInteger`.
 
 For a standalone STRING cast of ROUND/TRUNCATE with direct decimal and INT column arguments,
-a single `setScale` replaces Flink's two decimal-point shifts around rounding. The result keeps
-Flink's dynamic precision and scale; extreme negative positions still call the released function.
-Other expression shapes retain generated evaluation and its ordering. Floating-point TRUNCATE
+a native batch kernel rounds the Arrow decimal integers and formats each row using its resulting
+precision and scale. This avoids the decimal Arrow-to-Java conversion, `BigDecimal` rounding,
+and JNI callback for ordinary positions. A non-NULL position below -38 sends the whole batch
+through the existing generated evaluator, preserving released scale errors and row order.
+That evaluator uses a single equivalent `setScale` for ordinary positions. Multiple potentially
+failing projections and other expression shapes retain generated evaluation and its ordering. Floating-point TRUNCATE
 retains the released implementation: a separate helper experiment did not improve whole-job time.
 
 Linux x86-64 Core i7-12650H, JDK 17, Flink 2.2.1, release+mimalloc, 2 GiB heap,
 2M runtime rows, parallelism one, default 1,024-row batches, no injected NULLs, two warmups
 and five alternating trials per engine; both row/Arrow transposes and the row sink remain.
-Median complete-job seconds (updated range in parentheses):
+Historical callback-optimization measurements, before the native text kernel, in complete-job
+seconds (updated range in parentheses):
 
 | Expression | Previous native | Updated native | Stock Flink |
 | --- | ---: | ---: | ---: |
 | Runtime ROUND to STRING | 1.056 | 0.938 (0.930–0.963) | 0.685 (0.665–0.690) |
 | Runtime TRUNCATE to STRING | 1.048 | 0.936 (0.933–0.957) | 0.674 (0.665–0.681) |
 
-Native time decreases 11.2% and 10.7%, but both remain slower than Flink and the PR remains
-draft. Identity controls were 0.531 native / 0.311 Flink before and 0.466 / 0.305 after;
+The callback-only change decreased native time 11.2% and 10.7%, but remained slower than Flink. Identity controls were 0.531 native / 0.311 Flink before and 0.466 / 0.305 after;
 that drift means the whole-job improvement cannot all be attributed to decimal arithmetic.
 Reproduce with `ScalarFunctionBenchmark#individualFunctions`,
 `-Dscalar.functions=DECIMAL_ROUND_RUNTIME_STRING,DECIMAL_TRUNCATE_RUNTIME_STRING`,
 `-Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5` under `-Pbench` with
 `SF_BENCHMARK=true` and `-Dsf.extraJvmArgs=-Xmx2g`.
+
+The native text kernel, under the same release setup, gives these two-million-row results.
+The decimal input is DECIMAL(38,9); positions cycle through -3/0/2/9/12/NULL, with no
+additional input-value NULL injection. Values are read from the runtime row source, and the
+benchmark asserts native Calc and both boundary transposes. All five measured trials are retained.
+
+| Expression | Published callback native | Native text kernel, median (range) | Flink, median (range) |
+| --- | ---: | ---: | ---: |
+| Runtime ROUND to STRING | 0.938 | 0.634 (0.624–0.648) | 0.690 (0.682–0.697) |
+| Runtime TRUNCATE to STRING | 0.936 | 0.635 (0.616–0.701) | 0.694 (0.691–0.702) |
+
+This reduces native time by about 32% against the published callback implementation and by
+8.0%/8.5% against stock Flink in this run. The identity control was 0.479 native / 0.312 Flink;
+the previous control was 0.466 / 0.305. The TRUNCATE native range includes its slower 0.701 s
+trial. These figures do not establish performance for nested consumers or batches containing
+exceptional positions, which still use the callback. Reproduce using the command above with
+`-Dscalar.nullEvery=0`; [raw trials](../benchmarks/decimal-runtime-text-2026-09-28.csv) include
+both identity controls and every alternating measured trial.

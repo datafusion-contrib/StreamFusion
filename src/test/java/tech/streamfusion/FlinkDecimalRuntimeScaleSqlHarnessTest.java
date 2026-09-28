@@ -26,6 +26,32 @@ class FlinkDecimalRuntimeScaleSqlHarnessTest {
         "SELECT s < 0 OR " + function + "(d,s) > 0, s > 0 AND " + function + "(d,s) > 0 FROM src");
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"ROUND", "TRUNCATE"})
+  void singleStringConsumerRetainsWideValuesAndPerRowMetadata(String function) throws Exception {
+    for (int precision : new int[] {12, 18, 19, 20, 38}) {
+      BuiltinFunctionParity.assertParity(() -> environment(precision),
+          "SELECT CAST(" + function + "(d,s) AS STRING) FROM src");
+    }
+    List<Row> rows = new ArrayList<>();
+    for (int position : new int[] {-38, -3, -1, 0, 2, 3, 38, Integer.MAX_VALUE}) {
+      for (String value : new String[] {"99999999999999999999999999999999999.999",
+          "-99999999999999999999999999999999999.999", "0.005", "-0.005", "0.000", null}) {
+        rows.add(Row.of(value == null ? null : new BigDecimal(value), position));
+      }
+    }
+    rows.add(Row.of(null, Integer.MIN_VALUE));
+    rows.add(Row.of(new BigDecimal("1.234"), null));
+    BuiltinFunctionParity.assertParity(() -> BuiltinFunctionParity.environment(
+        ROW(FIELD("d", DECIMAL(38,3)), FIELD("s", INT())), rows),
+        "SELECT CAST(" + function + "(d,s) AS STRING) FROM src");
+    var max = new BigDecimal("99999999999999999999999999999999999999");
+    BuiltinFunctionParity.assertParity(() -> BuiltinFunctionParity.environment(
+        ROW(FIELD("d", DECIMAL(38,0)), FIELD("s", INT())),
+        List.of(Row.of(max, -1), Row.of(max.negate(), -1), Row.of(max, -38), Row.of(max, 0))),
+        "SELECT CAST(" + function + "(d,s) AS STRING) FROM src");
+  }
+
   @Test
   void largePrecision38ValuesAndNullsKeepTheirScaleInStringConsumers() throws Exception {
     List<Row> rows = new ArrayList<>();

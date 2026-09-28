@@ -72,6 +72,8 @@ final class RexExpression {
   // ScalarFunction.eval over each batch (columnar), so a non-builtin UDF stays inside the native
   // island.
   private static final int KIND_UDF = 17;
+  // Runtime decimal rounding to text, retaining a JVM evaluator for exceptional scales.
+  private static final int KIND_DECIMAL_ROUND_TEXT = 41;
   // A narrowing cast to an integer type: payload is the target integer type code (CAST_TINYINT..
   // CAST_BIGINT), one child. Built natively as a wrapping/saturating kernel matching Flink's
   // primitive
@@ -352,7 +354,7 @@ final class RexExpression {
   private boolean requiresCalcRowOrder(RexProgram program) {
     // Any JVM evaluator can throw, including independent deterministic user functions. Count
     // native failure sites too: a later-row failure must not overtake an earlier projection.
-    long[] failures = {kinds.stream().filter(kind -> kind == KIND_UDF).count()};
+    long[] failures = {kinds.stream().filter(kind -> kind == KIND_UDF || kind == KIND_DECIMAL_ROUND_TEXT).count()};
     var visitor =
         new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
           @Override
@@ -2614,9 +2616,16 @@ final class RexExpression {
         addUdf(
             tech.streamfusion.operator.NativeUdf.Descriptor.forFunction(
                 function, eval, codes.stream().mapToInt(Integer::intValue).toArray(), returnCode));
-    add(KIND_UDF, longs.size(), Math.max(1, arguments.size()));
+    RexCall decimalRound = call == projectionRoot
+        ? FlinkExpressionFunction.decimalRoundingTextCall(expression) : null;
+    add(decimalRound == null ? KIND_UDF : KIND_DECIMAL_ROUND_TEXT,
+        longs.size(), Math.max(1, arguments.size()));
     longs.add((long) localIndex);
     longs.add((long) returnCode);
+    if (decimalRound != null) {
+      longs.add(decimalRound.getOperator()
+          == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE ? 1L : 0L);
+    }
     if (arguments.isEmpty()) {
       add(KIND_LIT_INT, longs.size(), 0);
       longs.add(0L);

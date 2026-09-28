@@ -718,8 +718,10 @@ CASE can skip an unselected failing branch. BIGINT scale arguments retain an exp
 planner fallback; float/double ROUND keeps its existing compatibility gate.
 
 Runtime INT scales for ROUND and TRUNCATE run inside native Calc when a verified scalar
-consumer encloses the rounding. The complete expression uses Flink-generated evaluation,
-so STRING/integer casts, comparisons, predicates, nested rounding, CASE/COALESCE and
+consumer encloses the rounding. A standalone STRING cast on direct decimal and INT columns
+uses native batch rounding and per-row decimal formatting; a batch with non-NULL positions
+below -38 uses the existing Flink evaluator. Other complete expressions use Flink-generated
+evaluation, so integer casts, comparisons, predicates, nested rounding, CASE/COALESCE and
 explicit decimal normalization see the original runtime precision and scale. Arithmetic,
 nonidentity DECIMAL casts and IF can normalize the result before it crosses Arrow.
 Negative/NULL scales, scale expansion, precision 38, input errors and AND/OR/CASE
@@ -734,34 +736,19 @@ TRUNCATE collect as `12.346` and `12.345`, while their STRING consumers yield `1
 assertion with assertions enabled. Tests preserve both behaviors through explicit fallback,
 including when a JSON expression would otherwise select complete-row generation.
 
-The runtime-scale release+mimalloc benchmark uses Flink 2.2.1/JDK 17 on Linux x86_64
-(Core i7-12650H), 2,000,000 row-fed records, NULL values every seventh row, runtime scales
--3/0/2/9/12/NULL, two warmups and five alternating trials. The harness requires NativeCalc
-and both row/Arrow transposes. Median seconds:
-
-| Query | Flink | Native island | Flink/native |
-|---|---:|---:|---:|
-| DECIMAL identity | 0.261 | 0.568 | 0.459x |
-| CAST(ROUND(n,s) AS STRING) | 0.587 | 1.060 | 0.554x |
-| CAST(TRUNCATE(n,s) AS STRING) | 0.580 | 1.055 | 0.549x |
-
-The standalone queries are slower than stock Flink. This coverage reuses the existing
-generated-expression callback and decimal-boundary checks so scalar consumers can compose
-within native islands; it is not a standalone acceleration claim.
-
-```bash
-SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
-  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dscalar.functions=DECIMAL_ROUND_RUNTIME_STRING,DECIMAL_TRUNCATE_RUNTIME_STRING \
-  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
-```
+A release+mimalloc comparison of the direct STRING consumers on Flink 2.2.1/JDK 17,
+with two million row-fed records, measured native ROUND at 0.634 s versus Flink's 0.690 s,
+and native TRUNCATE at 0.635 s versus 0.694 s. Both transposes and the row sink remain in
+these measurements. These results apply to the direct decimal/INT column shape; composed
+expressions retain generated evaluation. See the [method, variability and prior implementation
+comparison](../optimizations/udf-columnar-upcall.md#decimal-runtime-scale-consumers).
 
 `TRUNCATE(decimal_column[, literal_integer_scale])` uses the same native fixed-width
 kernel with rounding toward zero. Positive, zero and negative positions preserve Flink's
 resolved precision/scale and NULL behavior; a position at or above the source scale retains
 the input value. Positions below -38 use Flink's generated expression through the columnar
 callback, including its extreme-scale errors. They retain the same AND/OR short-circuit
-restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above. A standalone STRING cast of ROUND/TRUNCATE on direct decimal and INT columns uses equivalent single-step rounding, with released-function fallback for extreme negative positions. Other compositions retain generated evaluation. [Current measurements](../optimizations/udf-columnar-upcall.md#decimal-runtime-scale-consumers) improve our baseline but remain slower than Flink.
+restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above. A standalone STRING cast of ROUND/TRUNCATE on direct decimal and INT columns uses native batch rounding and formatting, with released-function fallback for batches containing extreme negative positions. Other compositions retain generated evaluation. The direct STRING consumer measurements above include the full native island.
 Integer TRUNCATE inputs use the generated path described under exact numeric functions;
 floating-point inputs retain their existing admission restrictions. SQL tests cover
 precision 38, multiple batches, filters, CASE, COALESCE and aggregate consumers, including
