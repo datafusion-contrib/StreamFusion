@@ -110,9 +110,29 @@ Flink 1.18 and 2.2, with deterministic count-based mini-batch boundaries.
 
 These composed workloads use 16–24% less elapsed time than stock Flink, with
 nonoverlapping observed ranges. This is a pipeline result, not a standalone math
-speedup or a measured comparison with the previous StreamFusion fallback behavior.
-That before/after comparison and the standalone performance gap remain outstanding;
-the PR remains draft. The identity controls also remain slower than Flink.
+speedup. The standalone performance gap remains outstanding; the PR remains draft.
+The identity controls also remain slower than Flink.
+
+A separate 5M-row admission ablation restored the numeric cases in
+`needsExactScalarFunction` to their state before commit `c01f3db2`, while keeping
+all other current code and resource settings. The benchmark required the grouped
+plans to have no NativeCalc, permitted fallback execution, and labeled those trials
+`previous-admission` rather than native. Each plan reported zero native operators:
+TAN required its incompatible flag, COSH was unsupported, and floating TRUNCATE
+required DECIMAL. This isolates the previous admission behavior; it is not a build
+of an entire historical release.
+
+| Query | Previous admission median (range) | Matched Flink median (range) |
+| --- | ---: | ---: |
+| TAN grouped SUM | 1.710 (1.659–1.741) | 1.691 (1.636–1.736) |
+| COSH grouped SUM | 1.573 (1.520–1.600) | 1.541 (1.517–1.554) |
+| Floating TRUNCATE grouped SUM | 2.999 (2.976–3.015) | 3.008 (2.987–3.011) |
+
+Current native medians are approximately 23%, 17% and 15% lower than the previous
+admission medians, with disjoint trial ranges. Stock controls shifted by up to 5.5%
+between runs, so those percentages are not exact causal estimates. The direction
+of improvement holds against both Flink controls and the previous-admission trials.
+The temporary admission and benchmark changes were removed after measurement.
 
 [Raw measured trials](../benchmarks/exact-math-composition-2026-09-28.csv) retain
 both engines and the unfavorable standalone/control results. Reproduce grouped
