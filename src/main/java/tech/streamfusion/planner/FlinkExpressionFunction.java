@@ -96,7 +96,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
     var result = generator.generateExpression(expression);
     return new Body(
         context,
-        canonicalTimestampPrefix(expression, context)
+        canonicalTemporalPrefix(expression, context, config)
             + context.reuseInputUnboxingCode()
             + result.code()
             + "\nif ("
@@ -117,6 +117,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
         || config.get(org.apache.flink.table.api.config.ExecutionConfigOptions
             .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR).isEnabled()) return null;
     SqlTypeName type = call.getType().getSqlTypeName();
+    if (call.getOperands().get(0) instanceof RexInputRef) return null;
     String method;
     String suffix = "";
     if (type == SqlTypeName.DATE) method = "tryDate";
@@ -138,28 +139,39 @@ public final class FlinkExpressionFunction extends ScalarFunction
         + input.resultTerm() + suffix + ");\n";
   }
 
-  private static String canonicalTimestampPrefix(RexNode expression, Context context) {
+  private static String canonicalTemporalPrefix(
+      RexNode expression, Context context, ReadableConfig config) {
     if (!(expression instanceof RexCall call)
         || call.getOperator() != FlinkSqlOperatorTable.TRY_CAST
         || call.getOperands().size() != 1
         || !(call.getOperands().get(0) instanceof RexInputRef input)
-        || !SqlTypeFamily.CHARACTER.contains(input.getType())) {
-      return "";
-    }
-    var target = call.getType().getSqlTypeName();
-    if (target != SqlTypeName.TIMESTAMP
-        && target != SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
-      return "";
-    }
-    String zone = target == SqlTypeName.TIMESTAMP
-        ? "null" : context.addReusableSessionTimeZone();
-    // Only a direct input can be read speculatively without duplicating a child expression's
-    // effects or errors. Unrecognized values continue through the original generated TRY_CAST.
+        || !SqlTypeFamily.CHARACTER.contains(input.getType())) return "";
+    SqlTypeName target = call.getType().getSqlTypeName();
+    String parser = CanonicalTemporalParser.class.getCanonicalName();
+    String inputTerm = "input.getString(" + input.getIndex() + ")";
+    String resultType;
+    String value;
+    String result = "sfCanonicalTemporal";
+    if (target == SqlTypeName.DATE || target == SqlTypeName.TIME) {
+      if (config.get(org.apache.flink.table.api.config.ExecutionConfigOptions
+          .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR).isEnabled()) return "";
+      resultType = "java.lang.Integer";
+      value = parser + (target == SqlTypeName.DATE ? ".parseDate(" : ".parseTimeMillis(") + inputTerm + ")";
+      if (target == SqlTypeName.TIME) {
+        var logical = (org.apache.flink.table.types.logical.TimeType)
+            org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(call.getType());
+        result = "tech.streamfusion.compat.FlinkCompat.applyParsedTimePrecision(sfCanonicalTemporal, "
+            + logical.getPrecision() + ")";
+      }
+    } else if (target == SqlTypeName.TIMESTAMP || target == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      resultType = "org.apache.flink.table.data.TimestampData";
+      String zone = target == SqlTypeName.TIMESTAMP ? "null" : context.addReusableSessionTimeZone();
+      value = parser + ".parse(" + inputTerm + ", " + call.getType().getPrecision() + ", " + zone + ")";
+    } else return "";
+    // Direct references can be inspected before the released fallback without repeating child effects.
     return "if (!input.isNullAt(" + input.getIndex() + ")) {\n"
-        + "org.apache.flink.table.data.TimestampData sfCanonicalTimestamp = "
-        + CanonicalTemporalParser.class.getCanonicalName() + ".parse(input.getString("
-        + input.getIndex() + "), " + call.getType().getPrecision() + ", " + zone + ");\n"
-        + "if (sfCanonicalTimestamp != null) return sfCanonicalTimestamp;\n}\n";
+        + resultType + " sfCanonicalTemporal = " + value + ";\n"
+        + "if (sfCanonicalTemporal != null) return " + result + ";\n}\n";
   }
 
   private static Body rowBody(
