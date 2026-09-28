@@ -272,6 +272,16 @@ impl<K: Eq + Hash + Clone> Multiplicities<K> {
         }
     }
 
+    fn capacity_bytes(&self) -> usize {
+        let capacity = self.counts.capacity();
+        if capacity == 0 {
+            return 0;
+        }
+        // Include spare buckets/control bytes, including generic scalar keys wider than
+        // the ordinary per-entry estimate. Cleared keys own no additional payload.
+        capacity * MULTISET_ENTRY_BYTES.max(2 * (std::mem::size_of::<(K, i64)>() + 1)) + 16
+    }
+
     fn change_owned(&mut self, key: K, change: Change) -> bool {
         if let Change::Add(n) = change {
             super::note(&mut self.journal, &key);
@@ -392,6 +402,17 @@ impl DistinctSet {
     pub(super) fn len(&self) -> usize {
         each_map!(self, m, m.counts.len())
     }
+    pub(super) fn capacity_bytes(&self) -> usize {
+        each_map!(self, m, m.capacity_bytes())
+    }
+
+    pub(super) fn clear(&mut self) {
+        each_map!(self, m, {
+            m.counts.clear();
+            m.journal = None;
+        })
+    }
+
     pub(super) fn is_empty(&self) -> bool {
         self.len() == 0
     }

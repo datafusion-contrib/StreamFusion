@@ -641,8 +641,8 @@ Flink controls are 13.408 s (13.286–13.463) and 13.399 s (13.246–13.500).
 This uses release+mimalloc, JDK 17/Flink 2.2.1, Core i7-12650H/Linux,
 2 GiB heap, parallelism one, 64 groups, 1024-row mini-batches, two warmups
 and five alternating trials, row source/sink and both transposes. It includes
-the preceding IPC-buffer optimization in both native measurements. Native
-still trails Flink by about 6.6%, so the wide-AVG performance gap remains open.
+the preceding IPC-buffer optimization in both native measurements. That pre-cache implementation
+still trails Flink by about 6.6%; the bounded membership reuse below addresses this gap.
 
 The 2M-row COUNT/SUM control is 1.395 s native (1.363–1.408) against
 1.401 s Flink (1.362–1.440), effectively tied. Focused SQL validation passes
@@ -712,3 +712,49 @@ on Flink 2.2.1; Flink 1.18.1 passes 71 with the same 17 documented host-capabili
 The native source is unchanged from the 567-test validated direct-emission implementation;
 a forced release rebuild reproduces its saved library hash. Hosted CI must validate the exact
 PR head before merge.
+
+
+### Reuse empty local DISTINCT membership maps
+
+The sustained wide-decimal AVG profile included 899 inclusive hash-table growth samples
+and repeated allocation of local DISTINCT maps. Instead of guessing cardinality in advance,
+all-DISTINCT local bundles keep a bounded cache of emptied accumulator vectors. Reusing an
+allocation avoids the next bundle's initial growth steps. The cache holds at most 128 groups
+and a conservative 1 MiB estimate; other aggregate kinds retain their existing lifecycle.
+Membership values and journals are cleared, running sums/counts reset, and group keys, input
+batches and decimal ordering structures are released. Flink's observable map ordering is
+rebuilt as before, independently of membership-map capacity.
+
+Both active and cached local membership capacity are included in task-memory estimates.
+Unused cached states are evicted if a live-state reservation fails and before reserving
+flush scratch space. Dropping the operator releases its reservation. Native regressions
+compare fresh and reused bundles across NULLs and changing keys/values, exercise eviction
+under a tight budget, and verify bounded retention and reservation release.
+
+A release+mimalloc run on JDK 17/Flink 2.2.1, Core i7-12650H/Linux, 2 GiB heap,
+parallelism one, 20M rows, 64 groups, DECIMAL(38,2), NULL every seventh row and
+1,024-row mini-batches gave the following end-to-end AVG DISTINCT results. Both row/Arrow
+transposes and the row source/sink remain; local zero-copy transport is disabled. Each
+engine has two warmups and five alternating measured trials. Neither run overlapped
+detected competing builds or tests.
+
+| Implementation | Native median (range), s | Stock Flink median (range), s |
+| --- | ---: | ---: |
+| Published implementation | 14.701 (14.480–15.369) | 14.032 (13.727–14.232) |
+| Reused membership maps | 13.456 (13.431–13.472) | 13.779 (13.673–13.915) |
+
+Native time fell 8.5%; the Flink control fell 1.8%, so not all of that change should be
+attributed to reuse. Within the candidate run, native time was 2.3% lower than stock Flink,
+with non-overlapping ranges. This establishes the measured wide-AVG case, not every DISTINCT
+cardinality/type combination. Raw measured trials are in
+[the accompanying CSV](../benchmarks/distinct-map-reuse-2026-09-28.csv).
+Reproduce with `DistinctAggregateBenchmark` under `-Pbench`, `SF_BENCHMARK=true`,
+`-Ddistinct.average=true -Ddistinct.twoPhase=true -Ddistinct.precision=38`,
+`-Ddistinct.rows=20000000 -Ddistinct.warmup=2 -Ddistinct.runs=5` and
+`-Dsf.extraJvmArgs=-Xmx2g`.
+
+The same final implementation's 2M-row COUNT/SUM DISTINCT check measures 1.387 s native
+(1.382–1.527) versus 1.414 s Flink (1.377–1.475). Its ranges overlap, so this shorter mixed-type
+workload does not establish a speedup. All trials, including the slower native samples, remain
+in the CSV. Validation passes 592 native tests with one ignored, plus 55 focused SQL/operator
+checks on Flink 2.2.1 and 54 on Flink 1.18.1 with one documented host-capability skip.

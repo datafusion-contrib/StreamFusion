@@ -501,7 +501,13 @@ output and reserves bounded scratch space for wide-decimal view copies; a reject
 leaves the bundle intact. The local stage now emits wide-decimal groups in Flink's map order,
 including bucket capacity retained across flushes, and carries declared timestamp-key precision
 through JNI for matching binary-key hashes. The retained bucket allocation remains accounted
-between bundles. Shuffled runtime-source probes pass with this integration; ordering values
+between bundles. All-DISTINCT local bundles also reuse empty membership-map allocations,
+limited to 128 groups and a conservative 1 MiB estimate per operator. The cache retains no
+keys, input batches, membership values, or decimal ordering structures. Retained map capacity
+remains charged to the task budget; unused cached states are discarded under budget pressure
+and before flush scratch-space reservations. Partial sums, counts and membership start empty
+on reuse, and operator close releases the retained reservation.
+Shuffled runtime-source probes pass with this integration; ordering values
 inside each group's membership map alone was insufficient. The shared ordering core matches
 18 released-host binary-group fixtures, including bucket collision trees, resize splits and
 clear/reuse. With positive retention, the wide-decimal global stage retains and accounts

@@ -2733,6 +2733,8 @@ pub(crate) struct LocalGroupAggregator {
     group_order: Option<JavaMapOrder<usize>>,
     states: HashMap<ByteKey, LocalGroupEntry>,
     scalar_states: HashMap<GroupKey, LocalGroupEntry>,
+    cached_states: Vec<Vec<GroupAggState>>,
+    cached_state_bytes: usize,
     key_converter: Option<RowConverter>,
     key_batches: Vec<RecordBatch>,
     scalar_key_mode: Option<bool>,
@@ -2765,11 +2767,17 @@ fn decimal_order_bytes(orders: &Option<Box<Vec<DecimalMapOrder>>>) -> usize {
 fn local_entry_state_bytes(entry: &LocalGroupEntry) -> usize {
     std::mem::size_of::<LocalGroupEntry>()
         + decimal_order_bytes(&entry.decimal_orders)
-        + entry
-            .states
-            .iter()
-            .map(group_agg_state_bytes)
-            .sum::<usize>()
+        + entry.states.iter().map(local_state_bytes).sum::<usize>()
+}
+
+fn local_state_bytes(state: &GroupAggState) -> usize {
+    match state {
+        GroupAggState::Distinct { set, .. }
+        | GroupAggState::DistinctRunning { counts: set, .. } => {
+            std::mem::size_of::<GroupAggState>() + set.capacity_bytes()
+        }
+        _ => group_agg_state_bytes(state),
+    }
 }
 
 /// The struct fields of one distinct-view entry: the distinct value and its in-bundle multiplicity.
@@ -2841,12 +2849,87 @@ impl LocalGroupAggregator {
             group_order: None,
             states: HashMap::default(),
             scalar_states: HashMap::default(),
+            cached_states: Vec::new(),
+            cached_state_bytes: 0,
             key_converter: None,
             key_batches: Vec::new(),
             scalar_key_mode: None,
             key_types: Vec::new(),
             memory: OperatorMemory::unaccounted(),
         }
+    }
+
+    fn new_states(&mut self, append_only: bool) -> Vec<GroupAggState> {
+        if let Some(states) = self.cached_states.pop() {
+            let bytes = states.iter().map(local_state_bytes).sum::<usize>();
+            self.cached_state_bytes -= bytes;
+            if self.memory.tracking() {
+                self.memory.record(-(bytes as isize));
+            }
+            return states;
+        }
+        self.kinds
+            .iter()
+            .zip(&self.value_types)
+            .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
+            .collect()
+    }
+
+    fn cached_bytes(&self) -> usize {
+        self.cached_state_bytes
+            + self.cached_states.capacity() * std::mem::size_of::<Vec<GroupAggState>>()
+    }
+
+    fn discard_cached_states(&mut self) {
+        let bytes = self.cached_bytes();
+        self.cached_states = Vec::new();
+        self.cached_state_bytes = 0;
+        self.memory.forget(bytes);
+    }
+
+    fn recycle_states(&mut self, mut states: Vec<GroupAggState>) {
+        if states.is_empty()
+            || self.cached_states.len() >= 128
+            || !states.iter().all(|state| {
+                matches!(
+                    state,
+                    GroupAggState::Distinct { .. } | GroupAggState::DistinctRunning { .. }
+                )
+            })
+        {
+            return;
+        }
+        let bytes = states.iter().map(local_state_bytes).sum::<usize>();
+        let next_capacity = if self.cached_states.len() == self.cached_states.capacity() {
+            (self.cached_states.capacity() * 2).max(4)
+        } else {
+            self.cached_states.capacity()
+        };
+        if self.cached_state_bytes
+            + bytes
+            + next_capacity * std::mem::size_of::<Vec<GroupAggState>>()
+            > 1024 * 1024
+        {
+            return;
+        }
+        for ((state, &kind), value_type) in
+            states.iter_mut().zip(&self.kinds).zip(&self.value_types)
+        {
+            match state {
+                GroupAggState::Distinct { set, live } => {
+                    set.clear();
+                    *live = 0;
+                }
+                GroupAggState::DistinctRunning { counts, live, agg } => {
+                    counts.clear();
+                    *live = 0;
+                    *agg = RunningAgg::new(kind, value_type);
+                }
+                _ => unreachable!(),
+            }
+        }
+        self.cached_state_bytes += bytes;
+        self.cached_states.push(states);
     }
 
     fn new_decimal_orders(&self) -> Option<Box<Vec<DecimalMapOrder>>> {
@@ -2899,7 +2982,8 @@ impl LocalGroupAggregator {
                 .iter()
                 .map(|(key, entry)| group_key_bytes(key) * 2 + local_entry_state_bytes(entry))
                 .sum::<usize>()
-            + self.group_order.as_ref().map_or(0, JavaMapOrder::bytes);
+            + self.group_order.as_ref().map_or(0, JavaMapOrder::bytes)
+            + self.cached_bytes();
         self.memory
             .attach("local-group-aggregate", budget_bytes, current)?;
         Ok(self)
@@ -3013,18 +3097,14 @@ impl LocalGroupAggregator {
             let entry = if scalar_key_mode {
                 let key = read_key(&key_arrays, row);
                 if !self.scalar_states.contains_key(&key) {
-                    let init: Vec<GroupAggState> = self
-                        .kinds
-                        .iter()
-                        .zip(&self.value_types)
-                        .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
-                        .collect();
+                    let init = self.new_states(append_only);
                     let decimal_orders = self.new_decimal_orders();
                     if track {
                         self.memory.record(
                             (group_key_bytes(&key) * 2
                                 + std::mem::size_of::<LocalGroupEntry>()
-                                + decimal_order_bytes(&decimal_orders))
+                                + decimal_order_bytes(&decimal_orders)
+                                + init.iter().map(local_state_bytes).sum::<usize>())
                                 as isize,
                         );
                     }
@@ -3047,19 +3127,15 @@ impl LocalGroupAggregator {
                 let row_key = arrow_keys.as_ref().expect("arrow keys configured").row(row);
                 let key = row_key.as_ref();
                 if !self.states.contains_key(key) {
-                    let init: Vec<GroupAggState> = self
-                        .kinds
-                        .iter()
-                        .zip(&self.value_types)
-                        .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
-                        .collect();
+                    let init = self.new_states(append_only);
                     let owned = ByteKey::from(key);
                     let decimal_orders = self.new_decimal_orders();
                     if track {
                         self.memory.record(
                             (byte_key_bytes(key) * 2
                                 + std::mem::size_of::<LocalGroupEntry>()
-                                + decimal_order_bytes(&decimal_orders))
+                                + decimal_order_bytes(&decimal_orders)
+                                + init.iter().map(local_state_bytes).sum::<usize>())
                                 as isize,
                         );
                     }
@@ -3163,7 +3239,13 @@ impl LocalGroupAggregator {
         if retained_key_batch && !scalar_key_mode {
             self.key_batches.push(batch.clone());
         }
-        self.memory.account()
+        match self.memory.account() {
+            Err(_) if self.cached_bytes() > 0 => {
+                self.discard_cached_states();
+                self.memory.account()
+            }
+            result => result,
+        }
     }
 
     /// Emits the buffered partials (`[key0.., partial0.., distinct-view0..]`) and clears entries.
@@ -3176,6 +3258,10 @@ impl LocalGroupAggregator {
     }
 
     pub(crate) fn try_flush(&mut self) -> Result<RecordBatch, DataFusionError> {
+        if !self.cached_states.is_empty() {
+            self.discard_cached_states();
+            self.memory.account_shrink();
+        }
         let mut temporary = self.memory.temporary_reservation();
         if let Some(reservation) = temporary
             .as_mut()
@@ -3333,9 +3419,12 @@ impl LocalGroupAggregator {
             &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(order.len())),
         )
         .expect("failed to build local group-by partial batch");
-        drop((states, scalar_states, key_batches, order));
+        for entry in states.into_values().chain(scalar_states.into_values()) {
+            self.recycle_states(entry.states);
+        }
+        drop((key_batches, order));
         self.memory
-            .set(self.group_order.as_ref().map_or(0, JavaMapOrder::bytes));
+            .set(self.group_order.as_ref().map_or(0, JavaMapOrder::bytes) + self.cached_bytes());
         self.memory.account_shrink();
         Ok(output)
     }
@@ -3901,5 +3990,114 @@ mod rocks_codec_tests {
             counts(vec![2, 0]),
         ];
         check_columns(&codec, &[first, empty], columns);
+    }
+}
+
+#[cfg(test)]
+mod local_distinct_cache_tests {
+    use super::*;
+
+    fn create() -> LocalGroupAggregator {
+        LocalGroupAggregator::new(
+            vec![7, 18],
+            vec![0, 0],
+            vec![1, 1],
+            vec![],
+            vec![0],
+            vec![0, 1],
+        )
+    }
+
+    fn batch(keys: Vec<i64>, values: Vec<i64>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("k", DataType::Int64, false),
+                Field::new("v", DataType::Int64, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(Int64Array::from(values)),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn unused_cache_is_evicted_before_rejecting_live_state() {
+        let small_groups = batch((0..32).collect(), vec![1; 32]);
+        let larger_group = batch(vec![0; 64], (0..64).collect());
+        let mut probe = create().with_memory_budget(1 << 20).unwrap();
+        probe.update(&small_groups).unwrap();
+        let budget = probe.memory.state_bytes as i64;
+        let mut reused = create().with_memory_budget(budget).unwrap();
+        reused.update(&small_groups).unwrap();
+        reused.flush();
+        assert_eq!(reused.cached_states.len(), 32);
+        reused.update(&larger_group).unwrap();
+        assert!(reused.cached_states.is_empty());
+        assert!(reused.memory.state_bytes <= budget as usize);
+        let mut fresh = create();
+        fresh.update(&larger_group).unwrap();
+        let actual = reused.flush();
+        let expected = fresh.flush();
+        // Membership-map iteration order is not a wire contract for integer DISTINCT.
+        assert_eq!(actual.column(1), expected.column(1));
+        assert_eq!(actual.column(2), expected.column(2));
+    }
+
+    #[test]
+    fn large_bundles_bound_retained_cache_and_drop_releases_reservation() {
+        use datafusion::execution::memory_pool::{GreedyMemoryPool, MemoryPool};
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(16 << 20));
+        let mut aggregate = create();
+        aggregate
+            .memory
+            .attach_pool("cache-test", &pool, 0)
+            .unwrap();
+        aggregate
+            .update(&batch((0..512).collect(), vec![1; 512]))
+            .unwrap();
+        assert_eq!(aggregate.flush().num_rows(), 512);
+        assert_eq!(aggregate.cached_states.len(), 128);
+        assert!(aggregate.cached_bytes() <= 1024 * 1024);
+        assert_eq!(pool.reserved(), aggregate.cached_bytes());
+        drop(aggregate);
+        assert_eq!(pool.reserved(), 0);
+    }
+
+    #[test]
+    fn recycled_distinct_partials_match_fresh_bundles_and_account_retained_capacity() {
+        let create = || {
+            LocalGroupAggregator::new(
+                vec![7, 18],
+                vec![0, 0],
+                vec![1, 1],
+                vec![],
+                vec![0],
+                vec![0, 1],
+            )
+        };
+        let mut reused = create().with_memory_budget(1 << 20).unwrap();
+        for (key, value) in [(1, Some(7)), (2, None), (1, Some(-3)), (2, Some(7))] {
+            let batch = RecordBatch::try_new(
+                Arc::new(Schema::new(vec![
+                    Field::new("k", DataType::Int64, false),
+                    Field::new("v", DataType::Int64, true),
+                ])),
+                vec![
+                    Arc::new(Int64Array::from(vec![key; 5])),
+                    Arc::new(Int64Array::from(vec![value; 5])),
+                ],
+            )
+            .unwrap();
+            let mut fresh = create();
+            fresh.update(&batch).unwrap();
+            reused.update(&batch).unwrap();
+            assert_eq!(reused.flush(), fresh.flush());
+            assert!(reused.memory.state_bytes > 0);
+            assert_eq!(reused.memory.state_bytes, reused.cached_bytes());
+        }
+        assert_eq!(reused.cached_states.len(), 1);
+        assert!(reused.cached_bytes() < 1024 * 1024);
     }
 }
