@@ -112,7 +112,10 @@ combination is not admitted until those clocks match. The remaining work is trac
 
 The SQL fallback check uses a one-hour positive TTL so independent host/native-enabled jobs do
 not compare rows that expired at different wall-clock times. Expiry and checkpoint clock semantics
-are checked by the controlled-clock operator tests.
+are checked by the controlled-clock operator tests. The changing update-fast mini-batch
+fallback check also uses a one-hour flush interval and small count-triggered bundles: a one-second
+timer can split independent host jobs into different bundles and change the first proposed bound.
+The test still requires identical results, no native substitutions, and the expected fallback reason.
 
 With mini-batching, independently changing retracting or update-fast bounds require input whose per-record order
 is preserved: changelog sources through projections, filters, exchanges and batch markers qualify.
