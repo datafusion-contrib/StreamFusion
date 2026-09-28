@@ -233,7 +233,7 @@ pub(crate) enum GroupAggState {
         set: DistinctSet,
         live: i64,
     },
-    // SUM(DISTINCT x): the same value→multiplicity map plus a running SUM folded only when a value
+    // SUM/AVG(DISTINCT x): a value→multiplicity map plus a running accumulator folded when a value
     // enters the set and retracted only when its last occurrence leaves — Flink's DistinctAccumulator
     // wrapping the SUM accumulator, kept incremental so the emit stays O(1).
     DistinctRunning {
@@ -241,6 +241,43 @@ pub(crate) enum GroupAggState {
         agg: RunningAgg,
         live: i64,
     },
+}
+
+fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType) -> ScalarValue {
+    match agg {
+        // AVG partials carry an accumulator, not an evaluated result. A -U/+U bundle
+        // can have a zero net count but a nonzero sum adjustment for the global merge.
+        RunningAgg::Count(_)
+        | RunningAgg::AvgPartialSumInt(_)
+        | RunningAgg::AvgPartialSumFloat(_)
+        | RunningAgg::AvgPartialSumDecimal { .. } => agg.emit(),
+        _ if count == 0 => null_scalar(result_type),
+        // AVG divides the running sum by the live non-null count, truncating toward zero for an
+        // integer result (Flink's div) and casting back to the input type — see AvgAggFunction.
+        RunningAgg::AvgInt { sum, result } => avg_int_scalar(*sum / count, result),
+        RunningAgg::AvgFloat { sum, result } => avg_float_scalar(*sum / count as f64, result),
+        // Decimal AVG divides with Flink's exact decimal division (38-significant-digit
+        // quotient, HALF_UP) and reports DECIMAL(38, max(6, s)) — findAvgAggType's type. An
+        // overflowed sum reports NULL, like SUM.
+        RunningAgg::AvgDecimal {
+            sum,
+            scale,
+            overflow,
+        } => {
+            let result_scale = (*scale).max(6);
+            if *overflow {
+                ScalarValue::Decimal128(None, 38, result_scale)
+            } else {
+                let (unscaled, qscale) = quotient_38_digits(*sum, *scale, count as i128, 0);
+                ScalarValue::Decimal128(
+                    rescale_half_up(unscaled, qscale, 38, result_scale),
+                    38,
+                    result_scale,
+                )
+            }
+        }
+        _ => agg.emit(),
+    }
 }
 
 impl GroupAggState {
@@ -265,10 +302,10 @@ impl GroupAggState {
                 set: DistinctSet::new(value_type),
                 live: 0,
             }, // COUNT(DISTINCT)
-            // SUM(DISTINCT): the inner running aggregate is a plain SUM (kind 0) over the value type.
-            9 => GroupAggState::DistinctRunning {
+            // DISTINCT wraps the ordinary SUM/AVG accumulator and folds only set transitions.
+            9 | 17 => GroupAggState::DistinctRunning {
                 counts: DistinctSet::new(value_type),
-                agg: RunningAgg::new(0, value_type),
+                agg: RunningAgg::new(kind, value_type),
                 live: 0,
             },
             _ => GroupAggState::Running {
@@ -472,7 +509,7 @@ impl GroupAggState {
     }
 
     /// Adds one occurrence of a distinct value (COUNT/SUM DISTINCT); a value entering the set for the
-    /// first time also folds into a distinct SUM's running aggregate — later duplicates don't.
+    /// first time also folds into a distinct SUM/AVG accumulator — later duplicates do not.
     fn accumulate_distinct(&mut self, value: ScalarValue) {
         match self {
             GroupAggState::Distinct { set, live } => {
@@ -514,43 +551,7 @@ impl GroupAggState {
     fn emit(&self, result_type: &DataType) -> ScalarValue {
         match self {
             Self::Ordered(state) => state.emit(),
-            GroupAggState::Running { agg, non_null } => match agg {
-                // AVG partials carry an accumulator, not an evaluated result. A -U/+U bundle
-                // can have a zero net count but a nonzero sum adjustment for the global merge.
-                RunningAgg::Count(_)
-                | RunningAgg::AvgPartialSumInt(_)
-                | RunningAgg::AvgPartialSumFloat(_)
-                | RunningAgg::AvgPartialSumDecimal { .. } => agg.emit(),
-                _ if *non_null == 0 => null_scalar(result_type),
-                // AVG divides the running sum by the live non-null count, truncating toward zero for an
-                // integer result (Flink's div) and casting back to the input type — see AvgAggFunction.
-                RunningAgg::AvgInt { sum, result } => avg_int_scalar(*sum / *non_null, result),
-                RunningAgg::AvgFloat { sum, result } => {
-                    avg_float_scalar(*sum / *non_null as f64, result)
-                }
-                // Decimal AVG divides with Flink's exact decimal division (38-significant-digit
-                // quotient, HALF_UP) and reports DECIMAL(38, max(6, s)) — findAvgAggType's type. An
-                // overflowed sum reports NULL, like SUM.
-                RunningAgg::AvgDecimal {
-                    sum,
-                    scale,
-                    overflow,
-                } => {
-                    let result_scale = (*scale).max(6);
-                    if *overflow {
-                        ScalarValue::Decimal128(None, 38, result_scale)
-                    } else {
-                        let (unscaled, qscale) =
-                            quotient_38_digits(*sum, *scale, *non_null as i128, 0);
-                        ScalarValue::Decimal128(
-                            rescale_half_up(unscaled, qscale, 38, result_scale),
-                            38,
-                            result_scale,
-                        )
-                    }
-                }
-                _ => agg.emit(),
-            },
+            GroupAggState::Running { agg, non_null } => emit_running(agg, *non_null, result_type),
             GroupAggState::Extremes {
                 is_min,
                 counts,
@@ -576,14 +577,10 @@ impl GroupAggState {
                 debug_assert!(set.journaled() || set.len() as i64 == *live);
                 ScalarValue::Int64(Some(*live))
             }
-            // SUM(DISTINCT) reports NULL with no live values, like SUM.
+            // SUM/AVG(DISTINCT) use distinct cardinality rather than input row count.
             GroupAggState::DistinctRunning { counts, agg, live } => {
                 debug_assert!(counts.journaled() || counts.len() as i64 == *live);
-                if *live == 0 {
-                    null_scalar(result_type)
-                } else {
-                    agg.emit()
-                }
+                emit_running(agg, *live, result_type)
             }
         }
     }
@@ -798,7 +795,7 @@ impl GroupStateCodec {
         let multiset_aggs: Vec<usize> = kinds
             .iter()
             .enumerate()
-            .filter(|&(_, &kind)| matches!(kind, 1 | 2 | 7 | 9))
+            .filter(|&(_, &kind)| matches!(kind, 1 | 2 | 7 | 9 | 17))
             .map(|(i, _)| i)
             .collect();
         let distinct_view_columns = if distinct_view_columns.is_empty() {
@@ -892,7 +889,7 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             return None;
         }
         let column = batch.column(self.value_columns[agg] as usize);
-        let column = if matches!(self.kinds[agg], 7 | 9) {
+        let column = if matches!(self.kinds[agg], 7 | 9 | 17) {
             crate::flink_float::canonical_array(column)
         } else {
             column.clone()
@@ -1529,7 +1526,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // `self` field while `state` is borrowed.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                (matches!(self.kinds[i], 7 | 9) && self.distinct_view_columns[i] < 0)
+                (matches!(self.kinds[i], 7 | 9 | 17) && self.distinct_view_columns[i] < 0)
                     .then_some(self.value_columns[i] as usize)
             })
             .collect();
@@ -2104,10 +2101,15 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             multiset_counts[i].push(count);
                         }
                     }
-                    GroupAggState::DistinctRunning { counts, .. } => {
-                        // The running sum is refolded from the side batch's values on restore.
-                        state_columns[i].push(null_scalar(&self.result_types[i]));
-                        non_null_columns[i].push(0);
+                    GroupAggState::DistinctRunning { counts, agg, live } => {
+                        // Decimal AVG overflow depends on arrival order, not set iteration order.
+                        if self.kinds[i] == 17 {
+                            state_columns[i].push(agg.emit());
+                            non_null_columns[i].push(*live);
+                        } else {
+                            state_columns[i].push(null_scalar(&self.result_types[i]));
+                            non_null_columns[i].push(0);
+                        }
                         for (value, count) in counts.scalar_entries() {
                             multiset_keys[i].push(&key.0);
                             multiset_values[i].push(value);
@@ -2151,7 +2153,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         for i in 0..num_agg {
             // Kinds 10/11 write their (always empty) side batch too, so the frame layout matches
             // the retractable representation and a blob round-trips across the two.
-            if matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16) {
+            if matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17) {
                 let mut f = vec![Field::new("binary_key", DataType::Binary, false)];
                 let mut c: Vec<ArrayRef> = vec![Arc::new(
                     arrow::array::BinaryArray::from_iter_values(multiset_keys[i].iter().copied()),
@@ -2159,7 +2161,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 // MIN/MAX values take the aggregate's result type; a distinct value keeps its own type
                 // (a COUNT's bigint result type does not describe it), inferred from the scalars.
                 let values = std::mem::take(&mut multiset_values[i]);
-                let value_array: ArrayRef = if matches!(self.kinds[i], 7 | 9) {
+                let value_array: ArrayRef = if matches!(self.kinds[i], 7 | 9 | 17) {
                     if values.is_empty() {
                         new_empty_array(&DataType::Int64) // 0 rows — type is immaterial on restore
                     } else {
@@ -2279,6 +2281,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     /// the same decode serves the memory rebuild and the typed persistent import.
     fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
         let num_agg = self.kinds.len();
+        let average_distinct: Vec<_> = self.kinds.iter().map(|&kind| kind == 17).collect();
         let batches = read_framed(bytes);
         if batches.is_empty() {
             return;
@@ -2324,6 +2327,20 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             .value(row),
                     );
                 }
+                if average_distinct[i] {
+                    if let GroupAggState::DistinctRunning { agg, live, .. } = &mut state.aggs[i] {
+                        agg.restore_value(
+                            &ScalarValue::try_from_array(main.column(2 + 2 * i), row)
+                                .expect("distinct average sum"),
+                        );
+                        *live = main
+                            .column(3 + 2 * i)
+                            .as_any()
+                            .downcast_ref::<Int64Array>()
+                            .expect("distinct average count")
+                            .value(row);
+                    }
+                }
                 if let GroupAggState::Running { agg, non_null } = &mut state.aggs[i] {
                     let scalar = ScalarValue::try_from_array(main.column(2 + 2 * i), row)
                         .expect("group state scalar");
@@ -2340,7 +2357,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // One side batch per MIN/MAX or DISTINCT aggregate: BinaryRow key, value, count.
         let mut frame = 1;
         for i in 0..num_agg {
-            if !matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16) {
+            if !matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17) {
                 continue;
             }
             let side = &batches[frame];
@@ -2357,7 +2374,15 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let key = keys.value(row);
                 let value = ScalarValue::try_from_array(values, row).expect("multiset value");
                 if let Some(state) = self.store.get_mut(key) {
-                    state.aggs[i].import_multiset_entry(value, counts.value(row));
+                    if average_distinct[i] {
+                        if let GroupAggState::DistinctRunning { counts: set, .. } =
+                            &mut state.aggs[i]
+                        {
+                            set.insert_imported(value, counts.value(row));
+                        }
+                    } else {
+                        state.aggs[i].import_multiset_entry(value, counts.value(row));
+                    }
                 }
             }
         }
@@ -2575,7 +2600,7 @@ impl LocalGroupAggregator {
         // Distinct aggregates (kind 7/9) fold the value itself into their per-bundle set, not a Num;
         // typed column readers avoid per-row scalar materialization.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
-            .map(|i| matches!(self.kinds[i], 7 | 9).then_some(self.value_columns[i] as usize))
+            .map(|i| matches!(self.kinds[i], 7 | 9 | 17).then_some(self.value_columns[i] as usize))
             .collect();
         let distinct_columns: Vec<_> = distinct_cols
             .iter()

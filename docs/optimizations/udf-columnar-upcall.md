@@ -134,3 +134,62 @@ they do not establish a win for every generated string callback.
 
 The focused regression suite passes all 109 checks on Flink 2.2.1 and 93 on
 Flink 1.18.1, with 16 documented host-capability skips and no failures.
+
+## Decimal runtime-scale consumers
+
+A release CPU profile of `CAST(ROUND(d, scale_column) AS STRING)` attributed about 40% of
+inclusive samples to the scalar callback and about 10% to decimal Arrow access. Generated
+expressions without character arguments now read a borrowed Arrow row during the synchronous
+callback, avoiding temporary argument columns. Character arguments retain materialization to
+preserve Java string semantics. Wide decimals retain their existing `BigDecimal` directly
+instead of converting through an unscaled byte array and a second `BigInteger`.
+
+For a standalone STRING cast of ROUND/TRUNCATE with direct decimal and INT column arguments,
+a native batch kernel rounds the Arrow decimal integers and formats each row using its resulting
+precision and scale. This avoids the decimal Arrow-to-Java conversion, `BigDecimal` rounding,
+and JNI callback for ordinary positions. A non-NULL position below -38 sends the whole batch
+through the existing generated evaluator, preserving released scale errors and row order.
+That evaluator uses a single equivalent `setScale` for ordinary positions. Multiple potentially
+failing projections and other expression shapes retain generated evaluation and its ordering. Floating-point TRUNCATE
+retains the released implementation: a separate helper experiment did not improve whole-job time.
+
+Linux x86-64 Core i7-12650H, JDK 17, Flink 2.2.1, release+mimalloc, 2 GiB heap,
+2M runtime rows, parallelism one, default 1,024-row batches, no injected NULLs, two warmups
+and five alternating trials per engine; both row/Arrow transposes and the row sink remain.
+Reproduce with `ScalarFunctionBenchmark#individualFunctions`,
+`-Dscalar.functions=DECIMAL_ROUND_RUNTIME_STRING,DECIMAL_TRUNCATE_RUNTIME_STRING`,
+`-Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5` under `-Pbench` with
+`SF_BENCHMARK=true` and `-Dsf.extraJvmArgs=-Xmx2g`.
+
+The native text kernel, under the same release setup, gives these two-million-row results.
+The decimal input is DECIMAL(38,9); positions cycle through -3/0/2/9/12/NULL, with no
+additional input-value NULL injection. Values are read from the runtime row source, and the
+benchmark asserts native Calc and both boundary transposes. All five measured trials are retained.
+
+| Expression | Published callback native | Native text kernel, median (range) | Flink, median (range) |
+| --- | ---: | ---: | ---: |
+| Runtime ROUND to STRING | 0.938 | 0.634 (0.624–0.648) | 0.690 (0.682–0.697) |
+| Runtime TRUNCATE to STRING | 0.936 | 0.635 (0.616–0.701) | 0.694 (0.691–0.702) |
+
+This reduces native time by about 32% against the published callback implementation and by
+8.0%/8.5% against stock Flink in this run. The identity control was 0.479 native / 0.312 Flink;
+the previous control was 0.466 / 0.305. The TRUNCATE native range includes its slower 0.701 s
+trial. These figures do not establish performance for nested consumers or batches containing
+exceptional positions, which still use the callback. Reproduce using the command above with
+`-Dscalar.nullEvery=0`; [raw trials](../benchmarks/decimal-runtime-text-2026-09-28.csv) include
+both identity controls and every alternating measured trial.
+
+A five-million-row follow-up with the same configuration confirms the direct STRING
+consumer improvement over stock Flink beyond the initial two-million-row measurement:
+
+| Expression | Native median (range), s | Flink median (range), s |
+| --- | ---: | ---: |
+| Runtime ROUND to STRING | 1.458 (1.451–1.492) | 1.605 (1.565–1.610) |
+| Runtime TRUNCATE to STRING | 1.463 (1.448–1.464) | 1.576 (1.569–1.593) |
+
+Native elapsed time is 9.1% and 7.2% lower, respectively. The identity control remains
+slower natively: 1.054 s (1.053–1.064) versus Flink's 0.647 s (0.640–0.658); it is retained
+in the raw data, and no conversion cost is subtracted from expression timings. Use
+`-Dscalar.rows=5000000` to reproduce. Both sizes completed without detected competing
+build/test processes. The attempted 20M runs overlapped other builds and were discarded;
+these results make no claim for that size or for other expression shapes.

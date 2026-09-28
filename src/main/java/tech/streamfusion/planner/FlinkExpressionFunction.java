@@ -89,6 +89,8 @@ public final class FlinkExpressionFunction extends ScalarFunction
       ClassLoader classLoader,
       boolean binaryStringResult) {
     var context = new Context(config, classLoader);
+    String decimalCode = decimalRoundingText(expression);
+    if (decimalCode != null) return new Body(context, decimalCode, null);
     var generator = new ExprCodeGenerator(context, false);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
     String temporal = temporalBody(expression, generator, context, config);
@@ -172,6 +174,34 @@ public final class FlinkExpressionFunction extends ScalarFunction
     return "if (!input.isNullAt(" + input.getIndex() + ")) {\n"
         + resultType + " sfCanonicalTemporal = " + value + ";\n"
         + "if (sfCanonicalTemporal != null) return " + result + ";\n}\n";
+  }
+
+  static org.apache.calcite.rex.RexCall decimalRoundingTextCall(RexNode expression) {
+    if (!(expression instanceof org.apache.calcite.rex.RexCall cast)
+        || cast.getKind() != org.apache.calcite.sql.SqlKind.CAST
+        || cast.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.VARCHAR
+        || cast.getType().getPrecision() != Integer.MAX_VALUE
+        || !(cast.getOperands().get(0) instanceof org.apache.calcite.rex.RexCall round)
+        || (round.getOperator() != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
+            && round.getOperator() != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
+        || round.getOperands().size() != 2
+        || !(round.getOperands().get(0) instanceof org.apache.calcite.rex.RexInputRef value)
+        || !(round.getOperands().get(1) instanceof org.apache.calcite.rex.RexInputRef scale)
+        || value.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.DECIMAL
+        || scale.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.INTEGER) return null;
+    return round;
+  }
+
+  private static String decimalRoundingText(RexNode expression) {
+    var round = decimalRoundingTextCall(expression);
+    if (round == null) return null;
+    var value = (org.apache.calcite.rex.RexInputRef) round.getOperands().get(0);
+    var scale = (org.apache.calcite.rex.RexInputRef) round.getOperands().get(1);
+    return "return " + DecimalRounding.class.getCanonicalName() + ".text(input, "
+        + value.getIndex() + ", " + scale.getIndex() + ", " + value.getType().getPrecision()
+        + ", " + value.getType().getScale() + ", "
+        + (round.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
+        + ");\n";
   }
 
   private static Body rowBody(
@@ -283,7 +313,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
     return evaluator.eval(input);
   }
 
-  /** Evaluate a borrowed Arrow row while its argument batch remains open. */
+  /** The imported Arrow batch owns this row for the duration of synchronous evaluation. */
   public Object evalRow(RowData row) throws Exception {
     return evaluator.eval(row);
   }

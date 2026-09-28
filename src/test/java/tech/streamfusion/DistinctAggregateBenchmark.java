@@ -20,9 +20,13 @@ class DistinctAggregateBenchmark {
   private static final long ROWS = Long.getLong("distinct.rows", 2_000_000L);
   private static final int WARMUP = Integer.getInteger("distinct.warmup", 2);
   private static final int RUNS = Integer.getInteger("distinct.runs", 5);
+  private static final boolean AVERAGE = Boolean.getBoolean("distinct.average");
   private static final String SQL =
-      "INSERT INTO sink SELECT k, COUNT(DISTINCT b), COUNT(DISTINCT ts),"
-          + " SUM(DISTINCT amount) FROM src GROUP BY k";
+      AVERAGE
+          ? "INSERT INTO sink SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT amount) FROM"
+                + " src GROUP BY k"
+          : "INSERT INTO sink SELECT k, COUNT(DISTINCT b), COUNT(DISTINCT ts),"
+              + " SUM(DISTINCT amount) FROM src GROUP BY k";
 
   @Test
   void groupedDistinctTypes() throws Exception {
@@ -30,7 +34,7 @@ class DistinctAggregateBenchmark {
     if (!plan.contains("NativeColumnarGroupAggregate")
         || !plan.contains("RowDataToArrow")
         || !plan.contains("ArrowToRowData")
-        || !plan.contains("NativeColumnarLocalGroupAggregate")) {
+        || !AVERAGE && !plan.contains("NativeColumnarLocalGroupAggregate")) {
       throw new IllegalStateException("Expected native aggregation and both transposes: " + plan);
     }
     double[][] times = new double[2][RUNS];
@@ -50,8 +54,9 @@ class DistinctAggregateBenchmark {
     }
     System.out.printf(
         Locale.ROOT,
-        "[distinct-aggregate] phase=two rows=%d Flink=%.6fs Native=%.6fs flink_trials=%s"
+        "[distinct-aggregate] average=%s rows=%d Flink=%.6fs Native=%.6fs flink_trials=%s"
             + " native_trials=%s%n",
+        AVERAGE,
         ROWS,
         median(times[0]),
         median(times[1]),
@@ -69,35 +74,62 @@ class DistinctAggregateBenchmark {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
-    table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
-    table.getConfig().set("table.exec.mini-batch.enabled", "true");
+    table
+        .getConfig()
+        .set("table.optimizer.agg-phase-strategy", AVERAGE ? "ONE_PHASE" : "TWO_PHASE");
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(!AVERAGE));
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
     table.getConfig().set("table.exec.mini-batch.size", "1024");
     table.createTemporaryView(
         "src",
         env.fromSequence(0, ROWS - 1)
             .map(
-                i ->
-                    Row.of(
-                        (int) (i % 64),
-                        i % 7 == 0 ? null : (i / 64) % 2 == 0,
-                        i % 7 == 0 ? null : Instant.ofEpochSecond(0, i / 64 % 128),
-                        i % 7 == 0 ? null : BigDecimal.valueOf(i / 64 % 128 - 64, 2)))
+                i -> {
+                  boolean missing = i % 7 == 0;
+                  BigDecimal amount = missing ? null : BigDecimal.valueOf(i / 64 % 128 - 64, 2);
+                  return AVERAGE
+                      ? Row.of(
+                          (int) (i % 64),
+                          missing ? null : (byte) (i / 64 % 127 - 64),
+                          missing ? null : i / 64 % 1024 - 512,
+                          amount)
+                      : Row.of(
+                          (int) (i % 64),
+                          missing ? null : (i / 64) % 2 == 0,
+                          missing ? null : Instant.ofEpochSecond(0, i / 64 % 128),
+                          amount);
+                })
             .returns(
-                Types.ROW_NAMED(
-                    new String[] {"k", "b", "ts", "amount"},
-                    Types.INT,
-                    Types.BOOLEAN,
-                    Types.INSTANT,
-                    Types.BIG_DEC)),
-        Schema.newBuilder()
-            .column("k", DataTypes.INT())
-            .column("b", DataTypes.BOOLEAN())
-            .column("ts", DataTypes.TIMESTAMP_LTZ(9))
-            .column("amount", DataTypes.DECIMAL(19, 2))
-            .build());
+                AVERAGE
+                    ? Types.ROW_NAMED(
+                        new String[] {"k", "t", "b", "amount"},
+                        Types.INT,
+                        Types.BYTE,
+                        Types.LONG,
+                        Types.BIG_DEC)
+                    : Types.ROW_NAMED(
+                        new String[] {"k", "b", "ts", "amount"},
+                        Types.INT,
+                        Types.BOOLEAN,
+                        Types.INSTANT,
+                        Types.BIG_DEC)),
+        AVERAGE
+            ? Schema.newBuilder()
+                .column("k", DataTypes.INT())
+                .column("t", DataTypes.TINYINT())
+                .column("b", DataTypes.BIGINT())
+                .column("amount", DataTypes.DECIMAL(20, 2))
+                .build()
+            : Schema.newBuilder()
+                .column("k", DataTypes.INT())
+                .column("b", DataTypes.BOOLEAN())
+                .column("ts", DataTypes.TIMESTAMP_LTZ(9))
+                .column("amount", DataTypes.DECIMAL(19, 2))
+                .build());
     table.executeSql(
-        "CREATE TABLE sink (k INT, cb BIGINT, ct BIGINT, sa DECIMAL(38,2))"
+        (AVERAGE
+                ? "CREATE TABLE sink (k INT, av_t TINYINT, ab BIGINT, ad DECIMAL(38,6))"
+                : "CREATE TABLE sink (k INT, cb BIGINT, ct BIGINT, sa DECIMAL(38,2))")
             + " WITH ('connector' = 'blackhole')");
     return table;
   }

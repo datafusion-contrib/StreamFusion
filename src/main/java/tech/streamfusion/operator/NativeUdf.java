@@ -419,8 +419,8 @@ public final class NativeUdf {
                 : null;
         var rowResult =
             rowWriter == null ? null : new org.apache.flink.table.data.GenericRowData(1);
-        // Generated string arguments retain Java-backed StringData semantics, including UTF-16
-        // comparison and identity. Other generated arguments can borrow the imported Arrow row.
+        // String arguments retain Java-backed StringData comparison and identity semantics.
+        // Other generated arguments borrow the imported batch until evaluation completes.
         tech.streamfusion.arrow.ArrowReader generatedReader =
             udf.generated == null || Arrays.stream(udf.argTypes).anyMatch(type -> type == TYPE_STRING)
                 ? null

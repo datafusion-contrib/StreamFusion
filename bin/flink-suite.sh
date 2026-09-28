@@ -115,6 +115,9 @@ readonly PARQUET_MODULE="flink-formats/flink-parquet"
 readonly PARQUET_SINK_TESTS="org.apache.flink.formats.parquet.ParquetFsStreamingSinkITCase,org.apache.flink.formats.parquet.ParquetTimestampITCase"
 readonly PAIMON_SQL_TESTS="org.apache.paimon.flink.AppendOnlyTableITCase,org.apache.paimon.flink.AppendTableITCase,org.apache.paimon.flink.BatchFileStoreITCase,org.apache.paimon.flink.ComputedColumnAndWatermarkTableITCase,org.apache.paimon.flink.ContinuousFileStoreITCase,org.apache.paimon.flink.ReadWriteTableITCase,org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase,org.apache.paimon.flink.CompositePkAndMultiPartitionedTableITCase,org.apache.paimon.flink.FullCompactionFileStoreITCase,org.apache.paimon.flink.FlinkJobRecoveryITCase,org.apache.paimon.flink.RescaleBucketITCase,org.apache.paimon.flink.ScanBucketITCase,org.apache.paimon.flink.KeyOnlyDeletesITCase,org.apache.paimon.flink.FirstRowITCase,org.apache.paimon.flink.CoordinatorCommitITCase"
 readonly PAIMON_ISOLATED_TESTS=(
+  "org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase#testNoChangelogProducerStreamingRandom"
+  "org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase#testFullCompactionChangelogProducerStreamingRandom"
+  "org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase#testLookupChangelogProducerStreamingRandom"
   "org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase#testStandAloneLookupJobRandom"
   "org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase#testStandAloneFullCompactJobRandom"
 )
@@ -629,8 +632,8 @@ elif [[ "${SUITE_MODE}" == "paimon" ]]; then
     mkdir -p "${REPORT_ROOT}/flink-1.18"
     cp -R "${line_reports}/." "${REPORT_ROOT}/flink-1.18/" || exit $?
   elif [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
-    # Cancelled upstream compactors can kill their shared MiniCluster during cleanup. Run each
-    # unchanged standalone compaction test in its own fork to contain that lifecycle race.
+    # Cancellation and injected I/O failures can kill the shared MiniCluster during cleanup.
+    # Keep each affected upstream test unchanged and contain its failure in a separate fork.
     mkdir -p "${REPORT_ROOT}/shared-cluster"
     for report in "${REPORT_ROOT}/"*PrimaryKeyFileStoreTableITCase*; do
       if [[ -f "${report}" ]]; then
