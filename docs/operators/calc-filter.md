@@ -738,8 +738,9 @@ including when a JSON expression would otherwise select complete-row generation.
 
 A release+mimalloc comparison of the direct STRING consumers on Flink 2.2.1/JDK 17,
 with two million row-fed records, measured native ROUND at 0.634 s versus Flink's 0.690 s,
-and native TRUNCATE at 0.635 s versus 0.694 s. Both transposes and the row sink remain in
-these measurements. These results apply to the direct decimal/INT column shape; composed
+and native TRUNCATE at 0.635 s versus 0.694 s. At five million rows, ROUND measured
+1.458 s versus 1.605 s and TRUNCATE 1.463 s versus 1.576 s. Both transposes and the row sink
+remain in these measurements. These results apply to the direct decimal/INT column shape; composed
 expressions retain generated evaluation. See the [method, variability and prior implementation
 comparison](../optimizations/udf-columnar-upcall.md#decimal-runtime-scale-consumers).
 

@@ -91,16 +91,6 @@ retains the released implementation: a separate helper experiment did not improv
 Linux x86-64 Core i7-12650H, JDK 17, Flink 2.2.1, release+mimalloc, 2 GiB heap,
 2M runtime rows, parallelism one, default 1,024-row batches, no injected NULLs, two warmups
 and five alternating trials per engine; both row/Arrow transposes and the row sink remain.
-Historical callback-optimization measurements, before the native text kernel, in complete-job
-seconds (updated range in parentheses):
-
-| Expression | Previous native | Updated native | Stock Flink |
-| --- | ---: | ---: | ---: |
-| Runtime ROUND to STRING | 1.056 | 0.938 (0.930–0.963) | 0.685 (0.665–0.690) |
-| Runtime TRUNCATE to STRING | 1.048 | 0.936 (0.933–0.957) | 0.674 (0.665–0.681) |
-
-The callback-only change decreased native time 11.2% and 10.7%, but remained slower than Flink. Identity controls were 0.531 native / 0.311 Flink before and 0.466 / 0.305 after;
-that drift means the whole-job improvement cannot all be attributed to decimal arithmetic.
 Reproduce with `ScalarFunctionBenchmark#individualFunctions`,
 `-Dscalar.functions=DECIMAL_ROUND_RUNTIME_STRING,DECIMAL_TRUNCATE_RUNTIME_STRING`,
 `-Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5` under `-Pbench` with
@@ -123,3 +113,18 @@ trial. These figures do not establish performance for nested consumers or batche
 exceptional positions, which still use the callback. Reproduce using the command above with
 `-Dscalar.nullEvery=0`; [raw trials](../benchmarks/decimal-runtime-text-2026-09-28.csv) include
 both identity controls and every alternating measured trial.
+
+A five-million-row follow-up with the same configuration confirms the direct STRING
+consumer improvement over stock Flink beyond the initial two-million-row measurement:
+
+| Expression | Native median (range), s | Flink median (range), s |
+| --- | ---: | ---: |
+| Runtime ROUND to STRING | 1.458 (1.451–1.492) | 1.605 (1.565–1.610) |
+| Runtime TRUNCATE to STRING | 1.463 (1.448–1.464) | 1.576 (1.569–1.593) |
+
+Native elapsed time is 9.1% and 7.2% lower, respectively. The identity control remains
+slower natively: 1.054 s (1.053–1.064) versus Flink's 0.647 s (0.640–0.658); it is retained
+in the raw data, and no conversion cost is subtracted from expression timings. Use
+`-Dscalar.rows=5000000` to reproduce. Both sizes completed without detected competing
+build/test processes. The attempted 20M runs overlapped other builds and were discarded;
+these results make no claim for that size or for other expression shapes.
