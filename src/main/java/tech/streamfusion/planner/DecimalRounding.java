@@ -24,12 +24,6 @@ public final class DecimalRounding {
     return DecimalData.fromBigDecimal(rounded, precision, scale);
   }
 
-  public static double truncate(double value, int position) {
-    var decimal = org.apache.flink.table.data.DecimalDataUtils.castFrom(value, 38, 18);
-    if (decimal == null) return SqlFunctionUtils.struncate(value, position);
-    return org.apache.flink.table.data.DecimalDataUtils.doubleValue(round(decimal, position, true));
-  }
-
   public static StringData text(RowData row, int valueField, int scaleField,
       int precision, int scale, boolean truncate) {
     if (row.isNullAt(valueField) || row.isNullAt(scaleField)) return null;

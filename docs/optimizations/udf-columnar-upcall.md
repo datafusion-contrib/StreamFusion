@@ -82,7 +82,8 @@ instead of converting through an unscaled byte array and a second `BigInteger`.
 For a standalone STRING cast of ROUND/TRUNCATE with direct decimal and INT column arguments,
 a single `setScale` replaces Flink's two decimal-point shifts around rounding. The result keeps
 Flink's dynamic precision and scale; extreme negative positions still call the released function.
-Other expression shapes retain generated evaluation and its ordering.
+Other expression shapes retain generated evaluation and its ordering. Floating-point TRUNCATE
+retains the released implementation: a separate helper experiment did not improve whole-job time.
 
 Linux x86-64 Core i7-12650H, JDK 17, Flink 2.2.1, release+mimalloc, 2 GiB heap,
 2M runtime rows, parallelism one, default 1,024-row batches, no injected NULLs, two warmups
