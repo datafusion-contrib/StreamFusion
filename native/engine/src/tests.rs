@@ -659,6 +659,121 @@ fn evaluate_scalar_call(
 }
 
 #[test]
+fn integer_array_distinct_preserves_sliced_order_nulls_and_empty_containers() {
+    use arrow::array::ListArray;
+    use arrow::buffer::{NullBuffer, OffsetBuffer};
+    let values: ArrayRef = Arc::new(Int64Array::from(vec![
+        Some(99),
+        Some(3),
+        None,
+        Some(1),
+        Some(3),
+        None,
+        Some(1),
+        Some(-1),
+        Some(77),
+    ]));
+    let lists: ArrayRef = Arc::new(ListArray::new(
+        Arc::new(Field::new("item", DataType::Int64, true)),
+        OffsetBuffer::new(vec![0, 1, 8, 9, 9].into()),
+        values,
+        Some(NullBuffer::from(vec![true, true, false, true])),
+    ));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new(
+            "a",
+            lists.data_type().clone(),
+            true,
+        )])),
+        vec![lists],
+    )
+    .unwrap()
+    .slice(1, 3);
+    let result = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch);
+    let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+    assert_eq!(
+        result.value(0).as_ref(),
+        &Int64Array::from(vec![Some(3), None, Some(1), Some(-1)])
+    );
+    assert!(result.is_null(1));
+    assert_eq!(result.value_length(2), 0);
+    let empty = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch.slice(0, 0));
+    assert_eq!(empty.len(), 0);
+    assert_eq!(result.data_type(), empty.data_type());
+}
+
+#[test]
+fn integer_array_distinct_reuses_unique_values_and_adapts_scalars() {
+    use arrow::array::ListArray;
+    let lists = Arc::new(ListArray::from_iter_primitive::<
+        arrow::datatypes::Int16Type,
+        _,
+        _,
+    >(vec![
+        Some(vec![Some(2), None, Some(1)]),
+        None,
+        Some(vec![]),
+    ]));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new(
+            "a",
+            lists.data_type().clone(),
+            true,
+        )])),
+        vec![lists.clone()],
+    )
+    .unwrap();
+    let result = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch);
+    let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+    assert!(Arc::ptr_eq(result.values(), lists.values()));
+    assert_eq!(result, lists.as_ref());
+    for row in [0, 1] {
+        let literal = logical_lit(ScalarValue::List(Arc::new(lists.slice(row, 1))));
+        let result = evaluate_scalar_call(165, vec![literal], &batch);
+        let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+        for output_row in 0..batch.num_rows() {
+            assert_eq!(result.is_null(output_row), lists.is_null(row));
+            if !lists.is_null(row) {
+                assert_eq!(result.value(output_row).as_ref(), lists.value(row).as_ref());
+            }
+        }
+    }
+}
+
+#[test]
+fn integer_array_distinct_resolves_small_fingerprint_collisions_by_value() {
+    use arrow::array::ListArray;
+    let lists: ArrayRef = Arc::new(ListArray::from_iter_primitive::<
+        arrow::datatypes::Int64Type,
+        _,
+        _,
+    >(vec![Some(vec![
+        Some(0),
+        Some(64),
+        Some(-64),
+        Some(i64::MIN),
+        Some(0),
+        None,
+        None,
+    ])]));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new(
+            "a",
+            lists.data_type().clone(),
+            true,
+        )])),
+        vec![lists],
+    )
+    .unwrap();
+    let result = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch);
+    let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+    assert_eq!(
+        result.value(0).as_ref(),
+        &Int64Array::from(vec![Some(0), Some(64), Some(-64), Some(i64::MIN), None])
+    );
+}
+
+#[test]
 fn scalar_extrema_and_text_handle_null_masks_slices_and_scalars() {
     let input = RecordBatch::try_new(
         Arc::new(Schema::new(vec![

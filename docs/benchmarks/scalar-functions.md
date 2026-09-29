@@ -1,6 +1,6 @@
 # Scalar function benchmarks
 
-Measured on 2026-09-09 against the production implementation in `69122d2b`, using Apple M4 Pro,
+The original measurements below were made on 2026-09-09 against the production implementation in `69122d2b`, using Apple M4 Pro,
 JDK 17, UTC, Flink 2.2.1 and DataFusion 54.0.0. The native library uses the standard Maven
 `bench` profile: release mode, mimalloc, and the development connector features.
 
@@ -1264,3 +1264,85 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.nullEvery=8 \
   -Dscalar.warmup=2 -Dscalar.runs=5 -Dscalar.engine=both
 ```
+
+
+## Integer ARRAY_DISTINCT (2026-09-28)
+
+Measured against canonical main `665dc10d`, Intel Core i7-12650H, Linux, JDK 17,
+Flink 2.2.1, release Rust with mimalloc, parallelism one, 2 GiB heap and 1,024-row
+Arrow batches. Each case uses a fresh JVM, five warmups and five alternating
+stock/native trials. No other build or test ran concurrently. Times include
+planning and the complete job, a rowwise DataStream source, both production
+transposes, JNI execution and a rowwise blackhole sink. The harness asserts
+NativeCalc and both transposes, completes the job and checks planner substitution
+counts; an intentionally disabled admission must have zero substitutions.
+
+The query projects `ARRAY_DISTINCT(arr)` plus a TRUE anchor. Every eighth array is
+NULL; every seventh element is NULL; other elements are
+`(31 * elementIndex + rowIndex) % domain - domain / 2`. Width counts all elements;
+domain is the value generator's modulus, not the resulting distinct count.
+
+| Element type | Rows | Width / domain | Flink median (range), s | Native median (range), s | Flink/native |
+| --- | ---: | ---: | --- | --- | ---: |
+| BIGINT | 200,000 | 64 / 64 | 1.047 (1.039–1.065) | 0.310 (0.308–0.319) | 3.38x |
+| BIGINT | 200,000 | 256 / 256 | 13.388 (13.345–13.403) | 0.924 (0.911–0.942) | 14.50x |
+| BIGINT | 200,000 | 64 / 8 | 0.334 (0.328–0.373) | 0.243 (0.238–0.252) | 1.37x |
+| INT | 200,000 | 64 / 64 | 0.989 (0.979–1.005) | 0.306 (0.299–0.325) | 3.23x |
+| BIGINT | 2,000,000 | 8 / 8 | 0.668 (0.621–0.672) | 0.581 (0.581–0.625) | 1.15x |
+| BIGINT | 20,000,000 | 8 / 8 | 5.875 (5.660–5.943) | 5.215 (5.136–5.241) | 1.13x |
+| BIGINT, repeat | 20,000,000 | 8 / 8 | 5.430 (5.394–5.492) | 5.413 (5.358–5.468) | 1.00x |
+
+Large-array gains are clear. Small-array gains are sensitive to run-to-run control
+movement: the repeat is effectively tied, and neither long run is evidence of a
+stable 13% improvement. Short jobs also include appreciable fixed startup costs.
+These results do not establish gains for all integer widths or data distributions.
+
+For the previous StreamFusion behavior, an admission ablation removed only the
+new ARRAY_DISTINCT Java admission from the same runtime. The harness verified
+`unsupported function/operator: ARRAY_DISTINCT` and zero native substitutions.
+With five warmups/five trials, BIGINT 200,000 x 64/domain64 took 1.049s
+(1.041–1.124), versus its paired stock control 1.093s (1.031–1.154). BIGINT
+2,000,000 x 8/domain8 took 0.580s (0.545–0.607), versus stock 0.564s
+(0.545–0.572). The candidate's 0.310s large-array result improves this prior
+behavior by about 70%; its 0.581s small-array result is essentially unchanged
+across separate JVMs. This is an admission ablation, not a rebuilt old release.
+
+[Raw trials](array-distinct-2026-09-28.csv) retain the full investigation, including
+unfavorable implementations on baseline `4aae50a1`. Released DataFusion's generic
+kernel took 0.724s versus Flink 0.625s for two million eight-element arrays; typed
+hash membership reduced native time to 0.659s versus Flink 0.623s. A bounded stack
+search took 0.624s versus Flink 0.601s with two warmups, and 0.592s versus Flink
+0.607s with five. Its twenty-million-row result remained slower (5.393s versus
+5.314s). The final implementation adds a collision-checked fingerprint to that
+stack search. Its first long run improved native time to 5.215s, but the Flink
+control also moved; the repeat above prevents attributing the entire difference
+to the kernel. CSV implementation/run columns distinguish these intermediate
+variants from the shipped `typed_fingerprint` measurements.
+
+A diagnostic async-profiler CPU-timer run of the generic kernel collected 6,519
+mixed Java/native samples; 683 stacks included NativeCalc/JNI, 296 the generic
+array-distinct kernel, 199 hash insertion, and 36 row conversion. These overlapping
+counts include both engines and startup. That diagnostic overlapped a native
+build, so its elapsed times are excluded from benchmark claims. It motivated
+primitive membership without encoded rows; it does not measure isolated kernel
+CPU percentages. See the [kernel technique](../optimizations/scalar-function-kernels.md#integer-array_distinct).
+
+Reproduce each table scenario by changing rows, width, domain and `collection.int`
+(the default is BIGINT):
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=DynamicCollectionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.extraJvmArgs=-Xmx2g '-Dcollection.expression=ARRAY_DISTINCT(arr)' \
+  -Dcollection.map=false -Dcollection.rows=200000 -Dcollection.width=64 \
+  -Dcollection.domain=64 -Dcollection.int=false -Dcollection.warmup=5
+```
+
+For an admission ablation, remove the Java ARRAY_DISTINCT admission and add
+`-Dcollection.native=false` and
+`'-Dcollection.fallbackReason=unsupported function/operator: ARRAY_DISTINCT'`.
+Restore admission before measuring the candidate. MAP_KEYS/MAP_VALUES were also
+investigated but remain fallback after end-to-end regressions; their
+[raw trials](map-array-projections-2026-09-28.csv) and
+[rejection rationale](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-map-array-projections.md)
+are retained.

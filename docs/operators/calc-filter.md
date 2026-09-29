@@ -1451,6 +1451,25 @@ token/depth limits. Deep legacy nesting grows the native stack as needed.
 See the [SQL/JSON parser note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md)
 and [per-function benchmarks](../benchmarks/scalar-functions.md).
 
+### ARRAY_DISTINCT
+
+Integer arrays (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`) use a typed kernel following
+DataFusion's ordered membership and batch-gather structure. Arrays of at most
+eight elements use a bounded stack search with a collision-checked fingerprint;
+larger arrays use a reusable hash set. The first occurrence of each value is retained,
+including one NULL element. NULL containers remain NULL and empty arrays remain
+empty. The result preserves the element width and nullability. Other element
+types retain explicit fallback until their equality rules have been verified.
+[Whole-job measurements](../benchmarks/scalar-functions.md#integer-array_distinct-2026-09-28)
+show large-array gains and small-array sensitivity to run-to-run variation.
+
+`MAP_KEYS` and `MAP_VALUES` remain on Flink: a zero-copy native prototype passed
+parity but regressed whole-job performance with row sources and sinks. See the
+[rejected map projection experiment](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-map-array-projections.md).
+`CARDINALITY` over ordinary collection inputs also remains a fallback. The other
+collection-function and aggregate gaps remain tracked in
+[#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
 ### SPLIT
 
 Character input and a literal non-empty separator. The separator is literal text, including regex metacharacters. NULL input returns NULL, empty input returns an empty array, and leading/repeated/trailing separators retain empty tokens. Empty or dynamic separators fall back; the empty form splits UTF-16 surrogate units in Flink.

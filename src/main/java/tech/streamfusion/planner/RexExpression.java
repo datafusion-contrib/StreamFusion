@@ -1178,6 +1178,16 @@ final class RexExpression {
     if (jsonPredicate >= 0) {
       return emitIsJson(call, jsonPredicate, functionName.startsWith("IS NOT"));
     }
+    if ("ARRAY_DISTINCT".equals(functionName)) {
+      if (call.getOperands().size() != 1
+          || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.ARRAY
+          || !java.util.Set.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+                  SqlTypeName.INTEGER, SqlTypeName.BIGINT)
+              .contains(call.getOperands().get(0).getType().getComponentType().getSqlTypeName())) {
+        return reject("ARRAY_DISTINCT requires an integer ARRAY");
+      }
+      return emitBuiltinCall(call, 165);
+    }
     if ("SPLIT".equals(functionName)) {
       List<RexNode> args = call.getOperands();
       if (args.size() != 2
