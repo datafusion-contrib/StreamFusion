@@ -367,6 +367,51 @@ fn group_temporal_boolean_extrema_restore_multiplicity_nulls_and_ttl() {
 }
 
 #[test]
+fn group_distinct_ordered_values_restore_multiplicity_and_order() {
+    let value = |s: &str| ScalarValue::Utf8(Some(s.to_owned()));
+    let mut agg = GroupAggregator::new(vec![19, 20], vec![3; 2], vec![1; 2], vec![0], true);
+    agg.update(
+        &group_scalar_changelog(vec![value("a"), value("b"), value("a")], vec![0; 3]),
+        0,
+    )
+    .unwrap();
+    let mut restored = GroupAggregator::restore(
+        vec![19, 20],
+        vec![3; 2],
+        vec![1; 2],
+        vec![0],
+        true,
+        &agg.snapshot(),
+        0,
+    );
+    for (v, kind, first, last) in [("a", 3, "a", "b"), ("a", 3, "b", "b"), ("a", 0, "b", "a")] {
+        restored
+            .update(&group_scalar_changelog(vec![value(v)], vec![kind]), 0)
+            .unwrap();
+        let mut roundtrip = GroupAggregator::restore(
+            vec![19, 20],
+            vec![3; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &restored.snapshot(),
+            0,
+        );
+        let changed = roundtrip
+            .update(&group_scalar_changelog(vec![value("c")], vec![0]), 0)
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 0).unwrap(),
+            value(first)
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(2), 0).unwrap(),
+            value(last)
+        );
+    }
+}
+
+#[test]
 fn group_temporal_boolean_ordered_values_restore_arrival_order() {
     for (code, low, high) in temporal_boolean_values() {
         let null = ScalarValue::try_from(&low.data_type()).unwrap();

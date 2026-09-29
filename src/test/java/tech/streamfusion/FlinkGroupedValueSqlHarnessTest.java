@@ -152,6 +152,37 @@ class FlinkGroupedValueSqlHarnessTest {
             + " k");
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void distinctFirstLastPreserveMembershipAndArrivalOrder(boolean retract) throws Exception {
+    compare(
+        () -> environment("STRING", retract),
+        "SELECT k, FIRST_VALUE(DISTINCT v), LAST_VALUE(DISTINCT v), COUNT(*) FROM src GROUP BY k");
+    compare(
+        () -> environment("STRING", retract),
+        "SELECT k, FIRST_VALUE(DISTINCT v) FILTER (WHERE id >= 3), "
+            + "LAST_VALUE(DISTINCT v) FILTER (WHERE id <> 6), COUNT(*) FROM src GROUP BY k");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void distinctFirstLastBoundedVarcharAndEmptyResults(boolean retract) throws Exception {
+    compare(
+        () -> environment("VARCHAR(8)", retract),
+        "SELECT k, FIRST_VALUE(DISTINCT v), LAST_VALUE(DISTINCT v) FROM src GROUP BY k");
+    compare(
+        () -> environment("STRING", retract),
+        "SELECT FIRST_VALUE(DISTINCT v), LAST_VALUE(DISTINCT v) FROM src WHERE id < 0");
+    NativeParity.assertFallbackReasonContains(
+        () -> {
+          var table = environment("STRING", retract);
+          table.getConfig().setIdleStateRetention(java.time.Duration.ofHours(1));
+          return table;
+        },
+        "SELECT k, FIRST_VALUE(DISTINCT v) FROM src GROUP BY k",
+        "independently expiring value/order maps");
+  }
+
   private static void compare(Supplier<TableEnvironment> environment, String sql) throws Exception {
     String plan = NativePlanner.explain(environment.get(), sql);
     assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);

@@ -90,7 +90,7 @@ expand the DISTINCT admission gates.
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
 INT, BIGINT, DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP and TIMESTAMP_LTZ. Each preserves
 the input value's type and precision. Per-aggregate FILTER conditions are supported.
-Flink 1.18.1 cannot plan temporal FIRST_VALUE/LAST_VALUE and fails a type assertion for
+Flink 1.18.1 cannot plan CHAR or temporal FIRST_VALUE/LAST_VALUE and fails a type assertion for
 SINGLE_VALUE over TIME(0), including string casts to TIME(3) that resolve to TIME(0);
 those host limitations remain unavailable on that release. Typed TIME(3) input is supported.
 
@@ -100,6 +100,14 @@ a retraction removes the oldest matching occurrence, including when values repea
 Arrow batches. Removing every contributing value yields NULL, and removing the last
 record deletes the group. Results depend on arrival order, so SQL parity fixtures use a
 controlled source rather than asserting equal results from independently reordered inputs.
+
+`FIRST_VALUE(DISTINCT string)` and `LAST_VALUE(DISTINCT string)` also run in a single
+phase over STRING/VARCHAR. They retain the arrival order of unique live values and their
+multiplicities: inserting a duplicate does not move its position, and only the last
+retraction removes it. Reinsertion after complete removal gives it a new position. NULLs
+are ignored, and filtered instances have independent membership. Checkpoints retain both
+order and multiplicities. These DISTINCT forms require zero state retention because
+Flink's separate membership/order maps can expire independently.
 
 Ordered aggregate state now resides inline in the existing per-aggregate storage, avoiding a
 separate allocation for every group; dynamic strings and retraction queues remain accounted
@@ -121,8 +129,9 @@ positive retention, including a STATE_TTL hint, fall back: Flink independently e
 value-to-order and order-to-value map entries, which a single group lifetime does not model.
 These aggregate states use the existing raw keyed snapshot path with both memory and RocksDB
 backends; the direct RocksDB accumulator-row codec does not yet encode ordered occurrences.
-Two-phase local/global plans, DISTINCT forms, two-argument value/order dialects, and other
-value types retain explicit fallback gates.
+Two-phase local/global plans, SINGLE_VALUE DISTINCT, DISTINCT first/last over types other
+than STRING/VARCHAR, two-argument value/order dialects, and other value types retain explicit
+fallback gates.
 
 `GroupedValueBenchmark` measures append-only FIRST_VALUE/LAST_VALUE with a release native
 build (`-Pbench`, mimalloc), 2 million rows, 64 keys, one-eighth NULL values, parallelism 1,
@@ -299,14 +308,15 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 
 - A UDAF (no native path for arbitrary user aggregation logic).
 - `AVG`/`SUM`/`MIN`/`MAX` over a value type outside [Type support](#type-support)'s ✓ set.
-- `AVG(DISTINCT)` over FLOAT/DOUBLE, and DISTINCT FIRST_VALUE/LAST_VALUE/SINGLE_VALUE.
+- `AVG(DISTINCT)` over FLOAT/DOUBLE, DISTINCT SINGLE_VALUE, and DISTINCT FIRST_VALUE/LAST_VALUE
+  over types other than STRING/VARCHAR.
   (`COUNT(DISTINCT x)` keeps a per-key
   value set; `SUM(DISTINCT x)` adds a running sum folded as values enter/leave it; `MIN`/`MAX
   (DISTINCT)` run as their plain, multiplicity-blind forms.)
 - An approximate aggregate.
 - FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over a value type outside the single-phase list above,
   or with more than one argument.
-- Retracting FIRST_VALUE/LAST_VALUE with positive state TTL.
+- DISTINCT or retracting FIRST_VALUE/LAST_VALUE with positive state TTL.
 - An unsupported grouping-key or value column type.
 
 **Local group aggregate (two-phase local half) only:**
@@ -573,3 +583,33 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dsf.extraJvmArgs=-Xmx2g
 # Repeat with -Ddistinct.rows=20000000 for the sustained split comparison.
 ```
+
+### DISTINCT first/last strings
+
+Runtime-source tests assert the native grouped operator and compare ordered, kinded
+changelogs for STRING and bounded VARCHAR inputs. They cover duplicate insertions, removing
+one versus the last occurrence, update pairs, reinsertion, NULL-only groups, independent
+filters, empty global results and positive-TTL fallback. The grouped-value suite passes
+45 cases on Flink 2.2.1 and 31 with 14 host-capability skips on Flink 1.18.1. The full native
+core suite passes 566 tests with one ignored, including a checkpoint regression that removes
+duplicates and reinserts values after restore. Ordered DISTINCT state uses the existing
+ordered snapshot side frames, with multiplicities in their count fields; ordinary ordered
+snapshots continue writing one per occurrence.
+
+`GroupedValueBenchmark` accepts `-Dgrouped.value.distinct=true` for the new STRING forms.
+It retains two million runtime rows, 64 keys, one-eighth NULLs, parallelism one, both
+row/Arrow transposes and a rowwise blackhole sink. The plan must contain the native grouped
+aggregate and both transposes. The source cycles 1,024 strings across 64 keys (14 non-NULL
+unique values per key); two warmups precede five alternating measured runs per engine.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=GroupedValueBenchmark -Dgrouped.value.distinct=true \
+  -Dgrouped.value.rows=2000000 -Dgrouped.value.warmup=2 -Dgrouped.value.runs=5
+```
+
+On Intel Core i7-12650H, Linux/WSL, JDK 17 and Flink 2.2.1 (2026-09-27), release+mimalloc
+measured medians of **0.821 s for Flink and 0.714 s for native (1.150x)**. Flink trials ranged
+from 0.796–0.925 s; native trials ranged from 0.712–0.747 s. This is a workload-specific
+whole-job result for duplicate-heavy append-only input; it does not establish a speedup for
+high-cardinality or retracting workloads. The unsupported baseline routes this query to Flink.

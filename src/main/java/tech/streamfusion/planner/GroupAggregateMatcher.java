@@ -55,7 +55,7 @@ final class GroupAggregateMatcher {
         return "GROUP BY: only single-argument aggregates";
       }
       if (kind >= 12 && kind <= 16) {
-        if (kind >= 15) {
+        if (kind >= 15 || call.isDistinct()) {
           Long hint = FlinkCompat.singleStateTtl(agg);
           long retention =
               hint == null
@@ -64,15 +64,18 @@ final class GroupAggregateMatcher {
                       .toMillis()
                   : hint;
           if (retention > 0) {
-            return "GROUP BY: retracting FIRST_VALUE/LAST_VALUE with TTL require independently"
-                + " expiring value/order maps";
+            return "GROUP BY: DISTINCT or retracting FIRST_VALUE/LAST_VALUE with TTL require"
+                + " independently expiring value/order maps";
           }
         }
-        if (call.isDistinct() || call.getArgList().size() != 1) {
-          return "GROUP BY: FIRST_VALUE/LAST_VALUE/SINGLE_VALUE require one non-DISTINCT argument";
+        if ((call.isDistinct() && kind == 14) || call.getArgList().size() != 1) {
+          return "GROUP BY: ordered values require one argument; SINGLE_VALUE DISTINCT is unsupported";
         }
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+        if (call.isDistinct() && valueType != SqlTypeName.VARCHAR) {
+          return "GROUP BY: DISTINCT FIRST_VALUE/LAST_VALUE require a string value";
+        }
         if (!orderedValueType(valueType)) {
           return "GROUP BY: FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over an unsupported value type";
         }
@@ -223,6 +226,8 @@ final class GroupAggregateMatcher {
       } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_AVG) {
         kind = KIND_AVG_DISTINCT;
       }
+      if (call.isDistinct() && (kind == 12 || kind == 15)) kind = 19;
+      if (call.isDistinct() && (kind == 13 || kind == 16)) kind = 20;
       // MIN/MAX(DISTINCT) stay their plain kinds: the extreme ignores multiplicity either way.
       // Over an insert-only input a numeric MIN/MAX needs no retractable multiset at all.
       if ((kind == KIND_MIN || kind == KIND_MAX)
