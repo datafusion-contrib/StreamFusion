@@ -303,7 +303,7 @@ impl GroupAggState {
                 live: 0,
             }, // COUNT(DISTINCT)
             // DISTINCT wraps the ordinary SUM/AVG accumulator and folds only set transitions.
-            9 | 17 => GroupAggState::DistinctRunning {
+            9 | 17 | 18 => GroupAggState::DistinctRunning {
                 counts: DistinctSet::new(value_type),
                 agg: RunningAgg::new(kind, value_type),
                 live: 0,
@@ -795,7 +795,7 @@ impl GroupStateCodec {
         let multiset_aggs: Vec<usize> = kinds
             .iter()
             .enumerate()
-            .filter(|&(_, &kind)| matches!(kind, 1 | 2 | 7 | 9 | 17))
+            .filter(|&(_, &kind)| matches!(kind, 1 | 2 | 7 | 9 | 17 | 18))
             .map(|(i, _)| i)
             .collect();
         let distinct_view_columns = if distinct_view_columns.is_empty() {
@@ -889,7 +889,7 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             return None;
         }
         let column = batch.column(self.value_columns[agg] as usize);
-        let column = if matches!(self.kinds[agg], 7 | 9 | 17) {
+        let column = if matches!(self.kinds[agg], 7 | 9 | 17 | 18) {
             crate::flink_float::canonical_array(column)
         } else {
             column.clone()
@@ -1526,7 +1526,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // `self` field while `state` is borrowed.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                (matches!(self.kinds[i], 7 | 9 | 17) && self.distinct_view_columns[i] < 0)
+                (matches!(self.kinds[i], 7 | 9 | 17 | 18) && self.distinct_view_columns[i] < 0)
                     .then_some(self.value_columns[i] as usize)
             })
             .collect();
@@ -2153,7 +2153,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         for i in 0..num_agg {
             // Kinds 10/11 write their (always empty) side batch too, so the frame layout matches
             // the retractable representation and a blob round-trips across the two.
-            if matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17) {
+            if matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18) {
                 let mut f = vec![Field::new("binary_key", DataType::Binary, false)];
                 let mut c: Vec<ArrayRef> = vec![Arc::new(
                     arrow::array::BinaryArray::from_iter_values(multiset_keys[i].iter().copied()),
@@ -2161,7 +2161,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 // MIN/MAX values take the aggregate's result type; a distinct value keeps its own type
                 // (a COUNT's bigint result type does not describe it), inferred from the scalars.
                 let values = std::mem::take(&mut multiset_values[i]);
-                let value_array: ArrayRef = if matches!(self.kinds[i], 7 | 9 | 17) {
+                let value_array: ArrayRef = if matches!(self.kinds[i], 7 | 9 | 17 | 18) {
                     if values.is_empty() {
                         new_empty_array(&DataType::Int64) // 0 rows — type is immaterial on restore
                     } else {
@@ -2357,7 +2357,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // One side batch per MIN/MAX or DISTINCT aggregate: BinaryRow key, value, count.
         let mut frame = 1;
         for i in 0..num_agg {
-            if !matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17) {
+            if !matches!(self.kinds[i], 1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18) {
                 continue;
             }
             let side = &batches[frame];
@@ -2597,10 +2597,12 @@ impl LocalGroupAggregator {
             (!scalar_key_mode).then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
         let key_batch = self.key_batches.len();
         let mut retained_key_batch = false;
-        // Distinct aggregates (kind 7/9) fold the value itself into their per-bundle set, not a Num;
-        // typed column readers avoid per-row scalar materialization.
+        // Distinct aggregates fold values into per-bundle multiplicities.
+        // Typed column readers avoid per-row scalar materialization.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
-            .map(|i| matches!(self.kinds[i], 7 | 9 | 17).then_some(self.value_columns[i] as usize))
+            .map(|i| {
+                matches!(self.kinds[i], 7 | 9 | 17 | 18).then_some(self.value_columns[i] as usize)
+            })
             .collect();
         let distinct_columns: Vec<_> = distinct_cols
             .iter()

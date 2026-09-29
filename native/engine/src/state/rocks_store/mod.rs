@@ -204,7 +204,8 @@ pub(crate) fn rocks_group_supported(
     !kinds.iter().any(|kind| matches!(kind, 12..=16))
         && rocks_row_supported(state_types)
         && kinds.iter().zip(value_types).all(|(&kind, value_type)| {
-            !matches!(kind, 7 | 9 | 17) || rocks_row_supported(std::slice::from_ref(value_type))
+            !matches!(kind, 7 | 9 | 17 | 18)
+                || rocks_row_supported(std::slice::from_ref(value_type))
         })
 }
 

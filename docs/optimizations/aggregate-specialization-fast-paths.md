@@ -228,6 +228,16 @@ path; it does not isolate any one optimization's contribution.
 At 5M rows with the same configuration, native measures **6.399 s (6.354–6.508) versus
 Flink 16.267 s (16.054–16.322), 2.542x**. The native advantage persists as the input grows.
 
+The split AVG DISTINCT extension also benefits from the integrated typed column path. It
+uses TINYINT/BIGINT/DECIMAL(19,2), the same domains and NULL distribution, two native stages,
+and 1,024-row bundles. With the same explicit 2 GiB heap and repeated-trial method, 2M rows
+measure **1.275 s native (1.269–1.405) versus 1.609 s Flink (1.487–1.629)**. At 20M rows,
+native measures **12.071 s (12.030–12.261) versus Flink 13.511 s (13.449–13.566)**, taking
+20.8% and 10.7% less elapsed time. Both transposes and the rowwise source/sink remain measured.
+This resolves the original slower split-average workload; wide-decimal sums/averages retain
+their separate ordering and performance requirements. Select this workload with
+`-Ddistinct.average=true -Ddistinct.twoPhase=true` on `DistinctAggregateBenchmark`.
+
 `typed_distinct` in the native operator benchmark measures single-phase and local COUNT DISTINCT
 for all specialized types with input-domain sizes 4 and 256 per group, 16 groups and one-seventh
 NULLs. The BIGINT cases are controls for the existing specialization; strings use 8- and

@@ -1,6 +1,89 @@
 use super::*;
 
 #[test]
+fn distinct_average_partials_widen_and_merge_membership_across_restore() {
+    for (code, first, second, sum, average) in [
+        (
+            5,
+            ScalarValue::Int8(Some(127)),
+            ScalarValue::Int8(Some(126)),
+            ScalarValue::Int64(Some(253)),
+            ScalarValue::Int8(Some(126)),
+        ),
+        (
+            0,
+            ScalarValue::Int64(Some(i64::MAX)),
+            ScalarValue::Int64(Some(1)),
+            ScalarValue::Int64(Some(i64::MIN)),
+            ScalarValue::Int64(Some(i64::MIN / 2)),
+        ),
+        (
+            3902,
+            ScalarValue::Decimal128(Some(-301), 19, 2),
+            ScalarValue::Decimal128(Some(202), 19, 2),
+            ScalarValue::Decimal128(Some(-99), 38, 2),
+            ScalarValue::Decimal128(Some(-495_000), 38, 6),
+        ),
+    ] {
+        let make = || {
+            GroupAggregator::new(vec![17], vec![code], vec![1], vec![0], true)
+                .with_distinct_view_columns(vec![3])
+        };
+        let mut local = LocalGroupAggregator::new(
+            vec![18, 7],
+            vec![code; 2],
+            vec![1; 2],
+            vec![],
+            vec![0],
+            vec![0],
+        );
+        let mut global = make();
+        let null = null_scalar(&first.data_type());
+        local
+            .update(&group_scalar_changelog(
+                vec![first.clone(), first.clone(), null.clone()],
+                vec![0; 3],
+            ))
+            .unwrap();
+        global.update(&local.flush(), 0).unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![17],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &global.snapshot(),
+            0,
+        )
+        .with_distinct_view_columns(vec![3]);
+        local
+            .update(&group_scalar_changelog(
+                vec![first, second, null.clone()],
+                vec![0; 3],
+            ))
+            .unwrap();
+        let partial = local.flush();
+        assert_eq!(
+            ScalarValue::try_from_array(partial.column(1), 0).unwrap(),
+            sum
+        );
+        assert_eq!(values(&partial, 2), vec![2]);
+        let output = restored.update(&partial, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), output.num_rows() - 1).unwrap(),
+            average
+        );
+        local
+            .update(&group_scalar_changelog(vec![null], vec![0]))
+            .unwrap();
+        let empty_values = local.flush();
+        assert!(!empty_values.column(1).is_null(0));
+        assert_eq!(values(&empty_values, 2), vec![0]);
+        assert_eq!(restored.update(&empty_values, 0).unwrap().num_rows(), 0);
+    }
+}
+
+#[test]
 fn group_distinct_average_restores_sum_and_duplicate_retractions() {
     for (code, low, high, average) in [
         (
