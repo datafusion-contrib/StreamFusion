@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assumptions;
 
 /** Explicit N/A checks for syntax or host operations absent from the selected released line. */
 public final class FlinkTestCapabilities {
+  public static final boolean TIME_TRY_CAST_REJECTS_OUT_OF_RANGE = false;
   public static final boolean CAST_TIME_SINGLE_VALUE = false;
 
   private FlinkTestCapabilities() {}
@@ -12,6 +13,7 @@ public final class FlinkTestCapabilities {
 
   private static final java.util.Set<String> ABSENT_SQL_FUNCTIONS =
       java.util.Set.of(
+          "ARRAY_MIN",
           "BTRIM",
           "PRINTF",
           "REGEXP_COUNT",

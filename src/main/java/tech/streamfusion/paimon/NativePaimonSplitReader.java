@@ -191,6 +191,7 @@ public final class NativePaimonSplitReader
                 || (nativeSnapshotsEnabled
                     && data.rawConvertible()
                     && data.dataFiles().stream().allMatch(f -> f.deleteRowCount().isPresent())))
+            && !PaimonVersion.hasBeforeFiles(data)
             && data.deletionFiles().isEmpty()
             && data.dataFiles().stream()
                 .allMatch(
@@ -238,10 +239,7 @@ public final class NativePaimonSplitReader
     return new NativePaimonFileReader(
         PaimonCodecs.reader(
             file.fileFormat(),
-            table
-                .coreOptions()
-                .toConfiguration()
-                .get(org.apache.paimon.format.OrcOptions.ORC_TIMESTAMP_LTZ_LEGACY_TYPE)),
+            PaimonVersion.legacyOrcTimestamp(table.coreOptions().toConfiguration())),
         table.fileIO(),
         new Path(file.externalPath().orElse(split.bucketPath() + "/" + file.fileName())),
         file.fileSize(),

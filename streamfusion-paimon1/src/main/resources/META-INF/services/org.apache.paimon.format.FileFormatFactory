@@ -1,0 +1,2 @@
+tech.streamfusion.paimon.NativePaimonParquetFormatFactory
+tech.streamfusion.paimon.NativePaimonOrcFormatFactory

@@ -157,3 +157,28 @@ SF_BENCHMARK=true mvn -B -ntp -pl streamfusion-runtime -am test -Pbench \
   -Dscalar.functions=STRING_TO_INT,INT_TO_STRING \
   -Dscalar.output=target/integer-string-casts.csv
 ```
+
+
+## Integer ARRAY_DISTINCT
+
+Integer arrays retain DataFusion's ordered-membership and batch-gather structure,
+but use primitive integer membership rather than encoding each element into a
+row. Arrays with at most eight elements use stack storage and a 64-bit fingerprint
+that skips equality searches when the low six bits have not appeared. A
+fingerprint collision always performs full integer equality, including signed
+extrema. Larger arrays reuse a hash set across rows. NULL membership is tracked
+separately, preserving its first occurrence.
+
+One index vector gathers selected children for the entire batch; an already
+unique visible batch shares the original buffers. List offsets and validity
+preserve sliced input semantics. This changes no JNI or ownership boundary.
+Profiling the initial generic kernel identified encoded-row/hash membership as
+useful optimization targets, with the sampling limits documented alongside the
+[whole-job measurements](../benchmarks/scalar-functions.md#integer-array_distinct-2026-09-28).
+
+On Intel Core i7-12650H, Flink 2.2.1, release/mimalloc, 200,000 BIGINT arrays of
+64 elements improved from the prior fallback's 1.049s to 0.310s; matched stock
+Flink took 1.047s. The 256-element case took 0.924s versus stock 13.388s. With both
+row/Arrow transposes retained, twenty million eight-element arrays were effectively
+tied in the repeat (5.413s native, 5.430s stock). Small-array gains are not stable
+across runs; the benchmark page retains the unfavorable intermediate results.

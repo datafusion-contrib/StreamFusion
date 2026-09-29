@@ -2,7 +2,11 @@ package tech.streamfusion.planner;
 
 import java.math.BigDecimal;
 import java.util.List;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.type.SqlTypeFamily;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.api.common.functions.Function;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.data.GenericRowData;
@@ -13,6 +17,7 @@ import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.table.functions.UserDefinedFunction;
 import org.apache.flink.table.planner.codegen.CodeGeneratorContext;
 import org.apache.flink.table.planner.codegen.ExprCodeGenerator;
+import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable;
 import org.apache.flink.table.runtime.generated.GeneratedFunction;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -88,10 +93,13 @@ public final class FlinkExpressionFunction extends ScalarFunction
     if (decimalCode != null) return new Body(context, decimalCode, null);
     var generator = new ExprCodeGenerator(context, false);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
+    String temporal = temporalBody(expression, generator, context, config);
+    if (temporal != null) return new Body(context, temporal, null);
     var result = generator.generateExpression(expression);
     return new Body(
         context,
-        context.reuseInputUnboxingCode()
+        canonicalTemporalPrefix(expression, context, config)
+            + context.reuseInputUnboxingCode()
             + result.code()
             + "\nif ("
             + result.nullTerm()
@@ -100,6 +108,72 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + (binaryStringResult ? ".toBytes()" : "")
             + ";\n",
         null);
+  }
+
+  private static String temporalBody(RexNode expression, ExprCodeGenerator generator,
+      Context context, ReadableConfig config) {
+    if (!(expression instanceof RexCall call)
+        || call.getOperator() != FlinkSqlOperatorTable.TRY_CAST
+        || call.getOperands().size() != 1
+        || !SqlTypeFamily.CHARACTER.contains(call.getOperands().get(0).getType())
+        || config.get(org.apache.flink.table.api.config.ExecutionConfigOptions
+            .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR).isEnabled()) return null;
+    SqlTypeName type = call.getType().getSqlTypeName();
+    if (call.getOperands().get(0) instanceof RexInputRef) return null;
+    String method;
+    String suffix = "";
+    if (type == SqlTypeName.DATE) method = "tryDate";
+    else if (type == SqlTypeName.TIME) {
+      method = "tryTime";
+      var logical = (org.apache.flink.table.types.logical.TimeType)
+          org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(call.getType());
+      suffix = ", " + logical.getPrecision();
+    } else if (type == SqlTypeName.TIMESTAMP || type == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      method = "tryTimestamp";
+      suffix = ", " + call.getType().getPrecision() + ", "
+          + (type == SqlTypeName.TIMESTAMP ? "null" : context.addReusableSessionTimeZone());
+    } else return null;
+    var input = generator.generateExpression(call.getOperands().get(0));
+    // Child evaluation stays outside TRY_CAST's parser failure handler and executes exactly once.
+    return context.reuseInputUnboxingCode() + input.code()
+        + "\nif (" + input.nullTerm() + ") return null;\nreturn "
+        + CanonicalTemporalParser.class.getCanonicalName() + "." + method + "("
+        + input.resultTerm() + suffix + ");\n";
+  }
+
+  private static String canonicalTemporalPrefix(
+      RexNode expression, Context context, ReadableConfig config) {
+    if (!(expression instanceof RexCall call)
+        || call.getOperator() != FlinkSqlOperatorTable.TRY_CAST
+        || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexInputRef input)
+        || !SqlTypeFamily.CHARACTER.contains(input.getType())) return "";
+    SqlTypeName target = call.getType().getSqlTypeName();
+    String parser = CanonicalTemporalParser.class.getCanonicalName();
+    String inputTerm = "input.getString(" + input.getIndex() + ")";
+    String resultType;
+    String value;
+    String result = "sfCanonicalTemporal";
+    if (target == SqlTypeName.DATE || target == SqlTypeName.TIME) {
+      if (config.get(org.apache.flink.table.api.config.ExecutionConfigOptions
+          .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR).isEnabled()) return "";
+      resultType = "java.lang.Integer";
+      value = parser + (target == SqlTypeName.DATE ? ".parseDate(" : ".parseTimeMillis(") + inputTerm + ")";
+      if (target == SqlTypeName.TIME) {
+        var logical = (org.apache.flink.table.types.logical.TimeType)
+            org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(call.getType());
+        result = "tech.streamfusion.compat.FlinkCompat.applyParsedTimePrecision(sfCanonicalTemporal, "
+            + logical.getPrecision() + ")";
+      }
+    } else if (target == SqlTypeName.TIMESTAMP || target == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      resultType = "org.apache.flink.table.data.TimestampData";
+      String zone = target == SqlTypeName.TIMESTAMP ? "null" : context.addReusableSessionTimeZone();
+      value = parser + ".parse(" + inputTerm + ", " + call.getType().getPrecision() + ", " + zone + ")";
+    } else return "";
+    // Direct references can be inspected before the released fallback without repeating child effects.
+    return "if (!input.isNullAt(" + input.getIndex() + ")) {\n"
+        + resultType + " sfCanonicalTemporal = " + value + ";\n"
+        + "if (sfCanonicalTemporal != null) return " + result + ";\n}\n";
   }
 
   static org.apache.calcite.rex.RexCall decimalRoundingTextCall(RexNode expression) {
@@ -233,7 +307,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
     return evaluator.eval(input);
   }
 
-  /** Evaluate a materialized batch row without repacking it into reflective varargs. */
+  /** Preserve materialized argument semantics without reflective varargs dispatch. */
   public Object evalColumns(Object[][] columns, int row) throws Exception {
     for (int i = 0; i < columns.length; i++) setArgument(i, columns[i][row]);
     return evaluator.eval(input);
