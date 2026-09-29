@@ -53,7 +53,18 @@ final class PaimonSourceMatcher {
       return "query authorization retains the stock source";
     }
     if (table.options().containsKey("consumer-id")) {
-      return "consumer retention requires the stock source";
+      if (!"at-least-once".equals(table.options().get("consumer.mode"))) {
+        return "exactly-once consumer retention requires the stock source";
+      }
+      if (!table.options().containsKey("consumer.expiration-time")) {
+        return "consumer retention requires consumer.expiration-time";
+      }
+      for (String key : table.options().keySet()) {
+        if (key.startsWith("consumer.")
+            && !Set.of("consumer.mode", "consumer.expiration-time").contains(key)) {
+          return "consumer option " + key + " is not supported";
+        }
+      }
     }
     for (String option :
         Set.of(

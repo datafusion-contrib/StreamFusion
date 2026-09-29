@@ -229,6 +229,90 @@ exceeds the default footer admission budget; the ORC measurements use `256 mb`. 
 and fallback gates are unchanged; the eight-run ORC control still falls back at `256 mb`.
 A benchmark fails if its native run falls back to Java.
 
+### At-least-once consumer retention
+
+Paimon 2.0 streaming sources admit `consumer-id` with explicit
+`consumer.mode=at-least-once` and a configured `consumer.expiration-time`.
+The existing source type, format, projection and watermark gates still apply.
+Other explicit `consumer.*` options retain fallback until verified.
+
+Paimon's released continuous enumerator owns the durable consumer cursor and
+updates it only when Flink completes a checkpoint. Native readers report completed
+split snapshots through the same progress events as stock readers. An uncompleted
+newer checkpoint cannot advance an older completed cursor. Restored readers retain
+their snapshot until progress is reported; snapshot expiration remains owned by
+Paimon and respects that cursor.
+
+A fresh job starts at the persisted consumer snapshot. This at-least-once cursor
+can replay a partially consumed snapshot; regular Flink checkpoint recovery also
+restores each split's emitted-row offset. Coverage compares stock/native cursor
+restart, nullable append and primary-key rows, capture versus completion,
+enumerator serialization/restore, expiration protection/release, and recovery
+inside a native batch.
+
+Default or explicit exactly-once consumer mode remains on stock Paimon: its
+released source builder selects dedicated split generation, which is a different
+runtime protocol. Missing expiration configuration retains Paimon's validation
+error. Broader consumer modes remain tracked in
+[#27](https://github.com/datafusion-contrib/StreamFusion/issues/27).
+
+### Consumer-retention performance
+
+A released Flink 2.2.1 / Paimon 2.0.0 comparison on 2026-09-28 used JDK 17,
+release Rust with mimalloc, parallelism 1, a 2 GiB JVM heap, 100 ms checkpoints,
+1,024-row native batches and Paimon's default Zstandard compression. Each mode
+had two warmups and five measured jobs, rotating execution order. Input contains
+unique BIGINT IDs, nullable STRING payloads (4,096 distinct non-null values,
+roughly 60 bytes each) and nullable BIGINT amounts. Append tables use bucket -1;
+primary-key tables use bucket 1 and input changelogs. The bounded streaming scan
+reads one data snapshot and stops at the following watermark sentinel.
+
+Timing includes planning, job startup, file reads, JNI, Arrow-to-RowData conversion
+and job completion. Fixture creation and independent plan/decode/result checks
+are outside timing. Append jobs use a SQL blackhole sink. Primary-key jobs use
+`toChangelogStream` and a rowwise DataStream discard sink, retaining the external
+Row conversion and all changelog kinds. A primary-key SQL blackhole plan inserts
+`DropUpdateBefore`, which currently triggers the shared whole-island fallback;
+these primary-key timings do **not** establish acceleration for that SQL sink.
+
+“Previous source” enables StreamFusion but disables its Paimon source substitution,
+reproducing the earlier host source route on base `665dc10d`; it is an ablation,
+not a separately rebuilt historical release. The harness verifies native source
+substitution in every native job and native file decoding independently.
+
+Median seconds (minimum–maximum):
+
+| Format / table | Rows | Stock Flink | Native | Previous source |
+| --- | ---: | ---: | ---: | ---: |
+| Parquet / append | 200,000 | 0.183 (0.174–0.187) | 0.104 (0.101–0.171) | 0.125 (0.116–0.191) |
+| Parquet / append | 2,000,000 | 0.415 (0.398–0.420) | 0.279 (0.262–0.325) | 0.411 (0.400–0.428) |
+| Parquet / primary key | 200,000 | 0.200 (0.197–0.205) | 0.167 (0.161–0.171) | 0.201 (0.196–0.278) |
+| Parquet / primary key | 2,000,000 | 1.162 (1.153–1.166) | 0.793 (0.787–0.804) | 1.161 (1.146–1.168) |
+| ORC / append | 200,000 | 0.168 (0.160–0.171) | 0.104 (0.098–0.164) | 0.121 (0.110–0.170) |
+| ORC / append | 2,000,000 | 0.381 (0.370–0.386) | 0.268 (0.263–0.276) | 0.383 (0.370–0.385) |
+| ORC / primary key | 200,000 | 0.187 (0.186–0.201) | 0.164 (0.159–0.169) | 0.191 (0.188–0.195) |
+| ORC / primary key | 2,000,000 | 1.096 (1.082–1.354) | 0.798 (0.771–0.898) | 1.072 (1.060–1.085) |
+
+The two-million-row cases reduce median time by 27–33% versus stock and 26–32%
+versus the previous route. These are bounded jobs, not sustained streaming
+throughput measurements; especially the 200,000-row results are sensitive to
+startup and JVM warmup. The primary-key fixture contains inserts, while updating
+changelog and checkpoint correctness are covered separately by the source tests.
+
+[All individual trials](../benchmarks/paimon-consumer-2026-09-28.csv) include an
+earlier Parquet pilot marked `pilot_per_job_explain`. That pilot explained the
+native plan immediately before each native job, creating asymmetric planner
+warmup. Its 200,000-row native median was 0.162 s versus 0.172 s stock and
+0.115 s previous source (40% slower than the latter). The final harness validates
+the plan in a separate environment before all modes and retains this unfavorable
+pilot rather than mixing the two methods.
+
+Reproduce with `SF_BENCHMARK=true SF_PAIMON_FILE_FORMAT=parquet mvn -pl
+streamfusion-paimon -am test -Ppaimon,bench -Dtest=PaimonConsumerBenchmark
+-Dsurefire.failIfNoSpecifiedTests=false -Dconsumer.rows=2000000
+-Dconsumer.primaryKey=false -Dsf.extraJvmArgs=-Xmx2g` using JDK 17. Repeat with
+`orc`, `consumer.primaryKey=true` and `consumer.rows=200000` for the other cases.
+
 ### Source admission and fallbacks
 
 Only streaming data-table reads enter this path. It uses the sink's supported value types below
@@ -240,7 +324,7 @@ source at planning time:
   key-value sequence numbers.
 - Nested subfield pruning, zero-column projections, metadata columns, pushed limits/aggregates,
   and source abilities other than top-level projection, residual filters, and supported watermarks.
-- Consumer retention (`consumer-id`), dedicated split generation, checkpoint/snapshot alignment,
+- Consumer retention outside the verified at-least-once configuration above, dedicated split generation, checkpoint/snapshot alignment,
   and `postpone.merge-on-read`.
 - Source watermarks outside the shared periodic constant-interval expression contract, including on-event
   emission and watermark alignment. Non-negative day-time and YEAR/MONTH/YEAR TO MONTH delays
