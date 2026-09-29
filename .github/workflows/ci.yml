@@ -14,6 +14,9 @@ env:
 
 jobs:
   native-tests:
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: Rust tests
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -41,6 +44,9 @@ jobs:
         run: cargo fmt --all -- --check
 
   java-tests:
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: Java tests (debug native build)${{ matrix.suffix }}
     strategy:
       fail-fast: false
@@ -74,6 +80,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_check_native_glibc.py'
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
           python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
+          python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
         if: matrix.line == '1.18'
@@ -86,7 +93,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: debug-jvm
+          save-if: false
 
       # Builds the debug native library through the Maven exec hook, then runs the
       # full JUnit suite. The Kafka decode harnesses use Testcontainers, which the
@@ -120,6 +128,9 @@ jobs:
         run: python3 bin/check-native-workspace.py --libraries native/target/debug
 
   lake-module-tests:
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: ${{ matrix.name }} tests (debug native build)
     runs-on: ubuntu-24.04
     timeout-minutes: 150
@@ -163,7 +174,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: debug-jvm
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.profile == 'paimon' && matrix.format == 'orc' }}
 
       - name: Run optional lake module suite
         env:
@@ -240,76 +252,36 @@ jobs:
           if-no-files-found: error
 
   module-tests:
-    name: ${{ matrix.name }} module tests (debug native build)
+    name: ${{ matrix.name }} module tests (debug native build)${{ matrix.suffix }}
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
+        line: ['2.2', '1.18']
+        group: [kafka, formats, files]
         include:
-          - name: Kafka
-            tag: streamfusion-kafka
-            package: streamfusion-kafka
-          - name: JSON
-            tag: streamfusion-json
-            package: streamfusion-json
-          - name: CSV
-            tag: streamfusion-csv
-            package: streamfusion-csv
-          - name: RAW
-            tag: streamfusion-raw
-            package: streamfusion-raw
-          - name: Avro
-            tag: streamfusion-avro
-            package: streamfusion-avro
-          - name: Avro Confluent Registry
-            tag: streamfusion-avro-confluent
-            package: streamfusion-avro
-          - name: Protobuf
-            tag: streamfusion-protobuf
-            package: streamfusion-protobuf
-          - name: ORC
-            tag: streamfusion-orc
-            package: streamfusion-orc
-          - name: Parquet
-            tag: streamfusion-parquet
-            package: streamfusion-parquet
-          - name: Kafka (Flink 1.18)
-            tag: streamfusion-kafka
-            package: streamfusion-kafka
+          - line: '2.2'
+            profile: ''
+            suffix: ''
+          - line: '1.18'
             profile: '-Pflink-1.18'
-          - name: JSON (Flink 1.18)
-            tag: streamfusion-json
-            package: streamfusion-json
-            profile: '-Pflink-1.18'
-          - name: CSV (Flink 1.18)
-            tag: streamfusion-csv
-            package: streamfusion-csv
-            profile: '-Pflink-1.18'
-          - name: RAW (Flink 1.18)
-            tag: streamfusion-raw
-            package: streamfusion-raw
-            profile: '-Pflink-1.18'
-          - name: Avro (Flink 1.18)
-            tag: streamfusion-avro
-            package: streamfusion-avro
-            profile: '-Pflink-1.18'
-          - name: Avro Confluent Registry (Flink 1.18)
-            tag: streamfusion-avro-confluent
-            package: streamfusion-avro
-            profile: '-Pflink-1.18'
-          - name: Protobuf (Flink 1.18)
-            tag: streamfusion-protobuf
-            package: streamfusion-protobuf
-            profile: '-Pflink-1.18'
-          - name: ORC (Flink 1.18)
-            tag: streamfusion-orc
-            package: streamfusion-orc
-            profile: '-Pflink-1.18'
-          - name: Parquet (Flink 1.18)
-            tag: streamfusion-parquet
-            package: streamfusion-parquet
-            profile: '-Pflink-1.18'
+            suffix: ' (Flink 1.18)'
+          - group: kafka
+            name: Kafka
+            packages: streamfusion-kafka
+            tags: streamfusion-kafka
+          - group: formats
+            name: Row formats
+            packages: streamfusion-json streamfusion-csv streamfusion-raw streamfusion-avro streamfusion-protobuf
+            tags: streamfusion-json | streamfusion-csv | streamfusion-raw | streamfusion-avro | streamfusion-avro-confluent | streamfusion-protobuf
+          - group: files
+            name: Columnar formats
+            packages: streamfusion-orc streamfusion-parquet
+            tags: streamfusion-orc | streamfusion-parquet
     steps:
       - uses: actions/checkout@v6
 
@@ -329,14 +301,22 @@ jobs:
           workspaces: native
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Check the standalone native package
-        working-directory: native
-        run: cargo check -p ${{ matrix.package }} --all-targets
+      - name: Check every standalone native package
+        env:
+          NATIVE_PACKAGES: ${{ matrix.packages }}
+        run: |
+          status=0
+          for package in $NATIVE_PACKAGES; do
+            (cd native && cargo check -p "$package" --all-targets) || status=1
+          done
+          exit "$status"
 
-      - name: Run tagged Java module suite
+      - name: Run tagged Java module suites
+        env:
+          TEST_GROUPS: ${{ matrix.tags }}
         run: >
           mvn -B -ntp ${{ matrix.profile }} -pl streamfusion-runtime test
-          -Dgroups="${{ matrix.tag }}"
+          -Dgroups="$TEST_GROUPS"
 
   all-tests:
     name: All CI tests
