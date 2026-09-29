@@ -1,12 +1,20 @@
 package tech.streamfusion.operator;
 
+import java.util.stream.IntStream;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.binary.BinaryRowData;
+import org.apache.flink.table.planner.codegen.CodeGeneratorContext;
+import org.apache.flink.table.planner.codegen.ProjectionCodeGenerator;
+import org.apache.flink.table.runtime.generated.GeneratedProjection;
+import org.apache.flink.table.runtime.generated.Projection;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
+import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import tech.streamfusion.arrow.ArrowConversion;
@@ -18,15 +26,19 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  * native columnar operator feeds a rowwise (host) one, so the Arrow→row conversion happens once at
  * the boundary. It consumes (and closes) each batch it receives.
  *
- * <p>The Arrow reader exposes a reusable view backed by the input batch. Chained Flink operators
- * are allowed to retain a collected {@code RowData}. With object reuse disabled Flink's chained
- * output copies the view synchronously; with reuse enabled this boundary supplies the owned copy.
+ * <p>Fixed-width outputs use Flink's generated binary-row projection so downstream copying avoids
+ * generic field getters and boxing. Other outputs retain the reusable Arrow-backed row view.
+ * Chained Flink operators may retain a collected {@code RowData}. With object reuse disabled,
+ * Flink's chained output copies the reusable row synchronously; with reuse enabled this boundary
+ * supplies the owned copy.
  * Network outputs serialize synchronously before the batch closes.
  */
 public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
     implements OneInputStreamOperator<ArrowBatch, RowData> {
 
   private final RowType rowType;
+  private final GeneratedProjection generatedProjection;
+  private transient Projection<RowData, BinaryRowData> projection;
   private transient RowDataSerializer outputSerializer;
   private transient Counter numInputBatches;
   private transient Counter numOutputRows;
@@ -34,11 +46,25 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
 
   public ArrowToRowDataOperator(RowType rowType) {
     this.rowType = rowType;
+    boolean fixedWidth = rowType.getChildren().stream().allMatch(type -> switch (type.getTypeRoot()) {
+      case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE, DATE,
+          TIME_WITHOUT_TIME_ZONE, INTERVAL_YEAR_MONTH, INTERVAL_DAY_TIME -> true;
+      case DECIMAL -> ((DecimalType) type).getPrecision() <= 18;
+      default -> false;
+    });
+    generatedProjection = fixedWidth
+        ? ProjectionCodeGenerator.generateProjection(
+            new CodeGeneratorContext(new Configuration(), getClass().getClassLoader()),
+            "NativeExitRow", rowType, rowType,
+            IntStream.range(0, rowType.getFieldCount()).toArray())
+        : null;
   }
 
   @Override
   public void open() throws Exception {
     super.open();
+    projection = generatedProjection == null ? null
+        : generatedProjection.newInstance(getUserCodeClassloader());
     outputSerializer = getExecutionConfig().isObjectReuseEnabled()
         ? new RowDataSerializer(rowType) : null;
     numInputBatches = getMetricGroup().counter("numInputBatches");
@@ -60,6 +86,11 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
         RowData row = reader.read(i);
         if (kinds != null) {
           row.setRowKind(RowKind.fromByteValue(kinds.get(i)));
+        }
+        if (projection != null) {
+          BinaryRowData projected = projection.apply(row);
+          projected.setRowKind(row.getRowKind());
+          row = projected;
         }
         output.collect(new StreamRecord<>(outputSerializer == null ? row : outputSerializer.copy(row)));
       }

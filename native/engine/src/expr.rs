@@ -1981,7 +1981,7 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         let mut env = vm
             .attach_current_thread()
             .map_err(|e| exec(e.to_string()))?;
-        env.call_static_method(
+        if let Err(error) = env.call_static_method(
             "tech/streamfusion/operator/NativeUdf",
             "invokeUdf",
             "(IJJJJ)V",
@@ -1992,8 +1992,20 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
                 jni::objects::JValue::Long(&mut out_array as *mut FFI_ArrowArray as jlong),
                 jni::objects::JValue::Long(&mut out_schema as *mut FFI_ArrowSchema as jlong),
             ],
-        )
-        .map_err(|e| exec(format!("UDF upcall failed: {e}")))?;
+        ) {
+            if env.exception_check().unwrap_or(false) {
+                let throwable = env.exception_occurred().expect("capture scalar exception");
+                // Arrow release callbacks call Java while arguments unwind. Keep the original
+                // throwable alive without leaving it pending during those calls, as in Comet.
+                env.exception_clear()
+                    .expect("clear scalar exception before Arrow release");
+                let throwable = env
+                    .new_global_ref(throwable)
+                    .expect("retain scalar exception");
+                std::panic::resume_unwind(Box::new(JavaException(throwable)));
+            }
+            return Err(exec(format!("UDF upcall failed: {error}")));
+        }
 
         // The JVM exports the result as a one-field root, i.e. a struct{result}; take that one column.
         let mut data =
