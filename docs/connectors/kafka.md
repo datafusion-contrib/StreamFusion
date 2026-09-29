@@ -13,6 +13,30 @@ The `streamfusion-kafka` connector extension and the matching `streamfusion-*` f
 must both be installed. A missing extension is a planner fallback, never a linkage failure. See
 [Deployment](../deployment.md).
 
+## Flink release lines
+
+Each build line pins the released Kafka connector and the client used with it:
+
+| | Default build | `flink-1.18` build |
+| --- | --- | --- |
+| Flink | 2.2.1 | 1.18.1 |
+| Kafka connector | `flink-connector-kafka:5.0.0-2.2` | `flink-connector-kafka:3.2.0-1.18` |
+| Kafka client | 4.2.0 | 3.4.0 |
+
+The direct Kafka client dependency is needed for source compilation. Keep it aligned with
+its connector: overriding the transitive client also changes the broker-facing implementation.
+StreamFusion retains Flink's connector for broker interactions, so its native format paths do
+not supply connector or client fixes absent from the selected releases.
+
+The `streamfusion-kafka` module tests exercise the 1.18 pairing under `-Pflink-1.18`.
+The unchanged upstream Kafka 3.2 suite exercises `KafkaChangelogTableITCase`,
+`KafkaTableITCase` and `UpsertKafkaTableITCase` against real brokers on that line.
+`DynamicKafkaTableITCase` belongs to the newer connector suite. Upstream Kafka invocations do
+not yet have individual native-route contracts: passing these integration tests establishes
+compatibility, not native execution for every invocation. See the
+[upstream suite's validation evidence](../upstream-flink-suite.md) for the distinction between
+suite results and native coverage.
+
 ## Source: Flink consumption, native decode
 
 Flink continues to own topic enumeration, split assignment, offsets, checkpoints, authentication,
