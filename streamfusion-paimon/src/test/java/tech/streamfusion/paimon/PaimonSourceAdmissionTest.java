@@ -16,6 +16,9 @@ class PaimonSourceAdmissionTest {
   @CsvSource(
       delimiter = '|',
       value = {
+        "'consumer-id'='reader', 'consumer.expiration-time'='1 d'|exactly-once consumer retention",
+        "'consumer-id'='reader', 'consumer.mode'='at-least-once', 'consumer.expiration-time'='1 d',"
+            + " 'consumer.ignore-progress'='true'|consumer option",
         "'file.format'='avro'|file.format",
         "'source.checkpoint-align.enabled'='true'|checkpoint-align",
         "'scan.ignore-corrupt-file'='true'|ignore-corrupt-file",
@@ -31,6 +34,18 @@ class PaimonSourceAdmissionTest {
     String plan = NativePlanner.explain(sql, "SELECT * FROM t");
     assertFalse(plan.contains("StreamPhysicalNativePaimonSource"), plan);
     assertTrue(plan.contains(reason), plan);
+  }
+
+  @Test
+  void missingConsumerExpirationRetainsHostValidation() throws Exception {
+    var sql = environment();
+    sql.executeSql(
+        "CREATE TABLE t (id INT) WITH ('bucket'='-1', 'consumer-id'='reader',"
+            + " 'consumer.mode'='at-least-once')");
+    var failure =
+        assertThrows(
+            IllegalArgumentException.class, () -> NativePlanner.explain(sql, "SELECT * FROM t"));
+    assertTrue(failure.getMessage().contains("consumer.expiration-time"), failure.getMessage());
   }
 
   @Test
