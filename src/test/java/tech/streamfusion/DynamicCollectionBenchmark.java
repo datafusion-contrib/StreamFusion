@@ -18,20 +18,37 @@ class DynamicCollectionBenchmark {
   private static final long ROWS = Long.getLong("collection.rows", 2_000_000L);
   private static final int WARMUP = Integer.getInteger("collection.warmup", 2);
   private static final int RUNS = Integer.getInteger("collection.runs", 5);
+  private static final int WIDTH = Integer.getInteger("collection.width", 0);
+  private static final int DOMAIN = Integer.getInteger("collection.domain", WIDTH);
+  private static final boolean INTS = Boolean.getBoolean("collection.int");
+  private static final boolean EXPECT_NATIVE =
+      Boolean.parseBoolean(System.getProperty("collection.native", "true"));
 
   @Test
   void compareExpressions() throws Exception {
     for (boolean map : new boolean[] {false, true}) {
-      String name = map ? "MAP" : "ARRAY";
-      String expression = map ? "m[lookup_key]" : "arr[idx]";
+      String name = System.getProperty("collection.expression", map ? "MAP" : "ARRAY");
+      String expression =
+          System.getProperty("collection.expression", map ? "m[lookup_key]" : "arr[idx]");
+      if (System.getProperty("collection.expression") != null
+          && map != Boolean.parseBoolean(System.getProperty("collection.map", "true"))) continue;
       TableEnvironment check = environment(map);
       String sql = prepare(check, expression);
       String plan = NativePlanner.explain(check, sql);
-      if (!plan.contains("NativeCalc")
-          || !plan.contains("RowDataToArrow")
-          || !plan.contains("ArrowToRowData")) {
+      if (EXPECT_NATIVE
+          && (!plan.contains("NativeCalc")
+              || !plan.contains("RowDataToArrow")
+              || !plan.contains("ArrowToRowData"))) {
         throw new IllegalStateException("Both transposes must be measured: " + plan);
       }
+      if (!EXPECT_NATIVE && plan.contains("NativeCalc")) {
+        throw new IllegalStateException("Expected fallback control: " + plan);
+      }
+      String fallbackReason = System.getProperty("collection.fallbackReason");
+      if (!EXPECT_NATIVE && fallbackReason != null && !plan.contains(fallbackReason)) {
+        throw new IllegalStateException("Unexpected fallback reason: " + plan);
+      }
+      if (!EXPECT_NATIVE) name += " (fallback control)";
       double[][] seconds = new double[2][RUNS];
       for (int trial = 0; trial < WARMUP + RUNS; trial++) {
         for (int turn = 0; turn < 2; turn++) {
@@ -77,8 +94,8 @@ class DynamicCollectionBenchmark {
     long start = System.nanoTime();
     table.executeSql(sql).await();
     double seconds = (System.nanoTime() - start) / 1e9;
-    if (nativeRun && scan.substitutions() == 0) {
-      throw new IllegalStateException("Unexpected fallback: " + scan.fallbackReasons());
+    if (nativeRun && (scan.substitutions() > 0) != EXPECT_NATIVE) {
+      throw new IllegalStateException("Unexpected route: " + scan.explainSummary());
     }
     return seconds;
   }
@@ -88,6 +105,25 @@ class DynamicCollectionBenchmark {
     Arrays.sort(sorted);
     int middle = sorted.length / 2;
     return sorted.length % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+  }
+
+  private static Object inputArray(long row) {
+    if (!INTS) return array(row);
+    if (WIDTH == 0) return new Integer[] {(int) row, null, -(int) row};
+    Integer[] values = new Integer[WIDTH];
+    for (int i = 0; i < WIDTH; i++) {
+      values[i] = i % 7 == 0 ? null : (int) ((31L * i + row) % DOMAIN - DOMAIN / 2);
+    }
+    return values;
+  }
+
+  private static Long[] array(long row) {
+    if (WIDTH == 0) return new Long[] {row, null, -row};
+    Long[] values = new Long[WIDTH];
+    for (int i = 0; i < WIDTH; i++) {
+      values[i] = i % 7 == 0 ? null : (31L * i + row) % DOMAIN - DOMAIN / 2;
+    }
+    return values;
   }
 
   private static TableEnvironment environment(boolean map) {
@@ -111,17 +147,16 @@ class DynamicCollectionBenchmark {
                       Types.MAP(Types.STRING, Types.LONG),
                       Types.STRING)));
     } else {
+      org.apache.flink.api.common.typeinfo.TypeInformation<?> arrayType =
+          INTS ? Types.OBJECT_ARRAY(Types.INT) : Types.OBJECT_ARRAY(Types.LONG);
       table.createTemporaryView(
           "inputs",
           env.fromSequence(0, ROWS - 1)
               .map(
                   i ->
                       Row.of(
-                          i % 8 == 0 ? null : new Long[] {i, null, -i},
-                          i % 7 == 0 ? null : (int) (i % 6 - 1)))
-              .returns(
-                  Types.ROW_NAMED(
-                      new String[] {"arr", "idx"}, Types.OBJECT_ARRAY(Types.LONG), Types.INT)));
+                          i % 8 == 0 ? null : inputArray(i), i % 7 == 0 ? null : (int) (i % 6 - 1)))
+              .returns(Types.ROW_NAMED(new String[] {"arr", "idx"}, arrayType, Types.INT)));
     }
     return table;
   }
