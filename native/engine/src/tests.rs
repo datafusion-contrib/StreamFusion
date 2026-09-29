@@ -367,6 +367,60 @@ fn group_temporal_boolean_extrema_restore_multiplicity_nulls_and_ttl() {
 }
 
 #[test]
+fn group_single_value_partials_count_null_and_fail_after_restore() {
+    for value in [
+        ScalarValue::Utf8(None),
+        ScalarValue::Utf8(Some("one".into())),
+    ] {
+        let mut local = LocalGroupAggregator::new(
+            vec![14, 21],
+            vec![3; 2],
+            vec![1; 2],
+            vec![],
+            vec![0],
+            vec![],
+        );
+        local
+            .update(&group_scalar_changelog(vec![value.clone()], vec![0]))
+            .unwrap();
+        let partial = local.flush();
+        assert_eq!(partial.column(2).data_type(), &DataType::Int32);
+        assert_eq!(
+            ScalarValue::try_from_array(partial.column(2), 0).unwrap(),
+            ScalarValue::Int32(Some(1))
+        );
+        let mut global = GroupAggregator::new(vec![14], vec![3], vec![1], vec![0], true)
+            .with_count_columns(vec![2]);
+        let output = global.update(&partial, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+            value
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![14],
+            vec![3],
+            vec![1],
+            vec![0],
+            true,
+            &global.snapshot(),
+            0,
+        )
+        .with_count_columns(vec![2]);
+        assert!(restored
+            .update(&partial, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("SingleValueAggFunction received more than one element."));
+        assert!(local
+            .update(&group_scalar_changelog(
+                vec![value.clone(), value],
+                vec![0, 0]
+            ))
+            .is_err());
+    }
+}
+
+#[test]
 fn group_distinct_ordered_values_restore_multiplicity_and_order() {
     let value = |s: &str| ScalarValue::Utf8(Some(s.to_owned()));
     let mut agg = GroupAggregator::new(vec![19, 20], vec![3; 2], vec![1; 2], vec![0], true);

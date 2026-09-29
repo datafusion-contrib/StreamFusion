@@ -283,7 +283,7 @@ fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType) -> ScalarV
 impl GroupAggState {
     fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
-            12..=16 | 19 | 20 => Self::Ordered(OrderedValueState::new(kind, value_type)),
+            12..=16 | 19..=21 => Self::Ordered(OrderedValueState::new(kind, value_type)),
             1 => GroupAggState::Extremes {
                 is_min: true,
                 counts: BTreeMap::new(),
@@ -1216,7 +1216,9 @@ impl GroupAggregator {
             .iter()
             .zip(&value_types)
             .map(|(&kind, vt)| {
-                if is_ordered_value(kind) {
+                if kind == 21 {
+                    DataType::Int32
+                } else if is_ordered_value(kind) {
                     vt.clone()
                 } else {
                     RunningAgg::new(kind, vt).result_type()
@@ -1565,9 +1567,20 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         // Per aggregate, the two-phase AVG count-partial column (None = not a merge): the value
         // column is the pre-summed sum partial and the count folds from this column, not +1 per row.
+        let single_count_cols: Vec<Option<&Int32Array>> = (0..num_agg)
+            .map(|i| {
+                (self.count_columns[i] >= 0 && self.kinds[i] == 14).then(|| {
+                    batch
+                        .column(self.count_columns[i] as usize)
+                        .as_any()
+                        .downcast_ref::<Int32Array>()
+                        .expect("single-value count partial must be int")
+                })
+            })
+            .collect();
         let merge_count_cols: Vec<Option<&Int64Array>> = (0..num_agg)
             .map(|i| {
-                (self.count_columns[i] >= 0).then(|| {
+                (self.count_columns[i] >= 0 && self.kinds[i] != 14).then(|| {
                     batch
                         .column(self.count_columns[i] as usize)
                         .as_any()
@@ -1701,7 +1714,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     if let GroupAggState::Ordered(ordered) = &mut state.aggs[i] {
                         let column =
                             batch.column(ordered_columns[i].expect("ordered value column"));
-                        ordered.update(ScalarValue::try_from_array(column, row)?, retract)?;
+                        let value = ScalarValue::try_from_array(column, row)?;
+                        if let Some(counts) = single_count_cols[i] {
+                            ordered.merge_single(value, counts.value(row))?;
+                        } else {
+                            ordered.update(value, retract)?;
+                        }
                         continue;
                     }
                     // Two-phase AVG merge: fold the pre-summed sum partial and bump the count by the
@@ -2502,7 +2520,9 @@ impl LocalGroupAggregator {
             .iter()
             .zip(&value_types)
             .map(|(&kind, vt)| {
-                if is_ordered_value(kind) {
+                if kind == 21 {
+                    DataType::Int32
+                } else if is_ordered_value(kind) {
                     vt.clone()
                 } else {
                     RunningAgg::new(kind, vt).result_type()
@@ -2726,6 +2746,14 @@ impl LocalGroupAggregator {
                     if filter.is_null(row) || !filter.value(row) {
                         continue;
                     }
+                }
+                if let GroupAggState::Ordered(ordered) = &mut entry.states[i] {
+                    let value = ScalarValue::try_from_array(
+                        batch.column(self.value_columns[i] as usize),
+                        row,
+                    )?;
+                    ordered.update(value, retract)?;
+                    continue;
                 }
                 if let Some(col_idx) = scalar_extreme_cols[i] {
                     let column = batch.column(col_idx);
@@ -2974,6 +3002,22 @@ pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
     })
 }
 
+fn throw_group_update_error(env: &mut JNIEnv, error: DataFusionError) {
+    match error {
+        DataFusionError::Execution(message) => {
+            if let Ok(message) = env.new_string(message) {
+                let _ = env.call_static_method(
+                    "tech/streamfusion/compat/TableErrors",
+                    "fail",
+                    "(Ljava/lang/String;)V",
+                    &[jni::objects::JValue::Object(&message)],
+                );
+            }
+        }
+        other => throw_memory_limit(env, &other.to_string()),
+    }
+}
+
 /// Folds an Arrow batch the JVM exported into the buffered per-key accumulators; emits nothing.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_updateLocalGroupAggregator<'local>(
@@ -2992,7 +3036,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_updateLocalGroupAggregator<
             aggregator.update(&batch)
         };
         if let Err(e) = result {
-            throw_memory_limit(&mut env, &e.to_string());
+            throw_group_update_error(&mut env, e);
         }
     })
 }
@@ -3101,17 +3145,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_updateGroupAggregator<'loca
         };
         match result {
             Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
-            Err(DataFusionError::Execution(message)) => {
-                if let Ok(message) = env.new_string(message) {
-                    let _ = env.call_static_method(
-                        "tech/streamfusion/compat/TableErrors",
-                        "fail",
-                        "(Ljava/lang/String;)V",
-                        &[jni::objects::JValue::Object(&message)],
-                    );
-                }
-            }
-            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+            Err(e) => throw_group_update_error(&mut env, e),
         }
     })
 }

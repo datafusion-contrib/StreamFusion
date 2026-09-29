@@ -40,7 +40,8 @@ class GroupedValueBenchmark {
       String plan = NativePlanner.explain(environment(type), SQL);
       if (!plan.contains("NativeColumnarGroupAggregate")
           || !plan.contains("RowDataToArrow")
-          || !plan.contains("ArrowToRowData")) {
+          || !plan.contains("ArrowToRowData")
+          || (SINGLE && !plan.contains("NativeColumnarLocalGroupAggregate"))) {
         throw new IllegalStateException("Expected native aggregate and both transposes: " + plan);
       }
       double[][] times = new double[2][RUNS];
@@ -88,7 +89,12 @@ class GroupedValueBenchmark {
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
-    table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", SINGLE ? "TWO_PHASE" : "ONE_PHASE");
+    if (SINGLE) {
+      table.getConfig().set("table.exec.mini-batch.enabled", "true");
+      table.getConfig().set("table.exec.mini-batch.size", "1024");
+      table.getConfig().set("table.exec.mini-batch.allow-latency", "100 ms");
+    }
     var dataType =
         switch (type) {
           case "STRING" -> DataTypes.STRING();

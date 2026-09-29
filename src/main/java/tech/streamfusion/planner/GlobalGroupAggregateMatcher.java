@@ -53,9 +53,9 @@ final class GlobalGroupAggregateMatcher {
     int offset = grouping.length;
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       AggregateCall call = agg.aggCalls().apply(i);
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       if (kind < 0 || call.getArgList().size() > 1) {
-        return "global group aggregate: only single-field SUM/MIN/MAX/COUNT/AVG merges";
+        return "global group aggregate: only SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE merges";
       }
       if (needRetraction
           && (call.isDistinct()
@@ -102,6 +102,21 @@ final class GlobalGroupAggregateMatcher {
           return "global group aggregate: distinct merges are COUNT (over set-carriable value"
               + " types) and SUM/AVG (over integers or DECIMAL precision <= 19)";
         }
+        continue;
+      }
+      if (kind == 14) {
+        RelDataType result = agg.getRowType().getFieldList().get(grouping.length + i).getType();
+        if (call.isDistinct()
+            || call.getArgList().size() != 1
+            || offset + 1 >= inputType.getFieldCount()
+            || !LocalGroupAggregateMatcher.supportedSinglePartials(
+                result,
+                inputType.getFieldList().get(offset).getType(),
+                inputType.getFieldList().get(offset + 1).getType())) {
+          return "global group aggregate: SINGLE_VALUE expects matching string and INT count"
+              + " partials";
+        }
+        offset += 2;
         continue;
       }
       if (kind == WindowAggregateMatcher.KIND_AVG) {
@@ -251,7 +266,7 @@ final class GlobalGroupAggregateMatcher {
     return columns;
   }
 
-  /** Count-partial column for an ordinary AVG merge; DISTINCT merges read their view instead. */
+  /** Count column for AVG/SINGLE_VALUE; DISTINCT merges read their membership view instead. */
   static int[] countColumns(StreamPhysicalGlobalGroupAggregate agg) {
     int[] columns = new int[agg.aggCalls().size()];
     int offset = agg.grouping().length;
@@ -280,6 +295,8 @@ final class GlobalGroupAggregateMatcher {
         codes.add(
             GroupAggregateMatcher.retainedValueTypeCode(
                 agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType()));
+      } else if (LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind()) == 14) {
+        codes.add(3);
       } else if (spanOf(agg, i) == 2) {
         // An AVG state is typed by its final result — except decimal, whose state is the sum
         // partial's DECIMAL(38, s) (the emit derives the result scale max(6, s) itself).
@@ -291,7 +308,7 @@ final class GlobalGroupAggregateMatcher {
                 : avgResultCode(resultRel.getSqlTypeName()));
       } else {
         RelDataType partialRel = inputType.getFieldList().get(offset).getType();
-        int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+        int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
         codes.add(
             LocalGroupAggregateMatcher.isStringExtreme(kind, partialRel.getSqlTypeName())
                 ? 3
@@ -321,7 +338,7 @@ final class GlobalGroupAggregateMatcher {
     int offset = agg.grouping().length;
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       if (call.isDistinct()) {
         kinds[i] =
             kind == WindowAggregateMatcher.KIND_COUNT
@@ -393,12 +410,9 @@ final class GlobalGroupAggregateMatcher {
     return columns;
   }
 
-  /** How many positional partial columns aggregate {@code i} spans (2 for AVG, 1 otherwise). */
+  /** Positional width: two fields for AVG/SINGLE_VALUE, one otherwise. */
   private static int spanOf(StreamPhysicalGlobalGroupAggregate agg, int i) {
-    return WindowAggregateMatcher.aggregateKind(agg.aggCalls().apply(i).getAggregation().getKind())
-            == WindowAggregateMatcher.KIND_AVG
-        ? 2
-        : 1;
+    return LocalGroupAggregateMatcher.partialWidth(agg.aggCalls().apply(i));
   }
 
   static boolean generateUpdateBefore(StreamPhysicalGlobalGroupAggregate agg) {

@@ -5,7 +5,7 @@ pub(super) const SINGLE_VALUE_ERROR: &str =
     "SingleValueAggFunction received more than one element.";
 
 pub(super) fn is_ordered_value(kind: i64) -> bool {
-    matches!(kind, 12..=16 | 19 | 20)
+    matches!(kind, 12..=16 | 19..=21)
 }
 
 /// Append-only first/last retain one scalar; retractable first/last retain arrival order.
@@ -65,7 +65,7 @@ impl OrderedValueState {
             }
             return Ok(());
         }
-        if self.kind == 14 {
+        if matches!(self.kind, 14 | 21) {
             if (retract && !matches!(self.count, 0 | 1)) || (!retract && self.count > 0) {
                 return Err(DataFusionError::Execution(SINGLE_VALUE_ERROR.into()));
             }
@@ -101,8 +101,27 @@ impl OrderedValueState {
         Ok(())
     }
 
+    pub(super) fn merge_single(
+        &mut self,
+        value: ScalarValue,
+        count: i32,
+    ) -> Result<(), DataFusionError> {
+        let total = self.count.wrapping_add(count);
+        if total > 1 {
+            return Err(DataFusionError::Execution(SINGLE_VALUE_ERROR.into()));
+        }
+        self.value = if total == 0 && self.count != 0 && count <= 0 {
+            null_scalar(&self.value.data_type())
+        } else {
+            value
+        };
+        self.count = total;
+        Ok(())
+    }
+
     pub(super) fn emit(&self) -> ScalarValue {
         match self.kind {
+            21 => ScalarValue::Int32(Some(self.count)),
             15 | 19 => self.values.front().unwrap_or(&self.value).clone(),
             16 | 20 => self.values.back().unwrap_or(&self.value).clone(),
             _ => self.value.clone(),
@@ -183,6 +202,23 @@ mod tests {
             assert!(state.emit().is_null());
             assert_eq!(state.value_bytes, 0);
         }
+    }
+
+    #[test]
+    fn single_value_merge_preserves_zero_and_negative_count_rules() {
+        let value = |s: &str| ScalarValue::Utf8(Some(s.into()));
+        let mut state = OrderedValueState::new(14, &DataType::Utf8);
+        state.merge_single(value("zero"), 0).unwrap();
+        assert_eq!(state.emit(), value("zero"));
+        state.merge_single(value("one"), 1).unwrap();
+        state.merge_single(ScalarValue::Utf8(None), 0).unwrap();
+        assert!(state.emit().is_null());
+        state.merge_single(value("removed"), -1).unwrap();
+        assert!(state.emit().is_null());
+        state.merge_single(value("negative"), -1).unwrap();
+        state.merge_single(value("replacement"), 1).unwrap();
+        assert_eq!(state.count(), 0);
+        assert_eq!(state.emit(), value("replacement"));
     }
 
     #[test]
