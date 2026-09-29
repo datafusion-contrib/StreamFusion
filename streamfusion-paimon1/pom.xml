@@ -411,9 +411,11 @@
                             </dependenciesToScan>
                             <systemPropertyVariables>
                                 <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
+                                <junit.jupiter.execution.parallel.enabled>false</junit.jupiter.execution.parallel.enabled>
+                                <streamfusion.flink-suite.diagnostics>${project.build.directory}/upstream-suite/diagnostics/fork-${surefire.forkNumber}</streamfusion.flink-suite.diagnostics>
                                 <streamfusion.flink-suite.flink-line>1.18</streamfusion.flink-suite.flink-line>
-                                <streamfusion.flink-suite.sql-inventory>${project.build.directory}/upstream-suite/inventory</streamfusion.flink-suite.sql-inventory>
-                                <streamfusion.flink-suite.native-reports>${project.build.directory}/native-reports</streamfusion.flink-suite.native-reports>
+                                <streamfusion.flink-suite.sql-inventory>${project.build.directory}/upstream-suite/inventory/fork-${surefire.forkNumber}</streamfusion.flink-suite.sql-inventory>
+                                <streamfusion.flink-suite.native-reports>${project.build.directory}/native-reports/fork-${surefire.forkNumber}</streamfusion.flink-suite.native-reports>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>

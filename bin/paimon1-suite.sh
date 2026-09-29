@@ -3,6 +3,11 @@
 set -euo pipefail
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_dir"
+test_forks=${SF_PAIMON1_TEST_FORKS:-1}
+if [[ ! "$test_forks" =~ ^[1-9][0-9]*$ ]]; then
+  echo 'SF_PAIMON1_TEST_FORKS must be a positive integer.' >&2
+  exit 64
+fi
 work_dir="$repo_dir/streamfusion-paimon1/target/upstream-suite"
 mkdir -p "$work_dir"
 rm -rf "$work_dir/inventory" "$work_dir/diagnostics"
@@ -34,14 +39,16 @@ mvn -B -ntp -f dev/flink-suite/agent/pom.xml \
 agent="$repo_dir/dev/flink-suite/agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar"
 tests=${SF_PAIMON1_TESTS:-AppendOnlyTableITCase,FirstRowITCase,DynamicBucketTableITCase,ReadWriteTableITCase,PrimaryKeyFileStoreTableITCase,PartialUpdateITCase,FullCompactionFileStoreITCase,FlinkJobRecoveryITCase,ContinuousFileStoreITCase,UnawareBucketAppendOnlyTableITCase,SchemaChangeITCase,FilterPushdownWithSchemaChangeITCase,LookupChangelogWithAggITCase,PreAggregationITCase*,CompositePkAndMultiPartitionedTableITCase}
 jvm_args="-Xmx${SF_PAIMON1_TEST_HEAP:-2g} -XX:ActiveProcessorCount=${SF_PAIMON1_TEST_CPUS:-2} --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED"
-jvm_args="$jvm_args -Dlog4j.configurationFile=\"$repo_dir/dev/flink-suite/paimon-log4j2.properties\" -Dstreamfusion.flink-suite.diagnostics=\"$work_dir/diagnostics\" -Dmvn.forkNumber=1"
+jvm_args="$jvm_args -Dlog4j.configurationFile=\"$repo_dir/dev/flink-suite/paimon-log4j2.properties\""
+# Keep the placeholder literal until Surefire assigns each fork its identity.
+jvm_args+=' -Dmvn.forkNumber=${surefire.forkNumber}'
 if [[ ${SF_PAIMON1_STOCK:-false} != true ]]; then
   jvm_args="$jvm_args -javaagent:\"$agent\" -Dstreamfusion.logFallbackReasons=true"
 fi
 # Bound build and test concurrency independently of the host's CPU count.
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 mvn -B -ntp -Pflink-1.18,paimon1,upstream-paimon1 \
-  -pl streamfusion-paimon1 -am -Dsf.testForks=1 \
+  -pl streamfusion-paimon1 -am -Dsf.testForks="$test_forks" \
   -Dtest="$tests" -Dsurefire.failIfNoSpecifiedTests=false \
   -Dsf.extraJvmArgs="$jvm_args" "$@" test 2>&1 | tee "$work_dir/run.log"
 if [[ ${SF_PAIMON1_STOCK:-false} != true && -z ${SF_PAIMON1_TESTS:-} ]]; then
