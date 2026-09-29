@@ -116,11 +116,10 @@ class FlinkFilterSqlHarnessTest {
   }
 
   @Test
-  void unsupportedFunctionFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void tryBooleanFilterMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkFilterSqlHarnessTest::environment,
-        "SELECT * FROM f WHERE TRY_CAST(CAST(v AS STRING) AS BOOLEAN)",
-        "TRY_CAST");
+        "SELECT * FROM f WHERE TRY_CAST(CAST(v AS STRING) AS BOOLEAN)");
   }
 
   @Test

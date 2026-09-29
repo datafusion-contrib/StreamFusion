@@ -406,6 +406,10 @@ public final class NativeUdf {
       }
       try (VectorSchemaRoot out = resultRoot(udf, rows)) {
         FieldVector result = out.getFieldVectors().get(0);
+        var timestampWriter =
+            udf.returnType == TYPE_TIMESTAMP_DATA
+                ? new tech.streamfusion.arrow.TimestampAccessor(result)
+                : null;
         var rowWriter =
             udf.returnType == TYPE_ROW
                 ? tech.streamfusion.arrow.ArrowConversion.createRowDataArrowWriter(
@@ -475,7 +479,9 @@ public final class NativeUdf {
             }
             value = udf.eval.invoke(udf.function, invokeArgs);
           }
-          if (rowWriter == null) {
+          if (timestampWriter != null) {
+            timestampWriter.set(row, (org.apache.flink.table.data.TimestampData) value);
+          } else if (rowWriter == null) {
             writeValue(result, udf.returnType, row, value);
           } else {
             rowResult.setField(0, value);

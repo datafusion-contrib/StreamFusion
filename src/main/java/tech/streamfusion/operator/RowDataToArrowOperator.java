@@ -36,6 +36,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
   private final boolean carryRowKind;
   private final RowType sourceType;
 
+  private transient boolean writeRowKind;
   private transient BufferAllocator allocator;
   private transient VectorSchemaRoot pendingRoot;
   private transient ArrowWriter<RowData> writer;
@@ -61,6 +62,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     super.open();
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
+    writeRowKind = carryRowKind;
     flushLatencyMs = NativeConfig.transposeFlushLatencyMs();
     flushDeadline = Long.MIN_VALUE;
     // Prune before taking ownership so unused payload is neither copied nor buffered.
@@ -84,12 +86,20 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
       if (pendingRoot == null) {
         pendingRoot = VectorSchemaRoot.create(ArrowConversion.toArrowSchema(rowType), allocator);
         writer = ArrowConversion.createRowDataArrowWriter(pendingRoot, rowType);
-        if (carryRowKind) {
-          kinds = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, allocator);
-          kinds.allocateNew(batchSize);
+      }
+      RowData row =
+          projector == null ? element.getValue() : projector.replaceRow(element.getValue());
+      // A source may emit a retract after advertising insert-only output.
+      if (!writeRowKind && row.getRowKind() != org.apache.flink.types.RowKind.INSERT) {
+        writeRowKind = true;
+      }
+      if (writeRowKind && kinds == null) {
+        kinds = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, allocator);
+        kinds.allocateNew(batchSize);
+        for (int i = 0; i < pendingRows; i++) {
+          kinds.setSafe(i, org.apache.flink.types.RowKind.INSERT.toByteValue());
         }
       }
-      RowData row = projector == null ? element.getValue() : projector.replaceRow(element.getValue());
       writer.write(row);
       if (kinds != null) kinds.setSafe(pendingRows, row.getRowKind().toByteValue());
       pendingRows++;

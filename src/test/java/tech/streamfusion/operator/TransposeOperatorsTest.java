@@ -85,6 +85,75 @@ class TransposeOperatorsTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void fixedWidthExitPreservesNullsKindsAndFloatingBitsAfterBatchClose(boolean objectReuse)
+      throws Exception {
+    var schema = RowType.of(new org.apache.flink.table.types.logical.BooleanType(),
+        new org.apache.flink.table.types.logical.DoubleType(),
+        new org.apache.flink.table.types.logical.DecimalType(12, 2));
+    var decimal = org.apache.flink.table.data.DecimalData.fromBigDecimal(
+        new java.math.BigDecimal("-1.23"), 12, 2);
+    List<RowData> input = List.of(
+        GenericRowData.of(true, -0.0d, decimal),
+        GenericRowData.of(null, Double.longBitsToDouble(0x7ff8000000000001L), null),
+        GenericRowData.of(false, Double.POSITIVE_INFINITY, decimal),
+        GenericRowData.of(true, null, decimal));
+    var kinds = org.apache.flink.types.RowKind.values();
+    for (int i = 0; i < input.size(); i++) input.get(i).setRowKind(kinds[i]);
+    try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, RowData>(
+        new ArrowToRowDataOperator(schema), new ArrowBatchSerializer())) {
+      if (objectReuse) harness.getExecutionConfig().enableObjectReuse();
+      harness.setup(new RowDataSerializer(schema));
+      harness.open();
+      for (int start = 0; start < input.size(); start += 2) {
+        var root = RowDataArrowConverter.write(
+            input.subList(start, start + 2), schema, NativeAllocator.SHARED, true);
+        harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
+      }
+      List<RowData> output = values(harness);
+      assertEquals(input.size(), output.size());
+      for (int i = 0; i < input.size(); i++) {
+        RowData expected = input.get(i);
+        RowData actual = output.get(i);
+        assertEquals(expected.getRowKind(), actual.getRowKind());
+        for (int field = 0; field < 3; field++) {
+          assertEquals(expected.isNullAt(field), actual.isNullAt(field));
+        }
+        if (!expected.isNullAt(0)) assertEquals(expected.getBoolean(0), actual.getBoolean(0));
+        if (!expected.isNullAt(1)) assertEquals(Double.doubleToRawLongBits(expected.getDouble(1)),
+            Double.doubleToRawLongBits(actual.getDouble(1)));
+        if (!expected.isNullAt(2)) assertEquals(expected.getDecimal(2, 12, 2), actual.getDecimal(2, 12, 2));
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void zeroColumnExitRetainsRecordCountAndKinds(boolean objectReuse) throws Exception {
+    var schema = RowType.of(new LogicalType[0]);
+    List<RowData> input = new ArrayList<>();
+    for (var kind : org.apache.flink.types.RowKind.values()) {
+      var row = new GenericRowData(0);
+      row.setRowKind(kind);
+      input.add(row);
+    }
+    try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, RowData>(
+        new ArrowToRowDataOperator(schema), new ArrowBatchSerializer())) {
+      if (objectReuse) harness.getExecutionConfig().enableObjectReuse();
+      harness.setup(new RowDataSerializer(schema));
+      harness.open();
+      var root = RowDataArrowConverter.write(input, schema, NativeAllocator.SHARED, true);
+      harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
+      List<RowData> output = values(harness);
+      assertEquals(input.size(), output.size());
+      for (int i = 0; i < input.size(); i++) {
+        assertEquals(0, output.get(i).getArity());
+        assertEquals(input.get(i).getRowKind(), output.get(i).getRowKind());
+      }
+    }
+  }
+
   @Test
   void rowToArrowOwnsBufferedRowsFromReusingUpstream() throws Exception {
     try (OneInputStreamOperatorTestHarness<RowData, ArrowBatch> harness =

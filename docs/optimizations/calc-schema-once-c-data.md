@@ -3,12 +3,13 @@
 **Applies to:** native Calc operators
 
 Arrow C Data transfers the batch buffers without copying them, but an `ArrowSchema` is a separate
-tree of field metadata, native strings, and release callbacks. A Calc's input schema cannot change
-during one operator instance, yet the original bridge rebuilt and exported that identical tree for
-every physical batch.
+tree of field metadata, native strings, and release callbacks. Most batches reuse the same schema,
+yet the original bridge rebuilt and exported that identical tree for every physical batch.
 
-The first batch still exports both its `ArrowArray` and `ArrowSchema`. Rust caches the resulting
-struct type alongside the compiled Calc. Later batches use Arrow Java's array-only export and
+The first batch of each distinct input schema exports both its `ArrowArray` and `ArrowSchema`.
+The operator keeps a separate compiled handle for each schema, since a `UNION ALL` can mix batches
+with and without the hidden row-kind column. Rust caches the resulting struct type alongside that
+compiled Calc. Later batches with the same schema use Arrow Java's array-only export and
 Arrow Rust's `from_ffi_and_data_type`, so only buffer ownership and child-array layout cross JNI.
 This preserves the standard C Data ownership contract: the Java array's release callback is still
 consumed exactly once, and the schema remains owned by the native Calc handle until close.

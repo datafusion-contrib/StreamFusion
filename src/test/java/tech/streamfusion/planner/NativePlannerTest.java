@@ -114,7 +114,7 @@ class NativePlannerTest {
   }
 
   @Test
-  void leavesUnsupportedProjectionToHostEngine() throws Exception {
+  void substitutesTryBooleanProjection() throws Exception {
     TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
     PhysicalPlanScan scan = NativePlanner.install(tEnv);
     List<Integer> result =
@@ -123,8 +123,7 @@ class NativePlannerTest {
             "SELECT CASE WHEN TRY_CAST(CAST(c0 AS STRING) AS BOOLEAN) THEN c0 ELSE -c0 END"
                 + " FROM (VALUES (3), (4), (5)) AS t(c0)");
 
-    assertEquals(0, scan.substitutions(), "an unsupported projection should not be substituted");
-    assertTrue(scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("TRY_CAST")));
+    assertTrue(scan.substitutions() > 0, "TRY_CAST Boolean projection should be substituted");
     assertEquals(List.of(-5, -4, -3), result);
   }
 

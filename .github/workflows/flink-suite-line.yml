@@ -1,0 +1,187 @@
+name: Upstream Flink line
+
+on:
+  workflow_call:
+    inputs:
+      line:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      sql_inventory:
+        type: boolean
+        default: false
+      inventory_scope:
+        type: string
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare upstream build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      suites: ${{ steps.select.outputs.suites }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: select
+        env:
+          INVENTORY: ${{ inputs.sql_inventory }}
+          SCOPE: ${{ inputs.inventory_scope }}
+          FLINK_LINE: ${{ inputs.line }}
+        run: python3 dev/flink-suite/suite_matrix.py >> "$GITHUB_OUTPUT"
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        id: java
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Restore the isolated suite Maven repository
+        id: maven-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .flink-suite/${{ inputs.line }}/m2
+          key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh') }}
+          restore-keys: |
+            upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-
+      - name: Restore the compiled pinned Flink checkout
+        id: flink-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .flink-suite/${{ inputs.line }}/flink-${{ inputs.version }}
+          key: upstream-classes-ubuntu2404-${{ runner.arch }}-${{ steps.java.outputs.version }}-${{ inputs.version }}-${{ hashFiles('bin/flink-suite.sh', 'dev/flink-suite/settings.xml', '.github/workflows/flink-suite-line.yml') }}
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: upstream-suite
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: native -> ../.flink-suite/${{ inputs.line }}/streamfusion-source/native/target
+      - name: Build Flink and StreamFusion once
+        env:
+          FLINK_VERSION: ${{ inputs.version }}
+          FLINK_SUITE_BUILD_THREADS: 1C
+        run: |
+          set -o pipefail
+          bin/flink-suite.sh prepare 2>&1 | tee upstream-prepare.log
+          python3 dev/flink-suite/shared_build.py pack \
+            --root ".flink-suite/${{ inputs.line }}" --version "${{ inputs.version }}" \
+            --archive upstream-build.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upstream-build-${{ inputs.line }}-${{ github.sha }}
+          path: upstream-build.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-prepare-${{ inputs.line }}-${{ github.sha }}
+          path: |
+            upstream-prepare.log
+            .flink-suite/${{ inputs.line }}/runtime-shards.json
+          include-hidden-files: true
+          retention-days: 7
+
+      - name: Save the isolated suite Maven repository on main
+        if: github.ref == 'refs/heads/main' && steps.maven-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .flink-suite/${{ inputs.line }}/m2
+          key: ${{ steps.maven-cache.outputs.cache-primary-key }}
+      - name: Save the compiled pinned Flink checkout on main
+        if: github.ref == 'refs/heads/main' && steps.flink-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .flink-suite/${{ inputs.line }}/flink-${{ inputs.version }}
+          key: ${{ steps.flink-cache.outputs.cache-primary-key }}
+
+  upstream-suite:
+    name: ${{ matrix.label }} suite (Flink ${{ matrix.line }})
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.suites) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py --minimum-gib 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/download-artifact@v5
+        with:
+          name: upstream-build-${{ matrix.line }}-${{ github.sha }}
+      - name: Restore the shared build
+        run: |
+          python3 dev/flink-suite/shared_build.py restore \
+            --root ".flink-suite/${{ matrix.line }}" --version "${{ matrix.version }}" \
+            --archive upstream-build.tar.zst
+          rm upstream-build.tar.zst
+      - name: Require declared runtime audit routes
+        if: ${{ matrix.shard == '1' && !inputs.sql_inventory }}
+        env:
+          FLINK_VERSION: ${{ matrix.version }}
+          FLINK_SUITE_REUSE_COMMON_BUILD: 'true'
+          FLINK_SUITE_RUNTIME_AUDIT: 'true'
+        run: |
+          set -o pipefail
+          bin/flink-suite.sh runtime 2>&1 | tee upstream-runtime-audit.log
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && matrix.shard == '1' && !inputs.sql_inventory }}
+        with:
+          name: runtime-audit-${{ matrix.line }}-${{ github.sha }}
+          path: |
+            upstream-runtime-audit.log
+            .flink-suite/**/native-execution/
+            .flink-suite/**/diagnostics/
+            .flink-suite/**/sql-inventory/
+            .flink-suite/**/target/surefire-reports/
+          include-hidden-files: true
+          retention-days: 7
+      - name: Run unchanged upstream suite with StreamFusion
+        env:
+          FLINK_VERSION: ${{ matrix.version }}
+          SUITES: ${{ matrix.suites }}
+          FLINK_SUITE_REUSE_COMMON_BUILD: 'true'
+          FLINK_SUITE_SHARD: ${{ matrix.shard }}
+          FLINK_SUITE_SQL_INVENTORY: ${{ inputs.sql_inventory || false }}
+        run: |
+          set -o pipefail
+          suite_status=0
+          for suite in $SUITES; do
+            bin/flink-suite.sh "$suite" 2>&1 | tee "upstream-${suite}.log" || suite_status=1
+          done
+          exit "$suite_status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-flink-${{ matrix.line }}-${{ matrix.label }}-${{ github.sha }}
+          path: |
+            upstream-*.log
+            .flink-suite/**/native-execution/
+            .flink-suite/**/diagnostics/
+            .flink-suite/**/sql-inventory/
+            .flink-suite/**/target/surefire-reports/
+          include-hidden-files: true
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: matrix.shard != ''
+        with:
+          name: runtime-coverage-${{ matrix.line }}-${{ matrix.shard }}
+          path: |
+            .flink-suite/${{ matrix.line }}/runtime-shards.json
+            .flink-suite/${{ matrix.line }}/diagnostics/runtime/shard-coverage.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
