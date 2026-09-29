@@ -46,6 +46,9 @@ Install one complete line; a mixed install is an error.
 Both payload lines use the host's SLF4J 1.7 API and binding; it does not bundle Arrow's transitive
 SLF4J 2 API into Flink's global classpath.
 
+Each line also pins its Kafka connector and client. [Kafka](connectors/kafka.md#flink-release-lines)
+records these pairings and the integration evidence available for each line.
+
 The Kernel-based Delta implementation belongs only to the 2.2 source root and does not enter
 the 1.18 compilation, Javadoc or source artifacts. There is no admitted native Delta connector on 1.18 yet. Do not build or install a 1.18 Delta payload;
 this is unavailable functionality, not a verified host fallback.
