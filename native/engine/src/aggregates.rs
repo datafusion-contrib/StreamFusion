@@ -1058,6 +1058,16 @@ pub(crate) enum RunningAgg {
 impl RunningAgg {
     pub(crate) fn new(kind: i64, value_type: &DataType) -> Self {
         use RunningAgg::*;
+        if kind == 18 {
+            let sum_type = match value_type {
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                    DataType::Int64
+                }
+                DataType::Decimal128(_, scale) => DataType::Decimal128(38, *scale),
+                other => panic!("unsupported distinct average partial type: {other:?}"),
+            };
+            return Self::new(8, &sum_type);
+        }
         if matches!(kind, 10 | 11)
             && matches!(
                 value_type,

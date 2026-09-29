@@ -289,7 +289,12 @@ all three deployments, and the source restores its recorded offset. Checkpoint m
 must contain nonempty native aggregate state for every subtask, with exactly that subtask's
 assigned key groups. Committed file output materializes the complete changelog across
 restores; it includes pre-checkpoint output and therefore detects loss or replay in both
-operator and sink state. Jobs wait for checkpoint completion before cancellation, and
+operator and sink state. While a job is running, the sink may rename a hidden
+`.part-*.inprogress.*` file after directory enumeration but before its attributes are read.
+The output visitor ignores only `NoSuchFileException` for those temporary names; missing
+committed files, permission errors and other I/O failures still fail the test. A regression
+case checks this distinction and verifies that only committed changelog records contribute
+to materialization. Jobs wait for checkpoint completion before cancellation, and
 assert source/native ownership cleanup after every deployment. The separate
 `stateful-rescale.json` artifact records configuration, source recovery, operator IDs,
 key-group ranges, types, plans and cleanup. Failed cases retain configuration and the
@@ -322,3 +327,7 @@ Flink I/O accounting; broader accounting coverage remains tracked by #168.
 With metrics enabled, all 104 required checks and 12 opt-in stress cases pass on each
 released Flink line (116 total per release), including the portable SQL and transpose
 configuration regressions. Both execution-counter artifacts were inspected.
+
+Java CI failures retain Surefire reports, fork dump streams, and JVM fatal-error logs in the
+`java-failure-diagnostics-<Flink line>` artifact for seven days. These accompany the console
+log when a native abort prevents the crashing test from completing its XML report.

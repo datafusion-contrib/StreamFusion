@@ -19,8 +19,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.NativePlannerTestEnvironment;
 
 class PaimonSourceSharingTest {
-  private static final String FALLBACK_ID_EXPRESSION =
-      "IF(TRY_CAST(CAST(id AS STRING) AS BOOLEAN), -id, id)";
+  private static final String FALLBACK_ID_EXPRESSION = "CAST(TRY_CAST(id AS DOUBLE) AS BIGINT)";
 
   @ParameterizedTest
   @ValueSource(strings = {"parquet", "orc"})

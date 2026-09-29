@@ -14,6 +14,9 @@ env:
 
 jobs:
   native-tests:
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: Rust tests
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -27,6 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run native test suite
         working-directory: native
@@ -40,6 +44,9 @@ jobs:
         run: cargo fmt --all -- --check
 
   java-tests:
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: Java tests (debug native build)${{ matrix.suffix }}
     strategy:
       fail-fast: false
@@ -56,13 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # A cold debug build of the native library (DataFusion + Arrow) plus the
-      # Maven repository outgrows the runner's default free
-      # space; drop the preinstalled toolchains we never touch.
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
+        run: python3 bin/ci-free-disk.py
 
       - uses: actions/setup-java@v4
         with:
@@ -77,6 +79,8 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_check_flink_suite_classpath.py'
           python3 -m unittest discover -s bin -p 'test_check_native_glibc.py'
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
+          python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
+          python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
         if: matrix.line == '1.18'
@@ -89,12 +93,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          shared-key: debug-jvm
+          save-if: false
 
       # Builds the debug native library through the Maven exec hook, then runs the
       # full JUnit suite. The Kafka decode harnesses use Testcontainers, which the
       # hosted runners' preinstalled Docker daemon serves directly.
       - name: Run Java test suite
         run: mvn -B -ntp ${{ matrix.profile }} test
+
+      - name: Upload Java failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-failure-diagnostics-${{ matrix.line }}
+          path: |
+            **/surefire-reports/*.xml
+            **/surefire-reports/*.txt
+            **/surefire-reports/*.dump
+            **/surefire-reports/*.dumpstream
+            **/hs_err_pid*.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload portable SQL audit outcomes
         if: always()
@@ -108,6 +128,9 @@ jobs:
         run: python3 bin/check-native-workspace.py --libraries native/target/debug
 
   lake-module-tests:
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: ${{ matrix.name }} tests (debug native build)
     runs-on: ubuntu-24.04
     timeout-minutes: 150
@@ -138,9 +161,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
+        run: python3 bin/ci-free-disk.py
 
       - uses: actions/setup-java@v4
         with:
@@ -153,6 +174,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          shared-key: debug-jvm
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.profile == 'paimon' && matrix.format == 'orc' }}
 
       - name: Run optional lake module suite
         env:
@@ -178,12 +201,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # The release native payload, Maven repository, and Docker image need more than the runner's
-      # default free space. This is intentionally the same cleanup as the Java test jobs.
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
+        run: python3 bin/ci-free-disk.py
 
       - uses: actions/setup-java@v4
         with:
@@ -196,7 +215,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ubuntu-22.04-glibc-2.35
-          workspaces: native
+          workspaces: native -> target/release-staging
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Host-only is still a production Linux/x86_64 release (including mimalloc); cross-platform
       # manifest assembly is covered by the release builder, but does not belong on this smoke path.
@@ -213,147 +233,95 @@ jobs:
           mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-image-it verify
           -Dstreamfusion.image.name=streamfusion-flink:image-it
 
-  module-tests:
-    name: ${{ matrix.name }} module tests (debug native build)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 150
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Kafka
-            tag: streamfusion-kafka
-            package: streamfusion-kafka
-          - name: JSON
-            tag: streamfusion-json
-            package: streamfusion-json
-          - name: CSV
-            tag: streamfusion-csv
-            package: streamfusion-csv
-          - name: RAW
-            tag: streamfusion-raw
-            package: streamfusion-raw
-          - name: Avro
-            tag: streamfusion-avro
-            package: streamfusion-avro
-          - name: Avro Confluent Registry
-            tag: streamfusion-avro-confluent
-            package: streamfusion-avro
-          - name: Protobuf
-            tag: streamfusion-protobuf
-            package: streamfusion-protobuf
-          - name: ORC
-            tag: streamfusion-orc
-            package: streamfusion-orc
-          - name: Parquet
-            tag: streamfusion-parquet
-            package: streamfusion-parquet
-          - name: Kafka (Flink 1.18)
-            tag: streamfusion-kafka
-            package: streamfusion-kafka
-            profile: '-Pflink-1.18'
-          - name: JSON (Flink 1.18)
-            tag: streamfusion-json
-            package: streamfusion-json
-            profile: '-Pflink-1.18'
-          - name: CSV (Flink 1.18)
-            tag: streamfusion-csv
-            package: streamfusion-csv
-            profile: '-Pflink-1.18'
-          - name: RAW (Flink 1.18)
-            tag: streamfusion-raw
-            package: streamfusion-raw
-            profile: '-Pflink-1.18'
-          - name: Avro (Flink 1.18)
-            tag: streamfusion-avro
-            package: streamfusion-avro
-            profile: '-Pflink-1.18'
-          - name: Avro Confluent Registry (Flink 1.18)
-            tag: streamfusion-avro-confluent
-            package: streamfusion-avro
-            profile: '-Pflink-1.18'
-          - name: Protobuf (Flink 1.18)
-            tag: streamfusion-protobuf
-            package: streamfusion-protobuf
-            profile: '-Pflink-1.18'
-          - name: ORC (Flink 1.18)
-            tag: streamfusion-orc
-            package: streamfusion-orc
-            profile: '-Pflink-1.18'
-          - name: Parquet (Flink 1.18)
-            tag: streamfusion-parquet
-            package: streamfusion-parquet
-            profile: '-Pflink-1.18'
-    steps:
-      - uses: actions/checkout@v6
+      - name: Package qualified Flink 1.18 payloads
+        if: matrix.line == '1.18'
+        run: bin/package-release.sh --flink-line 1.18
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-
-      - uses: dtolnay/rust-toolchain@1.94.0
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native
-
-      - name: Check the standalone native package
-        working-directory: native
-        run: cargo check -p ${{ matrix.package }} --all-targets
-
-      - name: Run tagged Java module suite
-        run: >
-          mvn -B -ntp ${{ matrix.profile }} -pl streamfusion-runtime test
-          -Dgroups="${{ matrix.tag }}"
-
-  flink118-artifacts:
-    name: Flink 1.18 qualified artifacts and loader
-    runs-on: ubuntu-22.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v6
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          df -h /
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-      - uses: dtolnay/rust-toolchain@1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ubuntu-22.04-glibc-2.35
-          workspaces: native
-      - name: Build and validate qualified optimized payloads
-        run: |
-          bin/build-release.sh --host-only --flink-line 1.18
-          bin/check-artifacts.sh --host-only --flink-line 1.18
-          bin/package-release.sh --flink-line 1.18
       - name: Execute the packaged loader and mixed-line identity tests
+        if: matrix.line == '1.18'
         run: >
           mvn -B -ntp -Pflink-1.18,universal -pl streamfusion-loader -am test
           -Dtest=FlinkPayloadIdentityTest,StreamFusionPlannerLoaderTest
           -Dsurefire.failIfNoSpecifiedTests=false
 
       - uses: actions/upload-artifact@v4
+        if: matrix.line == '1.18'
         with:
           name: flink1.18-optimized-linux-payloads
           path: target/release/streamfusion-flink1.18-*-bin.tar.gz*
           if-no-files-found: error
 
+  module-tests:
+    name: ${{ matrix.name }} module tests (debug native build)${{ matrix.suffix }}
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        line: ['2.2', '1.18']
+        group: [kafka, formats, files]
+        include:
+          - line: '2.2'
+            profile: ''
+            suffix: ''
+          - line: '1.18'
+            profile: '-Pflink-1.18'
+            suffix: ' (Flink 1.18)'
+          - group: kafka
+            name: Kafka
+            packages: streamfusion-kafka
+            tags: streamfusion-kafka
+          - group: formats
+            name: Row formats
+            packages: streamfusion-json streamfusion-csv streamfusion-raw streamfusion-avro streamfusion-protobuf
+            tags: streamfusion-json | streamfusion-csv | streamfusion-raw | streamfusion-avro | streamfusion-avro-confluent | streamfusion-protobuf
+          - group: files
+            name: Columnar formats
+            packages: streamfusion-orc streamfusion-parquet
+            tags: streamfusion-orc | streamfusion-parquet
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - uses: dtolnay/rust-toolchain@1.94.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check every standalone native package
+        env:
+          NATIVE_PACKAGES: ${{ matrix.packages }}
+        run: |
+          status=0
+          for package in $NATIVE_PACKAGES; do
+            (cd native && cargo check -p "$package" --all-targets) || status=1
+          done
+          exit "$status"
+
+      - name: Run tagged Java module suites
+        env:
+          TEST_GROUPS: ${{ matrix.tags }}
+        run: >
+          mvn -B -ntp ${{ matrix.profile }} -pl streamfusion-runtime test
+          -Dgroups="$TEST_GROUPS"
+
   all-tests:
     name: All CI tests
     if: ${{ always() }}
-    needs: [native-tests, java-tests, lake-module-tests, image-integration, module-tests, flink118-artifacts]
+    needs: [native-tests, java-tests, lake-module-tests, image-integration, module-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

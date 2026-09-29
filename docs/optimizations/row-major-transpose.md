@@ -14,6 +14,13 @@ The RowData→Arrow entry converter used to fill column-major, growing each Arro
 `setSafe` as rows arrived. It was rewritten row-major into vectors pre-sized to the row count —
 the same shape as Comet's `ArrowWriter` (`64528e7`).
 
+Insert-only inputs omit the hidden Arrow row-kind column until a non-insert record
+actually arrives. If a source advertises insert-only output but emits a retraction,
+the transpose retains that row kind and carries the column on subsequent batches.
+When the first retract arrives partway through a batch, already-written rows receive
+explicit INSERT entries in the newly allocated sidecar; later batches keep it.
+This matches Flink's runtime forwarding and keeps deletes visible downstream.
+
 ## Measured
 
 354 → 265 µs per 4096-row batch.
@@ -80,6 +87,7 @@ SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
 
 At 20M rows with the same resources, warmup and five-trial method, Boolean TRY_CAST measures
 3.337 s native (3.314–3.343) versus 3.228 s Flink (3.186–3.239), or 0.967x. Its identity
-control is 3.829 s native / 3.151 s Flink. The remaining 3.4% Boolean deficit persists at the
-larger size; it is not explained solely by startup. This work improves the shared boundary,
-but Boolean coverage remains pending further optimization.
+control is 3.829 s native / 3.151 s Flink. That entry-only implementation still trails Flink at the
+larger size; startup alone does not explain the deficit. The subsequent
+[generated exit projection](zero-copy-exit-transpose.md#generated-projection-for-fixed-width-outputs)
+closes the measured Boolean gap while retaining both conversions.
