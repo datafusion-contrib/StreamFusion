@@ -54,6 +54,8 @@ jobs:
     timeout-minutes: 150
     env:
       CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v6
       - name: Free disk space
@@ -67,6 +69,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Source and sink parity
         run: >-
           mvn -B -ntp -Pflink-1.18,paimon1 -pl streamfusion-paimon1 -am

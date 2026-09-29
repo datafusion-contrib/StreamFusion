@@ -640,7 +640,7 @@ hash. Maven still runs the same build commands to validate and install its outpu
 compilation reuse, not a cached test result or a skipped StreamFusion build. A cache miss takes the
 normal cold-build path. Only main-branch preparation jobs save the compiled Flink and isolated Maven
 caches, before any upstream tests run, and shared artifacts continue to exclude test reports.
-Rust caches in ordinary CI and upstream preparation are also saved only on `main`. PRs restore
+Rust caches in ordinary CI, upstream preparation, and Paimon 1.0 compatibility are saved only on `main`. PRs restore
 available caches but do not save their own copies of these large caches; sibling PRs cannot reuse
 those copies. Main-branch runs seed caches available to PRs. The ordinary Maven dependency cache
 managed by `setup-java` retains its existing policy.
@@ -661,9 +661,42 @@ compile once, transfer build outputs, then run module groups on independent runn
 caches Maven dependencies, compiles with Maven reactor parallelism, and trims its transferred build
 artifact. CI likewise uses `FLINK_SUITE_BUILD_THREADS=1C` for the two upstream reactor compilation
 commands, allowing one Maven build thread per CPU. Local commands default to one thread. Test forks
-and native-execution checks are unchanged; Flink's workflow is a design reference, not an additional
+and native-execution checks follow the settings below; Flink's workflow is a design reference, not an additional
 dependency. The source-suite payload build skips duplicate Javadoc generation; the ordinary CI
 Java/module jobs still run the bound Javadoc check.
+
+CI debug builds use Cargo's `line-tables-only` debug information for both development and test
+profiles. This retains native filename/line-number backtraces without generating type and local
+variable debug information for every dependency. Debug assertions, overflow checks, optimization
+levels, package boundaries, and test selectors remain unchanged. Local development and release
+build profiles retain their defaults. The environment settings participate in the Rust cache key;
+the first run after this change rebuilds dependencies, and main-branch runs seed the smaller caches.
+Java and optional lake jobs share one `debug-jvm` dependency cache instead of storing nearly
+identical multi-gigabyte caches. The main-branch Flink 2.2 Paimon ORC job seeds it after its runtime,
+core and lake native builds; other Java/lake jobs only restore it. Cargo still validates each
+package's features and fingerprints and rebuilds any missing variants.
+
+A local cold `streamfusion-bridge` test build with four Cargo jobs, incremental compilation disabled,
+and the same 24 passing tests took 37.0 seconds with full debug information and 28.9 seconds with
+line tables (22% less elapsed time). Its target directory fell from 746 MB to 473 MB (37% smaller).
+These are one-pass build/test measurements on the same machine with warm dependency downloads,
+not an engine throughput benchmark or a hosted full-workspace speedup estimate.
+
+Ordinary module CI groups the same tags into Kafka, row formats (JSON, CSV, RAW, Avro,
+Avro-Confluent, Protobuf), and columnar formats (ORC, Parquet), each on both Flink versions.
+Every distinct native package still receives an independent `cargo check -p ... --all-targets`;
+checks continue after a failure and fail the job if any package failed. Each group then runs Maven
+once with the union of its tags. A test carrying multiple tags within a group executes once rather
+than being repeated in separate jobs. The CI grouping test compares selected tags against the Java
+sources so an added module tag cannot silently lose coverage.
+
+The Flink 2.2 Paimon CI consumer uses two Surefire JVM forks for its main class suite instead of
+one. Paimon's released build already exposes `flink.forkCount` and configures 2 GiB heaps per fork.
+Tests within each class remain serial, while independent classes can execute in separate JVMs.
+The five isolated failure/cancellation methods still run in their separate sequential Maven
+invocations. Flink 1.18 Paimon, runtime shards, native-execution contracts, and local default fork
+counts retain their existing settings. Hosted validation must confirm the two-fork setting does
+not introduce resource failures before treating its expected elapsed-time reduction as measured.
 
 A compressed artifact transfers the clean Flink checkout, compiled classes, Maven artifacts,
 injection agent and native libraries. It excludes Cargo intermediates and previous test reports
@@ -688,8 +721,10 @@ only for inventory dispatches; connector-only inventories do not request runtime
 
 A normal upstream workflow uses 18 runner jobs (two preparations, fourteen consumers, the legacy
 Delta audit, and the final gate), down from 19 with a separate matrix selector and 28 before grouping.
-Shared-build downloads remain fourteen. Ordinary CI uses 29 jobs instead of 30 after folding the
-Flink 1.18 artifact checks into its image job. All test selections and required gates are retained.
+Shared-build downloads remain fourteen. Ordinary CI uses 17 jobs: one Rust job, two Java jobs, five lake-module jobs, two image jobs,
+six grouped module jobs, and the final gate. Folding the Flink 1.18 artifact checks into its image
+job removed one allocation; grouping short module checks removed another twelve. All test
+selections and required gates are retained.
 For context, September 27, 2026 [PR #269's upstream run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36298667226)
 spent 42.7 aggregate runner-minutes deleting preinstalled tools and 24.0 downloading/restoring shared
 builds. Its coverage jobs waited 33.9 and 36.1 minutes after the final suite completed, then took six
