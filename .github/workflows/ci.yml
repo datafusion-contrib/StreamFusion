@@ -96,6 +96,20 @@ jobs:
       - name: Run Java test suite
         run: mvn -B -ntp ${{ matrix.profile }} test
 
+      - name: Upload Java failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-failure-diagnostics-${{ matrix.line }}
+          path: |
+            **/surefire-reports/*.xml
+            **/surefire-reports/*.txt
+            **/surefire-reports/*.dump
+            **/surefire-reports/*.dumpstream
+            **/hs_err_pid*.log
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload portable SQL audit outcomes
         if: always()
         uses: actions/upload-artifact@v4

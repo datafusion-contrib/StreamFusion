@@ -20,6 +20,23 @@ lifecycle per distinct function instance. Repeated and nested calls share initia
 cleanup. A failed binding removes its registrations and closes successfully opened functions;
 cleanup continues through function-close exceptions and retains those failures for reporting.
 
+## Exception-safe Arrow release
+
+When a scalar callback fails, the native bridge retains its original Java throwable in a global
+reference and clears the pending JNI exception before unwinding the argument and result buffers.
+Arrow release callbacks can then call Java safely. The outer JNI guard rethrows the same throwable
+after cleanup, preserving its type and message. This follows Comet's capture-and-clear handling
+and the existing native output-callback contract. Leaving the exception pending lets an Arrow
+release callback consume it, replacing the original failure with a generic native error.
+
+The bridge regression repeatedly transfers ownership of an input batch, closes its producer,
+throws from the scalar callback, and verifies throwable identity and complete buffer release.
+The recovery stress test also exercises decimal overflow through restarted streaming tasks.
+The new regression fails against the previous native build. With the fix, 182 focused checks
+pass on each of Flink 1.18.1 and 2.2.1 with JNI checking enabled, including 100 recovery
+iterations per release. This validates exception handover and cleanup; the intermittent CI
+process abort still requires verification in the full suite.
+
 ## Direct generated-expression dispatch
 
 Known, final internal Flink expression evaluators without top-level string arguments receive a

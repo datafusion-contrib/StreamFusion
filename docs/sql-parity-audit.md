@@ -322,3 +322,7 @@ Flink I/O accounting; broader accounting coverage remains tracked by #168.
 With metrics enabled, all 104 required checks and 12 opt-in stress cases pass on each
 released Flink line (116 total per release), including the portable SQL and transpose
 configuration regressions. Both execution-counter artifacts were inspected.
+
+Java CI failures retain Surefire reports, fork dump streams, and JVM fatal-error logs in the
+`java-failure-diagnostics-<Flink line>` artifact for seven days. These accompany the console
+log when a native abort prevents the crashing test from completing its XML report.
