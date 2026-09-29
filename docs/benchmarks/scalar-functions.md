@@ -1346,3 +1346,28 @@ investigated but remain fallback after end-to-end regressions; their
 [raw trials](map-array-projections-2026-09-28.csv) and
 [rejection rationale](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-map-array-projections.md)
 are retained.
+
+
+## Array extrema admission experiment (2026-09-28)
+
+Direct admission of released DataFusion 54 integer ARRAY_MIN/ARRAY_MAX kernels
+was tested on baseline `2201e98f`, Intel Core i7-12650H, Linux/JDK 17, Flink 2.2.1,
+release/mimalloc, 2 GiB heap, parallelism one and 1,024-row batches. Five warmups
+preceded five alternating whole-job trials with a row source, row blackhole sink,
+both transposes and verified native Calc routing.
+
+For two million eight-element BIGINT arrays, MIN took 0.502s native versus 0.480s
+stock and MAX took 0.496s versus 0.465s. At twenty million rows MIN took 4.549s
+(4.537–4.572) versus 3.967s (3.932–4.072), a 14.7% regression. Wider arrays showed
+modest gains: 200,000 arrays of width 256 took 0.497s versus 0.525s for MIN and
+0.498s versus 0.532s for MAX. Width-64 BIGINT and INT results were approximately
+tied or modestly favorable. The default admission was rejected; both functions
+continue on Flink.
+
+[Raw trials](array-extrema-2026-09-28.csv) include every candidate scenario and
+previous-admission controls. The
+[experiment note](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-array-extrema.md)
+records all ranges, the input generator, reproduction commands, control drift,
+prototype parity results and the separate profile. No timing from the instrumented
+profile is included in the raw benchmark series. This investigation does not
+remove the remaining collection gaps in [#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).

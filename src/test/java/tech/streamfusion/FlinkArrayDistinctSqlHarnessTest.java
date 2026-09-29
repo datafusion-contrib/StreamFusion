@@ -59,7 +59,7 @@ class FlinkArrayDistinctSqlHarnessTest {
         "ARRAY_DISTINCT requires an integer ARRAY");
   }
 
-  private static TableEnvironment environment(String kind) {
+  static TableEnvironment environment(String kind) {
     DataType element =
         switch (kind) {
           case "TINYINT" -> TINYINT();

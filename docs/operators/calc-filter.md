@@ -1451,6 +1451,17 @@ token/depth limits. Deep legacy nesting grows the native stack as needed.
 See the [SQL/JSON parser note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md)
 and [per-function benchmarks](../benchmarks/scalar-functions.md).
 
+### ARRAY_MIN / ARRAY_MAX
+
+These functions remain on Flink. Integer-only native prototypes preserved
+values and schemas but regressed whole-job performance on short arrays, including
+a twenty-million-row run. See the
+[rejected extrema experiment](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-array-extrema.md)
+and [measurements](../benchmarks/scalar-functions.md#array-extrema-admission-experiment-2026-09-28).
+`ARRAY_MIN` is absent from the released Flink 1.18.1 SQL catalog; `ARRAY_MAX`
+is available on both supported Flink lines. The broader work remains in
+[#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
 ### ARRAY_DISTINCT
 
 Integer arrays (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`) use a typed kernel following
