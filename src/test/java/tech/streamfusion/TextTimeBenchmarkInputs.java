@@ -16,7 +16,7 @@ final class TextTimeBenchmarkInputs {
 
   static String baselineExpression(String input) {
     return switch (input) {
-      case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
+      case "tt_bytes", "tt_fixed_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
       case "tt_boolean" -> "b";
       case "tt_decimal", "tt_decimal_scale", "tt_unix_time" -> "n";
       case "tt_decimal_array" -> "a";
@@ -30,6 +30,7 @@ final class TextTimeBenchmarkInputs {
     return switch (input) {
       case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "BYTES";
       case "tt_boolean" -> "BOOLEAN";
+      case "tt_fixed_bytes" -> "BINARY(16)";
       case "tt_decimal", "tt_decimal_scale" -> "DECIMAL(38,9)";
       case "tt_unix_time" -> "BIGINT";
       case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
@@ -164,6 +165,18 @@ final class TextTimeBenchmarkInputs {
               .map(i -> Row.of(isNull(i, nullEvery) ? null : values[(int) (i % values.length)]))
               .returns(Types.ROW_NAMED(new String[] {"ts"}, Types.LOCAL_DATE_TIME)),
           Schema.newBuilder().column("ts", DataTypes.TIMESTAMP(9)).build());
+    } else if (input.equals("tt_fixed_bytes")) {
+      byte[][] values = {new byte[16], new byte[16]};
+      for (int i = 0; i < 16; i++) {
+        values[0][i] = (byte) (i * 17);
+        values[1][i] = (byte) (255 - i * 17);
+      }
+      tables.createTemporaryView(
+          "inputs",
+          env.fromSequence(0, rows - 1)
+              .map(i -> Row.of(isNull(i, nullEvery) ? null : values[(int) (i % 2)], (int) (i % 4)))
+              .returns(Types.ROW_NAMED(new String[] {"b", "n"}, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.INT)),
+          Schema.newBuilder().column("b", DataTypes.BINARY(16)).column("n", DataTypes.INT()).build());
     } else if (input.equals("tt_bytes") || input.startsWith("tt_utf16")) {
       java.nio.charset.Charset charset =
           switch (input) {

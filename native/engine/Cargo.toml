@@ -99,3 +99,7 @@ required-features = ["rocksdb-state"]
 [[bench]]
 name = "calc_expressions"
 harness = false
+
+[[bench]]
+name = "binary_expressions"
+harness = false
