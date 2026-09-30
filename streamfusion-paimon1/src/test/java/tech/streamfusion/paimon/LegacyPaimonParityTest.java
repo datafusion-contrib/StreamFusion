@@ -20,6 +20,7 @@ import org.apache.paimon.table.FileStoreTableFactory;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 /** Compare multiple committed SQL writes against the exact released 1.0.0 reader. */
@@ -140,4 +141,71 @@ class LegacyPaimonParityTest {
     }
     assertEquals(results.get(0), results.get(1));
   }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void nullablePrimaryKeyInputPreservesNotNullErrors(boolean containsNull) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-not-null-error");
+    List<String> failures = new ArrayList<>();
+    for (boolean nativeSink : new boolean[] {false, true}) {
+      String name = nativeSink ? "required_native" : "required_stock";
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env);
+      tableEnv.executeSql(
+          "CREATE CATALOG p WITH ('type'='paimon', 'warehouse'='" + warehouse.toUri() + "')");
+      tableEnv.executeSql("USE CATALOG p");
+      tableEnv.getConfig().set("table.exec.sink.upsert-materialize", "NONE");
+      tableEnv.executeSql(
+          "CREATE TABLE "
+              + name
+              + " (id BIGINT, label STRING, PRIMARY KEY (id) NOT ENFORCED) "
+              + "WITH ('bucket' = '2', 'local-merge-buffer-size' = '1 mb')");
+      var rows =
+          tech.streamfusion.compat.FlinkTestSources.fromData(
+              env,
+              Types.ROW_NAMED(new String[] {"id", "label"}, Types.LONG, Types.STRING),
+              Row.of(1L, "first"),
+              Row.of(containsNull ? null : 2L, "second"));
+      tableEnv.createTemporaryView(
+          "required_input",
+          tableEnv.fromDataStream(
+              rows, Schema.newBuilder().column("id", "BIGINT").column("label", "STRING").build()));
+      var scan = nativeSink ? NativePlanner.install(tableEnv) : null;
+      String sql = "INSERT INTO " + name + " SELECT id AS renamed, label FROM required_input";
+      if (nativeSink) {
+        String plan =
+            tableEnv.explainSql(sql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
+        assertTrue(plan.contains("native-paimon-not-null-enforcer"), () -> plan);
+        assertTrue(plan.contains("native-paimon-bucket-route"), () -> plan);
+      }
+      if (containsNull) {
+        Throwable failure = assertThrows(Throwable.class, () -> tableEnv.executeSql(sql).await());
+        while (failure.getCause() != null) failure = failure.getCause();
+        failures.add(failure.getMessage());
+      } else {
+        tableEnv.executeSql(sql).await();
+        var table =
+            FileStoreTableFactory.create(
+                LocalFileIO.create(), new Path(warehouse.resolve("default.db/" + name).toUri()));
+        var read = table.newReadBuilder();
+        List<String> values = new ArrayList<>();
+        try (var reader = read.newRead().createReader(read.newScan().plan())) {
+          reader.forEachRemaining(row -> values.add(row.getLong(0) + "|" + row.getString(1)));
+        }
+        values.sort(String::compareTo);
+        assertEquals(List.of("1|first", "2|second"), values);
+      }
+      if (nativeSink) {
+        assertTrue(
+            scan.fallbackReasons().stream().noneMatch(reason -> reason.startsWith("paimon sink:")),
+            scan::explainSummary);
+      }
+    }
+    if (containsNull) {
+      assertEquals(failures.get(0), failures.get(1));
+      assertTrue(failures.get(0).contains("Column 'id' is NOT NULL"));
+    }
+  }
+
 }

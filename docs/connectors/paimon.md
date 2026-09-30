@@ -798,7 +798,8 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   `table.exec.sink.not-null-enforcer=DROP`, or a bounded `CHAR`/`VARCHAR` or
   `BINARY`/`VARBINARY` target while `table.exec.sink.type-length-enforcer` is enabled. The stock
   sink path preserves Flink's configured fail/drop and trim/pad/error behavior.
-  The default `ERROR` mode stays columnar: Arrow validity checks run before local merging and
+  In both the 2.0 and released 1.0 adapters, the default `ERROR` mode stays columnar:
+  Arrow validity checks run before local merging and
   bucket routing, preserve Flink's first offending row/column and error message, and reject null
   values without changing primary-key or changelog semantics. Non-null batches pass without
   materializing rows or copying their buffers.
