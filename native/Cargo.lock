@@ -3677,9 +3677,11 @@ version = "0.1.0-rc3"
 dependencies = [
  "arrow 58.3.0",
  "arrow-avro",
+ "criterion",
  "jni",
  "libmimalloc-sys",
  "serde_json",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-format-support",
  "streamfusion-native-build",
@@ -3712,9 +3714,11 @@ name = "streamfusion-csv"
 version = "0.1.0-rc3"
 dependencies = [
  "arrow 58.3.0",
+ "criterion",
  "csv-core",
  "jni",
  "libmimalloc-sys",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-format-support",
  "streamfusion-native-build",
@@ -3725,7 +3729,9 @@ name = "streamfusion-format-support"
 version = "0.1.0-rc3"
 dependencies = [
  "arrow 58.3.0",
+ "criterion",
  "jni",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
 ]
 
@@ -3756,6 +3762,7 @@ dependencies = [
  "serde_json",
  "simd-json",
  "sonic-rs",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-format-support",
  "streamfusion-native-build",
@@ -3833,11 +3840,13 @@ version = "0.1.0-rc3"
 dependencies = [
  "arrow 58.3.0",
  "chrono",
+ "criterion",
  "jni",
  "libmimalloc-sys",
  "prost 0.14.4",
  "prost-reflect",
  "prost-types",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-format-support",
  "streamfusion-native-build",

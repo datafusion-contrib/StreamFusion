@@ -73,6 +73,11 @@ implementation changes; this inventory identifies the currently measured boundar
 | --- | --- | --- |
 | Arrow C Data ownership | `handoffs` | Full-schema and cached-schema export/import; nullable sliced string and integer batches |
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
+| JSON decode | `json_decode`, `json_codecs` | Direct production decode, projection, wide messages, historical nested Nexmark corpus |
+| Raw decode | `raw_decode` | All admitted primitive/string/binary types, endianness, null bodies, slices |
+| CSV decode | `csv_decode` | Quoted wide strings, nullable schema, strict/ignore-errors configuration |
+| Avro decode | `avro_decode` | Bare and Confluent framing, wide strings |
+| Protobuf decode | `protobuf_decode` | Direct descriptor-based decode, primitive/string fields, wide strings |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
 
 Coverage expansion remains for operations and workload variants outside this table.
