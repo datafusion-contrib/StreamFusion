@@ -118,3 +118,117 @@ mvn -pl :streamfusion-runtime test -Pbench \
   -Dprofile.query=q17 -Dprofile.backend=rocksdb -Dprofile.seconds=30 \
   "-Dsf.extraJvmArgs=-agentpath:${ASPROF_LIB}=start,event=cpu,interval=1ms,cstack=fp,collapsed,file=${PROFILE_FILE}"
 ```
+
+## Record state for immediate inner joins
+
+The Q23 CPU profile attributed 45.8% of sampled CPU to batch-state hydration and
+20.7% to bundle commit; Snappy decompression appeared in 30.3% of samples. These
+are inclusive percentages and overlap. Hydrating and rewriting both full
+per-key multisets on every batch made cost grow with the accumulated history.
+
+With mini-batching disabled, an inner join reads the input row's count through a
+batched point lookup and iterates the opposite key's records. Its persistent key
+contains the Flink key group, side, length-delimited equality key, and Arrow row
+payload. The value contains the count, association metadata, and last-write time.
+A bundle writes only changed records, rather than rewriting the entire key's
+multiset. An empty input point lookup does not imply an empty logical key.
+
+Opposite-side reuse uses a per-bundle cache charged to the shared host memory
+pool, without a separate fixed byte ceiling. Groups that cannot obtain a memory
+reservation use a lazy iterator and bounded output chunks;
+allocation pressure drains pending output before retrying the same record. Expired
+records are skipped before payload allocation. Outer, semi, anti, and mini-batched
+joins retain their existing bucket implementation.
+
+Existing bucket checkpoints migrate when a key is first accessed. Canonical
+savepoints retain the existing logical encoding, including counts and per-row TTL,
+so backend transitions and key-group split/merge restore remain portable. Migration,
+cache, pending writes, and canonical materialization reserve host memory.
+
+The matched Q23 run (Flink 1.18.1, Kafka/Paimon, disk state, mini-batching off,
+2M inputs, P4, 512 MiB managed memory and 3 GiB heap per engine) measured
+11.339–13.016 s for Flink and 4.055–4.084 s for StreamFusion: 2.80× by best
+measured trial, with 5,520,000 output rows from each. Previous StreamFusion
+bucket-state trials were 21.838–22.435 s in an earlier matched run. Those runs
+were separate and machine variability limits direct before/after attribution.
+[All trials](../benchmarks/paimon-disk-q23-flink118-2026-09-29.csv), including
+warmups and rejected experiments, are retained. The complete 23-query rerun
+measured Q23 at 19.911/30.660 s Flink versus 4.026/4.215 s native (4.95× best);
+Flink variability is substantial. [Full-suite trials](../benchmarks/paimon-disk-full-flink118-2026-09-30.csv)
+show wins for all queries, with Q3 a narrow 1.12× full-suite win. A separate
+five-run Q3 verification measured 1.20× best and 1.29× by mean time; see the
+[benchmark details](../benchmarks.md#flink-118-diskpaimon-headline-rerun-2026-09-30).
+
+
+### Separating record layout from probe reuse, 2026-09-30
+
+A release diagnostic compares the old bucket store with the record store using
+no opposite-side cache, the production 8 MiB allowance, and a 64 MiB allowance.
+The allowance is a ceiling per store, not reserved memory. Disabling reuse also
+skips the cache-prefill scan. SQL, input, and the persistent record layout are
+identical across the three record variants; the bucket variant retains its
+original full-group reuse.
+
+The state-level diagnostic uses a 64 MiB enforced native pool, an 8 MiB RocksDB
+block cache, two 16 MiB write buffers, and uncompressed state. It includes Arrow
+conversion, join output consumption, and state updates, but excludes Kafka, JNI,
+Paimon, startup, and seeding. Seeded state can remain in memtables. Each case has
+one warmup and five measured trials, with policy order rotated. The table shows
+median seconds; every policy produced the same row count and checksum.
+
+| Shape / payload bytes | Bucket | Record, no reuse | Record, 8 MiB | Record, 64 MiB |
+|---|---:|---:|---:|---:|
+| Unique / 0 | 0.0755 | 0.1534 | 0.1585 | 0.1548 |
+| Unique / 256 | 0.0900 | 0.1873 | 0.1846 | 0.1924 |
+| Repeated / 0 | 0.0781 | 0.1864 | 0.0877 | 0.0880 |
+| Repeated / 256 | 0.2655 | 0.2869 | 0.1595 | 0.1596 |
+| Skewed / 0 | 0.0563 | 0.0942 | 0.0620 | 0.0612 |
+| Skewed / 256 | 2.0976 | 0.1459 | 0.0972 | 0.0952 |
+| 50,000-row group / 0 | 0.1256 | 0.3622 | 0.3635 | 0.1277 |
+| 50,000-row group / 256 | 0.4500 | 0.9465 | 0.9475 | 0.4557 |
+
+[Raw state-level trials](../benchmarks/record-join-probe-cache-2026-09-30.csv)
+retain all warmups and measured trials. Unique-key inputs favor the bucket layout;
+record layout is not universally faster. Repeated probes benefit from reuse.
+When a group exceeds 8 MiB, lazy rescans are about 2–3 times slower here than
+keeping that group under the larger allowance. The cap protects memory rather
+than creating the throughput improvement. Wide skewed bucket timings vary with
+storage/compaction behavior and should not be generalized into a universal ratio.
+
+
+End-to-end Q23 trials keep Kafka, JNI, both transposes, both joins, and Paimon
+in the measured path. Each fresh JVM has one warmup; the first series has two
+measured trials per policy and the reverse-order repeat has five. Configuration:
+Flink 1.18.1, release native library, disk, mini-batching off, 2M events, parallelism
+four, four Kafka partitions, 512 MiB managed memory and 3 GiB JVM heap. The existing
+shared-cluster task off-heap ceiling is 48 GiB for every policy (not allocated
+up front); these runs do **not** demonstrate a 512 MiB total native-memory budget.
+
+| Sequence / policy | Measured native seconds | Mean seconds |
+|---|---|---:|
+| First / record, 8 MiB | 4.295, 4.207 | 4.251 |
+| First / record, no reuse | 9.092, 9.337 | 9.215 |
+| First / record, 64 MiB | 4.345, 4.360 | 4.353 |
+| First / old bucket | 23.408, 22.518 | 22.963 |
+| Repeat / record, 8 MiB | 7.718, 9.130 | 8.424 |
+| Reverse / record, 64 MiB | 4.166, 4.139, 4.192, 4.240, 3.873 | 4.122 |
+| Reverse / record, 8 MiB | 7.681, 8.025, 11.850, 11.094, 4.078 | 8.546 |
+
+All completed policy runs returned 5,520,000 rows from each engine. The harness
+checks counts on the final trial, so other CSV count cells are intentionally blank.
+[All end-to-end trials](../benchmarks/paimon-disk-q23-cache-ab-flink118-2026-09-30.csv)
+include Flink controls, warmups, and native-library hashes. Flink measured trials
+range from 11.065 to 44.289 seconds; host variability is substantial. The same
+8 MiB binary was used in all three phases and its timings varied widely. No
+stable factor should be attributed to that cache based on the favorable first
+phase alone. The record store without reuse was approximately 2.49 times faster
+than the old bucket store by these phase means, establishing an independent
+layout benefit for Q23, while retaining the limits of separate timed phases.
+Reuse can further help, and the larger allowance was more consistent in this
+experiment; cache admission and working-set effects have not been causally
+profiled. These measurements preceded removal of the fixed 8 MiB production ceiling.
+Production reuse now follows the shared native memory pool; fixed cache allowances
+remain test-only controls for reproducing this experiment. A regression test
+verifies reuse of a group larger than 8 MiB under a 64 MiB pool, correct join
+output, and release of reservations. The small-pool regression still verifies
+lazy fallback and bounded output when a complete group cannot fit.

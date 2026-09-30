@@ -56,3 +56,18 @@ changelog join needs per-row retract bookkeeping a batch join can't give.
 ## Verification
 Parity harness: interval and window joins over DataStream and Parquet sources, at
 parallelism 1 and 2 (cross-input co-location), plus LEFT-join fallback assertions.
+
+## Updating inner joins on disk
+
+Arroyo's `join_with_expiration` keeps separate input-side state and probes the
+opposite side. Immediate updating inner joins follow that separation: point reads
+for input counts and lazy opposite-side record scans, with bounded per-bundle reuse.
+The record metadata and physical key-group prefix differ because Flink requires
+multiset retractions, unique-key replacement, independent write-based TTL, and
+portable key-group savepoints. Host-pool reservations follow Comet's reserve/release
+pattern; a cache miss never authorizes unbounded full-key hydration.
+
+Probe reuse has no separate fixed byte ceiling: allocations are charged to the
+shared host memory pool, following Comet’s reservation model. Failure to reserve
+a complete group retains the lazy RocksDB probe path. Historical 8 MiB/64 MiB
+comparisons remain test-only controls.

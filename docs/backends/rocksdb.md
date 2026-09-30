@@ -72,16 +72,15 @@ incremental checkpointing is enabled.
 
 There are also deliberate implementation differences:
 
-The updating JOIN currently persists a complete bucket per join key and coalesces mutations
-within each bundle. This can amplify writes for a sparse update to a large bucket. A release
-state microbenchmark tested per-record entries while preserving whole-bucket hydration:
-hot-key logical writes fell from 262 MiB to 67 KiB per 64 bundles, but foreground time increased
-from 0.270 s to 0.655 s; unique and uniform-key controls also regressed. The current format is
-retained. A useful redesign must address the access pattern as well as write granularity; this
-measurement establishes no new state format or checkpoint migration contract. The reproducible
-diagnostic is `join_record_profile` in the Rust engine tests, with the decision and detailed
-counter limitations recorded in `.claude/wontdos/61-record-join-full-hydration.md`.
-Access-pattern redesign and its recovery requirements remain tracked in
+Immediate inner JOIN uses record-level point updates and bounded opposite-side probes;
+other families and mini-batched joins retain complete buckets. The access pattern matters:
+an earlier storage-only experiment retained full hydration and regressed from 0.270 s to
+0.655 s despite reducing hot-key logical writes from 262 MiB to 67 KiB per 64 bundles.
+That rejected design remains documented in `.claude/wontdos/61-record-join-full-hydration.md`.
+The selective implementation migrates old buckets lazily and preserves the logical canonical
+savepoint format; the matched Q23 test measured 2.80× over Flink. See
+[record-state execution](../optimizations/rocksdb-write-through.md#record-state-for-immediate-inner-joins).
+The redesign, recovery validation, and performance gate remain tracked in
 [#244](https://github.com/datafusion-contrib/StreamFusion/issues/244).
 
 - the group aggregate, changelog normalize, keep-last deduplicate, updating join, the three Top-N
@@ -180,3 +179,12 @@ The planner declines keyed SQL with a changelog-specific reason and preserves th
 and changelog setting. Stateless native SQL remains eligible. Use `state.changelog.enabled=false`
 with StreamFusion's native state backends. This is unrelated to SQL insert/update/delete changelog
 rows, which supported native SQL operators handle normally.
+
+
+The controlled [record-layout and probe-reuse measurements](../optimizations/rocksdb-write-through.md#separating-record-layout-from-probe-reuse-2026-09-30)
+show that bounded reuse is a memory safeguard, not a universal speedup. Unique-key
+inputs favored the old bucket store in the state-level diagnostic; groups larger
+than the former 8 MiB allowance paid repeated lazy-scan costs.
+That fixed ceiling has been removed; probe reuse is governed by reservations
+from the shared native memory pool. Immediate inner joins
+still persist only changed records, independent of whether probe reuse fits.

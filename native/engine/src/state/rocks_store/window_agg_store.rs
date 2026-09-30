@@ -213,6 +213,13 @@ impl RocksWindowAggStore {
         if entries.is_empty() {
             return Ok(());
         }
+        if state_columns.is_empty() {
+            let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+            for (db_key, start) in entries {
+                writes.put(db_key, start.to_le_bytes())?;
+            }
+            return writes.finish();
+        }
         let rows = self
             .state_converter
             .convert_columns(state_columns)
@@ -537,6 +544,41 @@ mod tests {
         assert_eq!(memory.flush(1000).unwrap(), rocks.flush(1000).unwrap());
         assert_eq!(memory.flush(2000).unwrap(), rocks.flush(2000).unwrap());
         assert_eq!(memory.flush(3000).unwrap(), rocks.flush(3000).unwrap());
+    }
+
+    #[test]
+    fn grouping_only_windows_survive_store_round_trips_and_checkpoint_restore() {
+        let mut memory = TumblingAggregator::new(1000, 1000, false, vec![], vec![]);
+        let store =
+            RocksWindowAggStore::create(test_config("grouping-only"), &[], 0..=127).unwrap();
+        let mut rocks = TumblingAggregator::new(1000, 1000, false, vec![], vec![])
+            .with_key_timestamp_precisions(vec![-1])
+            .with_store(store, vec![DataType::Int64]);
+        for batch in [
+            keyed_window_batch(&[0, 0, 500], &[2, 1, 1], &[10, 20, 5]),
+            keyed_window_batch(&[700, 1500], &[3, 1], &[7, 1]),
+        ] {
+            memory.update(&batch).unwrap();
+            rocks.update(&batch).unwrap();
+        }
+        let expected = memory.flush(1000).unwrap();
+        assert_eq!(3, expected.num_rows());
+        assert_eq!(expected, rocks.flush(1000).unwrap());
+        let snapshot = snapshot_dir("grouping-only");
+        let manifest = rocks.checkpoint_store(i64::MIN, &snapshot).unwrap();
+        drop(rocks);
+        let store = RocksWindowAggStore::open_merged(
+            test_config("grouping-only-restored"),
+            &[],
+            0..=127,
+            &[(snapshot, manifest.snapshot_id)],
+            true,
+        )
+        .unwrap();
+        let mut restored = TumblingAggregator::new(1000, 1000, false, vec![], vec![])
+            .with_key_timestamp_precisions(vec![-1])
+            .with_store(store, vec![DataType::Int64]);
+        assert_eq!(memory.flush(2000).unwrap(), restored.flush(2000).unwrap());
     }
 
     #[test]

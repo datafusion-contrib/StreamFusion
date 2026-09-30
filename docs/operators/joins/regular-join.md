@@ -146,3 +146,26 @@ Flink. The initial admission adds verified composition with other native operato
 standalone throughput optimization.
 
 Run `SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench -Dtest=CrossJoinBenchmark`.
+
+### Immediate inner-join disk state
+
+When mini-batching is disabled, RocksDB inner joins store individual rows and their
+counts. Input updates use point reads; opposite-side probes use a memory-accounted,
+per-bundle cache or a lazy iterator with bounded output chunks. This preserves
+retractions, unique-key replacement, null-key policies, and independent per-side
+write-based TTL without hydrating both full histories on each batch.
+
+Old bucket checkpoints migrate lazily. Canonical savepoints retain their existing
+logical representation for memory/disk transitions and key-group rescaling. Native
+checkpoints require a reader supporting the record format and the same join kind
+and mini-batching configuration on restore.
+Other join families and mini-batched inner joins continue to use bucket state.
+
+
+The controlled [record-layout and probe-reuse measurements](../../optimizations/rocksdb-write-through.md#separating-record-layout-from-probe-reuse-2026-09-30)
+show that bounded reuse is a memory safeguard, not a universal speedup. Unique-key
+inputs favored the old bucket store in the state-level diagnostic; groups larger
+than the former 8 MiB allowance paid repeated lazy-scan costs.
+That fixed ceiling has been removed; probe reuse is governed by reservations
+from the shared native memory pool. Immediate inner joins
+still persist only changed records, independent of whether probe reuse fits.
