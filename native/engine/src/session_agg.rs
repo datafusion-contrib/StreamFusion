@@ -418,7 +418,7 @@ impl SessionAggregator {
             fields.push(Field::new(
                 format!("result{i}"),
                 self.aggregates[i].result_type(),
-                false,
+                true,
             ));
             columns.push(scalars_to_array(scalars, &self.aggregates[i].result_type()));
         }

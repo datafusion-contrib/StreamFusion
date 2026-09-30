@@ -9998,3 +9998,43 @@ fn component_timestamp_topn_checkpoint_preserves_fractional_order_and_payload() 
     assert_eq!(sorted.value(0).unwrap().nano_of_milli(), 999999);
     assert_eq!(sorted.value(1).unwrap().nano_of_milli(), 1);
 }
+
+#[test]
+fn session_all_null_aggregate_results_have_nullable_arrow_fields() {
+    let values: ArrayRef = Arc::new(Int64Array::from(vec![None, Some(2)]));
+    let mut columns = vec![
+        (
+            "ts".to_string(),
+            Arc::new(Int64Array::from(vec![0, 0])) as ArrayRef,
+        ),
+        (
+            "key0".to_string(),
+            Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef,
+        ),
+    ];
+    for i in 0..5 {
+        columns.push((format!("value{i}"), values.clone()));
+    }
+    let input = RecordBatch::try_from_iter(columns).unwrap();
+    let mut aggregator = SessionAggregator::new(1000, vec![0; 5], vec![0, 1, 2, 3, 7]);
+    aggregator.update(&input).unwrap();
+    let output = aggregator.flush(1000).unwrap();
+    assert_eq!(output.num_rows(), 2);
+    for i in 0..3 {
+        let column = output
+            .column(3 + i)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(column.iter().collect::<Vec<_>>(), vec![None, Some(2)]);
+        assert!(output.schema().field(3 + i).is_nullable());
+    }
+    for i in 3..5 {
+        let column = output
+            .column(3 + i)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(column.iter().collect::<Vec<_>>(), vec![Some(0), Some(1)]);
+    }
+}
