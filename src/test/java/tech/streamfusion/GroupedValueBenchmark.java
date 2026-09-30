@@ -22,6 +22,8 @@ class GroupedValueBenchmark {
   private static final int RUNS = Integer.getInteger("grouped.value.runs", 5);
   private static final boolean DISTINCT = Boolean.getBoolean("grouped.value.distinct");
   private static final boolean SINGLE = Boolean.getBoolean("grouped.value.single");
+  private static final boolean TWO_PHASE =
+      Boolean.parseBoolean(System.getProperty("grouped.value.twoPhase", Boolean.toString(SINGLE)));
   private static final String SQL =
       SINGLE
           ? "INSERT INTO sink SELECT k, SINGLE_VALUE(v) FROM inputs GROUP BY k"
@@ -35,13 +37,13 @@ class GroupedValueBenchmark {
   void groupedValues() throws Exception {
     if (DISTINCT && SINGLE) throw new IllegalArgumentException("Select DISTINCT first/last or SINGLE_VALUE");
     for (String type :
-        System.getProperty("grouped.value.types", SINGLE || DISTINCT ? "STRING" : "BIGINT,STRING")
+        System.getProperty("grouped.value.types", DISTINCT || SINGLE ? "STRING" : "BIGINT,STRING")
             .split(",")) {
       String plan = NativePlanner.explain(environment(type), SQL);
       if (!plan.contains("NativeColumnarGroupAggregate")
           || !plan.contains("RowDataToArrow")
           || !plan.contains("ArrowToRowData")
-          || (SINGLE && !plan.contains("NativeColumnarLocalGroupAggregate"))) {
+          || (TWO_PHASE && !plan.contains("NativeColumnarLocalGroupAggregate"))) {
         throw new IllegalStateException("Expected native aggregate and both transposes: " + plan);
       }
       double[][] times = new double[2][RUNS];
@@ -63,11 +65,12 @@ class GroupedValueBenchmark {
       double nativeTime = median(times[1]);
       System.out.printf(
           Locale.ROOT,
-          "[grouped-value] distinct=%s single=%s type=%s rows=%d Flink=%.6fs"
+          "[grouped-value] single=%s distinct=%s type=%s two_phase=%s rows=%d Flink=%.6fs"
               + " Native=%.6fs ratio=%.3fx flink_trials=%s native_trials=%s%n",
-          DISTINCT,
           SINGLE,
+          DISTINCT,
           type,
+          TWO_PHASE,
           ROWS,
           host,
           nativeTime,
@@ -89,8 +92,10 @@ class GroupedValueBenchmark {
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
-    table.getConfig().set("table.optimizer.agg-phase-strategy", SINGLE ? "TWO_PHASE" : "ONE_PHASE");
-    if (SINGLE) {
+    table
+        .getConfig()
+        .set("table.optimizer.agg-phase-strategy", TWO_PHASE ? "TWO_PHASE" : "ONE_PHASE");
+    if (TWO_PHASE) {
       table.getConfig().set("table.exec.mini-batch.enabled", "true");
       table.getConfig().set("table.exec.mini-batch.size", "1024");
       table.getConfig().set("table.exec.mini-batch.allow-latency", "100 ms");

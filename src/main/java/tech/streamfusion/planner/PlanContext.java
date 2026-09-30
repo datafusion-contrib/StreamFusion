@@ -1,5 +1,7 @@
 package tech.streamfusion.planner;
 
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.Set;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
@@ -15,10 +17,19 @@ final class PlanContext {
 
   private final PhysicalPlanScan scan;
   private final Set<String> repeatedSources;
+  private final Map<RelNode, RelNode> originals = new IdentityHashMap<>();
 
   PlanContext(PhysicalPlanScan scan, Set<String> repeatedSources) {
     this.scan = scan;
     this.repeatedSources = repeatedSources;
+  }
+
+  void rememberOriginal(RelNode rewritten, RelNode original) {
+    originals.put(rewritten, original);
+  }
+
+  RelNode originalNode(RelNode rewritten) {
+    return originals.getOrDefault(rewritten, rewritten);
   }
 
   String keyedStateUnsupportedReason() {

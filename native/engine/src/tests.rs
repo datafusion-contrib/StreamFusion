@@ -1,6 +1,434 @@
 use super::*;
 
 #[test]
+fn wide_distinct_retention_reads_state_at_flush_and_refreshes_at_flush() {
+    let mut local = LocalGroupAggregator::new(
+        vec![9, 18, 7],
+        vec![5800; 3],
+        vec![1; 3],
+        vec![],
+        vec![0],
+        vec![0, 1, 2],
+    );
+    let mut global =
+        GroupAggregator::new(vec![9, 17, 7], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+            .with_distinct_view_columns(vec![4, 5, 6])
+            .with_mini_batch()
+            .with_state_ttl(100)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+    for (arrivals, flush, sum, count, kinds) in [
+        (vec![(1, 0)], 10, 1, 1, vec![0]),
+        (vec![(2, 90)], 120, 2, 1, vec![0]),
+        (vec![(2, 200)], 215, 2, 1, vec![1, 2]),
+        (vec![(2, 300), (3, 320)], 340, 5, 2, vec![0]),
+    ] {
+        for (value, arrival) in arrivals {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            assert_eq!(
+                global.update(&local.flush(), arrival).unwrap().num_rows(),
+                0
+            );
+        }
+        assert_eq!(global.staged_keys(), 1);
+        assert!(global.staging_bytes() > 0);
+        let output = global.flush_mini_batch_at(flush).unwrap();
+        assert_eq!(
+            row_kind_column(&output).unwrap().values().as_ref(),
+            kinds.as_slice()
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), output.num_rows() - 1).unwrap(),
+            ScalarValue::Decimal128(Some(sum), 38, 0)
+        );
+        assert_eq!(*values(&output, 3).last().unwrap(), count);
+        assert_eq!(global.staged_keys(), 0);
+        assert_eq!(global.staging_bytes(), 0);
+    }
+}
+
+#[test]
+fn wide_decimal_local_emission_matches_binary_group_order_across_flushes() {
+    let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../src/test/resources/group-map-order.json"
+    ))
+    .unwrap();
+    for case in fixtures.as_array().unwrap() {
+        let keys: Vec<Option<i64>> = case["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().map(|v| v.parse().unwrap()))
+            .collect();
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, true),
+                Field::new("value", DataType::Decimal128(38, 0), false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(
+                    Decimal128Array::from(vec![1; case["values"].as_array().unwrap().len()])
+                        .with_precision_and_scale(38, 0)
+                        .unwrap(),
+                ),
+            ],
+        )
+        .unwrap();
+        for split in [1, usize::MAX] {
+            let mut local =
+                LocalGroupAggregator::new(vec![9], vec![5800], vec![1], vec![], vec![0], vec![0])
+                    .with_memory_budget(1 << 20)
+                    .unwrap();
+            let mut ends = Vec::new();
+            if let Some(position) = case["clear_after"].as_u64() {
+                ends.push(position as usize);
+            }
+            ends.push(batch.num_rows());
+            let mut start = 0;
+            for end in ends {
+                let count = (end - start).min(split);
+                local.update(&batch.slice(start, count)).unwrap();
+                if start + count < end {
+                    local
+                        .update(&batch.slice(start + count, end - start - count))
+                        .unwrap();
+                }
+                let output = local.try_flush().unwrap();
+                if end == batch.num_rows() {
+                    let expected: Vec<Option<i64>> = case["order"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_str().map(|v| v.parse().unwrap()))
+                        .collect();
+                    let actual = output
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap();
+                    assert_eq!(
+                        actual.iter().collect::<Vec<_>>(),
+                        expected,
+                        "{} split {split}",
+                        case["name"]
+                    );
+                }
+                start = end;
+            }
+        }
+    }
+}
+
+#[test]
+fn wide_decimal_local_flush_reserves_temporary_memory_before_draining() {
+    let batch = group_scalar_changelog(
+        (0..96)
+            .map(|v| ScalarValue::Decimal128(Some(v), 38, 0))
+            .collect(),
+        vec![0; 96],
+    );
+    let mut local =
+        LocalGroupAggregator::new(vec![9], vec![5800], vec![1], vec![], vec![0], vec![0])
+            .with_memory_budget(1 << 20)
+            .unwrap();
+    local.update(&batch).unwrap();
+    let tight_budget = local.memory.state_bytes as i64 + 1024;
+    let mut local = local.with_memory_budget(tight_budget).unwrap();
+    let retained = local.memory.state_bytes;
+    assert!(matches!(
+        local.try_flush(),
+        Err(DataFusionError::ResourcesExhausted(_))
+    ));
+    assert_eq!(local.memory.state_bytes, retained);
+    // Denied scratch memory leaves the bundle intact and releases the temporary reservation.
+    let mut local = local.with_memory_budget(1 << 20).unwrap();
+    let output = local.try_flush().unwrap();
+    assert_eq!(output.num_rows(), 1);
+    assert_eq!(
+        ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+        ScalarValue::Decimal128(Some(4560), 38, 0)
+    );
+    let view = output
+        .column(2)
+        .as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .unwrap();
+    assert_eq!(view.value_length(0), 96);
+    assert!(local.memory.state_bytes > 0 && local.memory.state_bytes < retained);
+    assert_eq!(local.try_flush().unwrap().num_rows(), 0);
+}
+
+#[test]
+fn wide_decimal_distinct_sum_checkpoint_preserves_overflow_without_refolding() {
+    let large = 9 * 10i128.pow(37);
+    for inputs in [vec![large, large - 3], vec![large, large - 3, -large]] {
+        let mut memory = GroupAggregator::new(vec![9], vec![5800], vec![1], vec![0], true);
+        memory
+            .update(
+                &group_scalar_changelog(
+                    inputs
+                        .iter()
+                        .map(|&v| ScalarValue::Decimal128(Some(v), 38, 0))
+                        .collect(),
+                    vec![0; inputs.len()],
+                ),
+                0,
+            )
+            .unwrap();
+        let mut frames = read_framed(&memory.snapshot());
+        // Side-table order is not accumulator order: make a refold produce the wrong sum.
+        let side = &frames[1];
+        let values = side
+            .column(1)
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap();
+        let mut rows = (0..side.num_rows() as u32).collect::<Vec<_>>();
+        rows.sort_by_key(|&row| {
+            let value = values.value(row as usize);
+            if value == large {
+                0
+            } else if value < 0 {
+                1
+            } else {
+                2
+            }
+        });
+        let rows = arrow::array::UInt32Array::from(rows);
+        frames[1] = RecordBatch::try_new(
+            side.schema(),
+            side.columns()
+                .iter()
+                .map(|column| arrow::compute::take(column, &rows, None).unwrap())
+                .collect(),
+        )
+        .unwrap();
+        if inputs.len() == 3 {
+            let mut legacy = frames.clone();
+            let fields = legacy[0]
+                .schema()
+                .fields()
+                .iter()
+                .map(|field| field.as_ref().clone().with_metadata(Default::default()))
+                .collect::<Vec<_>>();
+            let mut columns = legacy[0].columns().to_vec();
+            columns[2] = Arc::new(
+                Decimal128Array::from(vec![None::<i128>])
+                    .with_precision_and_scale(38, 0)
+                    .unwrap(),
+            );
+            columns[3] = Arc::new(Int64Array::from(vec![0]));
+            legacy[0] = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+            let mut restored = GroupAggregator::restore(
+                vec![9],
+                vec![5800],
+                vec![1],
+                vec![0],
+                true,
+                &write_framed(&legacy),
+                0,
+            );
+            let output = restored
+                .update(
+                    &group_scalar_changelog(vec![ScalarValue::Decimal128(Some(7), 38, 0)], vec![0]),
+                    0,
+                )
+                .unwrap();
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(1), 1).unwrap(),
+                ScalarValue::Decimal128(Some(large + 4), 38, 0)
+            );
+        }
+        let mut restored = GroupAggregator::restore(
+            vec![9],
+            vec![5800],
+            vec![1],
+            vec![0],
+            true,
+            &write_framed(&frames),
+            0,
+        );
+        for (value, kind) in [(large, 0), (7, 0), (large, 3), (large, 3)] {
+            let batch = group_scalar_changelog(
+                vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                vec![kind],
+            );
+            assert_eq!(
+                restored.update(&batch, 0).unwrap(),
+                memory.update(&batch, 0).unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+fn wide_decimal_global_views_union_before_folding_at_bundle_flush() {
+    let large = 9 * 10i128.pow(37);
+    for kind in [9, 17] {
+        let (local_kinds, views) = if kind == 9 {
+            (vec![9], vec![2])
+        } else {
+            (vec![18, 7], vec![3])
+        };
+        let mut local = LocalGroupAggregator::new(
+            local_kinds.clone(),
+            vec![5800; local_kinds.len()],
+            vec![1; local_kinds.len()],
+            vec![],
+            vec![0],
+            vec![0],
+        );
+        let mut global = GroupAggregator::new(vec![kind], vec![5800], vec![1], vec![0], true)
+            .with_distinct_view_columns(views)
+            .with_mini_batch()
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        // Singleton local views arrive in an order that would avoid overflow if folded eagerly.
+        for value in [Some(large), Some(-large), Some(large - 3), None] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(value, 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            assert_eq!(global.update(&local.flush(), 0).unwrap().num_rows(), 0);
+        }
+        let staged_bytes = global.memory.state_bytes;
+        assert!(staged_bytes > 0);
+        let output = global.flush_mini_batch().unwrap();
+        assert_eq!(output.num_rows(), 1);
+        if kind == 9 {
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+                ScalarValue::Decimal128(Some(-large), 38, 0)
+            );
+        } else {
+            assert!(output.column(1).is_null(0));
+        }
+        let resident_bytes = global.memory.state_bytes;
+        assert!(resident_bytes < staged_bytes);
+        // A fresh bundle sees durable membership, including the keys involved in overflow.
+        for value in [large, large - 3, -large] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            global.update(&local.flush(), 0).unwrap();
+        }
+        assert_eq!(global.flush_mini_batch().unwrap().num_rows(), 0);
+        assert_eq!(global.memory.state_bytes, resident_bytes);
+    }
+}
+
+#[test]
+fn wide_decimal_local_views_share_order_and_keep_filtered_zero_entries() {
+    let large = 9 * 10i128.pow(37);
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("value", DataType::Decimal128(38, 0), true),
+            Field::new("left", DataType::Boolean, false),
+            Field::new("right", DataType::Boolean, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1; 5])),
+            Arc::new(
+                Decimal128Array::from(vec![
+                    Some(large),
+                    Some(large - 3),
+                    Some(-large),
+                    None,
+                    Some(large),
+                ])
+                .with_precision_and_scale(38, 0)
+                .unwrap(),
+            ),
+            Arc::new(BooleanArray::from(vec![true, false, true, true, false])),
+            Arc::new(BooleanArray::from(vec![false, true, false, false, true])),
+        ],
+    )
+    .unwrap();
+    for split in [1, 3, 5] {
+        let mut local = LocalGroupAggregator::new(
+            vec![7, 9, 9],
+            vec![5800; 3],
+            vec![1; 3],
+            vec![-1, 2, 3],
+            vec![0],
+            vec![0, 1, 2],
+        )
+        .with_memory_budget(1 << 20)
+        .unwrap();
+        local.update(&batch.slice(0, split)).unwrap();
+        if split < 5 {
+            local.update(&batch.slice(split, 5 - split)).unwrap();
+        }
+        let retained = local.memory.state_bytes;
+        let output = local.flush();
+        assert!(local.memory.state_bytes > 0 && local.memory.state_bytes < retained);
+        for (column, expected_counts) in [
+            (4, vec![0, 2, 1, 1]),
+            (5, vec![0, 1, 1, 0]),
+            (6, vec![0, 1, 0, 1]),
+        ] {
+            let view = output
+                .column(column)
+                .as_any()
+                .downcast_ref::<arrow::array::ListArray>()
+                .unwrap();
+            let entries = view.value(0);
+            let entries = entries
+                .as_any()
+                .downcast_ref::<arrow::array::StructArray>()
+                .unwrap();
+            let values = entries
+                .column(0)
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .unwrap();
+            let counts = entries
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(
+                values.iter().collect::<Vec<_>>(),
+                vec![None, Some(large), Some(-large), Some(large - 3)]
+            );
+            assert_eq!(counts.values().as_ref(), expected_counts.as_slice());
+        }
+        let mut global =
+            GroupAggregator::new(vec![7, 9, 9], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+                .with_distinct_view_columns(vec![4, 5, 6])
+                .with_mini_batch();
+        global.update(&output, 0).unwrap();
+        let merged = global.flush_mini_batch().unwrap();
+        assert_eq!(values(&merged, 1), vec![3]);
+        assert_eq!(
+            ScalarValue::try_from_array(merged.column(2), 0).unwrap(),
+            ScalarValue::Decimal128(Some(0), 38, 0)
+        );
+        assert!(merged.column(3).is_null(0));
+        local.update(&batch.slice(1, 1)).unwrap();
+        let fresh = local.flush();
+        let view = fresh
+            .column(4)
+            .as_any()
+            .downcast_ref::<arrow::array::ListArray>()
+            .unwrap();
+        assert_eq!(view.value_length(0), 1);
+    }
+}
+
+#[test]
 fn distinct_average_partials_widen_and_merge_membership_across_restore() {
     for (code, first, second, sum, average) in [
         (
@@ -8616,6 +9044,16 @@ mod rocksdb_group_multisets {
     fn typed_distinct_counts_survive_memory_and_rocks_restore() {
         for (code, value) in [
             (0, ScalarValue::Int64(Some(i64::MAX))),
+            (10, ScalarValue::Boolean(Some(false))),
+            (
+                7,
+                ScalarValue::Struct(Arc::new(streamfusion_bridge::timestamp::timestamp_array([
+                    Some(
+                        streamfusion_bridge::timestamp::TimestampValue::new(i64::MAX, 999_999)
+                            .unwrap(),
+                    ),
+                ]))),
+            ),
             (2, ScalarValue::Int32(Some(i32::MIN))),
             (4, ScalarValue::Int16(Some(i16::MIN))),
             (5, ScalarValue::Int8(Some(i8::MIN))),
@@ -8796,9 +9234,9 @@ mod rocksdb_group_multisets {
     }
 
     #[test]
-    fn distinct_average_migrates_and_checkpoints_sum_and_membership() {
+    fn distinct_running_migrates_and_checkpoints_sum_and_membership() {
         let large = 9 * 10i128.pow(37);
-        for (code, low, high, third) in [
+        for (kind, (code, low, high, third)) in [
             (
                 5,
                 ScalarValue::Int8(Some(-3)),
@@ -8817,12 +9255,15 @@ mod rocksdb_group_multisets {
                 ScalarValue::Decimal128(Some(large - 1), 38, 0),
                 ScalarValue::Decimal128(Some(-large), 38, 0),
             ),
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|case| [9, 17].into_iter().map(move |kind| (kind, case.clone())))
+        {
             let make =
-                || GroupAggregator::new(vec![17, 3], vec![code, 0], vec![1, -1], vec![0], true);
+                || GroupAggregator::new(vec![kind, 3], vec![code, 0], vec![1, -1], vec![0], true);
             let codec = || {
                 GroupStateCodec::new(
-                    vec![17, 3],
+                    vec![kind, 3],
                     vec![low.data_type(), DataType::Int64],
                     vec![1, -1],
                     vec![-1; 2],
@@ -8866,7 +9307,7 @@ mod rocksdb_group_multisets {
                 .into_values()
                 .collect::<Vec<_>>();
             let mut exported = GroupAggregator::restore_partitions(
-                vec![17, 3],
+                vec![kind, 3],
                 vec![code, 0],
                 vec![1, -1],
                 vec![0],
@@ -8881,6 +9322,178 @@ mod rocksdb_group_multisets {
                 assert_eq!(rocks.update(&batch, 0).unwrap(), expected);
                 assert_eq!(exported.update(&batch, 0).unwrap(), expected);
             }
+        }
+    }
+
+    #[test]
+    fn buffered_wide_distinct_retention_uses_rocks_flush_clock() {
+        let make = || {
+            GroupAggregator::new(vec![9, 17, 7], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+                .with_distinct_view_columns(vec![4, 5, 6])
+                .with_mini_batch()
+                .with_state_ttl(100)
+        };
+        let codec = GroupStateCodec::new(
+            vec![9, 17, 7],
+            vec![DataType::Decimal128(38, 0); 3],
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+        );
+        let store = RocksGroupStore::create(store_config("wide-retention", 100), codec).unwrap();
+        let mut rocks = make().with_backend(store);
+        let mut memory = make();
+        let mut local = LocalGroupAggregator::new(
+            vec![9, 18, 7],
+            vec![5800; 3],
+            vec![1; 3],
+            vec![],
+            vec![0],
+            vec![0, 1, 2],
+        );
+        for (arrivals, flush, kinds) in [
+            (vec![(1, 0)], 10, vec![0]),
+            (vec![(2, 90)], 120, vec![0]),
+            (vec![(2, 200)], 215, vec![1, 2]),
+            (vec![(2, 300), (3, 320)], 340, vec![0]),
+        ] {
+            for (value, arrival) in arrivals {
+                local
+                    .update(&group_scalar_changelog(
+                        vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                        vec![0],
+                    ))
+                    .unwrap();
+                let partial = local.flush();
+                rocks.store_mut().set_clock(arrival);
+                rocks.update(&partial, arrival).unwrap();
+                memory.update(&partial, arrival).unwrap();
+            }
+            rocks.store_mut().set_clock(flush);
+            let actual = rocks.flush_mini_batch_at(flush).unwrap();
+            assert_eq!(actual, memory.flush_mini_batch_at(flush).unwrap());
+            assert_eq!(
+                row_kind_column(&actual).unwrap().values().as_ref(),
+                kinds.as_slice()
+            );
+            assert_eq!(rocks.staging_bytes(), 0);
+        }
+    }
+
+    #[test]
+    fn buffered_wide_distinct_views_survive_rocks_and_raw_checkpoints() {
+        let kinds = vec![9, 17, 7];
+        let types = vec![5800; 3];
+        let columns = vec![1, 2, 3];
+        let views = vec![4, 5, 6];
+        let make = || {
+            GroupAggregator::new(kinds.clone(), types.clone(), columns.clone(), vec![0], true)
+                .with_distinct_view_columns(views.clone())
+                .with_mini_batch()
+        };
+        let codec = || {
+            GroupStateCodec::new(
+                kinds.clone(),
+                vec![DataType::Decimal128(38, 0); 3],
+                columns.clone(),
+                views.clone(),
+            )
+        };
+        let mut local = LocalGroupAggregator::new(
+            vec![9, 18, 7],
+            types.clone(),
+            vec![1; 3],
+            vec![],
+            vec![0],
+            vec![0, 1, 2],
+        );
+        let mut memory = make();
+        let store = RocksGroupStore::create(store_config("wide-buffer", 0), codec()).unwrap();
+        let mut rocks = make().with_backend(store);
+        let large = 9 * 10i128.pow(37);
+        for value in [Some(large), Some(-large), Some(large - 3), None] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(value, 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            let partial = local.flush();
+            assert_eq!(memory.update(&partial, 0).unwrap().num_rows(), 0);
+            assert_eq!(rocks.update(&partial, 0).unwrap().num_rows(), 0);
+        }
+        let expected = memory.flush_mini_batch().unwrap();
+        assert_eq!(rocks.flush_mini_batch().unwrap(), expected);
+        assert_eq!(
+            ScalarValue::try_from_array(expected.column(1), 0).unwrap(),
+            ScalarValue::Decimal128(Some(-large), 38, 0)
+        );
+        assert!(expected.column(2).is_null(0));
+        assert_eq!(values(&expected, 3), vec![3]);
+        let raw = memory
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect::<Vec<_>>();
+        let snapshot = snapshot_dir("wide-buffer");
+        let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+        drop(rocks);
+        let store = RocksGroupStore::open_merged(
+            store_config("wide-buffer-reopen", 0),
+            codec(),
+            &[(snapshot, manifest.snapshot_id)],
+            0..=127,
+            true,
+            0,
+        )
+        .unwrap();
+        let mut rocks = make().with_backend(store);
+        let canonical = rocks
+            .canonical_partitions()
+            .unwrap()
+            .into_values()
+            .collect::<Vec<_>>();
+        let restore = |snapshots: &[Vec<u8>]| {
+            GroupAggregator::restore_partitions(
+                kinds.clone(),
+                types.clone(),
+                columns.clone(),
+                vec![0],
+                true,
+                snapshots,
+                0,
+            )
+            .with_distinct_view_columns(views.clone())
+            .with_mini_batch()
+        };
+        let mut from_raw = restore(&raw);
+        let mut from_canonical = restore(&canonical);
+        let store =
+            RocksGroupStore::create(store_config("wide-buffer-import", 0), codec()).unwrap();
+        let mut imported = make().with_backend(store);
+        imported.import_partitions(&raw, 0).unwrap();
+        for bundle in [
+            vec![Some(large), Some(7)],
+            vec![None, Some(large), Some(7)],
+            vec![Some(-large), Some(9)],
+        ] {
+            for value in bundle {
+                local
+                    .update(&group_scalar_changelog(
+                        vec![ScalarValue::Decimal128(value, 38, 0)],
+                        vec![0],
+                    ))
+                    .unwrap();
+                let partial = local.flush();
+                memory.update(&partial, 0).unwrap();
+                rocks.update(&partial, 0).unwrap();
+                from_raw.update(&partial, 0).unwrap();
+                from_canonical.update(&partial, 0).unwrap();
+                imported.update(&partial, 0).unwrap();
+            }
+            let expected = memory.flush_mini_batch().unwrap();
+            assert_eq!(rocks.flush_mini_batch().unwrap(), expected);
+            assert_eq!(from_raw.flush_mini_batch().unwrap(), expected);
+            assert_eq!(from_canonical.flush_mini_batch().unwrap(), expected);
+            assert_eq!(imported.flush_mini_batch().unwrap(), expected);
         }
     }
 

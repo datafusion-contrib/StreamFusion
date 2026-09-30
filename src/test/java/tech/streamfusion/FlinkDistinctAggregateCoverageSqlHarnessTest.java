@@ -60,7 +60,10 @@ class FlinkDistinctAggregateCoverageSqlHarnessTest {
           return table;
         };
     String sql = "SELECT k, SUM(DISTINCT amount) FROM src GROUP BY k";
-    NativeParity.assertFallbackReasonContains(source, sql, "DECIMAL precision <= 19");
+    String plan = NativePlanner.explain(source.get(), sql);
+    assertTrue(plan.contains("NativeColumnarLocalGroupAggregate"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+    NativeParity.assertChangelogParity(source, sql);
   }
 
   @ParameterizedTest

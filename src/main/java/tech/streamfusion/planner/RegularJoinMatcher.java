@@ -176,12 +176,12 @@ final class RegularJoinMatcher {
   static RelNode substitute(StreamPhysicalJoin join, PlanContext ctx) {
     int[] leftKeys = RegularJoinMatcher.leftKeys(join);
     int[] rightKeys = RegularJoinMatcher.rightKeys(join);
-    // Resolve Flink's upsert-key metadata before columnarInput substitutes either child. The
-    // metadata query is keyed by the original physical tree; asking after child substitution can
-    // return no key and incorrectly turn update-after-only inputs (notably GROUP BY outputs) into
-    // multiset join state. A join key containing the proven upsert key is replacement state.
-    boolean leftJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(join, 0);
-    boolean rightJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(join, 1);
+    // Child substitution has already run. Query the original host tree: native children do not
+    // implement Flink's upsert-key metadata, and querying them turns replacement state into a
+    // multiset that can emit obsolete rows again on a later match.
+    StreamPhysicalJoin original = (StreamPhysicalJoin) ctx.originalNode(join);
+    boolean leftJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(original, 0);
+    boolean rightJoinKeyUnique = RegularJoinMatcher.joinKeyIsUnique(original, 1);
     boolean leftInsertOnly =
         ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) join.getLeft());
     boolean rightInsertOnly =

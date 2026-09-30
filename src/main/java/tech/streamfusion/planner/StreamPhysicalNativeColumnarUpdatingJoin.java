@@ -4,6 +4,7 @@ import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
@@ -88,6 +89,13 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
         rightInsertOnly,
         leftStateTtlHintMillis,
         rightStateTtlHintMillis);
+  }
+
+  @Override
+  public RelWriter explainTerms(RelWriter writer) {
+    return super.explainTerms(writer)
+        .item("leftJoinKeyUnique", leftJoinKeyUnique)
+        .item("rightJoinKeyUnique", rightJoinKeyUnique);
   }
 
   @Override
