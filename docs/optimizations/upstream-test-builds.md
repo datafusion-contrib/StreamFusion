@@ -22,8 +22,9 @@ The Paimon 1.0 compatibility workflow builds release native libraries during sou
 and reuses them for the upstream SQL suite in the same job. Previously it compiled both debug
 and release libraries: the [baseline run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36557001611)
 took 110.5 minutes, including approximately 31 minutes of debug compilation and 49 minutes of
-release compilation. The upstream phase now uses two JVMs with distinct fork identities and
-separate evidence directories; tests remain serial within each JVM. See the
+release compilation. The upstream phase uses one JVM. An initial two-JVM trial finished in approximately 67 minutes
+but hit an upstream wait timeout in `PartialUpdateITCase.testForeignKeyJoin` (241 of 242 tests
+passed), so CI retains serial execution to avoid the additional contention. Configurable forks
+retain distinct identities and separate evidence directories. See the
 [Paimon guide](../connectors/paimon.md) for configuration and reuse prerequisites. These changes
-remove duplicate compilation and allow independent classes to overlap; the hosted post-change
-speedup has not yet been measured.
+remove duplicate compilation; a passing hosted post-change speedup has not yet been measured.

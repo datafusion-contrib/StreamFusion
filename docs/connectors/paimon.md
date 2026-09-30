@@ -1093,7 +1093,7 @@ checkout and job. This removes the previous debug-then-release build cycle. Do n
 completed successfully. Local commands above retain their default independent builds.
 
 `SF_PAIMON1_TEST_FORKS` selects a positive integer number of upstream test JVMs and defaults
-to one locally. CI uses two, each retaining the 2 GiB heap and two visible CPUs. Surefire assigns
+to one locally and in CI, retaining the 2 GiB heap and two visible CPUs. Surefire assigns
 `mvn.forkNumber` separately to each JVM; inventory, native evidence, and diagnostic paths include
 `fork-<number>` so the processes cannot overwrite each other's files. Tests inside each JVM remain
 serial, as required by the planner inventory. The selected classes, nested aggregation tests,
@@ -1102,8 +1102,10 @@ throughput benchmarks still require one uncontended JVM.
 
 The pre-change [CI run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36557001611)
 took 110.5 minutes, including approximately 31 minutes of debug compilation and 49 minutes of
-release compilation. Eliminating duplicate compilation and overlapping independent test classes
-are expected savings; a post-change hosted comparison is needed to quantify them.
+release compilation. A two-fork trial completed in approximately 67 minutes but failed
+`PartialUpdateITCase.testForeignKeyJoin` with an upstream wait timeout (241 of 242 tests passed).
+CI therefore keeps one fork to avoid the additional contention while retaining release-build
+reuse. The failed trial is not a validated speedup; a passing hosted comparison is still required.
 
 The selected upstream coverage includes append and primary-key tables, dynamic
 buckets, partial updates, first-row and field aggregation, input/lookup/full

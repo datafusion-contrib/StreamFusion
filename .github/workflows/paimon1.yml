@@ -82,7 +82,7 @@ jobs:
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
       - name: Upstream SQL tests (reuse release libraries)
         env:
-          SF_PAIMON1_TEST_FORKS: '2'
+          SF_PAIMON1_TEST_FORKS: '1'
         run: bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true
       - name: Retain test evidence
         if: always()
