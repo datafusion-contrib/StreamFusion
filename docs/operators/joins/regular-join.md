@@ -146,3 +146,11 @@ Flink. The initial admission adds verified composition with other native operato
 standalone throughput optimization.
 
 Run `SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench -Dtest=CrossJoinBenchmark`.
+
+### Upsert-key metadata during substitution
+
+Join input uniqueness is resolved against the original Flink physical plan, before its children
+are replaced by native nodes. A native source or Calc must not erase a proven upsert key: when
+the join key contains that key, a later update replaces the stored row. Treating it as multiset
+state can re-emit obsolete values when another input changes, including overwriting a newer
+value in a Paimon partial-update sink. Non-unique inputs retain multiset state.
