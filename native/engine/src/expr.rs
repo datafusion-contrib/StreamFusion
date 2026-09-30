@@ -171,6 +171,59 @@ pub(crate) fn build_expr(
             .expect("admitted FROM_UNIXTIME pattern")
             .call(vec![input])
         }
+        40 => {
+            let children = (0..child_counts[node])
+                .map(|_| {
+                    build_expr(
+                        schema,
+                        kinds,
+                        payload,
+                        child_counts,
+                        longs,
+                        doubles,
+                        strings,
+                        cursor,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let result =
+                crate::flink_functions::binary_elt::function(children.len()).call(children);
+            if arg == 0 {
+                result
+            } else {
+                datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
+                    Box::new(result),
+                    DataType::FixedSizeBinary(arg as i32),
+                ))
+            }
+        }
+        39 => {
+            let child = build_expr(
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
+            );
+            let length = if payload[node] == 0 {
+                usize::MAX
+            } else {
+                payload[node].unsigned_abs() as usize
+            };
+            let result = crate::flink_functions::binary_cast::function(length, payload[node] < 0)
+                .call(vec![child]);
+            if payload[node] >= 0 {
+                result
+            } else {
+                datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
+                    Box::new(result),
+                    DataType::FixedSizeBinary(length as i32),
+                ))
+            }
+        }
         37 => {
             let child = build_expr(
                 schema,
