@@ -456,6 +456,7 @@ public final class Native {
       int[] filterColumns,
       int[] keyColumns,
       int[] distinctViewSources,
+      int[] keyTimestampPrecisions,
       long memoryBudgetBytes);
 
   /** Folds a batch into the buffered per-key accumulators; emits nothing. */
@@ -1274,7 +1275,7 @@ public final class Native {
 
   /** Flushes the group changes staged across one logical mini-batch. */
   public static native void flushGroupAggregator(
-      long handle, long outArrayAddress, long outSchemaAddress);
+      long handle, long nowMillis, long outArrayAddress, long outSchemaAddress);
 
   /** Releases a {@code GROUP BY} aggregator handle. */
   public static native void closeGroupAggregator(long handle);
@@ -1455,7 +1456,7 @@ public final class Native {
       long outSchemaAddress);
 
   public static native void flushRocksDBGroupAggregator(
-      long handle, long outArrayAddress, long outSchemaAddress);
+      long handle, long nowMillis, long outArrayAddress, long outSchemaAddress);
 
   public static native String[] checkpointRocksDBGroupAggregator(
       long handle, String snapshotDirectory);

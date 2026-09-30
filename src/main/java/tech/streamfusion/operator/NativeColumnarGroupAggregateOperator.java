@@ -301,13 +301,15 @@ public class NativeColumnarGroupAggregateOperator
         directRocksDBState()
             ? Native.rocksdbGroupAggregatorStagedKeys(handle)
             : Native.groupAggregatorStagedKeys(handle);
+    long now = getProcessingTimeService().getCurrentProcessingTime();
     try (ArrowArray outArray = ArrowArray.allocateNew(allocator);
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       if (directRocksDBState()) {
         Native.flushRocksDBGroupAggregator(
-            handle, outArray.memoryAddress(), outSchema.memoryAddress());
+            handle, now, outArray.memoryAddress(), outSchema.memoryAddress());
       } else {
-        Native.flushGroupAggregator(handle, outArray.memoryAddress(), outSchema.memoryAddress());
+        Native.flushGroupAggregator(
+            handle, now, outArray.memoryAddress(), outSchema.memoryAddress());
       }
       VectorSchemaRoot out =
           Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);

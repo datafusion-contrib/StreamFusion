@@ -17,3 +17,14 @@ approximately 50 minutes, including 31 minutes in the test invocation. These are
 different runs, not engine benchmarks or a controlled version comparison. A measured end-to-end
 improvement must include build preparation, artifact transfer and runner queues; balanced historical
 class durations alone are not a measured CI speedup.
+
+The Paimon 1.0 compatibility workflow builds release native libraries during source/sink parity
+and reuses them for the upstream SQL suite in the same job. Previously it compiled both debug
+and release libraries: the [baseline run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36557001611)
+took 110.5 minutes, including approximately 31 minutes of debug compilation and 49 minutes of
+release compilation. The upstream phase uses one JVM. An initial two-JVM trial finished in approximately 67 minutes
+but hit an upstream wait timeout in `PartialUpdateITCase.testForeignKeyJoin` (241 of 242 tests
+passed), so CI retains serial execution to avoid the additional contention. Configurable forks
+retain distinct identities and separate evidence directories. See the
+[Paimon guide](../connectors/paimon.md) for configuration and reuse prerequisites. These changes
+remove duplicate compilation; a passing hosted post-change speedup has not yet been measured.

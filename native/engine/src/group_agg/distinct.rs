@@ -137,7 +137,7 @@ impl<'a> DistinctColumn<'a> {
 }
 
 // Build local membership columns directly instead of allocating a scalar and a temporary
-// vector for every map.
+// vector for every map. Ordered decimals append in the host's iteration order below.
 pub(super) enum DistinctValues {
     I64(arrow::array::Int64Builder),
     I32(arrow::array::Int32Builder),
@@ -272,6 +272,16 @@ impl<K: Eq + Hash + Clone> Multiplicities<K> {
         }
     }
 
+    fn capacity_bytes(&self) -> usize {
+        let capacity = self.counts.capacity();
+        if capacity == 0 {
+            return 0;
+        }
+        // Include spare buckets/control bytes, including generic scalar keys wider than
+        // the ordinary per-entry estimate. Cleared keys own no additional payload.
+        capacity * MULTISET_ENTRY_BYTES.max(2 * (std::mem::size_of::<(K, i64)>() + 1)) + 16
+    }
+
     fn change_owned(&mut self, key: K, change: Change) -> bool {
         if let Change::Add(n) = change {
             super::note(&mut self.journal, &key);
@@ -392,6 +402,17 @@ impl DistinctSet {
     pub(super) fn len(&self) -> usize {
         each_map!(self, m, m.counts.len())
     }
+    pub(super) fn capacity_bytes(&self) -> usize {
+        each_map!(self, m, m.capacity_bytes())
+    }
+
+    pub(super) fn clear(&mut self) {
+        each_map!(self, m, {
+            m.counts.clear();
+            m.journal = None;
+        })
+    }
+
     pub(super) fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -453,6 +474,18 @@ impl DistinctSet {
                 builder.append_value(column.value(0).expect("timestamp value"));
                 counts.push(count);
             }
+        }
+    }
+
+    pub(super) fn decimal_count(&self, value: &ScalarValue) -> i64 {
+        match (self, value) {
+            (Self::Decimal(m, p, s), ScalarValue::Decimal128(Some(v), vp, vs))
+                if p == vp && s == vs =>
+            {
+                m.counts.get(v).copied().unwrap_or(0)
+            }
+            (Self::Scalar(m), value) => m.counts.get(value).copied().unwrap_or(0),
+            _ => 0,
         }
     }
 

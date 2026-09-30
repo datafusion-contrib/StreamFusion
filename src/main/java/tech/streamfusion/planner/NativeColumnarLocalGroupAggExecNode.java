@@ -1,8 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -15,8 +12,13 @@ import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator;
 
-/** Wraps the stateless local two-phase GROUP BY pre-aggregate into the plan; Arrow batches in/out. */
+/**
+ * Wraps the stateless local two-phase GROUP BY pre-aggregate into the plan; Arrow batches in/out.
+ */
 public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch> {
 
@@ -28,6 +30,7 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
   private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] distinctViewSources;
+  private final int[] keyTimestampPrecisions;
 
   public NativeColumnarLocalGroupAggExecNode(
       ReadableConfig tableConfig,
@@ -39,7 +42,8 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
       int[] valueColumns,
       int[] filterColumns,
       int[] keyColumns,
-      int[] distinctViewSources) {
+      int[] distinctViewSources,
+      int[] keyTimestampPrecisions) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-local-group-aggregate_1"),
@@ -53,6 +57,7 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
     this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.distinctViewSources = distinctViewSources;
+    this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
   @Override
@@ -68,8 +73,14 @@ public class NativeColumnarLocalGroupAggExecNode extends ExecNodeBase<ArrowBatch
             input,
             createTransformationMeta(TRANSFORMATION, config),
             new NativeColumnarLocalGroupAggregateOperator(
-                aggregateKinds, valueTypes, valueColumns, filterColumns, keyColumns,
-                distinctViewSources, miniBatchSize),
+                aggregateKinds,
+                valueTypes,
+                valueColumns,
+                filterColumns,
+                keyColumns,
+                distinctViewSources,
+                keyTimestampPrecisions,
+                miniBatchSize),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

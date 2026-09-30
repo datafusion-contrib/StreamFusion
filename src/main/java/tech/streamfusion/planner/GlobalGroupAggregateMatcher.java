@@ -100,7 +100,7 @@ final class GlobalGroupAggregateMatcher {
                         && result.getScale() == Math.max(6, value.getScale()));
         if (!countDistinct && !sumDistinct && !averageDistinct) {
           return "global group aggregate: distinct merges are COUNT (over set-carriable value"
-              + " types) and SUM/AVG (over integers or DECIMAL precision <= 19)";
+              + " types) and SUM/AVG (over integers or DECIMAL)";
         }
         continue;
       }

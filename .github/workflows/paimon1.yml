@@ -19,7 +19,9 @@ on:
       - 'dev/flink-suite/paimon-log4j2.properties'
       - 'native/engine/src/keyed_upsert/**'
       - 'native/bridge/**'
+      - 'bin/ci-free-disk.py'
       - 'bin/paimon1-suite.sh'
+      - 'bin/test_paimon1_ci.py'
       - 'pom.xml'
       - '.github/workflows/paimon1.yml'
   push:
@@ -40,7 +42,9 @@ on:
       - 'dev/flink-suite/paimon-log4j2.properties'
       - 'native/engine/src/keyed_upsert/**'
       - 'native/bridge/**'
+      - 'bin/ci-free-disk.py'
       - 'bin/paimon1-suite.sh'
+      - 'bin/test_paimon1_ci.py'
       - 'pom.xml'
       - '.github/workflows/paimon1.yml'
 
@@ -54,12 +58,10 @@ jobs:
     timeout-minutes: 150
     env:
       CARGO_BUILD_JOBS: '2'
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v6
       - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+        run: python3 bin/ci-free-disk.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -69,14 +71,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          key: paimon1-release
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Source and sink parity
+      - name: Test upstream fork isolation
+        run: python3 -m unittest discover -s bin -p test_paimon1_ci.py
+      - name: Source and sink parity (build release libraries)
         run: >-
-          mvn -B -ntp -Pflink-1.18,paimon1 -pl streamfusion-paimon1 -am
+          mvn -B -ntp -Pflink-1.18,paimon1,bench -pl streamfusion-paimon1 -am
           -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest'
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
-      - name: Upstream SQL tests
-        run: bin/paimon1-suite.sh -Pbench
+      - name: Upstream SQL tests (reuse release libraries)
+        env:
+          SF_PAIMON1_TEST_FORKS: '1'
+        run: bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -87,3 +94,4 @@ jobs:
             streamfusion-paimon1/target/upstream-suite/run.log
             streamfusion-paimon1/target/upstream-suite/inventory/
             streamfusion-paimon1/target/upstream-suite/diagnostics/
+            streamfusion-paimon1/target/native-reports/

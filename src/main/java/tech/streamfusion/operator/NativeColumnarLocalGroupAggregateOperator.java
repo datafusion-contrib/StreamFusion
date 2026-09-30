@@ -35,6 +35,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
   private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] distinctViewSources;
+  private final int[] keyTimestampPrecisions;
   private final long miniBatchSize;
 
   private transient BufferAllocator allocator;
@@ -51,6 +52,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
       int[] filterColumns,
       int[] keyColumns,
       int[] distinctViewSources,
+      int[] keyTimestampPrecisions,
       long miniBatchSize) {
     this.aggregateKinds = aggregateKinds;
     this.valueTypes = valueTypes;
@@ -58,6 +60,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
     this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.distinctViewSources = distinctViewSources;
+    this.keyTimestampPrecisions = keyTimestampPrecisions;
     this.miniBatchSize = miniBatchSize;
   }
 
@@ -76,6 +79,7 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
             filterColumns,
             keyColumns,
             distinctViewSources,
+            keyTimestampPrecisions,
             memoryBudget.nativeHandle());
     boundary = new MiniBatchBoundary(miniBatchSize);
     miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);

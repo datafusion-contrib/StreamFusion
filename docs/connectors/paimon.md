@@ -1085,6 +1085,28 @@ tests without the planner agent; `SF_PAIMON1_TESTS` selects a narrower class/met
 set using Surefire syntax. The dedicated compatibility workflow also tracks shared
 Arrow, codec, and upstream-agent changes and retains the test evidence.
 
+CI runs the source/sink parity reactor with `-Pflink-1.18,paimon1,bench`, building optimized
+native libraries before testing. The following upstream invocation uses
+`bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true` to reuse those libraries from the same
+checkout and job. This removes the previous debug-then-release build cycle. Do not pass
+`-Dnative.build.skip=true` on a fresh checkout: the full release reactor must already have
+completed successfully. Local commands above retain their default independent builds.
+
+`SF_PAIMON1_TEST_FORKS` selects a positive integer number of upstream test JVMs and defaults
+to one locally and in CI, retaining the 2 GiB heap and two visible CPUs. Surefire assigns
+`mvn.forkNumber` separately to each JVM; inventory, native evidence, and diagnostic paths include
+`fork-<number>` so the processes cannot overwrite each other's files. Tests inside each JVM remain
+serial, as required by the planner inventory. The selected classes, nested aggregation tests,
+native-sink witness, and upstream assertions remain unchanged. This is compatibility testing;
+throughput benchmarks still require one uncontended JVM.
+
+The pre-change [CI run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36557001611)
+took 110.5 minutes, including approximately 31 minutes of debug compilation and 49 minutes of
+release compilation. A two-fork trial completed in approximately 67 minutes but failed
+`PartialUpdateITCase.testForeignKeyJoin` with an upstream wait timeout (241 of 242 tests passed).
+CI therefore keeps one fork to avoid the additional contention while retaining release-build
+reuse. The failed trial is not a validated speedup; a passing hosted comparison is still required.
+
 The selected upstream coverage includes append and primary-key tables, dynamic
 buckets, partial updates, first-row and field aggregation, input/lookup/full
 compaction changelogs, schema evolution and filter pushdown, composite partitioned

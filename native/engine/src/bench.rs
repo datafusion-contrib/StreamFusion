@@ -435,7 +435,7 @@ impl LocalGroupBy {
     }
 
     pub fn flush(&mut self) -> RecordBatch {
-        self.0.flush()
+        self.0.try_flush().expect("local aggregate benchmark flush")
     }
 }
 

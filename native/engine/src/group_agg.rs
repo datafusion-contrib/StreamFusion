@@ -1,9 +1,13 @@
 use crate::*;
 
+mod decimal_map_order;
 mod distinct;
-use distinct::{DistinctColumn, DistinctValues};
+mod java_map_order;
+use decimal_map_order::DecimalMapOrder;
+use java_map_order::JavaMapOrder;
 mod ordered_value;
 pub(crate) use distinct::DistinctSet;
+use distinct::{DistinctColumn, DistinctValues};
 use ordered_value::{is_ordered_value, OrderedValueState};
 
 /// Total ordering over f64 so a MIN/MAX value multiset can be a `BTreeMap` (floats compared by
@@ -138,6 +142,33 @@ fn note<T: std::hash::Hash + Eq + Clone>(journal: &mut Option<Box<ahash::HashSet
 #[cfg(test)]
 mod distinct_set_tests {
     use super::*;
+
+    #[test]
+    fn decimal_view_repeated_counts_preserve_null_and_filtered_arrival_order() {
+        let mut buffer = DecimalViewBuffer::new(0);
+        let mut expected = DecimalMapOrder::new(0);
+        for (value, count) in [
+            (Some(5), 0),
+            (Some(8), 1),
+            (Some(5), 3),
+            (None, 0),
+            (Some(8), 0),
+            (Some(8), 2),
+            (Some(11), -1),
+            (Some(11), 4),
+        ] {
+            expected.insert_optional(value);
+            buffer.merge(value, count);
+            assert_eq!(
+                buffer.order.iter().collect::<Vec<_>>(),
+                expected.iter().collect::<Vec<_>>()
+            );
+        }
+        assert_eq!(buffer.counts.len(), 3);
+        assert_eq!(buffer.counts[&5], 3);
+        assert_eq!(buffer.counts[&8], 3);
+        assert_eq!(buffer.counts[&11], 4);
+    }
 
     #[test]
     fn nan_payloads_share_counts_through_merge_restore_and_retraction() {
@@ -508,43 +539,36 @@ impl GroupAggState {
         self.retract_extreme_key(MinMaxKey::from_scalar(&value));
     }
 
-    /// Adds one occurrence of a distinct value (COUNT/SUM DISTINCT); a value entering the set for the
-    /// first time also folds into a distinct SUM/AVG accumulator — later duplicates do not.
-    fn accumulate_distinct(&mut self, value: ScalarValue) {
+    /// Folds one (value, count) entry of a local bundle's distinct view into the merged set — the
+    /// two-phase merge. A value newly entering the merged set also
+    /// folds once into its running SUM/AVG accumulator, exactly as the per-row path does. The
+    /// two-phase distinct input is insert-only (the local's bundle is append-only), so there is no
+    /// retracting counterpart.
+    fn merge_distinct(&mut self, value: ScalarValue, count: i64) {
         match self {
             GroupAggState::Distinct { set, live } => {
-                if set.add_scalar(value) {
+                if set.add_scalar_n(value, count) {
                     *live += 1;
                 }
             }
             GroupAggState::DistinctRunning { counts, agg, live } => {
                 let num = distinct_num(&value);
-                if counts.add_scalar(value) {
+                if counts.add_scalar_n(value, count) {
                     agg.fold(num);
                     *live += 1;
                 }
             }
-            _ => unreachable!("accumulate_distinct on a non-distinct aggregate"),
+            _ => unreachable!("distinct merge on a non-distinct aggregate"),
         }
     }
 
-    /// Removes one occurrence; the value leaves the distinct set when its last occurrence is retracted
-    /// (which is also when a distinct SUM's running aggregate retracts it).
-    fn retract_distinct(&mut self, value: ScalarValue) {
-        match self {
-            GroupAggState::Distinct { set, live } => {
-                if set.remove_scalar(&value) {
-                    *live -= 1;
-                }
-            }
-            GroupAggState::DistinctRunning { counts, agg, live } => {
-                if counts.remove_scalar(&value) {
-                    agg.retract(distinct_num(&value));
-                    *live -= 1;
-                }
-            }
-            _ => unreachable!("retract_distinct on a non-distinct aggregate"),
-        }
+    fn decimal_distinct_count(&self, value: &ScalarValue) -> i64 {
+        let set = match self {
+            Self::Distinct { set, .. } => set,
+            Self::DistinctRunning { counts, .. } => counts,
+            _ => unreachable!("decimal membership on a non-distinct aggregate"),
+        };
+        set.decimal_count(value)
     }
 
     /// The current output value; SUM and MIN/MAX report NULL when they hold no live non-null input.
@@ -747,8 +771,9 @@ pub(crate) struct GroupKeyState {
     records: i64,
     /// The tuple last emitted for this group — the per-row changelog needs the pre-update value of
     /// every touched group, and caching it halves the output materialization (the q16 profile put
-    /// ~half the operator in exactly that scalar build/clone churn). `None` after restore (the
-    /// snapshot doesn't carry it); the first touch then recomputes it from the aggregate state.
+    /// ~half the operator in exactly that scalar build/clone churn). Snapshots omit this cache.
+    /// An immediate, unfiltered single-value result also needs no duplicate tuple; when the cache
+    /// is absent, the next touch reconstructs the preimage from the aggregate state.
     last_output: Option<Vec<ScalarValue>>,
     /// `scalar_row_bytes` of the cached tuple, maintained alongside it: the state measurement
     /// runs twice per touched row, and re-walking the tuple's scalars each time was a measurable
@@ -1076,6 +1101,57 @@ fn staged_group_change_bytes(key: &ByteKey, old: &Option<Vec<ScalarValue>>) -> u
         + old.as_ref().map_or(0, |values| scalar_row_bytes(values))
 }
 
+struct DecimalViewBuffer {
+    order: DecimalMapOrder,
+    counts: HashMap<i128, i64>,
+}
+
+impl DecimalViewBuffer {
+    fn new(scale: i8) -> Self {
+        Self {
+            order: DecimalMapOrder::new(scale),
+            counts: HashMap::default(),
+        }
+    }
+
+    fn merge(&mut self, value: Option<i128>, count: i64) {
+        if let Some(value) = value {
+            if count > 0 {
+                match self.counts.entry(value) {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        *entry.get_mut() += count;
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        self.order.insert_optional(Some(value));
+                        entry.insert(count);
+                    }
+                }
+                return;
+            }
+        }
+        self.order.insert_optional(value);
+    }
+
+    fn bytes(&self) -> usize {
+        let buckets = if self.counts.capacity() == 0 {
+            0
+        } else {
+            (self.counts.capacity() * 8).div_ceil(7).next_power_of_two()
+        };
+        std::mem::size_of::<Self>() + self.order.bytes() - std::mem::size_of::<DecimalMapOrder>()
+            + buckets * (std::mem::size_of::<(i128, i64)>() + 1)
+    }
+}
+
+fn decimal_buffers_bytes(buffers: &[Option<DecimalViewBuffer>]) -> usize {
+    buffers.len() * std::mem::size_of::<Option<DecimalViewBuffer>>()
+        + buffers
+            .iter()
+            .flatten()
+            .map(|buffer| buffer.bytes() - std::mem::size_of::<DecimalViewBuffer>())
+            .sum::<usize>()
+}
+
 /// Non-windowed `GROUP BY` aggregation over a changelog. Holds per-key state — no windows, no
 /// watermark — and processes a batch in input order like the host's per-record aggregate, so the
 /// emitted change sequence matches byte for byte. Each row's `RowKind` (carried on `$row_kind$`)
@@ -1134,6 +1210,12 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     staged_changes: HashMap<ByteKey, StagedGroupChange>,
     staged_key_batches: Vec<RecordBatch>,
     staged_bytes: usize,
+    decimal_views: HashMap<ByteKey, Vec<Option<DecimalViewBuffer>>>,
+    deferred_batches: Vec<(RecordBatch, usize)>,
+    deferred_keys: HashMap<ByteKey, ()>,
+    deferred_bytes: usize,
+    draining_deferred: bool,
+    last_input_ms: i64,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -1250,6 +1332,12 @@ impl GroupAggregator {
             staged_changes: HashMap::default(),
             staged_key_batches: Vec::new(),
             staged_bytes: 0,
+            decimal_views: HashMap::default(),
+            deferred_batches: Vec::new(),
+            deferred_keys: HashMap::default(),
+            deferred_bytes: 0,
+            draining_deferred: false,
+            last_input_ms: 0,
             filter_columns,
             count_columns,
             distinct_view_columns,
@@ -1301,6 +1389,12 @@ impl GroupAggregator {
             staged_changes: self.staged_changes,
             staged_key_batches: self.staged_key_batches,
             staged_bytes: self.staged_bytes,
+            decimal_views: self.decimal_views,
+            deferred_batches: self.deferred_batches,
+            deferred_keys: self.deferred_keys,
+            deferred_bytes: self.deferred_bytes,
+            draining_deferred: self.draining_deferred,
+            last_input_ms: self.last_input_ms,
             memory: self.memory,
         }
     }
@@ -1313,7 +1407,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     }
 
     pub(crate) fn staged_keys(&self) -> usize {
-        self.staged_order.len()
+        self.staged_order.len() + self.deferred_keys.len()
     }
 
     /// The backing store, for backend-specific control paths (checkpointing a persistent store).
@@ -1332,7 +1426,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     }
 
     pub(crate) fn staging_bytes(&self) -> usize {
-        self.staged_bytes
+        self.staged_bytes + self.deferred_bytes
     }
 
     pub(crate) fn with_key_timestamp_precisions(
@@ -1435,6 +1529,38 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
+        self.last_input_ms = now_ms;
+        if self.mini_batch
+            && self.ttl_ms > 0
+            && !self.draining_deferred
+            && self.kinds.iter().enumerate().any(|(i, kind)| {
+                matches!(kind, 9 | 17)
+                    && self.distinct_view_columns[i] >= 0
+                    && matches!(self.value_types[i], DataType::Decimal128(p, _) if p > 19)
+            })
+        {
+            // The host reads retained global state only when its temporary bundle is merged.
+            let mut added = batch.get_array_memory_size() + std::mem::size_of::<RecordBatch>();
+            let mut encoder = BinaryRowBatchEncoder::new(
+                batch,
+                &self.key_columns,
+                &self.key_timestamp_precisions,
+            );
+            for row in 0..batch.num_rows() {
+                let key = encoder.encode(row);
+                if !self.deferred_keys.contains_key(key) {
+                    added += byte_key_bytes(key);
+                    self.deferred_keys.insert(ByteKey::from(key), ());
+                }
+            }
+            self.deferred_bytes += added;
+            self.deferred_batches.push((batch.clone(), added));
+            if self.memory.tracking() {
+                self.memory.record(added as isize);
+            }
+            self.memory.account()?;
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
         let ttl = StateTtl::new(self.ttl_ms, now_ms);
         // The sweep reclaims groups no later row ever touches. Once per TTL period bounds its
         // amortized cost at one map walk per period; it must not run mid-bundle, where removing a
@@ -1452,6 +1578,23 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .begin_batch(batch, &self.key_columns, &self.key_timestamp_precisions)?;
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
+        let wide_views: Vec<Option<(u8, i8)>> = self
+            .kinds
+            .iter()
+            .enumerate()
+            .map(|(i, kind)| match self.value_types[i] {
+                DataType::Decimal128(p, scale)
+                    if p > 19 && matches!(kind, 9 | 17) && self.distinct_view_columns[i] >= 0 =>
+                {
+                    Some((p, scale))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            self.mini_batch || wide_views.iter().all(Option::is_none),
+            "wide decimal DISTINCT merge requires a logical mini-batch"
+        );
         // `None` is a COUNT(*) aggregate (no argument column): it counts every row. A present column
         // counts/folds only non-null rows, matching the host's COUNT(col)/SUM null handling.
         let value_columns: Vec<Option<ValueColumn>> = (0..num_agg)
@@ -1532,7 +1675,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     .then_some(self.value_columns[i] as usize)
             })
             .collect();
-        // Downcast DISTINCT inputs once per batch.
+        // Downcast fixed-width DISTINCT inputs once per batch.
         let distinct_columns: Vec<_> = distinct_cols
             .iter()
             .map(|c| c.map(|c| DistinctColumn::new(batch.column(c))))
@@ -1698,6 +1841,37 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     },
                 );
             }
+            for (i, metadata) in wide_views.iter().enumerate() {
+                let Some((_, scale)) = metadata else {
+                    continue;
+                };
+                assert!(!retract, "wide decimal views are insert-only");
+                let (list, values, counts) = view_cols[i].expect("wide decimal membership view");
+                let values = values
+                    .as_any()
+                    .downcast_ref::<Decimal128Array>()
+                    .expect("decimal membership");
+                if !self.decimal_views.contains_key(key) {
+                    let owned = ByteKey::from(key);
+                    let buffers = (0..num_agg).map(|_| None).collect::<Vec<_>>();
+                    staged_delta += byte_key_bytes(key) + decimal_buffers_bytes(&buffers);
+                    self.decimal_views.insert(owned, buffers);
+                }
+                let buffers = self.decimal_views.get_mut(key).unwrap();
+                let before = buffers[i].as_ref().map_or(0, |buffer| {
+                    buffer.bytes() - std::mem::size_of::<DecimalViewBuffer>()
+                });
+                let buffer = buffers[i].get_or_insert_with(|| DecimalViewBuffer::new(*scale));
+                for entry in
+                    list.value_offsets()[row] as usize..list.value_offsets()[row + 1] as usize
+                {
+                    buffer.merge(
+                        (!values.is_null(entry)).then(|| values.value(entry)),
+                        counts.value(entry),
+                    );
+                }
+                staged_delta += buffer.bytes() - std::mem::size_of::<DecimalViewBuffer>() - before;
+            }
             {
                 let state = if exists {
                     self.store.get_mut(key).expect("key present")
@@ -1770,6 +1944,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     // retracting row kind cannot reach this path.
                     if let Some((list, _values, counts)) = view_cols[i] {
                         assert!(!retract, "distinct view partials are insert-only");
+                        if wide_views[i].is_some() {
+                            continue;
+                        }
                         let start = list.value_offsets()[row] as usize;
                         let end = list.value_offsets()[row + 1] as usize;
                         let column = view_values[i].as_ref().expect("distinct view reader");
@@ -1780,6 +1957,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         }
                         continue;
                     }
+                    // COUNT(DISTINCT x) (kind 7) folds the value itself, not a Num — read its scalar
+                    // (skipping nulls, which DISTINCT ignores) and add/remove it from the value set.
                     if let Some(column) = &distinct_columns[i] {
                         column.update(&mut state.aggs[i], row, retract, 1);
                         continue;
@@ -1955,6 +2134,39 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     /// current logical mini-batch. Key columns are gathered directly from retained Arrow inputs;
     /// only one row per emitted transition is copied into the compact output.
     pub(crate) fn flush_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
+        self.flush_mini_batch_at(self.last_input_ms)
+    }
+
+    pub(crate) fn flush_mini_batch_at(
+        &mut self,
+        now_ms: i64,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let batches = std::mem::take(&mut self.deferred_batches);
+        self.deferred_keys = HashMap::default();
+        self.draining_deferred = true;
+        let result = (|| {
+            for (batch, bytes) in batches {
+                let result = self.update(&batch, now_ms);
+                drop(batch);
+                self.deferred_bytes -= bytes;
+                if self.memory.tracking() {
+                    self.memory.forget(bytes);
+                }
+                result?;
+                self.memory.account_shrink();
+            }
+            Ok::<(), DataFusionError>(())
+        })();
+        self.draining_deferred = false;
+        if self.memory.tracking() {
+            self.memory.forget(self.deferred_bytes);
+        }
+        self.deferred_bytes = 0;
+        result?;
+        self.finish_mini_batch()
+    }
+
+    fn finish_mini_batch(&mut self) -> Result<RecordBatch, DataFusionError> {
         if !self.mini_batch || self.staged_order.is_empty() {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
@@ -1978,7 +2190,38 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // Staged keys were all written this bundle, so none can be expired here; a TTL shorter
         // than the bundle interval is degenerate and still only delays expiry to the next touch.
         let ttl_on = self.ttl_ms > 0 && self.ttl_emit_unchanged;
+        let mut decimal_views = std::mem::take(&mut self.decimal_views);
         for key in order {
+            if let Some(buffers) = decimal_views.remove(&key) {
+                let state = self
+                    .store
+                    .get_mut(&key.0)
+                    .expect("staged decimal key remains resident");
+                let before = if self.memory.tracking() {
+                    group_key_state_bytes(state)
+                } else {
+                    0
+                };
+                for (i, buffer) in buffers.into_iter().enumerate() {
+                    if let Some(buffer) = buffer {
+                        let DataType::Decimal128(precision, scale) = self.value_types[i] else {
+                            unreachable!()
+                        };
+                        for value in buffer.order.iter().flatten() {
+                            if let Some(&count) = buffer.counts.get(&value) {
+                                state.aggs[i].merge_distinct(
+                                    ScalarValue::Decimal128(Some(value), precision, scale),
+                                    count,
+                                );
+                            }
+                        }
+                    }
+                }
+                if self.memory.tracking() {
+                    self.memory
+                        .record(group_key_state_bytes(state) as isize - before as isize);
+                }
+            }
             let staged = &changes[&key];
             let new = self
                 .store
@@ -2120,8 +2363,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         }
                     }
                     GroupAggState::DistinctRunning { counts, agg, live } => {
-                        // Decimal AVG overflow depends on arrival order, not set iteration order.
-                        if self.kinds[i] == 17 {
+                        // Wide decimal SUM and AVG overflow depends on arrival order.
+                        if self.kinds[i] == 17 || self.wide_distinct_sum(i) {
                             state_columns[i].push(agg.emit());
                             non_null_columns[i].push(*live);
                         } else {
@@ -2145,11 +2388,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         fields.push(Field::new("records", DataType::Int64, false));
         columns.push(Arc::new(Int64Array::from(records)));
         for i in 0..num_agg {
-            fields.push(Field::new(
-                format!("state{i}"),
-                self.state_types[i].clone(),
-                true,
-            ));
+            let mut field = Field::new(format!("state{i}"), self.state_types[i].clone(), true);
+            if self.wide_distinct_sum(i) {
+                field = field.with_metadata(std::collections::HashMap::from([(
+                    "streamfusion.distinct-running-state".to_owned(),
+                    "1".to_owned(),
+                )]));
+            }
+            fields.push(field);
             columns.push(scalars_to_array(
                 std::mem::take(&mut state_columns[i]),
                 &self.state_types[i],
@@ -2298,11 +2544,14 @@ impl GroupAggregator {
 }
 
 impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
+    fn wide_distinct_sum(&self, i: usize) -> bool {
+        self.kinds[i] == 9 && matches!(self.value_types[i], DataType::Decimal128(p, _) if p > 19)
+    }
+
     /// Decodes one raw key-group snapshot blob into the backing store through the state seam, so
     /// the same decode serves the memory rebuild and the typed persistent import.
     fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
         let num_agg = self.kinds.len();
-        let average_distinct: Vec<_> = self.kinds.iter().map(|&kind| kind == 17).collect();
         let batches = read_framed(bytes);
         if batches.is_empty() {
             return;
@@ -2312,6 +2561,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // stamps every group with the restore time — a full retention from now, Flink's
         // enable-TTL migration — instead of 0, which would expire everything on first touch.
         let main = &batches[0];
+        let preserved_distinct: Vec<_> = (0..num_agg)
+            .map(|i| {
+                self.kinds[i] == 17
+                    || (self.wide_distinct_sum(i)
+                        && main
+                            .schema()
+                            .field(2 + 2 * i)
+                            .metadata()
+                            .get("streamfusion.distinct-running-state")
+                            .is_some_and(|version| version == "1"))
+            })
+            .collect();
         let write_timestamps = (main.num_columns() > 2 + 2 * num_agg).then(|| {
             assert_eq!(
                 main.schema().field(2 + 2 * num_agg).name(),
@@ -2348,17 +2609,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             .value(row),
                     );
                 }
-                if average_distinct[i] {
+                if preserved_distinct[i] {
                     if let GroupAggState::DistinctRunning { agg, live, .. } = &mut state.aggs[i] {
                         agg.restore_value(
                             &ScalarValue::try_from_array(main.column(2 + 2 * i), row)
-                                .expect("distinct average sum"),
+                                .expect("distinct running sum"),
                         );
                         *live = main
                             .column(3 + 2 * i)
                             .as_any()
                             .downcast_ref::<Int64Array>()
-                            .expect("distinct average count")
+                            .expect("distinct running count")
                             .value(row);
                     }
                 }
@@ -2398,7 +2659,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let key = keys.value(row);
                 let value = ScalarValue::try_from_array(values, row).expect("multiset value");
                 if let Some(state) = self.store.get_mut(key) {
-                    if average_distinct[i] {
+                    if preserved_distinct[i] {
                         if let GroupAggState::DistinctRunning { counts: set, .. } =
                             &mut state.aggs[i]
                         {
@@ -2450,7 +2711,8 @@ impl GroupAggregator<RocksGroupStore> {
 /// always drained before a checkpoint barrier, so nothing is persisted here (the global keeps the
 /// durable state). This mirrors Flink's `MapBundleOperator` + `MiniBatchLocalGroupAggFunction` and
 /// RisingWave's stateless two-phase local. SUM/MIN/MAX emit NULL for an all-null group; COUNT(*)
-/// counts rows. Group order follows first appearance across the buffered batches.
+/// counts rows. Wide decimal DISTINCT views preserve the host's group-map emission order;
+/// other partials follow first appearance across buffered batches.
 pub(crate) struct LocalGroupAggregator {
     kinds: Vec<i64>,
     value_types: Vec<DataType>,
@@ -2460,14 +2722,19 @@ pub(crate) struct LocalGroupAggregator {
     // the global merge is filter-blind because the partials are already filtered here.
     filter_columns: Vec<i64>,
     key_columns: Vec<usize>,
+    key_timestamp_precisions: Vec<i32>,
     result_types: Vec<DataType>,
     // Per distinct view column (trailing the partials, in Flink's declared order), the index of the
     // aggregate whose distinct set backs it — the flush emits that set's (value, count) entries as a
     // list column for the global to merge. Empty when no aggregate is distinct.
     distinct_view_sources: Vec<i64>,
+    decimal_view_groups: Vec<Vec<usize>>,
     order: Vec<LocalGroupKey>,
+    group_order: Option<JavaMapOrder<usize>>,
     states: HashMap<ByteKey, LocalGroupEntry>,
     scalar_states: HashMap<GroupKey, LocalGroupEntry>,
+    cached_states: Vec<Vec<GroupAggState>>,
+    cached_state_bytes: usize,
     key_converter: Option<RowConverter>,
     key_batches: Vec<RecordBatch>,
     scalar_key_mode: Option<bool>,
@@ -2476,6 +2743,7 @@ pub(crate) struct LocalGroupAggregator {
 }
 
 struct LocalGroupEntry {
+    decimal_orders: Option<Box<Vec<DecimalMapOrder>>>,
     states: Vec<GroupAggState>,
     key_batch: usize,
     key_row: usize,
@@ -2488,13 +2756,28 @@ enum LocalGroupKey {
 
 /// Estimated footprint of one buffered local-aggregate entry: the key is held twice (the states map
 /// and the first-appearance order), plus the per-aggregate partial states.
+fn decimal_order_bytes(orders: &Option<Box<Vec<DecimalMapOrder>>>) -> usize {
+    orders.as_ref().map_or(0, |orders| {
+        std::mem::size_of::<Vec<DecimalMapOrder>>()
+            + orders.iter().map(DecimalMapOrder::bytes).sum::<usize>()
+            + (orders.capacity() - orders.len()) * std::mem::size_of::<DecimalMapOrder>()
+    })
+}
+
 fn local_entry_state_bytes(entry: &LocalGroupEntry) -> usize {
     std::mem::size_of::<LocalGroupEntry>()
-        + entry
-            .states
-            .iter()
-            .map(group_agg_state_bytes)
-            .sum::<usize>()
+        + decimal_order_bytes(&entry.decimal_orders)
+        + entry.states.iter().map(local_state_bytes).sum::<usize>()
+}
+
+fn local_state_bytes(state: &GroupAggState) -> usize {
+    match state {
+        GroupAggState::Distinct { set, .. }
+        | GroupAggState::DistinctRunning { counts: set, .. } => {
+            std::mem::size_of::<GroupAggState>() + set.capacity_bytes()
+        }
+        _ => group_agg_state_bytes(state),
+    }
 }
 
 /// The struct fields of one distinct-view entry: the distinct value and its in-bundle multiplicity.
@@ -2534,22 +2817,155 @@ impl LocalGroupAggregator {
         } else {
             filter_columns
         };
+        let mut decimal_view_groups = Vec::new();
+        let mut columns = Vec::new();
+        for (i, &kind) in kinds.iter().enumerate() {
+            if matches!(kind, 9 | 18)
+                && matches!(value_types[i], DataType::Decimal128(p, _) if p > 19)
+                && !columns.contains(&value_columns[i])
+            {
+                columns.push(value_columns[i]);
+                let sources: Vec<usize> = distinct_view_sources
+                    .iter()
+                    .map(|&source| source as usize)
+                    .filter(|&source| value_columns[source] == value_columns[i])
+                    .collect();
+                if !sources.is_empty() {
+                    decimal_view_groups.push(sources);
+                }
+            }
+        }
         LocalGroupAggregator {
             kinds,
             value_types,
             value_columns,
             filter_columns,
+            key_timestamp_precisions: vec![-1; key_columns.len()],
             key_columns,
             result_types,
             distinct_view_sources,
+            decimal_view_groups,
             order: Vec::new(),
+            group_order: None,
             states: HashMap::default(),
             scalar_states: HashMap::default(),
+            cached_states: Vec::new(),
+            cached_state_bytes: 0,
             key_converter: None,
             key_batches: Vec::new(),
             scalar_key_mode: None,
             key_types: Vec::new(),
             memory: OperatorMemory::unaccounted(),
+        }
+    }
+
+    fn new_states(&mut self, append_only: bool) -> Vec<GroupAggState> {
+        if let Some(states) = self.cached_states.pop() {
+            let bytes = states.iter().map(local_state_bytes).sum::<usize>();
+            self.cached_state_bytes -= bytes;
+            if self.memory.tracking() {
+                self.memory.record(-(bytes as isize));
+            }
+            return states;
+        }
+        self.kinds
+            .iter()
+            .zip(&self.value_types)
+            .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
+            .collect()
+    }
+
+    fn cached_bytes(&self) -> usize {
+        self.cached_state_bytes
+            + self.cached_states.capacity() * std::mem::size_of::<Vec<GroupAggState>>()
+    }
+
+    fn discard_cached_states(&mut self) {
+        let bytes = self.cached_bytes();
+        self.cached_states = Vec::new();
+        self.cached_state_bytes = 0;
+        self.memory.forget(bytes);
+    }
+
+    fn recycle_states(&mut self, mut states: Vec<GroupAggState>) {
+        if states.is_empty()
+            || self.cached_states.len() >= 128
+            || !states.iter().all(|state| {
+                matches!(
+                    state,
+                    GroupAggState::Distinct { .. } | GroupAggState::DistinctRunning { .. }
+                )
+            })
+        {
+            return;
+        }
+        let bytes = states.iter().map(local_state_bytes).sum::<usize>();
+        let next_capacity = if self.cached_states.len() == self.cached_states.capacity() {
+            (self.cached_states.capacity() * 2).max(4)
+        } else {
+            self.cached_states.capacity()
+        };
+        if self.cached_state_bytes
+            + bytes
+            + next_capacity * std::mem::size_of::<Vec<GroupAggState>>()
+            > 1024 * 1024
+        {
+            return;
+        }
+        for ((state, &kind), value_type) in
+            states.iter_mut().zip(&self.kinds).zip(&self.value_types)
+        {
+            match state {
+                GroupAggState::Distinct { set, live } => {
+                    set.clear();
+                    *live = 0;
+                }
+                GroupAggState::DistinctRunning { counts, live, agg } => {
+                    counts.clear();
+                    *live = 0;
+                    *agg = RunningAgg::new(kind, value_type);
+                }
+                _ => unreachable!(),
+            }
+        }
+        self.cached_state_bytes += bytes;
+        self.cached_states.push(states);
+    }
+
+    fn new_decimal_orders(&self) -> Option<Box<Vec<DecimalMapOrder>>> {
+        (!self.decimal_view_groups.is_empty()).then(|| {
+            Box::new(
+                self.decimal_view_groups
+                    .iter()
+                    .map(|sources| {
+                        let DataType::Decimal128(_, scale) = self.value_types[sources[0]] else {
+                            unreachable!()
+                        };
+                        DecimalMapOrder::new(scale)
+                    })
+                    .collect(),
+            )
+        })
+    }
+
+    pub(crate) fn with_key_timestamp_precisions(mut self, precisions: Vec<i32>) -> Self {
+        self.key_timestamp_precisions = precisions;
+        self
+    }
+
+    fn note_group_order(&mut self, hash: Option<i32>) {
+        if let Some(hash) = hash {
+            let before = self.group_order.as_ref().map_or(0, JavaMapOrder::bytes);
+            let order = self
+                .group_order
+                .get_or_insert_with(|| JavaMapOrder::with_capacity(16));
+            let hash = hash as u32;
+            // BinaryRow tree ties use nondeterministic JVM identity. Insertion ranks choose
+            // one valid identity ordering; distinct hashes preserve the deterministic order.
+            order.insert(self.order.len(), (hash ^ (hash >> 16)) as i32);
+            if self.memory.tracking() {
+                self.memory.record((order.bytes() - before) as isize);
+            }
         }
     }
 
@@ -2565,7 +2981,9 @@ impl LocalGroupAggregator {
                 .scalar_states
                 .iter()
                 .map(|(key, entry)| group_key_bytes(key) * 2 + local_entry_state_bytes(entry))
-                .sum::<usize>();
+                .sum::<usize>()
+            + self.group_order.as_ref().map_or(0, JavaMapOrder::bytes)
+            + self.cached_bytes();
         self.memory
             .attach("local-group-aggregate", budget_bytes, current)?;
         Ok(self)
@@ -2621,6 +3039,9 @@ impl LocalGroupAggregator {
         let scalar_key_mode = *self.scalar_key_mode.get_or_insert(n == 1);
         let arrow_keys =
             (!scalar_key_mode).then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
+        let mut group_hashes = (!self.decimal_view_groups.is_empty()).then(|| {
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions)
+        });
         let key_batch = self.key_batches.len();
         let mut retained_key_batch = false;
         // Distinct aggregates fold values into per-bundle multiplicities.
@@ -2634,7 +3055,7 @@ impl LocalGroupAggregator {
             .iter()
             .map(|c| c.map(|c| DistinctColumn::new(batch.column(c))))
             .collect();
-        // Per aggregate, a nonnumeric MIN/MAX value column — folded as a scalar
+        // Per aggregate, a string/timestamp MIN/MAX value column — folded as a scalar
         // into typed running state for insert-only inputs, or the Extremes multiset otherwise.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
@@ -2676,22 +3097,23 @@ impl LocalGroupAggregator {
             let entry = if scalar_key_mode {
                 let key = read_key(&key_arrays, row);
                 if !self.scalar_states.contains_key(&key) {
-                    let init: Vec<GroupAggState> = self
-                        .kinds
-                        .iter()
-                        .zip(&self.value_types)
-                        .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
-                        .collect();
+                    let init = self.new_states(append_only);
+                    let decimal_orders = self.new_decimal_orders();
                     if track {
                         self.memory.record(
-                            (group_key_bytes(&key) * 2 + std::mem::size_of::<LocalGroupEntry>())
+                            (group_key_bytes(&key) * 2
+                                + std::mem::size_of::<LocalGroupEntry>()
+                                + decimal_order_bytes(&decimal_orders)
+                                + init.iter().map(local_state_bytes).sum::<usize>())
                                 as isize,
                         );
                     }
+                    self.note_group_order(group_hashes.as_mut().map(|encoder| encoder.hash(row)));
                     self.order.push(LocalGroupKey::Scalar(key.clone()));
                     self.scalar_states.insert(
                         key.clone(),
                         LocalGroupEntry {
+                            decimal_orders,
                             states: init,
                             key_batch,
                             key_row: row,
@@ -2705,23 +3127,24 @@ impl LocalGroupAggregator {
                 let row_key = arrow_keys.as_ref().expect("arrow keys configured").row(row);
                 let key = row_key.as_ref();
                 if !self.states.contains_key(key) {
-                    let init: Vec<GroupAggState> = self
-                        .kinds
-                        .iter()
-                        .zip(&self.value_types)
-                        .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
-                        .collect();
+                    let init = self.new_states(append_only);
                     let owned = ByteKey::from(key);
+                    let decimal_orders = self.new_decimal_orders();
                     if track {
                         self.memory.record(
-                            (byte_key_bytes(key) * 2 + std::mem::size_of::<LocalGroupEntry>())
+                            (byte_key_bytes(key) * 2
+                                + std::mem::size_of::<LocalGroupEntry>()
+                                + decimal_order_bytes(&decimal_orders)
+                                + init.iter().map(local_state_bytes).sum::<usize>())
                                 as isize,
                         );
                     }
+                    self.note_group_order(group_hashes.as_mut().map(|encoder| encoder.hash(row)));
                     self.order.push(LocalGroupKey::Byte(owned.clone()));
                     self.states.insert(
                         owned,
                         LocalGroupEntry {
+                            decimal_orders,
                             states: init,
                             key_batch,
                             key_row: row,
@@ -2735,11 +3158,23 @@ impl LocalGroupAggregator {
             let retract = row_kinds.map_or(false, |kinds| matches!(kinds.value(row), 1 | 3));
             let mut delta = 0isize;
             if track {
-                delta -= entry
-                    .states
-                    .iter()
-                    .map(group_agg_state_bytes)
-                    .sum::<usize>() as isize;
+                delta -= local_entry_state_bytes(entry) as isize;
+            }
+            if let Some(orders) = &mut entry.decimal_orders {
+                assert!(!retract, "ordered decimal local views are insert-only");
+                for (order, sources) in orders.iter_mut().zip(&self.decimal_view_groups) {
+                    if sources.iter().any(|&source| {
+                        filter_cols[source]
+                            .map_or(true, |filter| !filter.is_null(row) && filter.value(row))
+                    }) {
+                        let values = batch
+                            .column(self.value_columns[sources[0]] as usize)
+                            .as_any()
+                            .downcast_ref::<Decimal128Array>()
+                            .expect("decimal membership");
+                        order.insert_optional((!values.is_null(row)).then(|| values.value(row)));
+                    }
+                }
             }
             for i in 0..num_agg {
                 if let Some(filter) = filter_cols[i] {
@@ -2759,7 +3194,7 @@ impl LocalGroupAggregator {
                     let column = batch.column(col_idx);
                     if !column.is_null(row) {
                         if matches!(entry.states[i], GroupAggState::Running { .. }) {
-                            assert!(!retract, "running extrema require insert-only input");
+                            assert!(!retract, "running local extrema require insert-only input");
                             entry.states[i].accumulate_typed_extreme(column, row);
                             continue;
                         }
@@ -2797,33 +3232,81 @@ impl LocalGroupAggregator {
                 }
             }
             if track {
-                delta += entry
-                    .states
-                    .iter()
-                    .map(group_agg_state_bytes)
-                    .sum::<usize>() as isize;
+                delta += local_entry_state_bytes(entry) as isize;
                 self.memory.record(delta);
             }
         }
         if retained_key_batch && !scalar_key_mode {
             self.key_batches.push(batch.clone());
         }
-        self.memory.account()
+        match self.memory.account() {
+            Err(_) if self.cached_bytes() > 0 => {
+                self.discard_cached_states();
+                self.memory.account()
+            }
+            result => result,
+        }
     }
 
-    /// Emits the buffered partials (`[key0.., partial0.., distinct-view0..]`, in first-appearance
-    /// order) and clears the buffer; the key types are retained so an empty flush still carries the
-    /// right schema. Each distinct view column carries its bundle set's (value, count) entries as a
+    /// Emits the buffered partials (`[key0.., partial0.., distinct-view0..]`) and clears entries.
+    /// Key types are retained so an empty flush still carries the right schema. Each distinct view column carries its bundle set's (value, count) entries as a
     /// list of structs — the wire form of Flink's serialized MapView partial — for the global to
     /// merge with multiplicities.
+    #[cfg(test)]
     pub(crate) fn flush(&mut self) -> RecordBatch {
-        let order = std::mem::take(&mut self.order);
+        self.try_flush().expect("local aggregate flush")
+    }
+
+    pub(crate) fn try_flush(&mut self) -> Result<RecordBatch, DataFusionError> {
+        if !self.cached_states.is_empty() {
+            self.discard_cached_states();
+            self.memory.account_shrink();
+        }
+        let mut temporary = self.memory.temporary_reservation();
+        if let Some(reservation) = temporary
+            .as_mut()
+            .filter(|_| !self.decimal_view_groups.is_empty())
+        {
+            let mut entries = 0usize;
+            let mut copy_peak = 0usize;
+            for entry in self.states.values().chain(self.scalar_states.values()) {
+                if let Some(orders) = &entry.decimal_orders {
+                    for (order, sources) in orders.iter().zip(&self.decimal_view_groups) {
+                        entries += order.len() * sources.len();
+                        // One copied order at a time: node growth, old/new bucket arrays and
+                        // resize partition vectors fit within four retained order footprints.
+                        copy_peak = copy_peak.max(order.bytes() * 4);
+                    }
+                }
+            }
+            if copy_peak > 0 {
+                // Bound geometric vector growth plus simultaneous scalar and Arrow output.
+                let output = entries * 4 * (std::mem::size_of::<ScalarValue>() + 32)
+                    + (self.order.len() + 1) * self.distinct_view_sources.len() * 8;
+                reservation.try_grow(
+                    copy_peak + output + self.order.len() * std::mem::size_of::<usize>(),
+                )?;
+            }
+        }
+        let mut order = std::mem::take(&mut self.order);
+        if let Some(group_order) = &mut self.group_order {
+            let mut destinations = vec![0; order.len()];
+            for (destination, source) in group_order.iter().enumerate() {
+                destinations[source] = destination;
+            }
+            for position in 0..order.len() {
+                while destinations[position] != position {
+                    let other = destinations[position];
+                    order.swap(position, other);
+                    destinations.swap(position, other);
+                }
+            }
+            group_order.clear();
+        }
         let states = std::mem::take(&mut self.states);
         let scalar_states = std::mem::take(&mut self.scalar_states);
         let key_batches = std::mem::take(&mut self.key_batches);
         let scalar_key_mode = self.scalar_key_mode.take().unwrap_or(false);
-        self.memory.set(0);
-        self.memory.account_shrink();
         let mut fields = key_fields(&self.key_types);
         let mut columns: Vec<ArrayRef> = if scalar_key_mode {
             let keys: Vec<GroupKey> = order
@@ -2881,12 +3364,30 @@ impl LocalGroupAggregator {
                     LocalGroupKey::Byte(key) => &states[key],
                     LocalGroupKey::Scalar(key) => &scalar_states[key],
                 };
-                let set = match &entry.states[source] {
-                    GroupAggState::Distinct { set, .. } => set,
-                    GroupAggState::DistinctRunning { counts, .. } => counts,
-                    _ => unreachable!("distinct view state"),
-                };
-                values.append(set, &mut counts);
+                if let Some(group) = self
+                    .decimal_view_groups
+                    .iter()
+                    .position(|sources| sources.contains(&source))
+                {
+                    let DataType::Decimal128(precision, scale) = value_type else {
+                        unreachable!()
+                    };
+                    let original = &entry.decimal_orders.as_ref().unwrap()[group];
+                    let copied = original.copy_if_reordered();
+                    let transported = copied.as_ref().unwrap_or(original);
+                    for value in transported.iter() {
+                        let scalar = ScalarValue::Decimal128(value, *precision, *scale);
+                        counts.push(entry.states[source].decimal_distinct_count(&scalar));
+                        values.push(scalar);
+                    }
+                } else {
+                    let set = match &entry.states[source] {
+                        GroupAggState::Distinct { set, .. } => set,
+                        GroupAggState::DistinctRunning { counts, .. } => counts,
+                        _ => unreachable!("distinct view state"),
+                    };
+                    values.append(set, &mut counts);
+                }
                 offsets.push(counts.len() as i32);
             }
             let values = values.finish();
@@ -2912,12 +3413,20 @@ impl LocalGroupAggregator {
         // count-only partial represented entirely by the downstream record-count contract). Arrow
         // cannot infer its row count from an empty column list, so preserve the number of groups
         // explicitly instead of rejecting the batch.
-        RecordBatch::try_new_with_options(
+        let output = RecordBatch::try_new_with_options(
             Arc::new(Schema::new(fields)),
             columns,
             &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(order.len())),
         )
-        .expect("failed to build local group-by partial batch")
+        .expect("failed to build local group-by partial batch");
+        for entry in states.into_values().chain(scalar_states.into_values()) {
+            self.recycle_states(entry.states);
+        }
+        drop((key_batches, order));
+        self.memory
+            .set(self.group_order.as_ref().map_or(0, JavaMapOrder::bytes) + self.cached_bytes());
+        self.memory.account_shrink();
+        Ok(output)
     }
 }
 
@@ -2980,6 +3489,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
     filter_columns: JIntArray<'local>,
     key_columns: JIntArray<'local>,
     distinct_view_sources: JIntArray<'local>,
+    key_timestamp_precisions: JIntArray<'local>,
     memory_budget_bytes: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
@@ -2997,6 +3507,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createLocalGroupAggregator<
             key_cols,
             view_sources,
         )
+        .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
         .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
     })
@@ -3050,10 +3561,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushLocalGroupAggregator<'
     out_array_address: jlong,
     out_schema_address: jlong,
 ) {
-    crate::bridge::jni_guard(env, move |_env| {
+    crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut LocalGroupAggregator) };
-        let result = aggregator.flush();
-        export_record_batch(result, out_array_address, out_schema_address);
+        match aggregator.try_flush() {
+            Ok(result) => export_record_batch(result, out_array_address, out_schema_address),
+            Err(error) => throw_group_update_error(&mut env, error),
+        }
     })
 }
 
@@ -3155,12 +3668,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushGroupAggregator<'local
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    now_millis: jlong,
     out_array_address: jlong,
     out_schema_address: jlong,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
-        match aggregator.flush_mini_batch() {
+        match aggregator.flush_mini_batch_at(now_millis) {
             Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }
@@ -3476,5 +3990,114 @@ mod rocks_codec_tests {
             counts(vec![2, 0]),
         ];
         check_columns(&codec, &[first, empty], columns);
+    }
+}
+
+#[cfg(test)]
+mod local_distinct_cache_tests {
+    use super::*;
+
+    fn create() -> LocalGroupAggregator {
+        LocalGroupAggregator::new(
+            vec![7, 18],
+            vec![0, 0],
+            vec![1, 1],
+            vec![],
+            vec![0],
+            vec![0, 1],
+        )
+    }
+
+    fn batch(keys: Vec<i64>, values: Vec<i64>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("k", DataType::Int64, false),
+                Field::new("v", DataType::Int64, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(Int64Array::from(values)),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn unused_cache_is_evicted_before_rejecting_live_state() {
+        let small_groups = batch((0..32).collect(), vec![1; 32]);
+        let larger_group = batch(vec![0; 64], (0..64).collect());
+        let mut probe = create().with_memory_budget(1 << 20).unwrap();
+        probe.update(&small_groups).unwrap();
+        let budget = probe.memory.state_bytes as i64;
+        let mut reused = create().with_memory_budget(budget).unwrap();
+        reused.update(&small_groups).unwrap();
+        reused.flush();
+        assert_eq!(reused.cached_states.len(), 32);
+        reused.update(&larger_group).unwrap();
+        assert!(reused.cached_states.is_empty());
+        assert!(reused.memory.state_bytes <= budget as usize);
+        let mut fresh = create();
+        fresh.update(&larger_group).unwrap();
+        let actual = reused.flush();
+        let expected = fresh.flush();
+        // Membership-map iteration order is not a wire contract for integer DISTINCT.
+        assert_eq!(actual.column(1), expected.column(1));
+        assert_eq!(actual.column(2), expected.column(2));
+    }
+
+    #[test]
+    fn large_bundles_bound_retained_cache_and_drop_releases_reservation() {
+        use datafusion::execution::memory_pool::{GreedyMemoryPool, MemoryPool};
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(16 << 20));
+        let mut aggregate = create();
+        aggregate
+            .memory
+            .attach_pool("cache-test", &pool, 0)
+            .unwrap();
+        aggregate
+            .update(&batch((0..512).collect(), vec![1; 512]))
+            .unwrap();
+        assert_eq!(aggregate.flush().num_rows(), 512);
+        assert_eq!(aggregate.cached_states.len(), 128);
+        assert!(aggregate.cached_bytes() <= 1024 * 1024);
+        assert_eq!(pool.reserved(), aggregate.cached_bytes());
+        drop(aggregate);
+        assert_eq!(pool.reserved(), 0);
+    }
+
+    #[test]
+    fn recycled_distinct_partials_match_fresh_bundles_and_account_retained_capacity() {
+        let create = || {
+            LocalGroupAggregator::new(
+                vec![7, 18],
+                vec![0, 0],
+                vec![1, 1],
+                vec![],
+                vec![0],
+                vec![0, 1],
+            )
+        };
+        let mut reused = create().with_memory_budget(1 << 20).unwrap();
+        for (key, value) in [(1, Some(7)), (2, None), (1, Some(-3)), (2, Some(7))] {
+            let batch = RecordBatch::try_new(
+                Arc::new(Schema::new(vec![
+                    Field::new("k", DataType::Int64, false),
+                    Field::new("v", DataType::Int64, true),
+                ])),
+                vec![
+                    Arc::new(Int64Array::from(vec![key; 5])),
+                    Arc::new(Int64Array::from(vec![value; 5])),
+                ],
+            )
+            .unwrap();
+            let mut fresh = create();
+            fresh.update(&batch).unwrap();
+            reused.update(&batch).unwrap();
+            assert_eq!(reused.flush(), fresh.flush());
+            assert!(reused.memory.state_bytes > 0);
+            assert_eq!(reused.memory.state_bytes, reused.cached_bytes());
+        }
+        assert_eq!(reused.cached_states.len(), 1);
+        assert!(reused.cached_bytes() < 1024 * 1024);
     }
 }

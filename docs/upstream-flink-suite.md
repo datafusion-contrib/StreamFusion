@@ -112,6 +112,15 @@ beside the injected native planner. The runner excludes the isolated loader and 
 Calcite after Flink's patched classes. This changes only the harness classpath; the pinned
 connector sources, SQL and result assertions remain unchanged.
 
+On Flink 2.2, the suite agent extends Kafka's topic-creation fixture with a bounded
+administrative readiness check. Partition offsets can be readable before the metadata
+and producer-state requests used by the host exactly-once sink succeed. The check uses
+the released connector's own administrative utility, retrying only unknown-topic and
+leader-not-available responses with a 30-second retry budget and five-second API
+timeouts. Authorization and other failures remain fatal. This changes fixture
+synchronization only; sink execution, SQL, and result assertions stay upstream's,
+and failed tests are not rerun.
+
 The 1.18 execution contract resource names methods verified in that release's unchanged source.
 It retains scalar, aggregate, rank, distinct-window and lookup witnesses; it excludes the
 retracting window TVF method absent from that release and the unavailable Delta suite. Agent and
