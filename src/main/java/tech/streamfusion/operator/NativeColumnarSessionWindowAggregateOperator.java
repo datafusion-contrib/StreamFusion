@@ -1,28 +1,28 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
  * Columnar single-phase session-window aggregation: the same native session aggregator as {@link
- * NativeSessionWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows, and
- * emitting Arrow batches ({@code [key?, agg…, window_start, window_end]}). The whole operator is
- * Arrow → Arrow; a rowwise sink is reached through the dedicated {@code ArrowToRowDataOperator}
+ * NativeSessionWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows,
+ * and emitting Arrow batches ({@code [key?, agg…, window_start, window_end]}). The whole operator
+ * is Arrow → Arrow; a rowwise sink is reached through the dedicated {@code ArrowToRowDataOperator}
  * the planner inserts at the island perimeter.
  *
  * <p>Event-time sessions measure the gap in the rowtime column and close on a watermark. A
  * **proctime** session instead times every element at the operator's processing-time clock (Flink's
  * processing-time assigner uses the clock, not a row value) and closes a gap-separated session on a
- * processing-time timer: each batch registers a cleanup timer at {@code now + gap}, the earliest the
- * session could end with no further input. A later element extends the session and registers its own
- * later timer, so when a timer fires only the sessions the clock has truly passed are emitted.
- * Remaining open sessions are flushed when the (bounded) input finishes.
+ * processing-time timer: each batch registers a cleanup timer at {@code now + gap}, the earliest
+ * the session could end with no further input. A later element extends the session and registers
+ * its own later timer, so when a timer fires only the sessions the clock has truly passed are
+ * emitted. Event-time sessions close on watermarks; processing-time sessions close only when their
+ * gap elapses. Bounded-input completion does not close an unfinished processing-time session.
  */
 public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindowOperatorCore
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
@@ -250,14 +250,6 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   @Override
   protected long processingTimeTimerDeadlineForSnapshot() {
     return proctime ? registeredTimer : Long.MIN_VALUE;
-  }
-
-  @Override
-  public void finish() throws Exception {
-    if (proctime) {
-      emitClosedWindows(Long.MAX_VALUE); // end of input: close every remaining open session
-    }
-    super.finish();
   }
 
   @Override

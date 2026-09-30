@@ -92,6 +92,24 @@ class FlinkCalcExceptionOrderSqlHarnessTest {
   }
 
   @Test
+  void rowOrderedExpressionsKeepTheCompleteNestedInputSchema() {
+    NativeFailureParity.run(
+            () ->
+                BuiltinFunctionParity.environment(
+                    ROW(
+                        FIELD(
+                            "payload",
+                            ROW(
+                                FIELD("unused", STRING()),
+                                FIELD("a", STRING()),
+                                FIELD("b", STRING())))),
+                    List.of(
+                        Row.of(Row.of("unused", "1", "2")), Row.of(Row.of("unused", "3", "4")))),
+            "SELECT CAST(payload.a AS INT), CAST(payload.b AS INT) FROM src")
+        .assertSuccess(NATIVE);
+  }
+
+  @Test
   void binaryBackedStringsKeepFailureOrderThroughFallback() {
     var comparison =
         NativeFailureParity.run(

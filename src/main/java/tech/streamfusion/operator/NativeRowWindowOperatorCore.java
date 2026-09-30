@@ -76,11 +76,6 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
     super.processWatermark(mark);
   }
 
-  /** Whether watermarks, rather than processing-time timers, drive this window. */
-  protected boolean isEventTimeWindow() {
-    return true;
-  }
-
   /** Samples the native late-row total into Flink's counter and meter. */
   protected final void reportLateRecords(long cumulativeLateRecords) {
     flinkWindowMetrics.reportLateRecords(cumulativeLateRecords);

@@ -1,6 +1,9 @@
 use crate::*;
 
-pub(crate) struct UpdatingJoiner<S: KeyedStateStore<JoinBucket> = MemoryJoinStore> {
+mod store;
+pub(crate) use store::{JoinProbe, JoinRowRef, JoinStateStore};
+
+pub(crate) struct UpdatingJoiner<S: JoinStateStore = MemoryJoinStore> {
     left_keys: Vec<usize>,
     right_keys: Vec<usize>,
     filter_nulls: Vec<bool>,
@@ -59,7 +62,7 @@ const INNER_JOIN_CHUNK_BYTES: usize = 8 * 1024 * 1024;
 
 struct InnerJoinCandidates<'a> {
     input: Vec<usize>,
-    other: Vec<&'a ByteKey>,
+    other: Vec<JoinRowRef<'a>>,
     kinds: Vec<i8>,
     bytes: usize,
     reservation: Option<MemoryReservation>,
@@ -78,7 +81,7 @@ impl<'a> InnerJoinCandidates<'a> {
 
     fn index_bytes(&self) -> usize {
         self.input.capacity() * std::mem::size_of::<usize>()
-            + self.other.capacity() * std::mem::size_of::<&ByteKey>()
+            + self.other.capacity() * std::mem::size_of::<JoinRowRef>()
             + self.kinds.capacity()
     }
 
@@ -98,13 +101,14 @@ impl<'a> InnerJoinCandidates<'a> {
     fn add(
         &mut self,
         row: usize,
-        other: &'a ByteKey,
+        other: &JoinRowRef<'a>,
         kind: i8,
         bytes: usize,
     ) -> Result<(), DataFusionError> {
         let capacity = (self.input.len() + 1).next_power_of_two().max(4);
         let indices =
-            (capacity * (2 * std::mem::size_of::<usize>() + 1) + 8).max(self.index_bytes());
+            (capacity * (std::mem::size_of::<usize>() + std::mem::size_of::<JoinRowRef>() + 1) + 8)
+                .max(self.index_bytes());
         self.reserve(
             self.bytes
                 .saturating_add(bytes)
@@ -112,7 +116,7 @@ impl<'a> InnerJoinCandidates<'a> {
                 .saturating_add(4096),
         )?;
         self.input.push(row);
-        self.other.push(other);
+        self.other.push(other.clone());
         self.kinds.push(kind);
         self.bytes = self.bytes.saturating_add(bytes);
         Ok(())
@@ -132,7 +136,8 @@ impl<'a> InnerJoinCandidates<'a> {
             return Ok(());
         }
         let parser = other_converter.parser();
-        let other = other_converter.convert_rows(self.other.iter().map(|r| parser.parse(&r.0)))?;
+        let other =
+            other_converter.convert_rows(self.other.iter().map(|r| parser.parse(r.bytes())))?;
         let input = input_converter.convert_rows(self.input.iter().map(|&r| payloads.row(r)))?;
         let (mut columns, remaining) = if is_left {
             (input, other)
@@ -176,7 +181,7 @@ pub(crate) type MemoryJoinStore = MemoryStateStore<JoinBucket>;
 /// The join persistent backend: one store per side over one shared DB (see
 /// `RocksStore::create_pair`), each under the raw bucket codec.
 #[cfg(feature = "rocksdb-state")]
-pub(crate) type RocksJoinStore = crate::state::RocksStore<JoinStateCodec>;
+pub(crate) use crate::state::rocks_store::join_store::RocksJoinStore;
 
 /// The join value codec for the persistent store: raw — one whole bucket per key, framed as
 /// `[u32 nrows]` then per row `[u32 rowlen][row bytes][i64 count][i32 num_assoc][i64
@@ -344,11 +349,11 @@ impl UpdatingJoiner {
     }
 }
 
-impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
+impl<S: JoinStateStore> UpdatingJoiner<S> {
     /// Moves this freshly built (empty, memory-backed) joiner's configuration onto another state
     /// backend (one store per side); construction goes through `new` + builders first so backend
     /// choice stays orthogonal to the shape builders.
-    pub(crate) fn with_backend<T: KeyedStateStore<JoinBucket>>(
+    pub(crate) fn with_backend<T: JoinStateStore>(
         self,
         left_state: T,
         right_state: T,
@@ -392,6 +397,10 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("updating-join", budget_bytes, 0)?;
+        self.left_state
+            .attach_read_memory(self.memory.temporary_reservation());
+        self.right_state
+            .attach_read_memory(self.memory.temporary_reservation());
         Ok(self)
     }
 
@@ -831,12 +840,6 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             .collect();
         let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
         let row_kinds = row_kind_column(batch);
-        // A probe reads (and, for the degree, writes) the OTHER side's whole bucket for each input
-        // key, so both sides hydrate the batch's equi-keys before the fold.
-        self.left_state
-            .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
-        self.right_state
-            .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
         let payloads = if is_left {
             &self.left_payload
         } else {
@@ -844,6 +847,25 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
         }
         .convert_columns(&data_arrays)
         .expect("encode join payload");
+        if self.kind == JoinKind::Inner {
+            let (input, other) = if is_left {
+                (&mut self.left_state, &mut self.right_state)
+            } else {
+                (&mut self.right_state, &mut self.left_state)
+            };
+            input.prepare_inner_input(
+                batch,
+                key_indices,
+                &self.key_timestamp_precisions,
+                &payloads,
+            )?;
+            other.prepare_inner_probe(batch, key_indices, &self.key_timestamp_precisions)?;
+        } else {
+            self.left_state
+                .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
+            self.right_state
+                .begin_batch(batch, key_indices, &self.key_timestamp_precisions)?;
+        }
         // Only ordinary equality rejects nulls. Null-safe fields remain part of the encoded key
         // and therefore share both a state bucket and Flink key group with an equal null key.
         let key_null: Vec<bool> = (0..batch.num_rows())
@@ -1262,8 +1284,45 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
             let key = key_encoder.encode(row);
             let full = payloads.row(row);
             if !key_null[row] {
-                if let Some(bucket) = other_state.get(key) {
-                    for (other, meta) in bucket.iter() {
+                {
+                    let mut probe = loop {
+                        match other_state.inner_probe(key) {
+                            Ok(probe) => break probe,
+                            Err(DataFusionError::ResourcesExhausted(_))
+                                if !candidates.input.is_empty() =>
+                            {
+                                candidates.emit(
+                                    is_left,
+                                    payloads,
+                                    input_converter,
+                                    other_converter,
+                                    &schema,
+                                    &mut self.predicate,
+                                    emit,
+                                )?;
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    };
+                    while let Some(record) = probe.next() {
+                        let (other, meta) = match record {
+                            Ok(record) => record,
+                            Err(DataFusionError::ResourcesExhausted(_))
+                                if !candidates.input.is_empty() =>
+                            {
+                                candidates.emit(
+                                    is_left,
+                                    payloads,
+                                    input_converter,
+                                    other_converter,
+                                    &schema,
+                                    &mut self.predicate,
+                                    emit,
+                                )?;
+                                continue;
+                            }
+                            Err(error) => return Err(error),
+                        };
                         if other_ttl.expired(meta.last_write_ms) {
                             continue;
                         }
@@ -1271,7 +1330,7 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                         let bytes = full
                             .as_ref()
                             .len()
-                            .saturating_add(other.0.len())
+                            .saturating_add(other.bytes().len())
                             .saturating_add(schema.fields().len() * 16 + 16)
                             .saturating_mul(3);
                         for _ in 0..meta.count.max(0) {
@@ -1293,7 +1352,7 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                                     emit,
                                 )?;
                             }
-                            if let Err(error) = candidates.add(row, other, kind, bytes) {
+                            if let Err(error) = candidates.add(row, &other, kind, bytes) {
                                 if candidates.input.is_empty() {
                                     return Err(error);
                                 }
@@ -1306,11 +1365,24 @@ impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
                                     &mut self.predicate,
                                     emit,
                                 )?;
-                                candidates.add(row, other, kind, bytes)?;
+                                candidates.add(row, &other, kind, bytes)?;
                             }
                         }
                     }
                 }
+            }
+            if input_state.apply_inner_input(
+                key,
+                full.as_ref(),
+                kind,
+                if is_left {
+                    self.left_join_key_unique
+                } else {
+                    self.right_join_key_unique
+                },
+                input_ttl,
+            )? {
+                continue;
             }
             if kind == 0 || kind == 2 {
                 Self::prepare_unique_accumulate(
@@ -1729,7 +1801,7 @@ fn snapshot_take_u32(input: &mut &[u8]) -> usize {
 /// synchronous checkpoint build Arrow arrays only to serialize them immediately; Q9 spends its
 /// barrier critical path doing those copies. Restore still accepts that format below so existing
 /// checkpoints remain readable.
-impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
+impl<S: JoinStateStore> UpdatingJoiner<S> {
     fn side_snapshot_keys(&self, is_left: bool, selected: &[ByteKey]) -> Vec<u8> {
         let state = if is_left {
             &self.left_state
@@ -1810,6 +1882,20 @@ impl UpdatingJoiner<RocksJoinStore> {
         restored_at_ms: i64,
     ) -> Result<(), DataFusionError> {
         for bytes in snapshots {
+            if bytes.len() < 4 {
+                return Err(DataFusionError::Execution(
+                    "truncated updating-join snapshot".into(),
+                ));
+            }
+            let left_len = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+            let split = 4usize
+                .checked_add(left_len)
+                .filter(|&split| split <= bytes.len())
+                .ok_or_else(|| {
+                    DataFusionError::Execution("truncated updating-join snapshot".into())
+                })?;
+            self.left_state.prepare_import(left_len)?;
+            self.right_state.prepare_import(bytes.len() - split)?;
             self.load_snapshot(bytes, restored_at_ms);
             self.left_state.end_bundle()?;
             self.right_state.end_bundle()?;
@@ -1952,7 +2038,7 @@ impl UpdatingJoiner {
 
 /// Blob decode shared by the memory rebuild and the typed persistent import: every load goes
 /// through the state seam only.
-impl<S: KeyedStateStore<JoinBucket>> UpdatingJoiner<S> {
+impl<S: JoinStateStore> UpdatingJoiner<S> {
     fn load_snapshot(&mut self, bytes: &[u8], restored_at_ms: i64) {
         if bytes.len() < 4 {
             return;

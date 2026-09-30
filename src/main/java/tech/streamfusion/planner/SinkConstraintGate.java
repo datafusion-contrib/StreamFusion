@@ -16,6 +16,10 @@ final class SinkConstraintGate {
   private SinkConstraintGate() {}
 
   static String fallbackReason(StreamPhysicalSink sink) {
+    return fallbackReason(sink, false);
+  }
+
+  static String fallbackReason(StreamPhysicalSink sink, boolean enforcesNotNullErrors) {
     ResolvedCatalogTable table =
         (ResolvedCatalogTable) sink.contextResolvedTable().getResolvedTable();
     RowType targetType =
@@ -30,6 +34,10 @@ final class SinkConstraintGate {
     for (int i = 0; i < targetType.getFieldCount(); i++) {
       if (!targetType.getTypeAt(i).isNullable()
           && inputType.getFieldList().get(i).getType().isNullable()) {
+        if (enforcesNotNullErrors
+            && notNullEnforcer == ExecutionConfigOptions.NotNullEnforcer.ERROR) {
+          continue;
+        }
         return "nullable input for NOT NULL column "
             + targetType.getFieldNames().get(i)
             + " requires Flink's ConstraintEnforcer ("

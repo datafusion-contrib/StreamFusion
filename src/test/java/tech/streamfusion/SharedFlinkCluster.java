@@ -46,6 +46,10 @@ public final class SharedFlinkCluster
     // test that needs a different memory setup must build its own local environment
     // (FlinkMemoryAccountingTest does).
     Configuration config = new Configuration();
+    String managedMemory = System.getenv("SF_BENCH_MANAGED_MEMORY");
+    if (managedMemory != null) {
+      config.set(TaskManagerOptions.MANAGED_MEMORY_SIZE, MemorySize.parse(managedMemory));
+    }
     config.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.parse("48g"));
     // Direct operator test harnesses expose an empty mock TaskManager configuration. Initialize
     // the same process-wide authority here before either a harness or the shared MiniCluster opens.
@@ -60,7 +64,10 @@ public final class SharedFlinkCluster
             new MiniClusterResourceConfiguration.Builder()
                 .setConfiguration(config)
                 .setNumberTaskManagers(1)
-                .setNumberSlotsPerTaskManager(8)
+                .setNumberSlotsPerTaskManager(
+                    managedMemory == null
+                        ? 8
+                        : Integer.parseInt(System.getenv().getOrDefault("SF_PARALLELISM", "4")))
                 .build());
   }
 

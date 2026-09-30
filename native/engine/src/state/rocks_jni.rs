@@ -1240,7 +1240,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdatingJoiner
             .with_unique_join_keys(left_join_key_unique != 0, right_join_key_unique != 0)
             .with_mini_batch(mini_batch != 0)
             .with_state_ttl(left_state_ttl_millis, right_state_ttl_millis)
-            .with_backend(left_store, right_store)
+            .with_backend(
+                RocksJoinStore::new(left_store, join_type == 0 && mini_batch == 0),
+                RocksJoinStore::new(right_store, join_type == 0 && mini_batch == 0),
+            )
             .with_read_through_budget(memory_budget_bytes)
         });
         let joiner = joiner.and_then(|mut joiner| {
@@ -1334,7 +1337,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBUpdatingJo
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let joiner = unsafe { &mut *(handle as *mut RocksUpdatingJoiner) };
         let (left_store, right_store) = joiner.stores_mut();
-        match RocksStore::checkpoint_pair(left_store, right_store, &snapshot_directory) {
+        match RocksJoinStore::checkpoint_pair(left_store, right_store, &snapshot_directory) {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(
