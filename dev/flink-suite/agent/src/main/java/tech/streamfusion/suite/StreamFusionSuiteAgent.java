@@ -77,6 +77,12 @@ public final class StreamFusionSuiteAgent {
                 builder
                     .visit(Advice.to(StartSqlInventory.class).on(named("executionStarted")))
                     .visit(Advice.to(FinishSqlInventory.class).on(named("executionFinished"))))
+        .type(named("org.apache.flink.connector.kafka.testutils.KafkaUtil"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(
+                    Advice.to(WaitForKafkaTopic.class)
+                        .on(named("createNewTopicAndWaitForPartitionAssignment"))))
         .type(named("org.apache.flink.table.api.internal.TableEnvironmentImpl"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -268,6 +274,19 @@ public final class StreamFusionSuiteAgent {
                     Advice.to(ReportNativePaimonSnapshot.class)
                         .on(named("next").and(takesArguments(0)))))
         .installOn(instrumentation);
+  }
+
+  public static final class WaitForKafkaTopic {
+    @Advice.OnMethodExit
+    public static void exit(
+        @Advice.Origin Class<?> fixture,
+        @Advice.Argument(0) String topic,
+        @Advice.Argument(3) java.util.Properties properties)
+        throws Exception {
+      if ("2.2".equals(System.getProperty("streamfusion.flink-suite.flink-line", "2.2"))) {
+        KafkaTopicFixture.awaitReady(fixture.getClassLoader(), topic, properties);
+      }
+    }
   }
 
   public static final class StartSqlInventory {
