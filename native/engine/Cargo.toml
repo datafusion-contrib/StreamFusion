@@ -80,17 +80,21 @@ name = "data_movement"
 harness = false
 
 [[bench]]
+name = "scalar_registry"
+harness = false
+
+[[bench]]
 name = "keys_and_checkpoints"
+harness = false
+
+[[bench]]
+name = "operator_allocations"
 harness = false
 
 [[bench]]
 name = "persistent_state"
 harness = false
 required-features = ["rocksdb-state"]
-
-[[bench]]
-name = "scalar_registry"
-harness = false
 
 [[bench]]
 name = "calc_expressions"

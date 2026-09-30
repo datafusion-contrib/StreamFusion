@@ -626,6 +626,13 @@ impl Projection {
     }
 }
 
+/// Used by the benchmark catalog to catch a newly registered scalar without a fixture.
+pub fn registered_scalar_codes() -> Vec<i64> {
+    (0..256)
+        .filter(|&op| crate::flink_functions::function(op, 3).is_some())
+        .collect()
+}
+
 pub struct KeyCodec(arrow::row::RowConverter, Vec<DataType>);
 impl KeyCodec {
     pub fn new(input: &[ArrayRef]) -> Self {
@@ -711,39 +718,6 @@ impl Default for WindowRank {
     }
 }
 
-#[cfg(feature = "rocksdb-state")]
-pub struct PersistentSort(crate::sorter::TemporalSorter);
-#[cfg(feature = "rocksdb-state")]
-impl PersistentSort {
-    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
-        let config = crate::state::rocks_store::RocksStoreConfig {
-            table_dir: directory.into(),
-            max_parallelism: 1,
-            options_json: options.into(),
-            ttl_ms: 0,
-            shared_resources: 0,
-        };
-        let store = crate::state::RocksTemporalSortBuffer::create(config, schema).unwrap();
-        Self(crate::sorter::TemporalSorter::new(1).with_store(store))
-    }
-    pub fn push(&mut self, batch: &RecordBatch) {
-        self.0.push(batch.clone()).unwrap();
-    }
-    pub fn flush(&mut self) -> RecordBatch {
-        self.0.flush(i64::MAX).unwrap()
-    }
-    pub fn checkpoint(&mut self, directory: &str) {
-        self.0.store_mut().checkpoint(directory).unwrap();
-    }
-}
-
-/// Used by the benchmark catalog to catch a newly registered scalar without a fixture.
-pub fn registered_scalar_codes() -> Vec<i64> {
-    (0..256)
-        .filter(|&op| crate::flink_functions::function(op, 3).is_some())
-        .collect()
-}
-
 /// Parameterized kernels selected outside the numbered scalar registry.
 pub fn parameterized_scalar(name: &str, ty: DataType) -> datafusion::logical_expr::ScalarUDF {
     use crate::flink_functions as f;
@@ -788,6 +762,51 @@ pub fn parameterized_scalar(name: &str, ty: DataType) -> datafusion::logical_exp
         "watermark" => f::clock::function(5, "UTC".into()),
         "float_comparison" => f::numeric::comparison(14, &[ty.clone(), ty]).unwrap(),
         other => panic!("Unknown benchmark kernel {other}"),
+    }
+}
+
+pub struct UpsertMerge(crate::keyed_upsert::KeyedUpsertBuffer);
+impl UpsertMerge {
+    pub fn new(kind_column: usize, first: bool) -> Self {
+        Self(crate::keyed_upsert::KeyedUpsertBuffer::new(
+            vec![0],
+            kind_column,
+            if first {
+                crate::keyed_upsert::Keep::First
+            } else {
+                crate::keyed_upsert::Keep::Last
+            },
+            false,
+        ))
+    }
+    pub fn run(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch.clone(), 0);
+        self.0.flush(false).unwrap().batch
+    }
+}
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentSort(crate::sorter::TemporalSorter);
+#[cfg(feature = "rocksdb-state")]
+impl PersistentSort {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let config = crate::state::rocks_store::RocksStoreConfig {
+            table_dir: directory.into(),
+            max_parallelism: 1,
+            options_json: options.into(),
+            ttl_ms: 0,
+            shared_resources: 0,
+        };
+        let store = crate::state::RocksTemporalSortBuffer::create(config, schema).unwrap();
+        Self(crate::sorter::TemporalSorter::new(1).with_store(store))
+    }
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch.clone()).unwrap();
+    }
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush(i64::MAX).unwrap()
+    }
+    pub fn checkpoint(&mut self, directory: &str) {
+        self.0.store_mut().checkpoint(directory).unwrap();
     }
 }
 

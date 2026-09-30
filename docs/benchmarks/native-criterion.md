@@ -71,8 +71,13 @@ before proposing a copy-removal change.
 
 ## Coverage inventory
 
-Suites use representative batch sizes and payload widths. Extend workload profiles alongside
-implementation changes; this inventory identifies the currently measured boundaries.
+Most new suites vary 16, 1,024, and 16,384 input rows. Codec and handoff suites include 8-, 264-, and
+4,096-byte payloads; state suites vary one, 64, and batch-sized key cardinalities. Profiles deliberately
+include sliced arrays, nulls, and Unicode where the operation handles them. Updating-join probes use
+one right-side row per key; window joins use unique join keys. This bounds output cardinality rather
+than accidentally constructing a quadratic result while investigating per-row materialization.
+Some historical suites use
+4,096 or 8,192 rows and remain available for their original comparisons.
 
 | Production boundary | Suite | Current witnesses |
 | --- | --- | --- |
@@ -80,6 +85,7 @@ implementation changes; this inventory identifies the currently measured boundar
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
 | Calc evaluation and compilation | `calc_expressions` | Arithmetic, booleans, CASE, casts, hashes, regex, date formatting/extraction, string and floating builtins; warm execution and first-batch compilation |
 | Calc and column movement | `data_movement` | Compiled projection, grouping-set EXPAND, inner/left array UNNEST, Arrow IPC encode/decode |
+| Stateful processing | `operator_allocations` | Filter, local/global SUM, tumble/session aggregate, running/bounded OVER, append/retract Top-N, first/last dedup, normalize, updating/interval/window joins, Paimon upsert merge |
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
@@ -96,6 +102,22 @@ implementation changes; this inventory identifies the currently measured boundar
 | ORC post-decode normalization | `normalization` | CHAR trimming, string pass-through, full-range timestamp conversion |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
 
-Coverage expansion remains for operations and workload variants outside this table.
-Criterion isolates the listed boundary; host-backed I/O, arbitrary UDF upcalls, other persistent
-stores, recovery/rescale, TTL, and additional SQL type/codec options need dedicated workloads.
+This is operation-level coverage, not exhaustive coverage of every SQL type, expression opcode,
+codec option, state backend, and recovery mode. Expand profiles alongside implementation changes.
+The main remaining boundaries are:
+
+- JVM upcalls and host-owned reader callbacks: the scalar registry retains SQL/JSON recycler
+  calls in an embedded JVM, but arbitrary UDF upcalls and reader callbacks still need dedicated
+  workloads. Existing release
+  integration harnesses remain the timing authority for those boundaries.
+- Persistent stores beyond temporal sort, RocksDB restore/rescale/compaction, TTL expiry, and each
+  operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
+  for their disk I/O and native worker allocations.
+- ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
+  Parquet fixtures currently use ordinary timestamp encoding, not the paired INT96 reader.
+- Codec option/type combinations, CDC envelopes, nested encoder profiles, temporal arithmetic,
+  decimal division, and parameterized scalar variants beyond the listed witnesses need additional cases. Registry completeness covers the factory, not all Calc opcodes.
+
+`native-build`, `raw` (the deployment shim over shared raw decoding), and `integration-tests` do not
+introduce an independent data-plane hot loop. Their operational implementation is measured in its
+owning crate; build tooling and correctness tests are not timed as operators.
