@@ -46,6 +46,21 @@ class NativeColumnarSessionWindowAggregateOperatorTest {
           new String[] {"total", "window_start", "window_end"});
 
   @Test
+  void allNullSumSurvivesTheArrowOutputBoundary() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
+            rawKeyedHarness()) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      GenericRowData input = new GenericRowData(2);
+      input.setField(1, TimestampData.fromEpochMillis(0));
+      harness.processElement(new StreamRecord<>(batch(allocator, input)));
+      harness.processWatermark(new Watermark(500));
+      assertEquals(List.of(java.util.Arrays.asList(null, 0L, 500L)), collect(harness));
+    }
+  }
+
+  @Test
   void mergesWithinGapAndClosesOnTimer() throws Exception {
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
@@ -198,8 +213,8 @@ class NativeColumnarSessionWindowAggregateOperatorTest {
         try (VectorSchemaRoot root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
           for (RowData r : RowDataArrowConverter.read(root, OUTPUT)) {
             rows.add(
-                List.of(
-                    r.getLong(0),
+                java.util.Arrays.asList(
+                    r.isNullAt(0) ? null : r.getLong(0),
                     r.getTimestamp(1, 3).getMillisecond(),
                     r.getTimestamp(2, 3).getMillisecond()));
           }

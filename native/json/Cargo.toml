@@ -31,10 +31,15 @@ default = []
 mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
 
 [dev-dependencies]
-criterion = "0.5"
+criterion.workspace = true
+streamfusion-benchmark-support.workspace = true
 serde = { version = "1", features = ["derive"] }
 sonic-rs = "0.5.8"
 
 [[bench]]
 name = "json_codecs"
+harness = false
+
+[[bench]]
+name = "json_decode"
 harness = false

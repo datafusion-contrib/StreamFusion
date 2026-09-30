@@ -9,3 +9,11 @@ publish = false
 streamfusion-bridge = { path = "../bridge" }
 arrow.workspace = true
 jni.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+streamfusion-benchmark-support.workspace = true
+
+[[bench]]
+name = "raw_decode"
+harness = false

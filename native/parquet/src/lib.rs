@@ -19,3 +19,5 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_liveNativeHa
 ) -> jstring {
     streamfusion_bridge::live_handles_probe(env)
 }
+
+pub mod bench;
