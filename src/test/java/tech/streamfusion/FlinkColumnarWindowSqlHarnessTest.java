@@ -21,7 +21,6 @@ import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.planner.NativePlanner;
-import tech.streamfusion.planner.PhysicalPlanScan;
 
 /**
  * Flink's Parquet source transposes once into a native watermark assigner, columnar exchange, and
@@ -243,20 +242,32 @@ class FlinkColumnarWindowSqlHarnessTest {
   }
 
   @Test
+  @org.junit.jupiter.api.Timeout(30)
   void legacyProctimePropertyMaterializesNonNull() throws Exception {
-    TableEnvironment tEnv = proctimeEnvironment();
-    PhysicalPlanScan scan = NativePlanner.install(tEnv);
-    String sql =
-        "SELECT k, SUM(v) AS s, "
-            + "TUMBLE_PROCTIME(pt, INTERVAL '5' SECOND) AS window_proctime "
-            + "FROM src GROUP BY k, TUMBLE(pt, INTERVAL '5' SECOND)";
-    try (CloseableIterator<Row> rows = tEnv.executeSql(sql).collect()) {
-      assertTrue(rows.hasNext());
-      while (rows.hasNext()) {
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+      tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
+      tEnv.executeSql(
+          "CREATE TABLE src (k BIGINT, v BIGINT, pt AS PROCTIME()) WITH ("
+              + "'connector' = 'datagen', 'rows-per-second' = '1', "
+              + "'fields.k.min' = '1', 'fields.k.max' = '2', "
+              + "'fields.v.min' = '10', 'fields.v.max' = '11')");
+      if (nativeRun) NativePlanner.install(tEnv);
+      String sql =
+          "SELECT k, SUM(v) AS s, "
+              + "TUMBLE_PROCTIME(pt, INTERVAL '5' SECOND) AS window_proctime "
+              + "FROM src GROUP BY k, TUMBLE(pt, INTERVAL '5' SECOND)";
+      if (nativeRun) {
+        String plan = tEnv.explainSql(sql);
+        assertTrue(plan.contains("NativeColumnarWindowAggregate"), () -> plan);
+      }
+      try (CloseableIterator<Row> rows = tEnv.executeSql(sql).collect()) {
+        assertTrue(rows.hasNext(), "processing-time timer did not emit a closed window");
         assertNotNull(rows.next().getField(2));
       }
     }
-    assertTrue(scan.substitutions() > 0, "legacy proctime window did not route");
   }
 
   @Test

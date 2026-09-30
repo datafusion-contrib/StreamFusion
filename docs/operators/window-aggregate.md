@@ -558,3 +558,10 @@ blackhole sink remain in the measured path.
 
 These standalone native plans are slower than Flink. The boundary correction is required for
 correctness of the existing native path; these results do not establish a performance benefit.
+
+
+The legacy `TUMBLE_PROCTIME` SQL property regression keeps an ongoing input alive
+until a clock timer emits a completed window, and checks materialization in both
+stock and native execution. Bounded input completion is not a substitute for that
+timer; fixed-clock operator tests separately verify that finish and terminal
+watermarks leave processing-time windows open.
