@@ -757,11 +757,16 @@ class NativeColumnarWindowAggregateOperatorTest {
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
       proctimeRawHarness() throws Exception {
+    return proctimeRawHarness(false, 1000, 1000);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      proctimeRawHarness(boolean cumulative, long size, long slide) throws Exception {
     return rawHarness(
         new NativeColumnarWindowAggregateOperator(
-            false,
-            1000,
-            1000,
+            cumulative,
+            size,
+            slide,
             1,
             new int[] {0},
             new int[0],
@@ -773,6 +778,52 @@ class NativeColumnarWindowAggregateOperatorTest {
             true,
             new int[0],
             MAX_PARALLELISM));
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "false,false,1000,1000", "true,false,1000,1000",
+    "false,false,2000,1000", "true,false,2000,1000",
+    "false,true,3000,1000", "true,true,3000,1000"
+  })
+  void processingTimeWindowsIgnoreWatermarksAndCompletionBeforeTheirTimer(
+      boolean rocks, boolean cumulative, long size, long slide) throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        var before = proctimeRawHarness(cumulative, size, slide)) {
+      if (rocks)
+        before.setStateBackend(
+            new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+                .createFromConfig(
+                    new org.apache.flink.configuration.Configuration(),
+                    getClass().getClassLoader()));
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      before.setProcessingTime(500);
+      before.processElement(new StreamRecord<>(batch(allocator, event(7, 9000))));
+      before.processWatermark(new Watermark(9000));
+      before.processWatermark(Watermark.MAX_WATERMARK);
+      before.getOperator().finish();
+      assertEquals(List.of(), collect(before));
+      snapshot = before.snapshot(1, 1);
+    }
+    try (var restored = proctimeRawHarness(cumulative, size, slide)) {
+      if (rocks)
+        restored.setStateBackend(
+            new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+                .createFromConfig(
+                    new org.apache.flink.configuration.Configuration(),
+                    getClass().getClassLoader()));
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(snapshot);
+      restored.open();
+      restored.setProcessingTime(1000);
+      assertEquals(List.of(row(7, cumulative ? 0 : 1000 - size, 1000)), collect(restored));
+      for (long end = 2000; end <= size; end += slide) {
+        restored.setProcessingTime(end);
+        assertEquals(List.of(row(7, cumulative ? 0 : end - size, end)), collect(restored));
+      }
+    }
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> rawHarness(

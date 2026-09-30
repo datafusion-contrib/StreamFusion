@@ -338,14 +338,6 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     publishStateBytes();
   }
 
-  @Override
-  public void finish() throws Exception {
-    if (proctime) {
-      flush(Long.MAX_VALUE); // end of input: close every remaining window
-    }
-    super.finish();
-  }
-
   private void scheduleNextTimer(long now) {
     long boundary = Math.floorDiv(now + 1, slideMillis) * slideMillis + slideMillis - 1;
     if (boundary <= maxOpenEnd && boundary > registeredTimer) {
