@@ -3784,6 +3784,7 @@ dependencies = [
  "prost-reflect",
  "prost-types",
  "serde_json",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-native-build",
 ]
@@ -3802,10 +3803,12 @@ dependencies = [
  "arrow 58.3.0",
  "arrow 59.3.0",
  "bytes",
+ "criterion",
  "jni",
  "libmimalloc-sys",
  "orc-rust",
  "prost 0.13.5",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-native-build",
 ]
@@ -3815,8 +3818,10 @@ name = "streamfusion-paimon"
 version = "0.1.0-rc3"
 dependencies = [
  "arrow 58.3.0",
+ "criterion",
  "jni",
  "libmimalloc-sys",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-native-build",
 ]
@@ -3827,9 +3832,11 @@ version = "0.1.0-rc3"
 dependencies = [
  "arrow 58.3.0",
  "bytes",
+ "criterion",
  "jni",
  "libmimalloc-sys",
  "parquet",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-native-build",
 ]

@@ -78,6 +78,9 @@ implementation changes; this inventory identifies the currently measured boundar
 | CSV decode | `csv_decode` | Quoted wide strings, nullable schema, strict/ignore-errors configuration |
 | Avro decode | `avro_decode` | Bare and Confluent framing, wide strings |
 | Protobuf decode | `protobuf_decode` | Direct descriptor-based decode, primitive/string fields, wide strings |
+| Sink format encoding | `format_encode`, `kafka_sink` | Production JSON, CSV, raw, Avro, Confluent Avro, Protobuf; historical JSON/timestamp comparisons |
+| Parquet file operations | `parquet_io` | Production encode, selected-row encode, ordinary decode, nullable wide strings |
+| ORC post-decode normalization | `normalization` | CHAR trimming, string pass-through, full-range timestamp conversion |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
 
 Coverage expansion remains for operations and workload variants outside this table.

@@ -142,3 +142,5 @@ pub extern "system" fn Java_tech_streamfusion_orc_NativeOrc_closeOrcDecoder(
         drop(from_handle::<reader::Decoder>(handle));
     })
 }
+
+pub mod bench;
