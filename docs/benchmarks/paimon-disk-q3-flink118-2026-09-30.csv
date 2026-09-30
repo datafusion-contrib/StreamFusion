@@ -1,0 +1,13 @@
+query,engine,phase,run,seconds,output_rows,flink_version,state_backend,source,sink,mini_batch,input_events,parallelism,kafka_partitions,managed_memory_mib,heap_gib,native_build
+q3,Flink,warmup,1,2.583,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,Flink,measured,2,1.350,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,Flink,measured,3,1.144,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,Flink,measured,4,0.939,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,Flink,measured,5,0.959,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,Flink,measured,6,1.165,798,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,StreamFusion,warmup,1,1.170,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,StreamFusion,measured,2,0.929,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,StreamFusion,measured,3,0.891,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,StreamFusion,measured,4,0.842,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,StreamFusion,measured,5,0.786,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release
+q3,StreamFusion,measured,6,0.846,798,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release

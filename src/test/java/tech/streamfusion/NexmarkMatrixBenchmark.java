@@ -854,6 +854,10 @@ class NexmarkMatrixBenchmark {
   }
 
   private static void runLakeSinkComparison(LakeSink sink) throws Exception {
+    String stateBackend = System.getenv().getOrDefault("SF_LAKE_STATE_BACKEND", "memory");
+    if (!Set.of("memory", "disk").contains(stateBackend)) {
+      throw new IllegalArgumentException("SF_LAKE_STATE_BACKEND must be memory or disk");
+    }
     Query[] queries = Arrays.stream(selectQueries()).filter(sink::accepts).toArray(Query[]::new);
     boolean retainOutput = System.getenv(sink.retainOutputVariable()) != null;
     Path outputRoot =
@@ -870,7 +874,9 @@ class NexmarkMatrixBenchmark {
           new StringBuilder(
               "\n##### NEXMARK "
                   + sink.title()
-                  + " (Kafka JSON, memory state, mini-batch off; "
+                  + " (Kafka JSON, "
+                  + stateBackend
+                  + " state, mini-batch off; "
                   + ROWS
                   + " events, best of "
                   + RUNS
@@ -1080,9 +1086,14 @@ class NexmarkMatrixBenchmark {
     StreamTableEnvironment tEnv = kafkaEnvironment(brokers, "json");
     tEnv.getConfig().getConfiguration().setString("execution.checkpointing.interval", "1 s");
     tEnv.getConfig().getConfiguration().setString("table.exec.mini-batch.enabled", "false");
+    if ("disk".equals(System.getenv("SF_LAKE_STATE_BACKEND"))) {
+      tEnv.getConfig().getConfiguration().setString(
+          "state.backend.type",
+          nativeRun ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "rocksdb");
+    }
     sink.tableConfig().forEach(tEnv.getConfig().getConfiguration()::setString);
     runSetup(tEnv, q);
-    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
     tEnv.executeSql(sink.ddl(q, output));
     RowType sinkType =
         (RowType)
@@ -1090,9 +1101,43 @@ class NexmarkMatrixBenchmark {
     sink.initialize(output, sinkType);
     String plan =
         tEnv.explainSql(q.insertSql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
-    long start = System.nanoTime();
-    tEnv.executeSql(q.insertSql).await();
-    double seconds = (System.nanoTime() - start) / 1e9;
+    boolean checkDiskState =
+        "disk".equals(System.getenv("SF_LAKE_STATE_BACKEND")) && q.label.equals("q4");
+    Path rocksDir = checkDiskState ? Files.createTempDirectory("nexmark-lake-rocksdb") : null;
+    AtomicBoolean stateSeen = new AtomicBoolean();
+    Thread stateWatcher = null;
+    if (checkDiskState) {
+      if (!nativeRun) {
+        tEnv.getConfig().getConfiguration().setString(
+            "state.backend.rocksdb.localdir", rocksDir.toString());
+      }
+      stateWatcher = engagementWatcher(stateSeen, () -> {
+        if (nativeRun) {
+          return Native.liveNativeHandles().contains("Rocks");
+        }
+        try (var files = Files.list(rocksDir)) {
+          return files.findAny().isPresent();
+        } catch (Exception e) {
+          return false;
+        }
+      });
+    }
+    double seconds;
+    try {
+      long start = System.nanoTime();
+      tEnv.executeSql(q.insertSql).await();
+      seconds = (System.nanoTime() - start) / 1e9;
+    } finally {
+      if (stateWatcher != null) {
+        stateWatcher.interrupt();
+        stateWatcher.join();
+        deleteTree(rocksDir);
+      }
+    }
+    if (checkDiskState && !stateSeen.get()) {
+      throw new IllegalStateException(
+          "q4: " + (nativeRun ? "native" : "Flink") + " RocksDB backend did not engage");
+    }
     if (nativeRun
         && (!plan.contains("NativeKafkaDecode")
             || !plan.contains("native-kafka-source")
