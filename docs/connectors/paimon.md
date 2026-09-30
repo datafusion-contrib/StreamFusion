@@ -1115,6 +1115,37 @@ Dedicated stock/native twins additionally check Parquet and ORC across repeated
 commits, managed writer memory, read/restore offsets, before-file retractions,
 field defaults after merging, floating-point edge values, and historical timestamps.
 
+### Known Paimon 1.0 recovery limitation
+
+`PrimaryKeyFileStoreTableITCase.testNoChangelogProducerStreamingRandom` can return stale
+rows when deletion vectors and injected filesystem failures coincide. This is reproducible
+using released Paimon alone, without the StreamFusion planner or native operators:
+
+1. The final commit writes an APPEND snapshot containing the newest level-0 files.
+2. Filesystem access fails before the separate COMPACT snapshot is committed.
+3. Recovery filters out that commit identifier because the APPEND already exists, dropping
+   its pending compaction changes.
+4. The default deletion-vector batch scan excludes level-0 files, so the older value remains visible.
+
+A deterministic two-row reproducer writes `10`, then `20`, and injects one manifest-read failure
+between the final APPEND and COMPACT. Recovery completes but returns `10`; the control without
+failure returns `20`. This also explains a captured upstream failure whose correct final row
+was present in a live level-0 Parquet file while a fresh stock reader returned an older level-5 row.
+The upstream randomized test remains enabled and unchanged; longer deadlines do not resolve
+this durable snapshot state. A passing randomized run does not establish absence of this bug.
+StreamFusion remains on released Paimon 1.0.0; fixing the split-commit recovery requires a
+verified upstream release, not a planner workaround or a forked dependency.
+
+Run the opt-in diagnostic with JDK 17. **The recovery case is expected to fail on 1.0.0**
+(`expected: 20 but was: 10`); the control passes. It is separate from the regular test gate:
+
+```bash
+SF_PAIMON1_STOCK=true SF_PAIMON1_TESTS=PaimonSplitCommitRecoveryReproducerTest \
+  bin/paimon1-suite.sh -Dsf.paimon1.reproduceSplitCommit=true
+```
+
+### Recorded validation
+
 Validation on 2026-09-28 passed all **242 selected upstream cases** in one release
 run, with no failures, errors, or skips, plus **89 dedicated 1.0 cases** and
 **97 core SQL/boundary checks**. The final upstream inventory contains native-source
