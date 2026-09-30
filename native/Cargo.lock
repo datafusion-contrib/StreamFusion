@@ -3686,6 +3686,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "streamfusion-benchmark-support"
+version = "0.1.0-rc3"
+dependencies = [
+ "arrow 58.3.0",
+]
+
+[[package]]
 name = "streamfusion-bridge"
 version = "0.1.0-rc3"
 dependencies = [
@@ -3693,9 +3700,11 @@ dependencies = [
  "arrow 58.3.0",
  "base64 0.22.1",
  "chrono",
+ "criterion",
  "jni",
  "num-bigint 0.4.6",
  "num-traits",
+ "streamfusion-benchmark-support",
 ]
 
 [[package]]

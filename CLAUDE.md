@@ -99,6 +99,18 @@ add those improvements to our commit message. If our benchmarks don't improve, w
 the feature is worth it, or if it is the precursor to more optimizations. We also need to confirm compatibility with
 existing Flink results.
 
+### Native operation benchmarks
+
+Maintain release-mode Criterion coverage for Rust operational paths: operators, expression kernels,
+codecs, Arrow ownership handoffs, key encoding, and state/checkpoint work. When adding or changing
+such a path, add or update a benchmark that calls the production implementation and exercises
+representative batch sizes, nulls, widths, and cardinalities where applicable. Keep fixture setup
+outside timed execution and state the measured boundary. Use `bin/bench-native.py --list` to discover
+suites and `--smoke` to validate fixtures; the coverage inventory and methodology live in
+[docs/benchmarks/native-criterion.md](docs/benchmarks/native-criterion.md). Record allocation requests
+and Arrow buffer sharing when investigating copies, without equating either metric with copied bytes.
+Criterion isolates native costs; it does not replace the end-to-end Flink comparison below.
+
 ### Performance requirements for new features
 
 Correctness and native coverage alone do not make a feature accelerated. Design new operators, expressions,

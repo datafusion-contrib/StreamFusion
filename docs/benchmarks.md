@@ -240,3 +240,10 @@ logger has DEBUG enabled, so a benchmark JVM with an unconfigured log4j 1.x bind
 sink look 15–60× slower than it is. The module's test classpath excludes Hadoop's log4j 1.x
 bindings for exactly this reason; check the stock profile before trusting a sink number that far
 out of line with the rest of this table.
+
+## Native operation profiling
+
+Use the [native Criterion suites](benchmarks/native-criterion.md) to isolate Rust execution,
+allocation requests, and Arrow buffer sharing before optimizing an end-to-end regression.
+`python3 bin/bench-native.py --list` discovers every suite; `--smoke` checks fixtures in a release
+build. These measurements complement the Flink comparisons on this page.
