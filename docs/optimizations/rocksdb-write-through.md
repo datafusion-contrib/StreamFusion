@@ -163,7 +163,7 @@ five-run Q3 verification measured 1.20× best and 1.29× by mean time; see the
 ### Separating record layout from probe reuse, 2026-09-30
 
 A release diagnostic compares the old bucket store with the record store using
-no opposite-side cache, the production 8 MiB allowance, and a 64 MiB allowance.
+no opposite-side cache, the then-production 8 MiB allowance, and a 64 MiB allowance.
 The allowance is a ceiling per store, not reserved memory. Disabling reuse also
 skips the cache-prefill scan. SQL, input, and the persistent record layout are
 identical across the three record variants; the bucket variant retains its
@@ -232,3 +232,18 @@ remain test-only controls for reproducing this experiment. A regression test
 verifies reuse of a group larger than 8 MiB under a 64 MiB pool, correct join
 output, and release of reservations. The small-pool regression still verifies
 lazy fallback and bounded output when a complete group cannot fit.
+
+
+Reproduce the state-level policy diagnostic with
+`cargo test --release -p streamfusion record_join_probe_cache_profile -- --ignored --nocapture`
+from `native/`. Its fixed allowances exist only in test builds; production uses
+shared-pool reservations. The current-main integration passed 608 native tests,
+including the greater-than-8-MiB reuse and small-pool lazy-fallback regressions.
+
+
+After integration with current main (`c01fc7bc`) and removal of the fixed cache
+ceiling, the same end-to-end Q23 configuration measured 12.063/11.762 seconds
+for Flink and 4.354/4.210 seconds native (2.79× by best trial), with 5,520,000
+rows from each engine. The `record_pool_final` rows in the end-to-end CSV retain
+its warmups and library hash. This is a Q23 confirmation, not a repeat of the
+complete 23-query table above.

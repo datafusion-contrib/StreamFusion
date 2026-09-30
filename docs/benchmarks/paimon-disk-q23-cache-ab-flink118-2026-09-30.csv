@@ -53,3 +53,9 @@ cached8_c,q23,StreamFusion,measured,3,8.025,,1.18.1,disk,kafka,paimon,false,2000
 cached8_c,q23,StreamFusion,measured,4,11.850,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,8419b6697fbcd763ddb784b3afc8796b773c1da772f965d1b0edb73723252ec4
 cached8_c,q23,StreamFusion,measured,5,11.094,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,8419b6697fbcd763ddb784b3afc8796b773c1da772f965d1b0edb73723252ec4
 cached8_c,q23,StreamFusion,measured,6,4.078,5520000,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,8419b6697fbcd763ddb784b3afc8796b773c1da772f965d1b0edb73723252ec4
+record_pool_final,q23,Flink,warmup,1,15.043,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,39cbe7680ebf4b581f648c5495c0784502046d6acbd3caeb1e1c1071deaa74b2
+record_pool_final,q23,Flink,measured,2,12.063,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,39cbe7680ebf4b581f648c5495c0784502046d6acbd3caeb1e1c1071deaa74b2
+record_pool_final,q23,Flink,measured,3,11.762,5520000,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,39cbe7680ebf4b581f648c5495c0784502046d6acbd3caeb1e1c1071deaa74b2
+record_pool_final,q23,StreamFusion,warmup,1,5.881,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,39cbe7680ebf4b581f648c5495c0784502046d6acbd3caeb1e1c1071deaa74b2
+record_pool_final,q23,StreamFusion,measured,2,4.354,,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,39cbe7680ebf4b581f648c5495c0784502046d6acbd3caeb1e1c1071deaa74b2
+record_pool_final,q23,StreamFusion,measured,3,4.210,5520000,1.18.1,disk,kafka,paimon,false,2000000,4,4,512,3,release,39cbe7680ebf4b581f648c5495c0784502046d6acbd3caeb1e1c1071deaa74b2
