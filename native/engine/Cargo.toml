@@ -57,6 +57,7 @@ workspace = true
 optional = true
 
 [dev-dependencies]
+jni = { workspace = true, features = ["invocation"] }
 tempfile = "3"
 criterion.workspace = true
 streamfusion-benchmark-support.workspace = true
@@ -86,3 +87,11 @@ harness = false
 name = "persistent_state"
 harness = false
 required-features = ["rocksdb-state"]
+
+[[bench]]
+name = "scalar_registry"
+harness = false
+
+[[bench]]
+name = "calc_expressions"
+harness = false

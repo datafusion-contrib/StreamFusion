@@ -736,3 +736,86 @@ impl PersistentSort {
         self.0.store_mut().checkpoint(directory).unwrap();
     }
 }
+
+/// Used by the benchmark catalog to catch a newly registered scalar without a fixture.
+pub fn registered_scalar_codes() -> Vec<i64> {
+    (0..256)
+        .filter(|&op| crate::flink_functions::function(op, 3).is_some())
+        .collect()
+}
+
+/// Parameterized kernels selected outside the numbered scalar registry.
+pub fn parameterized_scalar(name: &str, ty: DataType) -> datafusion::logical_expr::ScalarUDF {
+    use crate::flink_functions as f;
+    use datafusion::logical_expr::ScalarUDF;
+    match name {
+        "decimal_cast" => ScalarUDF::new_from_impl(f::decimal::DecimalCast::new(18, 2)),
+        "decimal_round" => ScalarUDF::new_from_impl(f::decimal::DecimalRound::new(18, 2)),
+        "decimal_truncate" => ScalarUDF::new_from_impl(f::decimal::DecimalRound::truncate(18, 2)),
+        "decimal_add" => ScalarUDF::new_from_impl(f::decimal::DecimalBinary::new(
+            f::decimal::DecimalOp::Add,
+            18,
+            2,
+        )),
+        "decimal_subtract" => ScalarUDF::new_from_impl(f::decimal::DecimalBinary::new(
+            f::decimal::DecimalOp::Subtract,
+            18,
+            2,
+        )),
+        "decimal_multiply" => ScalarUDF::new_from_impl(f::decimal::DecimalBinary::new(
+            f::decimal::DecimalOp::Multiply,
+            18,
+            2,
+        )),
+        "decimal_to_double" => f::decimal_float::function(false),
+        "decimal_to_float" => f::decimal_float::function(true),
+        "integer_divide" => f::integer_divide::function(&[ty.clone(), ty]).unwrap(),
+        "integer_parse" => f::integer_string::parse_function(ty, false),
+        "integer_try_parse" => f::integer_string::parse_function(ty, true),
+        "integer_format" => f::integer_string::format_function(264, true),
+        "from_unixtime" => f::from_unixtime::function(0, "yyyy-MM-dd HH:mm:ss").unwrap(),
+        "array_item" => f::array_item::function(ty),
+        "map_lookup_literal" => f::map_lookup::function(ty, ScalarValue::Int64(Some(1))),
+        "map_lookup_dynamic" => f::map_lookup::dynamic_function(ty, false),
+        "random" => f::random::function(false, false, false),
+        "random_seeded" => f::random::function(false, true, true),
+        "random_integer" => f::random::function(true, false, false),
+        "random_integer_seeded" => f::random::function(true, true, true),
+        "current_timestamp" => f::clock::function(0, "UTC".into()),
+        "current_date" => f::clock::function(2, "UTC".into()),
+        "current_time" => f::clock::function(3, "UTC".into()),
+        "unix_timestamp" => f::clock::function(4, "UTC".into()),
+        "watermark" => f::clock::function(5, "UTC".into()),
+        "float_comparison" => f::numeric::comparison(14, &[ty.clone(), ty]).unwrap(),
+        other => panic!("Unknown benchmark kernel {other}"),
+    }
+}
+
+/// Serialized Calc plans retain production compilation, scalar adaptation, and materialization.
+pub struct CalcProgram(crate::calc::CalcExpression);
+impl CalcProgram {
+    pub fn new(
+        kinds: Vec<i64>,
+        payload: Vec<i64>,
+        children: Vec<i64>,
+        longs: Vec<i64>,
+        doubles: Vec<f64>,
+        strings: Vec<Option<String>>,
+    ) -> Self {
+        Self(crate::calc::CalcExpression {
+            kinds,
+            payload,
+            child_counts: children,
+            longs,
+            doubles,
+            strings,
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["result".into()],
+            compiled: None,
+        })
+    }
+    pub fn run(&mut self, batch: RecordBatch) -> RecordBatch {
+        self.0.evaluate(batch)
+    }
+}

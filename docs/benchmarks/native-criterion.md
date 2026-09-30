@@ -16,7 +16,7 @@ python3 bin/bench-native.py --smoke
 python3 bin/bench-native.py --bench handoffs --save-baseline before
 # Change the implementation, using the same host, toolchain, configuration, and fixtures.
 python3 bin/bench-native.py --bench handoffs --baseline before
-python3 bin/bench-native.py --bench handoffs --filter c_data
+python3 bin/bench-native.py --bench scalar_registry --filter decimal
 ```
 
 `--package` and `--bench` are repeatable. Cargo's benchmark profile is optimized; do not change it
@@ -24,6 +24,11 @@ to a debug profile when collecting timings. Criterion retains its samples and ba
 `native/target/criterion`. The runner writes each suite's combined output, `allocations.csv`, and
 `metadata.json` under a timestamped `native/target/native-benchmarks/` directory, or `--output`.
 Metadata includes commit, dirty status, toolchain, platform, commands, and relevant build settings.
+For `scalar_registry`, the runner compiles the production Java classes and resolves their released
+Maven dependencies. An embedded JVM keeps SQL/JSON buffer-recycler calls in the measured path; VM
+startup is outside measurement. The JVM uses a 128 MiB initial and 256 MiB maximum heap, UTF-8,
+and UTC. Maven setup logs and resolved classpath are retained. Set `SF_NATIVE_BENCH_CLASSPATH`
+to reuse a classpath when invoking the Criterion executable directly.
 Retain the actual diff when comparing an uncommitted implementation. Baselines must have matching
 case names and representative data. Existing comparison suites include experimental alternatives;
 only cases explicitly calling the production implementation describe shipped behavior.
@@ -73,11 +78,14 @@ implementation changes; this inventory identifies the currently measured boundar
 | --- | --- | --- |
 | Arrow C Data ownership | `handoffs` | Full-schema and cached-schema export/import; nullable sliced string and integer batches |
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
+| Calc evaluation and compilation | `calc_expressions` | Arithmetic, booleans, CASE, casts, hashes, regex, date formatting/extraction, string and floating builtins; warm execution and first-batch compilation |
 | Calc and column movement | `data_movement` | Compiled projection, grouping-set EXPAND, inner/left array UNNEST, Arrow IPC encode/decode |
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
 | Persistent state | `persistent_state` | Production RocksDB event-time-sort write/read and checkpoint file creation; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Registered Flink scalar functions | `scalar_registry` | Every registered numeric opcode; completeness assertion requires a fixture for new registrations; ASCII/null/Unicode profiles |
+| Parameterized scalar kernels | `scalar_registry` | Decimal cast/round/truncate/arithmetic/float conversion, integer parse/format/divide, FROM_UNIXTIME, array item, literal/dynamic map lookup, random, clock, float comparison |
 | JSON decode | `json_decode`, `json_codecs` | Direct production decode, projection, wide messages, historical nested Nexmark corpus |
 | Raw decode | `raw_decode` | All admitted primitive/string/binary types, endianness, null bodies, slices |
 | CSV decode | `csv_decode` | Quoted wide strings, nullable schema, strict/ignore-errors configuration |
