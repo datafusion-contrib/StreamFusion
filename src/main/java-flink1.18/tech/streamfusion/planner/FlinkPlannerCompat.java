@@ -12,6 +12,10 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 final class FlinkPlannerCompat {
   private FlinkPlannerCompat() {}
 
+  static List<RelNode> prepareTimestampComparisons(List<RelNode> roots) {
+    return TimestampComparisonCoercion.normalize(roots);
+  }
+
   static RelNode prepareForRewrite(RelNode node) {
     if (node
         instanceof

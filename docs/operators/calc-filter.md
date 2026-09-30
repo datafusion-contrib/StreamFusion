@@ -1603,3 +1603,17 @@ nulls, byte arrays, casts and row/projection evaluation order without changing o
 BINARY columns. Final projections and fused scalar consumers accelerate; an affected fixed-width
 result crossing into another operator or a native sink falls back before execution. Casting the
 result to BYTES establishes a normal variable-length boundary.
+
+## Flink 1.18 mixed timestamp comparison compatibility
+
+The installed planner supplies the mixed `TIMESTAMP`/`TIMESTAMP_LTZ` comparison coercion
+missing from Flink 1.18's code generator. It casts the lower-precision operand to the other
+operand's type; equal precision casts the left operand to the right type. Existing casts
+introduced by SQL validation are retained, including their precision and timezone semantics.
+The cast uses Flink's session timezone handling and preserves NULL behavior, including
+`IS DISTINCT FROM` and `IS NOT DISTINCT FROM`. Precision 0, 3, 6, and 9 and DST overlap inputs
+are covered by SQL parity tests.
+
+This compatibility normalization also applies when an installed planner has native
+substitutions disabled, so rowwise Flink execution can run the same mixed comparison.
+The Flink 2.2 line uses its released code generator's existing coercion.

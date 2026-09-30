@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Assumptions;
 public final class FlinkTestCapabilities {
   private FlinkTestCapabilities() {}
 
+  public static final boolean MIXED_TIMESTAMP_COMPARISONS = true;
+
   public static final boolean CHECKPOINT_REUSE_NOTIFICATION = true;
 
   private static final java.util.Set<String> ABSENT_SQL_FUNCTIONS = java.util.Set.of();
