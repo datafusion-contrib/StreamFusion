@@ -51,9 +51,13 @@ final class CalcProjectionPruner {
   }
 
   static Pruned compute(Calc calc) {
+    return compute(calc, false);
+  }
+
+  static Pruned compute(Calc calc, boolean wholeStructInputs) {
     RexProgram program = calc.getProgram();
     RelDataType source = program.getInputRowType();
-    Use root = collectUses(program);
+    Use root = collectUses(program, wholeStructInputs);
     // Only beneficial if at least one top-level column is dropped or some struct is partially read.
     RelDataType pruned = prunedType(source, root, calc.getCluster().getTypeFactory());
     if (sameLeafCount(source, pruned)) {
@@ -69,7 +73,7 @@ final class CalcProjectionPruner {
   }
 
   /** Walks the (CSE-expanded) condition and projections, recording every input column / field path. */
-  private static Use collectUses(RexProgram program) {
+  private static Use collectUses(RexProgram program, boolean wholeStructInputs) {
     Use root = new Use();
     List<RexNode> exprs = new ArrayList<>();
     program.getProjectList().forEach(ref -> exprs.add(program.expandLocalRef(ref)));
@@ -95,6 +99,10 @@ final class CalcProjectionPruner {
             }
             if (current instanceof RexInputRef) {
               Use node = root.child(((RexInputRef) current).getIndex());
+              if (wholeStructInputs) {
+                node.whole = true;
+                return null;
+              }
               for (int index : path) {
                 if (node.whole) {
                   return null;

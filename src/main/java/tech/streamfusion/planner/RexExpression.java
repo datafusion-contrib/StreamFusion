@@ -169,11 +169,16 @@ final class RexExpression {
   private RexNode projectionRoot;
   private int binaryUdfCalls;
   private boolean rowFusion;
+
   private boolean javaStringInputs;
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
   private ClassLoader expressionClassLoader = RexExpression.class.getClassLoader();
 
   private RexExpression() {}
+
+  boolean requiresWholeStructInputs() {
+    return rowFusion;
+  }
 
   /**
    * Records the first decline reason and returns false, so callers can {@code return reject(...)}.

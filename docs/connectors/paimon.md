@@ -709,9 +709,14 @@ Each of these declines at planning time with a reason visible in `NativePlanner.
   file indexes (`file-index.*`), `row-tracking.enabled`, `data-evolution.enabled`, `BLOB` columns.
 - Append tables with `spill-compression` other than `lz4`/`lzo`/`zstd`.
   Released Paimon 2.0.0 fails when actually spilling with `none`; it remains on the stock path.
-- A nullable query field assigned to a `NOT NULL` target, or a bounded `CHAR`/`VARCHAR` or
+- A nullable query field assigned to a `NOT NULL` target with
+  `table.exec.sink.not-null-enforcer=DROP`, or a bounded `CHAR`/`VARCHAR` or
   `BINARY`/`VARBINARY` target while `table.exec.sink.type-length-enforcer` is enabled. The stock
   sink path preserves Flink's configured fail/drop and trim/pad/error behavior.
+  The default `ERROR` mode stays columnar: Arrow validity checks run before local merging and
+  bucket routing, preserve Flink's first offending row/column and error message, and reject null
+  values without changing primary-key or changelog semantics. Non-null batches pass without
+  materializing rows or copying their buffers.
 - `TIMESTAMP` precision above 6 (Paimon writes INT96 there), `VARIANT`, vector, and geospatial
   types.
 - `parquet.*` keys the native writer cannot honour: bloom filters, page validation, custom

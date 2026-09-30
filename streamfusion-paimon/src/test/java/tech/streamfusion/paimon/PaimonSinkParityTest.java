@@ -309,6 +309,62 @@ class PaimonSinkParityTest {
     assertEquals(expected, PaimonTestTables.readRows(plannedTable, plannedTable.rowType()));
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void nullablePrimaryKeyInputPreservesNotNullErrors(boolean containsNull) throws Exception {
+    java.nio.file.Path warehouse = Files.createTempDirectory("paimon-not-null-error");
+    List<String> failures = new ArrayList<>();
+    for (boolean nativeSink : new boolean[] {false, true}) {
+      String name = nativeSink ? "required_native" : "required_stock";
+      StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+      env.setParallelism(1);
+      StreamTableEnvironment tableEnv = catalogEnvironment(env, warehouse);
+      tableEnv.getConfig().set("table.exec.sink.upsert-materialize", "NONE");
+      tableEnv.executeSql(
+          "CREATE TABLE "
+              + name
+              + " (id BIGINT, label STRING, PRIMARY KEY (id) NOT ENFORCED) "
+              + "WITH ('bucket' = '2', 'local-merge-buffer-size' = '1 mb')");
+      DataStream<Row> rows =
+          tech.streamfusion.compat.FlinkTestSources.fromData(
+              env,
+              Types.ROW_NAMED(new String[] {"id", "label"}, Types.LONG, Types.STRING),
+              Row.of(1L, "first"),
+              Row.of(containsNull ? null : 2L, "second"));
+      tableEnv.createTemporaryView(
+          "required_input",
+          tableEnv.fromDataStream(
+              rows, Schema.newBuilder().column("id", "BIGINT").column("label", "STRING").build()));
+      PhysicalPlanScan scan = nativeSink ? NativePlanner.install(tableEnv) : null;
+      String sql = "INSERT INTO " + name + " SELECT id AS renamed, label FROM required_input";
+      if (nativeSink) {
+        String plan = tableEnv.explainSql(sql, ExplainDetail.JSON_EXECUTION_PLAN);
+        assertTrue(plan.contains("native-paimon-not-null-enforcer"), () -> plan);
+        assertTrue(plan.contains("native-paimon-bucket-route"), () -> plan);
+      }
+      if (containsNull) {
+        Throwable failure = assertThrows(Throwable.class, () -> tableEnv.executeSql(sql).await());
+        while (failure.getCause() != null) failure = failure.getCause();
+        failures.add(failure.getMessage());
+      } else {
+        tableEnv.executeSql(sql).await();
+        assertEquals(
+            List.of("1|first", "2|second"),
+            PaimonTestTables.readRows(
+                openTable(warehouse, name), openTable(warehouse, name).rowType()));
+      }
+      if (nativeSink) {
+        assertTrue(
+            scan.fallbackReasons().stream().noneMatch(reason -> reason.startsWith("paimon sink:")),
+            scan::explainSummary);
+      }
+    }
+    if (containsNull) {
+      assertEquals(failures.get(0), failures.get(1));
+      assertTrue(failures.get(0).contains("Column 'id' is NOT NULL"));
+    }
+  }
+
   private static FileStoreTable insertConstraintFixture(
       java.nio.file.Path warehouse, boolean installPlanner) throws Exception {
     String name = installPlanner ? "constraints_planned" : "constraints_stock";

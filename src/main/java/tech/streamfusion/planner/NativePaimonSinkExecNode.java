@@ -33,6 +33,7 @@ import tech.streamfusion.paimon.NativePaimonBucketAssigner;
 import tech.streamfusion.paimon.NativePaimonBucketSink;
 import tech.streamfusion.paimon.NativePaimonDynamicPartitionOperator;
 import tech.streamfusion.paimon.NativePaimonLocalMergeOperator;
+import tech.streamfusion.paimon.NativePaimonNotNullEnforcer;
 import tech.streamfusion.paimon.NativePaimonPostponeSink;
 
 /**
@@ -70,6 +71,16 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     FileStoreTable table = planned.table;
+    if (java.util.Arrays.stream(planned.notNullFieldNames).anyMatch(name -> name != null)) {
+      input =
+          new OneInputTransformation<>(
+              input,
+              "native-paimon-not-null-enforcer",
+              SimpleOperatorFactory.of(new NativePaimonNotNullEnforcer(planned.notNullFieldNames)),
+              ArrowBatchTypeInformation.INSTANCE,
+              input.getParallelism(),
+              false);
+    }
     if (planned.primaryKey && table.coreOptions().localMergeEnabled()) {
       input =
           new OneInputTransformation<>(

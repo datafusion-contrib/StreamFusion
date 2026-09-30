@@ -9,6 +9,11 @@ narrows the entry transpose to exactly those leaves and remaps the calc accordin
 person/auction structs of the Nexmark wide event are never materialized into Arrow at all
 (`8523187`).
 
+Row-ordered expressions evaluated by Flink's generated Calc code retain the complete nested
+structs passed as arguments. That code uses the original positional row serializers, so pruning
+members would change their arity. Unused top-level columns are still pruned; native field-by-name
+expressions retain nested-field pruning.
+
 The entry transpose applies this projection **before copying and buffering the row**. Its
 serializer uses the projected schema and recursively copies only selected fields into owned
 storage. The reusable projection view releases its source and nested-row references immediately
