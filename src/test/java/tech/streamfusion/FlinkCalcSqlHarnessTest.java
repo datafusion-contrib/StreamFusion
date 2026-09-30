@@ -161,9 +161,9 @@ class FlinkCalcSqlHarnessTest {
   }
 
   @Test
-  void unsupportedProjectionFunctionFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
-        FlinkCalcSqlHarnessTest::environment, "SELECT TRY_CAST(s AS BOOLEAN) FROM f", "TRY_CAST");
+  void tryBooleanProjectionMatchesHost() throws Exception {
+    NativeParity.assertParity(
+        FlinkCalcSqlHarnessTest::environment, "SELECT TRY_CAST(s AS BOOLEAN) FROM f");
   }
 
   @Test

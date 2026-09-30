@@ -13,6 +13,7 @@ pub(crate) mod calendar;
 pub(crate) mod clock;
 pub(crate) mod decimal;
 pub(crate) mod decimal_float;
+pub(crate) mod decimal_round_text;
 pub(crate) mod decode;
 pub(crate) mod encode;
 pub(crate) mod from_unixtime;
@@ -28,6 +29,7 @@ pub(crate) mod split_index;
 pub(crate) mod substring;
 pub(crate) mod to_date;
 
+mod array_distinct;
 pub(crate) mod array_item;
 mod ascii;
 mod binary_strings;
@@ -181,6 +183,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         160 => string_to_boolean::function(true),
         161 => instr::function(arity),
         162 => hash_code::function(),
+        165 => array_distinct::function(),
         _ => return None,
     })
 }

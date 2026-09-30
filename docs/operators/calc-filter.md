@@ -12,7 +12,10 @@ query back to Flink, not just that node.
 
 `Calc` is also one of the changelog-aware operators (alongside `GROUP BY`, the regular join, a CDC
 source, `UNION ALL`, `Expand`, and changelog normalize) exempt from the insert-only guard — a
-retracting/updating input doesn't disqualify it by itself.
+retracting/updating input doesn't disqualify it by itself. A union may alternate insert-only Arrow
+batches and batches carrying a row-kind column; Calc caches each schema separately and preserves
+those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
+retractions received from a source that advertised insert-only output.
 
 The rest of this page is the exact admission list: what's unconditionally native, what's native by
 default via a JVM upcall (and why that's not a fallback), what's opt-in, and what's a straight
@@ -60,10 +63,12 @@ batches do not evaluate projections. Existing two-argument LIKE keeps its curren
 ## COALESCE
 
 `COALESCE` retains the first non-NULL operand without evaluating it again. When an operand
-contains a scalar UDF or a volatile expression, the complete COALESCE expression uses Flink's
+contains a scalar UDF, a volatile expression, or a known potentially failing native expression
+(such as a strict STRING-to-INT cast), the complete COALESCE expression uses Flink's
 generated code through the existing columnar JVM bridge. This preserves call counts, nullable
 results and Flink's evaluation of later operands inside native Calc, including failures from
-operands hoisted by host code generation. Pure expressions retain their
+operands hoisted by host code generation. This includes casts hoisted from later operands
+even when an earlier operand is non-NULL. Other pure expressions retain their
 existing native CASE lowering. Runtime tests cover INT/STRING stateful UDFs, predicates, nested
 expressions, seeded random calls and multiple batches, including NOT NULL output constraints.
 
@@ -581,8 +586,11 @@ an unselected failing cast. Default-mode casts nested under AND/OR still fall ba
 that Flink's row short-circuiting suppresses errors on unselected rows; legacy-mode
 casts can compose under AND/OR because malformed input returns NULL. A bare expression
 encoder without table configuration declines this cast instead of guessing the mode.
-STRING-to-BOOLEAN TRY_CAST remains unsupported. The reverse BOOLEAN-to-character casts use
-the host-exact path described above.
+`TRY_CAST(s AS BOOLEAN)` uses the same native parser with NULL on invalid input,
+independently of legacy mode. It composes under NOT, COALESCE, AND/OR and filters.
+When its input expression can fail, the existing generated-expression callback preserves
+Flink's input evaluation errors: TRY_CAST only catches conversion failures. The reverse
+BOOLEAN-to-character casts use the host-exact path described above.
 
 ### Integer/string casts
 
@@ -604,9 +612,68 @@ through JNI. Successful results and NULL-on-error policies match as well.
 Integer formatting uses canonical decimal text, including signed minima and zero.
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
-Flink. Other TRY_CAST pairs, except the DECIMAL forms below, still fall back. Bare encoders without table configuration
+Flink. Other TRY_CAST pairs, except the BOOLEAN and temporal forms described here and
+the DECIMAL forms below, still fall back. Bare encoders without table configuration
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
+
+Boolean TRY_CAST regression coverage also verifies native routing in ordinary projections,
+filter predicates and CASE consumers, including strings that parse to NULL.
+
+### Temporal TRY_CAST
+
+Standalone DATE, TIME and TIMESTAMP/TIMESTAMP_LTZ TRY_CAST use verified parsing fast paths
+inside the existing JVM batch callback. DATE accepts four-digit years and one- or two-digit
+month/day fields. TIMESTAMP accepts `yyyy-MM-dd HH:mm:ss` with an optional 1–9 digit fraction,
+including Flink's SMART normalization of days 29–31 and zero-fraction `24:00:00`. The result
+retains the declared precision and the same Java local-time and zone conversion as Flink.
+Other formats and year zero use the released Flink parser. Modern-mode composed character
+children execute their generated code exactly once, outside the conversion failure handler.
+Legacy mode retains generated DATE conversion and only the direct-input timestamp fast path.
+TIME recognizes `HH:mm:ss` with optional 1–3 fractional digits and applies the released
+version's logical-type precision rule: Flink 2.2 truncates while 1.18 preserves parsed milliseconds.
+Complete-row evaluators retain Flink's generated conversion. See
+[temporal parsing measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
+
+`TRY_CAST` from STRING/VARCHAR/CHAR to DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ
+uses the existing columnar callback, with the exact temporal subsets above and Flink's
+generated conversion for other cases. Malformed text and rejected conversions return NULL;
+errors in the input expression still propagate. Flink 1.18.1 accepts `24:00:00` as an internal TIME but throws
+`DateTimeException` during external collection; native execution preserves that failure.
+Flink 2.2.1 returns NULL for the same TRY_CAST. CASE and filters suppress unselected failing expressions. Default and legacy
+cast modes use their configured Flink rules. TIMESTAMP_LTZ interprets local text in the
+configured table time zone, including DST gaps and overlaps.
+
+Runtime-source parity covers DATE, TIME(0/3), TIMESTAMP(0/3/6/9) and
+TIMESTAMP_LTZ(0/3/6/9), NULL and NOT NULL character inputs, invalid dates, year/range
+boundaries, pre-epoch nanoseconds, UTC, Asia/Shanghai and America/Los_Angeles.
+Multi-batch tests verify NativeCalc input/output counters as well as values.
+Binary TRY_CAST remains outside this whitelist.
+
+The initial, pre-optimization release+mimalloc benchmark on Flink 2.2.1/JDK 17, Linux x86_64
+(Core i7-12650H), used 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
+trials. NativeCalc and both row/Arrow transposes are required by the harness. Median
+elapsed seconds (ratio = Flink/native):
+
+| Query | Flink | Native island | Ratio |
+|---|---:|---:|---:|
+| Boolean-text identity | 0.413 | 0.687 | 0.600x |
+| Timestamp-text identity | 0.404 | 0.652 | 0.620x |
+| TRY_CAST to BOOLEAN | 0.411 | 0.560 | 0.733x |
+| TRY_CAST to TIMESTAMP(9) | 3.073 | 3.982 | 0.772x |
+| TRY_CAST to TIMESTAMP_LTZ(9) | 3.123 | 4.003 | 0.780x |
+
+These initial standalone results were slower than stock Flink. Cached timestamp writers and
+the canonical parser now improve the timestamp cases; see the [current measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
+Boolean TRY_CAST remains slower and keeps this coverage work in draft pending optimization.
+The parser fast path does not establish a speedup for noncanonical formats or composed expressions.
+
+```bash
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=TRY_STRING_TO_BOOLEAN,TRY_STRING_TO_TIMESTAMP,TRY_STRING_TO_TIMESTAMP_LTZ \
+  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
+```
 
 ### DECIMAL TRY_CAST
 
@@ -712,18 +779,44 @@ Positions from -38 upward use a prepared native decimal kernel. More negative li
 use Flink's own decimal rounding through the existing columnar JVM upcall, so extreme BigDecimal
 scale/range exceptions match the host instead of being silently clamped to zero. These calls
 remain inside native Calc, but fall back when nested under AND/OR to preserve row short-circuiting.
-CASE can skip an unselected failing branch. Runtime scale columns and BIGINT scale arguments
-retain an explicit planner fallback; float/double ROUND keeps its existing compatibility gate.
-Flink 2.2.1 itself can fail when a runtime scale changes the returned DecimalData precision;
-the regression suite preserves the resulting binary-writer assertion failure through fallback.
+CASE can skip an unselected failing branch. BIGINT scale arguments retain an explicit
+planner fallback; float/double ROUND keeps its existing compatibility gate.
+
+Runtime INT scales for ROUND and TRUNCATE run inside native Calc when a verified scalar
+consumer encloses the rounding. A standalone STRING cast on direct decimal and INT columns
+uses native batch rounding and per-row decimal formatting; a batch with non-NULL positions
+below -38 uses the existing Flink evaluator. Other complete expressions use Flink-generated
+evaluation, so integer casts, comparisons, predicates, nested rounding, CASE/COALESCE and
+explicit decimal normalization see the original runtime precision and scale. Arithmetic,
+nonidentity DECIMAL casts and IF can normalize the result before it crosses Arrow.
+Negative/NULL scales, scale expansion, precision 38, input errors and AND/OR/CASE
+short-circuiting retain released Flink behavior. Positions at or above the input scale
+leave the input unchanged; extreme negative positions can throw BigDecimal's scale errors.
+
+Direct runtime-scale DECIMAL outputs, decimal-preserving selections/sign operations, and
+complex outputs remain on Flink. Its serializer can reinterpret the internal unscaled
+integer using the declared scale: for DECIMAL(20,3) `123.456` and scale 2, direct ROUND and
+TRUNCATE collect as `12.346` and `12.345`, while their STRING consumers yield `123.46` and
+`123.45`. Scale 1 changes the internal precision and triggers the host binary-writer
+assertion with assertions enabled. Tests preserve both behaviors through explicit fallback,
+including when a JSON expression would otherwise select complete-row generation.
+
+A release+mimalloc comparison of the direct STRING consumers on Flink 2.2.1/JDK 17,
+with two million row-fed records, measured native ROUND at 0.634 s versus Flink's 0.690 s,
+and native TRUNCATE at 0.635 s versus 0.694 s. At five million rows, ROUND measured
+1.458 s versus 1.605 s and TRUNCATE 1.463 s versus 1.576 s. Both transposes and the row sink
+remain in these measurements. These results apply to the direct decimal/INT column shape; composed
+expressions retain generated evaluation. See the [method, variability and prior implementation
+comparison](../optimizations/udf-columnar-upcall.md#decimal-runtime-scale-consumers).
 
 `TRUNCATE(decimal_column[, literal_integer_scale])` uses the same native fixed-width
 kernel with rounding toward zero. Positive, zero and negative positions preserve Flink's
 resolved precision/scale and NULL behavior; a position at or above the source scale retains
 the input value. Positions below -38 use Flink's generated expression through the columnar
 callback, including its extreme-scale errors. They retain the same AND/OR short-circuit
-restriction as ROUND. Integer and floating-point inputs are not admitted for TRUNCATE;
-Flink 2.2.1 rejects nonliteral TRUNCATE positions during validation. SQL tests cover
+restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above. A standalone STRING cast of ROUND/TRUNCATE on direct decimal and INT columns uses native batch rounding and formatting, with released-function fallback for batches containing extreme negative positions. Other compositions retain generated evaluation. The direct STRING consumer measurements above include the full native island.
+Integer TRUNCATE inputs use the generated path described under exact numeric functions;
+floating-point inputs retain their existing admission restrictions. SQL tests cover
 precision 38, multiple batches, filters, CASE, COALESCE and aggregate consumers, including
 projections that combine and nest truncation with DECIMAL-to-FLOAT/DOUBLE casts.
 
@@ -1420,6 +1513,36 @@ token/depth limits. Deep legacy nesting grows the native stack as needed.
 See the [SQL/JSON parser note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md)
 and [per-function benchmarks](../benchmarks/scalar-functions.md).
 
+### ARRAY_MIN / ARRAY_MAX
+
+These functions remain on Flink. Integer-only native prototypes preserved
+values and schemas but regressed whole-job performance on short arrays, including
+a twenty-million-row run. See the
+[rejected extrema experiment](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-array-extrema.md)
+and [measurements](../benchmarks/scalar-functions.md#array-extrema-admission-experiment-2026-09-28).
+`ARRAY_MIN` is absent from the released Flink 1.18.1 SQL catalog; `ARRAY_MAX`
+is available on both supported Flink lines. The broader work remains in
+[#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
+### ARRAY_DISTINCT
+
+Integer arrays (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`) use a typed kernel following
+DataFusion's ordered membership and batch-gather structure. Arrays of at most
+eight elements use a bounded stack search with a collision-checked fingerprint;
+larger arrays use a reusable hash set. The first occurrence of each value is retained,
+including one NULL element. NULL containers remain NULL and empty arrays remain
+empty. The result preserves the element width and nullability. Other element
+types retain explicit fallback until their equality rules have been verified.
+[Whole-job measurements](../benchmarks/scalar-functions.md#integer-array_distinct-2026-09-28)
+show large-array gains and small-array sensitivity to run-to-run variation.
+
+`MAP_KEYS` and `MAP_VALUES` remain on Flink: a zero-copy native prototype passed
+parity but regressed whole-job performance with row sources and sinks. See the
+[rejected map projection experiment](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-map-array-projections.md).
+`CARDINALITY` over ordinary collection inputs also remains a fallback. The other
+collection-function and aggregate gaps remain tracked in
+[#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
 ### SPLIT
 
 Character input and a literal non-empty separator. The separator is literal text, including regex metacharacters. NULL input returns NULL, empty input returns an empty array, and leading/repeated/trailing separators retain empty tokens. Empty or dynamic separators fall back; the empty form splits UTF-16 surrogate units in Flink.
@@ -1449,8 +1572,17 @@ Same input and boundary rules as LPAD, with padding appended on the right. Dynam
 Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. Numeric separator overloads use Flink-generated code and interpret the integer as a character code. BIGINT indices with character separators fall back.
 
 Generated scalar helpers keep operand computations within the same Flink evaluator, retaining
-intermediate StringData representation. This also preserves the released host's failure for a
-computed empty trim set instead of silently changing it through a string conversion.
+intermediate StringData representation. For a computed empty trim set, Flink 2.2.1 can throw
+an arithmetic exception while the empty value is binary-only, but succeeds after its Java string
+has been decoded and cached. The shared empty-string singleton makes this depend on prior use in
+the JVM. Native evaluation preserves the host representation and matches either outcome; parity
+checks compare the live host outcome rather than assuming that every computed empty set fails.
+A separate regression check uses a fresh empty value to verify both representation states.
+Regular correctness-test forks use `-XX:-OmitStackTraceInFastThrow` so repeated implicit
+exceptions retain the messages and stack frames needed to compare their evaluation phase.
+Without it, HotSpot can turn the same arithmetic failure into a stackless exception with no
+message after warmup, creating a second test-order dependency. The `bench` profile leaves
+this test-only setting empty and retains normal JVM exception optimization.
 
 ### Temporal parsing, extraction and rounding
 

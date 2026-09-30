@@ -43,6 +43,21 @@ class RuntimeRoutesTest(unittest.TestCase):
             with self.subTest(classes=classes, work=work):
                 self.assertEqual(expected, self.classify({'job': self.job(classes, work)}))
 
+    def test_split_aggregate_requires_work_from_both_native_halves(self):
+        local = 'tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator'
+        global_agg = 'tech.streamfusion.operator.NativeColumnarGroupAggregateOperator'
+        work = {'NativeColumnarLocalGroupAggregateOperator': 12,
+                'NativeColumnarGroupAggregateOperator': 5}
+        job = self.job([self.SOURCE,
+                        'tech.streamfusion.operator.NativeColumnarMiniBatchAssignerOperator',
+                        local, global_agg, self.SINK], work)
+        self.assertEqual('native', self.classify({'split': job}))
+        job['native_work'] = {'NativeColumnarGroupAggregateOperator': 5}
+        self.assertEqual('unclassified', self.classify({'split': job}))
+        job['native_work'] = work
+        job['graph']['nodes'].insert(2, dict(operator_class=self.MAP))
+        self.assertEqual('mixed', self.classify({'split': job}))
+
     def test_scan_only_requires_both_source_and_sink_without_other_operators(self):
         for classes, expected in (([self.SOURCE, self.SINK], 'scan_only'),
                                   ([self.SOURCE], 'unclassified'), ([self.SINK], 'unclassified'),
@@ -70,6 +85,39 @@ class RuntimeRoutesTest(unittest.TestCase):
         failure = copy.deepcopy(success)
         failure.update(status='RESULT_FAILED', job_status='FAILED')
         self.assertEqual('host_failure', self.classify({'success': success, 'failure': failure}))
+
+    def test_authoritative_job_result_survives_archived_status_lookup(self):
+        job = self.job([self.SOURCE, self.MAP, self.SINK])
+        job.update(status='RESULT_FAILED', application_statuses=['FAILED'],
+                   job_status_error='JobNotFoundException')
+        self.assertEqual('host_failure', self.classify({'failed': job}))
+        for statuses in (['CANCELED'], ['UNKNOWN'], ['SUCCEEDED'], ['FAILED', 'SUCCEEDED']):
+            with self.subTest(statuses=statuses):
+                job['application_statuses'] = statuses
+                self.assertEqual('unclassified', self.classify({'failed': job}))
+        job['application_statuses'] = ['FAILED']
+        for status in ('FINISHED', 'CANCELED', 'SUSPENDED'):
+            job['job_status'] = status
+            self.assertEqual('unclassified', self.classify({'failed': job}))
+        job['status'] = 'SUCCEEDED'
+        job.pop('job_status')
+        self.assertEqual('unclassified', self.classify({'failed': job}))
+
+    def test_unmatched_results_and_malformed_statuses_cannot_establish_a_route(self):
+        job = self.job([self.SOURCE, self.SINK])
+        row = dict(outcome='passed', native_work={}, jobs={'job': job},
+                   unattributed_native_work={}, unmatched_native_jobs={},
+                   unmatched_job_results={'missing': ['FAILED']})
+        self.assertEqual('unclassified', routes.classify(row, routes.validate_partition(row)))
+        for unmatched in ({'job': ['FAILED']}, {'missing': []}, {'missing': ['invented']}, []):
+            row['unmatched_job_results'] = unmatched
+            with self.assertRaises(ValueError):
+                routes.validate_partition(row)
+        row['unmatched_job_results'] = {}
+        for statuses in ([], 'FAILED', ['FAILED', 'FAILED'], [1]):
+            job['application_statuses'] = statuses
+            with self.assertRaises(ValueError):
+                routes.validate_partition(row)
 
     def test_generated_classes_require_the_released_flink_factory_identity(self):
         job = self.job([self.SOURCE, 'BatchExecCalc$2', self.SINK])

@@ -13,7 +13,9 @@ public final class DecimalAccessor {
     if (DecimalData.isCompact(precision)) {
       return DecimalData.fromUnscaledLong(value.unscaledValue().longValueExact(), precision, scale);
     }
-    return DecimalData.fromUnscaledBytes(value.unscaledValue().toByteArray(), precision, scale);
+    return DecimalData.fromBigDecimal(
+        value.scale() == scale ? value : new BigDecimal(value.unscaledValue(), scale),
+        precision, scale);
   }
 
   public static void set(DecimalVector vector, int row, DecimalData value) {

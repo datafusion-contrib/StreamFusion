@@ -92,6 +92,17 @@ class FlinkDynamicCollectionSqlHarnessTest {
     assertNativeParity(() -> typedArrays(kind), "SELECT id, arr[idx] FROM src");
   }
 
+  @org.junit.jupiter.api.Test
+  void mapProjectionsKeepMeasuredHostFallback() throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("MAP_KEYS");
+    for (String function : List.of("MAP_KEYS", "MAP_VALUES")) {
+      NativeParity.assertFallbackReasonContains(() -> typedMaps("STRING", true),
+          "SELECT id, " + function + "(m) FROM src", "unsupported function/operator: " + function);
+      NativeParity.assertFallbackReasonContains(FlinkDynamicCollectionSqlHarnessTest::collections,
+          "SELECT id, " + function + "(grouped) FROM src", "unsupported function/operator: " + function);
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {0, -1})
   void invalidLiteralArrayIndexKeepsHostValidation(int index) {
@@ -180,6 +191,7 @@ class FlinkDynamicCollectionSqlHarnessTest {
     TableEnvironment host = factory.get();
     List<Object> expected = collect(host, sql);
     TableEnvironment nativeEnv = factory.get();
+    assertEquals(host.sqlQuery(sql).getResolvedSchema(), nativeEnv.sqlQuery(sql).getResolvedSchema());
     String plan = NativePlanner.explain(nativeEnv, sql);
     assertTrue(plan.contains("NativeCalc"), plan);
     NativePlanner.install(nativeEnv);

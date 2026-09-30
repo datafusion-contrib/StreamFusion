@@ -10,6 +10,10 @@ import org.apache.flink.table.planner.plan.logical.WindowSpec;
 public final class FlinkCompat {
   private FlinkCompat() {}
 
+  public static int applyParsedTimePrecision(int millis, int precision) {
+    return millis;
+  }
+
   public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
       org.apache.calcite.sql.SqlOperator operator) {
     if (operator

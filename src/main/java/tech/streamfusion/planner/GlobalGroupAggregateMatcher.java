@@ -53,9 +53,9 @@ final class GlobalGroupAggregateMatcher {
     int offset = grouping.length;
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       AggregateCall call = agg.aggCalls().apply(i);
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       if (kind < 0 || call.getArgList().size() > 1) {
-        return "global group aggregate: only single-field SUM/MIN/MAX/COUNT/AVG merges";
+        return "global group aggregate: only SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE merges";
       }
       if (needRetraction
           && (call.isDistinct()
@@ -63,35 +63,60 @@ final class GlobalGroupAggregateMatcher {
                   && kind != WindowAggregateMatcher.KIND_AVG))) {
         return "global group aggregate: a retracting merge admits COUNT and AVG only";
       }
-      // COUNT/SUM(DISTINCT x): the merge folds the local bundles' (value, count) view entries into
+      // COUNT/SUM/AVG(DISTINCT x): the merge folds the local bundles' (value, count) view entries into
       // the per-key distinct set — the positional partial (the bundle's count/sum) is carried but
       // not consumed, exactly as the host's distinct merge re-accumulates from the view. The value
       // type comes from the ORIGINAL local input (the call's args point into it). Same scope as the
-      // local half: COUNT over the set-carriable types, SUM over exact integer arithmetic only.
+      // local half: COUNT over the set-carriable types, SUM over exact integer/decimal arithmetic.
       if (call.isDistinct()) {
         if (call.getArgList().size() != 1) {
           return "global group aggregate: a distinct merge must have exactly one argument";
         }
-        SqlTypeName valueType =
-            agg.localAggInputRowType()
-                .getFieldList()
-                .get(call.getArgList().get(0))
-                .getType()
-                .getSqlTypeName();
-        SqlTypeName partialType = inputType.getFieldList().get(offset).getType().getSqlTypeName();
-        offset++;
+        RelDataType value =
+            agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType();
+        int width = kind == WindowAggregateMatcher.KIND_AVG ? 2 : 1;
+        if (offset + width > inputType.getFieldCount())
+          return "global group aggregate: incomplete distinct partials";
+        RelDataType partial = inputType.getFieldList().get(offset).getType();
+        RelDataType count = width == 2 ? inputType.getFieldList().get(offset + 1).getType() : null;
+        SqlTypeName partialType = partial.getSqlTypeName();
+        offset += width;
         boolean countDistinct =
             kind == WindowAggregateMatcher.KIND_COUNT
                 && partialType == SqlTypeName.BIGINT
-                && LocalGroupAggregateMatcher.supportedDistinctValueType(valueType);
+                && LocalGroupAggregateMatcher.supportedDistinctValueType(value.getSqlTypeName());
         boolean sumDistinct =
             kind == WindowAggregateMatcher.KIND_SUM
-                && GroupAggregateMatcher.isIntegerType(valueType)
-                && partialType == valueType;
-        if (!countDistinct && !sumDistinct) {
+                && LocalGroupAggregateMatcher.supportedDistinctSumPartial(value, partial);
+        RelDataType result = agg.getRowType().getFieldList().get(grouping.length + i).getType();
+        boolean averageDistinct =
+            kind == WindowAggregateMatcher.KIND_AVG
+                && LocalGroupAggregateMatcher.supportedDistinctAveragePartials(
+                    value, partial, count)
+                && (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+                    ? result.getSqlTypeName() == value.getSqlTypeName()
+                    : result.getSqlTypeName() == SqlTypeName.DECIMAL
+                        && result.getPrecision() == 38
+                        && result.getScale() == Math.max(6, value.getScale()));
+        if (!countDistinct && !sumDistinct && !averageDistinct) {
           return "global group aggregate: distinct merges are COUNT (over set-carriable value"
-              + " types) and SUM (over integers)";
+              + " types) and SUM/AVG (over integers or DECIMAL)";
         }
+        continue;
+      }
+      if (kind == 14) {
+        RelDataType result = agg.getRowType().getFieldList().get(grouping.length + i).getType();
+        if (call.isDistinct()
+            || call.getArgList().size() != 1
+            || offset + 1 >= inputType.getFieldCount()
+            || !LocalGroupAggregateMatcher.supportedSinglePartials(
+                result,
+                inputType.getFieldList().get(offset).getType(),
+                inputType.getFieldList().get(offset + 1).getType())) {
+          return "global group aggregate: SINGLE_VALUE expects matching string and INT count"
+              + " partials";
+        }
+        offset += 2;
         continue;
       }
       if (kind == WindowAggregateMatcher.KIND_AVG) {
@@ -125,15 +150,16 @@ final class GlobalGroupAggregateMatcher {
       }
       RelDataType partialRel = inputType.getFieldList().get(offset).getType();
       offset++;
-      // A MIN/MAX partial may be a string (the extreme merges byte-lexicographically, matching
-      // the local's fold); every other partial must be a numeric the merge folds.
+      // MIN/MAX retain typed nonnumeric partials; other partials must support numeric folding.
       if (LocalGroupAggregateMatcher.isStringExtreme(kind, partialRel.getSqlTypeName())
-          || LocalGroupAggregateMatcher.isTimestampExtreme(kind, partialRel.getSqlTypeName())) {
+          || LocalGroupAggregateMatcher.isTimestampExtreme(kind, partialRel.getSqlTypeName())
+          || LocalGroupAggregateMatcher.isTemporalBooleanExtreme(
+              kind, partialRel.getSqlTypeName())) {
         continue;
       }
       if (partialCode(partialRel) < 0) {
         return "global group aggregate: partial columns must be integer/double/decimal, or a"
-            + " string/timestamp under MIN/MAX";
+            + " string/date/time/boolean/timestamp under MIN/MAX";
       }
     }
     // Under retraction Flink appends a count1 COUNT(*) accumulator (unless a bare COUNT(*) is
@@ -240,12 +266,12 @@ final class GlobalGroupAggregateMatcher {
     return columns;
   }
 
-  /** Per-aggregate count-partial column for an AVG merge, -1 otherwise. */
+  /** Count column for AVG/SINGLE_VALUE; DISTINCT merges read their membership view instead. */
   static int[] countColumns(StreamPhysicalGlobalGroupAggregate agg) {
     int[] columns = new int[agg.aggCalls().size()];
     int offset = agg.grouping().length;
     for (int i = 0; i < columns.length; i++) {
-      columns[i] = spanOf(agg, i) == 2 ? offset + 1 : -1;
+      columns[i] = spanOf(agg, i) == 2 && !agg.aggCalls().apply(i).isDistinct() ? offset + 1 : -1;
       offset += spanOf(agg, i);
     }
     return columns;
@@ -267,8 +293,10 @@ final class GlobalGroupAggregateMatcher {
         // The distinct set is keyed by the original value (the call's args point into the local's
         // input row), so its code carries that value's own type.
         codes.add(
-            WindowAggregateMatcher.typeCode(
+            GroupAggregateMatcher.retainedValueTypeCode(
                 agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType()));
+      } else if (LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind()) == 14) {
+        codes.add(3);
       } else if (spanOf(agg, i) == 2) {
         // An AVG state is typed by its final result — except decimal, whose state is the sum
         // partial's DECIMAL(38, s) (the emit derives the result scale max(6, s) itself).
@@ -280,13 +308,16 @@ final class GlobalGroupAggregateMatcher {
                 : avgResultCode(resultRel.getSqlTypeName()));
       } else {
         RelDataType partialRel = inputType.getFieldList().get(offset).getType();
-        int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+        int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
         codes.add(
             LocalGroupAggregateMatcher.isStringExtreme(kind, partialRel.getSqlTypeName())
                 ? 3
                 : LocalGroupAggregateMatcher.isTimestampExtreme(kind, partialRel.getSqlTypeName())
                     ? 7
-                    : partialCode(partialRel));
+                    : LocalGroupAggregateMatcher.isTemporalBooleanExtreme(
+                            kind, partialRel.getSqlTypeName())
+                        ? GroupAggregateMatcher.retainedValueTypeCode(partialRel)
+                        : partialCode(partialRel));
       }
       offset += spanOf(agg, i);
     }
@@ -299,7 +330,7 @@ final class GlobalGroupAggregateMatcher {
 
   /**
    * Merge kinds: COUNT merges by summing its partial counts; AVG keeps the ordinary AVG state; a
-   * distinct COUNT/SUM keeps the distinct-set state (kind 7/9) fed from its view column.
+   * distinct COUNT/SUM/AVG keeps its distinct-set state fed from the view column.
    */
   static int[] kinds(StreamPhysicalGlobalGroupAggregate agg) {
     RelDataType inputType = agg.getInput().getRowType();
@@ -307,12 +338,14 @@ final class GlobalGroupAggregateMatcher {
     int offset = agg.grouping().length;
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       if (call.isDistinct()) {
         kinds[i] =
             kind == WindowAggregateMatcher.KIND_COUNT
                 ? LocalGroupAggregateMatcher.KIND_COUNT_DISTINCT
-                : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
+                : kind == WindowAggregateMatcher.KIND_AVG
+                    ? GroupAggregateMatcher.KIND_AVG_DISTINCT
+                    : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
       } else {
         // A MIN/MAX merge is only admitted without retraction (see unsupportedReason), so a
         // numeric one always runs as the plain running extreme — no retractable multiset.
@@ -377,12 +410,9 @@ final class GlobalGroupAggregateMatcher {
     return columns;
   }
 
-  /** How many positional partial columns aggregate {@code i} spans (2 for AVG, 1 otherwise). */
+  /** Positional width: two fields for AVG/SINGLE_VALUE, one otherwise. */
   private static int spanOf(StreamPhysicalGlobalGroupAggregate agg, int i) {
-    return WindowAggregateMatcher.aggregateKind(agg.aggCalls().apply(i).getAggregation().getKind())
-            == WindowAggregateMatcher.KIND_AVG
-        ? 2
-        : 1;
+    return LocalGroupAggregateMatcher.partialWidth(agg.aggCalls().apply(i));
   }
 
   static boolean generateUpdateBefore(StreamPhysicalGlobalGroupAggregate agg) {

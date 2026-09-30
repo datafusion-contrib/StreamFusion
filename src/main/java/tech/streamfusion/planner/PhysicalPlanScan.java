@@ -588,6 +588,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       changed |= rewritten != input;
     }
     RelNode current = changed ? node.copy(node.getTraitSet(), inputs) : node;
+    ctx.rememberOriginal(current, node);
 
     RelNode changelogSafe = apply(current, ctx, true);
     if (changelogSafe != null) {

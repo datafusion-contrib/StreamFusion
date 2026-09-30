@@ -14,20 +14,23 @@ structs passed as arguments. That code uses the original positional row serializ
 members would change their arity. Unused top-level columns are still pruned; native field-by-name
 expressions retain nested-field pruning.
 
-The entry transpose applies this projection **before copying and buffering the row**. Its
-serializer uses the projected schema and recursively copies only selected fields into owned
-storage. The reusable projection view releases its source and nested-row references immediately
-after the copy, including on failure. Upstream GenericRowData and BinaryRowData can therefore be
-reused as soon as `processElement` returns without retaining or copying their unread payload.
+The entry transpose applies this projection **before writing into the owned Arrow batch**.
+Only selected fields are read and copied into Arrow; no intermediate deep-copied RowData list
+is retained. The reusable projection view releases its source and nested-row references
+immediately after the write, including on failure. Upstream GenericRowData and BinaryRowData
+can therefore be reused as soon as `processElement` returns without retaining unread payload.
 
-The Arrow writer still creates independent, pre-sized batches on the JVM, following Comet's
-ownership model. This does not introduce native row decoding or reset buffers held downstream.
-Row-count and latency limits, pre-watermark/checkpoint flushing, RowKind and zero-column row counts
-retain their existing behavior. No new byte limit is introduced: memory still depends on the
-**selected** values' sizes. This optimization removes unread payload from the buffer rather than
-claiming a bound on arbitrary projected records.
+Each emitted batch has independent buffers, following Comet's ownership model. Buffers held by
+downstream consumers are never reset or reused. Row-count and latency limits, pre-watermark and
+checkpoint flushing, RowKind and zero-column row counts retain their existing behavior. Partial
+batches now retain Arrow storage under the normal off-heap allocator rather than copied heap
+rows. Closing the operator releases a partial batch without emitting it. No new byte limit is
+introduced: memory still depends on the **selected** values' sizes.
 
 ## Measurement
+
+The following historical measurements compare full-row and projected-row buffering, before
+direct Arrow writes replaced the intermediate row list.
 
 `PrunedTransposeBenchmark` uses a source without projection pushdown that reuses full-width rows:
 INT, DECIMAL(20,2), an unread STRING and unread BYTES. Its fixed query computes `id + 1`, selects
@@ -90,3 +93,11 @@ pruning through the assigner (`ddc4f25`); a planner test pins the pruned arity.
 
 Any future pass-through columnar rel needs the same treatment — it must not opaquely block
 projection pruning from reaching the transpose on its far side.
+
+The current allocation diagnostic reports pending Arrow storage instead of reflecting into the
+removed row list. On the x86-64/JDK 17 direct-write implementation, 512 pending projected rows
+retain 81,920 Arrow bytes for every unread-payload size above. Measured heap allocation is about
+130.4 bytes/row for GenericRowData and 286.3 for BinaryRowData, averaged over five trials after
+three warmups. It now includes Arrow writer creation and writes during row ingestion; these
+numbers are not directly comparable to the earlier ARM64 copy-only diagnostic. The fixture and
+query are unchanged, and ownership tests independently verify that dropped fields are never read.

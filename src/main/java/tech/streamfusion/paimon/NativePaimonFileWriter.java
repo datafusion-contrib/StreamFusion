@@ -141,9 +141,8 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
   }
 
   @Nullable
-  @Override
   public Object writerMetadata() {
-    return mode == Mode.STOCK ? stock.writerMetadata() : floatingStats;
+    return mode == Mode.STOCK ? PaimonVersion.writerMetadata(stock) : floatingStats;
   }
 
   /** Whether this file was written from Arrow bundles rather than by Paimon's stock writer. */

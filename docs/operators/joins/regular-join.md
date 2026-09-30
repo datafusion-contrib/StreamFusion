@@ -169,3 +169,11 @@ than the former 8 MiB allowance paid repeated lazy-scan costs.
 That fixed ceiling has been removed; probe reuse is governed by reservations
 from the shared native memory pool. Immediate inner joins
 still persist only changed records, independent of whether probe reuse fits.
+
+### Upsert-key metadata during substitution
+
+Join input uniqueness is resolved against the original Flink physical plan, before its children
+are replaced by native nodes. A native source or Calc must not erase a proven upsert key: when
+the join key contains that key, a later update replaces the stored row. Treating it as multiset
+state can re-emit obsolete values when another input changes, including overwriting a newer
+value in a Paimon partial-update sink. Non-unique inputs retain multiset state.

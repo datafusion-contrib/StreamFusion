@@ -61,9 +61,9 @@ final class NativePaimonSourceReader
             new NativePaimonSplitReader(
                     table,
                     read,
-                    read.newRead()
-                        .withIOManager(io)
-                        .withMetricRegistry(new FlinkMetricRegistry(context.metricGroup())),
+                    PaimonVersion.withMetrics(
+                        read.newRead().withIOManager(io),
+                        new FlinkMetricRegistry(context.metricGroup())),
                     batchRows,
                     rowtimeIndex,
                     watermarkExpression)

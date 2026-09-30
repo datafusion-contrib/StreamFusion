@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Assumptions;
 
 /** Explicit N/A checks for syntax or host operations absent from the selected released line. */
 public final class FlinkTestCapabilities {
+  public static final boolean TIME_TRY_CAST_REJECTS_OUT_OF_RANGE = true;
+  public static final boolean CAST_TIME_SINGLE_VALUE = true;
+
   private FlinkTestCapabilities() {}
 
   public static final boolean MIXED_TIMESTAMP_COMPARISONS = true;
@@ -65,7 +68,7 @@ public final class FlinkTestCapabilities {
   }
 
   public static void requireFirstLastType(String type) {
-    boolean temporal = type.equals("DATE") || type.startsWith("TIMESTAMP");
+    boolean temporal = type.equals("DATE") || type.startsWith("TIME");
     Assumptions.assumeTrue(
         !temporal || TEMPORAL_FIRST_LAST,
         "Flink 1.18 cannot plan FIRST_VALUE/LAST_VALUE over " + type);

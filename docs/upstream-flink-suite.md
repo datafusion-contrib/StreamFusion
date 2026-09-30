@@ -112,6 +112,15 @@ beside the injected native planner. The runner excludes the isolated loader and 
 Calcite after Flink's patched classes. This changes only the harness classpath; the pinned
 connector sources, SQL and result assertions remain unchanged.
 
+On Flink 2.2, the suite agent extends Kafka's topic-creation fixture with a bounded
+administrative readiness check. Partition offsets can be readable before the metadata
+and producer-state requests used by the host exactly-once sink succeed. The check uses
+the released connector's own administrative utility, retrying only unknown-topic and
+leader-not-available responses with a 30-second retry budget and five-second API
+timeouts. Authorization and other failures remain fatal. This changes fixture
+synchronization only; sink execution, SQL, and result assertions stay upstream's,
+and failed tests are not rerun.
+
 The 1.18 execution contract resource names methods verified in that release's unchanged source.
 It retains scalar, aggregate, rank, distinct-window and lookup witnesses; it excludes the
 retracting window TVF method absent from that release and the unavailable Delta suite. Agent and
@@ -272,17 +281,28 @@ every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` f
 and a complete partition with
 no native work. Pending results, graph observation errors, unknown operator classes and older
 inventories without counter partitions remain `unclassified`. A host-failure route requires
-at least one exceptional result with an explicit
-`FAILED` job status, resolved Flink operator classes in every submitted batch/streaming graph,
+at least one exceptional execution result with an explicit `FAILED` job status or a matching
+Flink `JobResult` application status of `FAILED`, resolved Flink operator classes in every submitted batch/streaming graph,
 no native work, and all other jobs either successful or similarly confirmed failed. Cancelled,
-suspended or pending jobs cannot establish this route.
+suspended or pending jobs cannot establish this route. The agent observes `JobResult` before
+its conversion to an execution result, preserving the authoritative outcome even after an archived
+job's status lookup becomes unavailable. Results join by job ID, including those observed before
+submission returns. Repeated outcomes are deduplicated; conflicting outcomes, a successful result
+paired with a failed application status, or contradictory terminal job statuses stay unclassified.
+Unmatched results remain in `unmatched_job_results` through inventory loading and the exact
+JUnit join, and prevent invocation classification. The structured partition is kept in JSON;
+CSV summaries omit it alongside other nested job evidence. Malformed
+status lists and overlapping submitted/unmatched identities fail validation. Finished-invocation
+job IDs cannot contribute results to a later invocation.
 
 For streaming native routes, every job must succeed and every native operator type in its graph
 must have positive, job-associated work. The initial explicit type list covers Calc, Filter,
-synchronous/asynchronous lookup join, columnar group aggregate, updating join, Top-N and global
+synchronous/asynchronous lookup join, columnar local/global group aggregate, updating join, Top-N and global
 window aggregate. Unsupported native types and counters for types absent from the graph remain
 unclassified. Sources, sinks, row/Arrow transposes and columnar key-group routing are permitted
-boundaries. Other resolved Flink operators alongside native work produce `mixed`. These counts
+boundaries. The columnar mini-batch assigner is also a boundary: it forwards Arrow batches
+unchanged and emits scheduling markers without per-row computation. Other resolved Flink operators
+alongside native work produce `mixed`. These counts
 establish work per operator type and job, not per individual graph node or subtask.
 
 Generated `SourceConversion` operators are also boundaries when their input paths lead only to
@@ -331,25 +351,50 @@ wrong routes, unclassified evidence and invalid/wrong-line scopes fail the summa
 embeds every requirement and the matched invocation identities, while retaining all other cases
 in its complete denominator.
 
-The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require the six
-verified runtime variants described below. Run them with:
+Schema version 1 supports a fixed `route`. Version 2 also supports
+`route_by_contract_variant`, an exact mapping from the invocation-linked execution witness's
+`variant` to its required route. Missing or unmapped variants fail; this is not a set of interchangeable
+acceptable routes. Flink 1.18's test environment randomly enables changelog state, so its keyed
+fixtures require `native` for `changelog=false` and `full_fallback` for `changelog=true`. The same
+exact witness is independently checked against the existing execution contract. No upstream test
+configuration is changed to force a preferred route.
+
+The bundled `runtime-route-scope-2.2.json` and `runtime-route-scope-1.18.json` require 16 and 15
+verified runtime variants respectively. Run them with:
 
 ```sh
 FLINK_VERSION=2.2.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 FLINK_VERSION=1.18.1 FLINK_SUITE_RUNTIME_AUDIT=true bin/flink-suite.sh runtime
 ```
 
-The option selects the five upstream methods, enables fresh SQL inventory collection/reporting,
+The option selects the eight upstream methods, enables fresh SQL inventory collection/reporting,
 and applies the appropriate scope automatically. Add `FLINK_SUITE_REUSE_BUILD=true` after a
 compatible suite build. A custom `FLINK_SUITE_TEST` selection must still satisfy every required
 variant; omitted variants fail. The audit option requires the runtime suite and cannot be combined
 with runtime sharding. The commands retain complete reports, inventory and the execution audit
-under the suite workspace; requiring these scopes in CI remains pending.
-Both bundled commands have been verified against the unchanged released suites: each reports
-eight passed cases, all six required variants matched, and two unclassified early returns.
+under the suite workspace. CI runs the audit before the first runtime shard on each released
+line, reusing that worker's restored build. It uploads audit evidence before the full shard can
+replace reports. Audit failure fails the worker and the final upstream gate; no extra runners or
+shared-build downloads are added.
+The bundled Flink 2.2.1 command passes 18 cases with all 16 requirements matched; the Flink
+1.18.1 command passes 17 cases with all 15 requirements matched. Both retain two unclassified early returns.
+The batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes the host-failure
+route while its expected exception remains a passing upstream test.
 
-Broader route classification and verified upstream scopes remain part of #168; the
-published inventory remains a planning/admission report. Agent and Python tests verify the
+The keyed `AggregateITCase#testGroupByAgg` fixture covers HEAP/ROCKSDB, immediate/mini-batch
+and local/global modes. Local and global native operators must each have positive associated
+work; observing only the global half cannot establish a fully native split job. The seven Flink
+2.2 variants run natively, including both async-state settings. The six Flink 1.18 variants follow
+their recorded changelog-state setting. Split jobs record twelve local input rows and six global
+partial rows; immediate jobs record twelve global input rows.
+
+`DataStreamJavaITCase#testFromAndToChangelogStreamEventTime` verifies `mixed` on both releases
+with object reuse enabled and disabled: four native Calc input rows coexist with Flink map,
+watermark and window operators in the same successful graph. Native operator presence alone
+therefore cannot label the whole job native.
+
+Auditing remaining upstream methods and operator types remains part of #168; the published
+inventory remains a planning/admission report and no full-suite native percentage is claimed. Agent and Python tests verify the
 collection/linkage paths with synthetic observations, not additional upstream SQL coverage.
 
 An unchanged Flink 2.2.1 `batch.sql.CalcITCase#testSelectStar` run verifies the first runtime
@@ -457,7 +502,8 @@ required, including when an expected assertion failed.
 
 The harness checks include real Maven subprocesses with an allowed assertion followed by a fork
 crash or timeout. Run them with `mvn -f dev/flink-suite/agent/pom.xml package` followed by
-`python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'`.
+`python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'`. The workflow command checks
+also require Bash and `jq`, both provided on the CI runners.
 
 During development, select one or more Surefire test classes without changing the upstream checkout:
 
@@ -497,7 +543,9 @@ integration compatibility.
 Merges to `main` require **All CI tests** and **All upstream integration tests**, enforced by
 the repository's **Require all test suites** ruleset with no bypass actors, including administrators.
 The first check waits for Rust, Java/SQL parity, every format/connector module, both Paimon formats,
-Delta and the deployed Flink image integration job. The second waits for both shared builds,
+Delta and both deployed Flink image integration jobs. The Flink 1.18 image job also packages the
+qualified release artifacts and runs the loader/mixed-line identity tests, reusing its optimized
+build rather than compiling the same payload in a separate job. The second waits for both shared builds,
 every selected upstream suite, the complete runtime-shard coverage checks, and the legacy Delta host audit.
 Each check runs even when a dependency fails and succeeds only when every dependency succeeds;
 failed, cancelled or unexpectedly skipped jobs cannot produce a green aggregate check. Matrix
@@ -510,8 +558,7 @@ Paimon jobs compile the runtime and its shared test fixtures but pass `-Dsf.runt
 to avoid repeating that suite in each lake connector job. Each lake job still runs its complete
 connector suite; **All CI tests** requires both the Java job and every lake job. Ordinary `mvn test`
 continues to run the runtime tests, and the standard `-DskipTests` still skips all test execution.
-Updating a pull request cancels its superseded upstream run so the current revision can start;
-pushes to `main` retain their running upstream checks. Merge requirements always apply to the
+Updating a pull request or `main` cancels its superseded upstream run so the current revision can start. Merge requirements always apply to the
 pull request's current revision.
 
 Before committing operator changes, run the relevant unchanged upstream integration classes
@@ -567,6 +614,17 @@ by closing an uninitialized stock compactor in Flink's operator harness. These r
 can pass their row assertions and hit that cleanup race while cancelling their conflicting compaction
 jobs, killing the class's shared TaskManager and stranding subsequent tests. A separate JVM contains
 that upstream fixture failure without changing the test, its random options, or its assertions.
+The three streaming failure-injection cases, `testNoChangelogProducerStreamingRandom`,
+`testFullCompactionChangelogProducerStreamingRandom` and
+`testLookupChangelogProducerStreamingRandom`, also run separately. In
+[the #273 Paimon run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36411039663/job/108907928301),
+an injected `FailingFileIO.ArtificialException` escaped stock `MergeTreeWriter.close()`
+through `TableWriteOperator.close()`. Flink treated the cleanup failure as fatal and stopped
+TaskManager #0. Later jobs had no resources; the class JVM timed out roughly 28 minutes after
+the initial failure. The final report listed 237 passed tests but had no completed report for
+the timed-out class. Isolation preserves the original failed test and its diagnostics while
+preventing that lost TaskManager from blocking unrelated tests. It does not fix or suppress
+the upstream cleanup failure, disable failure injection, or retry random outcomes.
 All invocations' reports contribute to the result and native execution checks; any Maven
 failure remains blocking, including a process timeout without a finished JUnit report.
 Explicit `FLINK_SUITE_TEST` selectors keep their requested grouping for diagnosis.
@@ -580,13 +638,121 @@ consumer jobs, reusing the common build. The isolated Maven repository at `.flin
 is cached separately by platform, JDK, Flink version and build inputs; `setup-java`'s ordinary
 Maven cache serves the injection-agent build. Rust dependencies are cached in the isolated source
 build's actual native target directory. Every run still rebuilds current StreamFusion code.
-The Rust cache keeps the existing `upstream-suite` key across the move to a shared preparation job.
+The Rust cache keeps the existing `upstream-suite` key. Each Flink line runs its own preparation
+and consumer jobs in a reusable workflow: 1.18 consumers need only the 1.18 preparation, and 2.2
+consumers need only the 2.2 preparation. Suite selection happens inside preparation, removing a
+separate runner allocation. The parent gate still requires both lines to succeed.
+
+The preparation job also caches the compiled, clean Flink checkout using an exact key containing
+the released Flink version, actual JDK version, runner platform/architecture, and build script/settings/workflow
+hash. Maven still runs the same build commands to validate and install its outputs; this is incremental
+compilation reuse, not a cached test result or a skipped StreamFusion build. A cache miss takes the
+normal cold-build path. Only main-branch preparation jobs save the compiled Flink and isolated Maven
+caches, before any upstream tests run, and shared artifacts continue to exclude test reports.
+Rust caches in ordinary CI, upstream preparation, and Paimon 1.0 compatibility are saved only on `main`. PRs restore
+available caches but do not save their own copies of these large caches; sibling PRs cannot reuse
+those copies. Main-branch runs seed caches available to PRs. The ordinary Maven dependency cache
+managed by `setup-java` retains its existing policy.
+
+The optimized image jobs cache `native/target/release-staging`, the actual Cargo target directory
+used by the release builder. Debug dependencies retain their separate caches. The first run after
+a cache configuration change may be cold; this policy does not increase the repository cache quota
+or guarantee retention when main-branch caches alone exceed that quota.
+
+`bin/ci-free-disk.py` checks free space on the workspace filesystem and removes unused preinstalled
+toolchains one at a time, stopping when enough space is available. Build jobs target 30 GiB free;
+upstream consumers target 20 GiB before downloading the shared build. The script fails early if
+those targets cannot be met and refuses to delete anything outside GitHub-hosted Linux runners.
+These are initial capacity targets to validate on hosted runs, not measured peak usage guarantees.
+
+This follows [Flink's own compile-and-fan-out CI pattern](https://github.com/apache/flink/blob/master/.github/workflows/template.flink-ci.yml):
+compile once, transfer build outputs, then run module groups on independent runners. Flink also
+caches Maven dependencies, compiles with Maven reactor parallelism, and trims its transferred build
+artifact. CI likewise uses `FLINK_SUITE_BUILD_THREADS=1C` for the two upstream reactor compilation
+commands, allowing one Maven build thread per CPU. Local commands default to one thread. Test forks
+and native-execution checks follow the settings below; Flink's workflow is a design reference, not an additional
+dependency. The source-suite payload build skips duplicate Javadoc generation; the ordinary CI
+Java/module jobs still run the bound Javadoc check.
+
+CI debug builds use Cargo's `line-tables-only` debug information for both development and test
+profiles. This retains native filename/line-number backtraces without generating type and local
+variable debug information for every dependency. Debug assertions, overflow checks, optimization
+levels, package boundaries, and test selectors remain unchanged. Local development and release
+build profiles retain their defaults. The environment settings participate in the Rust cache key;
+the first run after this change rebuilds dependencies, and main-branch runs seed the smaller caches.
+Java and optional lake jobs share one `debug-jvm` dependency cache instead of storing nearly
+identical multi-gigabyte caches. The main-branch Flink 2.2 Paimon ORC job seeds it after its runtime,
+core and lake native builds; other Java/lake jobs only restore it. Cargo still validates each
+package's features and fingerprints and rebuilds any missing variants.
+
+A local cold `streamfusion-bridge` test build with four Cargo jobs, incremental compilation disabled,
+and the same 24 passing tests took 37.0 seconds with full debug information and 28.9 seconds with
+line tables (22% less elapsed time). Its target directory fell from 746 MB to 473 MB (37% smaller).
+These are one-pass build/test measurements on the same machine with warm dependency downloads,
+not an engine throughput benchmark or a hosted full-workspace speedup estimate.
+
+Ordinary module CI groups the same tags into Kafka, row formats (JSON, CSV, RAW, Avro,
+Avro-Confluent, Protobuf), and columnar formats (ORC, Parquet), each on both Flink versions.
+Every distinct native package still receives an independent `cargo check -p ... --all-targets`;
+checks continue after a failure and fail the job if any package failed. Each group then runs Maven
+once with the union of its tags. A test carrying multiple tags within a group executes once rather
+than being repeated in separate jobs. The CI grouping test compares selected tags against the Java
+sources so an added module tag cannot silently lose coverage.
+
+The Flink 2.2 Paimon CI consumer uses two Surefire JVM forks for its main class suite instead of
+one. Paimon's released build already exposes `flink.forkCount` and configures 2 GiB heaps per fork.
+Tests within each class remain serial, while independent classes can execute in separate JVMs.
+The five isolated failure/cancellation methods still run in their separate sequential Maven
+invocations. Flink 1.18 Paimon, runtime shards, native-execution contracts, and local default fork
+counts retain their existing settings. Hosted validation must confirm the two-fork setting does
+not introduce resource failures before treating its expected elapsed-time reduction as measured.
 
 A compressed artifact transfers the clean Flink checkout, compiled classes, Maven artifacts,
 injection agent and native libraries. It excludes Cargo intermediates and previous test reports
 or execution evidence. Consumers require the same revision, Flink version and platform, relocate
 the generated classpath to their checkout, and validate the payload manifests before testing.
 The artifact is shared within that workflow run; successful test results are never reused.
+
+Short connector suites run sequentially in one job per Flink line: formats first, then Parquet,
+ORC, Kafka, and (on 2.2 only) Delta. Formats runs first because its report cleanup spans the format
+modules. Each command retains its original selector, native-execution audit, diagnostics and log;
+a failed command does not prevent the remaining suites from running, and any failure fails the
+job. Paimon and native state suites remain independent, as do the four runtime shards per line.
+Inventory dispatches retain their runtime/connectors/all selections. New commits cancel obsolete
+runs for the same PR or main branch, following Flink's own per-ref cancellation policy. Manual SQL
+inventories have separate concurrency groups by scope so routine pushes do not cancel them. The
+latest main revision and each current PR head still require the complete suite.
+
+The required **All upstream integration tests** job checks all dependency results, then downloads
+both lines' runtime reports and runs the existing complete-shard verifier itself. Failed, cancelled
+or unexpectedly skipped dependencies fail the gate. The legacy Delta audit is intentionally skipped
+only for inventory dispatches; connector-only inventories do not request runtime artifacts.
+
+A normal upstream workflow uses 18 runner jobs (two preparations, fourteen consumers, the legacy
+Delta audit, and the final gate), down from 19 with a separate matrix selector and 28 before grouping.
+Shared-build downloads remain fourteen. Ordinary CI uses 17 jobs: one Rust job, two Java jobs, five lake-module jobs, two image jobs,
+six grouped module jobs, and the final gate. Folding the Flink 1.18 artifact checks into its image
+job removed one allocation; grouping short module checks removed another twelve. All test
+selections and required gates are retained.
+For context, September 27, 2026 [PR #269's upstream run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36298667226)
+spent 42.7 aggregate runner-minutes deleting preinstalled tools and 24.0 downloading/restoring shared
+builds. Its coverage jobs waited 33.9 and 36.1 minutes after the final suite completed, then took six
+and eight seconds. These are baseline CI measurements, not SQL benchmarks or promised wall-clock
+savings: queue conditions vary, cold caches still require preparation, and grouped jobs rerun their
+whole connector group when retried. Compare the first cold and subsequent warm CI runs before
+claiming an end-to-end speedup.
+
+September 28 baseline measurements further motivate cache retention and release-build reuse:
+[PR #263's Flink 1.18 image job](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36492833948/job/109165232775)
+took 31.6 minutes, including 28.9 minutes building the image after a Rust cache miss and 49 seconds
+running its smoke test. [PR #272's upstream preparation](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36492695468/job/109164790675)
+took 26.8 minutes, including 20.1 minutes building and 4.2 minutes reclaiming disk space. These are
+pre-change job execution times, excluding queueing; hosted before/after speedups are not yet established.
+
+A local Flink 2.2.1/JDK 17 validation with warm Maven/Cargo caches and four JVM-visible CPUs took
+21.4 seconds for the cached planner reactor and 237.5 seconds for complete preparation, including
+fresh StreamFusion Java packaging. This excludes archive transfer and test execution and is not a
+hosted-runner before/after comparison.
 
 The runtime suite runs in four jobs per version. `runtime_shards.py` discovers the compiled
 top-level `*ITCase` classes selected by the planner's upstream Surefire configuration, and assigns

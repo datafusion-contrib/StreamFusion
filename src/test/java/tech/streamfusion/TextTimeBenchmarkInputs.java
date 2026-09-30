@@ -18,7 +18,7 @@ final class TextTimeBenchmarkInputs {
     return switch (input) {
       case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
       case "tt_boolean" -> "b";
-      case "tt_decimal", "tt_unix_time" -> "n";
+      case "tt_decimal", "tt_decimal_scale", "tt_unix_time" -> "n";
       case "tt_decimal_array" -> "a";
       case "tt_json_array" -> "a";
       case "tt_timestamp", "tt_timestamp_ltz" -> "ts";
@@ -30,7 +30,7 @@ final class TextTimeBenchmarkInputs {
     return switch (input) {
       case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "BYTES";
       case "tt_boolean" -> "BOOLEAN";
-      case "tt_decimal" -> "DECIMAL(38,9)";
+      case "tt_decimal", "tt_decimal_scale" -> "DECIMAL(38,9)";
       case "tt_unix_time" -> "BIGINT";
       case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
       case "tt_json_array" -> "ARRAY<STRING>";
@@ -95,6 +95,20 @@ final class TextTimeBenchmarkInputs {
           .map(i -> Row.of((Object) (isNull(i, nullEvery) ? null : values)))
           .returns(Types.ROW_NAMED(new String[] {"a"}, Types.OBJECT_ARRAY(Types.BIG_DEC))),
           Schema.newBuilder().column("a", DataTypes.ARRAY(DataTypes.DECIMAL(38, 9))).build());
+    } else if (input.equals("tt_decimal_scale")) {
+      java.math.BigDecimal[] values = {
+        new java.math.BigDecimal("12345678901234567890.123456700"),
+        new java.math.BigDecimal("-0.000000100")
+      };
+      Integer[] scales = {-3, 0, 2, 9, 12, null};
+      tables.createTemporaryView(
+          "inputs",
+          env.fromSequence(0, rows - 1)
+              .map(i -> Row.of(isNull(i, nullEvery) ? null : values[(int) (i % 2)],
+                  scales[(int) ((i / 2) % scales.length)]))
+              .returns(Types.ROW_NAMED(new String[] {"n", "s"}, Types.BIG_DEC, Types.INT)),
+          Schema.newBuilder().column("n", DataTypes.DECIMAL(38, 9))
+              .column("s", DataTypes.INT()).build());
     } else if (input.equals("tt_decimal")) {
       java.math.BigDecimal[] values = {
         new java.math.BigDecimal("12345678901234567890.123456700"),
@@ -320,7 +334,11 @@ final class TextTimeBenchmarkInputs {
                 "{\"user\":{\"active\":false}" + members + ",\"padding\":\"" + text[1] + "\"}"
               };
             }
+            case "tt_date_noncanonical" -> new String[] {"2000-2-29", "1969-1-2"};
+            case "tt_time_noncanonical" -> new String[] {"12:34:56.1", "23:59:59.12"};
+            case "tt_timestamp_noncanonical" -> new String[] {"2024-02-30 00:00:00", "2024-02-29 24:00:00"};
             case "tt_date_text" -> new String[] {"2000-02-29", "1969-12-31"};
+            case "tt_time_text" -> new String[] {"12:34:56.789", "23:59:59.001"};
             case "tt_timestamp_text" -> new String[] {"2000-02-29 12:34:56", "1969-12-31 23:59:59"};
             default -> throw new IllegalArgumentException("Unknown text/time input: " + input);
           };

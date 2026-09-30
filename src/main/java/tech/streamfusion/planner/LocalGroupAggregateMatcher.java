@@ -1,6 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.RowDataArrowConverter;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
@@ -11,6 +10,7 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import scala.collection.Seq;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Recognizes the local half of a two-phase non-windowed {@code GROUP BY}: a stateless per-batch
@@ -18,7 +18,7 @@ import scala.collection.Seq;
  * {@link GlobalGroupAggregateMatcher global half} to merge. Scope mirrors the single-phase
  * {@link GroupAggregateMatcher}: SUM/MIN/MAX/COUNT over integer/double/decimal values, AVG over any of
  * Flink's AvgAggFunction numerics (the narrow integers and float included — the sum partial widens
- * to bigint/double), and COUNT/SUM(DISTINCT) whose per-bundle value set rides a trailing view
+ * to bigint/double), and COUNT/SUM/AVG(DISTINCT) whose per-bundle value set rides a trailing view
  * column, with grouping keys the boundary carries. A FILTER clause is native: the boolean column
  * gates each local fold and the merged partials are already filtered.
  *
@@ -35,6 +35,24 @@ import scala.collection.Seq;
 final class LocalGroupAggregateMatcher {
 
   private LocalGroupAggregateMatcher() {}
+
+  static int aggregateKind(org.apache.calcite.sql.SqlKind kind) {
+    return kind == org.apache.calcite.sql.SqlKind.SINGLE_VALUE
+        ? 14
+        : WindowAggregateMatcher.aggregateKind(kind);
+  }
+
+  static int partialWidth(AggregateCall call) {
+    int kind = aggregateKind(call.getAggregation().getKind());
+    return kind == 14 || kind == WindowAggregateMatcher.KIND_AVG ? 2 : 1;
+  }
+
+  static boolean supportedSinglePartials(
+      RelDataType value, RelDataType partial, RelDataType count) {
+    return value.getSqlTypeName() == SqlTypeName.VARCHAR
+        && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, partial)
+        && count.getSqlTypeName() == SqlTypeName.INTEGER;
+  }
 
   static boolean matches(StreamPhysicalLocalGroupAggregate agg) {
     RelDataType inputType = agg.getInput().getRowType();
@@ -58,7 +76,7 @@ final class LocalGroupAggregateMatcher {
       if (call.isApproximate()) {
         return false;
       }
-      int retractKind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int retractKind = aggregateKind(call.getAggregation().getKind());
       if (needRetraction
           && (call.isDistinct()
               || (retractKind != WindowAggregateMatcher.KIND_COUNT
@@ -74,35 +92,48 @@ final class LocalGroupAggregateMatcher {
               != SqlTypeName.BOOLEAN) {
         return false;
       }
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int kind = aggregateKind(call.getAggregation().getKind());
       if (kind < 0 || call.getArgList().size() > 1) {
-        return false; // SUM/MIN/MAX/COUNT/AVG only
+        return false; // SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE only
       }
-      // COUNT/SUM(DISTINCT x): the partial is the bundle's distinct count / distinct sum, and the
+      // COUNT/SUM/AVG(DISTINCT x): the partial is the bundle's distinct count / distinct sum, and the
       // bundle's (value, count) set rides a trailing view column (Flink's MapView partial) that the
-      // global merges with multiplicities. SUM admits exact arithmetic only — the merge folds in
-      // set-iteration order, so order-sensitive float/double sums stay on the host. MIN/MAX/AVG
-      // over DISTINCT fall back two-phase.
+      // global merges with multiplicities. SUM/AVG admit exact arithmetic only — the merge folds in
+      // set-iteration order, so floating sums/averages and wide decimal sums/averages stay on
+      // the host. MIN/MAX DISTINCT still fall back two-phase.
       if (call.isDistinct()) {
         if (call.getArgList().size() != 1) {
           return false;
         }
-        SqlTypeName valueType =
-            inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        SqlTypeName partialType = outputType.getFieldList().get(offset).getType().getSqlTypeName();
-        offset++;
+        RelDataType value = inputType.getFieldList().get(call.getArgList().get(0)).getType();
+        SqlTypeName valueType = value.getSqlTypeName();
+        int width = kind == WindowAggregateMatcher.KIND_AVG ? 2 : 1;
+        if (offset + width > outputType.getFieldCount()) return false;
+        RelDataType partial = outputType.getFieldList().get(offset).getType();
+        SqlTypeName partialType = partial.getSqlTypeName();
+        RelDataType count = width == 2 ? outputType.getFieldList().get(offset + 1).getType() : null;
+        offset += width;
         if (kind == WindowAggregateMatcher.KIND_COUNT) {
           if (partialType != SqlTypeName.BIGINT || !supportedDistinctValueType(valueType)) {
             return false;
           }
         } else if (kind == WindowAggregateMatcher.KIND_SUM) {
-          if (!GroupAggregateMatcher.isIntegerType(valueType)
-              || partialType != valueType) {
-            return false;
-          }
+          if (!supportedDistinctSumPartial(value, partial)) return false;
+        } else if (kind == WindowAggregateMatcher.KIND_AVG) {
+          if (!supportedDistinctAveragePartials(value, partial, count)) return false;
         } else {
           return false;
         }
+        continue;
+      }
+      if (kind == 14) {
+        if (call.getArgList().size() != 1
+            || offset + 1 >= outputType.getFieldCount()
+            || !supportedSinglePartials(
+                inputType.getFieldList().get(call.getArgList().get(0)).getType(),
+                outputType.getFieldList().get(offset).getType(),
+                outputType.getFieldList().get(offset + 1).getType())) return false;
+        offset += 2;
         continue;
       }
       if (kind == WindowAggregateMatcher.KIND_AVG) {
@@ -164,6 +195,12 @@ final class LocalGroupAggregateMatcher {
       }
       if (isTimestampExtreme(kind, valueType)) {
         if (partialType != valueType || partialRel.getPrecision() != valueRel.getPrecision()) {
+          return false;
+        }
+        continue;
+      }
+      if (isTemporalBooleanExtreme(kind, valueType)) {
+        if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(partialRel, valueRel)) {
           return false;
         }
         continue;
@@ -250,6 +287,8 @@ final class LocalGroupAggregateMatcher {
       case CHAR:
       case VARCHAR:
       case DECIMAL:
+      case BOOLEAN:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
         return true;
       default:
         return false;
@@ -257,7 +296,7 @@ final class LocalGroupAggregateMatcher {
   }
 
   /**
-   * Per emitted distinct view column, the index of the aggregate whose bundle set backs it: one
+   * Per emitted distinct view column, the native partial-state index whose bundle set backs it: one
    * view per unique (arg list, filter) pair, in first-appearance order. Instances with the same
    * args but different filters get separate views (their sets saw different row subsets), unlike
    * Flink's shared bitmask view — see the layout note in {@link #matches}.
@@ -266,12 +305,14 @@ final class LocalGroupAggregateMatcher {
     List<String> seen = new ArrayList<>();
     List<Integer> sources = new ArrayList<>();
     Seq<AggregateCall> aggCalls = agg.aggCalls();
+    int position = 0;
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       if (call.isDistinct() && !seen.contains(distinctViewKey(call))) {
         seen.add(distinctViewKey(call));
-        sources.add(i);
+        sources.add(position);
       }
+      position += partialWidth(call);
     }
     return toArray(sources);
   }
@@ -286,6 +327,22 @@ final class LocalGroupAggregateMatcher {
     return partial.getSqlTypeName() == SqlTypeName.DECIMAL
         && partial.getPrecision() == 38
         && partial.getScale() == value.getScale();
+  }
+
+  static boolean supportedDistinctSumPartial(RelDataType value, RelDataType partial) {
+    return (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+            && partial.getSqlTypeName() == value.getSqlTypeName())
+        || (value.getSqlTypeName() == SqlTypeName.DECIMAL
+            && isWidenedDecimal(partial, value));
+  }
+
+  static boolean supportedDistinctAveragePartials(
+      RelDataType value, RelDataType sum, RelDataType count) {
+    return count.getSqlTypeName() == SqlTypeName.BIGINT
+        && ((GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+                && sum.getSqlTypeName() == SqlTypeName.BIGINT)
+            || (value.getSqlTypeName() == SqlTypeName.DECIMAL
+                && isWidenedDecimal(sum, value)));
   }
 
   /** The declared type of an AVG's widened sum partial, or null if the value type isn't admitted. */
@@ -311,6 +368,13 @@ final class LocalGroupAggregateMatcher {
         && (valueType == SqlTypeName.CHAR || valueType == SqlTypeName.VARCHAR);
   }
 
+  static boolean isTemporalBooleanExtreme(int kind, SqlTypeName valueType) {
+    return (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
+        && (valueType == SqlTypeName.DATE
+            || valueType == SqlTypeName.TIME
+            || valueType == SqlTypeName.BOOLEAN);
+  }
+
   static boolean isTimestampExtreme(int kind, SqlTypeName valueType) {
     return (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
         && GroupAggregateMatcher.isTimestampType(valueType);
@@ -322,16 +386,24 @@ final class LocalGroupAggregateMatcher {
   /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
   static final int KIND_SUM_DISTINCT = 9;
 
-  /** Expanded native kinds, one entry per partial column (an AVG is a widened sum plus a count). */
+  /** Expanded native kinds, one entry per partial column (AVG and SINGLE_VALUE each have two). */
   static int[] kinds(StreamPhysicalLocalGroupAggregate agg) {
     List<Integer> kinds = new ArrayList<>();
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int kind = aggregateKind(call.getAggregation().getKind());
       if (call.isDistinct()) {
-        kinds.add(
-            kind == WindowAggregateMatcher.KIND_COUNT ? KIND_COUNT_DISTINCT : KIND_SUM_DISTINCT);
+        if (kind == WindowAggregateMatcher.KIND_AVG) {
+          kinds.add(18); // DISTINCT widened sum partial; its value set retains the input type.
+          kinds.add(KIND_COUNT_DISTINCT);
+        } else {
+          kinds.add(
+              kind == WindowAggregateMatcher.KIND_COUNT ? KIND_COUNT_DISTINCT : KIND_SUM_DISTINCT);
+        }
+      } else if (kind == 14) {
+        kinds.add(14);
+        kinds.add(21); // SINGLE_VALUE count is INT and includes NULL inputs.
       } else if (kind == WindowAggregateMatcher.KIND_AVG) {
         kinds.add(WindowAggregateMatcher.KIND_AVG_PARTIAL_SUM);
         kinds.add(WindowAggregateMatcher.KIND_COUNT);
@@ -345,15 +417,14 @@ final class LocalGroupAggregateMatcher {
     return toArray(kinds);
   }
 
-  /** Expanded FILTER columns (an AVG's sum and count states share its filter), -1 = unfiltered. */
+  /** Expanded FILTER columns; both partials share the filter, and -1 means unfiltered. */
   static int[] filterColumns(StreamPhysicalLocalGroupAggregate agg) {
     List<Integer> columns = new ArrayList<>();
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       columns.add(call.filterArg);
-      if (WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind())
-          == WindowAggregateMatcher.KIND_AVG) {
+      if (partialWidth(call) == 2) {
         columns.add(call.filterArg);
       }
     }
@@ -363,16 +434,15 @@ final class LocalGroupAggregateMatcher {
     return toArray(columns);
   }
 
-  /** Expanded value columns (an AVG's sum and count states both read its value column). */
+  /** Expanded value columns (both fields of a two-field accumulator read its value). */
   static int[] valueColumns(StreamPhysicalLocalGroupAggregate agg) {
     List<Integer> columns = new ArrayList<>();
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
       int column = call.getArgList().isEmpty() ? -1 : call.getArgList().get(0);
       columns.add(column);
-      if (kind == WindowAggregateMatcher.KIND_AVG) {
+      if (partialWidth(call) == 2) {
         columns.add(column);
       }
     }
@@ -389,12 +459,17 @@ final class LocalGroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      int kind = WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      int kind = aggregateKind(call.getAggregation().getKind());
       if (call.isDistinct()) {
         // The distinct set is keyed by the value itself, so its code carries the value's own type.
-        codes.add(
-            WindowAggregateMatcher.typeCode(
-                inputType.getFieldList().get(call.getArgList().get(0)).getType()));
+        int code =
+            GroupAggregateMatcher.retainedValueTypeCode(
+                inputType.getFieldList().get(call.getArgList().get(0)).getType());
+        codes.add(code);
+        if (kind == WindowAggregateMatcher.KIND_AVG) codes.add(code);
+      } else if (kind == 14) {
+        codes.add(3);
+        codes.add(3); // Both local states read the original string; kind 21 emits INT.
       } else if (kind == WindowAggregateMatcher.KIND_AVG) {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
         // The widened sum: a packed decimal code (the native partial reports DECIMAL(38, s)),
@@ -408,7 +483,10 @@ final class LocalGroupAggregateMatcher {
         codes.add(0);
       } else {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
-        codes.add(WindowAggregateMatcher.typeCode(valueRel));
+        codes.add(
+            isTemporalBooleanExtreme(kind, valueRel.getSqlTypeName())
+                ? GroupAggregateMatcher.retainedValueTypeCode(valueRel)
+                : WindowAggregateMatcher.typeCode(valueRel));
       }
     }
     if (countStarInserted(agg)) {
@@ -450,8 +528,9 @@ final class LocalGroupAggregateMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalLocalGroupAggregate agg) {
-    return "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/double/decimal values with no"
-        + " widening of the partial, or AVG over any AvgAggFunction numeric, and"
+    return "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/double/decimal values with"
+        + " no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG"
+        + " over any AvgAggFunction numeric, or insert-only SINGLE_VALUE over string, and"
         + " bigint/int/string/boolean/date/timestamp/decimal grouping keys";
   }
 }

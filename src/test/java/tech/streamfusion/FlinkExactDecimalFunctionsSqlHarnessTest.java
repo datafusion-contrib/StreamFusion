@@ -144,7 +144,7 @@ class FlinkExactDecimalFunctionsSqlHarnessTest {
       assertTrue(causes.toString().contains("AssertionError"), causes.toString());
       if (scan != null) {
         assertEquals(0, scan.substitutions());
-        assertTrue(scan.fallbackReasons().toString().contains("literal INT scale"));
+        assertTrue(scan.fallbackReasons().toString().contains("runtime scale"));
       }
     }
   }

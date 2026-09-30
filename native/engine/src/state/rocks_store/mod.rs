@@ -8,9 +8,9 @@
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
 pub(crate) mod interval_buffer;
-pub(crate) mod join_store;
 #[cfg(test)]
 mod join_record_tests;
+pub(crate) mod join_store;
 pub(crate) mod keep_first_dedup_store;
 pub(crate) mod over_agg_store;
 pub(crate) mod session_agg_store;
@@ -202,10 +202,11 @@ pub(crate) fn rocks_group_supported(
     value_types: &[DataType],
     state_types: &[DataType],
 ) -> bool {
-    !kinds.iter().any(|kind| matches!(kind, 12..=16))
+    !kinds.iter().any(|kind| matches!(kind, 12..=16 | 19..=21))
         && rocks_row_supported(state_types)
         && kinds.iter().zip(value_types).all(|(&kind, value_type)| {
-            !matches!(kind, 7 | 9) || rocks_row_supported(std::slice::from_ref(value_type))
+            !matches!(kind, 7 | 9 | 17 | 18)
+                || rocks_row_supported(std::slice::from_ref(value_type))
         })
 }
 

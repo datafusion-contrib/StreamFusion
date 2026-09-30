@@ -80,7 +80,8 @@ That rejected design remains documented in `.claude/wontdos/61-record-join-full-
 The selective implementation migrates old buckets lazily and preserves the logical canonical
 savepoint format; the matched Q23 test measured 2.80× over Flink. See
 [record-state execution](../optimizations/rocksdb-write-through.md#record-state-for-immediate-inner-joins).
-The redesign, recovery validation, and performance gate remain tracked in
+The remaining join families and broader storage/memory performance validation
+remain tracked in
 [#244](https://github.com/datafusion-contrib/StreamFusion/issues/244).
 
 - the group aggregate, changelog normalize, keep-last deduplicate, updating join, the three Top-N

@@ -55,7 +55,7 @@ final class GroupAggregateMatcher {
         return "GROUP BY: only single-argument aggregates";
       }
       if (kind >= 12 && kind <= 16) {
-        if (kind >= 15) {
+        if (kind >= 15 || call.isDistinct()) {
           Long hint = FlinkCompat.singleStateTtl(agg);
           long retention =
               hint == null
@@ -64,15 +64,18 @@ final class GroupAggregateMatcher {
                       .toMillis()
                   : hint;
           if (retention > 0) {
-            return "GROUP BY: retracting FIRST_VALUE/LAST_VALUE with TTL require independently"
-                + " expiring value/order maps";
+            return "GROUP BY: DISTINCT or retracting FIRST_VALUE/LAST_VALUE with TTL require"
+                + " independently expiring value/order maps";
           }
         }
-        if (call.isDistinct() || call.getArgList().size() != 1) {
-          return "GROUP BY: FIRST_VALUE/LAST_VALUE/SINGLE_VALUE require one non-DISTINCT argument";
+        if ((call.isDistinct() && kind == 14) || call.getArgList().size() != 1) {
+          return "GROUP BY: ordered values require one argument; SINGLE_VALUE DISTINCT is unsupported";
         }
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
+        if (call.isDistinct() && valueType != SqlTypeName.VARCHAR) {
+          return "GROUP BY: DISTINCT FIRST_VALUE/LAST_VALUE require a string value";
+        }
         if (!orderedValueType(valueType)) {
           return "GROUP BY: FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over an unsupported value type";
         }
@@ -82,10 +85,10 @@ final class GroupAggregateMatcher {
       // any type the row admits; SUM(DISTINCT x) adds a running sum folded as values enter/leave the
       // set (same value types as plain SUM, gated below); MIN/MAX(DISTINCT x) are semantically the
       // plain MIN/MAX — the extreme of the live values ignores multiplicity — so they run as such.
-      // AVG(DISTINCT) falls back (its count-of-distinct division isn't modelled).
+      // Exact AVG(DISTINCT) divides the running sum by the number of live distinct values.
       if (call.isDistinct()) {
-        if (call.getArgList().size() != 1 || kind == WindowAggregateMatcher.KIND_AVG) {
-          return "GROUP BY: DISTINCT is native for COUNT/SUM/MIN/MAX only";
+        if (call.getArgList().size() != 1) {
+          return "GROUP BY: DISTINCT requires exactly one argument";
         }
         if (kind == WindowAggregateMatcher.KIND_COUNT) {
           continue;
@@ -105,14 +108,21 @@ final class GroupAggregateMatcher {
           // and the result casts back to the input type; for DECIMAL(p, s), the sum is SUM's
           // DECIMAL(38, s) accumulator and the emit divides with Flink's exact decimal division,
           // reporting DECIMAL(38, max(6, s)) — findAvgAggType's derivation.
+          if (call.isDistinct() && !isIntegerType(valueType) && valueType != SqlTypeName.DECIMAL) {
+            return "GROUP BY: AVG(DISTINCT) requires an integer or DECIMAL value";
+          }
           if (!isAvgType(valueType) && valueType != SqlTypeName.DECIMAL) {
             return "GROUP BY: AVG over an unsupported value type";
           }
         } else if (kind == KIND_MIN || kind == KIND_MAX) {
-          // MIN/MAX keep a value multiset; admit the running numerics, DECIMAL, and strings (ordered
-          // byte-lexicographically, matching Flink's BinaryStringData comparison).
-          if (!isRunningType(valueType) && valueType != SqlTypeName.DECIMAL
-              && !isStringType(valueType) && !isTimestampType(valueType)) {
+          // MIN/MAX retain typed values in a multiset, including temporal and Boolean values.
+          if (!isRunningType(valueType)
+              && valueType != SqlTypeName.DECIMAL
+              && !isStringType(valueType)
+              && !isTimestampType(valueType)
+              && valueType != SqlTypeName.DATE
+              && valueType != SqlTypeName.TIME
+              && valueType != SqlTypeName.BOOLEAN) {
             return "GROUP BY: MIN/MAX over an unsupported value type";
           }
         } else if (!isRunningType(valueType) && valueType != SqlTypeName.DECIMAL) {
@@ -133,6 +143,8 @@ final class GroupAggregateMatcher {
           CHAR,
           VARCHAR,
           DATE,
+          TIME,
+          BOOLEAN,
           TIMESTAMP,
           TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
           true;
@@ -169,11 +181,13 @@ final class GroupAggregateMatcher {
   /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
   private static final int KIND_SUM_DISTINCT = 9;
 
+  static final int KIND_AVG_DISTINCT = 17;
+
   /**
    * Native kinds 10/11: MIN/MAX over an insert-only input. No retraction can ever arrive, so the
    * state is a plain running extreme — one scalar in the main row — instead of the retractable
-   * value multiset (and, on the RocksDB backend, no companion element table). Only the numeric
-   * types the running fold covers map; decimal and string extremes keep the multiset kinds.
+   * value multiset (and, on the RocksDB backend, no companion element table). Numeric, DATE, TIME and
+   * BOOLEAN running folds use these kinds; other value types keep the multiset kinds.
    */
   static final int KIND_MIN_APPEND = 10;
 
@@ -181,7 +195,10 @@ final class GroupAggregateMatcher {
 
   /** Whether an insert-only MIN/MAX over this value type can run as a plain running extreme. */
   static boolean runningExtremeType(SqlTypeName type) {
-    return isRunningType(type);
+    return isRunningType(type)
+        || type == SqlTypeName.DATE
+        || type == SqlTypeName.TIME
+        || type == SqlTypeName.BOOLEAN;
   }
 
   private static final int KIND_MIN = WindowAggregateMatcher.KIND_MIN;
@@ -206,7 +223,11 @@ final class GroupAggregateMatcher {
         kind = KIND_COUNT_DISTINCT;
       } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_SUM) {
         kind = KIND_SUM_DISTINCT;
+      } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_AVG) {
+        kind = KIND_AVG_DISTINCT;
       }
+      if (call.isDistinct() && (kind == 12 || kind == 15)) kind = 19;
+      if (call.isDistinct() && (kind == 13 || kind == 16)) kind = 20;
       // MIN/MAX(DISTINCT) stay their plain kinds: the extreme ignores multiplicity either way.
       // Over an insert-only input a numeric MIN/MAX needs no retractable multiset at all.
       if ((kind == KIND_MIN || kind == KIND_MAX)
@@ -273,6 +294,14 @@ final class GroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < codes.length; i++) {
       AggregateCall call = aggCalls.apply(i);
+      if (!call.getArgList().isEmpty()
+          && switch (call.getAggregation().getKind()) {
+            case MIN, MAX, FIRST_VALUE, LAST_VALUE, SINGLE_VALUE -> true;
+            default -> false;
+          }) {
+        codes[i] =
+            retainedValueTypeCode(inputType.getFieldList().get(call.getArgList().get(0)).getType());
+      }
       if (call.isDistinct()
           && !call.getArgList().isEmpty()
           && WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind())
@@ -284,6 +313,14 @@ final class GroupAggregateMatcher {
       }
     }
     return codes;
+  }
+
+  static int retainedValueTypeCode(RelDataType type) {
+    return switch (type.getSqlTypeName()) {
+      case TIME -> 9;
+      case BOOLEAN -> 10;
+      default -> WindowAggregateMatcher.typeCode(type);
+    };
   }
 
   static int[] keyColumns(StreamPhysicalGroupAggregate agg) {

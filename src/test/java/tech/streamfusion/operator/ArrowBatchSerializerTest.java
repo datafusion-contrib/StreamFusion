@@ -92,6 +92,66 @@ class ArrowBatchSerializerTest {
   }
 
   @Test
+  void ipcFramesLeaveFollowingRecordsUnreadIncludingLegacyFrames() throws Exception {
+    ArrowBatchSerializer serializer = new ArrowBatchSerializer();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      DataOutputSerializer encoded = new DataOutputSerializer(256);
+      serializer.serialize(
+          new ArrowBatch(RowDataArrowConverter.write(List.of(row(5, 6)), SCHEMA, allocator), 7),
+          encoded);
+      byte[] tagged = encoded.getCopyOfBuffer();
+      DataOutputSerializer records = new DataOutputSerializer(256);
+      // The legacy wire shape starts at the IPC length, after the tag and key group.
+      records.write(tagged, 8, tagged.length - 8);
+      records.write(tagged);
+      records.writeInt(0x12345678);
+      DataInputDeserializer input = new DataInputDeserializer(records.getCopyOfBuffer());
+      for (int keyGroup : new int[] {-1, 7}) {
+        ArrowBatch batch = serializer.deserialize(input);
+        assertEquals(keyGroup, batch.keyGroup());
+        try (VectorSchemaRoot root = batch.root()) {
+          assertEquals(5, RowDataArrowConverter.read(root, SCHEMA).get(0).getLong(0));
+        }
+      }
+      assertEquals(0x12345678, input.readInt());
+    }
+  }
+
+  @Test
+  void serializerReuseResetsGrowingAndShrinkingPayloads() throws Exception {
+    ArrowBatchSerializer serializer = new ArrowBatchSerializer();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      DataOutputSerializer output = new DataOutputSerializer(256);
+      for (int size : new int[] {1, 100_000, 2}) {
+        List<RowData> rows =
+            java.util.stream.IntStream.range(0, size).mapToObj(i -> row(size, i)).toList();
+        serializer.serialize(
+            new ArrowBatch(RowDataArrowConverter.write(rows, SCHEMA, allocator)), output);
+      }
+      DataInputDeserializer input = new DataInputDeserializer(output.getCopyOfBuffer());
+      for (int size : new int[] {1, 100_000, 2}) {
+        try (VectorSchemaRoot root = serializer.deserialize(input).root()) {
+          List<RowData> rows = RowDataArrowConverter.read(root, SCHEMA);
+          assertEquals(size, rows.size());
+          assertEquals(size, rows.get(0).getLong(0));
+          assertEquals(size - 1, rows.get(size - 1).getInt(1));
+        }
+      }
+    }
+  }
+
+  @Test
+  void truncatedIpcCannotReadIntoTheNextFrame() throws Exception {
+    DataOutputSerializer bytes = new DataOutputSerializer(32);
+    bytes.writeInt(1);
+    bytes.writeByte(0);
+    bytes.writeInt(0x12345678);
+    DataInputDeserializer input = new DataInputDeserializer(bytes.getCopyOfBuffer());
+    assertThrows(Exception.class, () -> new ArrowBatchSerializer().deserialize(input));
+    assertEquals(0x12345678, input.readInt());
+  }
+
+  @Test
   void zeroCopyHandsTheSameBatchAcrossTheWire() throws Exception {
     ArrowBatchSerializer serializer = new ArrowBatchSerializer(true);
     try (BufferAllocator allocator = new RootAllocator()) {
@@ -146,8 +206,10 @@ class ArrowBatchSerializerTest {
       long liveHandle = ArrowBatchHandles.register(new ArrowBatch(liveRoot, 1, liveOwner));
 
       assertEquals(1, ArrowBatchHandles.releaseOwner(failedOwner));
+      assertEquals(0, ArrowBatchHandles.releaseOwner(failedOwner));
+      assertEquals(1, ArrowBatchHandles.inFlight());
       assertThrows(
-          IllegalStateException.class,
+          org.apache.flink.runtime.execution.CancelTaskException.class,
           () ->
               ArrowBatchHandles.claim(
                   ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, failedHandle));
@@ -155,6 +217,53 @@ class ArrowBatchSerializerTest {
           ArrowBatchHandles.claim(
               ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, liveHandle);
       live.root().close();
+      assertThrows(IllegalStateException.class,
+          () -> ArrowBatchHandles.claim(
+              ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, failedHandle));
+      ArrowBatchHandles.forgetOwner(failedOwner);
+      ArrowBatchHandles.forgetOwner(liveOwner);
+    }
+  }
+
+  @Test
+  void jobReleaseForgetsUnconsumedCancellationMarkers() throws Exception {
+    long owner = ArrowBatchHandles.newOwner();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot root = RowDataArrowConverter.write(List.of(row(1L, 10)), SCHEMA, allocator);
+      long handle = ArrowBatchHandles.register(new ArrowBatch(root, 0, owner));
+      ArrowBatchHandles.releaseOwner(owner);
+      assertEquals(0, allocator.getAllocatedMemory());
+      ArrowBatchHandles.forgetOwner(owner);
+      assertThrows(IllegalStateException.class,
+          () -> ArrowBatchHandles.claim(ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, handle));
+    }
+  }
+
+  @Test
+  void claimedBatchSurvivesProducerAndJobCleanup() throws Exception {
+    long owner = ArrowBatchHandles.newOwner();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot root = RowDataArrowConverter.write(List.of(row(1L, 10)), SCHEMA, allocator);
+      long handle = ArrowBatchHandles.register(new ArrowBatch(root, 0, owner));
+      ArrowBatch claimed = ArrowBatchHandles.claim(
+          ArrowBatchHandles.TOKEN_HI, ArrowBatchHandles.TOKEN_LO, handle);
+      assertEquals(0, ArrowBatchHandles.releaseOwner(owner));
+      ArrowBatchHandles.forgetOwner(owner);
+      assertSame(root, claimed.root());
+      assertEquals(1, root.getRowCount());
+      root.close();
+      assertEquals(0, allocator.getAllocatedMemory());
+    }
+  }
+
+  @Test
+  void jobReleaseClosesBatchesThatWereNeverClaimed() throws Exception {
+    long owner = ArrowBatchHandles.newOwner();
+    try (BufferAllocator allocator = new RootAllocator()) {
+      VectorSchemaRoot root = RowDataArrowConverter.write(List.of(row(1L, 10)), SCHEMA, allocator);
+      ArrowBatchHandles.register(new ArrowBatch(root, 0, owner));
+      ArrowBatchHandles.forgetOwner(owner);
+      assertEquals(0, allocator.getAllocatedMemory());
     }
   }
 

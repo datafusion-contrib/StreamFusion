@@ -5,7 +5,7 @@ pub(super) const SINGLE_VALUE_ERROR: &str =
     "SingleValueAggFunction received more than one element.";
 
 pub(super) fn is_ordered_value(kind: i64) -> bool {
-    matches!(kind, 12..=16)
+    matches!(kind, 12..=16 | 19..=21)
 }
 
 /// Append-only first/last retain one scalar; retractable first/last retain arrival order.
@@ -16,6 +16,7 @@ pub(crate) struct OrderedValueState {
     count: i32,
     values: VecDeque<ScalarValue>,
     value_bytes: usize,
+    distinct: Option<Box<ahash::HashMap<ScalarValue, i64>>>,
 }
 
 impl OrderedValueState {
@@ -26,6 +27,7 @@ impl OrderedValueState {
             count: 0,
             values: VecDeque::new(),
             value_bytes: 0,
+            distinct: matches!(kind, 19 | 20).then(Box::default),
         }
     }
 
@@ -34,7 +36,36 @@ impl OrderedValueState {
         value: ScalarValue,
         retract: bool,
     ) -> Result<(), DataFusionError> {
-        if self.kind == 14 {
+        if let Some(counts) = &mut self.distinct {
+            if value.is_null() {
+                return Ok(());
+            }
+            if retract {
+                let Some(count) = counts.get_mut(&value) else {
+                    return Ok(());
+                };
+                *count -= 1;
+                if *count != 0 {
+                    return Ok(());
+                }
+                counts.remove(&value);
+                let index = self
+                    .values
+                    .iter()
+                    .position(|existing| *existing == value)
+                    .expect("distinct membership retains arrival order");
+                self.value_bytes -= self.values.remove(index).unwrap().size();
+            } else {
+                let count = counts.entry(value.clone()).or_insert(0);
+                *count += 1;
+                if *count == 1 {
+                    self.value_bytes += value.size();
+                    self.values.push_back(value);
+                }
+            }
+            return Ok(());
+        }
+        if matches!(self.kind, 14 | 21) {
             if (retract && !matches!(self.count, 0 | 1)) || (!retract && self.count > 0) {
                 return Err(DataFusionError::Execution(SINGLE_VALUE_ERROR.into()));
             }
@@ -70,10 +101,29 @@ impl OrderedValueState {
         Ok(())
     }
 
+    pub(super) fn merge_single(
+        &mut self,
+        value: ScalarValue,
+        count: i32,
+    ) -> Result<(), DataFusionError> {
+        let total = self.count.wrapping_add(count);
+        if total > 1 {
+            return Err(DataFusionError::Execution(SINGLE_VALUE_ERROR.into()));
+        }
+        self.value = if total == 0 && self.count != 0 && count <= 0 {
+            null_scalar(&self.value.data_type())
+        } else {
+            value
+        };
+        self.count = total;
+        Ok(())
+    }
+
     pub(super) fn emit(&self) -> ScalarValue {
         match self.kind {
-            15 => self.values.front().unwrap_or(&self.value).clone(),
-            16 => self.values.back().unwrap_or(&self.value).clone(),
+            21 => ScalarValue::Int32(Some(self.count)),
+            15 | 19 => self.values.front().unwrap_or(&self.value).clone(),
+            16 | 20 => self.values.back().unwrap_or(&self.value).clone(),
             _ => self.value.clone(),
         }
     }
@@ -91,8 +141,20 @@ impl OrderedValueState {
         self.count = count as i32;
     }
 
-    pub(super) fn entries(&self) -> impl Iterator<Item = &ScalarValue> {
-        self.values.iter()
+    pub(super) fn entries(&self) -> impl Iterator<Item = (&ScalarValue, i64)> {
+        self.values.iter().map(|value| {
+            (
+                value,
+                self.distinct.as_ref().map_or(1, |counts| counts[value]),
+            )
+        })
+    }
+
+    pub(super) fn restore_entry(&mut self, value: ScalarValue, count: i64) {
+        if let Some(counts) = &mut self.distinct {
+            counts.insert(value.clone(), count);
+        }
+        self.append_restored(value);
     }
 
     pub(super) fn append_restored(&mut self, value: ScalarValue) {
@@ -101,7 +163,15 @@ impl OrderedValueState {
     }
 
     pub(super) fn bytes(&self) -> usize {
-        std::mem::size_of::<Self>()
+        let distinct_bytes = self.distinct.as_ref().map_or(0, |counts| {
+            std::mem::size_of_val(counts.as_ref())
+                + self.value_bytes
+                + counts.len() * std::mem::size_of::<i64>()
+                + (counts.capacity() - counts.len()) * std::mem::size_of::<(ScalarValue, i64)>()
+                + counts.capacity()
+        });
+        distinct_bytes
+            + std::mem::size_of::<Self>()
             + self.value.size()
             + self.value_bytes
             + (self.values.capacity() - self.values.len()) * std::mem::size_of::<ScalarValue>()
@@ -132,6 +202,23 @@ mod tests {
             assert!(state.emit().is_null());
             assert_eq!(state.value_bytes, 0);
         }
+    }
+
+    #[test]
+    fn single_value_merge_preserves_zero_and_negative_count_rules() {
+        let value = |s: &str| ScalarValue::Utf8(Some(s.into()));
+        let mut state = OrderedValueState::new(14, &DataType::Utf8);
+        state.merge_single(value("zero"), 0).unwrap();
+        assert_eq!(state.emit(), value("zero"));
+        state.merge_single(value("one"), 1).unwrap();
+        state.merge_single(ScalarValue::Utf8(None), 0).unwrap();
+        assert!(state.emit().is_null());
+        state.merge_single(value("removed"), -1).unwrap();
+        assert!(state.emit().is_null());
+        state.merge_single(value("negative"), -1).unwrap();
+        state.merge_single(value("replacement"), 1).unwrap();
+        assert_eq!(state.count(), 0);
+        assert_eq!(state.emit(), value("replacement"));
     }
 
     #[test]

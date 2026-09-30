@@ -1,8 +1,8 @@
 package tech.streamfusion.operator;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
@@ -14,6 +14,7 @@ import org.apache.arrow.vector.util.TransferPair;
 import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
+import org.apache.flink.api.java.typeutils.runtime.DataOutputViewStream;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputView;
 
@@ -40,6 +41,17 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
   private static final int ORDERED_KEY_GROUP_TAG = 0xD5A5_0003;
 
   private final boolean zeroCopy;
+  private transient IpcOutputBuffer ipcOutput;
+
+  private static final class IpcOutputBuffer extends ByteArrayOutputStream {
+    private IpcOutputBuffer() {
+      super(4096);
+    }
+
+    private boolean reusable() {
+      return buf.length <= (1 << 20);
+    }
+  }
 
   public ArrowBatchSerializer() {
     this(false);
@@ -95,7 +107,13 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       return;
     }
     long started = System.nanoTime();
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    IpcOutputBuffer bytes = ipcOutput;
+    ipcOutput = null;
+    if (bytes == null) {
+      bytes = new IpcOutputBuffer();
+    } else {
+      bytes.reset();
+    }
     // One root() take per serialization: under a shared batch each take is a distinct retained
     // view, so taking once and closing that same root keeps the reference counts balanced.
     VectorSchemaRoot root = batch.root();
@@ -108,7 +126,6 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       // release the off-heap buffers here (the read side allocates a fresh batch on deserialize).
       root.close();
     }
-    byte[] encoded = bytes.toByteArray();
     target.writeInt(batch.isOrderedKeyGroupFragment() ? ORDERED_KEY_GROUP_TAG : KEY_GROUP_TAG);
     target.writeInt(batch.keyGroup());
     if (batch.isOrderedKeyGroupFragment()) {
@@ -118,9 +135,45 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
       writeInts(target, batch.rowOrdinals());
       writeInts(target, batch.parentKeyGroups());
     }
-    target.writeInt(encoded.length);
-    target.write(encoded);
+    target.writeInt(bytes.size());
+    bytes.writeTo(new DataOutputViewStream(target));
+    if (bytes.reusable()) ipcOutput = bytes;
     batch.recordEncodeNanos(System.nanoTime() - started);
+  }
+
+  private static final class FramedInputStream extends InputStream {
+    private final DataInputView source;
+    private int remaining;
+
+    private FramedInputStream(DataInputView source, int length) throws IOException {
+      if (length < 0) throw new IOException("Negative Arrow IPC frame length: " + length);
+      this.source = source;
+      this.remaining = length;
+    }
+
+    @Override
+    public int read() throws IOException {
+      if (remaining == 0) return -1;
+      int value = source.readUnsignedByte();
+      remaining--;
+      return value;
+    }
+
+    @Override
+    public int read(byte[] buffer, int offset, int length) throws IOException {
+      java.util.Objects.checkFromIndexSize(offset, length, buffer.length);
+      if (length == 0) return 0;
+      if (remaining == 0) return -1;
+      int count = Math.min(length, remaining);
+      source.readFully(buffer, offset, count);
+      remaining -= count;
+      return count;
+    }
+
+    private void finish() throws IOException {
+      source.skipBytesToRead(remaining);
+      remaining = 0;
+    }
   }
 
   @Override
@@ -138,11 +191,11 @@ public final class ArrowBatchSerializer extends TypeSerializer<ArrowBatch> {
     int[] ordinals = ordered ? readInts(source) : null;
     int[] parentKeyGroups = ordered ? readInts(source) : null;
     int length = tagged ? source.readInt() : tagOrLength;
-    byte[] encoded = new byte[length];
-    source.readFully(encoded);
-    try (ArrowStreamReader reader =
-        new ArrowStreamReader(new ByteArrayInputStream(encoded), allocator())) {
+    FramedInputStream frame = new FramedInputStream(source, length);
+    try (ArrowStreamReader reader = new ArrowStreamReader(frame, allocator())) {
       reader.loadNextBatch();
+      // Arrow may stop at the record batch before reading the stream's end marker.
+      frame.finish();
       VectorSchemaRoot read = reader.getVectorSchemaRoot();
       // Transfer the buffers out of the reader so the batch outlives it (closing the reader then
       // frees nothing — the vectors are now owned by the returned root).

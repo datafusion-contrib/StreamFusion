@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "flink_line": "1.18",
   "cases": [
     {
@@ -37,6 +37,78 @@
       "display_name": "testSelectStarFromNestedTable",
       "count": 1,
       "route": "scan_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.TableSinkITCase#testCollectSinkConfiguration",
+      "display_name": "testCollectSinkConfiguration()",
+      "count": 1,
+      "route": "host_failure"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
+      "display_name": "testGroupByAgg[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
+      "display_name": "testGroupByAgg[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
+      "display_name": "testGroupByAgg[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
+      "display_name": "testGroupByAgg[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
+      "display_name": "testGroupByAgg[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
+      "display_name": "testGroupByAgg[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.DataStreamJavaITCase#testFromAndToChangelogStreamEventTime",
+      "display_name": "testFromAndToChangelogStreamEventTime[objectReuse = ENABLED]",
+      "count": 1,
+      "route": "mixed"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.DataStreamJavaITCase#testFromAndToChangelogStreamEventTime",
+      "display_name": "testFromAndToChangelogStreamEventTime[objectReuse = DISABLED]",
+      "count": 1,
+      "route": "mixed"
     }
   ]
 }

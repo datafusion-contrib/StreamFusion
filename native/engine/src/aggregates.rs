@@ -22,6 +22,8 @@ pub(crate) fn value_data_type(code: i64) -> DataType {
         // the logical distinction is restored by the JVM output row type.
         7 | 1000..=1009 => streamfusion_bridge::timestamp::timestamp_type(),
         8 => DataType::Date32,
+        9 => DataType::Time32(arrow::datatypes::TimeUnit::Millisecond),
+        10 => DataType::Boolean,
         // A COUNT(DISTINCT) value whose Flink type has no faithful code (TIME, BOOLEAN, complex
         // types): the fold reads the actual column and the distinct set keys scalars, so the
         // declared type is immaterial there — but a fixed-type persistent element codec cannot be
@@ -993,6 +995,12 @@ pub(crate) enum RunningAgg {
     // type (the converter's Utf8). Never folded.
     MinMaxStr,
     MinMaxTimestamp,
+    MinMaxScalar(DataType),
+    TypedExtreme {
+        value: Option<i32>,
+        is_min: bool,
+        data_type: DataType,
+    },
     // FIRST_VALUE / LAST_VALUE: hold the first / most-recent non-null value seen (None until one
     // arrives → emits NULL, matching Flink, which ignores nulls in these functions).
     FirstI64(Option<i64>),
@@ -1050,15 +1058,64 @@ pub(crate) enum RunningAgg {
 impl RunningAgg {
     pub(crate) fn new(kind: i64, value_type: &DataType) -> Self {
         use RunningAgg::*;
+        if kind == 18 {
+            let sum_type = match value_type {
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                    DataType::Int64
+                }
+                DataType::Decimal128(_, scale) => DataType::Decimal128(38, *scale),
+                other => panic!("unsupported distinct average partial type: {other:?}"),
+            };
+            return Self::new(8, &sum_type);
+        }
+        if matches!(kind, 10 | 11)
+            && matches!(
+                value_type,
+                DataType::Date32
+                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                    | DataType::Boolean
+            )
+        {
+            return TypedExtreme {
+                value: None,
+                is_min: kind == 10,
+                data_type: value_type.clone(),
+            };
+        }
+        if kind == 18 {
+            let sum_type = match value_type {
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                    DataType::Int64
+                }
+                DataType::Decimal128(_, scale) => DataType::Decimal128(38, *scale),
+                other => panic!("unsupported distinct average partial type: {other:?}"),
+            };
+            return Self::new(8, &sum_type);
+        }
+        if matches!(kind, 10 | 11)
+            && matches!(
+                value_type,
+                DataType::Date32
+                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                    | DataType::Boolean
+            )
+        {
+            return TypedExtreme {
+                value: None,
+                is_min: kind == 10,
+                data_type: value_type.clone(),
+            };
+        }
         if kind == 3 || kind == 7 {
             return Count(0); // COUNT and COUNT(DISTINCT) both report a bigint count
         }
         // SUM(DISTINCT) (kind 9) runs a plain SUM inside its distinct set (GroupAggState wraps it);
-        // its running/result/state types are exactly SUM's. Kinds 10/11 are MIN/MAX over an
+        // AVG(DISTINCT), kind 17, similarly wraps AVG. Kinds 10/11 are MIN/MAX over an
         // insert-only input: no retraction can ever arrive, so they run as the plain single-value
         // extremes instead of the retractable multiset.
         let kind = match kind {
             9 => 0,
+            17 => 4, // AVG(DISTINCT) wraps the ordinary widened sum/count state.
             10 => 1,
             11 => 2,
             kind => kind,
@@ -1134,6 +1191,12 @@ impl RunningAgg {
             // MIN/MAX(string) — the extreme lives in the multiset; result is the converter's Utf8.
             (1 | 2, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) => MinMaxStr,
             (1 | 2, dt) if streamfusion_bridge::timestamp::is_timestamp(dt) => MinMaxTimestamp,
+            (
+                1 | 2,
+                dt @ (DataType::Date32
+                | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                | DataType::Boolean),
+            ) => MinMaxScalar(dt.clone()),
             (k, other) => panic!("unsupported OVER aggregate kind {k} for value type {other:?}"),
         }
     }
@@ -1142,6 +1205,9 @@ impl RunningAgg {
     pub(crate) fn fold(&mut self, value: Num) {
         use RunningAgg::*;
         match (self, value) {
+            (TypedExtreme { value, is_min, .. }, Num::I32(v)) => {
+                *value = Some(value.map_or(v, |old| if *is_min { old.min(v) } else { old.max(v) }));
+            }
             (SumI64(s), Num::I64(v)) => *s = Some(s.unwrap_or(0).wrapping_add(v)),
             (MinI64(m), Num::I64(v)) => *m = Some(m.map_or(v, |x| x.min(v))),
             (MaxI64(m), Num::I64(v)) => *m = Some(m.map_or(v, |x| x.max(v))),
@@ -1262,6 +1328,17 @@ impl RunningAgg {
             // Never folded — MIN/MAX state is the Extremes multiset, which emits via MinMaxKey::scalar.
             MinMaxDecimal { precision, scale } => ScalarValue::Decimal128(None, *precision, *scale),
             MinMaxStr => ScalarValue::Utf8(None),
+            MinMaxScalar(dt) => null_scalar(dt),
+            TypedExtreme {
+                value, data_type, ..
+            } => match data_type {
+                DataType::Date32 => ScalarValue::Date32(*value),
+                DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => {
+                    ScalarValue::Time32Millisecond(*value)
+                }
+                DataType::Boolean => ScalarValue::Boolean(value.map(|v| v != 0)),
+                _ => unreachable!("typed running extreme"),
+            },
             MinMaxTimestamp => {
                 ScalarValue::Struct(Arc::new(streamfusion_bridge::timestamp::timestamp_array([
                     None,
@@ -1317,6 +1394,8 @@ impl RunningAgg {
             AvgDecimal { scale, .. } => DataType::Decimal128(38, (*scale).max(6)),
             MinMaxDecimal { precision, scale } => DataType::Decimal128(*precision, *scale),
             MinMaxStr => DataType::Utf8,
+            MinMaxScalar(dt) => dt.clone(),
+            TypedExtreme { data_type, .. } => data_type.clone(),
             MinMaxTimestamp => streamfusion_bridge::timestamp::timestamp_type(),
             AvgInt { result, .. } | AvgFloat { result, .. } => result.clone(),
             AvgPartialSumInt(_) => DataType::Int64,
@@ -1328,6 +1407,18 @@ impl RunningAgg {
     pub(crate) fn restore_value(&mut self, scalar: &ScalarValue) {
         use RunningAgg::*;
         match (self, scalar) {
+            (
+                TypedExtreme {
+                    value, data_type, ..
+                },
+                scalar,
+            ) if scalar.data_type() == *data_type => {
+                *value = match scalar {
+                    ScalarValue::Date32(v) | ScalarValue::Time32Millisecond(v) => *v,
+                    ScalarValue::Boolean(v) => v.map(i32::from),
+                    _ => unreachable!("typed running extreme state"),
+                };
+            }
             (Count(c), ScalarValue::Int64(Some(v))) => *c = *v,
             (
                 SumI64(s) | MinI64(s) | MaxI64(s) | FirstI64(s) | LastI64(s),
@@ -1371,8 +1462,10 @@ impl RunningAgg {
             },
             (AvgFloat { sum, .. }, ScalarValue::Float64(Some(v))) => *sum = *v,
             // Constant NULL extrema have a typed result but no running value to restore.
-            (agg @ (MinMaxStr | MinMaxDecimal { .. } | MinMaxTimestamp), value)
-                if value.is_null() && value.data_type() == agg.state_type() => {}
+            (
+                agg @ (MinMaxStr | MinMaxDecimal { .. } | MinMaxTimestamp | MinMaxScalar(_)),
+                value,
+            ) if value.is_null() && value.data_type() == agg.state_type() => {}
             _ => panic!("OVER state type mismatch on restore"),
         }
     }
@@ -1427,14 +1520,15 @@ pub(crate) fn num_from_scalar(scalar: &ScalarValue) -> Option<Num> {
     }
 }
 
-/// The numeric fold value of a distinct-SUM scalar — the value types the matcher admits for SUM
-/// (all integer widths, double, and DECIMAL as its unscaled i128).
+/// Unbox DISTINCT SUM values and historical multiset entries imported into running extrema.
 pub(crate) fn distinct_num(value: &ScalarValue) -> Num {
     match value {
         ScalarValue::Int8(Some(v)) => Num::I8(*v),
         ScalarValue::Int16(Some(v)) => Num::I16(*v),
         ScalarValue::Int64(Some(v)) => Num::I64(*v),
         ScalarValue::Int32(Some(v)) => Num::I32(*v),
+        ScalarValue::Date32(Some(v)) | ScalarValue::Time32Millisecond(Some(v)) => Num::I32(*v),
+        ScalarValue::Boolean(Some(v)) => Num::I32(i32::from(*v)),
         ScalarValue::Float64(Some(v)) => Num::F64(*v),
         ScalarValue::Decimal128(Some(v), _, _) => Num::I128(*v),
         other => panic!("unsupported distinct SUM value {other:?}"),

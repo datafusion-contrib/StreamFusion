@@ -24,6 +24,42 @@ import org.junit.jupiter.api.Test;
 class FlinkRegularJoinSqlHarnessTest {
 
   @Test
+  void upsertKeysSurviveNativeCalcSubstitution() throws Exception {
+    String sql =
+        "SELECT a.f0, a.v, b.f1 FROM (SELECT f0, f1 + 1 AS v FROM up) a "
+            + "JOIN probe b ON a.f0 = b.f0";
+    String plan = tech.streamfusion.planner.NativePlanner.explain(upsertCalcEnvironment(), sql);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeColumnarUpdatingJoin"), plan);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeCalc"), plan);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("leftJoinKeyUnique=[true]"), plan);
+    NativeParity.assertChangelogParity(FlinkRegularJoinSqlHarnessTest::upsertCalcEnvironment, sql);
+  }
+
+  private static TableEnvironment upsertCalcEnvironment() {
+    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    var table = StreamTableEnvironment.create(env);
+    var source =
+        fromData(
+            env,
+            Row.ofKind(org.apache.flink.types.RowKind.INSERT, 1L, 10L),
+            Row.ofKind(org.apache.flink.types.RowKind.UPDATE_AFTER, 1L, 20L),
+            Row.ofKind(org.apache.flink.types.RowKind.UPDATE_AFTER, 1L, 30L));
+    table.createTemporaryView(
+        "up",
+        table.fromChangelogStream(
+            source,
+            Schema.newBuilder()
+                .column("f0", DataTypes.BIGINT().notNull())
+                .column("f1", DataTypes.BIGINT())
+                .primaryKey("f0")
+                .build(),
+            org.apache.flink.table.connector.ChangelogMode.upsert()));
+    table.createTemporaryView("probe", fromData(env, Row.of(1L, 100L)));
+    return table;
+  }
+
+  @Test
   void hotKeyResidualJoinMatchesHostAcrossOutputChunks() throws Exception {
     for (String condition : new String[] {"a.v < b.v", "a.v > b.v"}) {
       NativeParity.assertParity(

@@ -30,6 +30,26 @@ class ExecutionScopeTest(unittest.TestCase):
         self.assertEqual([self.case], selected)
         self.assertEqual(2, len(self.audit['testcases']))
 
+    def test_route_can_follow_an_exact_joined_execution_contract_variant(self):
+        self.requirement.pop('route')
+        self.requirement['route_by_contract_variant'] = {
+            'changelog=false': 'native', 'changelog=true': 'full_fallback'}
+        with self.assertRaises(ValueError):
+            self.check()
+        self.scope['schema_version'] = 2
+        for variant, route in self.requirement['route_by_contract_variant'].items():
+            self.case.update(execution_contract_variant=variant, runtime_route=route)
+            self.assertEqual([], self.check())
+            self.case['runtime_route'] = 'mixed'
+            self.assertTrue(self.check())
+        for variant in (None, 'changelog=unknown'):
+            self.case['execution_contract_variant'] = variant
+            self.assertTrue(self.check())
+        for invalid in ({}, {'': 'native'}, {'changelog=true': 'unclassified'}, []):
+            self.requirement['route_by_contract_variant'] = invalid
+            with self.assertRaises(ValueError):
+                self.check()
+
     def test_missing_duplicate_and_unclassified_cases_fail(self):
         for cases in ([], [self.case, copy.deepcopy(self.case)],
                       [dict(self.case, runtime_route='unclassified')],

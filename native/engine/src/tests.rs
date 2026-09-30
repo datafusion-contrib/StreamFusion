@@ -1,5 +1,986 @@
 use super::*;
 
+#[test]
+fn wide_distinct_retention_reads_state_at_flush_and_refreshes_at_flush() {
+    let mut local = LocalGroupAggregator::new(
+        vec![9, 18, 7],
+        vec![5800; 3],
+        vec![1; 3],
+        vec![],
+        vec![0],
+        vec![0, 1, 2],
+    );
+    let mut global =
+        GroupAggregator::new(vec![9, 17, 7], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+            .with_distinct_view_columns(vec![4, 5, 6])
+            .with_mini_batch()
+            .with_state_ttl(100)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+    for (arrivals, flush, sum, count, kinds) in [
+        (vec![(1, 0)], 10, 1, 1, vec![0]),
+        (vec![(2, 90)], 120, 2, 1, vec![0]),
+        (vec![(2, 200)], 215, 2, 1, vec![1, 2]),
+        (vec![(2, 300), (3, 320)], 340, 5, 2, vec![0]),
+    ] {
+        for (value, arrival) in arrivals {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            assert_eq!(
+                global.update(&local.flush(), arrival).unwrap().num_rows(),
+                0
+            );
+        }
+        assert_eq!(global.staged_keys(), 1);
+        assert!(global.staging_bytes() > 0);
+        let output = global.flush_mini_batch_at(flush).unwrap();
+        assert_eq!(
+            row_kind_column(&output).unwrap().values().as_ref(),
+            kinds.as_slice()
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), output.num_rows() - 1).unwrap(),
+            ScalarValue::Decimal128(Some(sum), 38, 0)
+        );
+        assert_eq!(*values(&output, 3).last().unwrap(), count);
+        assert_eq!(global.staged_keys(), 0);
+        assert_eq!(global.staging_bytes(), 0);
+    }
+}
+
+#[test]
+fn wide_decimal_local_emission_matches_binary_group_order_across_flushes() {
+    let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../src/test/resources/group-map-order.json"
+    ))
+    .unwrap();
+    for case in fixtures.as_array().unwrap() {
+        let keys: Vec<Option<i64>> = case["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().map(|v| v.parse().unwrap()))
+            .collect();
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, true),
+                Field::new("value", DataType::Decimal128(38, 0), false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(keys)),
+                Arc::new(
+                    Decimal128Array::from(vec![1; case["values"].as_array().unwrap().len()])
+                        .with_precision_and_scale(38, 0)
+                        .unwrap(),
+                ),
+            ],
+        )
+        .unwrap();
+        for split in [1, usize::MAX] {
+            let mut local =
+                LocalGroupAggregator::new(vec![9], vec![5800], vec![1], vec![], vec![0], vec![0])
+                    .with_memory_budget(1 << 20)
+                    .unwrap();
+            let mut ends = Vec::new();
+            if let Some(position) = case["clear_after"].as_u64() {
+                ends.push(position as usize);
+            }
+            ends.push(batch.num_rows());
+            let mut start = 0;
+            for end in ends {
+                let count = (end - start).min(split);
+                local.update(&batch.slice(start, count)).unwrap();
+                if start + count < end {
+                    local
+                        .update(&batch.slice(start + count, end - start - count))
+                        .unwrap();
+                }
+                let output = local.try_flush().unwrap();
+                if end == batch.num_rows() {
+                    let expected: Vec<Option<i64>> = case["order"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_str().map(|v| v.parse().unwrap()))
+                        .collect();
+                    let actual = output
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap();
+                    assert_eq!(
+                        actual.iter().collect::<Vec<_>>(),
+                        expected,
+                        "{} split {split}",
+                        case["name"]
+                    );
+                }
+                start = end;
+            }
+        }
+    }
+}
+
+#[test]
+fn wide_decimal_local_flush_reserves_temporary_memory_before_draining() {
+    let batch = group_scalar_changelog(
+        (0..96)
+            .map(|v| ScalarValue::Decimal128(Some(v), 38, 0))
+            .collect(),
+        vec![0; 96],
+    );
+    let mut local =
+        LocalGroupAggregator::new(vec![9], vec![5800], vec![1], vec![], vec![0], vec![0])
+            .with_memory_budget(1 << 20)
+            .unwrap();
+    local.update(&batch).unwrap();
+    let tight_budget = local.memory.state_bytes as i64 + 1024;
+    let mut local = local.with_memory_budget(tight_budget).unwrap();
+    let retained = local.memory.state_bytes;
+    assert!(matches!(
+        local.try_flush(),
+        Err(DataFusionError::ResourcesExhausted(_))
+    ));
+    assert_eq!(local.memory.state_bytes, retained);
+    // Denied scratch memory leaves the bundle intact and releases the temporary reservation.
+    let mut local = local.with_memory_budget(1 << 20).unwrap();
+    let output = local.try_flush().unwrap();
+    assert_eq!(output.num_rows(), 1);
+    assert_eq!(
+        ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+        ScalarValue::Decimal128(Some(4560), 38, 0)
+    );
+    let view = output
+        .column(2)
+        .as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .unwrap();
+    assert_eq!(view.value_length(0), 96);
+    assert!(local.memory.state_bytes > 0 && local.memory.state_bytes < retained);
+    assert_eq!(local.try_flush().unwrap().num_rows(), 0);
+}
+
+#[test]
+fn wide_decimal_distinct_sum_checkpoint_preserves_overflow_without_refolding() {
+    let large = 9 * 10i128.pow(37);
+    for inputs in [vec![large, large - 3], vec![large, large - 3, -large]] {
+        let mut memory = GroupAggregator::new(vec![9], vec![5800], vec![1], vec![0], true);
+        memory
+            .update(
+                &group_scalar_changelog(
+                    inputs
+                        .iter()
+                        .map(|&v| ScalarValue::Decimal128(Some(v), 38, 0))
+                        .collect(),
+                    vec![0; inputs.len()],
+                ),
+                0,
+            )
+            .unwrap();
+        let mut frames = read_framed(&memory.snapshot());
+        // Side-table order is not accumulator order: make a refold produce the wrong sum.
+        let side = &frames[1];
+        let values = side
+            .column(1)
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap();
+        let mut rows = (0..side.num_rows() as u32).collect::<Vec<_>>();
+        rows.sort_by_key(|&row| {
+            let value = values.value(row as usize);
+            if value == large {
+                0
+            } else if value < 0 {
+                1
+            } else {
+                2
+            }
+        });
+        let rows = arrow::array::UInt32Array::from(rows);
+        frames[1] = RecordBatch::try_new(
+            side.schema(),
+            side.columns()
+                .iter()
+                .map(|column| arrow::compute::take(column, &rows, None).unwrap())
+                .collect(),
+        )
+        .unwrap();
+        if inputs.len() == 3 {
+            let mut legacy = frames.clone();
+            let fields = legacy[0]
+                .schema()
+                .fields()
+                .iter()
+                .map(|field| field.as_ref().clone().with_metadata(Default::default()))
+                .collect::<Vec<_>>();
+            let mut columns = legacy[0].columns().to_vec();
+            columns[2] = Arc::new(
+                Decimal128Array::from(vec![None::<i128>])
+                    .with_precision_and_scale(38, 0)
+                    .unwrap(),
+            );
+            columns[3] = Arc::new(Int64Array::from(vec![0]));
+            legacy[0] = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+            let mut restored = GroupAggregator::restore(
+                vec![9],
+                vec![5800],
+                vec![1],
+                vec![0],
+                true,
+                &write_framed(&legacy),
+                0,
+            );
+            let output = restored
+                .update(
+                    &group_scalar_changelog(vec![ScalarValue::Decimal128(Some(7), 38, 0)], vec![0]),
+                    0,
+                )
+                .unwrap();
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(1), 1).unwrap(),
+                ScalarValue::Decimal128(Some(large + 4), 38, 0)
+            );
+        }
+        let mut restored = GroupAggregator::restore(
+            vec![9],
+            vec![5800],
+            vec![1],
+            vec![0],
+            true,
+            &write_framed(&frames),
+            0,
+        );
+        for (value, kind) in [(large, 0), (7, 0), (large, 3), (large, 3)] {
+            let batch = group_scalar_changelog(
+                vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                vec![kind],
+            );
+            assert_eq!(
+                restored.update(&batch, 0).unwrap(),
+                memory.update(&batch, 0).unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+fn wide_decimal_global_views_union_before_folding_at_bundle_flush() {
+    let large = 9 * 10i128.pow(37);
+    for kind in [9, 17] {
+        let (local_kinds, views) = if kind == 9 {
+            (vec![9], vec![2])
+        } else {
+            (vec![18, 7], vec![3])
+        };
+        let mut local = LocalGroupAggregator::new(
+            local_kinds.clone(),
+            vec![5800; local_kinds.len()],
+            vec![1; local_kinds.len()],
+            vec![],
+            vec![0],
+            vec![0],
+        );
+        let mut global = GroupAggregator::new(vec![kind], vec![5800], vec![1], vec![0], true)
+            .with_distinct_view_columns(views)
+            .with_mini_batch()
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        // Singleton local views arrive in an order that would avoid overflow if folded eagerly.
+        for value in [Some(large), Some(-large), Some(large - 3), None] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(value, 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            assert_eq!(global.update(&local.flush(), 0).unwrap().num_rows(), 0);
+        }
+        let staged_bytes = global.memory.state_bytes;
+        assert!(staged_bytes > 0);
+        let output = global.flush_mini_batch().unwrap();
+        assert_eq!(output.num_rows(), 1);
+        if kind == 9 {
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+                ScalarValue::Decimal128(Some(-large), 38, 0)
+            );
+        } else {
+            assert!(output.column(1).is_null(0));
+        }
+        let resident_bytes = global.memory.state_bytes;
+        assert!(resident_bytes < staged_bytes);
+        // A fresh bundle sees durable membership, including the keys involved in overflow.
+        for value in [large, large - 3, -large] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            global.update(&local.flush(), 0).unwrap();
+        }
+        assert_eq!(global.flush_mini_batch().unwrap().num_rows(), 0);
+        assert_eq!(global.memory.state_bytes, resident_bytes);
+    }
+}
+
+#[test]
+fn wide_decimal_local_views_share_order_and_keep_filtered_zero_entries() {
+    let large = 9 * 10i128.pow(37);
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("value", DataType::Decimal128(38, 0), true),
+            Field::new("left", DataType::Boolean, false),
+            Field::new("right", DataType::Boolean, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1; 5])),
+            Arc::new(
+                Decimal128Array::from(vec![
+                    Some(large),
+                    Some(large - 3),
+                    Some(-large),
+                    None,
+                    Some(large),
+                ])
+                .with_precision_and_scale(38, 0)
+                .unwrap(),
+            ),
+            Arc::new(BooleanArray::from(vec![true, false, true, true, false])),
+            Arc::new(BooleanArray::from(vec![false, true, false, false, true])),
+        ],
+    )
+    .unwrap();
+    for split in [1, 3, 5] {
+        let mut local = LocalGroupAggregator::new(
+            vec![7, 9, 9],
+            vec![5800; 3],
+            vec![1; 3],
+            vec![-1, 2, 3],
+            vec![0],
+            vec![0, 1, 2],
+        )
+        .with_memory_budget(1 << 20)
+        .unwrap();
+        local.update(&batch.slice(0, split)).unwrap();
+        if split < 5 {
+            local.update(&batch.slice(split, 5 - split)).unwrap();
+        }
+        let retained = local.memory.state_bytes;
+        let output = local.flush();
+        assert!(local.memory.state_bytes > 0 && local.memory.state_bytes < retained);
+        for (column, expected_counts) in [
+            (4, vec![0, 2, 1, 1]),
+            (5, vec![0, 1, 1, 0]),
+            (6, vec![0, 1, 0, 1]),
+        ] {
+            let view = output
+                .column(column)
+                .as_any()
+                .downcast_ref::<arrow::array::ListArray>()
+                .unwrap();
+            let entries = view.value(0);
+            let entries = entries
+                .as_any()
+                .downcast_ref::<arrow::array::StructArray>()
+                .unwrap();
+            let values = entries
+                .column(0)
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .unwrap();
+            let counts = entries
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(
+                values.iter().collect::<Vec<_>>(),
+                vec![None, Some(large), Some(-large), Some(large - 3)]
+            );
+            assert_eq!(counts.values().as_ref(), expected_counts.as_slice());
+        }
+        let mut global =
+            GroupAggregator::new(vec![7, 9, 9], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+                .with_distinct_view_columns(vec![4, 5, 6])
+                .with_mini_batch();
+        global.update(&output, 0).unwrap();
+        let merged = global.flush_mini_batch().unwrap();
+        assert_eq!(values(&merged, 1), vec![3]);
+        assert_eq!(
+            ScalarValue::try_from_array(merged.column(2), 0).unwrap(),
+            ScalarValue::Decimal128(Some(0), 38, 0)
+        );
+        assert!(merged.column(3).is_null(0));
+        local.update(&batch.slice(1, 1)).unwrap();
+        let fresh = local.flush();
+        let view = fresh
+            .column(4)
+            .as_any()
+            .downcast_ref::<arrow::array::ListArray>()
+            .unwrap();
+        assert_eq!(view.value_length(0), 1);
+    }
+}
+
+#[test]
+fn distinct_average_partials_widen_and_merge_membership_across_restore() {
+    for (code, first, second, sum, average) in [
+        (
+            5,
+            ScalarValue::Int8(Some(127)),
+            ScalarValue::Int8(Some(126)),
+            ScalarValue::Int64(Some(253)),
+            ScalarValue::Int8(Some(126)),
+        ),
+        (
+            0,
+            ScalarValue::Int64(Some(i64::MAX)),
+            ScalarValue::Int64(Some(1)),
+            ScalarValue::Int64(Some(i64::MIN)),
+            ScalarValue::Int64(Some(i64::MIN / 2)),
+        ),
+        (
+            3902,
+            ScalarValue::Decimal128(Some(-301), 19, 2),
+            ScalarValue::Decimal128(Some(202), 19, 2),
+            ScalarValue::Decimal128(Some(-99), 38, 2),
+            ScalarValue::Decimal128(Some(-495_000), 38, 6),
+        ),
+    ] {
+        let make = || {
+            GroupAggregator::new(vec![17], vec![code], vec![1], vec![0], true)
+                .with_distinct_view_columns(vec![3])
+        };
+        let mut local = LocalGroupAggregator::new(
+            vec![18, 7],
+            vec![code; 2],
+            vec![1; 2],
+            vec![],
+            vec![0],
+            vec![0],
+        );
+        let mut global = make();
+        let null = null_scalar(&first.data_type());
+        local
+            .update(&group_scalar_changelog(
+                vec![first.clone(), first.clone(), null.clone()],
+                vec![0; 3],
+            ))
+            .unwrap();
+        global.update(&local.flush(), 0).unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![17],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &global.snapshot(),
+            0,
+        )
+        .with_distinct_view_columns(vec![3]);
+        local
+            .update(&group_scalar_changelog(
+                vec![first, second, null.clone()],
+                vec![0; 3],
+            ))
+            .unwrap();
+        let partial = local.flush();
+        assert_eq!(
+            ScalarValue::try_from_array(partial.column(1), 0).unwrap(),
+            sum
+        );
+        assert_eq!(values(&partial, 2), vec![2]);
+        let output = restored.update(&partial, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), output.num_rows() - 1).unwrap(),
+            average
+        );
+        local
+            .update(&group_scalar_changelog(vec![null], vec![0]))
+            .unwrap();
+        let empty_values = local.flush();
+        assert!(!empty_values.column(1).is_null(0));
+        assert_eq!(values(&empty_values, 2), vec![0]);
+        assert_eq!(restored.update(&empty_values, 0).unwrap().num_rows(), 0);
+    }
+}
+
+#[test]
+fn group_distinct_average_restores_sum_and_duplicate_retractions() {
+    for (code, low, high, average) in [
+        (
+            5,
+            ScalarValue::Int8(Some(-3)),
+            ScalarValue::Int8(Some(2)),
+            ScalarValue::Int8(Some(0)),
+        ),
+        (
+            0,
+            ScalarValue::Int64(Some(-3)),
+            ScalarValue::Int64(Some(2)),
+            ScalarValue::Int64(Some(0)),
+        ),
+        (
+            4002,
+            ScalarValue::Decimal128(Some(-300), 20, 2),
+            ScalarValue::Decimal128(Some(200), 20, 2),
+            ScalarValue::Decimal128(Some(-500_000), 38, 6),
+        ),
+    ] {
+        let null = null_scalar(&low.data_type());
+        let mut agg = GroupAggregator::new(vec![17], vec![code], vec![1], vec![0], true);
+        let result = agg
+            .update(
+                &group_scalar_changelog(
+                    vec![low.clone(), low.clone(), high.clone(), null],
+                    vec![0; 4],
+                ),
+                0,
+            )
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            average
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![17],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &agg.snapshot(),
+            0,
+        );
+        let retract = group_scalar_changelog(vec![low], vec![3]);
+        assert_eq!(restored.update(&retract, 0).unwrap().num_rows(), 0);
+        let result = restored.update(&retract, 0).unwrap();
+        let expected = if code == 4002 {
+            ScalarValue::Decimal128(Some(2_000_000), 38, 6)
+        } else {
+            high
+        };
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn group_distinct_average_checkpoint_preserves_decimal_overflow() {
+    let large = 9 * 10i128.pow(37);
+    let scalar = |v| ScalarValue::Decimal128(v, 38, 0);
+    let mut agg = GroupAggregator::new(vec![17, 3], vec![5800, 0], vec![1, -1], vec![0], true);
+    agg.update(
+        &group_scalar_changelog(
+            vec![
+                scalar(Some(large)),
+                scalar(Some(large - 1)),
+                scalar(Some(-large)),
+                scalar(Some(-large + 1)),
+            ],
+            vec![0; 4],
+        ),
+        0,
+    )
+    .unwrap();
+    let mut restored = GroupAggregator::restore(
+        vec![17, 3],
+        vec![5800, 0],
+        vec![1, -1],
+        vec![0],
+        true,
+        &agg.snapshot(),
+        0,
+    );
+    let result = restored
+        .update(&group_scalar_changelog(vec![scalar(Some(7))], vec![0]), 0)
+        .unwrap();
+    assert_eq!(
+        ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+        ScalarValue::Decimal128(None, 38, 6)
+    );
+    assert_eq!(values(&result, 2).last(), Some(&5));
+}
+
+#[test]
+fn group_distinct_typed_partials_restore_then_merge_duplicates() {
+    let timestamp = |nanos| {
+        ScalarValue::Struct(Arc::new(streamfusion_bridge::timestamp::timestamp_array([
+            Some(streamfusion_bridge::timestamp::TimestampValue::from_nanos(nanos).unwrap()),
+        ])))
+    };
+    for (kind, code, low, high, first, both) in [
+        (
+            7,
+            10,
+            ScalarValue::Boolean(Some(false)),
+            ScalarValue::Boolean(Some(true)),
+            ScalarValue::Int64(Some(1)),
+            ScalarValue::Int64(Some(2)),
+        ),
+        (
+            7,
+            7,
+            timestamp(-1),
+            timestamp(1),
+            ScalarValue::Int64(Some(1)),
+            ScalarValue::Int64(Some(2)),
+        ),
+        (
+            9,
+            3902,
+            ScalarValue::Decimal128(Some(-103), 19, 2),
+            ScalarValue::Decimal128(Some(214), 19, 2),
+            ScalarValue::Decimal128(Some(-103), 38, 2),
+            ScalarValue::Decimal128(Some(111), 38, 2),
+        ),
+    ] {
+        let mut local =
+            LocalGroupAggregator::new(vec![kind], vec![code], vec![1], vec![], vec![0], vec![0]);
+        let mut global = GroupAggregator::new(vec![kind], vec![code], vec![1], vec![0], true)
+            .with_distinct_view_columns(vec![2]);
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        local
+            .update(&group_scalar_changelog(
+                vec![low.clone(), low.clone(), null],
+                vec![0; 3],
+            ))
+            .unwrap();
+        let partial = local.flush();
+        let result = global.update(&partial, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            first
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![kind],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &global.snapshot(),
+            0,
+        )
+        .with_distinct_view_columns(vec![2]);
+        local
+            .update(&group_scalar_changelog(vec![low.clone()], vec![0]))
+            .unwrap();
+        assert_eq!(restored.update(&local.flush(), 0).unwrap().num_rows(), 0);
+        local
+            .update(&group_scalar_changelog(vec![high, low], vec![0; 2]))
+            .unwrap();
+        let result = restored.update(&local.flush(), 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(result.column(1), result.num_rows() - 1).unwrap(),
+            both
+        );
+    }
+}
+
+fn group_scalar_changelog(values: Vec<ScalarValue>, kinds: Vec<i8>) -> RecordBatch {
+    let len = values.len();
+    let array = ScalarValue::iter_to_array(values).unwrap();
+    RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key0", DataType::Int64, false),
+            Field::new("value0", array.data_type().clone(), true),
+            Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1; len])),
+            array,
+            Arc::new(Int8Array::from(kinds)),
+        ],
+    )
+    .unwrap()
+}
+
+fn temporal_boolean_values() -> Vec<(i64, ScalarValue, ScalarValue)> {
+    vec![
+        (
+            8,
+            ScalarValue::Date32(Some(-3653)),
+            ScalarValue::Date32(Some(19782)),
+        ),
+        (
+            9,
+            ScalarValue::Time32Millisecond(Some(1)),
+            ScalarValue::Time32Millisecond(Some(86_399_999)),
+        ),
+        (
+            10,
+            ScalarValue::Boolean(Some(false)),
+            ScalarValue::Boolean(Some(true)),
+        ),
+    ]
+}
+
+#[test]
+fn group_temporal_boolean_extrema_restore_multiplicity_nulls_and_ttl() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let mut agg = GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true);
+        let out = agg
+            .update(
+                &group_scalar_changelog(
+                    vec![high.clone(), low.clone(), low.clone(), null.clone()],
+                    vec![0; 4],
+                ),
+                0,
+            )
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(out.column(1), out.num_rows() - 1).unwrap(),
+            low
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(out.column(2), out.num_rows() - 1).unwrap(),
+            high
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![1, 2],
+            vec![code; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &agg.snapshot(),
+            0,
+        );
+        let retract = group_scalar_changelog(vec![low.clone()], vec![3]);
+        assert_eq!(restored.update(&retract, 0).unwrap().num_rows(), 0);
+        let changed = restored.update(&retract, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 1).unwrap(),
+            high
+        );
+        let changed = restored
+            .update(&group_scalar_changelog(vec![high.clone()], vec![3]), 0)
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 1).unwrap(),
+            null
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(2), 1).unwrap(),
+            null
+        );
+        assert_eq!(
+            row_kinds(
+                &restored
+                    .update(&group_scalar_changelog(vec![null], vec![3]), 0)
+                    .unwrap()
+            ),
+            vec![3]
+        );
+        let mut ttl = GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true)
+            .with_state_ttl(100);
+        ttl.update(&group_scalar_changelog(vec![low], vec![0]), 1)
+            .unwrap();
+        let fresh = ttl
+            .update(&group_scalar_changelog(vec![high.clone()], vec![0]), 101)
+            .unwrap();
+        assert_eq!(row_kinds(&fresh), vec![0]);
+        assert_eq!(
+            ScalarValue::try_from_array(fresh.column(1), 0).unwrap(),
+            high
+        );
+    }
+}
+
+#[test]
+fn group_single_value_partials_count_null_and_fail_after_restore() {
+    for value in [
+        ScalarValue::Utf8(None),
+        ScalarValue::Utf8(Some("one".into())),
+    ] {
+        let mut local = LocalGroupAggregator::new(
+            vec![14, 21],
+            vec![3; 2],
+            vec![1; 2],
+            vec![],
+            vec![0],
+            vec![],
+        );
+        local
+            .update(&group_scalar_changelog(vec![value.clone()], vec![0]))
+            .unwrap();
+        let partial = local.flush();
+        assert_eq!(partial.column(2).data_type(), &DataType::Int32);
+        assert_eq!(
+            ScalarValue::try_from_array(partial.column(2), 0).unwrap(),
+            ScalarValue::Int32(Some(1))
+        );
+        let mut global = GroupAggregator::new(vec![14], vec![3], vec![1], vec![0], true)
+            .with_count_columns(vec![2]);
+        let output = global.update(&partial, 0).unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+            value
+        );
+        let mut restored = GroupAggregator::restore(
+            vec![14],
+            vec![3],
+            vec![1],
+            vec![0],
+            true,
+            &global.snapshot(),
+            0,
+        )
+        .with_count_columns(vec![2]);
+        assert!(restored
+            .update(&partial, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("SingleValueAggFunction received more than one element."));
+        assert!(local
+            .update(&group_scalar_changelog(
+                vec![value.clone(), value],
+                vec![0, 0]
+            ))
+            .is_err());
+    }
+}
+
+#[test]
+fn group_distinct_ordered_values_restore_multiplicity_and_order() {
+    let value = |s: &str| ScalarValue::Utf8(Some(s.to_owned()));
+    let mut agg = GroupAggregator::new(vec![19, 20], vec![3; 2], vec![1; 2], vec![0], true);
+    agg.update(
+        &group_scalar_changelog(vec![value("a"), value("b"), value("a")], vec![0; 3]),
+        0,
+    )
+    .unwrap();
+    let mut restored = GroupAggregator::restore(
+        vec![19, 20],
+        vec![3; 2],
+        vec![1; 2],
+        vec![0],
+        true,
+        &agg.snapshot(),
+        0,
+    );
+    for (v, kind, first, last) in [("a", 3, "a", "b"), ("a", 3, "b", "b"), ("a", 0, "b", "a")] {
+        restored
+            .update(&group_scalar_changelog(vec![value(v)], vec![kind]), 0)
+            .unwrap();
+        let mut roundtrip = GroupAggregator::restore(
+            vec![19, 20],
+            vec![3; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &restored.snapshot(),
+            0,
+        );
+        let changed = roundtrip
+            .update(&group_scalar_changelog(vec![value("c")], vec![0]), 0)
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 0).unwrap(),
+            value(first)
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(2), 0).unwrap(),
+            value(last)
+        );
+    }
+}
+
+#[test]
+fn group_temporal_boolean_ordered_values_restore_arrival_order() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let mut agg = GroupAggregator::new(vec![15, 16], vec![code; 2], vec![1; 2], vec![0], true);
+        agg.update(
+            &group_scalar_changelog(
+                vec![high.clone(), low.clone(), high.clone(), null],
+                vec![0; 4],
+            ),
+            0,
+        )
+        .unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![15, 16],
+            vec![code; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &agg.snapshot(),
+            0,
+        );
+        let changed = restored
+            .update(&group_scalar_changelog(vec![high.clone()], vec![3]), 0)
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(1), 1).unwrap(),
+            low
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(changed.column(2), 1).unwrap(),
+            high
+        );
+    }
+}
+
+#[test]
+fn group_temporal_boolean_append_value_ttl_and_single_null_cardinality() {
+    for (code, low, high) in temporal_boolean_values() {
+        let mut ordered =
+            GroupAggregator::new(vec![12, 13], vec![code; 2], vec![1; 2], vec![0], true)
+                .with_state_ttl(100);
+        ordered
+            .update(&group_scalar_changelog(vec![low], vec![0]), 1)
+            .unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![12, 13],
+            vec![code; 2],
+            vec![1; 2],
+            vec![0],
+            true,
+            &ordered.snapshot(),
+            0,
+        )
+        .with_state_ttl(100);
+        let fresh = restored
+            .update(&group_scalar_changelog(vec![high.clone()], vec![0]), 101)
+            .unwrap();
+        assert_eq!(row_kinds(&fresh), vec![0]);
+        assert_eq!(
+            ScalarValue::try_from_array(fresh.column(1), 0).unwrap(),
+            high
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(fresh.column(2), 0).unwrap(),
+            high
+        );
+        let null = ScalarValue::try_from(&high.data_type()).unwrap();
+        let mut single = GroupAggregator::new(vec![14], vec![code], vec![1], vec![0], true);
+        single
+            .update(&group_scalar_changelog(vec![null.clone()], vec![0]), 0)
+            .unwrap();
+        let mut restored = GroupAggregator::restore(
+            vec![14],
+            vec![code],
+            vec![1],
+            vec![0],
+            true,
+            &single.snapshot(),
+            0,
+        );
+        let error = restored
+            .update(&group_scalar_changelog(vec![null], vec![0]), 0)
+            .unwrap_err();
+        assert!(error.to_string().contains("received more than one element"));
+    }
+}
+
 fn group_timestamp_changelog(values: Vec<Option<i128>>, kinds: Vec<i8>) -> RecordBatch {
     use streamfusion_bridge::timestamp::{timestamp_array, timestamp_type, TimestampValue};
     RecordBatch::try_new(
@@ -202,6 +1183,121 @@ fn evaluate_scalar_call(
         .unwrap()
         .into_array(batch.num_rows())
         .unwrap()
+}
+
+#[test]
+fn integer_array_distinct_preserves_sliced_order_nulls_and_empty_containers() {
+    use arrow::array::ListArray;
+    use arrow::buffer::{NullBuffer, OffsetBuffer};
+    let values: ArrayRef = Arc::new(Int64Array::from(vec![
+        Some(99),
+        Some(3),
+        None,
+        Some(1),
+        Some(3),
+        None,
+        Some(1),
+        Some(-1),
+        Some(77),
+    ]));
+    let lists: ArrayRef = Arc::new(ListArray::new(
+        Arc::new(Field::new("item", DataType::Int64, true)),
+        OffsetBuffer::new(vec![0, 1, 8, 9, 9].into()),
+        values,
+        Some(NullBuffer::from(vec![true, true, false, true])),
+    ));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new(
+            "a",
+            lists.data_type().clone(),
+            true,
+        )])),
+        vec![lists],
+    )
+    .unwrap()
+    .slice(1, 3);
+    let result = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch);
+    let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+    assert_eq!(
+        result.value(0).as_ref(),
+        &Int64Array::from(vec![Some(3), None, Some(1), Some(-1)])
+    );
+    assert!(result.is_null(1));
+    assert_eq!(result.value_length(2), 0);
+    let empty = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch.slice(0, 0));
+    assert_eq!(empty.len(), 0);
+    assert_eq!(result.data_type(), empty.data_type());
+}
+
+#[test]
+fn integer_array_distinct_reuses_unique_values_and_adapts_scalars() {
+    use arrow::array::ListArray;
+    let lists = Arc::new(ListArray::from_iter_primitive::<
+        arrow::datatypes::Int16Type,
+        _,
+        _,
+    >(vec![
+        Some(vec![Some(2), None, Some(1)]),
+        None,
+        Some(vec![]),
+    ]));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new(
+            "a",
+            lists.data_type().clone(),
+            true,
+        )])),
+        vec![lists.clone()],
+    )
+    .unwrap();
+    let result = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch);
+    let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+    assert!(Arc::ptr_eq(result.values(), lists.values()));
+    assert_eq!(result, lists.as_ref());
+    for row in [0, 1] {
+        let literal = logical_lit(ScalarValue::List(Arc::new(lists.slice(row, 1))));
+        let result = evaluate_scalar_call(165, vec![literal], &batch);
+        let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+        for output_row in 0..batch.num_rows() {
+            assert_eq!(result.is_null(output_row), lists.is_null(row));
+            if !lists.is_null(row) {
+                assert_eq!(result.value(output_row).as_ref(), lists.value(row).as_ref());
+            }
+        }
+    }
+}
+
+#[test]
+fn integer_array_distinct_resolves_small_fingerprint_collisions_by_value() {
+    use arrow::array::ListArray;
+    let lists: ArrayRef = Arc::new(ListArray::from_iter_primitive::<
+        arrow::datatypes::Int64Type,
+        _,
+        _,
+    >(vec![Some(vec![
+        Some(0),
+        Some(64),
+        Some(-64),
+        Some(i64::MIN),
+        Some(0),
+        None,
+        None,
+    ])]));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new(
+            "a",
+            lists.data_type().clone(),
+            true,
+        )])),
+        vec![lists],
+    )
+    .unwrap();
+    let result = evaluate_scalar_call(165, vec![datafusion::prelude::col("a")], &batch);
+    let result = result.as_any().downcast_ref::<ListArray>().unwrap();
+    assert_eq!(
+        result.value(0).as_ref(),
+        &Int64Array::from(vec![Some(0), Some(64), Some(-64), Some(i64::MIN), None])
+    );
 }
 
 #[test]
@@ -2091,32 +3187,34 @@ fn session_state_partitions_and_restores_by_flink_key_group() {
 
 #[test]
 fn group_state_over_budget_fails_and_deletes_release() {
-    // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
-    let mut agg = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(1 << 20)
+    for kind in [0, 14, 15, 16] {
+        // A generous budget: inserts fit, and retracting every record shrinks the tracking to zero.
+        let mut agg = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
+            0,
+        )
         .unwrap();
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![0, 0]),
-        0,
-    )
-    .unwrap();
-    assert!(agg.memory.state_bytes > 0);
-    agg.update(
-        &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
-        0,
-    )
-    .unwrap();
-    assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
+        assert!(agg.memory.state_bytes > 0);
+        agg.update(
+            &group_changelog(vec![1, 2], vec![Some(10), Some(20)], vec![3, 3]),
+            0,
+        )
+        .unwrap();
+        assert_eq!(agg.memory.state_bytes, 0); // both groups deleted -> fully released
 
-    let mut tight = GroupAggregator::new(vec![0], vec![0], vec![1], vec![0], true)
-        .with_memory_budget(128)
-        .unwrap();
-    let keys: Vec<i64> = (0..100).collect();
-    let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
-    let err = tight
-        .update(&group_changelog(keys, values, vec![0; 100]), 0)
-        .unwrap_err();
-    assert!(err.to_string().contains("task off-heap"), "{err}");
+        let mut tight = GroupAggregator::new(vec![kind], vec![0], vec![1], vec![0], true)
+            .with_memory_budget(128)
+            .unwrap();
+        let keys: Vec<i64> = (0..100).collect();
+        let values: Vec<Option<i64>> = keys.iter().map(|&k| Some(k)).collect();
+        let err = tight
+            .update(&group_changelog(keys, values, vec![0; 100]), 0)
+            .unwrap_err();
+        assert!(err.to_string().contains("task off-heap"), "{err}");
+    }
 }
 
 #[test]
@@ -3337,6 +4435,105 @@ fn local_group_extremes_preserve_append_only_and_retracting_results() {
     let out = retracting.flush();
     assert_eq!(values(&out, 1), vec![10]);
     assert_eq!(values(&out, 2), vec![10]);
+}
+
+#[test]
+fn local_temporal_boolean_extrema_preserve_types_nulls_and_retractions() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        let make = || {
+            LocalGroupAggregator::new(
+                vec![1, 2],
+                vec![code; 2],
+                vec![1; 2],
+                vec![],
+                vec![0],
+                vec![],
+            )
+        };
+        let batch = group_scalar_changelog(
+            vec![
+                null.clone(),
+                high.clone(),
+                low.clone(),
+                low.clone(),
+                null.clone(),
+            ],
+            vec![0; 5],
+        )
+        .project(&[0, 1])
+        .unwrap();
+        for split in 1..5 {
+            let mut local = make();
+            local.update(&batch.slice(0, split)).unwrap();
+            local.update(&batch.slice(split, 5 - split)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), low);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+            local.update(&batch.slice(0, 1)).unwrap();
+            let out = local.flush();
+            assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), null);
+            assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), null);
+        }
+        let mut local = make();
+        local
+            .update(&group_scalar_changelog(
+                vec![
+                    high.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                    low.clone(),
+                ],
+                vec![0, 0, 0, 3, 3],
+            ))
+            .unwrap();
+        let out = local.flush();
+        assert_eq!(ScalarValue::try_from_array(out.column(1), 0).unwrap(), high);
+        assert_eq!(ScalarValue::try_from_array(out.column(2), 0).unwrap(), high);
+    }
+}
+
+#[test]
+fn temporal_boolean_running_extrema_restore_typed_and_multiset_state() {
+    for (code, low, high) in temporal_boolean_values() {
+        let null = ScalarValue::try_from(&low.data_type()).unwrap();
+        for previous_kinds in [vec![1, 2], vec![10, 11]] {
+            let mut previous =
+                GroupAggregator::new(previous_kinds, vec![code; 2], vec![1; 2], vec![0], true);
+            let mut running =
+                GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            for values in [vec![null.clone()], vec![high.clone(), high.clone()]] {
+                let input = group_scalar_changelog(values.clone(), vec![0; values.len()]);
+                assert_eq!(
+                    previous.update(&input, 0).unwrap(),
+                    running.update(&input, 0).unwrap()
+                );
+                let parts = previous
+                    .snapshot_partitions(128, &[-1])
+                    .into_values()
+                    .collect::<Vec<_>>();
+                let mut restored = GroupAggregator::restore_partitions(
+                    vec![10, 11],
+                    vec![code; 2],
+                    vec![1; 2],
+                    vec![0],
+                    true,
+                    &parts,
+                    0,
+                );
+                let probe = group_scalar_changelog(
+                    vec![low.clone(), high.clone(), null.clone()],
+                    vec![0; 3],
+                );
+                assert_eq!(
+                    restored.update(&probe, 0).unwrap(),
+                    running.update(&probe, 0).unwrap()
+                );
+                previous.update(&probe, 0).unwrap();
+            }
+        }
+    }
 }
 
 #[test]
@@ -7844,6 +9041,91 @@ mod rocksdb_group_multisets {
 
     // The multisets survive a native checkpoint and a fresh store opened from it.
     #[test]
+    fn typed_distinct_counts_survive_memory_and_rocks_restore() {
+        for (code, value) in [
+            (0, ScalarValue::Int64(Some(i64::MAX))),
+            (10, ScalarValue::Boolean(Some(false))),
+            (
+                7,
+                ScalarValue::Struct(Arc::new(streamfusion_bridge::timestamp::timestamp_array([
+                    Some(
+                        streamfusion_bridge::timestamp::TimestampValue::new(i64::MAX, 999_999)
+                            .unwrap(),
+                    ),
+                ]))),
+            ),
+            (2, ScalarValue::Int32(Some(i32::MIN))),
+            (4, ScalarValue::Int16(Some(i16::MIN))),
+            (5, ScalarValue::Int8(Some(i8::MIN))),
+            (
+                4002,
+                ScalarValue::Decimal128(Some(-12345678901234567890), 20, 2),
+            ),
+            (3, ScalarValue::Utf8(Some("a\0中😀".repeat(80)))),
+        ] {
+            let make = || GroupAggregator::new(vec![7], vec![code], vec![1], vec![0], true);
+            let codec =
+                || GroupStateCodec::new(vec![7], vec![value.data_type()], vec![1], vec![-1]);
+            let batch = |values: Vec<ScalarValue>, kinds: Vec<i8>| {
+                let len = values.len();
+                RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("k", DataType::Int64, false),
+                        Field::new("v", value.data_type(), true),
+                        Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+                    ])),
+                    vec![
+                        Arc::new(Int64Array::from(vec![1; len])),
+                        ScalarValue::iter_to_array(values).unwrap(),
+                        Arc::new(Int8Array::from(kinds)),
+                    ],
+                )
+                .unwrap()
+            };
+            let store =
+                RocksGroupStore::create(store_config("typed-distinct", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let null = ScalarValue::try_from(&value.data_type()).unwrap();
+            let seed = batch(vec![value.clone(), value.clone(), null.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let mut restored = GroupAggregator::restore(
+                vec![7],
+                vec![code],
+                vec![1],
+                vec![0],
+                true,
+                &memory.snapshot(),
+                0,
+            );
+            let snapshot = snapshot_dir("typed-distinct");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("typed-distinct-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            for probe in [
+                batch(vec![value.clone()], vec![3]),
+                batch(vec![value.clone()], vec![3]),
+                batch(vec![null], vec![3]),
+                batch(vec![value.clone()], vec![0]),
+            ] {
+                let expected = memory.update(&probe, 0).unwrap();
+                assert_eq!(restored.update(&probe, 0).unwrap(), expected);
+                rocks.store_mut().set_clock(0);
+                assert_eq!(rocks.update(&probe, 0).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
     fn multiset_aggregates_survive_checkpoint_and_reopen() {
         let mut rocks = rocks_agg("restart", 0);
         let mut memory = memory_agg(0);
@@ -7948,6 +9230,270 @@ mod rocksdb_group_multisets {
         ];
         for batch in &bundles {
             assert_parity(&mut rocks, &mut control, batch, 0);
+        }
+    }
+
+    #[test]
+    fn distinct_running_migrates_and_checkpoints_sum_and_membership() {
+        let large = 9 * 10i128.pow(37);
+        for (kind, (code, low, high, third)) in [
+            (
+                5,
+                ScalarValue::Int8(Some(-3)),
+                ScalarValue::Int8(Some(2)),
+                ScalarValue::Int8(Some(7)),
+            ),
+            (
+                0,
+                ScalarValue::Int64(Some(-3)),
+                ScalarValue::Int64(Some(2)),
+                ScalarValue::Int64(Some(7)),
+            ),
+            (
+                5800,
+                ScalarValue::Decimal128(Some(large), 38, 0),
+                ScalarValue::Decimal128(Some(large - 1), 38, 0),
+                ScalarValue::Decimal128(Some(-large), 38, 0),
+            ),
+        ]
+        .into_iter()
+        .flat_map(|case| [9, 17].into_iter().map(move |kind| (kind, case.clone())))
+        {
+            let make =
+                || GroupAggregator::new(vec![kind, 3], vec![code, 0], vec![1, -1], vec![0], true);
+            let codec = || {
+                GroupStateCodec::new(
+                    vec![kind, 3],
+                    vec![low.data_type(), DataType::Int64],
+                    vec![1, -1],
+                    vec![-1; 2],
+                )
+            };
+            let mut memory = make();
+            memory
+                .update(
+                    &group_scalar_changelog(
+                        vec![low.clone(), low.clone(), high.clone(), third],
+                        vec![0; 4],
+                    ),
+                    0,
+                )
+                .unwrap();
+            let partitions = memory
+                .snapshot_partitions(128, &[-1])
+                .into_values()
+                .collect::<Vec<_>>();
+            let store =
+                RocksGroupStore::create(store_config("distinct-average-import", 0), codec())
+                    .unwrap();
+            let mut rocks = make().with_backend(store);
+            rocks.import_partitions(&partitions, 0).unwrap();
+            let snapshot = snapshot_dir("distinct-average");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("distinct-average-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            let partitions = rocks
+                .canonical_partitions()
+                .unwrap()
+                .into_values()
+                .collect::<Vec<_>>();
+            let mut exported = GroupAggregator::restore_partitions(
+                vec![kind, 3],
+                vec![code, 0],
+                vec![1, -1],
+                vec![0],
+                true,
+                &partitions,
+                0,
+            );
+            for value in [low.clone(), low, high] {
+                let batch = group_scalar_changelog(vec![value], vec![3]);
+                rocks.store_mut().set_clock(0);
+                let expected = memory.update(&batch, 0).unwrap();
+                assert_eq!(rocks.update(&batch, 0).unwrap(), expected);
+                assert_eq!(exported.update(&batch, 0).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn buffered_wide_distinct_retention_uses_rocks_flush_clock() {
+        let make = || {
+            GroupAggregator::new(vec![9, 17, 7], vec![5800; 3], vec![1, 2, 3], vec![0], true)
+                .with_distinct_view_columns(vec![4, 5, 6])
+                .with_mini_batch()
+                .with_state_ttl(100)
+        };
+        let codec = GroupStateCodec::new(
+            vec![9, 17, 7],
+            vec![DataType::Decimal128(38, 0); 3],
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+        );
+        let store = RocksGroupStore::create(store_config("wide-retention", 100), codec).unwrap();
+        let mut rocks = make().with_backend(store);
+        let mut memory = make();
+        let mut local = LocalGroupAggregator::new(
+            vec![9, 18, 7],
+            vec![5800; 3],
+            vec![1; 3],
+            vec![],
+            vec![0],
+            vec![0, 1, 2],
+        );
+        for (arrivals, flush, kinds) in [
+            (vec![(1, 0)], 10, vec![0]),
+            (vec![(2, 90)], 120, vec![0]),
+            (vec![(2, 200)], 215, vec![1, 2]),
+            (vec![(2, 300), (3, 320)], 340, vec![0]),
+        ] {
+            for (value, arrival) in arrivals {
+                local
+                    .update(&group_scalar_changelog(
+                        vec![ScalarValue::Decimal128(Some(value), 38, 0)],
+                        vec![0],
+                    ))
+                    .unwrap();
+                let partial = local.flush();
+                rocks.store_mut().set_clock(arrival);
+                rocks.update(&partial, arrival).unwrap();
+                memory.update(&partial, arrival).unwrap();
+            }
+            rocks.store_mut().set_clock(flush);
+            let actual = rocks.flush_mini_batch_at(flush).unwrap();
+            assert_eq!(actual, memory.flush_mini_batch_at(flush).unwrap());
+            assert_eq!(
+                row_kind_column(&actual).unwrap().values().as_ref(),
+                kinds.as_slice()
+            );
+            assert_eq!(rocks.staging_bytes(), 0);
+        }
+    }
+
+    #[test]
+    fn buffered_wide_distinct_views_survive_rocks_and_raw_checkpoints() {
+        let kinds = vec![9, 17, 7];
+        let types = vec![5800; 3];
+        let columns = vec![1, 2, 3];
+        let views = vec![4, 5, 6];
+        let make = || {
+            GroupAggregator::new(kinds.clone(), types.clone(), columns.clone(), vec![0], true)
+                .with_distinct_view_columns(views.clone())
+                .with_mini_batch()
+        };
+        let codec = || {
+            GroupStateCodec::new(
+                kinds.clone(),
+                vec![DataType::Decimal128(38, 0); 3],
+                columns.clone(),
+                views.clone(),
+            )
+        };
+        let mut local = LocalGroupAggregator::new(
+            vec![9, 18, 7],
+            types.clone(),
+            vec![1; 3],
+            vec![],
+            vec![0],
+            vec![0, 1, 2],
+        );
+        let mut memory = make();
+        let store = RocksGroupStore::create(store_config("wide-buffer", 0), codec()).unwrap();
+        let mut rocks = make().with_backend(store);
+        let large = 9 * 10i128.pow(37);
+        for value in [Some(large), Some(-large), Some(large - 3), None] {
+            local
+                .update(&group_scalar_changelog(
+                    vec![ScalarValue::Decimal128(value, 38, 0)],
+                    vec![0],
+                ))
+                .unwrap();
+            let partial = local.flush();
+            assert_eq!(memory.update(&partial, 0).unwrap().num_rows(), 0);
+            assert_eq!(rocks.update(&partial, 0).unwrap().num_rows(), 0);
+        }
+        let expected = memory.flush_mini_batch().unwrap();
+        assert_eq!(rocks.flush_mini_batch().unwrap(), expected);
+        assert_eq!(
+            ScalarValue::try_from_array(expected.column(1), 0).unwrap(),
+            ScalarValue::Decimal128(Some(-large), 38, 0)
+        );
+        assert!(expected.column(2).is_null(0));
+        assert_eq!(values(&expected, 3), vec![3]);
+        let raw = memory
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect::<Vec<_>>();
+        let snapshot = snapshot_dir("wide-buffer");
+        let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+        drop(rocks);
+        let store = RocksGroupStore::open_merged(
+            store_config("wide-buffer-reopen", 0),
+            codec(),
+            &[(snapshot, manifest.snapshot_id)],
+            0..=127,
+            true,
+            0,
+        )
+        .unwrap();
+        let mut rocks = make().with_backend(store);
+        let canonical = rocks
+            .canonical_partitions()
+            .unwrap()
+            .into_values()
+            .collect::<Vec<_>>();
+        let restore = |snapshots: &[Vec<u8>]| {
+            GroupAggregator::restore_partitions(
+                kinds.clone(),
+                types.clone(),
+                columns.clone(),
+                vec![0],
+                true,
+                snapshots,
+                0,
+            )
+            .with_distinct_view_columns(views.clone())
+            .with_mini_batch()
+        };
+        let mut from_raw = restore(&raw);
+        let mut from_canonical = restore(&canonical);
+        let store =
+            RocksGroupStore::create(store_config("wide-buffer-import", 0), codec()).unwrap();
+        let mut imported = make().with_backend(store);
+        imported.import_partitions(&raw, 0).unwrap();
+        for bundle in [
+            vec![Some(large), Some(7)],
+            vec![None, Some(large), Some(7)],
+            vec![Some(-large), Some(9)],
+        ] {
+            for value in bundle {
+                local
+                    .update(&group_scalar_changelog(
+                        vec![ScalarValue::Decimal128(value, 38, 0)],
+                        vec![0],
+                    ))
+                    .unwrap();
+                let partial = local.flush();
+                memory.update(&partial, 0).unwrap();
+                rocks.update(&partial, 0).unwrap();
+                from_raw.update(&partial, 0).unwrap();
+                from_canonical.update(&partial, 0).unwrap();
+                imported.update(&partial, 0).unwrap();
+            }
+            let expected = memory.flush_mini_batch().unwrap();
+            assert_eq!(rocks.flush_mini_batch().unwrap(), expected);
+            assert_eq!(from_raw.flush_mini_batch().unwrap(), expected);
+            assert_eq!(from_canonical.flush_mini_batch().unwrap(), expected);
+            assert_eq!(imported.flush_mini_batch().unwrap(), expected);
         }
     }
 
@@ -8127,6 +9673,96 @@ mod rocksdb_group_multisets {
             ],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn group_temporal_boolean_extrema_rocks_checkpoint_preserves_values() {
+        for (code, low, high) in temporal_boolean_values() {
+            let types = vec![low.data_type(); 2];
+            if code == 9 {
+                assert!(!crate::state::rocks_store::rocks_group_supported(
+                    &[1, 2],
+                    &types,
+                    &types
+                ));
+                continue;
+            }
+            let make =
+                || GroupAggregator::new(vec![1, 2], vec![code; 2], vec![1; 2], vec![0], true);
+            let codec = || GroupStateCodec::new(vec![1, 2], types.clone(), vec![1; 2], vec![-1; 2]);
+            let store = RocksGroupStore::create(store_config("temporal-bool", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let seed =
+                group_scalar_changelog(vec![high.clone(), low.clone(), low.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let snapshot = snapshot_dir("temporal-bool");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("temporal-bool-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            for value in [low.clone(), low, high] {
+                assert_parity(
+                    &mut rocks,
+                    &mut memory,
+                    &group_scalar_changelog(vec![value], vec![3]),
+                    0,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn temporal_boolean_running_extrema_rocks_checkpoint_preserves_types() {
+        for (code, low, high) in temporal_boolean_values() {
+            let types = vec![low.data_type(); 2];
+            if code == 9 {
+                assert!(!crate::state::rocks_store::rocks_group_supported(
+                    &[10, 11],
+                    &types,
+                    &types
+                ));
+                continue;
+            }
+            let make =
+                || GroupAggregator::new(vec![10, 11], vec![code; 2], vec![1; 2], vec![0], true);
+            let codec =
+                || GroupStateCodec::new(vec![10, 11], types.clone(), vec![1; 2], vec![-1; 2]);
+            let store = RocksGroupStore::create(store_config("typed-running", 0), codec()).unwrap();
+            let mut rocks = make().with_backend(store);
+            let mut memory = make();
+            let null = ScalarValue::try_from(&low.data_type()).unwrap();
+            let seed =
+                group_scalar_changelog(vec![null.clone(), high.clone(), high.clone()], vec![0; 3]);
+            assert_parity(&mut rocks, &mut memory, &seed, 0);
+            let snapshot = snapshot_dir("typed-running");
+            let manifest = rocks.store_mut().checkpoint(&snapshot).unwrap();
+            drop(rocks);
+            let store = RocksGroupStore::open_merged(
+                store_config("typed-running-reopen", 0),
+                codec(),
+                &[(snapshot, manifest.snapshot_id)],
+                0..=127,
+                true,
+                0,
+            )
+            .unwrap();
+            let mut rocks = make().with_backend(store);
+            assert_parity(
+                &mut rocks,
+                &mut memory,
+                &group_scalar_changelog(vec![low, high, null], vec![0; 3]),
+                0,
+            );
+        }
     }
 
     #[test]

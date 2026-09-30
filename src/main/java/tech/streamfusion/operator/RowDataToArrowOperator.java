@@ -1,8 +1,10 @@
 package tech.streamfusion.operator;
 
 import java.util.ArrayList;
-import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.operators.BoundedOneInput;
@@ -10,15 +12,16 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.arrow.ArrowWriter;
 import tech.streamfusion.compat.FlinkStreamOperator;
 import tech.streamfusion.planner.NativeConfig;
 
 /**
- * Transpose entering a columnar region: buffers rows and emits them as {@link ArrowBatch}es. Sits
- * where a rowwise (host) operator feeds a native columnar one, so the row→Arrow conversion happens
- * once at the boundary rather than inside every native operator.
+ * Transpose entering a columnar region: writes rows into owned Arrow buffers and emits them as
+ * {@link ArrowBatch}es. Sits where a rowwise (host) operator feeds a native columnar one, so the
+ * row→Arrow conversion happens once at the boundary rather than inside every native operator.
  *
  * <p>Ownership of an emitted batch passes to the downstream operator, which closes it once read (in
  * a chained task the downstream consumes it inline). Watermarks pass through after the buffer
@@ -26,16 +29,20 @@ import tech.streamfusion.planner.NativeConfig;
  */
 public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<RowData, ArrowBatch>, BoundedOneInput {
+  private static final int TIMING_SAMPLE_RATE = 64;
 
   private final RowType rowType;
   private final int batchSize;
   private final boolean carryRowKind;
   private final RowType sourceType;
 
+  private transient boolean writeRowKind;
   private transient BufferAllocator allocator;
-  private transient List<RowData> buffer;
+  private transient VectorSchemaRoot pendingRoot;
+  private transient ArrowWriter<RowData> writer;
+  private transient TinyIntVector kinds;
+  private transient int pendingRows;
   private transient PrunedRowData projector;
-  private transient RowDataSerializer inputSerializer;
   private transient long flushLatencyMs;
   private transient long flushDeadline;
   private transient Counter numInputRows;
@@ -55,8 +62,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     super.open();
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
-    buffer = new ArrayList<>(batchSize);
-    inputSerializer = new RowDataSerializer(rowType);
+    writeRowKind = carryRowKind;
     flushLatencyMs = NativeConfig.transposeFlushLatencyMs();
     flushDeadline = Long.MIN_VALUE;
     // Prune before taking ownership so unused payload is neither copied nor buffered.
@@ -68,21 +74,49 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
 
   @Override
   public void processElement(StreamRecord<RowData> element) {
-    // Chained Flink operators may reuse their RowData object immediately after collect(). This
-    // boundary retains rows until a complete Arrow batch is ready, so it must take ownership with
-    // a deep copy rather than retaining the caller's mutable view.
-    boolean wasEmpty = buffer.isEmpty();
+    // Copy into owned Arrow buffers before upstream can mutate its reusable row or nested values.
+    boolean wasEmpty = pendingRows == 0;
     numInputRows.inc();
-    if (projector == null) {
-      buffer.add(inputSerializer.copy(element.getValue()));
-    } else {
+    // Time allocation exactly; randomly sample other writes to avoid a clock call per row and
+    // avoid aliasing periodic input shapes. Scale sampled durations to estimate conversion time.
+    boolean allocating = pendingRoot == null;
+    boolean timed = allocating || ThreadLocalRandom.current().nextInt(TIMING_SAMPLE_RATE) == 0;
+    long started = timed ? System.nanoTime() : 0;
+    try {
+      if (pendingRoot == null) {
+        pendingRoot = VectorSchemaRoot.create(ArrowConversion.toArrowSchema(rowType), allocator);
+        writer = ArrowConversion.createRowDataArrowWriter(pendingRoot, rowType);
+      }
+      RowData row =
+          projector == null ? element.getValue() : projector.replaceRow(element.getValue());
+      // A source may emit a retract after advertising insert-only output.
+      if (!writeRowKind && row.getRowKind() != org.apache.flink.types.RowKind.INSERT) {
+        writeRowKind = true;
+      }
+      if (writeRowKind && kinds == null) {
+        kinds = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, allocator);
+        kinds.allocateNew(batchSize);
+        for (int i = 0; i < pendingRows; i++) {
+          kinds.setSafe(i, org.apache.flink.types.RowKind.INSERT.toByteValue());
+        }
+      }
+      writer.write(row);
+      if (kinds != null) kinds.setSafe(pendingRows, row.getRowKind().toByteValue());
+      pendingRows++;
+    } catch (RuntimeException | Error failure) {
       try {
-        buffer.add(inputSerializer.copy(projector.replaceRow(element.getValue())));
-      } finally {
-        projector.clear();
+        releasePending();
+      } catch (Exception | Error closeFailure) {
+        failure.addSuppressed(closeFailure);
+      }
+      throw failure;
+    } finally {
+      if (projector != null) projector.clear();
+      if (timed) {
+        conversionTime.inc((System.nanoTime() - started) * (allocating ? 1 : TIMING_SAMPLE_RATE));
       }
     }
-    if (buffer.size() >= batchSize) {
+    if (pendingRows >= batchSize) {
       flush();
     } else if (wasEmpty && flushLatencyMs > 0) {
       armFlushTimer();
@@ -125,19 +159,45 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
 
   @Override
   public void close() throws Exception {
-    super.close();
+    try {
+      releasePending();
+    } finally {
+      super.close();
+    }
+  }
+
+  private void releasePending() throws Exception {
+    VectorSchemaRoot root = pendingRoot;
+    TinyIntVector rowKinds = kinds;
+    clearPending();
+    org.apache.flink.util.IOUtils.closeAll(root, rowKinds);
+  }
+
+  private void clearPending() {
+    pendingRoot = null;
+    writer = null;
+    kinds = null;
+    pendingRows = 0;
+    flushDeadline = Long.MIN_VALUE;
   }
 
   private void flush() {
     flushDeadline = Long.MIN_VALUE;
-    if (buffer.isEmpty()) {
-      return;
-    }
+    if (pendingRows == 0) return;
     long started = System.nanoTime();
-    VectorSchemaRoot root = RowDataArrowConverter.write(buffer, rowType, allocator, carryRowKind);
+    writer.finish();
+    VectorSchemaRoot root = pendingRoot;
+    if (kinds != null) {
+      kinds.setValueCount(pendingRows);
+      var columns = new ArrayList<FieldVector>(root.getFieldVectors());
+      columns.add(kinds);
+      root = new VectorSchemaRoot(columns);
+      root.setRowCount(pendingRows);
+    }
+    ArrowBatch batch = new ArrowBatch(root);
+    clearPending();
     conversionTime.inc(System.nanoTime() - started);
     numOutputBatches.inc();
-    ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(root));
-    buffer.clear();
+    ColumnarRecordMetrics.emit(output, getMetricGroup(), batch);
   }
 }

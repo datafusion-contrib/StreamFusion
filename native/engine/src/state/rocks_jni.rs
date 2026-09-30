@@ -323,11 +323,14 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBGroupAggregator
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     handle: jlong,
+    now_millis: jlong,
     out_array: jlong,
     out_schema: jlong,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
-        match unsafe { &mut *(handle as *mut RocksGroupAggregator) }.flush_mini_batch() {
+        let aggregator = unsafe { &mut *(handle as *mut RocksGroupAggregator) };
+        aggregator.store_mut().set_clock(now_millis);
+        match aggregator.flush_mini_batch_at(now_millis) {
             Ok(out) => export_record_batch(out, out_array, out_schema),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
         }

@@ -41,6 +41,9 @@ class PaimonSourceRecoveryTest {
       throws Exception {
     var options = new java.util.HashMap<String, String>();
     options.put("changelog-producer", "input");
+    options.put("consumer-id", "recovery-reader");
+    options.put("consumer.mode", "at-least-once");
+    options.put("consumer.expiration-time", "1 d");
     options.put("write-only", Boolean.toString(!mode.equals("first-row")));
     if (mode.equals("sequence")) options.put("sequence.field", "seq,seq2");
     if (mode.equals("first-row"))

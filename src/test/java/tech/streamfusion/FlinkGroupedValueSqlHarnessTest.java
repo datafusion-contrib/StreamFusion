@@ -30,6 +30,9 @@ class FlinkGroupedValueSqlHarnessTest {
         "DECIMAL(20,3)",
         "STRING",
         "DATE",
+        "TIME(0)",
+        "TIME(3)",
+        "BOOLEAN",
         "TIMESTAMP(9)",
         "TIMESTAMP_LTZ(3)"
       })
@@ -48,6 +51,9 @@ class FlinkGroupedValueSqlHarnessTest {
         "DECIMAL(20,3)",
         "STRING",
         "DATE",
+        "TIME(0)",
+        "TIME(3)",
+        "BOOLEAN",
         "TIMESTAMP(9)",
         "TIMESTAMP_LTZ(3)"
       })
@@ -75,10 +81,17 @@ class FlinkGroupedValueSqlHarnessTest {
         "DECIMAL(20,3)",
         "STRING",
         "DATE",
+        "TIME(0)",
+        "TIME(3)",
+        "BOOLEAN",
         "TIMESTAMP(9)",
         "TIMESTAMP_LTZ(3)"
       })
   void singleValuePreservesOneElementIncludingNull(String type) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        !type.startsWith("TIME(")
+            || tech.streamfusion.compat.FlinkTestCapabilities.CAST_TIME_SINGLE_VALUE,
+        "Flink 1.18 casts TIME to TIME(0), but SINGLE_VALUE infers TIME(3)");
     compare(() -> environment(type, false), "SELECT id, SINGLE_VALUE(v) FROM src GROUP BY id");
     compare(() -> environment(type, true), "SELECT id, SINGLE_VALUE(v) FROM src GROUP BY id");
     compare(() -> environment(type, false), "SELECT SINGLE_VALUE(v) FROM src WHERE id < 0");
@@ -139,6 +152,91 @@ class FlinkGroupedValueSqlHarnessTest {
             + " k");
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void distinctFirstLastPreserveMembershipAndArrivalOrder(boolean retract) throws Exception {
+    compare(
+        () -> environment("STRING", retract),
+        "SELECT k, FIRST_VALUE(DISTINCT v), LAST_VALUE(DISTINCT v), COUNT(*) FROM src GROUP BY k");
+    compare(
+        () -> environment("STRING", retract),
+        "SELECT k, FIRST_VALUE(DISTINCT v) FILTER (WHERE id >= 3), "
+            + "LAST_VALUE(DISTINCT v) FILTER (WHERE id <> 6), COUNT(*) FROM src GROUP BY k");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void distinctFirstLastBoundedVarcharAndEmptyResults(boolean retract) throws Exception {
+    compare(
+        () -> environment("VARCHAR(8)", retract),
+        "SELECT k, FIRST_VALUE(DISTINCT v), LAST_VALUE(DISTINCT v) FROM src GROUP BY k");
+    compare(
+        () -> environment("STRING", retract),
+        "SELECT FIRST_VALUE(DISTINCT v), LAST_VALUE(DISTINCT v) FROM src WHERE id < 0");
+    NativeParity.assertFallbackReasonContains(
+        () -> {
+          var table = environment("STRING", retract);
+          table.getConfig().setIdleStateRetention(java.time.Duration.ofHours(1));
+          return table;
+        },
+        "SELECT k, FIRST_VALUE(DISTINCT v) FROM src GROUP BY k",
+        "independently expiring value/order maps");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT id, AVG(k), SINGLE_VALUE(v), COUNT(DISTINCT k) FROM src GROUP BY id",
+        "SELECT SINGLE_VALUE(v) FROM src WHERE id = 1",
+        "SELECT SINGLE_VALUE(v) FROM src WHERE id < 0"
+      })
+  void twoPhaseSingleValuePreservesNullCardinalityAndPartialOffsets(String sql) throws Exception {
+    Supplier<TableEnvironment> source = () -> twoPhaseSingleEnvironment(5);
+    String plan = NativePlanner.explain(source.get(), sql);
+    assertTrue(plan.contains("NativeColumnarLocalGroupAggregate"), plan);
+    assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+    NativeParity.assertChangelogParity(source, sql);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 5})
+  void twoPhaseSingleValueRejectsSecondElementLocallyOrGlobally(int bundle) {
+    for (String argument : List.of("v", "CAST(NULL AS STRING)")) {
+      String sql = "SELECT k, SINGLE_VALUE(" + argument + ") FROM src GROUP BY k";
+      var source = (Supplier<TableEnvironment>) () -> twoPhaseSingleEnvironment(bundle);
+      String plan = NativePlanner.explain(source.get(), sql);
+      assertTrue(plan.contains("NativeColumnarLocalGroupAggregate"), plan);
+      assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+      NativeFailureParity.run(source, sql)
+          .assertFailure(
+              RuntimeException.class,
+              "SingleValueAggFunction received more than one element.",
+              ROW_EVALUATION,
+              NATIVE);
+    }
+  }
+
+  @org.junit.jupiter.api.Test
+  void twoPhaseSingleValueFilterRetainsHostPlanningFailure() {
+    NativeFailureParity.run(
+            () -> twoPhaseSingleEnvironment(5),
+            "SELECT k, SINGLE_VALUE(v) FILTER (WHERE id = 2) FROM src GROUP BY k")
+        .assertFailure(
+            IllegalArgumentException.class,
+            "",
+            NativeFailureParity.Phase.PLANNING,
+            NativeFailureParity.Route.UNPLANNED);
+  }
+
+  private static TableEnvironment twoPhaseSingleEnvironment(int bundle) {
+    var table = environment("STRING", false);
+    table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+    table.getConfig().set("table.exec.mini-batch.enabled", "true");
+    table.getConfig().set("table.exec.mini-batch.size", Integer.toString(bundle));
+    table.getConfig().set("table.exec.mini-batch.allow-latency", "100 ms");
+    return table;
+  }
+
   private static void compare(Supplier<TableEnvironment> environment, String sql) throws Exception {
     String plan = NativePlanner.explain(environment.get(), sql);
     assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
@@ -196,6 +294,8 @@ class FlinkGroupedValueSqlHarnessTest {
   private static String value(String type, int value) {
     return switch (type) {
       case "DATE" -> "2020-01-" + value;
+      case "TIME(0)", "TIME(3)" -> "12:34:" + value + ".123";
+      case "BOOLEAN" -> value == 20 ? "false" : "true";
       case "TIMESTAMP(9)" -> "2020-01-01 00:00:" + value + ".123456789";
       default -> Integer.toString(value);
     };
