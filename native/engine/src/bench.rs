@@ -519,3 +519,220 @@ impl WindowJoin {
         self.0.flush(watermark).expect("budget exceeded")
     }
 }
+
+/// Production IPC serialization, including the stream header and owned output buffer.
+pub fn encode_ipc(batch: &RecordBatch) -> Vec<u8> {
+    crate::ipc::write_ipc(batch)
+}
+
+pub fn decode_ipc(bytes: &[u8]) -> Vec<RecordBatch> {
+    crate::ipc::read_ipc(bytes)
+}
+
+pub fn expand_grouping_sets(batch: &RecordBatch) -> RecordBatch {
+    crate::flatten::expand(batch, 2, 3, 2, false, &[0, 1, -1, -1, 1, -1], &[0, 1])
+}
+
+pub fn unnest(batch: &RecordBatch, left: bool, ordinality: bool) -> RecordBatch {
+    crate::flatten::unnest_array(batch, 1, ordinality, left, false)
+}
+
+pub struct TemporalSort(crate::sorter::TemporalSorter);
+
+impl TemporalSort {
+    pub fn new(time_column: usize) -> Self {
+        Self(crate::sorter::TemporalSorter::new(time_column))
+    }
+    pub fn push(&mut self, batch: RecordBatch) {
+        self.0.push(batch).unwrap();
+    }
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+}
+
+pub struct ArrivalFirstN(crate::first_n::FirstN);
+
+impl ArrivalFirstN {
+    pub fn new(partitions: Vec<usize>, limit: i32) -> Self {
+        Self(
+            crate::first_n::FirstN::new(
+                partitions.clone(),
+                vec![0; partitions.len()],
+                limit,
+                true,
+                0,
+                MemoryStateStore::default(),
+                -1,
+            )
+            .unwrap(),
+        )
+    }
+    pub fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch, 0).unwrap()
+    }
+}
+
+pub struct TemporalJoin(crate::temporal_join::TemporalJoiner);
+
+impl TemporalJoin {
+    pub fn new(schema: SchemaRef) -> Self {
+        Self(crate::temporal_join::TemporalJoiner::new(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            JoinKind::LeftOuter,
+            schema.clone(),
+            schema,
+            None,
+        ))
+    }
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch, 0)
+        } else {
+            self.0.push_right(batch, 0)
+        }
+        .unwrap();
+    }
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark, 0).unwrap()
+    }
+    pub fn snapshot(&self) -> Vec<u8> {
+        self.0.snapshot()
+    }
+}
+
+pub struct Projection(crate::calc::CalcExpression);
+
+impl Projection {
+    pub fn columns(columns: &[usize]) -> Self {
+        Self(crate::calc::CalcExpression {
+            kinds: vec![0; columns.len()],
+            payload: columns.iter().map(|&column| column as i64).collect(),
+            child_counts: vec![0; columns.len()],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: (0..columns.len()).collect(),
+            condition_root: -1,
+            output_names: columns.iter().map(|column| format!("v{column}")).collect(),
+            compiled: None,
+        })
+    }
+    pub fn run(&mut self, batch: RecordBatch) -> RecordBatch {
+        self.0.evaluate(batch)
+    }
+}
+
+pub struct KeyCodec(arrow::row::RowConverter, Vec<DataType>);
+impl KeyCodec {
+    pub fn new(input: &[ArrayRef]) -> Self {
+        let types: Vec<_> = input
+            .iter()
+            .map(|array| array.data_type().clone())
+            .collect();
+        Self(crate::keys::key_row_converter_from_types(&types), types)
+    }
+    pub fn encode(&self, input: &[ArrayRef], rows: usize) -> arrow::row::Rows {
+        crate::keys::encode_group_keys(&self.0, input, rows)
+    }
+    pub fn decode(&self, rows: &arrow::row::Rows) -> Vec<ArrayRef> {
+        let keys: Vec<_> = rows.iter().map(|row| row.data()).collect();
+        crate::keys::decode_byte_keys(Some(&self.0), &keys, &self.1)
+    }
+}
+pub fn flink_key_hashes(batch: &RecordBatch, columns: &[usize], precisions: &[i32]) -> Vec<i32> {
+    let mut encoder = crate::flink_key::BinaryRowBatchEncoder::new(batch, columns, precisions);
+    (0..batch.num_rows()).map(|row| encoder.hash(row)).collect()
+}
+impl AppendTopN {
+    pub fn snapshot(&self, groups: usize) -> Vec<Vec<u8>> {
+        self.0.snapshot_partitions(groups).into_values().collect()
+    }
+    pub fn restore(snapshots: &[Vec<u8>]) -> Self {
+        Self(TopNRanker::restore_partitions(
+            vec![0],
+            vec![0],
+            vec![SortColumn {
+                index: 1,
+                ascending: true,
+                nulls_first: false,
+            }],
+            4,
+            false,
+            false,
+            snapshots,
+            0,
+        ))
+    }
+}
+impl GroupBy {
+    pub fn snapshot(&mut self) -> Vec<Vec<u8>> {
+        self.0.snapshot_partitions(1, &[-1]).into_values().collect()
+    }
+    pub fn restore(snapshot: &[Vec<u8>]) -> Self {
+        Self(GroupAggregator::restore_partitions(
+            vec![0],
+            vec![0],
+            vec![1],
+            vec![0],
+            true,
+            snapshot,
+            0,
+        ))
+    }
+}
+pub struct WindowRank(crate::topn::WindowRanker);
+impl WindowRank {
+    pub fn new() -> Self {
+        Self(crate::topn::WindowRanker::new(
+            0,
+            1,
+            vec![2],
+            vec![SortColumn {
+                index: 3,
+                ascending: true,
+                nulls_first: false,
+            }],
+            4,
+            true,
+        ))
+    }
+    pub fn run(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch).unwrap();
+        self.0.flush(i64::MAX).unwrap()
+    }
+}
+impl Default for WindowRank {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentSort(crate::sorter::TemporalSorter);
+#[cfg(feature = "rocksdb-state")]
+impl PersistentSort {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let config = crate::state::rocks_store::RocksStoreConfig {
+            table_dir: directory.into(),
+            max_parallelism: 1,
+            options_json: options.into(),
+            ttl_ms: 0,
+            shared_resources: 0,
+        };
+        let store = crate::state::RocksTemporalSortBuffer::create(config, schema).unwrap();
+        Self(crate::sorter::TemporalSorter::new(1).with_store(store))
+    }
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch.clone()).unwrap();
+    }
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush(i64::MAX).unwrap()
+    }
+    pub fn checkpoint(&mut self, directory: &str) {
+        self.0.store_mut().checkpoint(directory).unwrap();
+    }
+}

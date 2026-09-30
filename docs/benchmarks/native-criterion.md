@@ -73,6 +73,11 @@ implementation changes; this inventory identifies the currently measured boundar
 | --- | --- | --- |
 | Arrow C Data ownership | `handoffs` | Full-schema and cached-schema export/import; nullable sliced string and integer batches |
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
+| Calc and column movement | `data_movement` | Compiled projection, grouping-set EXPAND, inner/left array UNNEST, Arrow IPC encode/decode |
+| Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
+| Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
+| Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
+| Persistent state | `persistent_state` | Production RocksDB event-time-sort write/read and checkpoint file creation; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | JSON decode | `json_decode`, `json_codecs` | Direct production decode, projection, wide messages, historical nested Nexmark corpus |
 | Raw decode | `raw_decode` | All admitted primitive/string/binary types, endianness, null bodies, slices |
 | CSV decode | `csv_decode` | Quoted wide strings, nullable schema, strict/ignore-errors configuration |

@@ -3665,8 +3665,10 @@ dependencies = [
  "sha2",
  "simd-json",
  "stacker",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-native-build",
+ "tempfile",
  "tokio",
  "zstd",
 ]
