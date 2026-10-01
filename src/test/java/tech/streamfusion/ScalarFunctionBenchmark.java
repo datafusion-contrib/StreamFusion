@@ -37,6 +37,8 @@ class ScalarFunctionBenchmark {
   private static final boolean UNICODE = Boolean.getBoolean("scalar.unicode");
   private static final int NULL_EVERY = Integer.getInteger("scalar.nullEvery", 0);
   private static final int JSON_FIELDS = Integer.getInteger("scalar.json.fields", 0);
+  private static final boolean EXPECT_NATIVE =
+      Boolean.parseBoolean(System.getProperty("scalar.native.expected", "true"));
   private static final String ENGINE =
       System.getProperty("scalar.engine", "both").toLowerCase(Locale.ROOT);
 
@@ -734,6 +736,12 @@ class ScalarFunctionBenchmark {
     }
     tables.executeSql(query.ddl());
     String plan = NativePlanner.explain(tables, query.sql());
+    if (!expectsNative(query)) {
+      if (plan.contains("NativeCalc")) {
+        throw new IllegalStateException(query.name() + " expected previous-version fallback: " + plan);
+      }
+      return;
+    }
     if (!query.groupBy().isEmpty() && !plan.contains("NativeColumnarGroupAggregate")) {
       throw new IllegalStateException(
           "Grouped binary query must execute native aggregation: " + plan);
@@ -744,6 +752,10 @@ class ScalarFunctionBenchmark {
       throw new IllegalStateException(
           query.name() + " must include NativeCalc and both transposes: " + plan);
     }
+  }
+
+  private static boolean expectsNative(Query query) {
+    return query.name().startsWith("BASELINE_") || EXPECT_NATIVE;
   }
 
   private static double run(Query query, boolean useNative) throws Exception {
@@ -758,8 +770,8 @@ class ScalarFunctionBenchmark {
     long start = System.nanoTime();
     tables.executeSql(query.sql()).await();
     double seconds = (System.nanoTime() - start) / 1e9;
-    if (useNative && scan.substitutions() == 0) {
-      throw new IllegalStateException(query.name() + " fell back: " + scan.fallbackReasons());
+    if (useNative && (scan.substitutions() > 0) != expectsNative(query)) {
+      throw new IllegalStateException(query.name() + " unexpected route: " + scan.explainSummary());
     }
     return seconds;
   }

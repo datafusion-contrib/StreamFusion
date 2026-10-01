@@ -209,3 +209,44 @@ and retain the per-trial CSV with `-Dscalar.output=...`.
 All three profiles and their identity controls execute successfully with 5,003 runtime rows
 on released Flink 2.2.1. This single-trial fixture smoke check validates plan admission and
 execution only; its startup-dominated durations are not performance-admission evidence.
+
+When the previous production revision falls back for a newly supported function, run the same
+fixture with `-Dscalar.native.expected=false`. This explicit control requires the selected
+function to lack native Calc and runtime substitution while identity controls still require
+native execution. The default remains strict native admission. Label those native-enabled
+trials as previous-version fallback in retained comparisons; they do not represent native
+acceleration or replace stock-Flink measurements.
+
+## Recovered release whole-job measurements, 2026-10-01
+
+Released Flink 2.2.1, JDK 17 and the candidate at `ee58ff55`, with release Rust/mimalloc,
+run two million runtime rows, two warmups and five measured trials per engine. Execution
+alternates engine order each trial. The existing blackhole sink, JNI and both transposes
+remain measured; plan assertions require native Calc. The host was quiet before starting.
+Source values have alternating signs, dynamic scales, no NULLs and the three profiles above.
+[All trials and source-matched identity controls](../benchmarks/expression-wholejob-candidate-2026-10-01.csv)
+are retained.
+
+| Expression/profile | Stock Flink median | Candidate median | Stock/candidate |
+| --- | ---: | ---: | ---: |
+| STRING to BINARY(16), 264-byte source strings | 0.950 s | 1.007 s | 0.94× |
+| Fixed BINARY ELT | 0.334 s | 0.416 s | 0.80× |
+| DOUBLE TRUNCATE, bounded | 0.786 s | 0.457 s | 1.72× |
+| DOUBLE TRUNCATE, half-integer boundaries | 0.691 s | 0.766 s | 0.90× |
+| DOUBLE TRUNCATE, outside domain | 0.518 s | 0.591 s | 0.88× |
+
+These durations include startup and deployment. Retain the slow standalone binary and
+TRUNCATE fallback profiles; a bounded-domain win does not satisfy their admission gate.
+The source-matched native identity controls also lose to stock Flink, showing the remaining
+row/Arrow conversion floor. Profile and optimize before treating these candidates as complete.
+Previous-production comparisons and broader nullable/composition profiles remain pending.
+
+The previous production revision (`1b1b5ed8`, including canonical main `0b38269e`) runs
+identical fixture-only benchmark code with explicit expected fallback for the new functions.
+[All previous-version trials](../benchmarks/expression-wholejob-previous-2026-10-01.csv)
+retain stock and native-enabled fallback controls on the same host and configuration.
+Previous native-enabled medians are 0.939 s (cast), 0.350 s (ELT), 0.774 s (bounded TRUNCATE),
+0.689 s (boundary) and 0.529 s (small fractions). Thus the initial candidate's bounded
+TRUNCATE beats both references, while every other listed profile still requires optimization.
+The native identity controls are verified separately rather than bypassing all route assertions.
+Linux/Core i7-12650H, Rust 1.94.0 and JDK 17; the native library uses production mimalloc.
