@@ -381,3 +381,23 @@ its downstream copy 23.77%. These inclusive fractions overlap and must not be ad
 other shared-host jobs were active, so this is attribution evidence rather than throughput
 admission. The small kernel share redirects copy-removal work toward conversion and copying
 at the row boundaries rather than another ELT kernel rewrite.
+
+
+### Boolean whole-job diagnostic (2026-10-01)
+
+At revision `6160a21b`, a release/mimalloc Flink 2.2.1 comparison of
+`ARRAY_DISTINCT(arr)` uses two million runtime rows, 64 Boolean elements, nullable
+containers every eight rows and nullable elements every seven positions. Parallelism
+is one, the transpose batch is 1,024 rows, the JDK is 17 and the maximum heap is 8 GiB.
+Both row/Arrow transposes, JNI and a blackhole row sink remain in the measured native
+path, with plan and runtime checks. Two warmups precede five alternating measured
+trials. Stock Flink's median is 3.428 s and native's 2.770 s (1.24x), but ranges are
+3.187–4.344 s and 1.820–3.036 s respectively. Other jobs and a native build were active;
+this is diagnostic evidence, not a controlled performance gate. The previous-production
+comparison remains pending. [All trials](../benchmarks/array-distinct-boolean-wholejob-2026-10-01.csv)
+are retained.
+
+The 200,000-row, 64-element unique STRING comparison failed with a TaskManager
+heartbeat timeout during severe shared-host memory pressure; it yields no timing result.
+A retry uses a 2 GiB heap to bound this diagnostic's resource use. No speedup is inferred
+from the failed run and no timeout or production setting was changed to hide the failure.
