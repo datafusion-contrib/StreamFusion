@@ -349,3 +349,35 @@ are partially recoverable from the task log. The original complete CSV was lost 
 Flink speedup. Runtime SQL checks now pass; whole-job comparisons remain pending.
 
 The environment reset removed temporary benchmark artifacts. Historical links above now point to surviving task-log excerpts; complete raw CSVs and Criterion samples must be regenerated.
+
+## Boolean/string collection whole-job profiles
+
+`DynamicCollectionBenchmark` accepts `collection.type=BOOLEAN|STRING|INT|BIGINT`; the
+existing `collection.int` option retains its default mapping. ARRAY_DISTINCT measurements
+use `collection.expression=ARRAY_DISTINCT(arr)` and `collection.map=false`, retaining the
+runtime row source, blackhole sink, JNI and both transposes. `collection.width` and
+`collection.domain` vary list width and duplicates; strings include Unicode and NUL with
+`collection.bytes` suffix characters. The source reuses an immutable value catalogue equally
+for both engines and constructs each row's array outside the expression evaluation.
+`collection.nullEvery` and `collection.elementNullEvery` control NULL containers and elements,
+with defaults 8 and 7. Set both to zero for unchanged unique-list profiles, where repeated
+NULL elements would otherwise force a gather and hide the lazy-allocation benefit.
+These controls extend the release benchmark; they do not establish a whole-job speedup.
+
+Six 5,003-row fixture smoke checks pass on released Flink 2.2.1: Boolean and string short
+and large lists, repeated wide strings, and truly unique non-null string/integer lists.
+Those one-trial startup-dominated durations validate execution and route assertions only.
+Repeated release performance measurements remain required for the new element types.
+
+## Fixed-binary boundary CPU profile
+
+Released async-profiler 4.5 records 20 seconds of repeated two-million-row native fixed-ELT
+jobs after two warmups, using CPU sampling at 1 ms, production mimalloc, both transposes
+and the runtime source/blackhole sink. Of 30,955 samples, 16,010 have a Flink StreamTask frame.
+The Rust ELT evaluator is the leaf in 174 task samples (1.09%). Row-to-Arrow accounts for
+56.01% inclusive, native Calc including its chained exit 42.88%, and Arrow-to-row including
+its downstream copy 23.77%. These inclusive fractions overlap and must not be added.
+[Profile counts](../benchmarks/fixed-binary-profile-2026-10-01.csv) characterize this workload;
+other shared-host jobs were active, so this is attribution evidence rather than throughput
+admission. The small kernel share redirects copy-removal work toward conversion and copying
+at the row boundaries rather than another ELT kernel rewrite.
