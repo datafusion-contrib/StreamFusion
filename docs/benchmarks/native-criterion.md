@@ -129,7 +129,7 @@ measure multi-source rescaling or compaction. All 48 persistent fixtures pass re
 The largest nullable wide-row fixture requests 3,711 Rust bytes across 68 allocation calls for
 aligned recovery, compared with 4,707,561 bytes across 32,808 calls for key-group rebuild.
 These are different recovery modes, not before/after timings or proof of an avoidable copy.
-[Surviving allocation excerpts](recovered-historical-diagnostics-2026-10-01.txt) are retained; disk/native-worker
+[All 48 regenerated persistent allocation probes](native-followups-probes-2026-10-01.csv) are retained with the expression probes; disk/native-worker
 costs remain outside these counters.
 
 Focused release Criterion means for that 16,384-row fixture are 35.861 ms for clipped rebuild
@@ -159,4 +159,9 @@ The main remaining boundaries are:
 introduce an independent data-plane hot loop. Their operational implementation is measured in its
 owning crate; build tooling and correctness tests are not timed as operators.
 
-The environment reset removed temporary benchmark artifacts. Historical links above now point to surviving task-log excerpts; complete raw CSVs and Criterion samples must be regenerated.
+The environment reset removed temporary benchmark artifacts. Historical timing links above point to surviving task-log excerpts; complete timing samples must be regenerated. Fresh allocation probes are retained below.
+
+A fresh release smoke run on 2026-10-01 passes all 276 fixtures in `binary_expressions`,
+`collection_expressions`, `jvm_truncate`, and `persistent_state`.
+[Regenerated allocation and Arrow-buffer probes](native-followups-probes-2026-10-01.csv)
+cover those fixtures; smoke mode produces no timing evidence.

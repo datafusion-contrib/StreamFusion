@@ -1836,3 +1836,8 @@ and errors on each released line. Exception-message correctness runs retain
 `-XX:-OmitStackTraceInFastThrow`; the `bench` profile normally clears that correctness flag.
 
 Nonfinite DOUBLE TRUNCATE consumer checks compare independent released Flink and native executions, including matching failures when Flink evaluates an otherwise guarded operand. SQL AND/OR optimizations must not be assumed to suppress evaluation.
+
+The recovered release revision passes the complete 54-check selected suite on Flink 1.18.1
+with four unavailable-ELT checks skipped, and the corresponding Flink 2.2.1 checks pass.
+Eleven DOUBLE TRUNCATE runtime checks and nine Boolean/string ARRAY_DISTINCT checks pass on
+both released lines. These are correctness results; performance admission remains pending.
