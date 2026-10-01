@@ -79,7 +79,7 @@ def main():
         details["java_classpath"] = classpath
         details["java_version"] = subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True)
     with (output / "allocations.csv").open("w", newline="") as allocation_file:
-        writer = csv.writer(allocation_file)
+        writer = csv.writer(allocation_file, lineterminator="\n")
         writer.writerow(["package", "suite", "case", "allocation_calls", "requested_bytes", "shared_output_buffer_bytes", "new_output_buffer_bytes"])
         for package, bench in selected:
             command = ["cargo", "bench", "--manifest-path", str(MANIFEST), "--locked", "-p", package, "--bench", bench, "--"]

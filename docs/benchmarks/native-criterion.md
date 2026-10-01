@@ -24,6 +24,7 @@ to a debug profile when collecting timings. Criterion retains its samples and ba
 `native/target/criterion`. The runner writes each suite's combined output, `allocations.csv`, and
 `metadata.json` under a timestamped `native/target/native-benchmarks/` directory, or `--output`.
 Metadata includes commit, dirty status, toolchain, platform, commands, and relevant build settings.
+Allocation CSVs use LF line endings so retained probes produce clean repository diffs.
 For `scalar_registry` and `jvm_truncate`, the runner compiles the production Java classes and resolves
 their released Maven dependencies. The latter also compiles test fixtures: its reference wrapper
 supplies Flink's generated NULL guard around released `struncate`, with the same boxed argument types
