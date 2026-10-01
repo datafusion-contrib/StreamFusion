@@ -108,3 +108,6 @@ harness = false
 name = "collection_expressions"
 harness = false
 
+[[bench]]
+name = "jvm_truncate"
+harness = false

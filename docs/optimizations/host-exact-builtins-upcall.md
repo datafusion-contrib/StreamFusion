@@ -1,6 +1,7 @@
 # Host-exact builtins over the same upcall, with a faster pure-Rust opt-in
 
-**Applies to:** REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts
+**Applies to:** REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts,
+DOUBLE TRUNCATE (under validation)
 
 Builtins whose Rust implementation can diverge from the JVM's — REGEXP_EXTRACT (regex dialects),
 UPPER/LOWER (locale case folding), DATE_FORMAT/EXTRACT over `TIMESTAMP_LTZ` (time-zone database
@@ -101,3 +102,90 @@ SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
 All 91 parser/SQL checks pass on each released Flink line. They cover precisions 0–9, four zones,
 random dates, range limits, pre-epoch fractions, DST, normalization, short fractions, unpadded
 dates, legacy settings, stateful child evaluation, input failures, NULLs and guarded branches.
+
+## Bounded DOUBLE TRUNCATE shortcut
+
+The existing JVM scalar upcall can avoid decimal conversion for DOUBLE TRUNCATE when
+outward-rounded adjacent-double bounds give the same truncated integer. Absolute values
+1 through 1e9 and scales -6 through 6 keep the intermediate integer exactly representable.
+Ambiguous boundaries and values outside that domain use released Flink evaluation. NULL
+handling and row short-circuit/order gates remain in place; the Arrow/JNI bridge is unchanged.
+
+September 30, 2026, JDK 17, Flink 2.2.1, release Criterion, 1,024 sliced non-NULL rows:
+production Rust Calc exports both arguments, invokes Java, imports the Arrow result and disposes
+of it inside measurement. Fixture setup, JVM startup and registration are outside it. Each case
+uses three seconds of warmup and 100 samples over at least five seconds. Reference runs precede
+shortcut runs in one embedded JVM. These are Criterion **means**, with 95% confidence intervals
+partially recovered in the [task-log excerpts](../benchmarks/recovered-historical-diagnostics-2026-10-01.txt).
+
+| Profile | Released Flink upcall | Bounded shortcut | Change |
+| --- | ---: | ---: | ---: |
+| Bounded values, dynamic scales -3 through 3 | 368.029 µs | 168.769 µs | -54.1% |
+| Exact decimal boundaries (fallback) | 316.862 µs | 317.230 µs | +0.1%, overlapping intervals |
+| Values outside the domain (fallback) | 238.473 µs | 232.739 µs | -2.4% |
+
+Both paths request 5,248 Rust bytes across 84 allocation calls and produce a new 8,192-byte
+output payload. Rust counters do not measure Java allocations, so these figures do not quantify
+the avoided decimal objects or copied bytes. All 36 fixtures validate nullable slices and three
+batch sizes; only the six cases above were timed. Exact helper tests pass against released
+Flink 2.2.1 and 1.18.1. Runtime SQL parity now passes on Flink 2.2.1; complete-job comparisons with stock Flink and
+previous StreamFusion remain pending.
+These measurements establish an upcall improvement, not end-to-end acceleration admission.
+
+```sh
+python3 bin/bench-native.py --bench jvm_truncate --smoke
+python3 bin/bench-native.py --bench jvm_truncate --filter '/1024/.*/nulls=false$'
+```
+
+An expanded run registers the production generated Flink expression evaluator alongside the
+reflective reference and shortcut. All 54 fixtures compare exact outputs. JVM generation/opening
+remain outside measurement; the generated evaluator uses the existing imported Arrow-row reader
+inside the production upcall. Same machine, heap, batch size and sampling settings as above, fresh
+JVM, with reference/shortcut/generated cases run in that order. Remeasured means:
+
+| Profile | Reflective Flink | Shortcut | Generated Flink |
+| --- | ---: | ---: | ---: |
+| Bounded values | 351.421 µs | 155.387 µs | 351.387 µs |
+| Decimal boundaries | 326.910 µs | 321.720 µs | 295.411 µs |
+| Outside domain | 227.612 µs | 228.559 µs | 224.495 µs |
+
+The bounded shortcut improves 55.8% against the generated evaluator. Decimal-boundary fallback
+is 8.9% slower than generated evaluation, with disjoint mean confidence intervals: this remains
+an optimization blocker, rather than an admitted default acceleration. The generated path borrows
+Arrow rows, while reflective evaluation materializes argument columns; Java allocations are not
+captured by the Rust counter. All three retain identical 5,248-byte/84-call Rust probes and
+8,192-byte new output payloads. [All nine means and confidence intervals](../benchmarks/recovered-historical-diagnostics-2026-10-01.txt)
+are retained, including unfavorable profiles. The earlier two-way run remains above; movement
+between JVM runs does not establish a code improvement. Whole-job gates remain pending.
+
+### Borrow input rows in the shortcut evaluator
+
+The shortcut now runs inside the existing generated-expression class, using the same imported
+Arrow-row reader as the generated reference. Generated primitive operands call the exact helper
+directly, eliminating reflective argument-column materialization. NULL guards precede the helper;
+an omitted scale is primitive INT zero, with no additional Arrow argument. Lazy consumers and
+multi-failure row programs retain the existing generated row-order path. Comet's owned C Data
+import/evaluate/export contract is unchanged.
+
+Fresh four-way release Criterion run, same configuration and sampling, reference/reflective
+shortcut/generated/borrowed order, 1,024 sliced non-NULL rows, means:
+
+| Profile | Reflective shortcut | Generated Flink | Borrowed shortcut |
+| --- | ---: | ---: | ---: |
+| Bounded values | 167.718 µs | 364.370 µs | 163.116 µs |
+| Decimal boundaries | 315.334 µs | 292.829 µs | 302.161 µs |
+| Outside domain | 226.298 µs | 222.645 µs | 227.079 µs |
+
+Borrowing improves bounded and decimal-boundary times 2.7% and 4.2% over the same-run reflective
+shortcut. Bounded values remain 55.2% faster than generated Flink. Decimal-boundary fallback is
+still 3.2% slower than generated Flink, and outside-domain values 2.0% slower, with disjoint
+confidence intervals. This is partial optimization, not removal of the performance blocker.
+[All twelve means and confidence intervals](../benchmarks/recovered-historical-diagnostics-2026-10-01.txt)
+retain the unfavorable cases. Rust allocation/payload probes remain unchanged and do not count
+Java argument objects. All 72 upcall fixtures pass bit-exact checks. Twenty in-process checks pass
+on Flink 2.2.1; nineteen pass on 1.18.1 with unsupported ELT skipped. They include generated default
+and dynamic scale values, NULLs, signed zero, boundaries and exception messages. Eleven runtime SQL checks pass on Flink 2.2.1, including native CASE/COALESCE results and
+exceptions and the existing AND/OR fallback. Complete-job performance gates remain pending.
+
+
+The environment reset removed temporary benchmark artifacts. Historical links above now point to surviving task-log excerpts; complete raw CSVs and Criterion samples must be regenerated.

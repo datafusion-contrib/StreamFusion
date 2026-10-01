@@ -1040,6 +1040,7 @@ final class RexExpression {
       for (RexNode operand : call.getOperands()) if (!emit(operand)) return false;
       return true;
     }
+    if (isExactDoubleTruncate(call)) return emitExactDoubleTruncate(call);
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
       return emitHostExpression(call, false);
     }
@@ -1729,7 +1730,8 @@ final class RexExpression {
     if (!(node instanceof RexCall call)) {
       return false;
     }
-    return mayFailOnRow(call) || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit);
+    return isExactDoubleTruncate(call) || mayFailOnRow(call)
+        || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit);
   }
 
   private boolean mayFailOnRow(RexCall call) {
@@ -2631,6 +2633,20 @@ final class RexExpression {
     return call.getOperands().stream().anyMatch(RexExpression::containsScalarUdf);
   }
 
+  static boolean isExactDoubleTruncate(RexCall call) {
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE
+        && call.getType().getSqlTypeName() == SqlTypeName.DOUBLE
+        && (call.getOperands().size() == 1 || call.getOperands().size() == 2)
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DOUBLE
+        && (call.getOperands().size() == 1
+            || call.getOperands().get(1).getType().getSqlTypeName() == SqlTypeName.INTEGER);
+  }
+
+  private boolean emitExactDoubleTruncate(RexCall call) {
+    return emitHostExpression(call, false);
+  }
+
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers) {
     fuseConsumers |= needsExactScalarFunction(call);
     if (!validateHostStringInputs(call)) return false;
@@ -2666,10 +2682,13 @@ final class RexExpression {
     FlinkExpressionFunction function;
     Method eval;
     try {
-      function =
-          new FlinkExpressionFunction(
+      var argumentTypes = types.toArray(org.apache.flink.table.types.logical.LogicalType[]::new);
+      function = expression instanceof RexCall generatedCall && isExactDoubleTruncate(generatedCall)
+          ? FlinkExpressionFunction.doubleTruncate(generatedCall, argumentTypes,
+              temporalConfig, expressionClassLoader)
+          : new FlinkExpressionFunction(
               expression,
-              types.toArray(org.apache.flink.table.types.logical.LogicalType[]::new),
+              argumentTypes,
               temporalConfig,
               expressionClassLoader,
               binaryStringResult);
@@ -2719,6 +2738,7 @@ final class RexExpression {
         && (fuseConsumers
             || needsTemporalFunction(call) && nativeUnixTimeFormat(call) == null
             || needsExactPower(call)
+            || isExactDoubleTruncate(call)
             || needsExactScalarFunction(call))) {
       List<RexNode> operands = new ArrayList<>();
       for (RexNode operand : call.getOperands()) {

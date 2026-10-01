@@ -82,6 +82,27 @@ public final class FlinkExpressionFunction extends ScalarFunction
 
   private record Body(Context context, String code, RowType rowType) {}
 
+  static FlinkExpressionFunction doubleTruncate(RexCall call, LogicalType[] argumentTypes,
+      ReadableConfig config, ClassLoader classLoader) {
+    if (!RexExpression.isExactDoubleTruncate(call)) {
+      throw new IllegalArgumentException("unverified DOUBLE TRUNCATE signature");
+    }
+    var context = new Context(config, classLoader);
+    var generator = new ExprCodeGenerator(context, false);
+    generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
+    var value = generator.generateExpression(call.getOperands().get(0));
+    var scale = call.getOperands().size() == 2
+        ? generator.generateExpression(call.getOperands().get(1)) : null;
+    String code = context.reuseInputUnboxingCode() + value.code()
+        + (scale == null ? "" : scale.code())
+        + "\nif (" + value.nullTerm() + (scale == null ? "" : " || " + scale.nullTerm())
+        + ") return null;\nreturn " + ExactDoubleTruncateFunction.class.getCanonicalName()
+        + ".truncate(" + value.resultTerm() + ", "
+        + (scale == null ? "0" : scale.resultTerm()) + ");\n";
+    return new FlinkExpressionFunction(new Body(context, code, null),
+        argumentTypes, config, classLoader);
+  }
+
   private static Body scalarBody(
       RexNode expression,
       LogicalType[] argumentTypes,

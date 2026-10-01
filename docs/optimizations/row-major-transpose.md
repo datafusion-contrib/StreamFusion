@@ -89,5 +89,5 @@ At 20M rows with the same resources, warmup and five-trial method, Boolean TRY_C
 3.337 s native (3.314–3.343) versus 3.228 s Flink (3.186–3.239), or 0.967x. Its identity
 control is 3.829 s native / 3.151 s Flink. That entry-only implementation still trails Flink at the
 larger size; startup alone does not explain the deficit. The subsequent
-[generated exit projection](zero-copy-exit-transpose.md#generated-projection-for-fixed-width-outputs)
+[generated exit projection](zero-copy-exit-transpose.md#generated-projection-for-primitive-and-binary-outputs)
 closes the measured Boolean gap while retaining both conversions.

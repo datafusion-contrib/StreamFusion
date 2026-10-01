@@ -1807,3 +1807,32 @@ This compatibility normalization also applies when an installed planner has nati
 substitutions disabled, so rowwise Flink execution can run the same mixed comparison.
 The Flink 2.2 line uses its released code generator's existing coercion.
 
+### Exact DOUBLE TRUNCATE
+
+`TRUNCATE` with a DOUBLE operand/result and an optional INT scale uses a generated evaluator
+through the existing Arrow-batch JVM scalar bridge. It borrows the imported Arrow rows, avoiding
+reflective argument-column materialization. A bounded shortcut brackets the scaled value using outward-rounded adjacent
+doubles. Only when both bounds truncate to the same exactly representable integer does it avoid
+Flink's decimal conversion. The domain is absolute value 1 through 1e9 and scale -6 through 6;
+ambiguous decimal boundaries and every other value use released Flink `struncate`. This retains
+NULLs, signed-zero results, nonfinite behavior, extreme positions and errors. FLOAT and other
+unverified signatures retain their existing gates. An omitted scale is generated as primitive
+INT zero without another Arrow argument. No incompatible opt-in is used.
+
+CASE and COALESCE retain generated row evaluation when this callback can throw.
+AND/OR consumers retain the existing planner fallback for fallible operands; they preserve
+released Flink's short-circuit behavior. Programs with multiple failing evaluations retain the
+existing row-order gate. This extension is under validation; whole-job comparisons remain pending.
+
+`FollowupExpressionPlanTest` checks runtime-source SQL planning for fixed binary casts/ELT,
+Boolean/string ARRAY_DISTINCT, and DOUBLE TRUNCATE including consumer evaluation and exception behavior. It requires native
+Calc and both transposes without starting a job. Plan checks supplement, rather than replace,
+runtime parity and performance checks. All eight plans pass on Flink 2.2.1 against
+the integrated release library. Seven plans also pass on Flink 1.18.1, with its unavailable
+ELT function skipped. Seven in-process Arrow/JNI ownership tests and three DOUBLE TRUNCATE
+helper/admission tests pass on each line.
+Two generated-evaluator checks additionally validate omitted and dynamic scales, NULLs, bits
+and errors on each released line. Exception-message correctness runs retain
+`-XX:-OmitStackTraceInFastThrow`; the `bench` profile normally clears that correctness flag.
+
+Nonfinite DOUBLE TRUNCATE consumer checks compare independent released Flink and native executions, including matching failures when Flink evaluates an otherwise guarded operand. SQL AND/OR optimizations must not be assumed to suppress evaluation.
