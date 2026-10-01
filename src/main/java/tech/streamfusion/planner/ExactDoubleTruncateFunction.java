@@ -37,6 +37,14 @@ public final class ExactDoubleTruncateFunction extends ScalarFunction {
       if (low == high) {
         return low == 0 ? 0.0 : scale >= 0 ? low / factor : low * factor;
       }
+      if (scale >= 0 && value != 0) {
+        double scaled = value * factor;
+        long coefficient = (long) scaled;
+        // The bounded decimal grid has at most 15 significant digits (1e9 itself is
+        // already dyadic). Require both an integral product and an exact round trip:
+        // this is the canonical decimal value, while adjacent doubles stay ambiguous.
+        if (scaled == coefficient && coefficient / factor == value) return value;
+      }
       return truncateDecimalText(value, scale);
     }
     return SqlFunctionUtils.struncate(value, scale);

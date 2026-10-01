@@ -315,3 +315,58 @@ measurement. The small-fraction native trials span 0.457–0.651 s versus stock 
 so its narrow median difference does not establish the performance gate. Larger magnitudes,
 other scales, nullable/composed jobs and binary boundary regressions remain to be evaluated.
 Keep the PR draft; none of these partial results closes the broad floating-function issue.
+
+
+## Exact bounded decimal-grid identity
+
+At an ambiguous interval and a nonnegative scale, the helper additionally checks
+whether multiplying by the exact power of ten produces an integral coefficient
+and dividing that coefficient back produces the identical input double. Within
+the existing finite magnitude/scale bounds, the coefficient has at most 15
+significant decimal digits except the already-admitted exact power-of-ten endpoint.
+This identifies the canonical decimal grid value without allocating its text.
+Both conditions are required: a rounded integral multiplication alone could admit
+an adjacent double whose canonical decimal truncates differently. Zero continues
+through the existing path to preserve Flink's positive-zero result.
+
+The shortcut retains the released oracle outside its existing bounds and the
+canonical-text parser for unresolved intervals. Its regression samples decimal
+coefficients across every admitted scale and both immediate neighbors/signs,
+including the upper bound; comparison checks output DOUBLE bits against released
+Flink, while the text parser remains independently checked throughout the corpus.
+
+All 19 helper/generated/SQL checks pass on each released line, Flink 2.2.1 and
+1.18.1, including the
+new 105,000 signed grid/neighbor comparisons. All 96 four-way JNI profiles pass
+bit, NULL and schema checks with the new helper class first on the embedded JVM
+classpath. [Allocation probes](../benchmarks/double-truncate-decimal-grid-probes-2026-10-01.csv)
+are retained; these counters exclude JVM allocation and do not establish timing
+or whole-job improvements. Repeated representative whole-job coverage remains
+required before completing the broader floating-function work.
+
+
+The new grid candidate is measured in complete release jobs against stock Flink and
+previous-production `1b1b5ed8` (main plus benchmark foundation, only current fixtures
+copied). Both runs use Flink 2.2.1/JDK 17, release/mimalloc, a 2 GiB heap, parallelism
+one, two million non-null rows, 1,024-row transpose batches, two warmups and five alternating
+trials. Native candidate plans/runtimes include both transposes, JNI and the runtime
+row source/blackhole sink. Previous-version controls explicitly verify expression
+fallback; identity controls still require native execution.
+
+| Input profile | Candidate-run stock median | Candidate native median | Previous fallback median |
+| --- | ---: | ---: | ---: |
+| Non-dyadic decimal boundary (`1000.1`, scale 1, signed) | 0.618441 s | 0.428697 s | 0.643712 s |
+| Small fractions (`0.46`, dynamic scale -3..3, signed) | 0.455085 s | 0.423644 s | 0.448214 s |
+
+For non-dyadic boundaries, same-run speedup is 1.44x; stock trials range
+0.613260–0.627500 s and native 0.413980–0.436568 s. Small fractions yield 1.07x,
+with stock 0.454107–0.476213 s and native 0.421175–0.437192 s. Previous-run stock
+medians are 0.641638 s and 0.449402 s; fallback ranges are 0.636772–0.681802 s
+and 0.440072–0.462538 s respectively. Other host jobs were active, so retain
+[every candidate trial](../benchmarks/double-truncate-decimal-grid-wholejob-candidate-2026-10-01.csv)
+and [every previous-version trial](../benchmarks/double-truncate-decimal-grid-wholejob-previous-2026-10-01.csv).
+These two representative samples beat both required baselines, including production
+conversion costs; they do not validate all signatures or nullable/composed workloads.
+Native identity controls remain slower than stock. Wider-domain fallback profiles,
+consumer workload performance and repeated coverage remain draft gates. Historical
+results above describe earlier helpers and are retained as such.

@@ -89,6 +89,25 @@ class ExactDoubleTruncateFunctionTest {
   }
 
   @Test
+  void decimalGridIdentitiesAndAdjacentDoublesMatchReleasedFlink() {
+    var random = new SplittableRandom(518);
+    for (int scale = 0; scale <= 6; scale++) {
+      long factor = (long) Math.pow(10, scale);
+      long limit = 1_000_000_000L * factor;
+      for (int sample = 0; sample < 2500; sample++) {
+        long coefficient = sample < 10 ? limit - sample : random.nextLong(-limit, limit);
+        double value = coefficient / (double) factor;
+        check(Math.nextDown(value), scale);
+        check(value, scale);
+        check(Math.nextUp(value), scale);
+        check(Math.nextDown(-value), scale);
+        check(-value, scale);
+        check(Math.nextUp(-value), scale);
+      }
+    }
+  }
+
+  @Test
   void preservesSqlNulls() {
     var function = new ExactDoubleTruncateFunction();
     assertNull(function.eval(null, 1));

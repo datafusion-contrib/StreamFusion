@@ -1817,7 +1817,9 @@ Flink's decimal conversion. The domain is finite absolute value at most 1e9 and 
 values below one include a half-unit scale-18 decimal rounding margin in their bounds.
 For nonnegative scales, an integral power-of-two-scaled operand additionally proves the value
 already has at most the requested fractional decimal digits, so it returns unchanged.
-Ambiguous bounded values use the same canonical decimal text as released Flink, retaining
+At ambiguous nonnegative scales, an integral decimal-scaled coefficient whose division
+round-trips to the input proves a canonical bounded decimal-grid identity. Remaining
+ambiguous bounded values use the same canonical decimal text as released Flink, retaining
 its scale-18 HALF_UP rounding carry before truncation without constructing decimal objects.
 Values outside this bounded signature use released Flink `struncate`. This retains
 NULLs, signed-zero results, nonfinite behavior, extreme positions and errors. FLOAT and other
