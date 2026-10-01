@@ -446,3 +446,14 @@ and [restored-projection trials](../benchmarks/fixed-binary-projected-exit-2026-
 retain every measurement, including the unfavorable identity results. The ablation
 is reverted; production source matches the original generated projection. It does
 not resolve the BINARY admission blocker or justify changing the default exit path.
+
+
+A further configured-batch diagnostic retains the restored projection and sets
+`streamfusion.transpose.batchRows=16384`, changing no default. Other query,
+source/sink and measurement settings match the 2 GiB projection experiment.
+ELT medians are 0.322973 s stock and 0.361688 s native (0.89x), still below the
+required stock throughput. Identity medians are 0.280493 s and 0.570996 s, with a
+4.54-second native outlier. [Every larger-batch trial](../benchmarks/fixed-binary-batch16384-2026-10-01.csv)
+is retained; shared-host variation prevents attributing the cross-run difference
+precisely to batching. Larger batches do not resolve this workload's performance
+gate, and the default remains 1,024 rows with the existing latency backstop.
