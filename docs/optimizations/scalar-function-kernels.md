@@ -423,3 +423,26 @@ median therefore fails to demonstrate improvement against either required baseli
 Runs were sequential but other host jobs remained active; [all previous-version trials](../benchmarks/array-distinct-string-unique-previous-2026-10-01.csv)
 are retained rather than treating this cross-run difference as a precise regression
 estimate. The draft performance blocker remains.
+
+
+### Fixed-BINARY exit projection experiment (2026-10-01)
+
+A local ablation at `888f9ba2` removes BINARY/VARBINARY from the generated binary-row
+exit projection, retaining the generic Arrow-backed row and Flink's normal downstream
+copy. This changes only the two type entries in the projection whitelist; it does
+not change row ownership or bypass either transpose. The same release native library
+is retained. Measurements use released Flink 2.2.1/JDK 17, a 2 GiB heap, parallelism
+one, two million rows, 1,024-row batches, two warmups and five alternating trials.
+The query selects `ELT(n,b,X'00112233445566778899AABBCCDDEEFF')` from the fixed-byte
+runtime source into a blackhole row sink; native plan/runtime checks include both
+transposes. Source-matched fixed-byte identity controls are also retained.
+
+With the generic exit, ELT medians are 0.331388 s stock and 0.404879 s native
+(0.82x). Restoring the current generated projection gives 0.287855 s stock and
+0.384462 s native (0.75x). Both lose to stock, and differing stock times plus a
+4.36-second identity outlier expose shared-host variance; these sequential runs do
+not establish a precise projection-only difference. [Generic-exit trials](../benchmarks/fixed-binary-generic-exit-2026-10-01.csv)
+and [restored-projection trials](../benchmarks/fixed-binary-projected-exit-2026-10-01.csv)
+retain every measurement, including the unfavorable identity results. The ablation
+is reverted; production source matches the original generated projection. It does
+not resolve the BINARY admission blocker or justify changing the default exit path.
