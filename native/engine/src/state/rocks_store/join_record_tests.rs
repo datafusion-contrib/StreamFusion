@@ -2,7 +2,7 @@ use super::*;
 use crate::state::rocks_config::FlinkRocksOptions;
 use crate::updating_join::{JoinBucket, JoinStateCodec};
 
-fn config(path: &std::path::Path, ttl_ms: i64) -> RocksStoreConfig {
+pub(super) fn config(path: &std::path::Path, ttl_ms: i64) -> RocksStoreConfig {
     RocksStoreConfig {
         table_dir: path.to_string_lossy().into_owned(),
         max_parallelism: 128,
@@ -250,5 +250,90 @@ fn join_record_profile() {
             drop(store);
             std::fs::remove_dir_all(path).unwrap();
         }
+    }
+}
+
+#[test]
+fn paired_join_buckets_restore_different_payload_sizes_and_ttl() {
+    for ttl_ms in [0, 1000] {
+        let path = std::env::temp_dir().join(format!(
+            "sf-join-raw-roundtrip-{ttl_ms}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        let source = path.join("source");
+        let snapshot = path.join("snapshot");
+        let expected = [(0, 1, 64), (1, 128, 2048), (2, 2, 32)];
+        let (mut left, mut right) = RocksStore::create_pair(
+            config(&source, ttl_ms),
+            ttl_ms,
+            (JoinStateCodec, JoinStateCodec),
+        )
+        .unwrap();
+        left.set_clock(10);
+        right.set_clock(10);
+        for (key, rows, width) in expected {
+            let batch = input(key);
+            let mut encoder = BinaryRowBatchEncoder::new(&batch, &[0], &[-1]);
+            let key = encoder.encode(0);
+            left.insert(ByteKey::from(key), bucket(rows, width));
+            right.insert(ByteKey::from(key), bucket(rows + 1, width + 32));
+        }
+        left.end_bundle().unwrap();
+        right.end_bundle().unwrap();
+        let manifest =
+            RocksStore::checkpoint_pair(&mut left, &mut right, snapshot.to_str().unwrap()).unwrap();
+        drop(left);
+        drop(right);
+        let (mut left, mut right) = RocksStore::open_merged_pair(
+            config(&path.join("restored"), ttl_ms),
+            ttl_ms,
+            (JoinStateCodec, JoinStateCodec),
+            &[(
+                snapshot.to_string_lossy().into_owned(),
+                manifest.snapshot_id,
+            )],
+            0..=127,
+            true,
+            1002,
+        )
+        .unwrap();
+        for (key, rows, width) in expected {
+            let batch = input(key);
+            let mut encoder = BinaryRowBatchEncoder::new(&batch, &[0], &[-1]);
+            let key = encoder.encode(0);
+            left.begin_batch(&batch, &[0], &[-1]).unwrap();
+            right.begin_batch(&batch, &[0], &[-1]).unwrap();
+            for (store, rows, width) in [(&left, rows, width), (&right, rows + 1, width + 32)] {
+                let actual = store.get(key).unwrap();
+                let expected = bucket(rows, width);
+                assert_eq!(actual.len(), expected.len());
+                for (row, meta) in expected {
+                    let restored = actual.get(&row).unwrap();
+                    assert_eq!(restored.count, meta.count);
+                    assert_eq!(restored.num_assoc, meta.num_assoc);
+                    assert_eq!(restored.last_write_ms, meta.last_write_ms);
+                }
+            }
+            left.end_bundle().unwrap();
+            right.end_bundle().unwrap();
+        }
+        if ttl_ms > 0 {
+            left.set_clock(1010);
+            right.set_clock(1010);
+            for (key, _, _) in expected {
+                let batch = input(key);
+                let mut encoder = BinaryRowBatchEncoder::new(&batch, &[0], &[-1]);
+                let key = encoder.encode(0);
+                left.begin_batch(&batch, &[0], &[-1]).unwrap();
+                right.begin_batch(&batch, &[0], &[-1]).unwrap();
+                assert!(left.get(key).is_none());
+                assert!(right.get(key).is_none());
+            }
+        }
+        drop(left);
+        drop(right);
+        std::fs::remove_dir_all(path).unwrap();
     }
 }

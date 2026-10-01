@@ -15,7 +15,8 @@ both proctime windows. An event-time/proctime mismatch between the two sides' wi
 native.
 
 An event-time window join closes each window on the watermark, like the windowed aggregate; a
-proctime window join closes it on a processing-time timer instead.
+proctime window join closes it on a processing-time timer instead. Watermarks and bounded-input
+completion do not fire an unfinished processing-time window.
 
 ## Falls back to Flink when
 

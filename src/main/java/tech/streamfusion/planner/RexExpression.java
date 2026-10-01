@@ -177,6 +177,10 @@ final class RexExpression {
 
   private RexExpression() {}
 
+  boolean requiresWholeStructInputs() {
+    return rowFusion;
+  }
+
   /**
    * Records the first decline reason and returns false, so callers can {@code return reject(...)}.
    */

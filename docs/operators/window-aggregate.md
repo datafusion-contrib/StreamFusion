@@ -7,6 +7,11 @@ and the two-phase local/global split — and the windowing-TVF operator that ass
 window(s) ahead of a downstream consumer (an aggregate, a [window join](joins/window-join.md), or
 window Top-N/dedup).
 
+Grouping-only windows (a windowed `GROUP BY` without aggregate calls) retain each distinct group
+on disk as well as in memory. RocksDB persists their window bounds even though there are no
+accumulator columns; duplicate groups, watermark firing, and checkpoint recovery preserve the
+same output as the memory backend.
+
 ## Mixed aggregates and AVG partials
 
 SUM, MIN, MAX, COUNT and AVG can share a window and read the same or different numeric columns.
@@ -215,6 +220,12 @@ timer, so a firing emits only the sessions the clock has truly left behind by a 
 Proctime support is currently **single-phase only**: a single-phase `TUMBLE`/`HOP`/`CUMULATE` whose
 slide divides its size, or a single-phase `SESSION`. The two-phase local/global split is not yet on
 the processing-time-timer path.
+
+Watermarks, including the terminal `Long.MAX_VALUE` watermark of a bounded source, do not
+fire processing-time windows. Completing bounded input also leaves an unfinished window open,
+as in Flink; completion cannot substitute for advancing the processing-time clock. Checkpoints
+preserve the open state and processing-time timer deadline for recovery. This applies to fixed
+and session windows with either memory or disk state.
 
 Because proctime results depend on wall-clock timing, they are non-deterministic — routing and
 execution are tested, but the result is not byte-compared against Flink.
@@ -549,3 +560,10 @@ blackhole sink remain in the measured path.
 
 These standalone native plans are slower than Flink. The boundary correction is required for
 correctness of the existing native path; these results do not establish a performance benefit.
+
+
+The legacy `TUMBLE_PROCTIME` SQL property regression keeps an ongoing input alive
+until a clock timer emits a completed window, and checks materialization in both
+stock and native execution. Bounded input completion is not a substitute for that
+timer; fixed-clock operator tests separately verify that finish and terminal
+watermarks leave processing-time windows open.

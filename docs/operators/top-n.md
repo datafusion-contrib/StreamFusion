@@ -291,8 +291,9 @@ first or last row per key per window. Both are native for **event-time and proct
 the windowing TVF assigns each row to the window(s) covering its rowtime (or, under proctime, the
 operator's clock), and the rank operator closes each window on the same chained
 processing-time-timer model as the [window aggregate](window-aggregate.md) — the slide must divide
-the size. As with the other proctime-driven window operators, this is non-deterministic, so it's
-tested for routing/execution but not byte-compared to the host.
+the size. Watermarks and bounded-input completion leave unfinished processing-time windows
+open; only their processing-time timers fire them. As with the other proctime-driven window
+operators, this is non-deterministic, so it's tested for routing/execution but not byte-compared to the host.
 
 For plain `TIMESTAMP` rowtime, window start/end remain wall-clock values regardless of the session
 zone. A window dedup keep-last replaces a candidate with an equal rowtime; keep-first and general

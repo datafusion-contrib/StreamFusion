@@ -136,6 +136,31 @@ class NativeColumnarSessionWindowAggregateOperatorTest {
     }
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void processingTimeSessionIgnoresWatermarksAndCompletionBeforeItsGap(boolean rocks)
+      throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        var harness = rawKeyedHarness(true)) {
+      if (rocks)
+        harness.setStateBackend(
+            new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+                .createFromConfig(
+                    new org.apache.flink.configuration.Configuration(),
+                    getClass().getClassLoader()));
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.setProcessingTime(100);
+      harness.processElement(new StreamRecord<>(batch(allocator, event(7, 9000))));
+      harness.processWatermark(new Watermark(9000));
+      harness.processWatermark(Watermark.MAX_WATERMARK);
+      harness.getOperator().finish();
+      assertEquals(List.of(), collect(harness));
+      harness.setProcessingTime(600);
+      assertEquals(List.of(row(7, 100, 600)), collect(harness));
+    }
+  }
+
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
       rawKeyedHarness() throws Exception {
     return rawKeyedHarness(false);

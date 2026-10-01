@@ -11,17 +11,18 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  * Columnar single-phase window aggregation: the same native aggregator as {@link
  * NativeWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows, and
  * emitting Arrow batches ({@code [key?, agg…, window_start, window_end]}). The whole operator is
- * Arrow → Arrow; a rowwise sink downstream is reached through the dedicated
- * {@code ArrowToRowDataOperator} the planner inserts at the island perimeter.
+ * Arrow → Arrow; a rowwise sink downstream is reached through the dedicated {@code
+ * ArrowToRowDataOperator} the planner inserts at the island perimeter.
  *
  * <p>Event-time windows assign each row by its rowtime column and fire on a watermark (the core's
- * default). A **proctime** window instead assigns every row in a batch to the window(s) covering the
- * operator's current processing time (Flink's processing-time assigner uses the clock, not a row
- * value) and fires on a processing-time timer at each window's end — so a closed window is emitted
- * when wall-clock passes its boundary even with no further input. Hopping and cumulative windows leave
- * several windows open at once, so the timer chains: each firing schedules the next slide boundary
- * until the clock has passed the latest open window's end. Remaining open windows are flushed when
- * the (bounded) input finishes.
+ * default). A **proctime** window instead assigns every row in a batch to the window(s) covering
+ * the operator's current processing time (Flink's processing-time assigner uses the clock, not a
+ * row value) and fires on a processing-time timer at each window's end — so a closed window is
+ * emitted when wall-clock passes its boundary even with no further input. Hopping and cumulative
+ * windows leave several windows open at once, so the timer chains: each firing schedules the next
+ * slide boundary until the clock has passed the latest open window's end. Watermarks and
+ * bounded-input completion do not fire processing-time windows; their registered timers remain the
+ * authority.
  */
 public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperatorCore
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
@@ -253,14 +254,6 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     return cumulative
         ? Math.floorDiv(now, windowMillis) * windowMillis + windowMillis
         : Math.floorDiv(now, slideMillis) * slideMillis + windowMillis;
-  }
-
-  @Override
-  public void finish() throws Exception {
-    if (proctime) {
-      emitClosedWindows(Long.MAX_VALUE); // end of input: close every remaining window
-    }
-    super.finish();
   }
 
   @Override
