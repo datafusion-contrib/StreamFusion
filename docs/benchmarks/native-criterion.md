@@ -113,7 +113,7 @@ Some historical suites use
 | Avro decode | `avro_decode` | Bare and Confluent framing, wide strings |
 | Protobuf decode | `protobuf_decode` | Direct descriptor-based decode, primitive/string fields, wide strings |
 | Sink format encoding | `format_encode`, `kafka_sink` | Production JSON, CSV, raw, Avro, Confluent Avro, Protobuf; historical JSON/timestamp comparisons |
-| Parquet file operations | `parquet_io` | Production encode, selected-row encode, ordinary decode, nullable wide strings |
+| Parquet file operations | `parquet_io` | Production encode, selected-row encode, ordinary decode, paired INT96 decode, nullable wide strings and full-range timestamps |
 | ORC post-decode normalization | `normalization` | CHAR trimming, string pass-through, full-range timestamp conversion |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
 
@@ -152,7 +152,8 @@ The main remaining boundaries are:
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
-  Parquet fixtures currently use ordinary timestamp encoding, not the paired INT96 reader.
+  Parquet INT96 fixtures cover paired decoding from an in-memory file; host filesystem callbacks
+  and nested timestamp profiles remain unmeasured.
 - Codec option/type combinations, CDC envelopes, nested encoder profiles, temporal arithmetic,
   decimal division, and parameterized scalar variants beyond the listed witnesses need additional cases. Registry completeness covers the factory, not all Calc opcodes.
 
@@ -219,3 +220,48 @@ matching lookup interfaces and before/after measurements across duplicate and
 unique keys before being called an improvement. The allocation totals above
 include additional encoding/filtering work and cannot be attributed entirely
 to this clone.
+
+
+## Parquet paired INT96 profiles
+
+The Parquet suite adds 24 INT96 profiles: 16, 1,024 and 16,384 rows, nullable and
+non-null timestamp values, ordinary and selected-row encoding, and decoding with
+17-row and 1,024-row batches. Timestamp fixtures include year 1, year 9999,
+negative and positive epoch neighbors, and sub-millisecond fractions through
+999,999 nanoseconds. The short decode batches force partial tails and alignment
+between the millisecond and fractional readers. Every encoded profile is decoded
+and checked for exact timestamp components, NULLs, row order and the companion
+integer column; both decode batch sizes check the entire concatenated output.
+
+Fixtures use the production INT96 encoder and the paired readers plus component
+merge used by production decoding. The adapter retains schema reconstruction and
+owns an in-memory file copy inside measurement. This measures Rust encode/decode
+and conversion work, including both readers; it does not measure Java-owned
+filesystem callbacks, JNI export, or whole-job throughput. Existing plain-file
+profiles retain their behavior. Retained timing claims require a quiet-host
+release run; smoke checks provide only fixture and allocation evidence.
+
+Run `python3 bin/bench-native.py --bench parquet_io --filter int96 --smoke` to
+validate the profiles, then omit `--smoke` to retain timing samples.
+
+
+Decoder inputs are canonical INT96 files prepared with the released low-level
+Parquet writer outside measurement, including negative sub-millisecond epoch
+neighbors. Production encoder round trips use zero fractional remainder for
+negative non-day-aligned timestamps. This is an explicit Flink wire-format limit:
+the UTC writer uses Java division/remainder toward zero and can write a negative
+nanosecond-of-day; released Flink's reader rejects a negative remainder.
+A release oracle call to `TimestampColumnReader.int96ToTimestamp(true, -999999,
+2440588)` throws `IllegalArgumentException`, and the matching native merge rejects
+that same value. The initial benchmark exposed this matching failure; it does not
+justify accepting a value that Flink rejects. Canonical decoder fixtures keep the
+full negative-fraction coverage, while encoder profiles measure readable Flink
+output. Local-time conversion and failure-path throughput remain outside these
+profiles.
+
+All 24 new INT96 profiles and the 27 existing Parquet profiles pass release smoke
+checks on 2026-10-01. [All 51 allocation probes](parquet-int96-probes-2026-10-01.csv)
+are retained. At 16,384 nullable rows, paired decoding requests 5,305,611 Rust
+bytes with 17-row output batches and 1,882,535 bytes with 1,024-row batches.
+These profile differences include per-batch reader/output overhead and do not
+measure a new optimization or whole-job improvement.
