@@ -34,3 +34,5 @@ pub extern "system" fn Java_tech_streamfusion_format_avro_NativeAvroFormat_liveN
 ) -> jstring {
     streamfusion_bridge::live_handles_probe(env)
 }
+
+pub mod bench;

@@ -31,3 +31,5 @@ pub extern "system" fn Java_tech_streamfusion_format_csv_NativeCsvFormat_liveNat
 ) -> jstring {
     streamfusion_bridge::live_handles_probe(env)
 }
+
+pub mod bench;
