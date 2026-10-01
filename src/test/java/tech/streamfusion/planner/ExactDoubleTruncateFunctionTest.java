@@ -45,6 +45,50 @@ class ExactDoubleTruncateFunctionTest {
   }
 
   @Test
+  void dyadicBoundariesAndTheirNeighborsMatchReleasedDecimalRounding() {
+    var random = new SplittableRandom(219);
+    for (int bits = 0; bits <= 6; bits++) {
+      for (int i = 0; i < 1000; i++) {
+        double value = random.nextInt(-1000000000, 1000000001) / (double) (1 << bits);
+        for (int scale = 0; scale <= 6; scale++) {
+          check(Math.nextDown(value), scale);
+          check(value, scale);
+          check(Math.nextUp(value), scale);
+        }
+      }
+    }
+    for (double value : new double[] {1000.1, -1000.1, 1e9, -1e9}) {
+      for (int scale = 0; scale <= 6; scale++) check(value, scale);
+    }
+  }
+
+  @Test
+  void smallValuesIncludeTheReleasedScaleEighteenRoundingMargin() {
+    for (double value : new double[] {
+        -0.0, 0.0, Double.MIN_VALUE, -Double.MIN_VALUE,
+        0.5e-18, -0.5e-18, 1.5e-18, -1.5e-18,
+        0.46, -0.46, 0.1, -0.1, 1e-6, -1e-6, 1.0, -1.0}) {
+      for (int scale = -6; scale <= 6; scale++) {
+        check(Math.nextDown(value), scale);
+        check(value, scale);
+        check(Math.nextUp(value), scale);
+      }
+    }
+  }
+
+  @Test
+  void decimalTextBoundariesPreserveRoundingCarryBeforeTruncation() {
+    for (int scale = 0; scale <= 6; scale++) {
+      for (int coefficient = -20; coefficient <= 20; coefficient++) {
+        double value = coefficient / Math.pow(10, scale);
+        check(Math.nextDown(value), scale);
+        check(value, scale);
+        check(Math.nextUp(value), scale);
+      }
+    }
+  }
+
+  @Test
   void preservesSqlNulls() {
     var function = new ExactDoubleTruncateFunction();
     assertNull(function.eval(null, 1));
@@ -61,6 +105,11 @@ class ExactDoubleTruncateFunctionTest {
               failure.getClass(), () -> ExactDoubleTruncateFunction.truncate(value, scale));
       assertEquals(failure.getMessage(), actual.getMessage());
       return;
+    }
+    if (Double.isFinite(value) && Math.abs(value) <= 1e9 && scale >= -6 && scale <= 6) {
+      assertEquals(Double.doubleToLongBits(expected),
+          Double.doubleToLongBits(ExactDoubleTruncateFunction.truncateDecimalText(value, scale)),
+          () -> "decimal text " + value + " at scale " + scale);
     }
     assertEquals(
         Double.doubleToLongBits(expected),

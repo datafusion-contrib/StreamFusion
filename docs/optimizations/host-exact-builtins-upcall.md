@@ -107,8 +107,10 @@ dates, legacy settings, stateful child evaluation, input failures, NULLs and gua
 
 The existing JVM scalar upcall can avoid decimal conversion for DOUBLE TRUNCATE when
 outward-rounded adjacent-double bounds give the same truncated integer. Absolute values
-1 through 1e9 and scales -6 through 6 keep the intermediate integer exactly representable.
-Ambiguous boundaries and values outside that domain use released Flink evaluation. NULL
+at most 1e9 and scales -6 through 6 keep the intermediate integer exactly representable.
+Small values include the scale-18 rounding margin, dyadic identities return directly, and
+ambiguous intervals parse canonical decimal text without decimal objects. Values outside this
+domain use released Flink evaluation. Historical measurements below precede these followups. NULL
 handling and row short-circuit/order gates remain in place; the Arrow/JNI bridge is unchanged.
 
 September 30, 2026, JDK 17, Flink 2.2.1, release Criterion, 1,024 sliced non-NULL rows:
@@ -250,3 +252,43 @@ Previous native-enabled medians are 0.939 s (cast), 0.350 s (ELT), 0.774 s (boun
 TRUNCATE beats both references, while every other listed profile still requires optimization.
 The native identity controls are verified separately rather than bypassing all route assertions.
 Linux/Core i7-12650H, Rust 1.94.0 and JDK 17; the native library uses production mimalloc.
+
+## Exact dyadic boundary shortcut
+
+Within the existing absolute-value 1..1e9 and scale 0..6 domain, multiplication by `2^scale`
+is exact and remains below `2^53`. If that result is an integer, the operand has at most
+`scale` fractional decimal digits. Flink's scale-18 decimal conversion and truncation therefore
+leave it unchanged. This avoids unnecessary decimal fallback at half-integer and other dyadic
+boundaries without treating arbitrary decimal boundaries as exact.
+
+The helper regression compares all scales and immediate neighbors of 7,000 sampled dyadic
+operands against released Flink, in addition to the existing random/raw-bit/domain tests.
+The JNI suite now adds `decimal_ambiguous` inputs ending in .1, while retaining half-integer
+`decimal_boundary` inputs. Four evaluators, four profiles, three sizes and two NULL profiles
+produce 96 fixtures. Whole-job `DOUBLE_TRUNCATE_AMBIGUOUS` retains the non-dyadic ambiguous-interval
+control. The older 72-fixture results and unfavorable whole-job measurements above
+remain historical evidence for the revision before this shortcut, not claims for the new one.
+
+The revised bound also covers finite magnitudes below one, including zero and subnormals.
+It extends each adjacent-double interval outward by half a scale-18 decimal unit before
+multiplication/division, then rounds the arithmetic outward again. This brackets Flink's
+decimal conversion rounding; equality of the two truncated integers remains required.
+Zero results explicitly return positive zero. Nonfinite values, larger magnitudes, extreme
+scales and ambiguous bounds still use the released implementation. The historical
+`outside_domain`/`DOUBLE_TRUNCATE_OUTSIDE` profile retains its 0.46 input for comparison;
+it now denotes values outside the original domain, rather than the expanded domain.
+
+Ambiguous bounded intervals now parse the canonical `Double.toString` text that released
+Flink passes to `BigDecimal.valueOf`. The retained coefficient has at most 16 digits in this
+domain, so it fits an exact double integer. Before truncation, the parser preserves Flink's
+scale-18 HALF_UP carry: only omitted digits consisting entirely of nines followed by a rounding
+digit at position 19 can increment the retained coefficient. It then divides/multiplies by the
+same exact power of ten and returns positive zero for a zero coefficient. This avoids decimal
+objects without assuming decimal-grid arithmetic is exact. Other signatures and domains keep
+released fallback. Boundary and immediate-neighbor tests cover scientific notation, signs and
+small values that round across a scale-6 boundary before truncation.
+
+All 96 expanded JNI fixtures pass exact DOUBLE-bit, NULL and schema comparisons against
+released Flink. Eighteen helper/generated/runtime-SQL checks pass on each released line.
+The canonical-text path is additionally compared directly against Flink throughout the
+bounded helper corpus, even where the interval shortcut would normally avoid that path.

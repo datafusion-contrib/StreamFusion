@@ -137,7 +137,12 @@ fn run(c: &mut Criterion) {
     header();
     let mut group = c.benchmark_group("jvm_truncate");
     for rows in [16, 1024, 16384] {
-        for profile in ["bounded", "decimal_boundary", "outside_domain"] {
+        for profile in [
+            "bounded",
+            "decimal_boundary",
+            "decimal_ambiguous",
+            "outside_domain",
+        ] {
             for nullable in [false, true] {
                 let values: ArrayRef = Arc::new(Float64Array::from_iter((0..rows + 1).map(|i| {
                     if nullable && i % 7 == 0 {
@@ -148,6 +153,7 @@ fn run(c: &mut Criterion) {
                             sign * match profile {
                                 "bounded" => 1000.12345 + (i % 10000) as f64,
                                 "decimal_boundary" => 1000.5 + (i % 10000) as f64,
+                                "decimal_ambiguous" => 1000.1 + (i % 10000) as f64,
                                 _ => 0.46,
                             },
                         )
@@ -157,11 +163,13 @@ fn run(c: &mut Criterion) {
                     if nullable && i % 11 == 0 {
                         None
                     } else {
-                        Some(if profile == "decimal_boundary" {
-                            1
-                        } else {
-                            (i % 7) as i32 - 3
-                        })
+                        Some(
+                            if matches!(profile, "decimal_boundary" | "decimal_ambiguous") {
+                                1
+                            } else {
+                                (i % 7) as i32 - 3
+                            },
+                        )
                     }
                 })));
                 let batch = RecordBatch::try_from_iter([("value", values), ("scale", scales)])

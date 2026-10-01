@@ -70,6 +70,7 @@ class ScalarFunctionBenchmark {
       List.of(
           new Query("DOUBLE_TRUNCATE_BOUNDED", "tt_double_bounded", "TRUNCATE(n,s)", "DOUBLE"),
           new Query("DOUBLE_TRUNCATE_BOUNDARY", "tt_double_boundary", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_AMBIGUOUS", "tt_double_ambiguous", "TRUNCATE(n,s)", "DOUBLE"),
           new Query("DOUBLE_TRUNCATE_OUTSIDE", "tt_double_outside", "TRUNCATE(n,s)", "DOUBLE"),
           new Query("EXACT_ABS_BIGINT", "bigint", "ABS(n)", "BIGINT"),
           new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),

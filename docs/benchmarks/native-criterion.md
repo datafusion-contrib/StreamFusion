@@ -173,3 +173,9 @@ also pass their fixtures but do not emit allocation records.
 [Remaining operation probes](native-operation-probes-2026-10-01.csv) retain codec, handoff,
 Calc, stateful-operator, key/checkpoint and file-operation diagnostics. These are production
 boundary witnesses, not exhaustive coverage of all types, options, recovery modes or callbacks.
+
+The dyadic-shortcut revision adds a non-dyadic `decimal_ambiguous` JNI profile, increasing
+that suite from 72 to 96 fixtures. Historical counts and probes above describe the earlier
+revision; all 96 profiles pass the released-Flink bit/schema/NULL comparisons.
+[Expanded JNI probes](double-truncate-expanded-probes-2026-10-01.csv) are retained. Timing
+comparisons for the revised helper remain pending.

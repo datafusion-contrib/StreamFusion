@@ -1813,8 +1813,13 @@ The Flink 2.2 line uses its released code generator's existing coercion.
 through the existing Arrow-batch JVM scalar bridge. It borrows the imported Arrow rows, avoiding
 reflective argument-column materialization. A bounded shortcut brackets the scaled value using outward-rounded adjacent
 doubles. Only when both bounds truncate to the same exactly representable integer does it avoid
-Flink's decimal conversion. The domain is absolute value 1 through 1e9 and scale -6 through 6;
-ambiguous decimal boundaries and every other value use released Flink `struncate`. This retains
+Flink's decimal conversion. The domain is finite absolute value at most 1e9 and scale -6 through 6;
+values below one include a half-unit scale-18 decimal rounding margin in their bounds.
+For nonnegative scales, an integral power-of-two-scaled operand additionally proves the value
+already has at most the requested fractional decimal digits, so it returns unchanged.
+Ambiguous bounded values use the same canonical decimal text as released Flink, retaining
+its scale-18 HALF_UP rounding carry before truncation without constructing decimal objects.
+Values outside this bounded signature use released Flink `struncate`. This retains
 NULLs, signed-zero results, nonfinite behavior, extreme positions and errors. FLOAT and other
 unverified signatures retain their existing gates. An omitted scale is generated as primitive
 INT zero without another Arrow argument. No incompatible opt-in is used.
