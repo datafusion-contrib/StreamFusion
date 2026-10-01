@@ -166,3 +166,10 @@ A fresh release smoke run on 2026-10-01 passes all 276 fixtures in `binary_expre
 `collection_expressions`, `jvm_truncate`, and `persistent_state`.
 [Regenerated allocation and Arrow-buffer probes](native-followups-probes-2026-10-01.csv)
 cover those fixtures; smoke mode produces no timing evidence.
+
+The remaining 20 discovered suites also pass release smoke checks on the integrated revision.
+Together, the 24 suites produce 2,574 allocation-probe records; historical timing-only suites
+also pass their fixtures but do not emit allocation records.
+[Remaining operation probes](native-operation-probes-2026-10-01.csv) retain codec, handoff,
+Calc, stateful-operator, key/checkpoint and file-operation diagnostics. These are production
+boundary witnesses, not exhaustive coverage of all types, options, recovery modes or callbacks.
