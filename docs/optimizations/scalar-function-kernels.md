@@ -401,3 +401,25 @@ The 200,000-row, 64-element unique STRING comparison failed with a TaskManager
 heartbeat timeout during severe shared-host memory pressure; it yields no timing result.
 A retry uses a 2 GiB heap to bound this diagnostic's resource use. No speedup is inferred
 from the failed run and no timeout or production setting was changed to hide the failure.
+
+
+The 2 GiB retry completes with all plan/runtime checks: stock median 7.360150 s
+(range 6.975453–8.098612 s), native median 7.358441 s (6.813871–9.192524 s),
+effectively 1.00x. It uses 200,000 rows, 64 unique non-null strings per array,
+264 suffix bytes plus the UTF-8/NUL/index prefix, two warmups and five alternating
+trials. All other settings match the Boolean diagnostic. Other jobs were active;
+[all retry trials](../benchmarks/array-distinct-string-unique-wholejob-2026-10-01.csv)
+are retained. Reduced native gather allocations alone have not demonstrated an
+end-to-end win for this wide unique-string workload. Do not promote the draft
+admission based on the allocation witness.
+
+
+The matching previous-production run uses `1b1b5ed8` (production main plus benchmark
+foundation), with only the current fixture copied into the checkout. Planner and
+runtime checks confirm the string expression falls back. The same 2 GiB configuration
+produces stock median 7.418640 s (7.032609–8.228943 s) and previous StreamFusion
+fallback median 6.951133 s (6.761622–7.371126 s). Candidate native's 7.358441 s
+median therefore fails to demonstrate improvement against either required baseline.
+Runs were sequential but other host jobs remained active; [all previous-version trials](../benchmarks/array-distinct-string-unique-previous-2026-10-01.csv)
+are retained rather than treating this cross-run difference as a precise regression
+estimate. The draft performance blocker remains.

@@ -1,0 +1,11 @@
+revision,element_type,rows,width,domain,container_null_every,element_null_every,engine,trial,seconds
+d19d21a0,STRING,200000,64,64,0,0,stock_flink,1,7.360150242
+d19d21a0,STRING,200000,64,64,0,0,stock_flink,2,6.975452885
+d19d21a0,STRING,200000,64,64,0,0,stock_flink,3,7.490695882
+d19d21a0,STRING,200000,64,64,0,0,stock_flink,4,8.098612125
+d19d21a0,STRING,200000,64,64,0,0,stock_flink,5,7.2199075
+d19d21a0,STRING,200000,64,64,0,0,candidate_native,1,6.887664887
+d19d21a0,STRING,200000,64,64,0,0,candidate_native,2,6.813870935
+d19d21a0,STRING,200000,64,64,0,0,candidate_native,3,9.192523741
+d19d21a0,STRING,200000,64,64,0,0,candidate_native,4,8.65610001
+d19d21a0,STRING,200000,64,64,0,0,candidate_native,5,7.358440608

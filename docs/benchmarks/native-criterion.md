@@ -210,3 +210,12 @@ profile requests 2,124,664 bytes across 32,846 calls despite producing an empty 
 These counters identify input-side encoding/allocation work for further investigation;
 they do not establish how much can be removed or quantify database-worker costs. Timing
 claims await controlled sequential release measurements.
+
+The current arrival path encodes one owned key buffer per input row, then clones
+those owned keys into a sorted/deduplicated probe list. Because the key wrapper
+owns a boxed byte slice, this clone copies key payloads, not just references.
+Borrowing the distinct probe keys is a concrete follow-up candidate; it needs
+matching lookup interfaces and before/after measurements across duplicate and
+unique keys before being called an improvement. The allocation totals above
+include additional encoding/filtering work and cannot be attributed entirely
+to this clone.
