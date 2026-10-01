@@ -336,14 +336,6 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
         : Math.floorDiv(now, slideMillis) * slideMillis + windowMillis - 1;
   }
 
-  @Override
-  public void finish() throws Exception {
-    if (proctime) {
-      flush(Long.MAX_VALUE); // end of input: close every remaining window
-    }
-    super.finish();
-  }
-
   /** Hands a batch to its side of the joiner, which buffers it (no output until a watermark). */
   private void buffer(ArrowBatch batch, boolean left) {
     VectorSchemaRoot in = batch.root();

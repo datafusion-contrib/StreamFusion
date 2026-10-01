@@ -10,6 +10,7 @@
 pub(crate) mod interval_buffer;
 #[cfg(test)]
 mod join_record_tests;
+pub(crate) mod join_store;
 pub(crate) mod keep_first_dedup_store;
 pub(crate) mod over_agg_store;
 pub(crate) mod session_agg_store;
@@ -481,6 +482,8 @@ impl<C: RocksStateCodec> RocksStore<C> {
             &[
                 (Some(PAIR_FIRST_TABLE), config.ttl_ms),
                 (Some(PAIR_SECOND_TABLE), second_ttl_ms),
+                (Some(PAIR_FIRST_TABLE + 2), config.ttl_ms),
+                (Some(PAIR_SECOND_TABLE + 2), second_ttl_ms),
             ],
         )?;
         let first = Self::attach(&opened, config, codecs.0, Some(PAIR_FIRST_TABLE))?;

@@ -70,3 +70,71 @@ change still needs per-row TTL, count/degree and retraction parity, old incremen
 reading, canonical savepoints, both rescale directions and both released Flink test lines. No
 such semantics or migration support is claimed for this diagnostic. Keep current formats and
 recovery behavior until that design demonstrates a material net benefit.
+
+## Q23 Kafka-to-Paimon profile, 2026-09-29
+
+A Flink 1.18.1 release-build Nexmark run with 2M Kafka events, Paimon append sink,
+disk state, parallelism four, mini-batching disabled, equal 512 MiB managed memory,
+and equal 3 GiB JVM heap limits reproduced a whole-bucket bottleneck. The initial
+measured best times were 12.709 s stock versus 22.114 s native (0.57×), with
+5,520,000 output rows on both sides. This WSL2 host had concurrent workloads;
+retain both trials and remeasure on an idle host before attributing all wall-clock
+variation to the implementation.
+
+The matched native CPU profile placed about 73% of samples under join ingestion
+and 68% under immediate join processing. Self samples included approximately
+18% Snappy decompression and 5% Snappy compression, plus allocation, copying,
+hashing, and bucket destruction. The current `begin_batch` hydrates both whole
+input-side and opposite-side buckets; `end_bundle` serializes dirty buckets and
+clears both working sets, repeating this work on the next Arrow batch.
+
+This is evidence to investigate the selective access pattern in the reopen
+conditions above, not justification for adopting the rejected full-hydration
+record prototype. A production redesign must point-read changed input rows,
+stream opposite-side records into bounded output chunks, and persist only changed
+record metadata. Duplicate counts, unique-key replacement, association degrees,
+per-row TTL, retractions, and uncommitted same-batch updates must remain visible.
+The old bucket checkpoints must remain readable, canonical savepoints must retain
+their logical format, and clipping must preserve key-group ownership in both
+rescale directions. An unbounded resident cache, increased memory budget,
+mini-batch activation, or changed Nexmark SQL does not satisfy this investigation.
+
+A partial bucket cannot be substituted silently behind `KeyedStateStore<JoinBucket>`:
+its `remove`/empty-bucket contract assumes the complete multiset is resident. Retracting
+the final *probed* row must not erase unrelated committed rows, while a planner-proven
+unique-key replacement must erase the complete prior key range. A selective store needs
+an explicit record-access contract that distinguishes these operations. For INNER joins,
+only the input side changes during an immediate Arrow batch; the opposite side can be
+read as a stable bounded cursor. Degree-bearing outer/semi/anti joins additionally need
+journal-aware opposite-side updates. Retaining the current verified path for those
+families is preferable to claiming untested partial-state semantics.
+
+A matched release experiment reusing the raw serializer's temporary buffer within
+writeback was rejected. Stock measured 24.502/18.157 s and native 48.117/22.038 s,
+with equal 5,520,000 output rows. The native best time did not improve versus
+21.838/22.435 s before; the change was reverted. A new paired-store checkpoint/TTL
+round-trip test was retained as useful recovery coverage. The full native Rust
+suite passed (558 tests, one ignored diagnostic), and the Q7/Q12 regression suite
+passed 114 tests on each released Flink line. Those correctness results do not
+resolve the Q23 performance issue.
+
+## Selective access implementation (2026-09-30)
+
+The storage-only rejection above remains valid. A new immediate-INNER path uses
+input record point lookups, bounded opposite-side reuse, and lazy record scans; it
+does not hydrate full input buckets. Old-checkpoint migration, canonical backend
+transitions, key-group split/merge, counts, unique replacement, NULL policies, and
+per-side TTL have regression coverage. The matched Q23 Kafka/Paimon disk run
+measured stock 11.339/13.016 s and native 4.055/4.084 s (2.80× best), with identical
+5,520,000 row counts. The full 23-query rerun passed with matching output counts
+and faster native timings (2.46× geometric mean); Q23 measured 4.95× best in that
+run, with substantial stock timing variability. See the live
+technique in `docs/optimizations/rocksdb-write-through.md` and retained trial CSV.
+
+
+The September 30 controlled cache/layout diagnostic retains unfavorable cases:
+unique-key inputs favored the bucket store, and a 50,000-row group exceeded the
+production cache allowance and paid repeated scans. The memory cap is a resource
+safeguard, not the mechanism removing whole-group write amplification. See
+`docs/optimizations/rocksdb-write-through.md` for all policies and raw trials.
+The original rejection of unconditional full hydration remains applicable.

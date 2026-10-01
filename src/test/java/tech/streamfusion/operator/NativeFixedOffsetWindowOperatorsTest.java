@@ -170,6 +170,40 @@ class NativeFixedOffsetWindowOperatorsTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void processingTimeRankDoesNotFireOnBoundedCompletion(boolean rocks) throws Exception {
+    try (var harness = rank(0, true, rocks)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.setProcessingTime(500);
+      harness.processElement(new StreamRecord<>(batch(0, 7)));
+      harness.processWatermark(Watermark.MAX_WATERMARK);
+      harness.getOperator().finish();
+      assertEquals(List.of(), collect(harness.getOutput()));
+      harness.setProcessingTime(999);
+      assertEquals(List.of(List.of(7L, 0L, 1000L, 999L)), collect(harness.getOutput()));
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void processingTimeJoinDoesNotFireOnBoundedCompletion(boolean rocks) throws Exception {
+    try (var harness = join(0, true, rocks)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.setProcessingTime(500);
+      harness.processElement1(new StreamRecord<>(batch(0, 7)));
+      harness.processElement2(new StreamRecord<>(batch(0, 7)));
+      harness.processWatermark1(Watermark.MAX_WATERMARK);
+      harness.processWatermark2(Watermark.MAX_WATERMARK);
+      harness.getOperator().finish();
+      assertEquals(List.of(), collect(harness.getOutput()));
+      harness.setProcessingTime(999);
+      assertEquals(List.of(List.of(7L, 0L, 1000L, 999L)), collect(harness.getOutput()));
+    }
+  }
+
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> rank(
       long offset, boolean proctime, boolean rocks) throws Exception {
     var harness =

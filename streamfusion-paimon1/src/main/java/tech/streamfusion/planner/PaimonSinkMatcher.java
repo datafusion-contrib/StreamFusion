@@ -48,6 +48,7 @@ final class PaimonSinkMatcher {
     final int[] partitionTimestampPrecisions;
     final int[] bucketColumns;
     final int[] bucketTimestampPrecisions;
+    final String[] notNullFieldNames;
     final String fallbackReason;
 
     private Planned(
@@ -57,6 +58,7 @@ final class PaimonSinkMatcher {
         int[] partitionTimestampPrecisions,
         int[] bucketColumns,
         int[] bucketTimestampPrecisions,
+        String[] notNullFieldNames,
         String fallbackReason) {
       this.table = table;
       this.primaryKey = primaryKey;
@@ -64,11 +66,12 @@ final class PaimonSinkMatcher {
       this.partitionTimestampPrecisions = partitionTimestampPrecisions;
       this.bucketColumns = bucketColumns;
       this.bucketTimestampPrecisions = bucketTimestampPrecisions;
+      this.notNullFieldNames = notNullFieldNames;
       this.fallbackReason = fallbackReason;
     }
 
     static Planned fallback(String reason) {
-      return new Planned(null, false, null, null, null, null, reason);
+      return new Planned(null, false, null, null, null, null, null, reason);
     }
   }
 
@@ -142,13 +145,20 @@ final class PaimonSinkMatcher {
               + " columns for a table with "
               + fieldNames.size());
     }
-    String constraintFallback = SinkConstraintGate.fallbackReason(sink);
+    String constraintFallback = SinkConstraintGate.fallbackReason(sink, true);
     if (constraintFallback != null) {
       return Planned.fallback(constraintFallback);
     }
     String formatFallback = formatFallbackReason(table);
     if (formatFallback != null) {
       return Planned.fallback(formatFallback);
+    }
+    String[] notNullFieldNames = new String[fieldNames.size()];
+    for (int i = 0; i < fieldNames.size(); i++) {
+      if (!table.rowType().getTypeAt(i).isNullable()
+          && inputType.getFieldList().get(i).getType().isNullable()) {
+        notNullFieldNames[i] = fieldNames.get(i);
+      }
     }
     int[] partitionColumns = ordinals(fieldNames, table.partitionKeys());
     int[] bucketColumns =
@@ -164,6 +174,7 @@ final class PaimonSinkMatcher {
         FlinkKeyGroupUtils.timestampPrecisions(inputType, partitionColumns),
         bucketColumns,
         FlinkKeyGroupUtils.timestampPrecisions(inputType, bucketColumns),
+        notNullFieldNames,
         null);
   }
 

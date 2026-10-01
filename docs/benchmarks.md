@@ -207,8 +207,9 @@ insert-only: every table is a Parquet append table that Paimon creates from the 
 bucket-unaware variant keeps Paimon's in-job compaction topology, and the fixed-bucket variant uses
 four buckets keyed on the result's first column. Both engines run Paimon's writer, committer, and
 manifests unchanged, so the row counts read back through Paimon's snapshots agree on every query
-except q12, whose processing-time window Flink never fires at end of input while StreamFusion
-flushes it. Per query the speed-up ranges from 1.08× (q3, a join that emits under a thousand rows)
+except q12: that historical run used a native processing-time window that was incorrectly
+flushed at bounded-input completion. The engine now leaves unfinished processing-time windows
+open, including when it receives the terminal watermark; only the processing-time clock fires them. Per query the speed-up ranges from 1.08× (q3, a join that emits under a thousand rows)
 to 2.04× (q23, which writes 5.5 M joined rows); queries that write most of their input land at
 1.4–1.8×.
 
@@ -233,6 +234,104 @@ TZ=UTC SF_BENCHMARK=true SF_MATRIX_PAIMON_SINK=true SF_ROWS=2000000 \
 `NexmarkPaimonSinkBenchmark` runs all three variants; select `unawareBucketAppendComparison`,
 `fixedBucketAppendComparison`, or `primaryKeyComparison` for one of them.
 
+To run the headline disk workload with only the sink changed to Paimon, set
+`SF_LAKE_STATE_BACKEND=disk`, `SF_WARMUP=1`, and `SF_RUNS=2`, and select
+`NexmarkPaimonSinkBenchmark#unawareBucketAppendComparison+primaryKeyComparison`.
+This covers all 23 executable headline queries with 2M Kafka JSON events, four partitions,
+parallelism four, and mini-batching disabled. Stock Flink uses RocksDB and StreamFusion uses
+native RocksDB; q4 asserts that both persistent backends engage during the measured jobs.
+The default lake-sink state backend remains `memory`.
+
+For Flink 1.18.1, run with Java 17 and select the matching module. Set
+`SF_BENCH_MANAGED_MEMORY` to provision equal managed memory for both engines; the local
+Flink 1.18 cluster's small default can force RocksDB to flush tiny memtables continuously.
+With this override, the shared cluster's slot count matches `SF_PARALLELISM` (default four),
+so unused slots do not dilute the workload's managed-memory share.
+
+```sh
+TZ=UTC SF_BENCHMARK=true SF_MATRIX_PAIMON_SINK=true SF_LAKE_STATE_BACKEND=disk \
+  SF_BENCH_MANAGED_MEMORY='512 mb' \
+  SF_ROWS=2000000 SF_PARALLELISM=4 SF_KAFKA_PARTITIONS=4 SF_WARMUP=1 SF_RUNS=2 \
+  mvn -Pflink-1.18,paimon,bench -pl :streamfusion-paimon-flink1.18 -am test \
+  -Duser.timezone=UTC \
+  -Dsf.extraJvmArgs=-Xmx3g \
+  -Dtest='NexmarkPaimonSinkBenchmark#unawareBucketAppendComparison+primaryKeyComparison' \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+The test dependencies pin Testcontainers core to the same version as its Kafka and MinIO modules,
+including on the Flink 1.18 line, to prevent Flink's older transitive core from breaking startup.
+
+The disk/Paimon matrix reads output counts after the final measured repetition.
+CSV count fields are blank for repetitions whose output was not counted; timings
+retain every warmup and measured repetition.
+
+The example caps the shared test JVM's heap at 3 GiB for both engines. The default 8 GiB
+Surefire heap can exceed a small benchmark host's physical memory during state-heavy queries.
+
+Unmodified Flink 1.18 cannot generate the mixed `TIMESTAMP_LTZ(3)`/`TIMESTAMP(3)`
+window-boundary comparison in q7. The installed planner supplies the timestamp comparison
+coercion used by newer released Flink versions, while retaining the fixed SQL and schema.
+Both benchmark engines use this compatibility step: the baseline disables native substitutions
+and executes Flink's rowwise operators. Accordingly, q7 compares against Flink 1.18 execution
+with that shared planner compatibility fix, rather than its unmodified failing compiler.
+
+The Q7/Q12 verification on a WSL2 Linux x86-64 host (7.6 GiB visible RAM) used the
+configuration above. Q7 produced 4,000 rows per engine: measured Flink trials were
+15.363/40.813 s and native trials 8.176/5.694 s (2.70× by the suite's best-of-two rule).
+Q12 produced zero unfinished-window rows per engine: 1.066/1.107 s Flink and
+0.828/0.801 s native (1.33×). These are targeted verification results, not a replacement
+headline table; Q7 has substantial timing variability. [All trials, including warmups](benchmarks/paimon-disk-q7-q12-flink118-2026-09-29.csv)
+are retained. Q23's selective disk-state implementation subsequently measured
+11.339/13.016 s Flink and 4.055/4.084 s StreamFusion (2.80× best), with 5,520,000
+rows per engine. The complete rerun below verifies a timing win for all 23 queries; Q3 remains
+a narrow win, checked in a separate five-run verification below. [All Q23 trials](benchmarks/paimon-disk-q23-flink118-2026-09-29.csv)
+include the original 12.709 s Flink / 22.114 s native best times and an idle rerun's
+23.484 s / 21.838 s; native stayed around 22 s while Flink varied substantially.
+The idle rerun's 1.08× is insufficient evidence of a robust acceleration win.
+
+### Flink 1.18 disk/Paimon headline rerun (2026-09-30)
+
+The configuration above completed all 23 queries with native substitutions and
+matching final-repetition output counts. The geometric-mean speedup is 2.46×
+by the unchanged best-of-two rule. Q3 is the narrowest full-suite win
+(1.12× best, 1.09× by mean time). A separate verification with one warmup and
+five measured runs per engine, keeping all other settings unchanged, measured
+0.939–1.350 s Flink and 0.786–0.929 s native: 1.20× best and 1.29× by mean time.
+[All Q3 verification trials](benchmarks/paimon-disk-q3-flink118-2026-09-30.csv)
+are retained. Its CPU profile points mainly to Kafka fetching and JSON decoding;
+join execution contributes a small share. These sub-second native timings leave
+startup and I/O as material parts of the end-to-end comparison. Flink Q7, Q8, Q18, and Q23 show large variability; all warmups and
+measured times are retained in the [trial CSV](benchmarks/paimon-disk-full-flink118-2026-09-30.csv).
+The Q7 baseline includes the shared compiler compatibility step described above.
+
+| Query | Flink best (s) | StreamFusion best (s) | Speedup |
+|---|---:|---:|---:|
+| q0 | 1.196 | 0.720 | 1.66× |
+| q1 | 1.248 | 0.686 | 1.82× |
+| q2 | 0.851 | 0.656 | 1.30× |
+| q3 | 0.833 | 0.747 | 1.12× |
+| q4 | 8.274 | 5.305 | 1.56× |
+| q5 | 51.404 | 4.466 | 11.51× |
+| q7 | 22.817 | 3.204 | 7.12× |
+| q8 | 31.567 | 0.899 | 35.11× |
+| q9 | 7.900 | 6.670 | 1.18× |
+| q10 | 1.505 | 1.093 | 1.38× |
+| q11 | 5.371 | 0.670 | 8.02× |
+| q12 | 0.959 | 0.684 | 1.40× |
+| q13 | 1.411 | 0.839 | 1.68× |
+| q14 | 1.785 | 1.346 | 1.33× |
+| q15 | 9.394 | 5.640 | 1.67× |
+| q16 | 7.443 | 4.689 | 1.59× |
+| q17 | 2.933 | 1.312 | 2.24× |
+| q18 | 19.978 | 3.631 | 5.50× |
+| q19 | 5.975 | 3.467 | 1.72× |
+| q20 | 4.907 | 4.181 | 1.17× |
+| q21 | 1.231 | 0.675 | 1.82× |
+| q22 | 1.498 | 0.698 | 2.15× |
+| q23 | 19.911 | 4.026 | 4.95× |
+
+
 Set `SF_PROFILE_PAIMON_SINK=true` and run `unawareBucketAppendProfile` for matched q0 CPU and
 wall-clock recordings of the stock and native paths. A word of caution that this profile taught
 us: stock Paimon's parquet-mr wraps its record consumer in per-value debug logging whenever its
@@ -240,6 +339,13 @@ logger has DEBUG enabled, so a benchmark JVM with an unconfigured log4j 1.x bind
 sink look 15–60× slower than it is. The module's test classpath excludes Hadoop's log4j 1.x
 bindings for exactly this reason; check the stock profile before trusting a sink number that far
 out of line with the rest of this table.
+
+
+The September 30 Q23 [controlled record-layout/cache experiment](optimizations/rocksdb-write-through.md#separating-record-layout-from-probe-reuse-2026-09-30)
+retains all cache policies, unfavorable results, and library hashes. It uses the
+existing shared-cluster 48 GiB task off-heap ceiling, equal for all policies,
+alongside 512 MiB managed memory and a 3 GiB heap. That ceiling is not an allocation
+and these timings do not establish performance under a 512 MiB total native pool.
 
 ## Native operation profiling
 

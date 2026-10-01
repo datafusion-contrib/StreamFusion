@@ -61,7 +61,8 @@ final class CalcMatcher {
     // and remap the calc's top-level column references to the compacted positions. The transpose
     // then converts only the read fields of each wide source row to Arrow. (A columnar producer is
     // left alone — its batch is already built; nested access stays by name, so it needs no remap.)
-    CalcProjectionPruner.Pruned pruned = CalcProjectionPruner.compute(calc);
+    CalcProjectionPruner.Pruned pruned =
+        CalcProjectionPruner.compute(calc, encoded.requiresWholeStructInputs());
     if (pruned != null && input instanceof ProjectableNativeSource) {
       // The native decode is itself a (Rust) row→Arrow transpose: pushing the projection into it
       // makes the decoder build only the read columns/fields straight from the bytes, so a wide

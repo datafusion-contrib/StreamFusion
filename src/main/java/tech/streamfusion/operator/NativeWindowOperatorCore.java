@@ -282,9 +282,15 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   @Override
   public void processWatermark(Watermark mark) throws Exception {
     flushPending();
-    emitClosedWindows(mark.getTimestamp());
+    if (isEventTimeWindow()) {
+      emitClosedWindows(mark.getTimestamp());
+    }
     publishStateBytes();
     super.processWatermark(mark);
+  }
+
+  protected boolean isEventTimeWindow() {
+    return true;
   }
 
   /** Window start (epoch millis) rendered as a session-zone local timestamp, as the host does. */

@@ -113,6 +113,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   }
 
   private List<RelNode> optimizeConfigured(List<RelNode> roots, boolean finalOutput) {
+    roots = FlinkPlannerCompat.prepareTimestampComparisons(roots);
     operatorTypes.clear();
     fallbackReasons.clear();
     substitutions = 0;
