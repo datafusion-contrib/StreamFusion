@@ -1580,13 +1580,16 @@ is available on both supported Flink lines. The broader work remains in
 
 ### ARRAY_DISTINCT
 
-Integer arrays (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`) use a typed kernel following
+Boolean, integer (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`), and VARCHAR/STRING arrays use typed kernels following
 DataFusion's ordered membership and batch-gather structure. Arrays of at most
 eight elements use a bounded stack search with a collision-checked fingerprint;
 larger arrays use a reusable hash set. The first occurrence of each value is retained,
 including one NULL element. NULL containers remain NULL and empty arrays remain
-empty. The result preserves the element width and nullability. Other element
-types retain explicit fallback until their equality rules have been verified.
+empty. The result preserves the element width, field metadata, and nullability. Boolean equality
+compares values; string equality compares UTF-8 bytes without trimming or Unicode normalization.
+CHAR, floating, decimal, temporal, binary, and nested element types retain explicit fallback.
+Nine runtime SQL parity checks pass against released Flink 2.2.1; whole-job performance
+admission remains pending.
 [Whole-job measurements](../benchmarks/scalar-functions.md#integer-array_distinct-2026-09-28)
 show large-array gains and small-array sensitivity to run-to-run variation.
 
@@ -1803,3 +1806,4 @@ are covered by SQL parity tests.
 This compatibility normalization also applies when an installed planner has native
 substitutions disabled, so rowwise Flink execution can run the same mixed comparison.
 The Flink 2.2 line uses its released code generator's existing coercion.
+

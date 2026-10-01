@@ -1217,9 +1217,9 @@ final class RexExpression {
       if (call.getOperands().size() != 1
           || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.ARRAY
           || !java.util.Set.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
-                  SqlTypeName.INTEGER, SqlTypeName.BIGINT)
+                  SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.BOOLEAN, SqlTypeName.VARCHAR)
               .contains(call.getOperands().get(0).getType().getComponentType().getSqlTypeName())) {
-        return reject("ARRAY_DISTINCT requires an integer ARRAY");
+        return reject("ARRAY_DISTINCT requires a BOOLEAN, integer, or VARCHAR ARRAY");
       }
       return emitBuiltinCall(call, 165);
     }

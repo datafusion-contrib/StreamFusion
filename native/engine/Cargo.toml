@@ -103,3 +103,8 @@ harness = false
 [[bench]]
 name = "binary_expressions"
 harness = false
+
+[[bench]]
+name = "collection_expressions"
+harness = false
+

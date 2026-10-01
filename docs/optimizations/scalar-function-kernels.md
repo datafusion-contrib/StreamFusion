@@ -311,3 +311,41 @@ standalone and composition measurements above remain the admission evidence unti
 Reproduce the native comparison with
 `python3 bin/bench-native.py --bench binary_expressions --filter '(string_cast|fixed_cast|elt)/1024/width=16/nulls=false'`
 and `--save-baseline before` / `--baseline before`, applying the same production diff between runs.
+
+## ARRAY_DISTINCT defers gather indices until a value is removed
+
+The typed deduplication kernels share the input Arrow array when every visible element is already
+distinct. They now also avoid constructing gather indices and normalized offsets in that case.
+Until the first duplicate or nonempty NULL-container span, retained positions form a contiguous
+visible prefix. Only at that first removal does the kernel materialize that prefix, then append
+subsequent selected positions. Hidden child values belonging to NULL containers are excluded,
+including after a sliced, unchanged prefix. Element order, field metadata, nullability, and the
+existing Arrow gather path for changed arrays are preserved.
+
+The `collection_expressions` release suite covers Boolean, integer and UTF-8 arrays, unique and
+repeated values, sliced/null input, short/large lists, and narrow/wide strings. All 84 fixtures
+pass after the change. The Boolean/string extension is under review; nine runtime SQL checks pass against released Flink 2.2.1; whole-job Flink evidence remains pending.
+
+On Rust 1.94.0/Arrow 58.3.0, Linux/Core i7-12650H, sequential Criterion runs of warm compiled
+Calc with 1,024 non-null arrays of 64 unique values report:
+
+| Input | Previous mean | Lazy selection mean | Previous allocation requests | Lazy allocation requests |
+| --- | ---: | ---: | ---: | ---: |
+| INT | 347.785 µs | 340.647 µs | 268,819 B | 2,575 B |
+| STRING, 264-byte suffix plus UTF-8/key prefix | 1.878 ms | 1.804 ms | 271,843 B | 5,599 B |
+
+Criterion reports 2.1% and 3.9% lower time with disjoint 95% mean confidence intervals.
+An earlier revision measured 3.3% and 12.2%; retain it in the CSV rather than selecting the
+stronger preliminary result. The final revision avoids calling the prefix-building helper
+again once selection has started. Hash-set seeding and timing variability remain relevant.
+Both versions already share all output payload buffers for these unchanged arrays; this removes
+index/offset allocation and filling, rather than a payload copy. Fixture construction and probe
+traversal remain outside measurement. Counting uses the same benchmark system allocator in both
+runs, with 100 samples, three-second warmup and five-second measurement per case.
+[Mean confidence intervals and allocation probes](../benchmarks/recovered-historical-diagnostics-2026-10-01.txt)
+are partially recoverable from the task log. The original complete CSV was lost during an environment reset. Reproduce using `--bench collection_expressions`,
+`--filter '(integer|string)/1024/width=64/domain=64/bytes=(0|264)/nulls=false'`, and
+`--save-baseline before` / `--baseline before`. Native timings do not establish an end-to-end
+Flink speedup. Runtime SQL checks now pass; whole-job comparisons remain pending.
+
+The environment reset removed temporary benchmark artifacts. Historical links above now point to surviving task-log excerpts; complete raw CSVs and Criterion samples must be regenerated.
