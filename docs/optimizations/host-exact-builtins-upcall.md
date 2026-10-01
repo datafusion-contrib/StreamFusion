@@ -292,3 +292,26 @@ All 96 expanded JNI fixtures pass exact DOUBLE-bit, NULL and schema comparisons 
 released Flink. Eighteen helper/generated/runtime-SQL checks pass on each released line.
 The canonical-text path is additionally compared directly against Flink throughout the
 bounded helper corpus, even where the interval shortcut would normally avoid that path.
+
+## Revised helper whole-job measurements
+
+The canonical-text revision `26fe2647` repeats the same two-million-row, two-warmup,
+five-trial alternating-engine release comparison.
+[All revised trials](../benchmarks/double-truncate-decimal-text-wholejob-2026-10-01.csv)
+and the [intermediate interval-only trials](../benchmarks/double-truncate-interval-wholejob-2026-10-01.csv)
+retain variability and unfavorable observations. Other shared-host jobs were active during
+parts of these runs, so these are directional evidence requiring a controlled repeat.
+
+| Profile | Same-run stock median | Revised native median | Stock/native |
+| --- | ---: | ---: | ---: |
+| Bounded | 0.734 s | 0.449 s | 1.63× |
+| Half-integer boundaries | 0.677 s | 0.430 s | 1.57× |
+| Small fractions, original outside-domain control | 0.528 s | 0.515 s | 1.02× |
+| Non-dyadic ambiguous intervals | 0.752 s | 0.649 s | 1.16× |
+
+The earlier previous-production native-enabled fallback medians are 0.774/0.689/0.529 s
+for the first three profiles; the ambiguous profile still needs its explicit previous-version
+measurement. The small-fraction native trials span 0.457–0.651 s versus stock 0.469–0.568 s,
+so its narrow median difference does not establish the performance gate. Larger magnitudes,
+other scales, nullable/composed jobs and binary boundary regressions remain to be evaluated.
+Keep the PR draft; none of these partial results closes the broad floating-function issue.
