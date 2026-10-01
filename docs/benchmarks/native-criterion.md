@@ -24,11 +24,22 @@ to a debug profile when collecting timings. Criterion retains its samples and ba
 `native/target/criterion`. The runner writes each suite's combined output, `allocations.csv`, and
 `metadata.json` under a timestamped `native/target/native-benchmarks/` directory, or `--output`.
 Metadata includes commit, dirty status, toolchain, platform, commands, and relevant build settings.
-For `scalar_registry`, the runner compiles the production Java classes and resolves their released
-Maven dependencies. An embedded JVM keeps SQL/JSON buffer-recycler calls in the measured path; VM
+For `scalar_registry` and `jvm_truncate`, the runner compiles the production Java classes and resolves
+their released Maven dependencies. The latter also compiles test fixtures: its reference wrapper
+supplies Flink's generated NULL guard around released `struncate`, with the same boxed argument types
+as the shortcut. An embedded JVM keeps SQL/JSON buffer-recycler calls in the measured path; VM
 startup is outside measurement. The JVM uses a 128 MiB initial and 256 MiB maximum heap, UTF-8,
 and UTC. Maven setup logs and resolved classpath are retained. Set `SF_NATIVE_BENCH_CLASSPATH`
 to reuse a classpath when invoking the Criterion executable directly.
+
+`jvm_truncate` additionally registers the production generated Flink expression evaluator and
+the borrowed-row shortcut evaluator.
+Generation and opening happen before timing; per-row evaluation and Arrow/C Data conversion stay
+inside the same Calc boundary, with exact output comparisons against the released reference.
+Checks compare DOUBLE bits, NULL positions and schemas, preserving signed-zero distinctions.
+All 72 upcall fixtures pass. The [four-way measurements](recovered-historical-diagnostics-2026-10-01.txt)
+retain the partial borrowing improvement and slower fallback cases. The earlier [three-way measurements](recovered-historical-diagnostics-2026-10-01.txt)
+include slower fallback profiles; see the [optimization ledger](../optimizations/host-exact-builtins-upcall.md#bounded-double-truncate-shortcut).
 Retain the actual diff when comparing an uncommitted implementation. Baselines must have matching
 case names and representative data. Existing comparison suites include experimental alternatives;
 only cases explicitly calling the production implementation describe shipped behavior.
@@ -90,7 +101,9 @@ Some historical suites use
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
-| Persistent state | `persistent_state` | Production RocksDB event-time-sort write/read and checkpoint file creation; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Persistent state | `persistent_state` | Production RocksDB event-time-sort write/read, checkpoint creation, aligned file adoption and clipped restore; nullable sliced wide rows, order and resumed-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
+| Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
 | Registered Flink scalar functions | `scalar_registry` | Every registered numeric opcode; completeness assertion requires a fixture for new registrations; ASCII/null/Unicode profiles |
 | Parameterized scalar kernels | `scalar_registry` | Decimal cast/round/truncate/arithmetic/float conversion, integer parse/format/divide, FROM_UNIXTIME, array item, literal/dynamic map lookup, random, clock, float comparison |
 | JSON decode | `json_decode`, `json_codecs` | Direct production decode, projection, wide messages, historical nested Nexmark corpus |
@@ -105,13 +118,36 @@ Some historical suites use
 
 This is operation-level coverage, not exhaustive coverage of every SQL type, expression opcode,
 codec option, state backend, and recovery mode. Expand profiles alongside implementation changes.
+Disk recovery fixtures prepare the source checkpoint and an empty destination directory outside
+measurement. Aligned recovery adopts checkpoint files; clipped recovery rebuilds the verified
+singleton key group through the production store. Timed recovery includes copy/rebuild, database
+opening and closing, while directory cleanup and output verification stay outside it. Allocation
+probes cover construction on the current Rust thread, not RocksDB's C++/worker allocations. Each
+fixture appends after recovery and checks the complete ordered batch, including NULLs, to validate
+the restored arrival-sequence counter. Both recovery modes use one source checkpoint; these do not
+measure multi-source rescaling or compaction. All 48 persistent fixtures pass release smoke checks.
+The largest nullable wide-row fixture requests 3,711 Rust bytes across 68 allocation calls for
+aligned recovery, compared with 4,707,561 bytes across 32,808 calls for key-group rebuild.
+These are different recovery modes, not before/after timings or proof of an avoidable copy.
+[Surviving allocation excerpts](recovered-historical-diagnostics-2026-10-01.txt) are retained; disk/native-worker
+costs remain outside these counters.
+
+Focused release Criterion means for that 16,384-row fixture are 35.861 ms for clipped rebuild
+and 11.711 ms for aligned adoption, including opening and closing the restored database.
+The same source checkpoint is reused with warm filesystem caches; three seconds of warmup,
+100 samples and at least five seconds of measurement run sequentially, clipped first. Rust 1.94.0,
+Arrow 58.3.0, Linux/Core i7-12650H. The fixed store options are linked in the inventory above.
+[Mean confidence intervals](recovered-historical-diagnostics-2026-10-01.txt) retain variability.
+These characterize existing paths and do not measure a new optimization or whole-job speedup.
+Reproduce with `--bench persistent_state --filter 'temporal_sort_restore/16384/bytes=264/nulls=true'`.
+
 The main remaining boundaries are:
 
-- JVM upcalls and host-owned reader callbacks: the scalar registry retains SQL/JSON recycler
-  calls in an embedded JVM, but arbitrary UDF upcalls and reader callbacks still need dedicated
-  workloads. Existing release
-  integration harnesses remain the timing authority for those boundaries.
-- Persistent stores beyond temporal sort, RocksDB restore/rescale/compaction, TTL expiry, and each
+- JVM upcalls and host-owned reader callbacks: `jvm_truncate` exercises reflective scalar
+  upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
+  Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
+  integration harnesses remain the whole-job timing authority for those boundaries.
+- Persistent stores beyond temporal sort, multi-source RocksDB rescale/compaction, TTL expiry, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
@@ -122,3 +158,5 @@ The main remaining boundaries are:
 `native-build`, `raw` (the deployment shim over shared raw decoding), and `integration-tests` do not
 introduce an independent data-plane hot loop. Their operational implementation is measured in its
 owning crate; build tooling and correctness tests are not timed as operators.
+
+The environment reset removed temporary benchmark artifacts. Historical links above now point to surviving task-log excerpts; complete raw CSVs and Criterion samples must be regenerated.

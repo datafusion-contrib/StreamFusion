@@ -788,15 +788,37 @@ impl UpsertMerge {
 pub struct PersistentSort(crate::sorter::TemporalSorter);
 #[cfg(feature = "rocksdb-state")]
 impl PersistentSort {
-    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
-        let config = crate::state::rocks_store::RocksStoreConfig {
+    fn config(directory: &str, options: &str) -> crate::state::rocks_store::RocksStoreConfig {
+        crate::state::rocks_store::RocksStoreConfig {
             table_dir: directory.into(),
             max_parallelism: 1,
             options_json: options.into(),
             ttl_ms: 0,
             shared_resources: 0,
-        };
-        let store = crate::state::RocksTemporalSortBuffer::create(config, schema).unwrap();
+        }
+    }
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store =
+            crate::state::RocksTemporalSortBuffer::create(Self::config(directory, options), schema)
+                .unwrap();
+        Self(crate::sorter::TemporalSorter::new(1).with_store(store))
+    }
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksTemporalSortBuffer::open_merged(
+            Self::config(directory, options),
+            schema,
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
         Self(crate::sorter::TemporalSorter::new(1).with_store(store))
     }
     pub fn push(&mut self, batch: &RecordBatch) {
@@ -805,8 +827,12 @@ impl PersistentSort {
     pub fn flush(&mut self) -> RecordBatch {
         self.0.flush(i64::MAX).unwrap()
     }
-    pub fn checkpoint(&mut self, directory: &str) {
-        self.0.store_mut().checkpoint(directory).unwrap();
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
     }
 }
 
