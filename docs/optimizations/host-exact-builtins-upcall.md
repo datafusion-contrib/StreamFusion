@@ -189,3 +189,23 @@ exceptions and the existing AND/OR fallback. Complete-job performance gates rema
 
 
 The environment reset removed temporary benchmark artifacts. Historical links above now point to surviving task-log excerpts; complete raw CSVs and Criterion samples must be regenerated.
+
+## Whole-job DOUBLE TRUNCATE controls
+
+`ScalarFunctionBenchmark` includes `DOUBLE_TRUNCATE_BOUNDED`, `DOUBLE_TRUNCATE_BOUNDARY`,
+and `DOUBLE_TRUNCATE_OUTSIDE`. Runtime sequence sources generate alternating signs, dynamic
+INT scales and optional NULL operands. Boundary inputs use half-integers at scale one; outside
+inputs use absolute value 0.46. Each has a source-matched DOUBLE identity control. The existing
+blackhole sink, release JNI library and both transposes stay in the native measured path, and
+plan assertions require native Calc. These fixtures provide end-to-end evidence for the same
+three profiles as the four-way JNI Criterion controls; no whole-job speedup is assumed.
+
+Run with `SF_BENCHMARK=true`, `-Pbench`,
+`-Dtest=ScalarFunctionBenchmark#individualFunctions`, and
+`-Dscalar.functions=DOUBLE_TRUNCATE_BOUNDED,DOUBLE_TRUNCATE_BOUNDARY,DOUBLE_TRUNCATE_OUTSIDE`.
+Use identical rows, warmups and trials for stock Flink and previous/candidate StreamFusion,
+and retain the per-trial CSV with `-Dscalar.output=...`.
+
+All three profiles and their identity controls execute successfully with 5,003 runtime rows
+on released Flink 2.2.1. This single-trial fixture smoke check validates plan admission and
+execution only; its startup-dominated durations are not performance-admission evidence.

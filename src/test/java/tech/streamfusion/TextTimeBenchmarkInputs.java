@@ -18,7 +18,8 @@ final class TextTimeBenchmarkInputs {
     return switch (input) {
       case "tt_bytes", "tt_fixed_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
       case "tt_boolean" -> "b";
-      case "tt_decimal", "tt_decimal_scale", "tt_unix_time" -> "n";
+      case "tt_decimal", "tt_decimal_scale", "tt_unix_time",
+          "tt_double_bounded", "tt_double_boundary", "tt_double_outside" -> "n";
       case "tt_decimal_array" -> "a";
       case "tt_json_array" -> "a";
       case "tt_timestamp", "tt_timestamp_ltz" -> "ts";
@@ -33,6 +34,7 @@ final class TextTimeBenchmarkInputs {
       case "tt_fixed_bytes" -> "BINARY(16)";
       case "tt_decimal", "tt_decimal_scale" -> "DECIMAL(38,9)";
       case "tt_unix_time" -> "BIGINT";
+      case "tt_double_bounded", "tt_double_boundary", "tt_double_outside" -> "DOUBLE";
       case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
       case "tt_json_array" -> "ARRAY<STRING>";
       case "tt_timestamp" -> "TIMESTAMP(9)";
@@ -96,6 +98,20 @@ final class TextTimeBenchmarkInputs {
           .map(i -> Row.of((Object) (isNull(i, nullEvery) ? null : values)))
           .returns(Types.ROW_NAMED(new String[] {"a"}, Types.OBJECT_ARRAY(Types.BIG_DEC))),
           Schema.newBuilder().column("a", DataTypes.ARRAY(DataTypes.DECIMAL(38, 9))).build());
+    } else if (input.equals("tt_double_bounded") || input.equals("tt_double_boundary")
+        || input.equals("tt_double_outside")) {
+      tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
+          .map(i -> {
+            double magnitude = switch (input) {
+              case "tt_double_boundary" -> 1000.5 + i % 1024;
+              case "tt_double_outside" -> 0.46;
+              default -> 1000.12345 + i % 1024;
+            };
+            Double value = isNull(i, nullEvery) ? null : (i % 2 == 0 ? magnitude : -magnitude);
+            int scale = input.equals("tt_double_boundary") ? 1 : (int) (i % 7) - 3;
+            return Row.of(value, scale);
+          })
+          .returns(Types.ROW_NAMED(new String[] {"n", "s"}, Types.DOUBLE, Types.INT)));
     } else if (input.equals("tt_decimal_scale")) {
       java.math.BigDecimal[] values = {
         new java.math.BigDecimal("12345678901234567890.123456700"),
