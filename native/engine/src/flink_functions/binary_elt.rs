@@ -1,4 +1,6 @@
-use arrow::array::{Array, ArrayRef, BinaryArray, BinaryBuilder, FixedSizeBinaryArray};
+use arrow::array::{
+    Array, ArrayRef, BinaryArray, BinaryBuilder, FixedSizeBinaryArray, FixedSizeBinaryBuilder,
+};
 use arrow::datatypes::DataType;
 use datafusion::common::{cast::as_int32_array, exec_err, Result};
 use datafusion::logical_expr::{
@@ -6,14 +8,16 @@ use datafusion::logical_expr::{
 };
 use std::sync::Arc;
 
-pub(crate) fn function(arity: usize) -> ScalarUDF {
+pub(crate) fn function(arity: usize, width: i32) -> ScalarUDF {
     ScalarUDF::new_from_impl(BinaryElt {
+        width,
         signature: Signature::any(arity, Volatility::Immutable),
     })
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct BinaryElt {
+    width: i32,
     signature: Signature,
 }
 
@@ -25,14 +29,21 @@ impl ScalarUDFImpl for BinaryElt {
         &self.signature
     }
     fn return_type(&self, _: &[DataType]) -> Result<DataType> {
-        Ok(DataType::Binary)
+        Ok(if self.width > 0 {
+            DataType::FixedSizeBinary(self.width)
+        } else {
+            DataType::Binary
+        })
     }
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
-        datafusion::functions::utils::make_scalar_function(select, vec![])(&args.args)
+        datafusion::functions::utils::make_scalar_function(
+            |arrays| select(arrays, self.width),
+            vec![],
+        )(&args.args)
     }
 }
 
-fn select(args: &[ArrayRef]) -> Result<ArrayRef> {
+fn select(args: &[ArrayRef], width: i32) -> Result<ArrayRef> {
     let Some((index, values)) = args.split_first() else {
         return exec_err!("ELT requires an index");
     };
@@ -56,6 +67,20 @@ fn select(args: &[ArrayRef]) -> Result<ArrayRef> {
             _ => BinaryInput::Variable(array.as_any().downcast_ref::<BinaryArray>().unwrap()),
         })
         .collect::<Vec<_>>();
+    if width > 0 {
+        let mut output = FixedSizeBinaryBuilder::with_capacity(indexes.len(), width);
+        for (row, index) in indexes.iter().enumerate() {
+            let selected = index
+                .filter(|&index| index > 0)
+                .and_then(|index| arrays.get(index as usize - 1))
+                .and_then(|array| array.value(row));
+            match selected {
+                Some(value) => output.append_value(value)?,
+                None => output.append_null(),
+            }
+        }
+        return Ok(Arc::new(output.finish()));
+    }
     let mut output = BinaryBuilder::new();
     for (row, index) in indexes.iter().enumerate() {
         let selected = index
@@ -107,14 +132,17 @@ mod tests {
         ]));
         let indexes: ArrayRef = Arc::new(Int32Array::from(vec![0, 1, 1, 2, 0]));
         assert_eq!(
-            select(&[indexes.slice(1, 3), fixed.slice(1, 3), variable.slice(1, 3)])
-                .unwrap()
-                .as_ref(),
+            select(
+                &[indexes.slice(1, 3), fixed.slice(1, 3), variable.slice(1, 3)],
+                0
+            )
+            .unwrap()
+            .as_ref(),
             &BinaryArray::from(vec![Some(&[0xff, 0][..]), None, None])
         );
         let indexes: ArrayRef = Arc::new(Int32Array::from(vec![2, 2, 1]));
         assert_eq!(
-            select(&[indexes, fixed.slice(1, 3), variable.slice(1, 3)])
+            select(&[indexes, fixed.slice(1, 3), variable.slice(1, 3)], 0)
                 .unwrap()
                 .as_ref(),
             &BinaryArray::from(vec![
@@ -147,7 +175,7 @@ mod tests {
             None,
         ]));
         assert_eq!(
-            select(&[indexes, a, b]).unwrap().as_ref(),
+            select(&[indexes, a, b], 0).unwrap().as_ref(),
             &BinaryArray::from(vec![
                 Some(&[0xff, 0][..]),
                 Some(&[0, 0x80][..]),

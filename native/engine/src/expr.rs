@@ -186,16 +186,7 @@ pub(crate) fn build_expr(
                     )
                 })
                 .collect::<Vec<_>>();
-            let result =
-                crate::flink_functions::binary_elt::function(children.len()).call(children);
-            if arg == 0 {
-                result
-            } else {
-                datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
-                    Box::new(result),
-                    DataType::FixedSizeBinary(arg as i32),
-                ))
-            }
+            crate::flink_functions::binary_elt::function(children.len(), arg as i32).call(children)
         }
         39 => {
             let child = build_expr(
@@ -213,16 +204,8 @@ pub(crate) fn build_expr(
             } else {
                 payload[node].unsigned_abs() as usize
             };
-            let result = crate::flink_functions::binary_cast::function(length, payload[node] < 0)
-                .call(vec![child]);
-            if payload[node] >= 0 {
-                result
-            } else {
-                datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
-                    Box::new(result),
-                    DataType::FixedSizeBinary(length as i32),
-                ))
-            }
+            crate::flink_functions::binary_cast::function(length, payload[node] < 0)
+                .call(vec![child])
         }
         37 => {
             let child = build_expr(

@@ -1,6 +1,6 @@
 use arrow::array::{
-    ArrayRef, BinaryArray, FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int32Array,
-    RecordBatch, StringArray,
+    ArrayRef, BinaryArray, FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int32Array, RecordBatch,
+    StringArray,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::sync::Arc;

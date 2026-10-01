@@ -277,3 +277,37 @@ and identity controls. Reproduce with the same `ScalarFunctionBenchmark#individu
 release command above, setting
 `-Dscalar.functions=TRY_FIXED_BINARY_GROUPED_COUNT,ELT_FIXED_BINARY_GROUPED_COUNT`
 and `-Dscalar.rows=2000000` or `5000000`. The Nexmark harness is unchanged.
+
+## Direct fixed-binary output buffers
+
+Fixed-result casts and ELT now produce the declared Arrow `FixedSizeBinary` array directly.
+Previously the UDF built variable binary and Calc converted it again to fixed binary, allocating
+an offsets buffer and copying the result payload twice. Fixed input casts also borrow their input
+bytes rather than first materializing a variable-binary array. Casts truncate bytes into the final
+buffer and extend zero padding directly there. A fixed cast with unchanged width retains the
+original sliced array and validity bitmap. Variable/legacy results keep their existing representation.
+
+The `binary_expressions` Criterion suite runs the production compiled Calc path and asserts result
+bytes and fixed widths before measurement. The following comparison uses 1,024 sliced input rows,
+width 16, non-null inputs, and the same system-allocator instrumentation in both runs. ELT includes
+NULL results from invalid/null indices. Fixture construction and allocation-report traversal are
+outside measurement; output disposal is inside. Standard Criterion sampling uses 100 samples,
+three-second warmup, and five-second measurement per case.
+
+| Operation | Previous warm Calc | Direct-buffer warm Calc | Previous allocation requests | Direct allocation requests |
+| --- | ---: | ---: | ---: | ---: |
+| String to fixed binary | 10.048 µs | 4.644 µs | 38,799 B | 17,843 B |
+| Fixed binary width change | 13.064 µs | 3.666 µs | 107,571 B | 17,659 B |
+| Fixed binary ELT | 10.654 µs | 5.486 µs | 38,361 B | 18,357 B |
+
+Criterion reports time reductions of 53.8%, 72.0%, and 48.0%, respectively, with disjoint
+confidence intervals. The result payload remains 16,384 bytes (ELT also has a 128-byte validity
+bitmap); these are reductions in intermediate allocation and materialization, not elimination of
+the necessary output buffer. Allocation requests do not measure peak memory or copied bytes.
+All 72 fixtures across 16/1,024/16,384 rows, widths 1/16/256, input representations and null profiles
+pass release smoke checks. These native timings do not establish an end-to-end Flink win; the
+standalone and composition measurements above remain the admission evidence until rerun.
+
+Reproduce the native comparison with
+`python3 bin/bench-native.py --bench binary_expressions --filter '(string_cast|fixed_cast|elt)/1024/width=16/nulls=false'`
+and `--save-baseline before` / `--baseline before`, applying the same production diff between runs.
