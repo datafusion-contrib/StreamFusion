@@ -148,7 +148,7 @@ The main remaining boundaries are:
   upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
-- Persistent stores beyond temporal sort, multi-source RocksDB rescale/compaction, TTL expiry, and each
+- Persistent stores beyond temporal sort and keep-first deduplication, multi-source RocksDB rescale/compaction, TTL expiry, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
@@ -179,3 +179,34 @@ that suite from 72 to 96 fixtures. Historical counts and probes above describe t
 revision; all 96 profiles pass the released-Flink bit/schema/NULL comparisons.
 [Expanded JNI probes](double-truncate-expanded-probes-2026-10-01.csv) are retained. Timing
 comparisons for the revised helper remain pending.
+
+
+## Persistent keep-first deduplication probes
+
+`persistent_state` also exercises the production disk-backed keep-first deduplicator. The
+48 profiles cover 16, 1,024 and 16,384 input rows, eight-key and unique-key cardinalities,
+short and wide UTF-8 payloads (including embedded NUL), and nullable payloads. Pending
+candidate insertion and watermark firing are measured together and checked against the
+first input row for each key. A second workload prepares fired markers outside measurement,
+then measures a later batch against those markers and verifies that no row is emitted.
+Its timestamps exceed the previous finite watermark, so it exercises persisted-marker
+reads rather than the late-data rejection shortcut.
+
+Database creation and directory cleanup stay outside these timings. Production Arrow-row
+encoding, database reads/writes and output reconstruction remain inside. Each Criterion
+iteration starts from fresh state; the marker workload verifies its prepared output before
+measurement. Allocation counters include only the calling Rust thread, excluding RocksDB
+C++ and background-worker allocations. These workloads do not yet cover dedup checkpoint
+recovery, TTL expiry or rescaling, and do not establish a whole-job speedup.
+
+Run `python3 bin/bench-native.py --bench persistent_state --filter keep_first --smoke`
+to validate these fixtures; omit `--smoke` for retained release timings.
+
+All 48 new deduplication profiles pass release smoke checks on 2026-10-01; the existing
+48 sort profiles pass in the same run. [Retained deduplication probes](persistent-dedup-probes-2026-10-01.csv)
+show 32,916 allocation requests totaling 2,128,064 Rust bytes for 16,384 rows with eight
+keys and short non-null payloads during insertion/firing. Reading emitted markers in that
+profile requests 2,124,664 bytes across 32,846 calls despite producing an empty output.
+These counters identify input-side encoding/allocation work for further investigation;
+they do not establish how much can be removed or quantify database-worker costs. Timing
+claims await controlled sequential release measurements.

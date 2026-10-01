@@ -1,7 +1,7 @@
 use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray, UInt32Array};
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 use std::sync::Arc;
-use streamfusion::bench::PersistentSort;
+use streamfusion::bench::{PersistentFirstDedup, PersistentSort};
 use streamfusion_benchmark_support::{header, measure, report, CountingAllocator};
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -133,5 +133,110 @@ fn persistent(c: &mut Criterion) {
     }
     group.finish();
 }
-criterion_group!(benches, persistent);
+fn dedup(c: &mut Criterion) {
+    header();
+    let mut group = c.benchmark_group("engine/rocksdb/keep_first");
+    for rows in [16, 1024, 16384] {
+        for domain in [8, rows] {
+            for width in [8, 264] {
+                for nullable in [false, true] {
+                    let text = "中\0".to_owned() + &"x".repeat(width);
+                    let input = RecordBatch::try_from_iter(vec![
+                        (
+                            "key",
+                            Arc::new(Int64Array::from_iter_values(
+                                (0..rows).map(|i| (i % domain) as i64),
+                            )) as ArrayRef,
+                        ),
+                        (
+                            "value",
+                            Arc::new(StringArray::from_iter((0..rows).map(|i| {
+                                if nullable && i % 7 == 0 {
+                                    None
+                                } else {
+                                    Some(text.as_str())
+                                }
+                            }))) as ArrayRef,
+                        ),
+                        (
+                            "rt",
+                            Arc::new(Int64Array::from_iter_values(0..rows as i64)) as ArrayRef,
+                        ),
+                    ])
+                    .unwrap();
+                    let expected = input.slice(0, domain);
+                    let setup = || {
+                        let directory = tempfile::tempdir().unwrap();
+                        let operator = PersistentFirstDedup::new(
+                            directory.path().join("db").to_str().unwrap(),
+                            input.schema(),
+                            OPTIONS,
+                        );
+                        (operator, directory)
+                    };
+                    group.throughput(Throughput::Elements(rows as u64));
+                    let label =
+                        format!("pending/{rows}/keys={domain}/bytes={width}/nulls={nullable}");
+                    let (mut operator, _directory) = setup();
+                    let (output, allocations) = measure(|| {
+                        operator.push(&input);
+                        operator.flush(rows as i64 - 1)
+                    });
+                    assert_eq!(output, expected);
+                    report(&label, input.columns(), output.columns(), allocations);
+                    group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                        b.iter_batched_ref(
+                            &setup,
+                            |(operator, _)| {
+                                operator.push(&input);
+                                std::hint::black_box(operator.flush(rows as i64 - 1))
+                            },
+                            BatchSize::PerIteration,
+                        )
+                    });
+                    let marked_setup = || {
+                        let (mut operator, directory) = setup();
+                        operator.push(&input);
+                        assert_eq!(operator.flush(rows as i64 - 1), expected);
+                        (operator, directory)
+                    };
+                    let later = RecordBatch::try_new(
+                        input.schema(),
+                        vec![
+                            input.column(0).clone(),
+                            input.column(1).clone(),
+                            Arc::new(Int64Array::from_iter_values(
+                                (0..rows).map(|i| rows as i64 + i as i64),
+                            )),
+                        ],
+                    )
+                    .unwrap();
+                    let label = format!(
+                        "emitted_markers/{rows}/keys={domain}/bytes={width}/nulls={nullable}"
+                    );
+                    let (mut operator, _directory) = marked_setup();
+                    let (output, allocations) = measure(|| {
+                        operator.push(&later);
+                        operator.flush(2 * rows as i64)
+                    });
+                    assert_eq!(output.schema(), input.schema());
+                    assert_eq!(output.num_rows(), 0);
+                    report(&label, later.columns(), output.columns(), allocations);
+                    group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                        b.iter_batched_ref(
+                            &marked_setup,
+                            |(operator, _)| {
+                                operator.push(&later);
+                                std::hint::black_box(operator.flush(2 * rows as i64))
+                            },
+                            BatchSize::PerIteration,
+                        )
+                    });
+                }
+            }
+        }
+    }
+    group.finish();
+}
+criterion_group!(benches, persistent, dedup);
 criterion_main!(benches);

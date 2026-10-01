@@ -787,6 +787,30 @@ impl UpsertMerge {
 #[cfg(feature = "rocksdb-state")]
 pub struct PersistentSort(crate::sorter::TemporalSorter);
 #[cfg(feature = "rocksdb-state")]
+pub struct PersistentFirstDedup(KeepFirstDeduplicator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentFirstDedup {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksKeepFirstDedupStore::create(
+            PersistentSort::config(directory, options),
+            schema,
+            &[0],
+        )
+        .unwrap();
+        Self(KeepFirstDeduplicator::new(vec![0], 2).with_store(store))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch, 0).unwrap();
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark, 0).unwrap()
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
 impl PersistentSort {
     fn config(directory: &str, options: &str) -> crate::state::rocks_store::RocksStoreConfig {
         crate::state::rocks_store::RocksStoreConfig {
