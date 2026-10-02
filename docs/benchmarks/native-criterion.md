@@ -538,6 +538,22 @@ the Nexmark schemas, queries and harness are unchanged.
 
 ## Persistent window rank and deduplication
 
+The opt-in `WindowRankBenchmark` provides a separate row-fed whole-job comparison:
+`SF_BENCHMARK=true mvn test -Pbench -Dtest=WindowRankBenchmark`. It uses two event-time
+tumble windows, a sequence source emitting Flink rows, and a blackhole sink retaining the
+rank, sort value, and payload. Plan checks require native window ranking and both transposes.
+Before timing, a separate stock/native collection compares the complete output multiset,
+including row kinds, payloads, NULLs, and rank values, for the selected workload.
+Use `-Drank.verifyOnly=true` to run only the plan and result checks.
+Rows remain pending until the source's terminal watermark; periodic watermarks are disabled.
+The default workload has 2,000,000 rows, eight keys, a 264-character payload suffix, rank
+limit one, two warmups and five measured trials per engine, with alternating engine order.
+Override `rank.rows`, `rank.keys`, `rank.width`, `rank.limit`, `rank.nullable`, `rank.warmup`
+and `rank.runs` to cover smaller/wider payloads, unique keys, NULLs, and larger rank limits.
+Output includes every measured trial and medians. Use the identical fixture and released
+native libraries in the previous-production checkout as a third baseline. This harness is
+not a persistent recovery workload, and no whole-job ranking improvement is claimed here.
+
 The `window_rank` module under `persistent_state` defines 432 profiles: 16/1,024/16,384
 incoming rows, eight or batch-cardinality keys, UTF-8 payload suffixes of 8/264 bytes,
 non-null or nullable sort/payload columns, and three rank modes. The modes keep one row
