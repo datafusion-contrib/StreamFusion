@@ -666,3 +666,36 @@ does not establish a small-array win against both baselines.
 retain the unfavorable results alongside the original comparison and wide-array
 win. The unresolved signal warrants boundary profiling rather than further
 kernel-only claims or silently enabling the feature as complete.
+
+
+### Small Boolean array boundary profile (2026-10-02)
+
+An async-profiler 4.5 CPU recording uses ten million rows with the same width-eight
+NULL/domain configuration and saved final release/mimalloc library. One warmup and
+two alternating trials provide a diagnostic, not gate timings. The 1 ms recording
+includes both engines; analysis selects native operator task threads and excludes
+the thread-name frame before matching stacks. Of 7,955 native-task CPU samples,
+Rust ARRAY_DISTINCT accounts for 689 (8.7%), row serialization for 2,691 (33.8%),
+and the exit transpose for 1,709 (21.5%). Entry transpose 4,475 (56.3%) and Native
+Calc 3,056 (38.4%) include downstream chained execution: inclusive counts overlap
+and cannot be added. [All sample counts](../benchmarks/array-distinct-boolean-small-cpu-2026-10-02.csv)
+retain source/array-writer detail; raw JFR and collapsed stacks remain in task
+artifacts. Process-specific filenames prevent later Maven JVMs overwriting them.
+
+A removed prototype extends the existing generated binary-row projection to
+Boolean arrays. Reference-first inspection of Comet's `CometColumnarToRowExec`
+confirms generated row projection at this boundary; the prototype uses released
+Flink projection/array serialization and preserves the existing owned-copy rules.
+It passes 26 checks on Flink 2.2.1, including object reuse on/off, NULL containers
+and elements, empty arrays, all row kinds, multiple closed Arrow batches, 8,192
+elements to force payload growth, and the nine existing SQL parity checks.
+
+The ten-million-row release comparison retains two warmups, five alternating
+trials and both transposes. Prototype median is 2.362853 s (2.347223–2.364031),
+stock 2.281326 s (2.246154–2.336978): 3.6% slower. It also takes 5.2% longer than
+the preceding previous-production fallback sample (2.245811 s). Earlier candidate
+controls differ, so the lower absolute native time is not a controlled improvement.
+[All ten prototype trials](../benchmarks/boolean-array-exit-prototype-2026-10-02.csv)
+are retained. Code and prototype-only ownership tests were removed after this
+failed gate; Flink 1.18 prototype validation was not run. This rejects the specific
+projection extension, not future ownership-preserving boundary optimizations.
