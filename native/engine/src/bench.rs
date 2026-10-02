@@ -78,6 +78,76 @@ impl Tumbling {
     }
 }
 
+/// Persistent tumbling SUM through the production window-state lifecycle.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentTumbling(TumblingAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentTumbling {
+    fn state_types() -> Vec<DataType> {
+        crate::aggregates::build_aggregates(&[0], &[0])
+            .iter()
+            .flat_map(crate::aggregates::WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect()
+    }
+
+    fn operator(store: crate::state::RocksWindowAggStore) -> Self {
+        Self(
+            TumblingAggregator::new(1000, 1000, false, vec![0], vec![0])
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store, vec![DataType::Utf8]),
+        )
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        let store = crate::state::RocksWindowAggStore::create(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+        )
+        .expect("persistent tumbling create");
+        Self::operator(store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksWindowAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .expect("persistent tumbling restore");
+        Self::operator(store)
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) {
+        self.0.update(batch).expect("persistent tumbling update");
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).expect("persistent tumbling flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(12345, directory)
+            .expect("persistent tumbling checkpoint")
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
+    }
+}
+
 /// A session-window aggregator driven by `update`/`flush`.
 pub struct Session(SessionAggregator);
 

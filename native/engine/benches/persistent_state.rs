@@ -14,6 +14,8 @@ mod interval;
 mod over;
 #[path = "persistent_state/temporal_join.rs"]
 mod temporal_join;
+#[path = "persistent_state/tumbling.rs"]
+mod tumbling;
 #[path = "persistent_state/window_rank.rs"]
 mod window_rank;
 fn persistent(c: &mut Criterion) {
@@ -449,6 +451,7 @@ criterion_group!(
     temporal_join::temporal_join,
     over::over,
     over::over_fold_recovery,
-    group::group
+    group::group,
+    tumbling::tumbling
 );
 criterion_main!(benches);

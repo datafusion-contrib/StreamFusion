@@ -119,8 +119,9 @@ Some historical suites use
 | ORC post-decode normalization | `normalization` | CHAR trimming, string pass-through, full-range timestamp conversion |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
 
-Persistent lifecycle witnesses remain missing for window aggregation, session
-aggregation, updating joins and window joins. GROUP BY fixtures cover COUNT(*)
+Persistent tumbling SUM lifecycle fixtures are now validated. Window aggregation
+with other shapes or aggregate kinds, session aggregation, updating joins and
+window joins still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*)
 and SUM only; other aggregate kinds, retractions, DISTINCT views and TTL still
 need dedicated persistent benchmarks. The operation inventory is not a claim of
 exhaustive type, option or state-backend coverage.
@@ -976,3 +977,64 @@ operators. This establishes execution of the intended direct RocksDB path.
 These are inclusive, overlapping stack counts, not additive costs. Profiler
 runs are separate from timing comparisons; representative repeated whole-job
 performance measurements remain pending.
+
+
+### Persistent tumbling SUM lifecycle
+
+A benchmark-only adapter now exposes the production tumbling SUM store's
+update, watermark firing, checkpoint and aligned/rebuilt restore entry points.
+It derives state field types from the production aggregate definitions and
+uses one singleton key group with UTF-8 keys. The new fixture defines 120
+profiles: 16/1,024/16,384 rows, repeated/unique key domains, short/wide keys,
+both nullability modes and five phases (update, firing, checkpoint after
+partial firing, aligned restore and rebuilt restore).
+
+The independent SUM oracle checks all four output columns and their types,
+NULLs, ascending window ends and multiplicity. Inputs use sliced buffers and
+Unicode/embedded-NUL keys. Recovery retains the second open window after
+firing the first, verifies the saved timer deadline and rejects first-window
+late input before advancing the restored watermark. Continued processing and
+empty repeated firings are checked outside measurement. All 120 new profiles pass release smoke validation, alongside the existing
+1,608 profiles, for 1,728 unique diagnostics (1,512 persistent and 216 memory
+window-rank profiles). Source hashes were unchanged at completion.
+Five focused baseline timing estimates and all 500 samples are retained below;
+these characterize existing execution, with no performance improvement claimed. Hopping/cumulative windows, retractions, other aggregate kinds,
+TTL and multi-source rescaling are outside this fixture's scope.
+
+
+[All 120 tumbling allocation profiles](persistent-tumbling-sum-allocations-2026-10-02.csv)
+are retained. For 16,384 rows with a unique key domain, wide keys and NULLs,
+the update requests 54,122,090 Rust bytes across 278,919 allocation calls;
+firing the remaining second window requests 15,353,503 bytes across 105,428
+calls and creates 2,245,838 output-buffer bytes. Post-firing checkpointing
+requests 511 bytes across 22 calls; aligned restore requests 7,542 across
+138 calls; rebuilt restore requests 2,464,392 across 15,007 calls. These are
+System counting-allocator diagnostics, excluding C++ and worker allocations,
+not copied-byte or peak-memory measurements. Firing measures only the second
+window after the first was prepared and fired outside measurement.
+For these tumbling fixtures, directory creation, preparation of the initial
+state, validation, continuation, final operator close and directory cleanup
+are outside the measured closures. Restore timing includes checkpoint
+copy/rebuild and database opening. The update phase measures the production
+write-through update; its later watermark firings are verification steps.
+
+
+For the same wide unique nullable 16,384-row shape, release Criterion used
+three seconds of warmup, 100 samples and at least five seconds of collection
+per phase. All 1,728 untimed diagnostics ran before the filtered timing cases.
+Production source and fixture hashes were unchanged at completion. Rust 1.94.0,
+Arrow 58.3.0, Linux/Core i7-12650H, System counting allocator and the linked
+RocksDB options apply; C++ and worker allocation costs are not counted.
+
+| Phase | Mean | 95% confidence interval |
+| --- | ---: | ---: |
+| Write-through update | 52.524 ms | 52.168–52.898 ms |
+| Remaining-window firing | 10.753 ms | 10.324–11.396 ms |
+| Checkpoint after partial firing | 14.807 ms | 13.934–15.924 ms |
+| Aligned restore | 13.266 ms | 12.342–14.281 ms |
+| Rebuilt restore | 21.300 ms | 21.076–21.528 ms |
+
+[All five timing estimates](persistent-tumbling-original-timing-2026-10-02.csv)
+and [all 500 samples](persistent-tumbling-original-samples-2026-10-02.csv)
+retain variability. These are operator lifecycle baselines, not release/mimalloc
+whole-job comparisons against stock Flink or an optimization candidate.
