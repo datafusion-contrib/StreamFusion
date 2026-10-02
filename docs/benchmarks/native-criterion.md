@@ -643,3 +643,25 @@ The 16,384-row inputs use non-null wide payloads, keep-first ties and rank limit
 update interval. These are initial baselines of the unchanged store, not before/after
 results. Key cardinality changes retained state and I/O as well as allocation, so differences
 between these rows cannot be attributed solely to discarded payload copies.
+
+### Rejected window-rank payload admission prototype
+
+A single-map-entry prototype checked ranking admission before full-row extraction.
+Twenty matched memory-operator cases on 16,384 rows improved repeated-key ingestion
+and updates by 35.79–51.75%, but unique-key ingestion regressed 3.01–13.44%.
+Unique-key keep-last and limit-four updates regressed 19.45% and 24.06%. The original
+production loop is retained; the allocation opportunity remains an investigation.
+
+The comparison includes nullable inputs, narrow/wide Unicode payloads, limits one/four
+and first/last ties (last only at limit one). Candidate cases ran before a fresh original
+control, sequentially with three-second warmup, 100 samples and at least five seconds
+targeted measurement. Rust 1.94.0/Arrow 58.3.0, Linux WSL2/Core i7-12650H, counting
+System allocator. Operator setup/population and teardown are outside timing. These
+results exclude JNI, transposes, C++ allocations and whole-job costs. All 1,176
+allocation fixtures passed for both implementations.
+
+[All 20 comparisons](window-rank-lazy-payload-rejected-comparison-2026-10-02.csv),
+[40 estimates and confidence intervals](window-rank-lazy-payload-rejected-timing-2026-10-02.csv)
+and [4,000 raw samples](window-rank-lazy-payload-rejected-samples-2026-10-02.csv) preserve
+unfavorable controls. The rejected approach and recovery constraints are recorded in
+`.claude/wontdos/window-rank-lazy-payload.md`. No whole-job acceleration is claimed.

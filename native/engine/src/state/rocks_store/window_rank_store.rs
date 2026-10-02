@@ -410,6 +410,7 @@ fn read_u32(cursor: &mut &[u8]) -> usize {
 mod tests {
     use super::*;
     use crate::state::rocks_config::FlinkRocksOptions;
+    use arrow::array::Float64Array;
 
     fn options_json() -> String {
         serde_json::to_string(&FlinkRocksOptions {
@@ -614,6 +615,176 @@ mod tests {
             2,
             true,
         )
+    }
+
+    #[test]
+    fn smaller_restored_rank_limit_trims_even_when_new_input_loses() {
+        let snapshot = snapshot_dir("smaller-rank-limit");
+        let mut before = store_backed_ranker("smaller-rank-limit");
+        before
+            .push(&rank_batch(&[0, 0], &[100, 100], &[1, 1], &[10, 20]))
+            .unwrap();
+        let manifest = before.checkpoint_store(100, &snapshot).unwrap();
+        drop(before);
+        let row_types = rank_schema()
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect::<Vec<_>>();
+        for aligned in [false, true] {
+            let store = RocksWindowRankStore::open_merged(
+                test_config(if aligned {
+                    "smaller-rank-aligned"
+                } else {
+                    "smaller-rank-rebuild"
+                }),
+                &row_types,
+                0..=127,
+                &[(snapshot.clone(), manifest.snapshot_id)],
+                aligned,
+            )
+            .unwrap();
+            let mut restored = WindowRanker::new(
+                0,
+                1,
+                vec![2],
+                vec![SortColumn {
+                    index: 3,
+                    ascending: false,
+                    nulls_first: false,
+                }],
+                1,
+                true,
+            )
+            .with_key_timestamp_precisions(vec![-1])
+            .with_store(store, rank_schema());
+            restored
+                .push(&rank_batch(&[0], &[100], &[1], &[5]))
+                .unwrap();
+            let output = restored.flush(100).unwrap();
+            assert_eq!(output.num_rows(), 1);
+            assert_eq!(
+                output
+                    .column(3)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values(),
+                &[20]
+            );
+            assert_eq!(
+                output
+                    .column(4)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values(),
+                &[1]
+            );
+        }
+    }
+
+    #[test]
+    fn restored_nan_tail_does_not_hide_better_window_rank_candidate() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("window_start", DataType::Int64, false),
+            Field::new("window_end", DataType::Int64, false),
+            Field::new("k", DataType::Int64, false),
+            Field::new("v", DataType::Float64, false),
+            Field::new("payload", DataType::Utf8, false),
+        ]));
+        let batch = |values: Vec<f64>, payloads: Vec<&str>| {
+            let rows = values.len();
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(Int64Array::from(vec![0; rows])) as ArrayRef,
+                    Arc::new(Int64Array::from(vec![100; rows])),
+                    Arc::new(Int64Array::from(vec![1; rows])),
+                    Arc::new(Float64Array::from(values)),
+                    Arc::new(StringArray::from(payloads)),
+                ],
+            )
+            .unwrap()
+        };
+        let ranker = || {
+            WindowRanker::new(
+                0,
+                1,
+                vec![2],
+                vec![SortColumn {
+                    index: 3,
+                    ascending: true,
+                    nulls_first: false,
+                }],
+                3,
+                true,
+            )
+            .with_key_timestamp_precisions(vec![-1])
+        };
+        let row_types = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect::<Vec<_>>();
+        let store =
+            RocksWindowRankStore::create(test_config("nan-tail"), &row_types, 0..=127).unwrap();
+        let mut before = ranker().with_store(store, schema.clone());
+        before
+            .push(&batch(
+                vec![0.0, 2.0, f64::from_bits(0x7ff8_0000_0000_0042)],
+                vec!["zero", "two", "nan"],
+            ))
+            .unwrap();
+        let snapshot = snapshot_dir("nan-tail");
+        let manifest = before.checkpoint_store(100, &snapshot).unwrap();
+        drop(before);
+        for aligned in [false, true] {
+            let store = RocksWindowRankStore::open_merged(
+                test_config(if aligned {
+                    "nan-aligned"
+                } else {
+                    "nan-rebuild"
+                }),
+                &row_types,
+                0..=127,
+                &[(snapshot.clone(), manifest.snapshot_id)],
+                aligned,
+            )
+            .unwrap();
+            let mut restored = ranker().with_store(store, schema.clone());
+            // NaN compares equal to every value, so the tail is not an admission bound.
+            restored.push(&batch(vec![1.0], vec!["one"])).unwrap();
+            let output = restored.flush(100).unwrap();
+            assert_eq!(
+                output
+                    .column(3)
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap()
+                    .values(),
+                &[0.0, 1.0, 2.0]
+            );
+            assert_eq!(
+                output
+                    .column(4)
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .iter()
+                    .collect::<Vec<_>>(),
+                vec![Some("zero"), Some("one"), Some("two")]
+            );
+            assert_eq!(
+                output
+                    .column(5)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values(),
+                &[1, 2, 3]
+            );
+        }
     }
 
     fn store_backed_ranker(name: &str) -> WindowRanker {

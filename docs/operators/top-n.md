@@ -300,6 +300,17 @@ zone. A window dedup keep-last replaces a candidate with an equal rowtime; keep-
 Top-N preserve the earlier arrival on a tie. This plan-level tie policy is reapplied after memory
 or RocksDB restoration, without changing the retained row or snapshot layout.
 
+Recovery regressions cover string sort keys with a secondary sort, NULL ordering, first/last
+ties, exact payloads and rank numbers across raw memory restoration. Persistent recovery also
+covers a smaller restored rank limit: the next input trims an oversized retained buffer even
+when that input loses. A NaN-tail regression preserves the existing partition-point admission
+behavior; it is not a general claim of floating-point ordering parity with Flink.
+
+A proposed admission check before full-row extraction was rejected after its common-case
+regressions: unique-key ingestion slowed 3–13%, and retained-row updates slowed 19–24%, despite
+repeated-key gains. The production loop is retained. [The complete Criterion comparison](../benchmarks/native-criterion.md#rejected-window-rank-payload-admission-prototype)
+includes the unfavorable controls and does not establish a whole-job improvement.
+
 The one shape gap is a rank that doesn't start at 1 — i.e. an `OFFSET` on the window rank. Both
 shapes also hold the [window-assignment zone gate](window-aggregate.md#matcher-declines): a
 `TIMESTAMP_LTZ` time attribute in a session zone with any historical or recurring transition, or a fixed offset not
