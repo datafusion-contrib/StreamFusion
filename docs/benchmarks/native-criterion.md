@@ -150,8 +150,8 @@ The main remaining boundaries are:
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
 - Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank,
-  temporal join and rowtime running-SUM OVER; other OVER shapes and recovery of
-  checkpointed running folds after partial firing; multi-source RocksDB rescale/compaction,
+  temporal join and rowtime running-SUM OVER, including recovery after partial
+  firing; other OVER shapes and multi-source RocksDB rescale/compaction,
   TTL migration/compaction, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
@@ -815,3 +815,42 @@ benchmark allocator, excluding JVM/native worker allocations; no JVM allocation
 saving or Criterion throughput improvement is inferred from this smoke run.
 Release/mimalloc whole-job performance and all 210 repeated measurements live
 in the [kernel ledger](../optimizations/scalar-function-kernels.md).
+
+
+### Persistent OVER recovery after partial firing
+
+The additional fixture checkpoints a running-SUM fold after advancing a watermark
+through half the initial rows while retaining the other half as pending state.
+It verifies aligned and single-source rebuilt restores against an independent
+prefix-sum oracle, then submits an already-fired row and a second wave of new
+rows. Complete output values and schema must match the oracle, and refiring must
+be empty. The 24 existing shapes produce 72 additional allocation profiles for
+checkpoint-after-fire and both restore paths. All 72 pass, along with the
+1,440 earlier cases: 1,512 unique release fixtures in total.
+[All 72 allocation probes](persistent-over-fold-recovery-allocations-2026-10-02.csv)
+are retained. These do not establish multi-source rescale, bounded OVER,
+equal-time arrival ordering or retention coverage.
+
+For 16,384 unique-key wide nullable initial rows, checkpoint after partial
+firing requests 511 Rust bytes in 22 calls; aligned restore requests 5,335
+bytes in 91 calls and rebuilt restore 2,766,601 bytes in 32,832 calls.
+Continuation firing and oracle comparisons happen after the measured call.
+RocksDB C++ allocations, worker threads and filesystem buffers remain outside
+the Rust request counter, so these are neither total memory nor copied-byte
+measurements. The three lifecycle baselines retain 100 samples each, with a
+three-second warmup and five-second target measurement (Criterion extended the
+checkpoint collection to approximately 50.5 seconds).
+
+| Lifecycle | Mean | 95% confidence interval |
+| --- | ---: | ---: |
+| Checkpoint after partial firing | 57.177 ms | 34.865–82.292 ms |
+| Aligned restore | 10.575 ms | 10.390–10.804 ms |
+| Rebuilt restore | 22.074 ms | 21.615–22.637 ms |
+
+The checkpoint measurements have substantial variability, including 17 outliers
+among 100 samples; they do not establish a stable checkpoint throughput claim.
+[All timing estimates](persistent-over-fold-recovery-timing-2026-10-02.csv) and
+[all 300 samples](persistent-over-fold-recovery-samples-2026-10-02.csv) are retained.
+Criterion filtering still runs the full untimed diagnostics before selected
+timings. These use the Rust counting allocator rather than production mimalloc;
+no whole-job improvement is claimed.

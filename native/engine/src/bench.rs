@@ -1227,7 +1227,11 @@ impl PersistentOver {
     }
 
     pub fn flush(&mut self) -> RecordBatch {
-        self.0.flush(i64::MAX, 0).expect("persistent OVER flush")
+        self.advance(i64::MAX)
+    }
+
+    pub fn advance(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark, 0).expect("persistent OVER flush")
     }
 
     pub fn checkpoint(&mut self, directory: &str) -> i64 {

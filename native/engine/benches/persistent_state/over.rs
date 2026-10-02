@@ -214,3 +214,115 @@ pub(super) fn over(c: &mut Criterion) {
     }
     group.finish();
 }
+
+pub(super) fn over_fold_recovery(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine/rocksdb/over_fold_recovery");
+    for rows in [16, 1024, 16384] {
+        for domain in [8, rows] {
+            for width in [8, 264] {
+                for nullable in [false, true] {
+                    let all_input = input(rows * 2, domain, width, nullable);
+                    let initial = all_input.slice(0, rows);
+                    let continued = all_input.slice(rows, rows);
+                    let watermark = rows as i64 / 2 - 1;
+                    let all_expected = expected(rows * 2, domain, width, nullable);
+                    let fired = all_expected
+                        .iter()
+                        .filter(|row| row.2 <= watermark)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let remaining = all_expected
+                        .iter()
+                        .filter(|row| row.2 > watermark)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let create = |directory: &tempfile::TempDir| {
+                        PersistentOver::new(
+                            directory.path().join("db").to_str().unwrap(),
+                            initial.schema(),
+                            OPTIONS,
+                        )
+                    };
+                    let source_directory = tempfile::tempdir().unwrap();
+                    let mut source_operator = create(&source_directory);
+                    source_operator.push(&initial);
+                    let prefix = source_operator.advance(watermark);
+                    validate(&prefix, &fired);
+                    let source_path = source_directory.path().join("checkpoint");
+                    let source = source_path.to_str().unwrap();
+                    let generation = source_operator.checkpoint(source);
+                    for phase in [
+                        "checkpoint_after_fire",
+                        "restore_fold_aligned",
+                        "restore_fold_rebuilt",
+                    ] {
+                        let restoring = phase.starts_with("restore");
+                        let setup = || {
+                            let directory = tempfile::tempdir().unwrap();
+                            let operator = if restoring {
+                                None
+                            } else {
+                                let mut operator = create(&directory);
+                                operator.push(&initial);
+                                operator.advance(watermark);
+                                Some(operator)
+                            };
+                            (operator, directory)
+                        };
+                        let run = |state: &mut (Option<PersistentOver>, tempfile::TempDir)| {
+                            if restoring {
+                                state.0 = Some(PersistentOver::restore(
+                                    state.1.path().join("db").to_str().unwrap(),
+                                    initial.schema(),
+                                    OPTIONS,
+                                    source,
+                                    generation,
+                                    phase == "restore_fold_aligned",
+                                ));
+                                None
+                            } else {
+                                Some(state.0.as_mut().unwrap().checkpoint(
+                                    state.1.path().join("checkpoint").to_str().unwrap(),
+                                ))
+                            }
+                        };
+                        let label = format!(
+                            "over/{phase}/{rows}/domain={domain}/bytes={width}/nulls={nullable}"
+                        );
+                        let mut state = setup();
+                        let (snapshot, allocations) = measure(|| run(&mut state));
+                        if let Some(snapshot) = snapshot {
+                            state.0.take();
+                            state.0 = Some(PersistentOver::restore(
+                                state.1.path().join("verified-db").to_str().unwrap(),
+                                initial.schema(),
+                                OPTIONS,
+                                state.1.path().join("checkpoint").to_str().unwrap(),
+                                snapshot,
+                                true,
+                            ));
+                        }
+                        let operator = state.0.as_mut().unwrap();
+                        // The restored watermark must reject this already-fired row.
+                        operator.push(&initial.slice(0, 1));
+                        operator.push(&continued);
+                        let output = operator.flush();
+                        assert_eq!(output.schema(), prefix.schema());
+                        validate(&output, &remaining);
+                        assert_eq!(operator.flush().num_rows(), 0);
+                        report(&label, &[], &[], allocations);
+                        group.throughput(Throughput::Elements(rows as u64));
+                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                            b.iter_batched_ref(
+                                &setup,
+                                |state| std::hint::black_box(run(state)),
+                                BatchSize::PerIteration,
+                            )
+                        });
+                    }
+                }
+            }
+        }
+    }
+    group.finish();
+}

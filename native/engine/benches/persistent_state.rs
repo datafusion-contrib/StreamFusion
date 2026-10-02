@@ -445,6 +445,7 @@ criterion_group!(
     window_rank::window_rank,
     window_rank::memory_window_rank,
     temporal_join::temporal_join,
-    over::over
+    over::over,
+    over::over_fold_recovery
 );
 criterion_main!(benches);
