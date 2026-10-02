@@ -96,7 +96,7 @@ Some historical suites use
 | Arrow C Data ownership | `handoffs` | Full-schema and cached-schema export/import; nullable sliced string and integer batches |
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
 | Calc evaluation and compilation | `calc_expressions` | Arithmetic, booleans, CASE, casts, hashes, regex, date formatting/extraction, string and floating builtins; warm execution and first-batch compilation |
-| Fixed binary expressions | `binary_expressions` | Production Calc casts and ELT, plus direct UDF scalar/array argument adaptation; sliced inputs, NULLs, invalid indices, fixed/variable literals, widths 1/16/256 |
+| Fixed binary expressions | `binary_expressions` | Production Calc casts and ELT, direct UDF scalar/array adaptation and all-scalar contracts; sliced inputs, NULLs, invalid indices, fixed/variable literals/results, widths 1/16/256, one/three scalar value arguments |
 | Calc and column movement | `data_movement` | Compiled projection, grouping-set EXPAND, inner/left array UNNEST, Arrow IPC encode/decode |
 | Stateful processing | `operator_allocations` | Filter, local/global SUM, tumble/session aggregate, running/bounded OVER, append/retract Top-N, first/last dedup, normalize, updating/interval/window joins, Paimon upsert merge |
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
@@ -415,8 +415,9 @@ checks. All 792 fixtures pass release smoke checks on 2026-10-02.
 Argument cloning, production scalar adaptation, selection and output allocation/disposal are
 inside timing. Field metadata and fixtures are built outside it. The controls deliberately
 prepare the repeated literal arrays outside measurement; they isolate adaptation cost and are
-not a shipped optimization, a Calc comparison, or a whole-job baseline. There is always a
-source array: all-scalar calls, variable-binary results and different variadic arities remain
+not a shipped optimization, a Calc comparison, or a whole-job baseline. These adaptation
+profiles always have a source array. The separate all-scalar profiles below cover scalar
+return behavior. Mixed array/scalar variable-binary results and other variadic arities remain
 uncovered. Scalar output materialization for validation is outside measurement; if a function
 returns a scalar, Arrow output-buffer metrics are inapplicable.
 
@@ -447,3 +448,44 @@ adds roughly 0.54 microseconds per 1,024-row call in this diagnostic, about 11% 
 kernel boundary. This is small relative to the measured whole-job ELT gap and does not establish
 that removing the allocation would resolve it. The control's excluded literal preparation
 must not be treated as an end-to-end optimization or a stock-Flink comparison.
+
+### All-scalar ELT contracts
+
+`elt_all_scalar` adds 168 profiles across variable-binary and fixed-width 1/16 results,
+one or three value arguments, variable or fixed-size binary literals, nullable/non-null
+values, and indices -1/0/1/2/3/4/NULL. Variable-output fixtures select values of different
+lengths, including an empty variable-binary value distinct from NULL. Every result is
+checked independently for exact bytes, NULLs, declared type and
+scalar representation, with `number_rows=1024` to ensure a larger enclosing batch does not
+turn an all-scalar expression into an array.
+
+All 960 binary fixtures pass the final release smoke run on 2026-10-02, including these
+168 cases and the prior 792. [All-scalar allocation probes](binary-elt-all-scalar-probes-2026-10-02.csv)
+retain every new case. Selecting the first of three non-null variable-binary literals
+requests 7,019 Rust bytes in 31 allocation calls for the empty variable result, or 1,956
+bytes in 31 calls for a fixed-width-16 result. These include temporary adapter/output
+builders and argument clones; they are not measurements of live memory or copied bytes.
+
+The production implementation uses the released DataFusion 54 scalar adapter: it evaluates
+one row when every argument is scalar and extracts a scalar result. Argument cloning,
+one-row adaptation, selection, result extraction and disposal are inside measurement;
+fixture and field construction are outside. There are no input or output Arrow arrays at
+this boundary, so the probe's Arrow buffer columns are inapplicable and recorded as zero.
+Rust allocation requests still include temporary arrays used inside the adapter and must
+not be interpreted as copied bytes. These profiles establish the contract before changing
+literal expansion; they introduce no production optimization or Flink throughput claim.
+
+Run `python3 bin/bench-native.py --bench binary_expressions --filter elt_all_scalar --smoke`
+for these cases, or remove `--smoke` for timing. Mixed variable-result batches, additional
+binary input types, selected-length errors and arities beyond one/three values remain
+uncovered by this matrix.
+
+Two sequential release baselines use the same Rust/Arrow, CPU and system allocator as the
+adaptation measurements above, with three seconds of warmup, 100 samples and at least five
+seconds of measurement each. Both select the first of three non-null variable-binary
+literals. The empty variable result averages 0.9583 microseconds (95% interval
+0.9545–0.9625); the fixed-width-16 result averages 1.1432 microseconds (1.1377–1.1493).
+[Mean estimates](binary-elt-all-scalar-timing-2026-10-02.csv) and
+[all 200 samples](binary-elt-all-scalar-samples-2026-10-02.csv) are retained. These are
+baseline costs for different result shapes, not an optimization comparison. The filter is
+`'elt_all_scalar/width=(0|16)/values=3/fixed_literal=false/nulls=false/index=Some\(1\)'`.
