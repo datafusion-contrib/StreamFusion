@@ -153,5 +153,7 @@ fn run(c: &mut Criterion) {
     }
     group.finish();
 }
-criterion_group!(benches, run);
+#[path = "binary_expressions/elt_arguments.rs"]
+mod elt_arguments;
+criterion_group!(benches, run, elt_arguments::run);
 criterion_main!(benches);

@@ -96,7 +96,7 @@ Some historical suites use
 | Arrow C Data ownership | `handoffs` | Full-schema and cached-schema export/import; nullable sliced string and integer batches |
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
 | Calc evaluation and compilation | `calc_expressions` | Arithmetic, booleans, CASE, casts, hashes, regex, date formatting/extraction, string and floating builtins; warm execution and first-batch compilation |
-| Fixed binary expressions | `binary_expressions` | Production Calc casts from string/variable/fixed binary and fixed ELT; sliced inputs, nulls, invalid indices, byte truncation/padding, widths 1/16/256 |
+| Fixed binary expressions | `binary_expressions` | Production Calc casts and ELT, plus direct UDF scalar/array argument adaptation; sliced inputs, NULLs, invalid indices, fixed/variable literals, widths 1/16/256 |
 | Calc and column movement | `data_movement` | Compiled projection, grouping-set EXPAND, inner/left array UNNEST, Arrow IPC encode/decode |
 | Stateful processing | `operator_allocations` | Filter, local/global SUM, tumble/session aggregate, running/bounded OVER, append/retract Top-N, first/last dedup, normalize, updating/interval/window joins, Paimon upsert merge |
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
@@ -401,3 +401,49 @@ intervals are wide, so these should be treated as initial shared-host characteri
 than precise comparative claims. They describe different operational boundaries, not a
 before/after optimization or end-to-end Flink comparison. Reproduce with
 `--bench persistent_state --filter '16384/domain=16384/bytes=264/nulls=true/outer=true'`.
+
+## Binary ELT argument adaptation
+
+`binary_expressions` adds 720 direct-production-UDF profiles alongside its 72 Calc fixtures.
+The matrix varies 16, 1,024 and 16,384 rows, widths 1/16/256, nullable/non-null sliced fixed
+input arrays, fixed-size or variable-binary scalar literals, NULL/non-null literals, and five
+index modes: dynamic, constant first argument, constant literal, invalid zero and NULL.
+Dynamic indices also include negative, zero and NULL values. Each case has a scalar-literal
+path and a pre-expanded array control, with complete independent expected-value and result-type
+checks. All 792 fixtures pass release smoke checks on 2026-10-02.
+
+Argument cloning, production scalar adaptation, selection and output allocation/disposal are
+inside timing. Field metadata and fixtures are built outside it. The controls deliberately
+prepare the repeated literal arrays outside measurement; they isolate adaptation cost and are
+not a shipped optimization, a Calc comparison, or a whole-job baseline. There is always a
+source array: all-scalar calls, variable-binary results and different variadic arities remain
+uncovered. Scalar output materialization for validation is outside measurement; if a function
+returns a scalar, Arrow output-buffer metrics are inapplicable.
+
+[All 720 allocation probes](binary-elt-argument-probes-2026-10-02.csv) are retained. For a
+1,024-row non-null source, width 16, non-null variable-binary literal and dynamic indices,
+the scalar path requests 37,972 Rust bytes across 17 calls versus 17,224 across 11 for the
+pre-expanded control. Both produce the same 16,512 new Arrow buffer bytes. The difference
+includes scalar cloning and adaptation, rather than identifying every requested byte as a copy.
+It motivates avoiding repeated literal-array construction; no such production change is made here.
+
+Run `python3 bin/bench-native.py --bench binary_expressions --filter elt_arguments --smoke`
+to validate these profiles, then omit `--smoke` for timing. A focused comparison uses
+`--filter 'elt_arguments/(scalar|expanded_control)/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic'`.
+
+A sequential release characterization of that 1,024-row case uses three seconds of warmup,
+100 samples and at least five seconds of measurement per representation, Rust 1.94.0/Arrow
+58.3.0 on Linux x86-64/Core i7-12650H, with the benchmark system allocator. Means and 95%
+confidence intervals are:
+
+| Representation | Mean microseconds | 95% interval microseconds |
+| --- | ---: | ---: |
+| Pre-expanded control | 4.9482 | 4.9336–4.9649 |
+| Scalar literal | 5.4754 | 5.4561–5.4968 |
+
+[Mean estimates](binary-elt-argument-timing-2026-10-02.csv) and
+[all 200 samples](binary-elt-argument-samples-2026-10-02.csv) are retained. Scalar adaptation
+adds roughly 0.54 microseconds per 1,024-row call in this diagnostic, about 11% of the control's
+kernel boundary. This is small relative to the measured whole-job ELT gap and does not establish
+that removing the allocation would resolve it. The control's excluded literal preparation
+must not be treated as an end-to-end optimization or a stock-Flink comparison.
