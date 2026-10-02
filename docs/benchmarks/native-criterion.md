@@ -102,7 +102,7 @@ Some historical suites use
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
-| Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication and interval join; append/probe/eviction, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join and window rank; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
 | Registered Flink scalar functions | `scalar_registry` | Every registered numeric opcode; completeness assertion requires a fixture for new registrations; ASCII/null/Unicode profiles |
@@ -148,7 +148,7 @@ The main remaining boundaries are:
   upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
-- Persistent stores beyond temporal sort, keep-first deduplication and interval join, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
+- Persistent stores beyond temporal sort, keep-first deduplication, interval join and window rank, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
@@ -535,3 +535,71 @@ Use `SF_BENCHMARK=true mvn test -pl streamfusion-runtime -am -Pbench
 -Dscalar.binary.width=256 -Dscalar.rows=2000000` with the same heap and worker resources
 for stock, current native and previous production. This extends the scalar diagnostic;
 the Nexmark schemas, queries and harness are unchanged.
+
+## Persistent window rank and deduplication
+
+The `window_rank` module under `persistent_state` defines 432 profiles: 16/1,024/16,384
+incoming rows, eight or batch-cardinality keys, UTF-8 payload suffixes of 8/264 bytes,
+non-null or nullable sort/payload columns, and three rank modes. The modes keep one row
+with first-arrival ties, keep one with last-arrival ties, or retain four ranked rows.
+Inputs have a nonzero Arrow slice offset, two window ends (100/200), five repeated sort
+values, Unicode/NUL text and independently placed sort/payload NULLs. Each mode projects
+the rank number. NULL sort values follow non-null values.
+
+Six phases separate empty-store ingestion, an additional bundle against populated state,
+watermark firing, native checkpoint creation, aligned adoption and single-source rebuild.
+The update bundle repeats the original input, exercising hydration and persistence of
+existing ranked buffers. Firing includes output materialization and closed-group deletion.
+Checkpoint preparation fires only the first window; the saved store retains the second
+window and the late-data watermark. Recovery verifies the timer deadline, replays both
+windows, requires half the replayed rows to be dropped as late, compares the surviving
+ranked output and requires repeated firing to be empty.
+
+An independent oracle groups row indices by window/key, sorts by NULL placement, value
+and arrival order, takes the configured prefix, and builds the expected rows/ranks with
+Arrow `take`. The memory-backed production ranker is checked against that oracle too.
+Comparison canonicalizes ordering across independent key groups outside measurements;
+rank positions and selected payloads remain part of the complete equality assertion.
+
+Input construction, oracle work, temporary-directory creation and prepopulation are outside
+each timed phase. Normal ingestion/firing excludes opening and closing the store; recovery
+timing includes both. The one-shot recovery allocation probe measures construction, with
+destruction outside its counter. Checkpoint and recovery produce no Arrow batch, so their
+output-buffer columns are inapplicable. Throughput reports original input rows, including
+for firing/checkpoint/recovery; it is not the number of emitted ranks or retained records.
+RocksDB C++/worker allocations remain outside the Rust-thread counters, while their elapsed
+cost is retained in timing. These profiles use one source and `max_parallelism=1`; they do
+not cover key-group clipping, multi-source rescale, canonical savepoint migration, mixed
+schemas, other sort types/directions, or checkpoint compaction.
+
+Run `python3 bin/bench-native.py --bench persistent_state --filter window_rank --smoke`
+for fixture validation; omit `--smoke` for Criterion timing. These are benchmarks of the
+existing production store, not a runtime optimization or a whole-job speedup claim.
+
+All 432 window-rank profiles and all 528 existing persistent-state profiles pass release
+smoke checks on 2026-10-02. [Window-rank allocation probes](persistent-window-rank-probes-2026-10-02.csv)
+retain every new case. For non-null, wide 16,384-row keep-first input, eight keys request
+12,154,000 Rust bytes on initial ingestion and 12,168,570 on update. Batch-cardinality keys
+request 68,350,972 and 81,251,466 bytes respectively. These are total requested allocation
+traffic, not copied bytes or peak memory; they include key/row materialization and state
+handling. The repeated-key case motivates investigating payload materialization before
+rank rejection, but these measurements alone do not prove an optimization or its safety.
+
+Baseline `window-rank-ingestion-initial` records four sequential release profiles on
+Rust 1.94.0/Arrow 58.3.0, Linux WSL2/Core i7-12650H, with the counting system allocator
+and the fixed RocksDB options above. Each has three seconds of warmup, 100 samples and
+at least five seconds targeted measurement, extended by Criterion where required.
+The 16,384-row inputs use non-null wide payloads, keep-first ties and rank limit one:
+
+| Keys | Phase | Mean milliseconds | 95% confidence interval |
+| ---: | --- | ---: | --- |
+| 8 | Initial ingestion | 3.137 | 3.120–3.155 |
+| 8 | Update | 3.132 | 3.108–3.158 |
+| 16,384 | Initial ingestion | 39.344 | 38.970–39.751 |
+| 16,384 | Update | 136.997 | 121.226–153.306 |
+
+[All four estimates](persistent-window-rank-timing-2026-10-02.csv) and
+[all 400 raw samples](persistent-window-rank-samples-2026-10-02.csv) retain the broad
+update interval. These are initial baselines of the unchanged store, not before/after
+results. Key cardinality changes retained state and I/O as well as allocation, so differences
+between these rows cannot be attributed solely to discarded payload copies.

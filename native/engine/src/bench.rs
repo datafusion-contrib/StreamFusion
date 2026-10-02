@@ -990,6 +990,94 @@ impl PersistentSort {
     }
 }
 
+/// Production disk-backed window rank with the same configuration as its memory oracle.
+#[cfg(feature = "rocksdb-state")]
+pub struct WindowRankState(crate::topn::WindowRanker);
+
+#[cfg(feature = "rocksdb-state")]
+impl WindowRankState {
+    pub fn memory(limit: i64, keep_last: bool) -> Self {
+        let mut ranker = crate::topn::WindowRanker::new(
+            0,
+            1,
+            vec![2],
+            vec![SortColumn {
+                index: 3,
+                ascending: true,
+                nulls_first: false,
+            }],
+            limit,
+            true,
+        );
+        ranker.set_keep_last_on_tie(keep_last);
+        Self(ranker.with_key_timestamp_precisions(vec![-1]))
+    }
+
+    pub fn new(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        limit: i64,
+        keep_last: bool,
+    ) -> Self {
+        let types = schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect::<Vec<_>>();
+        let store = crate::state::RocksWindowRankStore::create(
+            PersistentSort::config(directory, options),
+            &types,
+            0..=0,
+        )
+        .unwrap();
+        Self(Self::memory(limit, keep_last).0.with_store(store, schema))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        limit: i64,
+        keep_last: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let types = schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect::<Vec<_>>();
+        let store = crate::state::RocksWindowRankStore::open_merged(
+            PersistentSort::config(directory, options),
+            &types,
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .unwrap();
+        Self(Self::memory(limit, keep_last).0.with_store(store, schema))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch).unwrap();
+    }
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+    pub fn late_drops(&self) -> u64 {
+        self.0.late_drops
+    }
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
+    }
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0.checkpoint_store(200, directory).unwrap().snapshot_id
+    }
+}
+
 /// Serialized Calc plans retain production compilation, scalar adaptation, and materialization.
 pub struct CalcProgram(crate::calc::CalcExpression);
 impl CalcProgram {

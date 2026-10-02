@@ -1,0 +1,5 @@
+case,mean_ns,ci_lower_ns,ci_upper_ns,confidence_level,samples,sampling_mode
+engine/rocksdb/window_rank/append/16384/domain=16384/bytes=264/nulls=false/limit=1/last=false,39343756.6,38970358.52675,39751264.25,0.95,100,Flat
+engine/rocksdb/window_rank/append/16384/domain=8/bytes=264/nulls=false/limit=1/last=false,3136929.833333334,3119682.3733333345,3155015.2195000006,0.95,100,Flat
+engine/rocksdb/window_rank/update/16384/domain=16384/bytes=264/nulls=false/limit=1/last=false,136997404.7,121226427.616,153306455.25425,0.95,100,Flat
+engine/rocksdb/window_rank/update/16384/domain=8/bytes=264/nulls=false/limit=1/last=false,3132064.295,3107999.078,3158219.6018749997,0.95,100,Flat

@@ -8,6 +8,8 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 const OPTIONS: &str = include_str!("fixtures/rocks-options.json");
 #[path = "persistent_state/interval.rs"]
 mod interval;
+#[path = "persistent_state/window_rank.rs"]
+mod window_rank;
 fn persistent(c: &mut Criterion) {
     header();
     let mut group = c.benchmark_group("engine/rocksdb");
@@ -435,6 +437,7 @@ criterion_group!(
     dedup,
     dedup_ttl,
     dedup_recovery,
-    interval::interval
+    interval::interval,
+    window_rank::window_rank
 );
 criterion_main!(benches);
