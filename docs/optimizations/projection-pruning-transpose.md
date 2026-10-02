@@ -259,3 +259,33 @@ roughly 2% stock drift limits attribution of the smaller changes. It does not
 overturn the earlier narrow-only rejection or clear the stock-performance gate.
 Benchmark loops skip repeated Javadoc generation after the full correctness
 reactors have passed those checks; this does not change timed job execution.
+
+
+## Fixed-binary entry copy experiment
+
+A measured candidate copied variable-layout fixed-binary fields from a
+single-segment heap `BinaryRowData` directly into owned Arrow storage, avoiding
+the intermediate byte array from `getBinary()`. Inline, off-heap, multi-segment
+and generic rows retained the getter path. The candidate is reverted: its
+whole-job measurements do not establish a performance improvement.
+
+Ownership and layout validation passed 20 tests on released Flink 2.2.1;
+Flink 1.18.1 passed 14 with six explicit skips for unavailable ELT forms.
+Writer checks included input mutation, inline values, nonzero offsets,
+segment boundaries, off-heap fallback and growth. These tests establish
+correctness of the prototype, not retained direct-copy coverage.
+
+For dynamic ELT over 2,000,000 non-null BINARY(16) rows, release/mimalloc,
+2 GiB heap, two warmups and five alternating trials, original/candidate/
+restored-original native medians were 0.314/0.333/0.307 seconds. Corresponding
+stock medians were 0.283/0.295/0.300 seconds. Both transposes and the blackhole
+sink remained in the timed job. Startup and variability are retained; no
+acceleration claim is made. [All 60 trials, including identity controls](../benchmarks/fixed-binary-entry-copy-2026-10-02.csv)
+are retained.
+
+Flink's Row-to-internal converter constructs GenericRowData, whereas the
+candidate targets BinaryRowData. This source audit identifies an applicability
+mismatch for the selected source; runtime row-class distribution has not been
+measured. Revisit only with a workload that proves the intended copy is removed
+and matched whole-job evidence, rather than assuming every binary field passes
+through binary-row storage.
