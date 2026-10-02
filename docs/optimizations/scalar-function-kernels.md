@@ -1035,3 +1035,29 @@ its stock and previous-production controls, whose complete ranges are retained
 in the CSV. This fixes the measured large-domain regression and establishes a
 CASE win for this configuration; it does not prove every fallback domain or
 unregistered floating-function family accelerated.
+
+
+### Sustained dynamic fixed-binary ELT control
+
+The retained dynamic-index gate also runs at 20 million non-null BINARY(16)
+rows, released Flink 2.2.1/JDK 17, release Rust with mimalloc, 2 GiB heap,
+parallelism one, two warmups and five alternating stock/native trials. Both
+transposes and the blackhole sink remain in the timed complete job. Query and
+source fixtures are byte-identical in the current and previous-production
+worktrees; the previous revision explicitly verifies fallback for ELT.
+
+| Revision / order | Stock ELT median (range), s | Native-enabled ELT median (range), s |
+| --- | --- | --- |
+| Current, first | 2.057 (2.026–2.095) | 2.442 (2.390–2.462) |
+| Previous production | 2.384 (2.356–2.425) | 2.400 (2.344–2.441), fallback |
+| Current, last | 2.016 (1.984–2.080) | 2.526 (2.509–2.548) |
+
+Current native execution loses to its matched stock controls by 18.7% and
+25.3%. The identity query also loses: current native/stock medians are
+2.306/1.971 seconds initially and 2.299/1.990 seconds afterward. This supports
+investigating conversion costs rather than attributing the full gap to startup.
+Previous-production stock controls differ substantially, so these runs do not
+establish a clean cross-revision improvement or explain that variation.
+[All 60 trials, including identity controls](../benchmarks/fixed-binary-elt-sustained-2026-10-02.csv)
+retain unfavorable results. No new optimization or default admission is
+justified; the fixed-binary dynamic ELT performance gate remains unresolved.
