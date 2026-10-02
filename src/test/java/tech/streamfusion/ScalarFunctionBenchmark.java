@@ -110,14 +110,14 @@ class ScalarFunctionBenchmark {
               "tt_fixed_bytes",
               "COUNT(*)",
               "BIGINT",
-              "ELT(n,b,X'00112233445566778899AABBCCDDEEFF')"),
+              TextTimeBenchmarkInputs.fixedBinarySelection()),
           new Query(
               "TRY_STRING_TO_FIXED_BINARY", "text", "TRY_CAST(s AS BINARY(16))", "BINARY(16)"),
           new Query(
               "ELT_FIXED_BINARY",
               "tt_fixed_bytes",
-              "ELT(n,b,X'00112233445566778899AABBCCDDEEFF')",
-              "BINARY(16)"),
+              TextTimeBenchmarkInputs.fixedBinarySelection(),
+              TextTimeBenchmarkInputs.baselineType("tt_fixed_bytes")),
           new Query(
               "REGEXP_EXTRACT_ALL", "text", "REGEXP_EXTRACT_ALL(s, '(a)', 1)", "ARRAY<STRING>"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
@@ -595,7 +595,7 @@ class ScalarFunctionBenchmark {
     List<String> csv =
         new ArrayList<>(
             List.of(
-                "function,input,output_type,payload_bytes,json_fields,unicode,null_every,scale_null_every,rows,engine,trial,seconds"));
+                "function,input,output_type,payload_bytes,json_fields,unicode,null_every,scale_null_every,rows,engine,trial,seconds,binary_width"));
     Path output = Path.of(System.getProperty("scalar.output", "target/scalar-functions.csv"));
     if (output.getParent() != null && !Files.isDirectory(output.getParent())) {
       Files.createDirectories(output.getParent());
@@ -615,7 +615,7 @@ class ScalarFunctionBenchmark {
             csv.add(
                 String.format(
                     Locale.ROOT,
-                    "%s,%s,\"%s\",%d,%d,%s,%d,%d,%d,%s,%d,%.6f",
+                    "%s,%s,\"%s\",%d,%d,%s,%d,%d,%d,%s,%d,%.6f,%d",
                     query.name(),
                     query.input(),
                     query.outputType(),
@@ -627,7 +627,8 @@ class ScalarFunctionBenchmark {
                     ROWS,
                     engine == 1 ? "native" : "flink",
                     trial - WARMUP,
-                    seconds));
+                    seconds,
+                    query.input().equals("tt_fixed_bytes") ? TextTimeBenchmarkInputs.fixedBinaryWidth() : 0));
           }
         }
       }

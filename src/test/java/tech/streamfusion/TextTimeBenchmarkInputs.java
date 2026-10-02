@@ -14,6 +14,26 @@ import org.apache.flink.types.Row;
 final class TextTimeBenchmarkInputs {
   private TextTimeBenchmarkInputs() {}
 
+  static int fixedBinaryWidth() {
+    int width = Integer.getInteger("scalar.binary.width", 16);
+    if (width < 1) throw new IllegalArgumentException("scalar.binary.width must be positive");
+    return width;
+  }
+
+  static String fixedBinaryLiteral() {
+    return fixedBinaryLiteral(fixedBinaryWidth());
+  }
+
+  static String fixedBinaryLiteral(int width) {
+    byte[] value = new byte[width];
+    for (int i = 0; i < value.length; i++) value[i] = (byte) (i * 17);
+    return "X'" + java.util.HexFormat.of().withUpperCase().formatHex(value) + "'";
+  }
+
+  static String fixedBinarySelection() {
+    return "ELT(n,b," + fixedBinaryLiteral() + ")";
+  }
+
   static String baselineExpression(String input) {
     return switch (input) {
       case "tt_bytes", "tt_fixed_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
@@ -31,7 +51,7 @@ final class TextTimeBenchmarkInputs {
     return switch (input) {
       case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "BYTES";
       case "tt_boolean" -> "BOOLEAN";
-      case "tt_fixed_bytes" -> "BINARY(16)";
+      case "tt_fixed_bytes" -> "BINARY(" + fixedBinaryWidth() + ")";
       case "tt_decimal", "tt_decimal_scale" -> "DECIMAL(38,9)";
       case "tt_unix_time" -> "BIGINT";
       case "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large" -> "DOUBLE";
@@ -187,8 +207,9 @@ final class TextTimeBenchmarkInputs {
               .returns(Types.ROW_NAMED(new String[] {"ts"}, Types.LOCAL_DATE_TIME)),
           Schema.newBuilder().column("ts", DataTypes.TIMESTAMP(9)).build());
     } else if (input.equals("tt_fixed_bytes")) {
-      byte[][] values = {new byte[16], new byte[16]};
-      for (int i = 0; i < 16; i++) {
+      int width = fixedBinaryWidth();
+      byte[][] values = {new byte[width], new byte[width]};
+      for (int i = 0; i < width; i++) {
         values[0][i] = (byte) (i * 17);
         values[1][i] = (byte) (255 - i * 17);
       }
@@ -197,7 +218,7 @@ final class TextTimeBenchmarkInputs {
           env.fromSequence(0, rows - 1)
               .map(i -> Row.of(isNull(i, nullEvery) ? null : values[(int) (i % 2)], (int) (i % 4)))
               .returns(Types.ROW_NAMED(new String[] {"b", "n"}, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.INT)),
-          Schema.newBuilder().column("b", DataTypes.BINARY(16)).column("n", DataTypes.INT()).build());
+          Schema.newBuilder().column("b", DataTypes.BINARY(width)).column("n", DataTypes.INT()).build());
     } else if (input.equals("tt_bytes") || input.startsWith("tt_utf16")) {
       java.nio.charset.Charset charset =
           switch (input) {

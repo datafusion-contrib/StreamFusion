@@ -489,3 +489,17 @@ literals. The empty variable result averages 0.9583 microseconds (95% interval
 [all 200 samples](binary-elt-all-scalar-samples-2026-10-02.csv) are retained. These are
 baseline costs for different result shapes, not an optimization comparison. The filter is
 `'elt_all_scalar/width=(0|16)/values=3/fixed_literal=false/nulls=false/index=Some\(1\)'`.
+
+### Configurable fixed-BINARY whole-job diagnostics
+
+The separate scalar diagnostic accepts `-Dscalar.binary.width=N` (positive, default 16)
+for `ELT_FIXED_BINARY` and `ELT_FIXED_BINARY_GROUPED_COUNT`. Source arrays, literals,
+resolved result/sink types and the source-matched identity control all use that same width.
+Bytes cycle through zero and high values; the default reproduces the original 16-byte
+fixture and literal. Its CSV appends `binary_width` (zero for other source families),
+since `scalar.bytes` controls text payloads rather than this fixed-binary source.
+Use `SF_BENCHMARK=true mvn test -pl streamfusion-runtime -am -Pbench
+'-Dtest=ScalarFunctionBenchmark#individualFunctions' -Dscalar.functions=ELT_FIXED_BINARY
+-Dscalar.binary.width=256 -Dscalar.rows=2000000` with the same heap and worker resources
+for stock, current native and previous production. This extends the scalar diagnostic;
+the Nexmark schemas, queries and harness are unchanged.
