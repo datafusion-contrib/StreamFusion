@@ -370,3 +370,103 @@ conversion costs; they do not validate all signatures or nullable/composed workl
 Native identity controls remain slower than stock. Wider-domain fallback profiles,
 consumer workload performance and repeated coverage remain draft gates. Historical
 results above describe earlier helpers and are retained as such.
+
+
+## Generated consumer evaluation
+
+Consumer benchmarks revealed that root-only substitution left nested calls and
+conditional COALESCE evaluation using released decimal allocation. Scalar generation
+now substitutes the verified DOUBLE invocation within the generated expression,
+retaining its NULL guards, result type and preceding operand code. It replaces
+only that invocation, so nested DECIMAL overloads retain their released callee.
+The dedicated root factory uses the same generator for operands; the Criterion
+released-generated reference explicitly disables substitution.
+
+Whole-row evaluation still uses Flink's released Calc generator. A Rex visitor
+binds only verified DOUBLE TRUNCATE calls to the existing nullable helper through
+Flink's released scalar-function bridge, adding an INT-zero operand only for the
+omitted-scale form. It preserves the original expression result type and all
+parent CASE/COALESCE/filter control flow. Dependency capture and lifecycle stay
+with the existing function context; other overloads are unchanged. This avoids
+reimplementing Calc execution or evaluating fallible branches eagerly.
+
+The regression corpus includes nullable CASE, COALESCE, runtime-scale nesting
+and a mixed DECIMAL/DOUBLE nesting case, alongside nonfinite failures. All 23
+helper/generated/SQL checks pass on released Flink 2.2.1 and 1.18.1.
+Whole-job performance remains a required gate. The pre-change consumer run shows
+COALESCE slower than stock; scalar-only substitution improves nesting but leaves
+that whole-row regression. All before/after trials are retained rather than
+presenting root-only measurements as proof of consumer performance.
+
+
+The nullable consumer comparison uses two million runtime rows, value NULLs every
+eight rows, scale NULLs every seven rows, two warmups and five alternating trials
+with the release native library, a 2 GB JVM heap and both transposes. Median
+seconds below retain source, sink, JNI and conversion costs:
+
+| Consumer | Root helper: stock / native | Scalar substitution: stock / native | Whole-row bridge: stock / native |
+|---|---:|---:|---:|
+| CASE | 0.453 / 0.443 | 0.444 / 0.446 | 0.468 / 0.486 |
+| COALESCE | 0.629 / 0.722 | 0.642 / 0.727 | 0.697 / 0.814 |
+| Nested TRUNCATE | 0.931 / 0.745 | 0.937 / 0.452 | 0.996 / 0.477 |
+| Large values | 0.863 / 0.953 | 0.851 / 0.949 | 0.952 / 1.066 |
+
+Scalar substitution improves the nested workload, but the whole-row bridge does
+not establish an improvement for COALESCE. CASE remains close to stock and large
+values outside the bounded helper still lose. Other host workloads were active;
+these comparisons do not establish a quiet-host performance gate or improvement
+against previous production behavior. All trials, including identity controls,
+are retained in [root-helper results](../benchmarks/truncate-consumer-candidate-2026-10-01.csv),
+[scalar-substitution results](../benchmarks/truncate-consumer-generator-candidate-2026-10-01.csv)
+and [whole-row results](../benchmarks/truncate-consumer-wholerow-candidate-2026-10-01.csv).
+The first file predates the scale-NULL CSV column; its configured interval is seven.
+These consumer changes remain draft pending profiling and comparison against both
+stock Flink and previous production StreamFusion.
+
+
+A subsequent 30-second CPU profile of the nullable COALESCE workload used the
+same two-million-row release setup. Of 40,370 total samples, 10,968 (27.17%)
+included `SqlFunctionUtils`, 10,650 (26.38%) included `BigDecimal`, and none
+included the exact helper. Inclusive frames overlap; these percentages must not
+be added. This establishes that the measured evaluator still reaches the released
+decimal path despite the attempted substitution. The next optimization must fix
+that generated call path before attributing the remaining loss solely to row
+conversion or helper boxing.
+
+
+The missed call came from overriding the top-level expression entry point:
+Flink visits conditional operands through the Rex visitor directly. The candidate
+now overrides the call visitor, so both top-level and scoped conditional calls
+receive the typed substitution. A generated-code regression check verifies the
+conditional operand uses the helper while the benchmark reference retains the
+released callee. All 24 targeted checks pass on released Flink 2.2.1 and 1.18.1.
+
+
+With the visitor correction, the same nullable release setup gives COALESCE
+stock/native medians of 0.698/0.472 seconds (1.480x), CASE 0.494/0.496 seconds
+(0.998x), and nested TRUNCATE 1.042/0.492 seconds (2.118x). All five alternating
+trials and the slower native identity control are retained in the
+[corrected candidate results](../benchmarks/truncate-call-visitor-candidate-2026-10-01.csv).
+The CASE ranges overlap; this is not evidence of acceleration for that consumer.
+Previous-production comparison and a follow-up profile remain required before
+accepting the corrected consumer optimization.
+
+
+The matching previous-production checkout (production code unchanged, current
+fixtures only) verified the expected fallback for these consumers. Its stock /
+previous medians were COALESCE 0.745 / 0.815 seconds, CASE 0.496 / 0.493 seconds,
+and nested TRUNCATE 1.040 / 1.037 seconds. The corrected candidate therefore beats
+both measured baselines for COALESCE and nesting; CASE remains a tie with both.
+[Previous-production trials](../benchmarks/truncate-call-visitor-previous-2026-10-01.csv)
+retain the same nullable inputs, resources, warmups and repeated measurements.
+Host load varied between runs, so this remains evidence for these sampled
+workloads rather than a general guarantee.
+
+
+A matching 30-second follow-up CPU profile records 41,907 samples. No sample
+includes `SqlFunctionUtils`; six (0.014%) include `BigDecimal` and 264 (0.630%)
+include the exact helper. Inlining and inclusive sampling prevent interpreting
+helper-frame counts as an execution count, but the disappearance of released
+decimal frames supports the generated-code regression check and measured
+COALESCE improvement. Both raw JFR recordings and collapsed stacks are retained
+with the local benchmark artifacts.

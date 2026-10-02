@@ -1371,3 +1371,37 @@ records all ranges, the input generator, reproduction commands, control drift,
 prototype parity results and the separate profile. No timing from the instrumented
 profile is included in the raw benchmark series. This investigation does not
 remove the remaining collection gaps in [#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
+
+## DOUBLE TRUNCATE consumer and nullable workloads
+
+`ScalarFunctionBenchmark` adds `DOUBLE_TRUNCATE_CASE`, `DOUBLE_TRUNCATE_COALESCE`
+and `DOUBLE_TRUNCATE_NESTED`, all on the existing bounded signed source with
+runtime scale -3..3. They respectively select
+`CASE WHEN n > 0 THEN TRUNCATE(n,s) ELSE -1E0 END`,
+`COALESCE(TRUNCATE(n,s),1E0)`, and `TRUNCATE(TRUNCATE(n,3),s)`.
+`DOUBLE_TRUNCATE_LARGE` uses signed `1e12 + 0.12345 + row % 1024`, explicitly
+outside the helper's magnitude domain, with the same runtime scales.
+`scalar.nullEvery` controls operand NULLs; new `scalar.scaleNullEvery` controls
+scale NULLs for these DOUBLE source fixtures (default zero leaves scales non-null).
+The configuration is captured outside the source's per-row loop. Each source
+has its own matching DOUBLE identity control.
+
+The existing strict native-plan/runtime checks retain JNI, both transposes and
+the runtime row source/blackhole sink. Six workload smoke checks at 5,003 rows,
+operand NULL every eight rows and scale NULL every seven rows complete on
+released Flink 2.2.1. They prove execution/admission, not timing or output parity;
+consumer SQL parity is independently checked against released Flink. Whole-job
+comparisons use repeated alternating trials and the same fixture-only copies
+in the previous-production checkout, with fallback controls explicitly expected.
+An initial timing attempt overlapped an own native build and was stopped; it
+supplies no accepted full-run timing result. Retain its log rather than treating
+partial observations as complete samples.
+
+```sh
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=DOUBLE_TRUNCATE_CASE,DOUBLE_TRUNCATE_COALESCE,DOUBLE_TRUNCATE_NESTED,DOUBLE_TRUNCATE_LARGE \
+  -Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5 \
+  -Dscalar.nullEvery=8 -Dscalar.scaleNullEvery=7
+```

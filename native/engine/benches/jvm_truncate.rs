@@ -142,6 +142,8 @@ fn run(c: &mut Criterion) {
             "decimal_boundary",
             "decimal_ambiguous",
             "outside_domain",
+            "large_domain",
+            "rounded_subunit",
         ] {
             for nullable in [false, true] {
                 let values: ArrayRef = Arc::new(Float64Array::from_iter((0..rows + 1).map(|i| {
@@ -154,6 +156,10 @@ fn run(c: &mut Criterion) {
                                 "bounded" => 1000.12345 + (i % 10000) as f64,
                                 "decimal_boundary" => 1000.5 + (i % 10000) as f64,
                                 "decimal_ambiguous" => 1000.1 + (i % 10000) as f64,
+                                "large_domain" => 1e12 + 0.12345 + (i % 10000) as f64,
+                                "rounded_subunit" => {
+                                    [1e-6 - 0.5e-18, 1e-6 + 0.5e-18, 0.5e-18, 1.5e-18][i % 4]
+                                }
                                 _ => 0.46,
                             },
                         )
@@ -163,13 +169,13 @@ fn run(c: &mut Criterion) {
                     if nullable && i % 11 == 0 {
                         None
                     } else {
-                        Some(
-                            if matches!(profile, "decimal_boundary" | "decimal_ambiguous") {
-                                1
-                            } else {
-                                (i % 7) as i32 - 3
-                            },
-                        )
+                        Some(if profile == "rounded_subunit" {
+                            6
+                        } else if matches!(profile, "decimal_boundary" | "decimal_ambiguous") {
+                            1
+                        } else {
+                            (i % 7) as i32 - 3
+                        })
                     }
                 })));
                 let batch = RecordBatch::try_from_iter([("value", values), ("scale", scales)])

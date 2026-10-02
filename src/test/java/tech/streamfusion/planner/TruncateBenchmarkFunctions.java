@@ -36,7 +36,7 @@ public final class TruncateBenchmarkFunctions {
     var loader = TruncateBenchmarkFunctions.class.getClassLoader();
     var function = shortcut
         ? FlinkExpressionFunction.doubleTruncate(call, arguments, TableConfig.getDefault(), loader)
-        : new FlinkExpressionFunction(call, arguments, TableConfig.getDefault(), loader);
+        : new FlinkExpressionFunction(call, arguments, TableConfig.getDefault(), loader, false, false);
     function.open(new FunctionContext(null) {
       @Override
       public ClassLoader getUserCodeClassLoader() {

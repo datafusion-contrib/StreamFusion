@@ -265,3 +265,20 @@ are retained. At 16,384 nullable rows, paired decoding requests 5,305,611 Rust
 bytes with 17-row output batches and 1,882,535 bytes with 1,024-row batches.
 These profile differences include per-batch reader/output overhead and do not
 measure a new optimization or whole-job improvement.
+
+
+The DOUBLE TRUNCATE JNI suite adds `large_domain` (signed values near 1e12,
+scales -3..3) and `rounded_subunit` (scale-18 rounding boundaries near 1e-6 and
+zero, scale 6) to each of its reflective/generated and released/shortcut controls.
+All existing sliced-input and NULL profiles remain. These add 48 fixtures,
+bringing the suite to 144; large values exercise released fallback rather than
+assuming the historical small-fraction `outside_domain` label is a true magnitude
+exclusion. Exact DOUBLE-bit, NULL and schema checks stay outside timing.
+
+All 144 expanded JNI profiles pass release smoke checks on 2026-10-01.
+[All domain/rounding allocation probes](double-truncate-domain-probes-2026-10-01.csv)
+are retained. The final smoke run uses the corrected production evaluator and current
+benchmark controls with released Flink 2.2.1 dependencies. The generated-code
+regression test separately verifies that the released control disables helper
+substitution. Smoke mode provides no timing claims;
+JVM/native-worker allocations remain outside the Rust counters.

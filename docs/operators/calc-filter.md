@@ -1826,10 +1826,17 @@ NULLs, signed-zero results, nonfinite behavior, extreme positions and errors. FL
 unverified signatures retain their existing gates. An omitted scale is generated as primitive
 INT zero without another Arrow argument. No incompatible opt-in is used.
 
-CASE and COALESCE retain generated row evaluation when this callback can throw.
+Generated scalar consumers substitute only verified DOUBLE invocations, retaining released
+NULL guards and operand evaluation. Whole-row consumers bind verified DOUBLE TRUNCATE calls
+to the same helper through Flink's released scalar-function bridge; other overloads and
+original expression types remain intact. The released generated Criterion control explicitly
+disables this substitution. CASE and COALESCE retain generated row evaluation when this callback can throw.
 AND/OR consumers retain the existing planner fallback for fallible operands; they preserve
 released Flink's short-circuit behavior. Programs with multiple failing evaluations retain the
-existing row-order gate. This extension is under validation; whole-job comparisons remain pending.
+existing row-order gate. This extension remains draft. Nullable COALESCE and nested TRUNCATE samples beat
+stock and previous production behavior; CASE ties both, and large-domain
+consumers still lose. See the [consumer results](../optimizations/host-exact-builtins-upcall.md#generated-consumer-evaluation)
+for retained trials and validation limits.
 
 `FollowupExpressionPlanTest` checks runtime-source SQL planning for fixed binary casts/ELT,
 Boolean/string ARRAY_DISTINCT, and DOUBLE TRUNCATE including consumer evaluation and exception behavior. It requires native

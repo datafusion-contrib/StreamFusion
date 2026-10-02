@@ -18,6 +18,10 @@ class FlinkDoubleTruncateSqlHarnessTest {
     "SELECT id, TRUNCATE(x, -3) FROM src",
     "SELECT id, TRUNCATE(x, CAST(NULL AS INT)) FROM src",
     "SELECT id, TRUNCATE(TRUNCATE(x, 3), 1) FROM src",
+    "SELECT id, TRUNCATE(TRUNCATE(x, 3), p) FROM src",
+    "SELECT id, CASE WHEN x > 0 THEN TRUNCATE(x,p) ELSE -1E0 END FROM src",
+    "SELECT id, COALESCE(TRUNCATE(x,p),1E0) FROM src",
+    "SELECT id, COALESCE(TRUNCATE(CAST(TRUNCATE(CAST(x AS DECIMAL(20,6)),1) AS DOUBLE),p),1E0) FROM src",
     "SELECT id, TRUNCATE(x, p) FROM src WHERE id < 0"
   })
   void preservesResolvedDoubleTypesNullsAndDecimalBoundaries(String sql) throws Exception {

@@ -68,4 +68,32 @@ class GeneratedDoubleTruncateTest {
       function.close();
     }
   }
+  @org.junit.jupiter.api.Test
+  void conditionalOperandVisitsUseHelperAndKeepReleasedBenchmarkControl() throws Exception {
+    var types = new JavaTypeFactoryImpl();
+    var rex = new RexBuilder(types);
+    var valueType = types.createTypeWithNullability(types.createSqlType(SqlTypeName.DOUBLE), true);
+    var scaleType = types.createTypeWithNullability(types.createSqlType(SqlTypeName.INTEGER), true);
+    var truncate = rex.makeCall(valueType, FlinkSqlOperatorTable.TRUNCATE,
+        List.of(rex.makeInputRef(valueType, 0), rex.makeInputRef(scaleType, 1)));
+    var consumer = rex.makeCall(valueType, org.apache.calcite.sql.fun.SqlStdOperatorTable.CASE,
+        List.of(rex.makeLiteral(true), truncate,
+            rex.makeApproxLiteral(java.math.BigDecimal.ONE, valueType)));
+    var arguments = new LogicalType[] {new DoubleType(), new IntType()};
+    var candidate = new FlinkExpressionFunction(consumer, arguments,
+        TableConfig.getDefault(), getClass().getClassLoader(), false);
+    var reference = new FlinkExpressionFunction(consumer, arguments,
+        TableConfig.getDefault(), getClass().getClassLoader(), false, false);
+    var field = FlinkExpressionFunction.class.getDeclaredField("generated");
+    field.setAccessible(true);
+    var candidateCode = ((org.apache.flink.table.runtime.generated.GeneratedFunction<?>)
+        field.get(candidate)).getCode();
+    var referenceCode = ((org.apache.flink.table.runtime.generated.GeneratedFunction<?>)
+        field.get(reference)).getCode();
+    assertTrue(candidateCode.contains(ExactDoubleTruncateFunction.class.getCanonicalName() + ".truncate("));
+    assertFalse(candidateCode.contains(SqlFunctionUtils.class.getCanonicalName() + ".struncate("));
+    assertTrue(referenceCode.contains(SqlFunctionUtils.class.getCanonicalName() + ".struncate("));
+    assertFalse(referenceCode.contains(ExactDoubleTruncateFunction.class.getCanonicalName() + ".truncate("));
+  }
+
 }

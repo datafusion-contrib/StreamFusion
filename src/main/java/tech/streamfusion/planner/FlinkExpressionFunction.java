@@ -17,6 +17,7 @@ import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.table.functions.UserDefinedFunction;
 import org.apache.flink.table.planner.codegen.CodeGeneratorContext;
 import org.apache.flink.table.planner.codegen.ExprCodeGenerator;
+import org.apache.flink.table.planner.codegen.GeneratedExpression;
 import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable;
 import org.apache.flink.table.runtime.generated.GeneratedFunction;
 import org.apache.flink.table.types.logical.DecimalType;
@@ -59,8 +60,15 @@ public final class FlinkExpressionFunction extends ScalarFunction
       ReadableConfig config,
       ClassLoader classLoader,
       boolean binaryStringResult) {
+    this(expression, argumentTypes, config, classLoader, binaryStringResult, true);
+  }
+
+  FlinkExpressionFunction(
+      RexNode expression, LogicalType[] argumentTypes, ReadableConfig config,
+      ClassLoader classLoader, boolean binaryStringResult, boolean exactDoubleTruncate) {
     this(
-        scalarBody(expression, argumentTypes, config, classLoader, binaryStringResult),
+        scalarBody(expression, argumentTypes, config, classLoader, binaryStringResult,
+            exactDoubleTruncate),
         argumentTypes,
         config,
         classLoader);
@@ -88,7 +96,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
       throw new IllegalArgumentException("unverified DOUBLE TRUNCATE signature");
     }
     var context = new Context(config, classLoader);
-    var generator = new ExprCodeGenerator(context, false);
+    var generator = new ExactExpressionGenerator(context);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
     var value = generator.generateExpression(call.getOperands().get(0));
     var scale = call.getOperands().size() == 2
@@ -108,11 +116,13 @@ public final class FlinkExpressionFunction extends ScalarFunction
       LogicalType[] argumentTypes,
       ReadableConfig config,
       ClassLoader classLoader,
-      boolean binaryStringResult) {
+      boolean binaryStringResult,
+      boolean exactDoubleTruncate) {
     var context = new Context(config, classLoader);
     String decimalCode = decimalRoundingText(expression);
     if (decimalCode != null) return new Body(context, decimalCode, null);
-    var generator = new ExprCodeGenerator(context, false);
+    var generator = exactDoubleTruncate
+        ? new ExactExpressionGenerator(context) : new ExprCodeGenerator(context, false);
     generator.bindInput(RowType.of(argumentTypes), "input", scala.Option.empty());
     String temporal = temporalBody(expression, generator, context, config);
     if (temporal != null) return new Body(context, temporal, null);
@@ -356,6 +366,32 @@ public final class FlinkExpressionFunction extends ScalarFunction
     if (evaluator != null) {
       evaluator.close();
       evaluator = null;
+    }
+  }
+
+  private static final class ExactExpressionGenerator extends ExprCodeGenerator {
+    ExactExpressionGenerator(Context context) {
+      super(context, false);
+    }
+
+    @Override
+    public GeneratedExpression visitCall(RexCall call) {
+      var generated = super.visitCall(call);
+      if (!RexExpression.isExactDoubleTruncate(call)) {
+        return generated;
+      }
+      String released = org.apache.flink.table.runtime.functions.SqlFunctionUtils.class
+          .getCanonicalName() + ".struncate(";
+      String code = generated.code();
+      int offset = code.lastIndexOf(released);
+      if (offset < 0) return generated;
+      // Operand code precedes this call. Replace only its typed invocation, retaining
+      // Flink's NULL guards/evaluation order and any DECIMAL calls in operand code.
+      String exact = code.substring(0, offset)
+          + ExactDoubleTruncateFunction.class.getCanonicalName() + ".truncate("
+          + code.substring(offset + released.length());
+      return generated.copy(generated.resultTerm(), generated.nullTerm(), exact,
+          generated.resultType(), generated.literalValue());
     }
   }
 

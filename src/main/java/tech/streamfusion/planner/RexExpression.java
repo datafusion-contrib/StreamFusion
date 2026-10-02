@@ -625,6 +625,9 @@ final class RexExpression {
           return reject("row-fused UDF output type is not supported: " + projection.getType());
         projections.add(projection.accept(remap));
       }
+      var exactCalls = exactDoubleTruncateCalls(calc);
+      if (condition != null) condition = condition.accept(exactCalls);
+      projections.replaceAll(projection -> projection.accept(exactCalls));
       if (arguments.isEmpty()) {
         types.add(new org.apache.flink.table.types.logical.IntType());
         codes.add(tech.streamfusion.operator.NativeUdf.TYPE_INT);
@@ -2641,6 +2644,31 @@ final class RexExpression {
         && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DOUBLE
         && (call.getOperands().size() == 1
             || call.getOperands().get(1).getType().getSqlTypeName() == SqlTypeName.INTEGER);
+  }
+
+  private static org.apache.calcite.rex.RexShuttle exactDoubleTruncateCalls(Calc calc) {
+    var builder = calc.getCluster().getRexBuilder();
+    return new org.apache.calcite.rex.RexShuttle() {
+      private org.apache.calcite.sql.SqlOperator helper;
+
+      @Override
+      public RexNode visitCall(RexCall original) {
+        var call = (RexCall) super.visitCall(original);
+        if (!isExactDoubleTruncate(call)) return call;
+        if (helper == null) {
+          var definition = new org.apache.flink.table.functions.ScalarFunctionDefinition(
+              "streamfusion_exact_double_truncate", new ExactDoubleTruncateFunction());
+          helper = org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction.of(
+              calc.getCluster(), org.apache.flink.table.catalog.ContextResolvedFunction.anonymous(definition));
+        }
+        var operands = new java.util.ArrayList<>(call.getOperands());
+        if (operands.size() == 1) {
+          operands.add(builder.makeLiteral(0,
+              builder.getTypeFactory().createSqlType(SqlTypeName.INTEGER), true));
+        }
+        return builder.makeCall(call.getType(), helper, operands);
+      }
+    };
   }
 
   private boolean emitExactDoubleTruncate(RexCall call) {

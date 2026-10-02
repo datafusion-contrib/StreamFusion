@@ -36,6 +36,7 @@ class ScalarFunctionBenchmark {
   private static final int RUNS = Integer.getInteger("scalar.runs", 5);
   private static final boolean UNICODE = Boolean.getBoolean("scalar.unicode");
   private static final int NULL_EVERY = Integer.getInteger("scalar.nullEvery", 0);
+  private static final int SCALE_NULL_EVERY = Integer.getInteger("scalar.scaleNullEvery", 0);
   private static final int JSON_FIELDS = Integer.getInteger("scalar.json.fields", 0);
   private static final boolean EXPECT_NATIVE =
       Boolean.parseBoolean(System.getProperty("scalar.native.expected", "true"));
@@ -72,6 +73,13 @@ class ScalarFunctionBenchmark {
           new Query("DOUBLE_TRUNCATE_BOUNDARY", "tt_double_boundary", "TRUNCATE(n,s)", "DOUBLE"),
           new Query("DOUBLE_TRUNCATE_AMBIGUOUS", "tt_double_ambiguous", "TRUNCATE(n,s)", "DOUBLE"),
           new Query("DOUBLE_TRUNCATE_OUTSIDE", "tt_double_outside", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_LARGE", "tt_double_large", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_CASE", "tt_double_bounded",
+              "CASE WHEN n > 0 THEN TRUNCATE(n,s) ELSE -1E0 END", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_COALESCE", "tt_double_bounded",
+              "COALESCE(TRUNCATE(n,s),1E0)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_NESTED", "tt_double_bounded",
+              "TRUNCATE(TRUNCATE(n,3),s)", "DOUBLE"),
           new Query("EXACT_ABS_BIGINT", "bigint", "ABS(n)", "BIGINT"),
           new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),
           new Query("DECIMAL_FLOOR_STRING", "tt_decimal", "CAST(FLOOR(n) AS STRING)", "STRING"),
@@ -552,7 +560,7 @@ class ScalarFunctionBenchmark {
 
   @Test
   void individualFunctions() throws Exception {
-    if (ROWS < 1 || BYTES < 0 || WARMUP < 0 || RUNS < 1 || NULL_EVERY < 0) {
+    if (ROWS < 1 || BYTES < 0 || WARMUP < 0 || RUNS < 1 || NULL_EVERY < 0 || SCALE_NULL_EVERY < 0) {
       throw new IllegalArgumentException("Invalid scalar benchmark sizes/trial counts");
     }
     if (!List.of("both", "flink", "native").contains(ENGINE)) {
@@ -587,7 +595,7 @@ class ScalarFunctionBenchmark {
     List<String> csv =
         new ArrayList<>(
             List.of(
-                "function,input,output_type,payload_bytes,json_fields,unicode,null_every,rows,engine,trial,seconds"));
+                "function,input,output_type,payload_bytes,json_fields,unicode,null_every,scale_null_every,rows,engine,trial,seconds"));
     Path output = Path.of(System.getProperty("scalar.output", "target/scalar-functions.csv"));
     if (output.getParent() != null && !Files.isDirectory(output.getParent())) {
       Files.createDirectories(output.getParent());
@@ -607,7 +615,7 @@ class ScalarFunctionBenchmark {
             csv.add(
                 String.format(
                     Locale.ROOT,
-                    "%s,%s,\"%s\",%d,%d,%s,%d,%d,%s,%d,%.6f",
+                    "%s,%s,\"%s\",%d,%d,%s,%d,%d,%d,%s,%d,%.6f",
                     query.name(),
                     query.input(),
                     query.outputType(),
@@ -615,6 +623,7 @@ class ScalarFunctionBenchmark {
                     query.input().equals("tt_json") ? JSON_FIELDS : 0,
                     UNICODE,
                     NULL_EVERY,
+                    SCALE_NULL_EVERY,
                     ROWS,
                     engine == 1 ? "native" : "flink",
                     trial - WARMUP,
