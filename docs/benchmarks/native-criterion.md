@@ -102,7 +102,7 @@ Some historical suites use
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
-| Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join and window rank; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank and temporal join; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
@@ -149,7 +149,7 @@ The main remaining boundaries are:
   upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
-- Persistent stores beyond temporal sort, keep-first deduplication, interval join and window rank, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
+- Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank and temporal join, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
@@ -665,3 +665,66 @@ allocation fixtures passed for both implementations.
 and [4,000 raw samples](window-rank-lazy-payload-rejected-samples-2026-10-02.csv) preserve
 unfavorable controls. The rejected approach and recovery constraints are recorded in
 `.claude/wontdos/window-rank-lazy-payload.md`. No whole-job acceleration is claimed.
+
+### Persistent temporal-join lifecycle
+
+The `persistent_state` suite includes 144 temporal-join profiles: 16/1,024/16,384
+probe rows, eight or batch-cardinality keys, UTF8 suffix widths 8/264, nullable
+payloads, and six phases (build, probe, watermark firing, checkpoint, aligned
+restore, clipped restore). Inputs use nonzero Arrow slice offsets. Even keys have
+two build versions at times 100/200; odd keys are unmatched. Probes at 150/250
+exercise latest-version selection and LEFT outer output. An independent row-index
+oracle checks complete values, NULLs, Unicode/embedded-NUL payloads and INSERT row
+kinds, canonicalizing only output order. A second firing must be empty.
+
+The thin adapter calls the existing persistent operator and store APIs with the
+shared RocksDB options and one key group. Creation, prepopulation, filesystem
+fixture construction and operator destruction are outside the counted/timed
+boundary. Fire includes output Arrow construction. Checkpoint includes creating
+its disk snapshot; restore includes opening/adopting or rebuilding the database,
+with output validation outside measurement. The rebuild path filters the full
+single-key-group range, so no keys are excluded. These single-source restore
+controls are not partial or multi-source rescaling, TTL,
+retraction, arbitrary type or compaction coverage.
+
+Run `python3 bin/bench-native.py --bench persistent_state --smoke` for fixture
+validation, or filter `engine/rocksdb/temporal_join` without `--smoke` for release
+Criterion timing. Allocation counters exclude C++, filesystem/native workers and
+JVM costs. This matrix measures existing behavior; it does not claim a new runtime
+optimization or a whole-job speedup. All 144 profiles and all 1,176 earlier
+profiles pass release fixture validation on 2026-10-02. [All 144 allocation probes](persistent-temporal-join-probes-2026-10-02.csv)
+retain every phase and shape. Smoke validation does not produce timing evidence.
+The separate release baseline below retains [five estimates and confidence intervals](persistent-temporal-join-timing-2026-10-02.csv)
+and [all 500 raw samples](persistent-temporal-join-samples-2026-10-02.csv).
+
+For the focused 16,384-row, unique-key, wide nullable lifecycle baseline, use:
+
+```sh
+python3 bin/bench-native.py --bench persistent_state \
+  --filter 'engine/rocksdb/temporal_join/temporal_join/(build|probe|fire|restore_aligned|restore_clipped)/16384/domain=16384/bytes=264/nulls=true' \
+  --save-baseline temporal-join-lifecycle-original
+```
+
+Criterion uses its default 3-second warmup, 5-second measurement and 100 samples.
+Each iteration starts with a fresh fixture outside the timed boundary. The
+allocation/oracle diagnostics execute for the full suite before the selected
+timings; a filter does not skip those checks. Build throughput counts right-side
+rows; the other phases count left-side probe rows. The saved baseline measures
+these lifecycle boundaries alone, with the benchmark's counting system allocator.
+Production mimalloc, JNI, row conversions and whole-job costs require separate
+measurements before accepting any optimization.
+
+For the 16,384-row unique-key wide nullable firing fixture, Rust requests
+89,643,808 bytes across 382,390 allocation calls while constructing 6,437,741
+bytes of new output buffers. Requested bytes sum allocation/reallocation requests;
+they are not peak live memory. This gives a baseline for investigating the
+store decode, owned scalar materialization and output reconstruction path, not
+evidence that all of those requests can be removed.
+
+| Phase | Mean (ms) | 95% confidence interval (ms) |
+| --- | ---: | ---: |
+| build | 5.535 | 5.408–5.697 |
+| fire | 46.381 | 46.083–46.693 |
+| probe | 11.695 | 10.724–12.902 |
+| restore_aligned | 27.902 | 27.180–28.741 |
+| restore_clipped | 38.430 | 38.024–38.869 |

@@ -8,6 +8,8 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 const OPTIONS: &str = include_str!("fixtures/rocks-options.json");
 #[path = "persistent_state/interval.rs"]
 mod interval;
+#[path = "persistent_state/temporal_join.rs"]
+mod temporal_join;
 #[path = "persistent_state/window_rank.rs"]
 mod window_rank;
 fn persistent(c: &mut Criterion) {
@@ -439,6 +441,7 @@ criterion_group!(
     dedup_recovery,
     interval::interval,
     window_rank::window_rank,
-    window_rank::memory_window_rank
+    window_rank::memory_window_rank,
+    temporal_join::temporal_join
 );
 criterion_main!(benches);

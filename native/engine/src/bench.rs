@@ -609,6 +609,76 @@ impl TemporalJoin {
     }
 }
 
+#[cfg(feature = "rocksdb-state")]
+pub struct TemporalJoinState(crate::temporal_join::TemporalJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl TemporalJoinState {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksTemporalJoinStore::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[0],
+        )
+        .unwrap();
+        Self(
+            TemporalJoin::new(schema)
+                .0
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksTemporalJoinStore::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[0],
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(
+            TemporalJoin::new(schema)
+                .0
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch, 0)
+        } else {
+            self.0.push_right(batch, 0)
+        }
+        .unwrap();
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark, 0).unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
 pub struct Projection(crate::calc::CalcExpression);
 
 impl Projection {
