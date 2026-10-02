@@ -264,8 +264,8 @@ match the standalone configuration. Complete-job medians and trial ranges in sec
 The grouped queries take 19–35% less native elapsed time at 2M rows and 22–26%
 less at 5M, with disjoint observed ranges. This benefit belongs to the complete
 native expression-plus-aggregate pipeline. It does not erase the slower standalone
-binary projections or identity controls, nor measure a previous-StreamFusion
-composition baseline. The standalone performance requirement remains unresolved.
+binary projections or identity controls, nor by itself measure a previous-StreamFusion composition baseline; the later
+paired comparison below adds that missing evidence. The standalone performance requirement remains unresolved.
 
 Grouped parity tests compare materialized results on NULLs, invalid ELT indexes,
 non-text bytes, zero padding, UTF-8 truncation and multiple input batches. Both
@@ -481,3 +481,30 @@ wide-variance diagnostic remains retained.
 [All fresh comparison trials](../benchmarks/array-distinct-boolean-recomparison-2026-10-01.csv)
 include both stock controls; STRING still lacks a demonstrated win against both
 baselines and the remaining collection coverage/performance gaps remain open.
+
+
+### Paired BINARY composition comparison (2026-10-01)
+
+The current candidate and the previous-production checkout repeat the existing
+grouped-COUNT fixtures at two million rows, a 264-byte source budget and non-null
+inputs. Both use release libraries, a 2 GB JVM heap, 1,024-row transpose batches,
+two warmups and five alternating trials. Candidate plans require native Calc,
+native columnar aggregation and both transposes; runtime substitution is verified.
+Previous production changes only fixtures and verifies fallback for the unsupported
+expression pipeline. Row sources and blackhole sinks remain in every measured run.
+
+| Group key expression | Candidate-run stock (s) | Candidate native (s) | Previous fallback (s) | Previous-run stock (s) |
+|---|---:|---:|---:|---:|
+| String to BINARY(16) | 1.235 | 0.977 | 1.225 | 1.222 |
+| BINARY(16) ELT | 0.644 | 0.442 | 0.633 | 0.641 |
+
+Candidate ranges are 0.963–0.997 seconds for cast and 0.426–0.445 seconds for ELT.
+Same-run stock ranges are 1.232–1.250 and 0.628–0.664 seconds; previous fallback
+ranges are 1.213–1.245 and 0.625–0.692 seconds. These sampled complete pipelines
+beat both baselines: 1.264x / 1.456x against same-run stock and 1.254x / 1.432x
+against previous fallback. They support the composed native island, not standalone
+BINARY projection acceleration. All identity controls and trials are retained in
+[candidate results](../benchmarks/binary-composition-candidate-2026-10-01.csv) and
+[previous results](../benchmarks/binary-composition-previous-2026-10-01.csv). Shared
+host conditions and the separately documented standalone losses remain relevant
+limits; fixed-BINARY admission/performance work stays draft.
