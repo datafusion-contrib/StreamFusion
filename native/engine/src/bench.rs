@@ -148,6 +148,76 @@ impl PersistentTumbling {
     }
 }
 
+/// Persistent session SUM through the production window-state lifecycle.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentSession(SessionAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentSession {
+    fn state_types() -> Vec<DataType> {
+        crate::aggregates::build_aggregates(&[0], &[0])
+            .iter()
+            .flat_map(crate::aggregates::WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect()
+    }
+
+    fn operator(store: crate::state::RocksSessionAggStore) -> Self {
+        Self(
+            SessionAggregator::new(1000, vec![0], vec![0])
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store, vec![DataType::Utf8]),
+        )
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        let store = crate::state::RocksSessionAggStore::create(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+        )
+        .expect("persistent session create");
+        Self::operator(store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksSessionAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .expect("persistent session restore");
+        Self::operator(store)
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) {
+        self.0.update(batch).expect("persistent session update");
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).expect("persistent session flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(12345, directory)
+            .expect("persistent session checkpoint")
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
+    }
+}
+
 /// A session-window aggregator driven by `update`/`flush`.
 pub struct Session(SessionAggregator);
 

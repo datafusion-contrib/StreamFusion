@@ -103,6 +103,7 @@ Some historical suites use
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
 | Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank, temporal join and rowtime running-SUM OVER; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Persistent window aggregation | `persistent_state` | Tumbling and session Int64 SUM; partial firing, checkpoint and aligned/rebuilt single-source recovery; session bridge merging, independent event-list oracle, saved watermark and continued processing |
 | Persistent group aggregation | `persistent_state` | Mini-batch COUNT(*) and nullable Int64 SUM with UTF-8 keys; ingestion/flush, checkpoint and aligned/rebuilt single-source restore; independent continued-changelog oracle and per-key row-kind order checks |
 | Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
@@ -119,9 +120,9 @@ Some historical suites use
 | ORC post-decode normalization | `normalization` | CHAR trimming, string pass-through, full-range timestamp conversion |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
 
-Persistent tumbling SUM lifecycle fixtures are now validated. Window aggregation
-with other shapes or aggregate kinds, session aggregation, updating joins and
-window joins still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*)
+Persistent tumbling and session SUM lifecycle fixtures are now validated.
+Window/session aggregation with other shapes or aggregate kinds, updating joins
+and window joins still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*)
 and SUM only; other aggregate kinds, retractions, DISTINCT views and TTL still
 need dedicated persistent benchmarks. The operation inventory is not a claim of
 exhaustive type, option or state-backend coverage.
@@ -158,7 +159,8 @@ The main remaining boundaries are:
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
 - Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank,
-  temporal join, rowtime running-SUM OVER, COUNT(*)/SUM GROUP BY and tumbling SUM
+  temporal join, rowtime running-SUM OVER, COUNT(*)/SUM GROUP BY, tumbling SUM
+  and session SUM
   need dedicated workloads. Partial-firing recovery is covered for the running-SUM
   OVER and tumbling SUM fixtures described below; other aggregate/window shapes,
   multi-source RocksDB rescale/compaction, TTL migration/compaction and unlisted
@@ -1129,3 +1131,90 @@ request and 568 bytes; all output buffer counts and the other 1,727 cases matche
 The production loop is restored. The [rejection record](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/window-state-value-buffer-reuse.md)
 retains the design and correctness checks. Candidate released Flink parity and
 release/mimalloc whole-job improvement were not established.
+
+## Persistent session SUM lifecycle
+
+The session SUM fixture calls the production session aggregator and direct
+RocksDB store. A separate event-list oracle groups nullable UTF-8 keys, sorts
+timestamps and merges gap-connected intervals. Inputs prepare separated sessions
+at 100 and 2,100 ms; a 1,100-ms batch bridges both, while an 8,100-ms session
+remains after partial firing. The intended measured boundaries are bridge merge,
+pending-session firing, checkpoint after partial firing and aligned/rebuilt
+single-source recovery. Variable widths, repeated/unique keys, independent NULL
+masks and nonzero-offset input slices match the tumbling matrix. Saved watermark,
+timer deadline, late-row rejection, continued processing and no refiring are
+checked outside timing. Release compilation and the full 1,848-diagnostic smoke
+run pass, including all 120 session lifecycle profiles; guarded sources remain
+unchanged throughout. [All session allocation profiles](persistent-session-sum-allocations-2026-10-02.csv)
+are retained. These counters exclude RocksDB C++ and background workers and do
+not measure copied bytes or peak memory. The focused original timing run also
+passes all 1,848 diagnostics with unchanged guarded sources. This adds validated
+lifecycle coverage and an original baseline, not a speed improvement.
+
+Each profile runs its untimed oracle and allocation diagnostic before its
+Criterion registration. Selected profiles then run their timing before later
+profiles finish validation. `iter_batched_ref` prepares a fresh database and
+operator for each iteration outside the measured boundary; that preparation
+and cleanup can make wall-clock runtime substantially longer than Criterion's
+reported measurement estimate. A partial log does not establish that every
+fixture or timing has completed.
+
+The gap is 1,000 ms and SUM uses nullable Int64 values with UTF-8 grouping keys.
+Input events arrive out of timestamp order when the bridge is applied; the
+oracle checks exact session bounds, nullable sums, multiplicity and output schema.
+The checkpoint retains the 3,100-ms watermark and timer deadline 12,345. Recovery
+includes checkpoint-file copy/rebuild and opening the restored database; operator
+closing, temporary-directory cleanup, prepared state and continued-output
+validation stay outside timing. These singleton-key-group, single-source fixtures
+do not cover other aggregate kinds, retractions, TTL, processing time, arbitrary
+gaps, overflow boundaries or multi-source rescaling.
+
+For the 16,384-row unique-key nullable session profile with 264-byte suffixes,
+the current-thread Rust allocation requests are:
+
+| Phase | Requests | Requested bytes | Newly allocated output buffers |
+| --- | ---: | ---: | ---: |
+| Bridge merge | 1,252,871 | 158,966,734 | 0 |
+| Remaining-session firing | 240,533 | 36,545,705 | 4,491,646 |
+| Checkpoint after partial firing | 35 | 827 | 0 |
+| Aligned recovery | 168 | 8,307 | 0 |
+| Key-group rebuild recovery | 29,901 | 4,921,903 | 0 |
+
+The same 16,384-row unique-key, wide nullable profile has the following original
+Criterion means from 100 samples per phase (3-second warmup, 5-second target,
+extended automatically where needed):
+
+| Phase | Mean (ms) | 95% interval (ms) |
+| --- | ---: | ---: |
+| Checkpoint after partial firing | 12.693 | 12.045–13.367 |
+| Remaining-session firing | 57.409 | 46.823–69.203 |
+| Bridge merge | 291.554 | 264.566–321.756 |
+| Aligned recovery | 14.008 | 13.834–14.279 |
+| Key-group rebuild recovery | 36.745 | 36.410–37.096 |
+
+[All five estimates](persistent-session-original-timing-2026-10-02.csv) and
+[500 raw samples](persistent-session-original-samples-2026-10-02.csv) are retained.
+Merge and firing each have 18 high outliers out of 100 measurements, so their
+variability must remain visible in any subsequent candidate/control comparison.
+These measurements use the counting System allocator and do not establish
+release/mimalloc whole-job performance against stock Flink.
+
+These characterize existing paths. They are neither a before/after comparison
+nor evidence that all requested bytes are copies that can be removed. Disk I/O,
+C++ allocations and worker threads remain outside these counters.
+
+The opt-in `PersistentSessionAggregateBenchmark` prepares a separate
+row-fed COUNT(*)/SUM witness using legacy `SESSION` SQL. Per-key input timestamps
+cycle through 0, 2 and 1 seconds, so the third timestamp phase bridges the separated
+one-second sessions; periodic watermark emission is disabled and the terminal
+watermark fires results. The harness retains identical stock/native state
+budgets, both transposes, blackhole output, alternating trials and separate
+profiling. Compilation and one unskipped sanity test pass on both released
+Flink 2.2.1 and 1.18.1 using a verified release/mimalloc library (16,384 rows,
+eight keys, eight-byte suffixes, nullable input, no warmup and one trial).
+These checks assert the session operator and both transposes in the plan and
+nonzero runtime substitutions. Normal checks with Javadocs enabled also pass
+on both released versions. Direct RocksDB JNI profiling proof and representative
+repeated timings remain pending. The sanity
+trials establish harness execution, not performance or SQL result parity; the
+blackhole sink does not compare output values.

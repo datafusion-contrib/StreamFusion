@@ -12,6 +12,8 @@ mod group;
 mod interval;
 #[path = "persistent_state/over.rs"]
 mod over;
+#[path = "persistent_state/session.rs"]
+mod session;
 #[path = "persistent_state/temporal_join.rs"]
 mod temporal_join;
 #[path = "persistent_state/tumbling.rs"]
@@ -452,6 +454,7 @@ criterion_group!(
     over::over,
     over::over_fold_recovery,
     group::group,
-    tumbling::tumbling
+    tumbling::tumbling,
+    session::session
 );
 criterion_main!(benches);
