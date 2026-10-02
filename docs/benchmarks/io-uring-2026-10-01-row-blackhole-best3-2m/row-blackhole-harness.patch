@@ -1,9 +1,6 @@
 --- a/src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java
 +++ b/src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java
-@@ -1604,48 +1604,12 @@
-       Map<String, String> nativeRocksDB,
-       boolean miniBatch)
-       throws Exception {
+@@ -1607,10 +1607 @@
 -    StringBuilder out =
 -        new StringBuilder(
 -            "\n##### NEXMARK STATE BACKENDS (exactly-once Kafka, mini-batch "
@@ -15,7 +12,7 @@
 -                + ") #####\n");
 -    out.append("query  Flink/RocksDB s      ev/s  SF/RocksDB s     ev/s  SF/Flink\n");
 +    System.out.printf("NATIVE ONLY: %d events, best of %d, mini-batch %s%n", ROWS, RUNS, miniBatch);
-     for (Query q : queries) {
+@@ -1618,31 +1609,4 @@
 -      String row;
 -      // See the mode comparison: a query lost to a transient stall is marked, not fatal.
 -      try {
@@ -51,13 +48,7 @@
 +      System.out.printf("[native-best] %s seconds=%.9f events_per_second=%.3f%n",
 +          q.label, seconds, ROWS / seconds);
 +    }
-   }
- 
-   /** q4 preflight proving both RocksDB backends engage under the job-level configuration. */
-@@ -1657,28 +1621,6 @@
-       throws Exception {
-     Query q4 =
-         Arrays.stream(ALL_QUERIES).filter(q -> q.label.equals("q4")).findFirst().orElseThrow();
+@@ -1660,22 +1623,0 @@
 -    AtomicBoolean rocksSeen = new AtomicBoolean();
 -    Thread rocksWatcher =
 -        engagementWatcher(
@@ -80,21 +71,9 @@
 -          "state.backend.type=rocksdb never materialized working files under its localdir;"
 -              + " the comparison would run stock Flink on heap state");
 -    }
-     AtomicBoolean nativeRocksSeen = new AtomicBoolean();
-     Thread nativeRocksWatcher =
-         engagementWatcher(nativeRocksSeen, () -> Native.liveNativeHandles().contains("Rocks"));
-@@ -1750,6 +1692,7 @@
-       double best = Double.MAX_VALUE;
-       for (int run = 0; run < warmup + runs; run++) {
-         double seconds = runKafkaSinkOnce(brokers, q, nativeRun, config);
+@@ -1752,0 +1695 @@
 +        System.out.printf("[native-trial] %s trial=%d seconds=%.9f%n", q.label, run + 1, seconds);
-         if (run >= warmup) {
-           best = Math.min(best, seconds);
-         }
-@@ -2087,6 +2030,39 @@
-         source, label, variant, ROWS / variant, flink / variant);
-   }
- 
+@@ -2089,0 +2033,33 @@
 +  @Test
 +  @EnabledIfEnvironmentVariable(named = "SF_ROW_ROCKS_BENCH", matches = "true")
 +  void rowDataRocksComparison() throws Exception {
@@ -128,21 +107,9 @@
 +    }
 +  }
 +
-   // ----- generator source -----
- 
-   private static double generatorBest(Query q, boolean nativeRun, Map<String, String> extra)
-@@ -2094,6 +2070,7 @@
-     double best = Double.MAX_VALUE;
-     for (int run = 0; run < WARMUP + RUNS; run++) {
-       double seconds = withProps(q, nativeRun, extra, () -> runGeneratorOnce(q, nativeRun));
+@@ -2096,0 +2073 @@
 +      System.out.printf("[native-trial] %s trial=%d seconds=%.9f%n", q.label, run + 1, seconds);
-       if (run >= WARMUP) {
-         best = Math.min(best, seconds);
-       }
-@@ -2301,6 +2278,13 @@
-     // the Kafka epoch decode). %WTS% = a window-boundary column (window_start/_end, SESSION_START/_END),
-     // which Flink always types as a plain TIMESTAMP even over an LTZ rowtime.
-     tEnv.executeSql(q.sinkDdl.replace("%TS%", tsType).replace("%WTS%", "TIMESTAMP(3)"));
+@@ -2303,0 +2281,7 @@
 +    if ("true".equals(System.getenv("SF_ROW_ROCKS_BENCH"))) {
 +      String plan = tEnv.explainSql(q.insertSql);
 +      if (!plan.contains("RowDataToArrow") || !plan.contains("ArrowToRowData")) {
@@ -150,18 +117,9 @@
 +      }
 +      System.out.printf("[row-plan] %s both-transposes=true backend=rocksdb%n", q.label);
 +    }
-     long start = System.nanoTime();
-     tEnv.executeSql(q.insertSql).await();
-     double seconds = (System.nanoTime() - start) / 1e9;
 --- a/src/test/java/tech/streamfusion/NexmarkBenchmark.java
 +++ b/src/test/java/tech/streamfusion/NexmarkBenchmark.java
-@@ -197,7 +197,8 @@
-     // uses 5M events so flush latency amortizes). Per-test cluster Configurations are ignored;
-     // the passed configuration carries job-level options only (state backend, checkpointing).
-     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+@@ -200 +200,2 @@
 -    env.setParallelism(1);
 +    env.setParallelism("true".equals(System.getenv("SF_ROW_ROCKS_BENCH"))
 +        ? Integer.parseInt(System.getenv("SF_PARALLELISM")) : 1);
-     // Object reuse is a standard tuned-production setting and is enabled for both the Flink baseline
-     // and native run. StreamFusion's transpose boundaries still take ownership when they buffer or
-     // leave Arrow, because chained operators may retain the exact object passed to collect().

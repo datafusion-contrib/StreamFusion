@@ -74,7 +74,8 @@ retain the full evidence. The
 [isolated runner patch](../benchmarks/io-uring-2026-10-01-row-blackhole-best3-2m/row-blackhole-harness.patch)
 records how this variant was selected; it is not applied to the production
 Nexmark harness in this PR. It is against the frozen experimental source,
-whose prerequisites differ from canonical main.
+whose prerequisites differ from canonical main. The patch has zero context;
+apply it to that frozen source with `git apply --unidiff-zero`.
 
 ## Reproduction
 
