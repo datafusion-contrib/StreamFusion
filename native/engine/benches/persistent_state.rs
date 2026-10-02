@@ -6,6 +6,8 @@ use streamfusion_benchmark_support::{header, measure, report, CountingAllocator}
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 const OPTIONS: &str = include_str!("fixtures/rocks-options.json");
+#[path = "persistent_state/interval.rs"]
+mod interval;
 fn persistent(c: &mut Criterion) {
     header();
     let mut group = c.benchmark_group("engine/rocksdb");
@@ -427,5 +429,12 @@ fn dedup_recovery(c: &mut Criterion) {
     }
     group.finish();
 }
-criterion_group!(benches, persistent, dedup, dedup_ttl, dedup_recovery);
+criterion_group!(
+    benches,
+    persistent,
+    dedup,
+    dedup_ttl,
+    dedup_recovery,
+    interval::interval
+);
 criterion_main!(benches);

@@ -850,6 +850,91 @@ impl PersistentFirstDedup {
     }
 }
 
+/// Fixed-schema interval state probes share the production joiner with the memory oracle.
+#[cfg(feature = "rocksdb-state")]
+pub struct IntervalState(IntervalJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl IntervalState {
+    pub fn memory(schema: SchemaRef, outer: bool) -> Self {
+        Self(
+            IntervalJoiner::new(
+                vec![0],
+                vec![0],
+                2,
+                2,
+                -100,
+                100,
+                None,
+                if outer {
+                    JoinKind::LeftOuter
+                } else {
+                    JoinKind::Inner
+                },
+                schema.clone(),
+                schema,
+            )
+            .with_key_timestamp_precisions(vec![-1]),
+        )
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str, outer: bool) -> Self {
+        let store = crate::state::RocksIntervalBuffer::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+        )
+        .unwrap();
+        Self(Self::memory(schema, outer).0.with_store(store))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        outer: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksIntervalBuffer::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(Self::memory(schema, outer).0.with_store(store))
+    }
+
+    pub fn push_left(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push_left(batch.clone(), None).unwrap()
+    }
+
+    pub fn push_right(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push_right(batch.clone(), None).unwrap()
+    }
+
+    pub fn advance(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark).unwrap()
+    }
+
+    pub fn timer_deadline(&mut self) -> i64 {
+        self.0.store_mut().timer_deadline()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(500, directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
 #[cfg(feature = "rocksdb-state")]
 impl PersistentSort {
     fn config(directory: &str, options: &str) -> crate::state::rocks_store::RocksStoreConfig {

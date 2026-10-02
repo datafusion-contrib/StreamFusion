@@ -102,7 +102,7 @@ Some historical suites use
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
-| Persistent state | `persistent_state` | Production RocksDB event-time-sort write/read, checkpoint creation, aligned file adoption and clipped restore; nullable sliced wide rows, order and resumed-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication and interval join; append/probe/eviction, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
 | Registered Flink scalar functions | `scalar_registry` | Every registered numeric opcode; completeness assertion requires a fixture for new registrations; ASCII/null/Unicode profiles |
@@ -148,7 +148,7 @@ The main remaining boundaries are:
   upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
-- Persistent stores beyond temporal sort and keep-first deduplication, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
+- Persistent stores beyond temporal sort, keep-first deduplication and interval join, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
@@ -328,3 +328,76 @@ profiles eliminate one 48-byte membership allocation while gather buffers remain
 unchanged. Timing filters select four 1,024-row Boolean controls only; the
 [scalar-kernel ledger](../optimizations/scalar-function-kernels.md) records estimates
 and intermediate experiments. JVM/C++ allocations are not included.
+
+## Persistent interval-join probes
+
+`persistent_state` adds 288 interval-state profiles: 48 shapes across six measured boundaries.
+Shapes vary 16, 1,024 and 16,384 left rows, eight or batch-sized key cardinality, eight- or
+264-character UTF-8 suffixes (with Unicode and embedded NUL), nullable/non-null payloads, and
+INNER/LEFT OUTER joins. Inputs have nonzero Arrow slice offsets. Keys and rowtimes are non-null
+INT64 columns. There is one right row per even key, so matches are bounded at half the left
+row count; left-outer eviction emits the unmatched half. This avoids timing a quadratic output.
+
+The separate phases measure:
+
+- Left append into an empty persistent buffer, including production row/key encoding and writes.
+- Right append and probing against the prepared left buffer, including match materialization and
+  persistent outer-match flag updates.
+- Watermark expiry over both prepared sides, including scans, deletion and outer null-padding.
+- Checkpoint creation over both live sides, including stored row-sequence and timer metadata.
+- Aligned single-source recovery, adopting files and opening/closing the restored database.
+- Single-source rebuild recovery, reading and resequencing the one verified key group and
+  opening/closing the destination database.
+
+The source checkpoint, input arrays, prepopulated state and temporary directories are prepared
+outside their phase's measurement. Normal operation phases exclude opening/closing the operator;
+recovery includes those costs. Checkpoint and restore adapters retain path/configuration handling.
+Throughput counts incoming rows for append/probe, and prepared-state rows for expiry, checkpoint
+and recovery; probe output can exceed incoming right-side cardinality. Disk and RocksDB worker
+costs remain in elapsed timing but outside the Rust-thread allocation counter. Arrow buffer
+probes compare each operational output against both original input sides; checkpoint and restore
+have no Arrow output, so their buffer-byte columns are inapplicable.
+
+The memory-backed production joiner supplies complete match and eviction reference batches,
+with independent cardinality assertions. Restore checks verify the timer deadline, append again
+on both sides, require two matches for a repeated key, then append an unmatched left row and
+compare complete watermark output. These expose overwritten rows, reused sequence IDs, lost
+match flags and repeated outer emission. Both modes restore one source with `max_parallelism=1`;
+these do not measure key-group exclusion, multi-source rescale, FULL/RIGHT OUTER joins, NULL keys,
+processing-time joins or residual predicates.
+
+Run `python3 bin/bench-native.py --bench persistent_state --filter 'engine/rocksdb/interval' --smoke`
+to validate fixtures, then omit `--smoke` to collect timing samples. Smoke mode and allocation
+traffic do not establish an optimization or whole-job speedup. Other persistent stores remain
+uncovered as listed above.
+
+All 288 new interval profiles and all 240 existing persistent-state profiles pass release smoke
+checks on 2026-10-02. [All interval allocation probes](persistent-interval-probes-2026-10-02.csv)
+are retained. The largest nullable, batch-cardinality left-outer fixture requests 9,678,187 Rust
+bytes during append, 36,523,865 during probing and 21,107,256 during expiry. Its rebuild restore
+requests 7,650,531 bytes across 73,779 calls, versus 4,404 bytes across 83 calls for aligned
+adoption. These distinguish production boundaries and recovery modes; they do not identify
+all requested bytes as avoidable copies or compare a new optimization against a baseline.
+
+A focused sequential release run records the six large, nullable, batch-cardinality LEFT OUTER
+profiles as baseline `interval-state-initial`: three seconds of warmup, 100 samples and at least
+five seconds targeted measurement per phase, extended by Criterion when required for 100 samples.
+The same source checkpoint is reused for recovery with warm filesystem caches. Rust 1.94.0,
+Arrow 58.3.0, Linux x86-64/Core i7-12650H, system allocator with the benchmark instrumentation
+and the fixed RocksDB options above. Mean durations and 95% confidence intervals:
+
+| Phase | Mean milliseconds | 95% interval milliseconds |
+| --- | ---: | ---: |
+| append_left | 4.145 | 4.097–4.200 |
+| checkpoint | 37.136 | 30.710–43.955 |
+| probe_right | 27.973 | 23.915–32.159 |
+| restore (rebuild) | 80.690 | 71.076–90.525 |
+| restore (aligned) | 10.938 | 10.805–11.150 |
+| watermark_expire | 14.130 | 14.024–14.242 |
+
+[All mean estimates](persistent-interval-timing-2026-10-02.csv) and
+[all 600 samples](persistent-interval-samples-2026-10-02.csv) are retained. Probe, checkpoint and rebuild
+intervals are wide, so these should be treated as initial shared-host characterizations rather
+than precise comparative claims. They describe different operational boundaries, not a
+before/after optimization or end-to-end Flink comparison. Reproduce with
+`--bench persistent_state --filter '16384/domain=16384/bytes=264/nulls=true/outer=true'`.
