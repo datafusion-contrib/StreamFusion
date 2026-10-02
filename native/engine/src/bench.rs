@@ -792,21 +792,34 @@ pub struct PersistentFirstDedup(KeepFirstDeduplicator);
 #[cfg(feature = "rocksdb-state")]
 impl PersistentFirstDedup {
     pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
-        let store = crate::state::RocksKeepFirstDedupStore::create(
-            PersistentSort::config(directory, options),
-            schema,
-            &[0],
+        Self::with_ttl(directory, schema, options, 0)
+    }
+
+    pub fn with_ttl(directory: &str, schema: SchemaRef, options: &str, ttl_ms: i64) -> Self {
+        let mut config = PersistentSort::config(directory, options);
+        config.ttl_ms = ttl_ms;
+        let store = crate::state::RocksKeepFirstDedupStore::create(config, schema, &[0]).unwrap();
+        Self(
+            KeepFirstDeduplicator::new(vec![0], 2)
+                .with_store(store)
+                .with_state_ttl(ttl_ms),
         )
-        .unwrap();
-        Self(KeepFirstDeduplicator::new(vec![0], 2).with_store(store))
     }
 
     pub fn push(&mut self, batch: &RecordBatch) {
-        self.0.push(batch, 0).unwrap();
+        self.push_at(batch, 0);
+    }
+
+    pub fn push_at(&mut self, batch: &RecordBatch, now_ms: i64) {
+        self.0.push(batch, now_ms).unwrap();
     }
 
     pub fn flush(&mut self, watermark: i64) -> RecordBatch {
-        self.0.flush(watermark, 0).unwrap()
+        self.flush_at(watermark, 0)
+    }
+
+    pub fn flush_at(&mut self, watermark: i64, now_ms: i64) -> RecordBatch {
+        self.0.flush(watermark, now_ms).unwrap()
     }
 }
 

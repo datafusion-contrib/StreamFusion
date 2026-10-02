@@ -282,3 +282,20 @@ benchmark controls with released Flink 2.2.1 dependencies. The generated-code
 regression test separately verifies that the released control disables helper
 substitution. Smoke mode provides no timing claims;
 JVM/native-worker allocations remain outside the Rust counters.
+
+
+The persistent keep-first deduplication suite also defines 72 TTL profiles:
+three batch sizes, repeated/all-distinct keys, two payload sizes, nullable/non-null
+payloads and three phases. Live emitted markers suppress duplicates just before
+the retention boundary; expired markers admit the next candidate exactly at that
+boundary. A half-retention read during setup verifies reads do not refresh expiry.
+Pending candidates still emit after that wall-clock interval because Flink's timer
+state is not TTL-expired. Fixtures use the production disk store, production TTL
+configuration and explicit host-clock readings; construction/priming stays outside
+measurement. These profiles extend operation coverage, not production behavior.
+All 168 persistent-state profiles (96 existing plus 72 TTL) pass release smoke
+checks on 2026-10-02. [All allocation probes](persistent-state-ttl-probes-2026-10-02.csv)
+are retained. Smoke checks establish output/schema and boundary behavior, without
+timing claims; Rust-thread allocation counters exclude RocksDB C++ and background
+workers. Coverage of other persistent stores and restore/rescale operations remains
+incomplete.
