@@ -698,7 +698,9 @@ sliced fixed/variable vectors, output ownership after input closure, and allocat
 [Low-cardinality grouped-count measurements](../optimizations/scalar-function-kernels.md#binary-keys-composed-with-grouped-counts)
 show 19–35% less native time at 2M rows and 22–26% less at 5M for binary-cast and
 ELT keys, retaining both transposes. These composed workloads are faster than Flink;
-standalone projections and identity controls remain slower. This does not establish
+the [synchronous entry optimization](../optimizations/projection-pruning-transpose.md#borrowing-at-the-synchronous-consumer)
+also makes the measured non-null standalone STRING-to-BINARY cast faster than both baselines.
+Standalone ELT and the sustained BINARY identity control remain slower. This does not establish
 a speedup for arbitrary binary projections or high-cardinality grouping.
 
 The original callback-only release+mimalloc measurements on Flink 2.2.1/JDK 17,
@@ -1581,9 +1583,9 @@ is available on both supported Flink lines. The broader work remains in
 ### ARRAY_DISTINCT
 
 Boolean, integer (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`), and VARCHAR/STRING arrays use typed kernels following
-DataFusion's ordered membership and batch-gather structure. Arrays of at most
-eight elements use a bounded stack search with a collision-checked fingerprint;
-larger arrays use a reusable hash set. The first occurrence of each value is retained,
+DataFusion's ordered membership and batch-gather structure. Boolean membership uses two bits;
+integer and string arrays of at most eight elements use a bounded stack search with a
+collision-checked fingerprint, and larger arrays use a reusable hash set. The first occurrence of each value is retained,
 including one NULL element. NULL containers remain NULL and empty arrays remain
 empty. The result preserves the element width, field metadata, and nullability. Boolean equality
 compares values; string equality compares UTF-8 bytes without trimming or Unicode normalization.
@@ -1591,7 +1593,10 @@ CHAR, floating, decimal, temporal, binary, and nested element types retain expli
 Nine runtime SQL parity checks pass against released Flink 2.2.1; whole-job performance
 admission remains pending.
 [Whole-job measurements](../benchmarks/scalar-functions.md#integer-array_distinct-2026-09-28)
-show large-array gains and small-array sensitivity to run-to-run variation.
+show large-array gains and small-array sensitivity to run-to-run variation. With
+[synchronous entry borrowing](../optimizations/projection-pruning-transpose.md#borrowing-at-the-synchronous-consumer),
+the nullable width-eight Boolean diagnostic also beats stock and previous production in two
+ten-million-row candidate runs; STRING performance admission remains unresolved.
 
 `MAP_KEYS` and `MAP_VALUES` remain on Flink: a zero-copy native prototype passed
 parity but regressed whole-job performance with row sources and sinks. See the

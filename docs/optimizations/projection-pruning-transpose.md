@@ -27,6 +27,65 @@ batches now retain Arrow storage under the normal off-heap allocator rather than
 rows. Closing the operator releases a partial batch without emitting it. No new byte limit is
 introduced: memory still depends on the **selected** values' sizes.
 
+## Borrowing at the synchronous consumer
+
+For a direct physical input whose released Flink `InternalTypeInfo` matches the source row
+schema, the entry edge uses a consumer-local serializer whose row-copy methods borrow the
+incoming row. The transpose writes selected values into independent Arrow buffers before
+returning. Flink's extra chained-input deep copy therefore adds no ownership protection on this
+edge and is avoided. The source type and every sibling consumer keep their normal serializers;
+global object reuse is unchanged. This also avoids copying unread fields before pruning.
+
+The edge is a standard virtual forward partition, not another physical operator or a custom
+transformation subclass. Existing virtual partition inputs retain their original serializer,
+so a hash or rebalance partition cannot be replaced accidentally. Other type information and
+schema mismatches also retain the original input. Network serialization, deserialization and
+binary copying delegate to the released row serializer. Its original snapshot is preserved;
+restoring that snapshot conservatively restores ordinary row copying. This borrowing serializer
+belongs only at the synchronous transpose input, never at a consumer that retains rows or sorts,
+keys, or asynchronously processes them.
+
+The design follows Comet's row-to-Arrow reader, which writes a row before advancing its producer.
+Flink's consumer-specific chained serializer is the adaptation needed here; see
+[the divergence note](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/divergences/46-synchronous-arrow-input.md). Ownership checks run a
+source that reuses one row and one array through both chained and network-separated forks. They
+verify every buffered Arrow result and a sibling that retains its first row. Additional checks
+cover serializer duplication, changelog wire bytes, conservative snapshot restoration and
+partition/schema exclusions, alongside transpose and SQL parity checks on released Flink 2.2.1
+and 1.18.1.
+
+Release/mimalloc diagnostics on x86-64, JDK 17 and Flink 2.2.1 use a 2 GiB test heap, two warmups
+and five alternating stock/native trials. Both transposes, the native Calc and the rowwise
+blackhole sink remain in the measured job. Previous production is `1b1b5ed8` with the same
+benchmark fixtures and its own release DSO; it falls back to stock expressions for these new
+functions. Trial sets ran separately on the same host.
+
+| Query | Rows | Stock seconds | Current native seconds | Previous production seconds |
+| --- | ---: | ---: | ---: | ---: |
+| STRING to fixed BINARY, 264-byte ASCII source, no NULLs | 2,000,000 | 0.868 | 0.379 | 0.858 |
+| ELT on fixed BINARY, no NULLs | 2,000,000 | 0.307 | 0.321 | 0.321 |
+| ELT on fixed BINARY, no NULLs | 10,000,000 | 1.018 | 1.280 | not measured |
+| Boolean ARRAY_DISTINCT, width eight, domain two, nullable | 10,000,000 | 2.466 | 2.087 | 2.199 |
+
+For the two-million-row cast, native trials span 0.371–0.423 seconds, stock
+0.861–0.885, and previous production 0.847–0.883 (its stock control is 0.856).
+The combined native cast and entry path is 2.29× faster than stock and 2.26× faster than previous
+production. These comparisons include both the new expression and the entry optimization;
+they do not isolate the serializer change. ELT remains slower than stock: native trials span
+0.318–0.325 seconds at two million rows and 1.273–1.288 at ten million, versus stock
+0.303–0.308 and 1.001–1.026 respectively. The ten-million-row fixed-BINARY identity control is
+also slower (native 1.171 versus stock 1.005). Entry borrowing does not resolve that exit-boundary
+performance limit, and ELT's acceleration gate remains open.
+
+Boolean containers are NULL every eighth row and elements every seventh. The repeated native
+run spans 2.081–2.097 seconds against stock 2.440–2.469; previous-production fallback spans
+2.171–2.241 with its stock control at 2.183. An earlier candidate run is 2.036 against stock
+2.512. Both candidate runs beat both baselines, but the changing stock controls limit the size
+of the comparative claim: the repeat is 15.4% below its stock control and 5.1% below previous
+production. All trials, identities and both stock controls are retained in the
+[measurement CSV](../benchmarks/synchronous-arrow-entry-2026-10-02.csv). These are complete-job
+measurements; the Boolean membership optimization is included alongside entry borrowing.
+
 ## Measurement
 
 The following historical measurements compare full-row and projected-row buffering, before

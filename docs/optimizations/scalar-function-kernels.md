@@ -699,3 +699,13 @@ controls differ, so the lower absolute native time is not a controlled improveme
 are retained. Code and prototype-only ownership tests were removed after this
 failed gate; Flink 1.18 prototype validation was not run. This rejects the specific
 projection extension, not future ownership-preserving boundary optimizations.
+
+## Synchronous entry follow-up
+
+The measurements above precede the consumer-local entry serializer. The
+[entry transpose ledger](projection-pruning-transpose.md#borrowing-at-the-synchronous-consumer)
+records the updated complete-job comparisons and all trials. The non-null standalone
+STRING-to-fixed-BINARY cast now beats stock and previous production, and the small nullable
+Boolean ARRAY_DISTINCT case does so in two sustained candidate runs. Standalone ELT remains
+slower, including at ten million rows. STRING ARRAY_DISTINCT has not yet been remeasured with
+this entry change. Earlier rejected exit projections and membership experiments remain rejected.
