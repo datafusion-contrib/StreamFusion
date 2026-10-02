@@ -85,7 +85,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
     try {
       if (pendingRoot == null) {
         pendingRoot = VectorSchemaRoot.create(ArrowConversion.toArrowSchema(rowType), allocator);
-        writer = ArrowConversion.createRowDataArrowWriter(pendingRoot, rowType);
+        writer = ArrowConversion.createRowDataArrowWriter(pendingRoot, rowType, batchSize);
       }
       RowData row =
           projector == null ? element.getValue() : projector.replaceRow(element.getValue());

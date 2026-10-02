@@ -193,3 +193,69 @@ its new test were removed; no capacity policy change remains.
 are retained. Rust's current ELT adaptation also expands scalar BINARY arguments to batch-sized
 arrays before selection; this is a candidate for dedicated scalar/array Criterion profiles and
 further profiling, not yet a demonstrated optimization.
+
+
+### Wide fixed-width capacity sizing (prototype)
+
+A 45-second release/mimalloc CPU profile of the row-fed, nullable BINARY(256)
+constant-index ELT job records 6,027 of 56,885 samples (10.6%) in fixed-vector
+initialization under entry writer creation. This is new evidence beyond the
+previous narrow-row capacity experiment, which showed no reliable speedup.
+The prototype follows Comet's Arrow writer: allocate top-level fixed-width
+vectors for the entry batch limit, while variable and nested vectors retain
+their default allocation policy. Every batch retains independent owned buffers.
+Safe writes can grow beyond the hint. All 48 selected Flink 2.2 correctness
+cases pass, including fixed-width growth, NULLs, reused input ownership, SQL
+parity, and existing transpose checks. The matching Flink 1.18 suite passes
+42 cases and explicitly skips six unavailable-function cases. Four additional
+batch-configuration checks pass on each Flink version, including limits 1, 5
+and 64. Whole-job
+acceptance remains pending; the earlier narrow-row rejection still applies.
+
+
+The first matched wide-row pair uses 2 million BINARY(256) records, NULL every
+seventh row, a 2 GiB heap, two warmups and five alternating stock/native trials
+per query. Both allocation policies use the identical release/mimalloc native
+library with ELT array reuse. Both transposes and blackhole remain in the plan.
+[All 60 trials](../benchmarks/binary-wide-fixed-capacity-pair-2026-10-02.csv)
+include identity controls; candidate Java source is restored after the pair.
+
+| Query | Sized policy stock / native median (s) | Original policy stock / native median (s) |
+| --- | --- | --- |
+| Constant-index ELT | 0.328 / 0.401 | 0.311 / 0.440 |
+| Dynamic-index ELT | 0.315 / 0.406 | 0.339 / 0.445 |
+| Identity | 0.311 / 0.406 | 0.327 / 0.456 |
+
+Native constant-index time falls 9.0% (candidate range 0.398–0.409 seconds,
+original 0.428–0.449), and dynamic time falls 8.7% (0.397–0.422 versus
+0.436–0.451). Stock controls drift in different directions, by roughly
+5–7%. Both native queries remain slower than stock. This supports an
+incremental capacity improvement but does not resolve fixed-BINARY admission
+or establish stability across run order; the prototype remains unaccepted
+pending released-version validation and a reversed-order comparison.
+
+
+The reversed-order pair also completes successfully with the same configuration
+and native library; [all 60 trials](../benchmarks/binary-wide-fixed-capacity-reverse-pair-2026-10-02.csv)
+are retained. Original-policy constant-index median is 0.434 seconds
+(range 0.431–0.440), versus sized-policy 0.406 (0.402–0.409), a 6.6%
+reduction. Dynamic medians are 0.438 (0.432–0.445) versus 0.408
+(0.401–0.417), a 6.9% reduction. Stock controls are 0.307 versus
+0.336 seconds for constant selection and 0.310 versus 0.326 for dynamic
+selection; this drift remains visible. Identity native medians fall from
+0.458 to 0.429 seconds. The reduction repeats in both run orders, but both
+queries still lose to stock and the feature admission gate remains open.
+
+
+The sustained narrow-row control retains 10 million non-null BINARY(16) rows,
+the same heap, warmups, repeats and native library, and
+[all 60 trials](../benchmarks/binary-narrow-fixed-capacity-pair-2026-10-02.csv).
+Native constant-index medians are 1.171 seconds sized (1.164–1.172) versus
+1.196 original (1.195–1.201); dynamic medians are 1.240 (1.231–1.244)
+versus 1.295 (1.279–1.308). Stock constant medians are 1.005 versus 1.024
+and dynamic medians 1.020 versus 1.046. Identity native medians are 1.173
+versus 1.199 seconds. This pair detects no narrow-profile regression, but
+roughly 2% stock drift limits attribution of the smaller changes. It does not
+overturn the earlier narrow-only rejection or clear the stock-performance gate.
+Benchmark loops skip repeated Javadoc generation after the full correctness
+reactors have passed those checks; this does not change timed job execution.
