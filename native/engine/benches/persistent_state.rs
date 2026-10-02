@@ -6,6 +6,8 @@ use streamfusion_benchmark_support::{header, measure, report, CountingAllocator}
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 const OPTIONS: &str = include_str!("fixtures/rocks-options.json");
+#[path = "persistent_state/group.rs"]
+mod group;
 #[path = "persistent_state/interval.rs"]
 mod interval;
 #[path = "persistent_state/over.rs"]
@@ -446,6 +448,7 @@ criterion_group!(
     window_rank::memory_window_rank,
     temporal_join::temporal_join,
     over::over,
-    over::over_fold_recovery
+    over::over_fold_recovery,
+    group::group
 );
 criterion_main!(benches);

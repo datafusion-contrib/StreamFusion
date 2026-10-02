@@ -103,6 +103,7 @@ Some historical suites use
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
 | Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank, temporal join and rowtime running-SUM OVER; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Persistent group aggregation | `persistent_state` | Mini-batch COUNT(*) and nullable Int64 SUM with UTF-8 keys; ingestion/flush, checkpoint and aligned/rebuilt single-source restore; independent continued-changelog oracle and per-key row-kind order checks |
 | Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
@@ -117,6 +118,12 @@ Some historical suites use
 | Parquet file operations | `parquet_io` | Production encode, selected-row encode, ordinary decode, paired INT96 decode, nullable wide strings and full-range timestamps |
 | ORC post-decode normalization | `normalization` | CHAR trimming, string pass-through, full-range timestamp conversion |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
+
+Persistent lifecycle witnesses remain missing for window aggregation, session
+aggregation, updating joins and window joins. GROUP BY fixtures cover COUNT(*)
+and SUM only; other aggregate kinds, retractions, DISTINCT views and TTL still
+need dedicated persistent benchmarks. The operation inventory is not a claim of
+exhaustive type, option or state-backend coverage.
 
 This is operation-level coverage, not exhaustive coverage of every SQL type, expression opcode,
 codec option, state backend, and recovery mode. Expand profiles alongside implementation changes.
@@ -854,3 +861,53 @@ among 100 samples; they do not establish a stable checkpoint throughput claim.
 Criterion filtering still runs the full untimed diagnostics before selected
 timings. These use the Rust counting allocator rather than production mimalloc;
 no whole-job improvement is claimed.
+
+
+### Persistent GROUP BY lifecycle fixtures
+
+The new benchmark matrix uses the production RocksDB-backed mini-batch
+COUNT(*) and nullable Int64 SUM implementation. Its 24 shapes combine 16,
+1,024 and 16,384 rows, repeated or unique UTF-8 keys, short or wide keys,
+and nullable or nonnullable input. Keys include Unicode and NUL bytes;
+input arrays have nonzero slice offsets. Independent key and value null
+masks include groups with entirely null SUM inputs.
+
+Four phases measure update plus logical-bundle flush, checkpoint after flush,
+aligned restore and single-source rebuilt restore. An independent map oracle
+checks complete schema and INSERT/UPDATE_BEFORE/UPDATE_AFTER values, including
+a second input wave after each measured call and reopening the actual measured
+checkpoint. UPDATE_BEFORE must precede UPDATE_AFTER for each key; unordered
+group emission is canonicalized only after this order check. Setup, continuation
+and oracle checks remain outside measurement. All 96 new profiles
+pass, along with 1,512 earlier profiles: 1,608 unique release fixtures. The final
+run verifies unchanged source hashes and the per-key changelog order. These
+fixtures do not establish retract/delete, DISTINCT, TTL or multi-source rescale coverage. Existing-group continuation is
+validated outside measurement; the ingestion timing starts from empty state.
+
+
+[All 96 GROUP BY allocation profiles](persistent-group-aggregate-allocations-2026-10-02.csv)
+are retained. For 16,384 rows with a 16,384-key domain, wide UTF-8 keys and
+nullable input, ingestion plus flush requests 80,232,710 Rust bytes in 182,018
+calls and produces 4,387,381 bytes of new output buffers. Null keys coalesce into
+one group, so the nullable shape has fewer groups than its configured domain.
+Checkpoint requests 511 bytes in 22 calls; aligned restore requests 5,990 bytes
+in 94 calls; rebuilt restore requests 5,136,455 bytes in 29,855 calls. These
+counters exclude RocksDB C++ allocations, worker threads and filesystem buffers;
+they measure requested Rust allocations rather than copied bytes or peak memory.
+Four lifecycle baselines retain 100 samples each, with a three-second warmup
+and five-second target measurement. Criterion extended checkpoint sample
+collection to approximately 14 seconds.
+
+| Lifecycle | Mean | 95% confidence interval |
+| --- | ---: | ---: |
+| Ingestion and logical-bundle flush | 45.974 ms | 45.684–46.267 ms |
+| Checkpoint | 40.502 ms | 33.368–48.495 ms |
+| Aligned restore | 9.882 ms | 9.742–10.087 ms |
+| Rebuilt restore | 28.361 ms | 26.588–30.164 ms |
+
+[All four timing estimates](persistent-group-aggregate-timing-2026-10-02.csv) and
+[all 400 samples](persistent-group-aggregate-samples-2026-10-02.csv) are retained.
+Checkpoint variability remains substantial. The Rust counting allocator uses
+System rather than production mimalloc; all 1,608 untimed diagnostics execute
+before the filtered timing cases. No whole-job acceleration is inferred from
+this benchmark extension.

@@ -372,6 +372,76 @@ impl GroupBy {
     }
 }
 
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentGroupBy(GroupAggregator<crate::group_agg::RocksGroupStore>);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentGroupBy {
+    fn codec() -> crate::group_agg::GroupStateCodec {
+        crate::group_agg::GroupStateCodec::new(
+            vec![3, 0],
+            vec![DataType::Int64; 2],
+            vec![-1, 1],
+            vec![-1; 2],
+        )
+    }
+
+    fn operator(store: crate::group_agg::RocksGroupStore) -> Self {
+        Self(
+            GroupAggregator::new(vec![3, 0], vec![0, 0], vec![-1, 1], vec![0], true)
+                .with_key_timestamp_precisions(vec![-1])
+                .with_mini_batch()
+                .with_backend(store),
+        )
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        let store = crate::group_agg::RocksGroupStore::create(
+            PersistentSort::config(directory, options),
+            Self::codec(),
+        )
+        .expect("persistent GROUP BY create");
+        Self::operator(store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::group_agg::RocksGroupStore::open_merged(
+            PersistentSort::config(directory, options),
+            Self::codec(),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+            0,
+        )
+        .expect("persistent GROUP BY restore");
+        Self::operator(store)
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.update(batch, 0).expect("persistent GROUP BY update")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0
+            .flush_mini_batch()
+            .expect("persistent GROUP BY flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .expect("persistent GROUP BY checkpoint")
+            .snapshot_id
+    }
+}
+
 /// Changelog normalization with either immediate or explicit logical-bundle output.
 pub struct Normalize(ChangelogNormalizer);
 
