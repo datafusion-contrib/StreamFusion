@@ -1056,8 +1056,46 @@ warmup jobs and a 30-second profiling target over 2,000,000 rows, 16,384 keys,
 `RocksWindowAggStore`, and both transpose operators appear.
 [The runtime witness counts](persistent-tumbling-runtime-witness-2026-10-02.csv)
 are inclusive and overlap; they must not be added or treated as latency shares.
-Representative repeated timings remain pending. Neither the profile nor the
-single-trial sanity runs are performance evidence.
+The repeated stock/current/previous-production comparison is recorded below.
+Neither the profile nor the single-trial sanity runs are performance evidence.
+
+## Persistent tumbling whole-job baseline
+
+A release/mimalloc Flink 2.2.1 run of the row-fed COUNT(*)/SUM harness used
+2,000,000 rows, 16,384 keys, 264-byte key suffixes and independent key/value NULL
+masks. The two fixed one-second event-time windows fire on the terminal
+watermark. Parallelism is one, task off-heap memory is 256 MiB and fixed-slot
+RocksDB memory is 128 MiB for both engines; the sink is blackhole and the native
+plan retains both transposes. Two warmup jobs per engine precede five retained
+trials per engine, alternating engine order. The measured boundary is
+`executeSql(...).await()`, including job startup, conversion, JNI and state work;
+environment/view construction and plan validation precede measurement.
+
+The byte-identical harness runs sequentially against current production
+(`33052baf`, with buffer reuse reverted), previous production (`1b1b5ed8`) and
+current production again. Each checkout uses its own verified release/mimalloc
+library and production Java classes; the only added previous-checkout source is
+the same benchmark harness. [All 30 measured trials](persistent-tumbling-whole-job-trials-2026-10-02.csv)
+are retained.
+
+| Run | Stock median (range), s | Native median (range), s | Native vs stock |
+| --- | ---: | ---: | ---: |
+| Current before previous | 7.744 (7.420–8.009) | 8.152 (7.718–8.202) | 5.3% slower |
+| Previous production | 7.178 (7.170–7.268) | 7.686 (7.572–7.838) | 7.1% slower |
+| Current after previous | 7.060 (7.015–7.252) | 7.810 (7.559–7.868) | 10.6% slower |
+
+Native trails stock in all three runs for this profile. The first run's ranges
+overlap; the other two runs' stock/native ranges do not. Stock also changes
+between runs, so these observations establish no clean cross-revision speed
+claim or explanation for the drift. This single nullable wide-key profile does
+not cover other cardinalities, widths, NULL modes or checkpoint behavior. The
+measurements characterize an existing production path; no new window-state
+optimization is accepted. A separate previous-production profile also verifies
+the direct RocksDB path: 26,452 of 38,717 CPU samples include
+`pushRocksDBWindowAggregator`, 6,731 include `RocksWindowAggStore`, and both
+transposes appear. [The previous runtime witness](persistent-tumbling-previous-runtime-witness-2026-10-02.csv)
+retains inclusive overlapping counts, which must not be added or used as latency
+shares. Both profiles are separate from the reported timings.
 
 ## Window-state value buffer reuse experiment
 
