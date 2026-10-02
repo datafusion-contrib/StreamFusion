@@ -331,3 +331,12 @@ configuration regressions. Both execution-counter artifacts were inspected.
 Java CI failures retain Surefire reports, fork dump streams, and JVM fatal-error logs in the
 `java-failure-diagnostics-<Flink line>` artifact for seven days. These accompany the console
 log when a native abort prevents the crashing test from completing its XML report.
+
+## JVM-generated failure diagnostics
+
+Nullable JSON boolean composition is checked against both host and native
+execution for `NullPointerException`, row-evaluation phase, and native routing.
+It does not require HotSpot's generated `booleanValue` detail message: a valid
+NPE can lack that diagnostic across JVM execution and exception transport.
+Assertions for explicit SQL error messages remain unchanged. Focused regression validation runs with helpful NPE messages disabled to
+exercise this message-independent failure contract.
