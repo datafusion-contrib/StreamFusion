@@ -1,0 +1,17 @@
+round,case,revision,mean_ns,lower_ns,upper_ns
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,original,77737.19551329267,77540.70201950881,77939.65961843955
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,candidate,76575.82020835196,76260.04772936857,77060.1309919912
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,original,178981.08912075937,177358.56232666798,180544.60908345747
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,candidate,160943.22828039862,159811.75996005625,162131.97309425715
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,original,179639.44898010188,178094.66859979494,181144.09799761578
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,candidate,162323.26121400078,160968.43731985075,163691.99992107076
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,original,70092.6834058647,69452.64271016863,70977.1145464353
+1,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,candidate,68803.46811726014,68450.59760659708,69269.9636917112
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,candidate,77371.53374402458,77044.66603979174,77732.37772462203
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,original,78025.50826850574,77733.6848075779,78336.71124468968
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,candidate,167031.36871347518,166059.3713364767,168154.82843934343
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,original,159990.08388310065,159231.25511882477,160784.9515235246
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,candidate,165302.76341588944,164136.95780379482,166445.9194474611
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,original,168163.05514179263,166848.1916540085,169495.7539720063
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,candidate,69261.36524370051,68502.15617452789,70532.09945443433
+2,binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,original,70102.04560049382,68938.99805021899,72139.39750186681

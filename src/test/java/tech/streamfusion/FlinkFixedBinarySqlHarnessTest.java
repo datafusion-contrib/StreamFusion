@@ -82,12 +82,19 @@ class FlinkFixedBinarySqlHarnessTest {
     java.util.Arrays.fill(source, (byte) 0x80);
     source[width - 1] = (byte) 0xff;
     List<Row> rows = new ArrayList<>();
-    for (int i = 0; i < 1033; i++) rows.add(Row.of(i % 7 == 0 ? null : source, i % 4));
+    for (int i = 0; i < 1033; i++) {
+      byte[] value = source.clone();
+      value[0] = (byte) i;
+      if (width > 1) value[width - 1] = (byte) (i >>> 8);
+      rows.add(Row.of(i % 7 == 0 ? null : value, i % 4));
+    }
     String literal = TextTimeBenchmarkInputs.fixedBinaryLiteral(width);
     BuiltinFunctionParity.assertParity(
         () -> BuiltinFunctionParity.environment(
             ROW(FIELD("b", BINARY(width)), FIELD("n", INT())), rows),
-        "SELECT ELT(n,b," + literal + "), ELT(n,b,CAST(NULL AS BINARY(" + width + "))) FROM src");
+        "SELECT ELT(n,b," + literal + "), ELT(n,b,CAST(NULL AS BINARY(" + width + "))), "
+            + "ELT(1,b," + literal + "), ELT(2," + literal + ",b), "
+            + "ELT(1,b,CAST(NULL AS BINARY(" + width + "))) FROM src");
   }
 
   @Test

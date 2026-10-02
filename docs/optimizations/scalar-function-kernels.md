@@ -851,3 +851,137 @@ guarantee. No ownership change or allocation saving is claimed here. The entry
 VARCHAR writer already copies heap binary-string segments directly into Arrow,
 following Comet's buffer-based writer pattern; that existing optimization also
 applies to nested array elements.
+
+
+### Scalar-index binary ELT array reuse (prototype)
+
+The candidate returns a selected immutable Arrow array directly when ELT's index
+is a positive INT scalar, the selected value is an array of exactly the declared
+result type, all array arguments have the expected batch length, and all value
+arguments are binary. This avoids index expansion and rebuilding the selected
+payload. Other indexes and type adaptation keep the original path. Array output
+representation, slices and NULLs are preserved, including empty and single-row
+batches. The retained Arrow reference owns its buffers after the argument batch
+is dropped; no Java or native handover contract changes. Comet's existing
+expression and schema-cast paths similarly return an `Arc` clone when input
+already satisfies the result contract.
+
+All four targeted release tests pass, including 12 buffer-ownership cases.
+The runtime SQL width-1/16/256 fixture now also selects runtime columns with
+constant first/second indexes across 1,033 rows and includes a NULL unselected
+literal. The release/mimalloc candidate library passes all 32 selected Flink
+2.2 tests: 17 fixed-BINARY SQL cases, 10 pruned-transpose ownership cases and
+five synchronous Arrow-input cases. These include stock/native values, types
+and operator checks. The matching Flink 1.18 suite passes 26 cases and explicitly
+skips six unavailable-function cases; it does not prove ELT parity on that
+release. Exception correctness uses full stack traces on Flink 1.18; all
+three targeted Flink 2.2 failing-index, input-failure and unselected-input
+short-circuit checks also pass with full stack traces enabled. `ELT_FIXED_BINARY_FIRST` adds the matching scalar-index
+query to the row-fed whole-job harness, retaining its existing transposes and
+blackhole sink. Eight original Criterion baselines are
+retained before the change, with 100 samples each: 16,384 rows, widths 16/256,
+nullable/non-null inputs and scalar/dynamic index controls. The existing full
+960-profile binary suite also includes invalid/NULL indexes, literal selection,
+expanded controls and all-scalar calls. The candidate passes all 960 fixture checks. Allocation requests fall in 180
+profiles and remain equal in 780; none increase. Four scalar-index timing
+controls fall from 62.847–203.860 microseconds to 0.127–0.134 microseconds,
+removing over 99% of kernel time by returning the selected array.
+
+The first non-null width-256 dynamic-index control regresses 4.6% (95% change
+interval 3.7–5.5%), while its nullable counterpart improves 4.8%. Other dynamic
+controls vary between a 1.4% improvement and a 0.3% change with an interval
+including zero. Preserve this unfavorable control and repeat the dynamic
+comparisons before accepting the change.
+[All eight comparison estimates](../benchmarks/binary-elt-array-selection-comparison-2026-10-02.csv),
+[16 original/candidate timing estimates](../benchmarks/binary-elt-array-selection-timing-2026-10-02.csv)
+and [all 1,600 samples](../benchmarks/binary-elt-array-selection-samples-2026-10-02.csv)
+retain the complete first comparison. The repeated and pinned controls below retain the uncertain comparisons;
+whole-job validation remains pending. The standalone SQL gate uses a dynamic index and
+will not be fixed by this scalar-index branch. No acceleration claim is made
+from the prototype alone.
+
+A second candidate run does not reproduce the first width-256 non-null
+regression: its mean is 164.495 microseconds, a -0.4% change with a 95% interval
+including zero. The nullable width-256 case instead rises to 186.696 microseconds,
++12.6% (11.8–13.3%), after improving in the first run. Narrow dynamic controls
+remain close to their earlier results. These opposite wide-case outcomes leave
+the dynamic comparison unresolved; do not dismiss either unfavorable run.
+[All four repeat estimates](../benchmarks/binary-elt-array-selection-dynamic-repeat-comparison-2026-10-02.csv)
+and [all 400 repeat samples](../benchmarks/binary-elt-array-selection-dynamic-repeat-samples-2026-10-02.csv)
+are retained. The fresh pinned comparisons below extend this check with reversed run
+order; acceptance still requires the remaining validation.
+
+Two fresh rounds pin the unchanged original and saved candidate executables to
+CPU 0, reverse their execution order and use the same four dynamic controls,
+3-second warmups, 5-second measurement targets and 100 samples per case.
+
+| Width / nullable | Candidate change in mean, original first | Candidate change in mean, candidate first |
+| --- | ---: | ---: |
+| 16 / false | -1.8% | -1.2% |
+| 16 / true | -1.5% | -0.8% |
+| 256 / false | -10.1% | +4.4% |
+| 256 / true | -9.6% | -1.7% |
+
+The unchanged wide non-null original varies from 178.981 to 159.990
+microseconds between rounds. CPU affinity alone has not settled the wide-case
+comparison; retain the +4.4% result alongside the improvements.
+[All 16 paired timing estimates and confidence intervals](../benchmarks/binary-elt-array-selection-pinned-timing-2026-10-02.csv)
+and [all 1,600 paired samples](../benchmarks/binary-elt-array-selection-pinned-samples-2026-10-02.csv)
+are retained. Production-allocator JNI and whole-job validation are next; the
+prototype remains unaccepted and the existing dynamic-index SQL gate unresolved.
+
+
+The first release/mimalloc whole-job comparison uses 2 million row-fed
+BINARY(16) records, NULL every seventh row, a 2 GiB heap, two warmups and five
+alternating stock/native measurements. The native plan includes both transposes
+and drains to blackhole. The same benchmark fixtures run against previous
+production, where this query falls back. All 40 measured trials, including the
+identity controls, are [retained](../benchmarks/binary-elt-scalar-wholejob-2026-10-02.csv).
+
+| Build | Stock median / range (s) | Native or fallback median / range (s) |
+| --- | --- | --- |
+| Array-reuse candidate | 0.294 / 0.270–0.335 | 0.311 / 0.305–0.312 (native) |
+| Previous production | 0.320 / 0.311–0.356 | 0.321 / 0.317–0.344 (fallback) |
+
+The candidate is 5.7% slower than its stock control and 3.1% faster than
+previous production. Stock controls themselves differ by 8.8%, and measured
+ranges overlap. Identity medians are 0.277/0.322 seconds stock/native for the
+candidate and 0.318/0.398 seconds for previous production. This narrow-payload
+profile does not establish acceleration despite the kernel allocation saving.
+The completed width-256 comparison retains all
+[60 measured trials](../benchmarks/binary-elt-scalar-wide-wholejob-2026-10-02.csv)
+under the same configuration, adding the prior candidate without array reuse.
+
+| Build, width 256 | Stock median / range (s) | Native or fallback median / range (s) |
+| --- | --- | --- |
+| Array-reuse candidate | 0.331 / 0.316–0.356 | 0.432 / 0.429–0.440 (native) |
+| Prior candidate without reuse | 0.341 / 0.316–0.373 | 0.473 / 0.458–0.560 (native) |
+| Previous production | 0.349 / 0.336–0.363 | 0.346 / 0.338–0.369 (fallback) |
+
+Array reuse reduces wide-query elapsed time by 8.7% against the prior candidate,
+whose measured native range is higher, but remains 30.6% slower than its stock
+control and 24.8% slower than previous production. Stock medians differ by up to
+5.6%. Identity stock/native medians are 0.317/0.457 seconds for the candidate,
+0.324/0.451 for the prior candidate, and 0.345/0.513 for previous production.
+The copy removal therefore helps an existing draft kernel but does not clear
+the end-to-end acceleration gate. The prototype remains unaccepted; conversion
+costs require further profiling and optimization before shipping the feature.
+
+
+A separate 45-second CPU profile of the width-256 candidate job, after two
+warmups, records 56,885 samples using async-profiler 4.5 at a 1 ms interval.
+It repeatedly executes whole jobs, so planning, startup, source conversion,
+GC and shutdown remain in the recording. Classifying each stack by its deepest
+entry, native Calc or exit process/flush frame avoids counting chained downstream
+work twice: entry owns 10,507 samples (18.5%), native Calc 3,141 (5.5%), exit
+12,516 (22.0%), and other work 30,721 (54.0%).
+[Sample attribution](../benchmarks/binary-elt-scalar-wide-cpu-profile-2026-10-02.csv)
+is diagnostic CPU evidence, not an elapsed-time or allocation benchmark.
+
+Fixed-width buffer initialization under entry writer creation is a material
+subset of entry samples: allocation zeroes the default capacity each batch.
+This wide-payload evidence motivates revisiting batch-capacity sizing, whose
+previous narrow-row experiment failed to demonstrate a speedup. The earlier
+rejection remains valid for that workload; no new capacity change or win is
+claimed yet. Exit projection and Arrow binary getters also copy payloads, but
+previous direct-exit experiments already failed their whole-job gates.

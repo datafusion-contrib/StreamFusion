@@ -1,0 +1,6 @@
+category,samples,total_samples,percent,scope
+other,30721,56885,54.005450,deepest matching process/flush frame; exclusive categories
+entry,10507,56885,18.470599,deepest matching process/flush frame; exclusive categories
+native_calc,3141,56885,5.521667,deepest matching process/flush frame; exclusive categories
+exit,12516,56885,22.002285,deepest matching process/flush frame; exclusive categories
+fixed_vector_initial_zeroing,6027,56885,10.595060,subset of entry; do not add to exclusive categories

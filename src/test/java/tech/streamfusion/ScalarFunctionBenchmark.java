@@ -114,6 +114,11 @@ class ScalarFunctionBenchmark {
           new Query(
               "TRY_STRING_TO_FIXED_BINARY", "text", "TRY_CAST(s AS BINARY(16))", "BINARY(16)"),
           new Query(
+              "ELT_FIXED_BINARY_FIRST",
+              "tt_fixed_bytes",
+              "ELT(1,b," + TextTimeBenchmarkInputs.fixedBinaryLiteral() + ")",
+              TextTimeBenchmarkInputs.baselineType("tt_fixed_bytes")),
+          new Query(
               "ELT_FIXED_BINARY",
               "tt_fixed_bytes",
               TextTimeBenchmarkInputs.fixedBinarySelection(),

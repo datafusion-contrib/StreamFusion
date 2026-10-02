@@ -1,0 +1,9 @@
+case,mean_change,lower_change,upper_change
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=true/fixed_literal=false/literal_null=false/index=first,-0.9993715883711003,-0.9993748001251948,-0.9993686200377152
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,-0.014139134605707926,-0.01931284234583129,-0.00874476004531973
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=false/fixed_literal=false/literal_null=false/index=first,-0.9979315147348564,-0.997940952167464,-0.9979225035946021
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=false/fixed_literal=false/literal_null=false/index=first,-0.9993066949927465,-0.9993106392940575,-0.9993026957890224
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,0.046444370871730145,0.036955878771977244,0.055470312316680426
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=true/fixed_literal=false/literal_null=false/index=first,-0.9984616260330249,-0.998469923780412,-0.9984537801828105
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,-0.04819534838325856,-0.05863593287322808,-0.03884420458391684
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,0.002663794497675953,-0.0036612526148590936,0.009263862272809727
