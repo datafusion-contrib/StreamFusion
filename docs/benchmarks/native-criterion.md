@@ -911,3 +911,68 @@ Checkpoint variability remains substantial. The Rust counting allocator uses
 System rather than production mimalloc; all 1,608 untimed diagnostics execute
 before the filtered timing cases. No whole-job acceleration is inferred from
 this benchmark extension.
+
+
+### Persistent key ownership experiment
+
+The measured candidate consumes the batch's owned missing-key list when
+installing fetched or absent state in the RocksDB working set. It moves each
+key into its next owner instead of cloning the bytes; TTL companion cleanup
+still clones a key when two owners are required. Pinned values remain borrowed
+only through decoding. No extra hash lookup or state representation is added.
+
+[Eight unchanged-source ingestion baselines](persistent-group-key-move-original-timing-2026-10-02.csv)
+and [all 800 original samples](persistent-group-key-move-original-samples-2026-10-02.csv)
+cover repeated and unique domains, short and wide UTF-8 keys, and both nullability
+modes at 16,384 rows. [Candidate estimates](persistent-group-key-move-candidate-timing-2026-10-02.csv)
+and [all 800 candidate samples](persistent-group-key-move-candidate-samples-2026-10-02.csv)
+retain all eight matched cases. The candidate passed 103 release Rust RocksDB
+tests; two profiling diagnostics were explicitly ignored. Java parity and
+whole-job performance have not yet been established.
+
+The [allocation comparison](persistent-group-key-move-allocation-comparison-2026-10-02.csv)
+contains all 1,608 diagnostics: requested Rust allocation bytes decreased in
+24 GROUP ingestion fixtures and were unchanged in 1,584 fixtures. Output-buffer
+bytes were identical in every fixture. These counters exclude C++ allocations
+and background threads and do not measure copied bytes or peak memory.
+At 16,384 rows, the unique wide non-null fixture saved 16,384 allocation
+requests and 4,841,664 requested bytes; the repeated short non-null fixture
+saved eight requests and 256 bytes. Allocation savings alone are insufficient
+evidence of a throughput improvement.
+
+Timing results were mixed. Unique wide-key cases slowed by 7.9% and 15.4%,
+and the repeated short non-null case slowed by 97.7%; other cases ranged from
+11.4% faster to 6.5% slower. The [original-source control estimates](persistent-group-key-move-original-control-timing-2026-10-02.csv)
+and [all 800 control samples](persistent-group-key-move-original-control-samples-2026-10-02.csv)
+were collected after restoring the original implementation, with the same
+source fixtures, allocator and Criterion settings. The repeated short non-null
+case returned to 1.576 ms, compared with 1.585 ms originally and 3.133 ms for
+the candidate. Unique wide nullable keys returned to 45.788 ms, compared with
+46.337 ms originally and 53.456 ms for the candidate. These repeated original
+controls do not explain the regression's mechanism, but contradict accepting
+the allocation reduction as a throughput win. The original production
+implementation remains in place; the measured candidate is rejected and has
+no established whole-job speedup.
+
+
+The opt-in `PersistentGroupAggregateBenchmark` adds a separate row-fed
+COUNT(*)/SUM whole-job witness using the configured native RocksDB backend,
+one-phase logical mini-batches of 1,024 rows, identical 256 MiB task off-heap
+and 128 MiB fixed-per-slot RocksDB budgets, a blackhole sink and both
+transposes. Stock/native trials alternate after two warmups and retain five
+measurements by default. Each trial times SQL submission through job completion,
+including planning and startup; setup of the environment and source view stays
+outside the timer. These are end-to-end job timings rather than isolated
+steady-state throughput. Source keys and values use independent null masks;
+key cardinality and payload width are configurable. Test compilation and a
+16,384-row runtime sanity checks passed on released Flink 2.2.1 and 1.18.1
+with the archived release/mimalloc library: each executed one test, with no
+failures or skips. The
+sanity run used no warmup and one trial, so it is not performance evidence.
+A separate 30-second CPU profile after two warmups on the 2,000,000-row,
+16,384-key wide nullable fixture sampled `updateRocksDBGroupAggregator`
+(14,617 of 35,888 samples), Rust `RocksStore` frames and both transpose
+operators. This establishes execution of the intended direct RocksDB path.
+These are inclusive, overlapping stack counts, not additive costs. Profiler
+runs are separate from timing comparisons; representative repeated whole-job
+performance measurements remain pending.
