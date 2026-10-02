@@ -457,3 +457,27 @@ required stock throughput. Identity medians are 0.280493 s and 0.570996 s, with 
 is retained; shared-host variation prevents attributing the cross-run difference
 precisely to batching. Larger batches do not resolve this workload's performance
 gate, and the default remains 1,024 rows with the existing latency backstop.
+
+
+### Boolean previous-production comparison (2026-10-01)
+
+A fresh paired comparison uses the same two million runtime rows, width 64,
+Boolean domain two, container NULL every eight rows and element NULL every seven
+rows. Both release runs retain two warmups, five alternating trials, a 2 GB JVM
+heap, the runtime row source/blackhole sink and all actual execution costs. The
+previous-production checkout changes only benchmark fixtures and verifies the
+expected expression fallback; the candidate verifies native Calc and both
+transposes at planning and runtime.
+
+| Revision | Stock Flink median / range (s) | StreamFusion median / range (s) |
+|---|---:|---:|
+| Previous production | 2.122 / 1.926–2.148 | 2.040 / 1.955–2.060 (fallback) |
+| Candidate | 1.945 / 1.920–1.977 | 1.502 / 1.488–1.542 (native) |
+
+The candidate beats its same-run stock control by 1.294x and the measured previous
+fallback by 1.358x. Stock timing also changes between runs, so these are shared-host
+samples rather than proof of a quiet-host gate or all cardinalities. The earlier
+wide-variance diagnostic remains retained.
+[All fresh comparison trials](../benchmarks/array-distinct-boolean-recomparison-2026-10-01.csv)
+include both stock controls; STRING still lacks a demonstrated win against both
+baselines and the remaining collection coverage/performance gaps remain open.
