@@ -530,3 +530,57 @@ This duplicate-heavy workload fails the performance gate, extending the existing
 unique-string limitation; native STRING coverage remains draft.
 [All 20 comparison trials](../benchmarks/array-distinct-string-duplicates-2026-10-02.csv)
 retain both stock controls and unfavorable results.
+
+
+### Duplicate-heavy STRING CPU diagnostic (2026-10-02)
+
+An async-profiler 4.5 CPU recording repeats the duplicate-heavy workload above
+with the same saved release/mimalloc library, released Flink 2.2.1 and JDK 17.
+This diagnostic uses one warmup and two alternating trials; its instrumented
+timings are not performance-gate evidence. Sampling uses a 1 ms interval across
+the test JVM, including startup, warmup and both engines. Analysis selects the
+native operator task threads and removes the thread-name frame before matching
+operator stacks: names themselves contain the full chained operator plan.
+There are 10,314 native-task CPU samples.
+
+| Inclusive stack match | Native-task samples | Share |
+|---|---:|---:|
+| Flink object-array conversion | 5,805 | 56.3% |
+| Flink UTF-8 materialization | 4,488 | 43.5% |
+| Entry transpose | 3,537 | 34.3% |
+| Native Calc | 1,649 | 16.0% |
+| Rust ARRAY_DISTINCT | 1,040 | 10.1% |
+| Exit transpose | 381 | 3.7% |
+
+These inclusive counts overlap and must not be added. Source-side Flink
+conversion/materialization dominates this witness; removing a small exit copy
+alone would not explain a large end-to-end win. The source and its wire conversion
+remain in the benchmark. Kernel membership hashing still merits a bounded
+experiment, with whole-job comparison required afterward.
+[All matched sample counts](../benchmarks/array-distinct-string-cpu-2026-10-02.csv)
+retain boundary and serializer details. Raw JFR and collapsed stacks are retained
+in the task artifacts. A first recording was overwritten by a later Maven JVM
+and is excluded; profiling outputs now include the process ID.
+
+
+### Rejected adaptive membership experiment (2026-10-02)
+
+Three removed variants keep the first eight distinct values on the stack even for
+wide arrays, promoting to the existing hash set on the ninth value. They use
+length-only, four-byte and eight-byte prefix fingerprints; equality always checks
+the full value. Release Criterion compares 1,024-row, width-64 STRING batches
+with domain four or 64, 264-byte suffixes and both NULL profiles. Original runs
+precede each variant; each has one-second warmup, 30 samples and a two-second
+measurement target on the shared host. All fixture output assertions pass.
+
+The duplicate-heavy comparisons improve by roughly 50–60%, but non-null unique
+strings regress by 6–9% in Criterion's comparison estimates. Nullable unique cases
+vary from a small regression to an improvement. The final eight-byte variant
+reports non-null unique time 1.917 ms (95% interval 1.883–1.948 ms), versus the
+original 1.858 ms (1.759–1.947 ms). Criterion's distribution comparison reports
++8.45% (3.26–14.26%); that estimator differs from the displayed point timings.
+This is a cardinality tradeoff, not a general STRING acceleration. No production
+change is retained and no new whole-job win is claimed.
+[Mean/slope estimates and confidence intervals for every variant](../benchmarks/array-distinct-adaptive-membership-prototype-2026-10-02.csv)
+retain unfavorable controls. The per-profile allocations also remain in task logs.
+See the scoped [rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/array-distinct-adaptive-membership.md).
