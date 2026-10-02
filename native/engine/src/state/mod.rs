@@ -5,6 +5,8 @@ pub(crate) use ttl::*;
 
 #[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_config;
+#[cfg(all(feature = "rocksdb-io-uring", target_os = "linux"))]
+mod rocks_io_uring;
 #[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_jni;
 #[cfg(feature = "rocksdb-state")]

@@ -1,0 +1,33 @@
+{
+  "complete": true,
+  "paired_queries": 23,
+  "geomean_throughput_change_percent": 3.925980610807933,
+  "measurement": "Best of three measured trials per query/mode; no warmups; no stock Flink runs",
+  "finished": 1790909345.6782308,
+  "median_trial_comparison": {
+    "geomean_throughput_change_percent": 1.0805863770737334,
+    "median_query_change_percent": 0.5929760999860534,
+    "faster_queries": 13,
+    "slower_queries": 10
+  },
+  "nonoverlapping_trials_faster": [
+    "q3"
+  ],
+  "nonoverlapping_trials_slower": [
+    "q17",
+    "q19"
+  ],
+  "median_throughput_change_percent": 0.7988283633305171,
+  "faster_queries": 16,
+  "slower_queries": 7,
+  "wall_seconds": 876.8428571224213,
+  "host_pressure": {
+    "minimum_available_memory_gib": 4.633995056152344,
+    "swap_in_pages": 277,
+    "swap_out_pages": 0,
+    "memory_some_stall_percent": 0.0,
+    "memory_full_stall_percent": 0.0,
+    "io_some_stall_percent": 14.704314244438516,
+    "io_full_stall_percent": 14.426542428345337
+  }
+}
