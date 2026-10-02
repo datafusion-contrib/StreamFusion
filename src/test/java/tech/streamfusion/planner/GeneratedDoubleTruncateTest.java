@@ -43,7 +43,8 @@ class GeneratedDoubleTruncateTest {
     try {
       for (Double input : new Double[] {null, -0.0, 0.0, 0.46, -0.46, 1.0, -1.0,
           Math.nextDown(1.0), 1e9, Math.nextUp(1e9), 1000.5, Math.nextDown(1000.5),
-          Math.nextUp(1000.5), Double.MIN_VALUE, Double.MAX_VALUE, Double.NaN,
+          Math.nextUp(1000.5), 1e12 + 0.12345, -1e12 - 0.12345,
+          1e15, Math.nextDown(1e15), Math.nextUp(1e15), Double.MIN_VALUE, Double.MAX_VALUE, Double.NaN,
           Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
         for (Integer position : new Integer[] {null, -6, -3, 0, 1, 3, 6,
             Integer.MIN_VALUE, Integer.MAX_VALUE}) {

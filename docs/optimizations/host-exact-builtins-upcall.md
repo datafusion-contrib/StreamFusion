@@ -107,7 +107,10 @@ dates, legacy settings, stateful child evaluation, input failures, NULLs and gua
 
 The existing JVM scalar upcall can avoid decimal conversion for DOUBLE TRUNCATE when
 outward-rounded adjacent-double bounds give the same truncated integer. Absolute values
-at most 1e9 and scales -6 through 6 keep the intermediate integer exactly representable.
+at most `1e15 / 10^max(scale,0)` for scales -6 through 6 keep the intermediate
+integer exactly representable. This scale-dependent expansion is a draft prototype:
+exact oracle and SQL checks pass on both released Flink versions, while whole-job
+acceptance is pending. The previous uniform 1e9 domain remains the historical baseline.
 Small values include the scale-18 rounding margin, dyadic identities return directly, and
 ambiguous intervals parse canonical decimal text without decimal objects. Values outside this
 domain use released Flink evaluation. Historical measurements below precede these followups. NULL
@@ -255,7 +258,7 @@ Linux/Core i7-12650H, Rust 1.94.0 and JDK 17; the native library uses production
 
 ## Exact dyadic boundary shortcut
 
-Within the existing absolute-value 1..1e9 and scale 0..6 domain, multiplication by `2^scale`
+Within the bounded shortcut domain at scale 0..6, multiplication by `2^scale`
 is exact and remains below `2^53`. If that result is an integer, the operand has at most
 `scale` fractional decimal digits. Flink's scale-18 decimal conversion and truncation therefore
 leave it unchanged. This avoids unnecessary decimal fallback at half-integer and other dyadic

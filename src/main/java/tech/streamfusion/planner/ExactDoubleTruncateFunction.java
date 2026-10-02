@@ -15,7 +15,8 @@ public final class ExactDoubleTruncateFunction extends ScalarFunction {
 
   public static double truncate(double value, int scale) {
     double magnitude = Math.abs(value);
-    if (magnitude <= 1e9 && scale >= -6 && scale <= 6) {
+    if (scale >= -6 && scale <= 6
+        && magnitude <= 1e15 / POWERS[Math.max(scale, 0)]) {
       if (value != 0 && scale >= 0) {
         double scaledByTwo = value * (1 << scale);
         // An integral power-of-two scale proves at most scale fractional decimal digits.
@@ -40,8 +41,8 @@ public final class ExactDoubleTruncateFunction extends ScalarFunction {
       if (scale >= 0 && value != 0) {
         double scaled = value * factor;
         long coefficient = (long) scaled;
-        // The bounded decimal grid has at most 15 significant digits (1e9 itself is
-        // already dyadic). Require both an integral product and an exact round trip:
+        // Coefficients stay below 1e15, with its integral endpoint exact. Require
+        // both an integral product and an exact round trip:
         // this is the canonical decimal value, while adjacent doubles stay ambiguous.
         if (scaled == coefficient && coefficient / factor == value) return value;
       }

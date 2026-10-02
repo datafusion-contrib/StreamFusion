@@ -1818,7 +1818,9 @@ The Flink 2.2 line uses its released code generator's existing coercion.
 through the existing Arrow-batch JVM scalar bridge. It borrows the imported Arrow rows, avoiding
 reflective argument-column materialization. A bounded shortcut brackets the scaled value using outward-rounded adjacent
 doubles. Only when both bounds truncate to the same exactly representable integer does it avoid
-Flink's decimal conversion. The domain is finite absolute value at most 1e9 and scale -6 through 6;
+Flink's decimal conversion. The draft shortcut domain uses scales -6 through 6 and
+`abs(value) <= 1e15 / 10^max(scale,0)`, keeping the coefficient bounded while
+allowing larger values at coarser scales. Its whole-job acceptance remains pending;
 values below one include a half-unit scale-18 decimal rounding margin in their bounds.
 For nonnegative scales, an integral power-of-two-scaled operand additionally proves the value
 already has at most the requested fractional decimal digits, so it returns unchanged.

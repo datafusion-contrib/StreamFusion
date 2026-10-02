@@ -108,6 +108,30 @@ class ExactDoubleTruncateFunctionTest {
   }
 
   @Test
+  void scaleDependentMagnitudeBoundsAndLargeDecimalNeighborsMatchReleasedFlink() {
+    var random = new SplittableRandom(20261002);
+    for (int scale = -6; scale <= 6; scale++) {
+      double factor = Math.pow(10, Math.max(scale, 0));
+      double limit = 1e15 / factor;
+      for (double sign : new double[] {-1, 1}) {
+        for (double magnitude : new double[] {limit, 1e12 + 0.12345, 1e14 + 0.25}) {
+          double value = sign * magnitude;
+          check(Math.nextDown(value), scale);
+          check(value, scale);
+          check(Math.nextUp(value), scale);
+        }
+      }
+      for (int i = 0; i < 2500; i++) {
+        double value = random.nextLong(-1_000_000_000_000_000L, 1_000_000_000_000_001L) / factor;
+        check(Math.nextDown(value), scale);
+        check(value, scale);
+        check(Math.nextUp(value), scale);
+        check(random.nextDouble(-limit, limit), scale);
+      }
+    }
+  }
+
+  @Test
   void preservesSqlNulls() {
     var function = new ExactDoubleTruncateFunction();
     assertNull(function.eval(null, 1));
@@ -125,7 +149,8 @@ class ExactDoubleTruncateFunctionTest {
       assertEquals(failure.getMessage(), actual.getMessage());
       return;
     }
-    if (Double.isFinite(value) && Math.abs(value) <= 1e9 && scale >= -6 && scale <= 6) {
+    if (Double.isFinite(value) && scale >= -6 && scale <= 6
+        && Math.abs(value) <= 1e15 / Math.pow(10, Math.max(scale, 0))) {
       assertEquals(Double.doubleToLongBits(expected),
           Double.doubleToLongBits(ExactDoubleTruncateFunction.truncateDecimalText(value, scale)),
           () -> "decimal text " + value + " at scale " + scale);

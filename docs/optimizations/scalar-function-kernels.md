@@ -985,3 +985,53 @@ previous narrow-row experiment failed to demonstrate a speedup. The earlier
 rejection remains valid for that workload; no new capacity change or win is
 claimed yet. Exit projection and Arrow binary getters also copy payloads, but
 previous direct-exit experiments already failed their whole-job gates.
+
+### Scale-dependent DOUBLE TRUNCATE domain (prototype)
+
+The proposed guard replaces the uniform magnitude limit with
+`abs(value) <= 1e15 / 10^max(scale,0)` for scales -6 through 6. It preserves
+the bounded decimal-coefficient limit while allowing larger magnitudes at
+coarser scales, including the measured slow 1e12 workload at small positive
+scales. Other domains retain released Flink evaluation. All seven Flink 2.2
+oracle tests pass, including 130,234 new comparisons of large magnitudes,
+scale-dependent boundaries and adjacent doubles. All seven matching Flink
+1.18 oracle tests also pass. All 21 generated-evaluation and SQL cases pass
+on each released version, including three 5,003-row large-boundary query forms
+and preserved NULL/error/short-circuit behavior. The strengthened signed
+boundary cases also pass on Flink 2.2. The matched whole-job comparison below
+clears these measured profiles. All 144 release JNI fixtures also pass,
+comparing exact bits, NULL positions and schemas across reflective, generated
+and borrowed evaluators. The loaded candidate class is verified by bytecode
+and source/class hashes. Final correctness/Javadoc, documentation and formatting
+checks pass; CI and the broader issue gates remain pending.
+
+
+The release/mimalloc comparison retains 2 million rows, NULL every seventh
+value, a 2 GiB heap, two warmups and five alternating stock/native measurements
+per query. Runtime scales range from -3 through 3 except the ambiguous profile's
+fixed scale 1. The large profile alternates signed values around 1e12. Every
+intended native plan executes Calc with both transposes and a blackhole sink.
+Candidate and prior helper use the same native library and capacity policy;
+previous production uses its saved release library and explicitly verified
+fallback for these queries. Fixtures are byte-identical across worktrees.
+[All 210 trials](../benchmarks/double-truncate-scale-bound-wholejobs-2026-10-02.csv)
+include three source-matched identity controls for each build.
+
+| Profile | Candidate stock / native median (s) | Prior helper native median (s) | Previous production fallback median (s) |
+| --- | --- | --- | --- |
+| Large | 0.903 / 0.479 | 0.945 | 0.916 |
+| Bounded | 0.650 / 0.379 | 0.383 | 0.662 |
+| Ambiguous | 0.607 / 0.387 | 0.394 | 0.625 |
+| CASE | 0.473 / 0.396 | 0.396 | 0.489 |
+
+Large-profile native elapsed time falls 49.3% against the prior helper, 46.9%
+against stock and 47.7% against previous production. Its candidate range is
+0.474–0.494 seconds, prior-helper range 0.927–0.958, stock range 0.882–0.913,
+and previous fallback range 0.903–0.938. Large stock medians are 0.903, 0.895
+and 0.913 seconds across builds, limiting drift to about 2%. Bounded, ambiguous
+and CASE candidate ranges are 0.371–0.390, 0.385–0.390 and 0.387–0.398
+seconds respectively; prior-helper ranges overlap these controls. Each beats
+its stock and previous-production controls, whose complete ranges are retained
+in the CSV. This fixes the measured large-domain regression and establishes a
+CASE win for this configuration; it does not prove every fallback domain or
+unregistered floating-function family accelerated.

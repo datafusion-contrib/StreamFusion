@@ -58,6 +58,31 @@ class FlinkDoubleTruncateSqlHarnessTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {
+    "SELECT id, TRUNCATE(x,p) FROM src",
+    "SELECT id, COALESCE(TRUNCATE(x,p),1E0) FROM src",
+    "SELECT id, CASE WHEN x > 0 THEN TRUNCATE(x,p) ELSE -1E0 END FROM src"
+  })
+  void largeScaleDependentBoundsKeepNativeParityAcrossBatches(String sql) throws Exception {
+    List<Row> rows = new ArrayList<>();
+    for (int i = 0; i < 5003; i++) {
+      int scale = i % 13 - 6;
+      double limit = 1e15 / Math.pow(10, Math.max(scale, 0));
+      double magnitude = switch (i % 4) {
+        case 0 -> limit;
+        case 1 -> Math.nextDown(limit);
+        case 2 -> Math.nextUp(limit);
+        default -> 1e12 + 0.12345;
+      };
+      rows.add(Row.of(i, i % 23 == 0 ? null : (i / 4 % 2 == 0 ? magnitude : -magnitude),
+          i % 17 == 0 ? null : scale));
+    }
+    BuiltinFunctionParity.assertParity(
+        () -> BuiltinFunctionParity.environment(
+            ROW(FIELD("id", INT()), FIELD("x", DOUBLE()), FIELD("p", INT())), rows), sql);
+  }
+
   static TableEnvironment ordinary() {
     List<Row> rows = new ArrayList<>();
     Double[] values = {null, 0.46, -0.46, -0.0, 0.0, 1000.12345, -1000.12345,

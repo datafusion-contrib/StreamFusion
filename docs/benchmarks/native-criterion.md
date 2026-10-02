@@ -799,3 +799,19 @@ than rebuilding in this fixture. The timed boundary includes native database
 opening/adoption work that the Rust allocation counter excludes. Checkpoint
 and rebuild timing intervals are broad; retain their raw variability rather
 than interpreting this baseline as a precise general ranking of recovery paths.
+
+
+### Scale-dependent DOUBLE TRUNCATE validation
+
+The expanded decimal-coefficient guard passes all 144 existing release JNI
+fixtures: four evaluators, six value profiles, three sizes and two NULL shapes.
+Each compares exact result bits, NULL positions and schema with released Flink.
+The embedded JVM loads freshly compiled Flink 2.2 candidate classes first;
+bytecode and source/class hashes verify the scale-dependent bound. Independent
+helper oracle and generated/SQL checks also pass on released Flink 1.18.
+[Allocation probes](double-truncate-scale-bound-jni-allocations-2026-10-02.csv)
+retain the complete matrix. These count requested Rust allocations with the
+benchmark allocator, excluding JVM/native worker allocations; no JVM allocation
+saving or Criterion throughput improvement is inferred from this smoke run.
+Release/mimalloc whole-job performance and all 210 repeated measurements live
+in the [kernel ledger](../optimizations/scalar-function-kernels.md).
