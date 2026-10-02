@@ -103,6 +103,7 @@ Some historical suites use
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
 | Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join and window rank; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
 | Registered Flink scalar functions | `scalar_registry` | Every registered numeric opcode; completeness assertion requires a fixture for new registrations; ASCII/null/Unicode profiles |
@@ -537,6 +538,29 @@ for stock, current native and previous production. This extends the scalar diagn
 the Nexmark schemas, queries and harness are unchanged.
 
 ## Persistent window rank and deduplication
+
+The same module also defines 216 `engine/memory/window_rank` profiles for ingestion,
+updates to populated state, and firing, using the identical 72 input shapes and independent
+row-index oracle as the persistent fixtures. This isolates ranking and scalar materialization
+from RocksDB write, flush, and filesystem costs when a persistent comparison varies widely.
+Operator creation, population, destruction, and complete output comparison are outside timing;
+the measured operation includes production ranking or Arrow result construction. Allocation
+CSV labels begin with `memory_rank/` to distinguish these probes from the disk-backed cases.
+Run a focused comparison with `--bench persistent_state --filter 'engine/memory/window_rank'`.
+Both memory and persistent fixtures remain Rust kernel diagnostics; neither measures JNI or
+the two row transposes in a complete Flink job.
+
+The original implementation passes all 1,176 release fixtures, including all 216 new memory
+profiles. [Memory allocation probes](memory-window-rank-probes-2026-10-02.csv),
+[four baseline estimates and confidence intervals](memory-window-rank-timing-2026-10-02.csv),
+and [all 400 raw samples](memory-window-rank-samples-2026-10-02.csv) are retained. For 16,384
+non-null rows with a 264-character suffix and rank limit one preserving first arrivals, means
+are 2.351 ms for ingestion and 2.320 ms for updates with eight keys; with one key per input row,
+they are 4.026 ms and 3.049 ms. These characterize the original ranker, not an optimization.
+Baseline `window-rank-memory-original` uses three seconds of warmup, 100 flat samples and
+at least five seconds of measurement, Rust 1.94.0, Arrow 58.3.0, Linux/Core i7-12650H and the
+benchmark-only counting system allocator. Reproduce with `--bench persistent_state --filter
+'engine/memory/window_rank/(append|update)/16384/domain=(8|16384)/bytes=264/nulls=false/limit=1/last=false'`.
 
 The opt-in `WindowRankBenchmark` provides a separate row-fed whole-job comparison:
 `SF_BENCHMARK=true mvn test -Pbench -Dtest=WindowRankBenchmark`. It uses two event-time

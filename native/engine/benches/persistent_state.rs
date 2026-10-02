@@ -438,6 +438,7 @@ criterion_group!(
     dedup_ttl,
     dedup_recovery,
     interval::interval,
-    window_rank::window_rank
+    window_rank::window_rank,
+    window_rank::memory_window_rank
 );
 criterion_main!(benches);

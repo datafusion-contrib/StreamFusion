@@ -990,7 +990,7 @@ impl PersistentSort {
     }
 }
 
-/// Production disk-backed window rank with the same configuration as its memory oracle.
+/// Production window rank with matched memory and disk configurations.
 #[cfg(feature = "rocksdb-state")]
 pub struct WindowRankState(crate::topn::WindowRanker);
 

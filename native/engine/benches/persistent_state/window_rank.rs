@@ -282,3 +282,87 @@ pub(super) fn window_rank(c: &mut Criterion) {
     }
     group.finish();
 }
+
+pub(super) fn memory_window_rank(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine/memory/window_rank");
+    for rows in [16, 1024, 16384] {
+        for domain in [8, rows] {
+            for width in [8, 264] {
+                for nullable in [false, true] {
+                    let input = input(rows, domain, width, nullable);
+                    for (limit, keep_last) in [(1, false), (1, true), (4, false)] {
+                        let shape = format!("{rows}/domain={domain}/bytes={width}/nulls={nullable}/limit={limit}/last={keep_last}");
+                        let wanted = expected(&input, limit, keep_last, 200);
+                        let setup = || WindowRankState::memory(limit as i64, keep_last);
+                        let populated = || {
+                            let mut operator = setup();
+                            operator.push(&input);
+                            operator
+                        };
+                        group.throughput(Throughput::Elements(rows as u64));
+
+                        let label = format!("append/{shape}");
+                        let mut operator = setup();
+                        let (_, allocations) = measure(|| operator.push(&input));
+                        assert_eq!(canonical(&operator.flush(200)), wanted);
+                        report(
+                            &format!("memory_rank/{label}"),
+                            input.columns(),
+                            &[],
+                            allocations,
+                        );
+                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                            b.iter_batched_ref(
+                                &setup,
+                                |operator| operator.push(&input),
+                                BatchSize::PerIteration,
+                            )
+                        });
+
+                        let doubled =
+                            arrow::compute::concat_batches(&input.schema(), [&input, &input])
+                                .unwrap();
+                        let wanted_updated = expected(&doubled, limit, keep_last, 200);
+                        let label = format!("update/{shape}");
+                        let mut operator = populated();
+                        let (_, allocations) = measure(|| operator.push(&input));
+                        assert_eq!(canonical(&operator.flush(200)), wanted_updated);
+                        report(
+                            &format!("memory_rank/{label}"),
+                            input.columns(),
+                            &[],
+                            allocations,
+                        );
+                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                            b.iter_batched_ref(
+                                &populated,
+                                |operator| operator.push(&input),
+                                BatchSize::PerIteration,
+                            )
+                        });
+
+                        let label = format!("fire/{shape}");
+                        let mut operator = populated();
+                        let (output, allocations) = measure(|| operator.flush(200));
+                        assert_eq!(canonical(&output), wanted);
+                        assert_eq!(operator.flush(200).num_rows(), 0);
+                        report(
+                            &format!("memory_rank/{label}"),
+                            &[],
+                            output.columns(),
+                            allocations,
+                        );
+                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                            b.iter_batched_ref(
+                                &populated,
+                                |operator| std::hint::black_box(operator.flush(200)),
+                                BatchSize::PerIteration,
+                            )
+                        });
+                    }
+                }
+            }
+        }
+    }
+    group.finish();
+}
