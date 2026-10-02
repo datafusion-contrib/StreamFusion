@@ -1422,3 +1422,22 @@ removed; production still uses the generated projection. The
 [scoped rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/binary-manual-exit-projection.md)
 records the ownership design, validation and remaining investigation. This does
 not close [#235](https://github.com/datafusion-contrib/StreamFusion/issues/235).
+
+### Rejected generated BINARY segment projection
+
+A second prototype kept Flink-generated field execution while copying binary
+payload segments directly into owned Flink rows. It passed five wire/lifetime,
+fourteen fixed-BINARY SQL and ten existing ownership checks on Flink 2.2.1, but
+still lost to stock in the release measurements. At two million rows, stock /
+prototype medians are ELT 0.314 / 0.399 seconds and cast 0.567 / 0.606 seconds for
+the 264-byte input budget. Widening the string input to 4,096 bytes gives cast
+8.496 / 8.682 seconds; the wide identity control is 9.070 / 10.345 seconds.
+All measurements keep BINARY(16) output, a 2 GB heap, 1,024-row batches, two
+warmups, five alternating trials, JNI and both transposes. The
+[small-input trials](binary-generated-segment-candidate-2026-10-01.csv) and
+[wide-input trials](binary-generated-segment-wide-candidate-2026-10-01.csv)
+retain all observations. The prototype was removed; the original generated
+projection remains. The
+[scoped rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/binary-generated-segment-projection.md)
+records validation and architecture. Wider inputs did not prove the hypothesized
+encoding advantage, and no issue is closed from this experiment.
