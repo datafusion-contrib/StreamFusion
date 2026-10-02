@@ -168,3 +168,28 @@ retain 81,920 Arrow bytes for every unread-payload size above. Measured heap all
 three warmups. It now includes Arrow writer creation and writes during row ingestion; these
 numbers are not directly comparable to the earlier ARM64 copy-only diagnostic. The fixture and
 query are unchanged, and ownership tests independently verify that dropped fields are never read.
+
+## Remaining standalone ELT costs
+
+A 45-second async-profiler 4.5 CPU recording repeats the non-null ten-million-row ELT workload
+after two warmups with the released current native DSO, JDK 17/Flink 2.2.1 and a 2 GiB heap.
+The plan and runtime verify native Calc and both transposes. The profile selects the native
+task threads and removes the thread-name frame before matching components. It contains
+42,929 selected CPU samples: entry including downstream work 62.7%, entry excluding Calc
+18.3%, Calc including exit 44.4%, Calc excluding exit 18.0%, exit 26.6%, and Rust binary ELT
+5.3%. Inclusive counts overlap and must not be added; compiler, coordinator and other threads
+are excluded. [Component counts](../benchmarks/entry-elt-cpu-2026-10-02.csv) retain the method.
+This is diagnostic sampling, not throughput evidence or a comparison against the old profile.
+
+The per-batch fixed-width capacity experiment follows Comet's writer allocation pattern,
+retaining independent buffers and the defaults for variable/nested values. It passes 68
+existing Flink 2.2.1 checks and an additional capacity/growth/ownership fixture. At ten million
+rows, its ELT median is 1.255 seconds versus a fresh unchanged-production 1.260, with
+overlapping trial ranges and changing stock controls (1.013 and 1.017 respectively).
+It does not establish a repeatable speedup or close the standalone gate. The prototype and
+its new test were removed; no capacity policy change remains.
+[All 40 identity/function trials](../benchmarks/fixed-entry-capacity-2026-10-02.csv) and the
+[scoped rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/fixed-entry-capacity.md)
+are retained. Rust's current ELT adaptation also expands scalar BINARY arguments to batch-sized
+arrays before selection; this is a candidate for dedicated scalar/array Criterion profiles and
+further profiling, not yet a demonstrated optimization.
