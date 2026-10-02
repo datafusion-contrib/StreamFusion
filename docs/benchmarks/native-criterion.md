@@ -158,11 +158,12 @@ The main remaining boundaries are:
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
 - Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank,
-  temporal join and rowtime running-SUM OVER, including recovery after partial
-  firing; other OVER shapes and multi-source RocksDB rescale/compaction,
-  TTL migration/compaction, and each
-  operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
-  for their disk I/O and native worker allocations.
+  temporal join, rowtime running-SUM OVER, COUNT(*)/SUM GROUP BY and tumbling SUM
+  need dedicated workloads. Partial-firing recovery is covered for the running-SUM
+  OVER and tumbling SUM fixtures described below; other aggregate/window shapes,
+  multi-source RocksDB rescale/compaction, TTL migration/compaction and unlisted
+  checkpoint variants remain unmeasured. Memory checkpoint probes cannot stand in
+  for disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
   Parquet INT96 fixtures cover paired decoding from an in-memory file; host filesystem callbacks
   and nested timestamp profiles remain unmeasured.
@@ -1038,3 +1039,55 @@ RocksDB options apply; C++ and worker allocation costs are not counted.
 and [all 500 samples](persistent-tumbling-original-samples-2026-10-02.csv)
 retain variability. These are operator lifecycle baselines, not release/mimalloc
 whole-job comparisons against stock Flink or an optimization candidate.
+
+
+The opt-in `PersistentTumblingAggregateBenchmark` defines a separate
+row-fed COUNT(*)/SUM whole-job witness with two one-second event-time windows,
+periodic watermark emission disabled and terminal-watermark firing. It retains
+the same off-heap/RocksDB budgets, mini-batch settings, blackhole sink and both
+transposes as the persistent GROUP witness. Stock/native trials alternate and
+profiling is separate. The harness compiles and passes a 16,384-row sanity run
+on released Flink 2.2.1 and 1.18.1 (8 keys, 8-byte suffix, nullable inputs,
+no warmup and one trial per engine). These checks verify the native plan and both
+transposes. A separate release/mimalloc CPU profile on Flink 2.2.1, with two
+warmup jobs and a 30-second profiling target over 2,000,000 rows, 16,384 keys,
+264-byte suffixes and nullable inputs, verifies direct RocksDB execution:
+26,825 of 38,467 CPU samples include `pushRocksDBWindowAggregator`, 6,976 include
+`RocksWindowAggStore`, and both transpose operators appear.
+[The runtime witness counts](persistent-tumbling-runtime-witness-2026-10-02.csv)
+are inclusive and overlap; they must not be added or treated as latency shares.
+Representative repeated timings remain pending. Neither the profile nor the
+single-trial sanity runs are performance evidence.
+
+## Window-state value buffer reuse experiment
+
+The unchanged-production buffer-reuse baseline additionally measured all eight
+16,384-row update shapes (domain 8/16,384, key suffix 8/264 bytes, nullable/non-null),
+with 100 samples, a three-second warmup and a five-second target per case.
+[The eight estimates](persistent-tumbling-buffer-original-timing-2026-10-02.csv)
+and [all 800 samples](persistent-tumbling-buffer-original-samples-2026-10-02.csv)
+are retained. The full 1,728 untimed fixtures ran before these selected timings;
+source hashes stayed unchanged throughout the run. These baseline results
+establish no speedup.
+
+The within-call buffer-reuse experiment passed 104 release Rust state tests
+(two profiling tests ignored) and the full 1,728 Criterion fixture diagnostics.
+[Allocation requests decreased in 24 profiles and stayed unchanged in 1,704](persistent-tumbling-buffer-allocation-comparison-2026-10-02.csv);
+output buffer counts matched throughout.
+[Eight candidate timing estimates](persistent-tumbling-buffer-candidate-timing-2026-10-02.csv)
+and [800 candidate samples](persistent-tumbling-buffer-candidate-samples-2026-10-02.csv)
+show mixed results. The [restored-original estimates](persistent-tumbling-buffer-control-timing-2026-10-02.csv)
+and [800 control samples](persistent-tumbling-buffer-control-samples-2026-10-02.csv)
+complete a sequential original/candidate/control experiment, with all 1,728
+fixtures passing in each run. [The three-run comparison](persistent-tumbling-buffer-timing-comparison-2026-10-02.csv)
+shows that large repeated-key changes also appeared in unchanged production:
+the original-to-candidate 56.5% decrease for short non-null keys accompanied a
+56.7% original-to-control decrease; the 25.6% candidate increase for wide nullable
+keys accompanied a 35.3% control increase. Unique-key candidate/control changes
+were mixed and within 2%; repeated short nullable keys were 6.1% slower than control.
+These observations establish no broadly repeatable speedup or drift mechanism.
+Original/control allocation diagnostics differed in one 1,024-row case by one
+request and 568 bytes; all output buffer counts and the other 1,727 cases matched.
+The production loop is restored. The [rejection record](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/window-state-value-buffer-reuse.md)
+retains the design and correctness checks. Candidate released Flink parity and
+release/mimalloc whole-job improvement were not established.
