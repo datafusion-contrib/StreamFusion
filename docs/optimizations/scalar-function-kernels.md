@@ -637,3 +637,32 @@ The shared-host small-array comparison does not pass both performance baselines.
 [All 40 whole-job trials](../benchmarks/array-distinct-boolean-bits-wholejob-2026-10-02.csv)
 include both stock controls. STRING and standalone BINARY gates also remain
 unresolved; the PR stays draft. Kernel gains alone do not complete those gates.
+
+
+### Small Boolean array follow-ups (2026-10-02)
+
+To investigate the width-eight stock-control drift, fresh runs put previous
+production before the candidate, reversing the earlier revision order. A second
+pair increases the row count to ten million while retaining width eight, domain
+two, the same NULL profiles, two warmups, five alternating trials, release/mimalloc,
+2 GB heap and both rowwise boundaries. Candidate native plan/runtime and previous
+fallback checks pass in all four runs; fixture sources and Maven POMs are identical
+between the checkouts.
+
+| Rows / revision | Stock median / range (s) | StreamFusion median / range (s) |
+|---|---:|---:|
+| 2m / previous first | 0.513 / 0.509–0.546 | 0.525 / 0.493–0.536 (fallback) |
+| 2m / candidate second | 0.541 / 0.532–0.643 | 0.544 / 0.537–0.623 (native) |
+| 10m / previous first | 2.237 / 2.197–2.281 | 2.246 / 2.206–2.291 (fallback) |
+| 10m / candidate second | 2.491 / 2.469–2.584 | 2.497 / 2.456–2.698 (native) |
+
+The two-million-row candidate takes 3.6% longer than the previous fallback
+sample; the ten-million-row candidate takes 11.2% longer. Both tie their own stock
+controls, whose medians also differ between revisions by 5.5% and 11.4%. These
+measurements cannot separate shared-host/JVM effects from revision differences,
+and no adjustment is used to claim an acceleration. Increasing workload duration
+does not establish a small-array win against both baselines.
+[All 40 follow-up trials](../benchmarks/array-distinct-boolean-small-followups-2026-10-02.csv)
+retain the unfavorable results alongside the original comparison and wide-array
+win. The unresolved signal warrants boundary profiling rather than further
+kernel-only claims or silently enabling the feature as complete.
