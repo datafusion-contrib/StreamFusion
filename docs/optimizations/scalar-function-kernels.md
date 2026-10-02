@@ -710,3 +710,72 @@ Boolean ARRAY_DISTINCT case does so in two sustained candidate runs. Standalone 
 slower, including at ten million rows. Duplicate-heavy STRING ARRAY_DISTINCT now takes 3.160 seconds native versus 3.150 stock;
 overlapping trials do not establish a win against both baselines. Unique strings have not yet
 been remeasured with this entry change. Earlier rejected exit projections and membership experiments remain rejected.
+
+### Preserve ELT literal cardinality
+
+ELT's released DataFusion scalar adapter previously repeated each binary literal into an
+array as long as the runtime batch. Mixed scalar/array calls now use `AcceptsSingular` for
+value arguments: the index still supplies the batch-length loop, and a literal's bytes or
+NULL are borrowed from its one-row adapted array once. Selection writes only the chosen
+bytes into the declared output builder. Original argument representation identifies a
+scalar; array length one never implies scalar semantics. All-scalar calls keep the released
+adapter's scalar extraction, and array-only/all-scalar calls allocate no hint vector.
+
+This preserves the existing cast and output-width checks, invalid-index/NULL behavior and
+owning output buffers. It changes neither JNI nor the row/Arrow boundary. Release Rust
+tests cover sliced binary values and 48 empty/one-row mixed-call combinations, including
+scalar versus array indices and NULL literals; the Criterion matrix checks 960 complete
+values/types and all-scalar representation contracts.
+
+For a non-null 1,024-row width-16 dynamic-index call with a variable-binary literal,
+requested Rust bytes drop from 37,972 to 17,579, while allocation calls increase from 17
+to 18 and the 16,512 output Arrow buffer bytes stay unchanged. The removed allocation
+volume is repeated literal storage, not a measurement of every copied byte. A revised
+candidate averages 4.992 microseconds against a fresh published-code control's 5.724,
+but pre-expanded controls drift by a similar amount (4.883 versus 5.535); these sequential
+measurements do not support a precise throughput percentage. An initial unconditional-hint
+version is replaced because its hint allocation is unnecessary outside mixed calls.
+
+The [Criterion methodology and retained evidence](../benchmarks/native-criterion.md#scalar-preserving-adapter-measurements)
+include all 960 allocation probes, 12 estimates with 95% intervals and 1,200 raw samples,
+including both candidates and the published-code control. This bounded kernel change alone
+does not resolve the previously measured standalone ELT deficit against stock Flink.
+
+Fresh release/mimalloc whole-job runs on Flink 2.2.1/JDK 17 use the identical row-fed
+`ELT(n,b,X'00112233445566778899AABBCCDDEEFF')` query, BINARY(16) source/result, blackhole
+sink, one worker, 2 GiB heap, batch limit 1,024, two warmups and five measured runs per engine.
+Plans require NativeCalc and both transposes, with runtime substitution checks. The
+pre-kernel control uses the saved production library from before scalar preservation;
+previous production uses main `0b38269e` plus benchmark-only foundation `1b1b5ed8`, its
+matching Java/native code, and explicit expected-ELT-fallback checks. Source/query fixtures
+in the previous-production worktree are byte-identical to the current diagnostic fixtures.
+
+| Rows / source NULL interval | Revised native / stock seconds | Before kernel native / stock | Previous-production fallback / stock |
+| --- | ---: | ---: | ---: |
+| 10M / none | 1.272 / 1.009 | 1.280 / 1.019 | 1.198 / 1.199 |
+| 2M / every seventh | 0.316 / 0.284 | 0.325 / 0.282 | 0.310 / 0.313 |
+
+[All 120 identity/function trials](../benchmarks/binary-elt-singular-whole-job-2026-10-02.csv)
+are retained. Ten-million-row native function ranges overlap (revised 1.266–1.288 seconds,
+pre-kernel 1.274–1.331); its identity medians also shift by roughly eight milliseconds
+(1.159 versus 1.167), limiting attribution of the function difference to this kernel.
+Nullable two-million-row function ranges overlap too (0.314–0.321 versus 0.317–0.330).
+Previous-production stock controls drift substantially, so they cannot establish a precise
+cross-worktree speed ratio. Revised ELT still loses to its own stock control and the
+previous-production fallback in both shapes. The change is retained for eliminating
+batch-length literal storage, with no claimed standalone acceleration or resolved admission
+gate. Release fixed-BINARY SQL checks pass 17/17 on Flink 2.2.1 and 11/17 on 1.18.1,
+with six explicit unavailable-stock-ELT skips. The added runtime-source cases cover widths
+1/16/256 across complete and partial batches, NULL literals, padding/truncation of hex and
+UTF-8 literals and a narrower declared NULL-literal width. All 960 final Criterion smoke
+fixtures and three release Rust tests pass.
+
+With the scalar diagnostic's configurable width set to 256, two million non-null source
+rows give ELT native/stock medians 0.435/0.307 seconds versus the pre-kernel control's
+0.448/0.304 and previous-production fallback/stock 0.336/0.350. Candidate and pre-kernel
+native ranges overlap (0.433–0.449 versus 0.441–0.451). Native identity controls are
+0.451/0.444 seconds, so the function difference is not simply an identical shift in the
+identity cost; its magnitude remains uncertain. [All 60 wide identity/function trials](../benchmarks/binary-elt-singular-wide-whole-job-2026-10-02.csv)
+are retained, with matched schema/literal widths and the same resources/warmups/repetitions
+as above. Width 256 still fails the standalone stock and previous-production performance
+gate; no admission or default change is justified by these measurements.

@@ -426,7 +426,8 @@ returns a scalar, Arrow output-buffer metrics are inapplicable.
 the scalar path requests 37,972 Rust bytes across 17 calls versus 17,224 across 11 for the
 pre-expanded control. Both produce the same 16,512 new Arrow buffer bytes. The difference
 includes scalar cloning and adaptation, rather than identifying every requested byte as a copy.
-It motivates avoiding repeated literal-array construction; no such production change is made here.
+These are the pre-optimization allocation baselines. The current adapter preserves scalar
+literal cardinality as described in the [kernel ledger](../optimizations/scalar-function-kernels.md#preserve-elt-literal-cardinality).
 
 Run `python3 bin/bench-native.py --bench binary_expressions --filter elt_arguments --smoke`
 to validate these profiles, then omit `--smoke` for timing. A focused comparison uses
@@ -489,6 +490,37 @@ literals. The empty variable result averages 0.9583 microseconds (95% interval
 [all 200 samples](binary-elt-all-scalar-samples-2026-10-02.csv) are retained. These are
 baseline costs for different result shapes, not an optimization comparison. The filter is
 `'elt_all_scalar/width=(0|16)/values=3/fixed_literal=false/nulls=false/index=Some\(1\)'`.
+
+### Scalar-preserving adapter measurements
+
+The current ELT adapter uses released DataFusion 54 `AcceptsSingular` hints for binary
+values in mixed scalar/array calls. The index still expands to the batch length, while
+binary literals expand to one row. Original argument representation distinguishes scalars
+from real one-row arrays. All-scalar calls retain DataFusion's scalar extraction contract.
+Calls without mixed scalar/array values allocate no hint vector.
+
+[All 960 current probes](binary-elt-singular-probes-2026-10-02.csv),
+[12 timing estimates](binary-elt-singular-timing-2026-10-02.csv) and
+[all 1,200 samples](binary-elt-singular-samples-2026-10-02.csv) retain an initial
+unconditional-hint candidate, a fresh published-code control (`f0aa2c43`), and the revised
+mixed-only-hint candidate. Each variant times the same four cases with three seconds of
+warmup, 100 samples and at least five seconds per case, using the same Rust/Arrow versions,
+CPU and system allocator as the earlier adaptation baselines.
+
+For the 1,024-row dynamic-index, non-null width-16 variable-literal case, requested Rust
+bytes fall from 37,972 to 17,579 (18 calls rather than 17), with unchanged 16,512 new output
+Arrow buffer bytes. The pre-expanded control retains 11 allocation calls and requests
+17,240 bytes versus the former 17,224. Literal repetition is removed; an extra hint allocation
+and larger input descriptors remain. These metrics do not count copied bytes or peak memory.
+
+The fresh published-code means are 5.724 microseconds for the scalar literal and 5.535 for
+the pre-expanded control; the revised candidate means are 4.992 and 4.883. Control means
+across the three variants vary from 4.883 to 5.535 microseconds, so these sequential runs
+do not establish a precise percentage speedup. Revised all-scalar means are 1.041 microseconds
+for the empty variable result and 1.155 for the width-16 result, versus fresh controls
+1.102 and 1.148; the fixed-result confidence intervals overlap. The certain result is
+lower literal-adaptation allocation, with independent value/type/representation checks.
+Whole-job evidence and its remaining performance gate belong in the kernel ledger.
 
 ### Configurable fixed-BINARY whole-job diagnostics
 

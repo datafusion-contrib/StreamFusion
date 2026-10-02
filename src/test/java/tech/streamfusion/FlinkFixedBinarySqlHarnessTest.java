@@ -57,6 +57,11 @@ class FlinkFixedBinarySqlHarnessTest {
     BuiltinFunctionParity.assertParity(this::binary,
         "SELECT ELT(n,b,p), ELT(n,b,CAST(NULL AS BINARY(2))) FROM src WHERE n = 2");
     BuiltinFunctionParity.assertParity(this::binary,
+        "SELECT ELT(n,b,CAST(X'00' AS BINARY(2))), "
+            + "ELT(n,b,CAST(X'FF0080' AS BINARY(2))), "
+            + "ELT(n,b,TRY_CAST('é中' AS BINARY(2))), "
+            + "ELT(n,b,CAST(NULL AS BINARY(1))) FROM src");
+    BuiltinFunctionParity.assertParity(this::binary,
         "SELECT ELT(n,b,p) FROM src WHERE n = 99");
   }
 
@@ -67,6 +72,22 @@ class FlinkFixedBinarySqlHarnessTest {
         "SELECT CAST(b AS BINARY(1)), CAST(b AS BINARY(4)), "
             + "TRY_CAST(b AS BINARY(4)), CAST(b AS VARBINARY(1)), "
             + "TRY_CAST(b AS VARBINARY(4)), TO_BASE64(b), TO_BASE64(X'00FF') FROM src");
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 16, 256})
+  void runtimeBinarySelectionRetainsLiteralWidthsAcrossBatches(int width) throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
+    byte[] source = new byte[width];
+    java.util.Arrays.fill(source, (byte) 0x80);
+    source[width - 1] = (byte) 0xff;
+    List<Row> rows = new ArrayList<>();
+    for (int i = 0; i < 1033; i++) rows.add(Row.of(i % 7 == 0 ? null : source, i % 4));
+    String literal = TextTimeBenchmarkInputs.fixedBinaryLiteral(width);
+    BuiltinFunctionParity.assertParity(
+        () -> BuiltinFunctionParity.environment(
+            ROW(FIELD("b", BINARY(width)), FIELD("n", INT())), rows),
+        "SELECT ELT(n,b," + literal + "), ELT(n,b,CAST(NULL AS BINARY(" + width + "))) FROM src");
   }
 
   @Test
