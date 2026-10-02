@@ -508,3 +508,25 @@ BINARY projection acceleration. All identity controls and trials are retained in
 [previous results](../benchmarks/binary-composition-previous-2026-10-01.csv). Shared
 host conditions and the separately documented standalone losses remain relevant
 limits; fixed-BINARY admission/performance work stays draft.
+
+
+### Duplicate-heavy STRING comparison (2026-10-02)
+
+The paired release comparison uses 200,000 runtime rows, array width 64,
+string domain eight, a 264-byte suffix with Unicode/NUL prefix, container NULL
+every eight rows and element NULL every seven rows. Both revisions use two
+warmups, five alternating trials and a 2 GB heap. The candidate verifies native
+Calc and both transposes at planning and runtime; previous production verifies
+expression fallback. All conversion and JNI costs remain in the measured path.
+
+| Revision | Stock Flink median / range (s) | StreamFusion median / range (s) |
+|---|---:|---:|
+| Previous production | 3.152 / 3.119–3.180 | 3.172 / 3.149–3.178 (fallback) |
+| Candidate | 3.295 / 3.282–3.317 | 3.494 / 3.440–3.579 (native) |
+
+The candidate takes 6.0% longer than its stock control and 10.1% longer than
+the previous fallback sample. Stock controls also drift by 4.5% between runs.
+This duplicate-heavy workload fails the performance gate, extending the existing
+unique-string limitation; native STRING coverage remains draft.
+[All 20 comparison trials](../benchmarks/array-distinct-string-duplicates-2026-10-02.csv)
+retain both stock controls and unfavorable results.
