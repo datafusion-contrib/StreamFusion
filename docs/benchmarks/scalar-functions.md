@@ -1405,3 +1405,20 @@ SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
   -Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5 \
   -Dscalar.nullEvery=8 -Dscalar.scaleNullEvery=7
 ```
+
+### Rejected manual BINARY exit projection
+
+A direct Arrow-segment copy prototype preserved owned Flink row bytes and passed
+29 targeted wire, lifetime, ownership and SQL parity checks on Flink 2.2.1. The
+manual per-field projection did not improve release whole-job results over the
+prior generated projection: ELT medians are stock/manual/prior-native
+0.305/0.402/0.387 seconds; string cast medians 0.570/0.615/0.613 seconds. Both native
+versions still lose to stock. These use two million rows, two warmups, five
+alternating trials, a 2 GB heap, 1,024-row batches and both transposes. All
+[manual trials](binary-direct-exit-candidate-2026-10-01.csv) and
+[prior-native trials](binary-direct-exit-prior-native-2026-10-01.csv), including
+identity controls and changing stock timings, are retained. The prototype was
+removed; production still uses the generated projection. The
+[scoped rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/binary-manual-exit-projection.md)
+records the ownership design, validation and remaining investigation. This does
+not close [#235](https://github.com/datafusion-contrib/StreamFusion/issues/235).
