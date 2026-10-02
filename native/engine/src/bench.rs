@@ -792,7 +792,11 @@ pub struct PersistentFirstDedup(KeepFirstDeduplicator);
 #[cfg(feature = "rocksdb-state")]
 impl PersistentFirstDedup {
     pub fn checkpoint(&mut self, directory: &str) -> i64 {
-        self.0.store_mut().checkpoint(directory).unwrap().snapshot_id
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
     }
 
     pub fn restore(
