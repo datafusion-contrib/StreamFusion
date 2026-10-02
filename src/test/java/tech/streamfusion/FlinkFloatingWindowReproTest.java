@@ -107,6 +107,46 @@ class FlinkFloatingWindowReproTest {
     }
   }
 
+  @Test
+  void legacySessionCancellationPreservesArrivalOrder() throws Exception {
+    String sql =
+        "SELECT SESSION_START(ts, INTERVAL '1' SECOND), "
+            + "SESSION_END(ts, INTERVAL '1' SECOND), SUM(d), SUM(f) "
+            + "FROM n GROUP BY SESSION(ts, INTERVAL '1' SECOND)";
+    java.util.function.Supplier<org.apache.flink.table.api.TableEnvironment> environment =
+        () -> {
+          var env = StreamExecutionEnvironment.getExecutionEnvironment();
+          env.setParallelism(1);
+          env.getConfig().setAutoWatermarkInterval(0);
+          var table = StreamTableEnvironment.create(env);
+          table.getConfig().setLocalTimeZone(java.time.ZoneOffset.UTC);
+          table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+          var ts = LocalDateTime.of(2026, 1, 1, 0, 0);
+          table.createTemporaryView(
+              "n",
+              fromData(
+                  env,
+                  Types.ROW_NAMED(
+                      new String[] {"ts", "d", "f"},
+                      Types.LOCAL_DATE_TIME, Types.DOUBLE, Types.FLOAT),
+                  Row.of(ts, 1e16, 1e8f),
+                  Row.of(ts.plusNanos(200_000_000), -1e16, -1e8f),
+                  Row.of(ts.plusNanos(100_000_000), 1.0, 1.0f),
+                  Row.of(ts.plusNanos(300_000_000), null, null)),
+              Schema.newBuilder()
+                  .column("ts", DataTypes.TIMESTAMP(3))
+                  .column("d", DataTypes.DOUBLE())
+                  .column("f", DataTypes.FLOAT())
+                  .watermark("ts", "ts - INTERVAL '1' SECOND")
+                  .build());
+          return table;
+        };
+    NativeParity.assertParity(environment, sql);
+    org.junit.jupiter.api.Assertions.assertTrue(
+        tech.streamfusion.planner.NativePlanner.explain(environment.get(), sql)
+            .contains("NativeColumnarSessionWindowAggregate"));
+  }
+
   private static void check(String function, double first, double second) throws Exception {
     String intervals = function.equals("HOP")
         ? "INTERVAL '1' SECOND, INTERVAL '2' SECOND" : "INTERVAL '1' SECOND";

@@ -1214,7 +1214,93 @@ Flink 2.2.1 and 1.18.1 using a verified release/mimalloc library (16,384 rows,
 eight keys, eight-byte suffixes, nullable input, no warmup and one trial).
 These checks assert the session operator and both transposes in the plan and
 nonzero runtime substitutions. Normal checks with Javadocs enabled also pass
-on both released versions. Direct RocksDB JNI profiling proof and representative
-repeated timings remain pending. The sanity
-trials establish harness execution, not performance or SQL result parity; the
+on both released versions. Representative repeated whole-job timings remain
+pending. The sanity trials establish harness execution, not performance or SQL
+result parity; the
 blackhole sink does not compare output values.
+
+
+The original session CPU recording also completes on released Flink 2.2.1 using
+release/mimalloc, two warmups and a 30-second recording request. Of 41,158 CPU
+samples, inclusive markers include session push JNI (33,922), flush JNI (136),
+`RocksSessionAggStore` (2,840), input transpose (1,344), output transpose (10),
+session aggregation (32,978) and Arrow `take` (723). Markers overlap and are not
+additive; the [runtime witness counts](persistent-session-runtime-witness-2026-10-02.csv)
+prove runtime routes, not throughput or copied bytes. Session-inclusive leaf
+frames also include unresolved libc frames, RocksDB skip-list/index work and
+allocation calls; the profile does not justify attributing all session cost
+to Arrow gathering or any particular copy.
+
+A rejected contiguous-row selection candidate uses owned Arrow slices after
+restoring arrival order, retaining `take` for scattered selections. Both new
+regressions and all 16 release session tests pass. They cover sequential FLOAT
+SUM arrival order, Unicode/NUL string DISTINCT, independently nullable values,
+singleton/contiguous/scattered groups, nonzero input offsets, input release
+before firing, snapshot recovery and no refiring. Existing tests also check
+persistent merge tombstones, saved watermark recovery and memory budgets.
+The matched candidate Criterion run completes with all 1,848 diagnostics,
+unchanged fixtures and frozen sources. The restored-original control also
+passes all 1,848 diagnostics. Production retains its original selection loop;
+released candidate parity and whole-job improvement remain unestablished.
+
+DOUBLE SUM delegates to Arrow aggregation; the cancellation array
+`[1e16, -1e16, 1, NULL]` returns zero in both the original and candidate native
+batch tests rather than the sequential-fold result one. That failed initial
+assertion does not distinguish the candidate from production. The retained
+arrival-order regression instead uses the explicit sequential FLOAT accumulator.
+A separate legacy SESSION SQL cancellation probe for DOUBLE and FLOAT passes
+with one unskipped test on each released Flink version against the original
+release/mimalloc library. It uses non-monotonic timestamps, NULLs and terminal
+watermark firing and requires native runtime substitutions. This checks the
+SQL harness output, not identical native batch partitioning; it does not prove
+arbitrary DOUBLE batch parity or parity with a rebuilt candidate library.
+
+The cancellation probe now additionally requires the specific native columnar
+session operator in its explained plan on a separate fresh environment. Plan
+inspection installs native execution, so it runs outside the shared environment
+factory to preserve the independent stock result. The strengthened test passes
+with one unskipped test and normal Javadoc checks on both released Flink 2.2.1
+and 1.18.1 against the original release/mimalloc library.
+
+
+The complete [allocation comparison](persistent-session-slice-allocation-comparison-2026-10-02.csv)
+retains all 1,848 cases: 14 have fewer allocation calls, 1,834 are unchanged and
+none have more; all output-buffer counters match. [All 120 candidate session
+profiles](persistent-session-slice-candidate-allocations-2026-10-02.csv) are saved.
+Wide nullable unique-key merge changes from 1,252,871 calls/158,966,734 requested
+bytes to 1,178,401 calls/156,226,238 requested bytes, saving 74,470 calls and
+2,740,496 requested bytes. These counters do not measure copied bytes.
+
+[Five candidate estimates](persistent-session-slice-candidate-timing-2026-10-02.csv)
+and [500 samples](persistent-session-slice-candidate-samples-2026-10-02.csv) preserve
+all phases. Means in milliseconds are merge 290.088, firing 35.085, checkpoint
+72.652, aligned recovery 14.871 and rebuilt recovery 36.941. Merge overlaps the
+original 291.554-ms interval, firing is lower than the variable original and
+checkpoint is substantially higher with a broad interval. The update-only
+change does not justify attributing these other phase differences to removed
+copies.
+
+The [completed three-run comparison](persistent-session-slice-timing-comparison-2026-10-02.csv)
+verifies all 1,500 samples and matching original/control source hashes. The
+[control estimates](persistent-session-slice-control-timing-2026-10-02.csv) and
+[500 control samples](persistent-session-slice-control-samples-2026-10-02.csv)
+retain every selected phase:
+
+| Phase | Original, ms | Candidate, ms | Restored original, ms |
+| --- | ---: | ---: | ---: |
+| Merge | 291.554 | 290.088 | 229.110 |
+| Fire | 57.409 | 35.085 | 58.016 |
+| Checkpoint after fire | 12.693 | 72.652 | 9.958 |
+| Aligned restore | 14.008 | 14.871 | 14.302 |
+| Rebuilt restore | 36.745 | 36.941 | 36.518 |
+
+Merge has no repeatable benefit: the candidate overlaps the first original run
+and is slower than the restored-original control. Other phases are mixed;
+these sequential runs do not establish the cause of drift or a causal gain
+from slicing. The [complete control allocation comparison](persistent-session-slice-control-allocation-comparison-2026-10-02.csv)
+retains all 1,848 cases: two 1,024-row unique short-key merge cases each differ
+by one allocation and 56 requested bytes; output counters match in every case.
+The candidate is rejected despite lower allocation counts. No candidate whole-job
+speedup is claimed. The repository decision record at
+`.claude/wontdos/session-contiguous-value-slices.md` retains the scope and
+conditions for revisiting this experiment.
