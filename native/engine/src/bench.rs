@@ -1176,3 +1176,64 @@ impl CalcProgram {
         self.0.evaluate(batch)
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentOver(OverWindowAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentOver {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksOverAggStore::create(
+            PersistentSort::config(directory, options),
+            &rocks_over_state_types(&[0], &[0], 0, false).unwrap(),
+            &[],
+            &[],
+            schema,
+            0..=0,
+        )
+        .expect("persistent OVER fixture");
+        Self(Self::operator().with_store(store, vec![DataType::Int64]))
+    }
+
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksOverAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &rocks_over_state_types(&[0], &[0], 0, false).unwrap(),
+            &[],
+            &[],
+            schema,
+            0..=0,
+            &[(source.to_owned(), generation)],
+            aligned,
+        )
+        .expect("persistent OVER restore");
+        Self(Self::operator().with_store(store, vec![DataType::Int64]))
+    }
+
+    fn operator() -> OverWindowAggregator {
+        OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false)
+            .with_key_timestamp_precisions(vec![-1])
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch.clone(), 0).expect("persistent OVER push");
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush(i64::MAX, 0).expect("persistent OVER flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(directory)
+            .expect("persistent OVER checkpoint")
+            .snapshot_id
+    }
+}

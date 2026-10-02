@@ -102,7 +102,7 @@ Some historical suites use
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |
 | Key materialization | `keys_and_checkpoints` | Arrow-row encode/decode, Flink BinaryRow hash; primitive and wide nullable string composite keys |
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
-| Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank and temporal join; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
+| Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank, temporal join and rowtime running-SUM OVER; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
@@ -149,7 +149,10 @@ The main remaining boundaries are:
   upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
-- Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank and temporal join, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
+- Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank,
+  temporal join and rowtime running-SUM OVER; other OVER shapes and recovery of
+  checkpointed running folds after partial firing; multi-source RocksDB rescale/compaction,
+  TTL migration/compaction, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
@@ -728,3 +731,71 @@ evidence that all of those requests can be removed.
 | probe | 11.695 | 10.724–12.902 |
 | restore_aligned | 27.902 | 27.180–28.741 |
 | restore_clipped | 38.430 | 38.024–38.869 |
+
+
+### Persistent running-SUM OVER lifecycle
+
+New `persistent_state` fixtures exercise the existing rowtime unbounded BIGINT
+SUM OVER path through its RocksDB store: 16/1,024/16,384 rows, eight or
+batch-cardinality partition keys, UTF8 payload suffix widths 8/264 and nullable
+values/payloads. All inputs have a nonzero Arrow slice offset. An independent
+per-key running-sum oracle checks all five output columns, including NULL before
+the first non-null value, raw Unicode/embedded-NUL payloads and preserved rowtimes.
+Output order alone is canonicalized; repeated firing must produce no rows.
+
+The 120 profiles separate push, firing, pending-row checkpoint and aligned/rebuilt
+restore. The checkpoint source contains pending input rows before any firing.
+Creation, prepopulation, fixture destruction and correctness checks are outside
+the measurement boundary; firing includes output construction. Push includes the
+adapter's shallow `RecordBatch` clone: Arrow buffers remain shared, while metadata
+clone costs are counted. The production method consumes its input batch, so this
+adapter cost must not be reported as an engine payload copy. Restore adopts
+or rebuilds a single source over its full one-key-group range, excluding no keys.
+These fixtures do not yet cover checkpointed running folds after firing, continued
+arrivals, bounded ROWS/RANGE frames, processing time, DISTINCT, TTL or multi-source
+rescaling. Rust allocation counters exclude RocksDB C++ and worker allocations.
+
+All 120 profiles and the 1,320 earlier profiles pass release fixture validation
+on 2026-10-02. [All 120 allocation profiles](persistent-over-probes-2026-10-02.csv)
+retain every phase and shape. The separate release baseline retains
+[five estimates and confidence intervals](persistent-over-timing-2026-10-02.csv)
+and [all 500 raw samples](persistent-over-samples-2026-10-02.csv). Smoke validation
+does not produce timing evidence. No runtime optimization or whole-job improvement
+is claimed by this matrix.
+
+For the 16,384-row unique-key wide nullable OVER fixture, firing requests
+30,868,044 Rust allocation bytes across 164,050 calls and creates 4,434,503
+bytes of output buffers. Aligned restore requests 5,335 Rust bytes across 91
+calls, versus 5,020,657 bytes across 32,832 calls for rebuilding. These are
+allocation-request sums, not peak memory or complete database I/O costs; the
+C++ and worker exclusions matter particularly for database adoption.
+
+Reproduce the release lifecycle baseline for 16,384 unique-key wide nullable
+rows with:
+
+```sh
+python3 bin/bench-native.py --bench persistent_state \
+  --filter 'engine/rocksdb/over/over/(push|fire|checkpoint|restore_aligned|restore_rebuilt)/16384/domain=16384/bytes=264/nulls=true' \
+  --save-baseline over-lifecycle-original
+```
+
+The five phases use Criterion's default 3-second warmup, 5-second measurement
+target and 100 samples, with a fresh per-iteration fixture outside timing. The
+filter selects timed cases but still executes all suite allocation/oracle
+diagnostics beforehand. These System/counting-allocator lifecycle timings do
+not include JNI, row conversions or the production mimalloc configuration and
+are not a substitute for the required whole-job performance comparisons.
+
+| Phase | Mean (ms) | 95% confidence interval (ms) |
+| --- | ---: | ---: |
+| checkpoint | 120.722 | 98.461–143.604 |
+| fire | 26.450 | 26.198–26.701 |
+| push | 4.125 | 4.084–4.167 |
+| restore_aligned | 66.246 | 63.493–69.273 |
+| restore_rebuilt | 27.875 | 24.110–32.377 |
+
+Aligned restore has fewer Rust allocation requests but greater elapsed time
+than rebuilding in this fixture. The timed boundary includes native database
+opening/adoption work that the Rust allocation counter excludes. Checkpoint
+and rebuild timing intervals are broad; retain their raw variability rather
+than interpreting this baseline as a precise general ranking of recovery paths.
