@@ -708,8 +708,10 @@ records the updated complete-job comparisons and all trials. The non-null standa
 STRING-to-fixed-BINARY cast now beats stock and previous production, and the small nullable
 Boolean ARRAY_DISTINCT case does so in two sustained candidate runs. Standalone ELT remains
 slower, including at ten million rows. Duplicate-heavy STRING ARRAY_DISTINCT now takes 3.160 seconds native versus 3.150 stock;
-overlapping trials do not establish a win against both baselines. Unique strings have not yet
-been remeasured with this entry change. Earlier rejected exit projections and membership experiments remain rejected.
+overlapping trials do not establish a win against both baselines. The [quiet-host unique-string comparison](#quiet-host-unique-string-control-2026-10-02)
+below subsequently measures improvement against both baselines. Duplicate-heavy coverage
+still lacks a demonstrated win. Earlier rejected exit projections and membership
+experiments remain rejected.
 
 ### Preserve ELT literal cardinality
 
@@ -779,3 +781,73 @@ identity cost; its magnitude remains uncertain. [All 60 wide identity/function t
 are retained, with matched schema/literal widths and the same resources/warmups/repetitions
 as above. Width 256 still fails the standalone stock and previous-production performance
 gate; no admission or default change is justified by these measurements.
+
+
+### Quiet-host unique STRING control (2026-10-02)
+
+A fresh sequential comparison uses the same 200,000-row, width/domain-64,
+264-byte-suffix non-null STRING fixture, released Flink 2.2.1, JDK 17, a
+2 GiB heap, two warmups and five alternating stock/native trials. No other
+local compilation or timing jobs overlap the measured trials. Both checkouts
+use byte-identical fixtures; native uses the saved production release/mimalloc
+library rather than the Criterion counting-allocator library. Plan checks retain
+the row-fed source, blackhole sink and both transposes, and runtime checks verify
+acceleration for the candidate and fallback for previous production.
+
+Candidate median is 5.906901 seconds (5.712531–5.939868), versus its stock
+control at 6.427183 (6.420305–6.460492): 8.1% less elapsed time. Previous
+production fallback measures 6.255865 (6.168646–6.276111), with its stock
+control at 6.220809 (6.163930–6.361735). Candidate is 5.6% faster than the
+previous fallback median. The stock controls differ by 3.3%, so retain both
+and do not interpret the sequential comparison as a precise universal gain.
+[All 20 trials and actual native-library hashes](../benchmarks/array-distinct-string-unique-quiet-2026-10-02.csv)
+are retained. This supplies positive evidence for the unique-string workload;
+it does not erase the earlier confounded results, demonstrate a win for the
+duplicate-heavy profile, or complete the collection-family admission gate.
+
+
+### Quiet-host duplicate STRING control (2026-10-02)
+
+The matching duplicate-heavy comparison keeps 200,000 rows, width 64, suffix
+264, two warmups, five alternating trials, 2 GiB heap and the same release
+libraries. Domain is eight, containers are NULL every eight rows and elements
+NULL every seven positions. Candidate and previous production run sequentially
+with the same plan/runtime route checks and no overlapping local benchmark or
+compilation jobs during measured trials.
+
+| Revision | Stock median / range (s) | StreamFusion median / range (s) |
+| --- | ---: | ---: |
+| Candidate | 3.339411 / 3.300283–3.366571 | 3.271065 / 3.173405–3.417530 |
+| Previous production | 3.142147 / 3.140216–3.212720 | 3.169808 / 3.152526–3.214228 (fallback) |
+
+Candidate's median is 2.0% lower than its stock control, with overlapping trial
+ranges, and 3.2% higher than previous production. Stock controls drift 6.3%
+between runs. This does not demonstrate improvement against both baselines and
+keeps the duplicate-heavy STRING performance gate unresolved. The unique-string
+win above must not be generalized into an unrestricted STRING admission claim.
+[All 20 duplicate-heavy trials and native-library hashes](../benchmarks/array-distinct-string-duplicates-quiet-2026-10-02.csv)
+retain the unfavorable control. No production kernel change is made by these
+remeasurements.
+
+
+### Remaining STRING exit copies
+
+The current Arrow VARCHAR column adapter obtains a heap byte array from
+`VarCharVector.get` for every string access. Released Flink 2.2.1 and 1.18.1
+`RowDataSerializer` copy each field through its type serializer;
+`ArrayDataSerializer` similarly copies columnar-array elements, and
+`StringDataSerializer` calls `BinaryStringData.copy`. Thus retained string
+outputs pay for the temporary Arrow-to-heap bytes and the subsequently owned
+string bytes. This finding comes from inspecting the released artifact
+bytecode, rather than assuming the development checkout matches either release.
+
+Flink's `ColumnarRowData` and `ColumnarArrayData` are final on both releases.
+An alternate borrowed-string row view would need a different implementation and
+may lose the existing columnar-array serializer branch. Removing the temporary
+copy therefore needs a measured design that preserves synchronous consumption,
+retained rows after batch close, fan-out and network serialization, rather than
+changing the existing adapter to expose a buffer whose lifetime it cannot
+guarantee. No ownership change or allocation saving is claimed here. The entry
+VARCHAR writer already copies heap binary-string segments directly into Arrow,
+following Comet's buffer-based writer pattern; that existing optimization also
+applies to nested array elements.
