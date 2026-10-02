@@ -86,6 +86,14 @@ production. All trials, identities and both stock controls are retained in the
 [measurement CSV](../benchmarks/synchronous-arrow-entry-2026-10-02.csv). These are complete-job
 measurements; the Boolean membership optimization is included alongside entry borrowing.
 
+The duplicate-heavy STRING follow-up uses 200,000 rows, width 64, domain eight, a
+264-byte suffix with Unicode/NUL prefix and the same NULL frequencies. It takes 3.160 seconds
+native (2.968–3.216) versus 3.150 stock (3.137–3.173). Previous production's earlier matching
+fallback sample is 3.172 (3.149–3.178), with stock 3.152. The current native median improves over
+the pre-entry candidate's 3.494 seconds, but overlapping trials do not establish a win against
+both baselines. STRING's performance gate remains unresolved; unique strings have not been
+remeasured. The CSV retains all ten new trials.
+
 ## Measurement
 
 The following historical measurements compare full-row and projected-row buffering, before

@@ -129,3 +129,13 @@ candidate-boolean-repeat,synchronous-entry-repeat-boolean-10m-2026-10-02.log,ARR
 candidate-boolean-repeat,synchronous-entry-repeat-boolean-10m-2026-10-02.log,ARRAY_DISTINCT(arr),10000000,native,3,2.081116288
 candidate-boolean-repeat,synchronous-entry-repeat-boolean-10m-2026-10-02.log,ARRAY_DISTINCT(arr),10000000,native,4,2.088255368
 candidate-boolean-repeat,synchronous-entry-repeat-boolean-10m-2026-10-02.log,ARRAY_DISTINCT(arr),10000000,native,5,2.097229032
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,stock_flink,1,3.172064945
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,stock_flink,2,3.149866867
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,stock_flink,3,3.140048925
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,stock_flink,4,3.137448748
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,stock_flink,5,3.172798070
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,native,1,3.193515019
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,native,2,3.159971063
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,native,3,3.216020509
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,native,4,2.967990844
+candidate-string-duplicates,synchronous-entry-string-duplicates-2026-10-02.log,ARRAY_DISTINCT(arr),200000,native,5,3.146476216

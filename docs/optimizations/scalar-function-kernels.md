@@ -707,5 +707,6 @@ The measurements above precede the consumer-local entry serializer. The
 records the updated complete-job comparisons and all trials. The non-null standalone
 STRING-to-fixed-BINARY cast now beats stock and previous production, and the small nullable
 Boolean ARRAY_DISTINCT case does so in two sustained candidate runs. Standalone ELT remains
-slower, including at ten million rows. STRING ARRAY_DISTINCT has not yet been remeasured with
-this entry change. Earlier rejected exit projections and membership experiments remain rejected.
+slower, including at ten million rows. Duplicate-heavy STRING ARRAY_DISTINCT now takes 3.160 seconds native versus 3.150 stock;
+overlapping trials do not establish a win against both baselines. Unique strings have not yet
+been remeasured with this entry change. Earlier rejected exit projections and membership experiments remain rejected.
