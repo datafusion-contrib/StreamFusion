@@ -1,0 +1,84 @@
+{
+  "complete": true,
+  "native_sha256": "029d41a9f20e83637fdaa90a0e3d006745737d4aff3d12439925ee1d758a37f6",
+  "cold_read_checks": {
+    "unset": {
+      "returncode": 0,
+      "passed": true,
+      "io_uring_setup_calls": 1,
+      "io_uring_enter_calls": 0
+    },
+    "false": {
+      "returncode": 0,
+      "passed": true,
+      "io_uring_setup_calls": 1,
+      "io_uring_enter_calls": 0
+    },
+    "true": {
+      "returncode": 0,
+      "passed": true,
+      "io_uring_setup_calls": 2,
+      "io_uring_enter_calls": 6
+    },
+    "invalid": {
+      "returncode": 0,
+      "passed": true,
+      "io_uring_setup_calls": 1,
+      "io_uring_enter_calls": 0
+    },
+    "denied": {
+      "returncode": 0,
+      "passed": true,
+      "io_uring_setup_calls": 1,
+      "io_uring_enter_calls": 0
+    }
+  },
+  "runtime_settings_and_caching_passed": true,
+  "jvm": {
+    "false": {
+      "returncode": 0,
+      "passed": true,
+      "reports": [
+        {
+          "name": "tech.streamfusion.FlinkRocksDBNativeStateBackendSqlHarnessTest",
+          "tests": "31",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "tech.streamfusion.state.RocksDBNativeStateBackendOperatorTest",
+          "tests": "5",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0"
+        }
+      ]
+    },
+    "true": {
+      "returncode": 0,
+      "passed": true,
+      "reports": [
+        {
+          "name": "tech.streamfusion.FlinkRocksDBNativeStateBackendSqlHarnessTest",
+          "tests": "31",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0"
+        },
+        {
+          "name": "tech.streamfusion.state.RocksDBNativeStateBackendOperatorTest",
+          "tests": "5",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0"
+        }
+      ]
+    }
+  },
+  "finished": 1790910414.5740209,
+  "validated_code_commit": "c8d02d85eae328af447487d68807a0ca7436fdc8",
+  "canonical_base": "0b38269e",
+  "release_feature": "mimalloc,streamfusion/rocksdb-io-uring",
+  "validation_scope": "PR library and cold-read test rebuilt from canonical-main worktree; measured performance snapshot documented separately"
+}

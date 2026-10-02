@@ -1,0 +1,10 @@
+{
+  "complete": true,
+  "issues": [],
+  "queries": 23,
+  "measured_trials": 138,
+  "stock_reference_jobs": 0,
+  "native_preflights": 2,
+  "native_sha256": "63403851fddcb69b43bbaf25c7ba2ae60cd394020669b98d961781bf8c74c68c",
+  "benchmark_source_sha256": "a8d5a3b035751c279faf03d45914bc42b0664cf81757aefcb8355fdca795369b"
+}

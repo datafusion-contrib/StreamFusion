@@ -41,6 +41,10 @@ final class NativeFailureParity {
   }
 
   record Comparison(Outcome host, Outcome nativeRun) {
+    void assertFailure(Class<? extends Throwable> causeType, Phase phase, Route nativeRoute) {
+      assertFailure(causeType, null, phase, nativeRoute);
+    }
+
     void assertFailure(Class<? extends Throwable> causeType, String message, Phase phase,
         Route nativeRoute) {
       assertEquals(host.failure() == null, nativeRun.failure() == null, this::toString);
@@ -48,7 +52,9 @@ final class NativeFailureParity {
         assertNotNull(outcome.failure(), outcome.toString());
         Throwable cause = outcome.rootCause();
         assertTrue(causeType.isInstance(cause), outcome.toString());
-        assertTrue(String.valueOf(cause.getMessage()).contains(message), outcome.toString());
+        if (message != null) {
+          assertTrue(String.valueOf(cause.getMessage()).contains(message), outcome.toString());
+        }
         assertEquals(phase, outcome.phase(), outcome.toString());
       }
       assertEquals(host.rootCause().getClass(), nativeRun.rootCause().getClass(), this::toString);

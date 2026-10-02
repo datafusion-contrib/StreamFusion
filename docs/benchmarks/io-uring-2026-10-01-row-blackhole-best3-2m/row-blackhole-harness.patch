@@ -1,0 +1,125 @@
+--- a/src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java
++++ b/src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java
+@@ -1607,10 +1607 @@
+-    StringBuilder out =
+-        new StringBuilder(
+-            "\n##### NEXMARK STATE BACKENDS (exactly-once Kafka, mini-batch "
+-                + (miniBatch ? "on" : "off")
+-                + "; Flink RocksDB vs StreamFusion native RocksDB; "
+-                + ROWS
+-                + " events, best of "
+-                + RUNS
+-                + ") #####\n");
+-    out.append("query  Flink/RocksDB s      ev/s  SF/RocksDB s     ev/s  SF/Flink\n");
++    System.out.printf("NATIVE ONLY: %d events, best of %d, mini-batch %s%n", ROWS, RUNS, miniBatch);
+@@ -1618,31 +1609,4 @@
+-      String row;
+-      // See the mode comparison: a query lost to a transient stall is marked, not fatal.
+-      try {
+-        double flink = kafkaSinkBest(brokers, q, false, rocksdb);
+-        try {
+-          double nativeRun = kafkaSinkBest(brokers, q, true, nativeRocksDB);
+-          row =
+-              String.format(
+-                  "%4s  %15.3f  %8.0f  %11.3f  %8.0f  %7.2fx%n",
+-                  q.label,
+-                  flink,
+-                  ROWS / flink,
+-                  nativeRun,
+-                  ROWS / nativeRun,
+-                  flink / nativeRun);
+-        } catch (IllegalStateException fallback) {
+-          row = String.format("%4s  %15.3f  |  %s%n", q.label, flink, fallback.getMessage());
+-        }
+-      } catch (Exception failure) {
+-        row = String.format("%4s  FAILED: %s%n", q.label, rootCause(failure));
+-        if (rootCause(failure).contains("createTopics")) {
+-          // The broker itself is gone — every further cell would burn the same timeout.
+-          out.append(row);
+-          System.out.println(out);
+-          throw failure;
+-        }
+-      }
+-      out.append(row);
+-      System.out.print(row);
+-    }
+-    System.out.println(out);
++      double seconds = kafkaSinkBest(brokers, q, true, nativeRocksDB);
++      System.out.printf("[native-best] %s seconds=%.9f events_per_second=%.3f%n",
++          q.label, seconds, ROWS / seconds);
++    }
+@@ -1660,22 +1623,0 @@
+-    AtomicBoolean rocksSeen = new AtomicBoolean();
+-    Thread rocksWatcher =
+-        engagementWatcher(
+-            rocksSeen,
+-            () -> {
+-              try (var files = Files.list(rocksDir)) {
+-                return files.findAny().isPresent();
+-              } catch (Exception e) {
+-                return false;
+-              }
+-            });
+-    try {
+-      kafkaSinkBest(brokers, q4, false, rocksdb, 0, 1);
+-    } finally {
+-      rocksWatcher.interrupt();
+-      rocksWatcher.join();
+-    }
+-    if (!rocksSeen.get()) {
+-      throw new IllegalStateException(
+-          "state.backend.type=rocksdb never materialized working files under its localdir;"
+-              + " the comparison would run stock Flink on heap state");
+-    }
+@@ -1752,0 +1695 @@
++        System.out.printf("[native-trial] %s trial=%d seconds=%.9f%n", q.label, run + 1, seconds);
+@@ -2089,0 +2033,33 @@
++  @Test
++  @EnabledIfEnvironmentVariable(named = "SF_ROW_ROCKS_BENCH", matches = "true")
++  void rowDataRocksComparison() throws Exception {
++    tableConfigExtras = Map.of(
++        "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory",
++        "table.exec.mini-batch.enabled", "false",
++        "execution.checkpointing.interval", "1 s");
++    System.setProperty("streamfusion.native.enabled", "true");
++    Query q4 = Arrays.stream(ALL_QUERIES).filter(q -> q.label.equals("q4")).findFirst().orElseThrow();
++    AtomicBoolean seen = new AtomicBoolean();
++    Thread watcher = engagementWatcher(seen, () -> Native.liveNativeHandles().contains("Rocks"));
++    try {
++      withProps(q4, true, null, () -> runGeneratorOnce(q4, true));
++    } finally {
++      watcher.interrupt();
++      watcher.join();
++    }
++    if (!seen.get()) {
++      throw new IllegalStateException("Row-data preflight did not engage native RocksDB");
++    }
++    System.out.printf("[native-preflight] RocksDB engaged; rows=%d parallelism=%d checkpoints=1s%n", ROWS, PARALLELISM);
++    try {
++      for (Query q : selectQueries()) {
++        double seconds = generatorBest(q, true, null);
++        System.out.printf("[native-best] %s seconds=%.9f events_per_second=%.3f%n",
++            q.label, seconds, ROWS / seconds);
++      }
++    } finally {
++      tableConfigExtras = Map.of();
++      System.clearProperty("streamfusion.native.enabled");
++    }
++  }
++
+@@ -2096,0 +2073 @@
++      System.out.printf("[native-trial] %s trial=%d seconds=%.9f%n", q.label, run + 1, seconds);
+@@ -2303,0 +2281,7 @@
++    if ("true".equals(System.getenv("SF_ROW_ROCKS_BENCH"))) {
++      String plan = tEnv.explainSql(q.insertSql);
++      if (!plan.contains("RowDataToArrow") || !plan.contains("ArrowToRowData")) {
++        throw new IllegalStateException(q.label + ": expected both row/Arrow transposes: " + plan);
++      }
++      System.out.printf("[row-plan] %s both-transposes=true backend=rocksdb%n", q.label);
++    }
+--- a/src/test/java/tech/streamfusion/NexmarkBenchmark.java
++++ b/src/test/java/tech/streamfusion/NexmarkBenchmark.java
+@@ -200 +200,2 @@
+-    env.setParallelism(1);
++    env.setParallelism("true".equals(System.getenv("SF_ROW_ROCKS_BENCH"))
++        ? Integer.parseInt(System.getenv("SF_PARALLELISM")) : 1);

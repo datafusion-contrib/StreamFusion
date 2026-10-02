@@ -346,3 +346,14 @@ retains all cache policies, unfavorable results, and library hashes. It uses the
 existing shared-cluster 48 GiB task off-heap ceiling, equal for all policies,
 alongside 512 MiB managed memory and a 3 GiB heap. That ceiling is not an allocation
 and these timings do not establish performance under a 512 MiB total native pool.
+
+## Optional RocksDB io_uring isolation experiment
+
+A generated-row/blackhole experiment at 2M events, parallelism 4, native RocksDB,
+mini batching off and one-second checkpoints compared the best of three trials
+with io_uring OFF and ON. The measured geometric-mean throughput change was
++3.93%, median +0.80%; using median trial times reduced these to +1.08% and
++0.59%. This is a different workload from the Kafka headline and does not
+establish a broad, repeatable speedup. [Method, baseline disclosure, regressions
+and all individual trials](optimizations/rocksdb-io-uring.md) document the
+optional integration.

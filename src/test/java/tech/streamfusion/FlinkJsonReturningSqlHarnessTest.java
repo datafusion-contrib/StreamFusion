@@ -114,6 +114,7 @@ class FlinkJsonReturningSqlHarnessTest {
 
   @Test
   void nullableBooleanCompositionPreservesFlinkBoxedNullFailures() {
+    // JVM-generated NPE detail messages are not stable across execution and transport.
     String[] expressions = {
       "JSON_VALUE(s, '$' RETURNING BOOLEAN) IS TRUE",
       "JSON_VALUE(s, '$' RETURNING BOOLEAN) IS FALSE",
@@ -125,7 +126,6 @@ class FlinkJsonReturningSqlHarnessTest {
               "SELECT " + expression + " FROM inputs")
           .assertFailure(
               NullPointerException.class,
-              "booleanValue",
               NativeFailureParity.Phase.ROW_EVALUATION,
               NativeFailureParity.Route.NATIVE);
     }
@@ -134,7 +134,6 @@ class FlinkJsonReturningSqlHarnessTest {
             "SELECT id FROM inputs WHERE JSON_VALUE(s, '$' RETURNING BOOLEAN)")
         .assertFailure(
             NullPointerException.class,
-            "booleanValue",
             NativeFailureParity.Phase.ROW_EVALUATION,
             NativeFailureParity.Route.NATIVE);
   }
