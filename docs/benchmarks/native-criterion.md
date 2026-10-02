@@ -319,3 +319,12 @@ RocksDB C++/background allocations and filesystem I/O are outside Rust counters.
 The suite now defines 240 profiles; this run filters timing smoke to the 72 new
 recovery profiles. Cargo metadata confirms 24 workspace benchmark targets, without
 establishing exhaustive operation coverage.
+
+
+The 2026-10-02 Boolean membership comparison retains all 84 collection fixtures
+for both original and final release builds. [All 168 allocation probes](array-distinct-boolean-bits-probes-2026-10-02.csv)
+include integer/string controls; every output assertion passes. Width-64 Boolean
+profiles eliminate one 48-byte membership allocation while gather buffers remain
+unchanged. Timing filters select four 1,024-row Boolean controls only; the
+[scalar-kernel ledger](../optimizations/scalar-function-kernels.md) records estimates
+and intermediate experiments. JVM/C++ allocations are not included.

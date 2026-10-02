@@ -74,7 +74,7 @@ fn distinct(args: &[ArrayRef]) -> Result<ArrayRef> {
                 .as_any()
                 .downcast_ref::<BooleanArray>()
                 .unwrap();
-            distinct_values(
+            distinct_values::<_, _, true>(
                 array,
                 values,
                 |index| values.value(index),
@@ -87,7 +87,7 @@ fn distinct(args: &[ArrayRef]) -> Result<ArrayRef> {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .unwrap();
-            distinct_values(
+            distinct_values::<_, _, false>(
                 array,
                 values,
                 |index| values.value(index),
@@ -107,7 +107,7 @@ where
         .as_any()
         .downcast_ref::<PrimitiveArray<T>>()
         .expect("integer array element type");
-    distinct_values(
+    distinct_values::<_, _, false>(
         array,
         values,
         |index| values.value(index),
@@ -115,7 +115,7 @@ where
     )
 }
 
-fn distinct_values<K: Eq + Hash + Copy + Default, A: Array>(
+fn distinct_values<K: Eq + Hash + Copy + Default, A: Array, const BOOLEAN: bool>(
     array: &ListArray,
     values: &A,
     value: impl Fn(usize) -> K,
@@ -146,12 +146,18 @@ fn distinct_values<K: Eq + Hash + Copy + Default, A: Array>(
             let mut small_len = 0;
             let mut small_fingerprint = 0u64;
             let small = end - start <= small_values.len();
-            if !small {
+            if !small && !BOOLEAN {
                 seen.clear();
             }
             for index in start..end {
                 let first = if values.is_null(index) {
                     !std::mem::replace(&mut seen_null, true)
+                } else if BOOLEAN {
+                    // Boolean fingerprints are exact: false is bit 0 and true is bit 1.
+                    let bit = 1u64 << fingerprint(value(index));
+                    let first = small_fingerprint & bit == 0;
+                    small_fingerprint |= bit;
+                    first
                 } else if small {
                     let value = value(index);
                     let bit = 1u64 << (fingerprint(value) & 63);

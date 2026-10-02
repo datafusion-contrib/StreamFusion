@@ -584,3 +584,56 @@ change is retained and no new whole-job win is claimed.
 [Mean/slope estimates and confidence intervals for every variant](../benchmarks/array-distinct-adaptive-membership-prototype-2026-10-02.csv)
 retain unfavorable controls. The per-profile allocations also remain in task logs.
 See the scoped [rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/array-distinct-adaptive-membership.md).
+
+
+### Exact Boolean membership bits (2026-10-02)
+
+Boolean ARRAY_DISTINCT tracks `false` and `true` in two bits, with NULL handled
+separately. The caller selects this path at compile time; integer and string
+loops retain collision-checked membership. There is no hash allocation or equality
+scan for Boolean membership, including wide arrays. Selection order, lazy gather
+allocation, sliced inputs and declared child/container nullability are unchanged.
+
+Release Criterion repeats 1,024-row Boolean fixtures at widths eight and 64,
+with/without NULLs, two-second warmup, 50 samples and a three-second measurement
+target. Original measurements precede the candidate on the same shared host.
+All 84 collection output/allocation assertions pass in the final comparison.
+
+| Width / NULL profile | Original estimate (µs) | Bit membership estimate (µs) |
+|---|---:|---:|
+| 8 / non-null | 21.012 | 17.286 |
+| 8 / nullable | 23.086 | 21.050 |
+| 64 / non-null | 205.950 | 95.898 |
+| 64 / nullable | 188.310 | 113.200 |
+
+Criterion's distribution comparisons report improvements of 18.0%, 8.9%, 53.6%
+and 39.2%, respectively. These are kernel witnesses, not whole-job speedups.
+[All original, stack-only, runtime-bit and compile-time-bit mean/slope estimates](../benchmarks/array-distinct-boolean-membership-2026-10-02.csv)
+retain confidence intervals and the intermediate stack-only small-array regressions.
+All nine SQL parity checks pass against both released Flink 2.2.1 and 1.18.1
+with the final release/mimalloc library. They cover Boolean/string equality,
+integer widths, nested DISTINCT/lookup, NULLs, schema and unsupported-type fallback.
+
+Fresh whole-job comparisons retain two million runtime rows, domain two,
+container NULL every eight rows and element NULL every seven rows, a 2 GB JVM
+heap, 1,024-row batches, two warmups and five alternating trials. Candidate plans
+and runtime checks require native Calc and both transposes; previous production
+verifies whole-expression fallback. Source/blackhole and all conversion costs
+remain measured. The candidate identifier is parent `3dc219af` plus this Boolean
+bit specialization; previous production is `1b1b5ed8` with fixture-only updates.
+
+| Width / revision | Stock median / range (s) | StreamFusion median / range (s) |
+|---|---:|---:|
+| 64 / previous production | 1.884 / 1.866–1.906 | 1.878 / 1.866–1.884 (fallback) |
+| 64 / candidate | 1.887 / 1.861–1.901 | 1.264 / 1.258–1.297 (native) |
+| 8 / previous production | 0.513 / 0.499–0.516 | 0.505 / 0.503–0.518 (fallback) |
+| 8 / candidate | 0.568 / 0.556–0.676 | 0.568 / 0.548–0.575 (native) |
+
+Width 64 beats stock and previous fallback by 1.493x and 1.486x, respectively.
+Width eight ties its same-run stock control but takes 12.7% longer than the
+previous fallback sample. Its stock control also moves by 10.7% between runs;
+this variability is retained rather than used to claim a small-array win.
+The shared-host small-array comparison does not pass both performance baselines.
+[All 40 whole-job trials](../benchmarks/array-distinct-boolean-bits-wholejob-2026-10-02.csv)
+include both stock controls. STRING and standalone BINARY gates also remain
+unresolved; the PR stays draft. Kernel gains alone do not complete those gates.
