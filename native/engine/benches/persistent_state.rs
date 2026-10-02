@@ -309,7 +309,8 @@ fn dedup_ttl(c: &mut Criterion) {
                         "pending_not_expired/{rows}/keys={domain}/bytes={width}/nulls={nullable}"
                     );
                     let (mut operator, _directory) = setup();
-                    let (output, allocations) = measure(|| operator.flush_at(rows as i64 - 1, 1000));
+                    let (output, allocations) =
+                        measure(|| operator.flush_at(rows as i64 - 1, 1000));
                     assert_eq!(output, expected);
                     report(&label, input.columns(), output.columns(), allocations);
                     group.bench_function(BenchmarkId::from_parameter(label), |b| {
@@ -327,5 +328,104 @@ fn dedup_ttl(c: &mut Criterion) {
     }
     group.finish();
 }
-criterion_group!(benches, persistent, dedup, dedup_ttl);
+fn dedup_recovery(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine/rocksdb/keep_first_recovery");
+    for rows in [16, 1024, 16384] {
+        for domain in [8, rows] {
+            for width in [8, 264] {
+                for nullable in [false, true] {
+                    let input = dedup_input(rows, domain, width, nullable);
+                    let fired = domain / 2;
+                    let setup = || {
+                        let directory = tempfile::tempdir().unwrap();
+                        let mut operator = PersistentFirstDedup::new(
+                            directory.path().join("db").to_str().unwrap(),
+                            input.schema(),
+                            OPTIONS,
+                        );
+                        operator.push(&input);
+                        assert_eq!(operator.flush(fired as i64 - 1), input.slice(0, fired));
+                        (operator, directory)
+                    };
+                    let fresh = |rt| {
+                        RecordBatch::try_new(
+                            input.schema(),
+                            vec![
+                                Arc::new(Int64Array::from(vec![domain as i64])) as ArrayRef,
+                                input.column(1).slice(0, 1),
+                                Arc::new(Int64Array::from(vec![rt])) as ArrayRef,
+                            ],
+                        )
+                        .unwrap()
+                    };
+                    let late = fresh(0);
+                    let next = fresh(rows as i64);
+                    let expected = arrow::compute::concat_batches(
+                        &input.schema(),
+                        [&input.slice(fired, domain - fired), &next],
+                    )
+                    .unwrap();
+                    let verify = |operator: &mut PersistentFirstDedup| {
+                        operator.push(&late);
+                        operator.push(&input);
+                        operator.push(&next);
+                        assert_eq!(operator.flush(rows as i64), expected);
+                        operator.push(&next);
+                        assert_eq!(operator.flush(rows as i64 + 1).num_rows(), 0);
+                    };
+                    let label =
+                        format!("checkpoint/{rows}/keys={domain}/bytes={width}/nulls={nullable}");
+                    let (mut operator, directory) = setup();
+                    let source_path = directory.path().join("snapshot");
+                    let source = source_path.to_str().unwrap();
+                    let (generation, allocations) = measure(|| operator.checkpoint(source));
+                    verify(&mut operator);
+                    report(&label, &[], &[], allocations);
+                    group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                        b.iter_batched_ref(
+                            &setup,
+                            |(operator, directory)| {
+                                std::hint::black_box(operator.checkpoint(
+                                    directory.path().join("snapshot").to_str().unwrap(),
+                                ))
+                            },
+                            BatchSize::PerIteration,
+                        )
+                    });
+                    drop(operator);
+                    for aligned in [false, true] {
+                        let restore = |directory: &tempfile::TempDir| {
+                            PersistentFirstDedup::restore(
+                                directory.path().join("restored").to_str().unwrap(),
+                                input.schema(),
+                                OPTIONS,
+                                source,
+                                generation,
+                                aligned,
+                            )
+                        };
+                        let label = format!("restore/{rows}/keys={domain}/bytes={width}/nulls={nullable}/aligned={aligned}");
+                        let target = tempfile::tempdir().unwrap();
+                        let (mut restored, allocations) = measure(|| restore(&target));
+                        verify(&mut restored);
+                        report(&label, &[], &[], allocations);
+                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                            b.iter_batched_ref(
+                                || tempfile::tempdir().unwrap(),
+                                |directory| {
+                                    let restored = restore(directory);
+                                    std::hint::black_box(&restored);
+                                    drop(restored);
+                                },
+                                BatchSize::PerIteration,
+                            )
+                        });
+                    }
+                }
+            }
+        }
+    }
+    group.finish();
+}
+criterion_group!(benches, persistent, dedup, dedup_ttl, dedup_recovery);
 criterion_main!(benches);

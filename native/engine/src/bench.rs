@@ -791,6 +791,29 @@ pub struct PersistentFirstDedup(KeepFirstDeduplicator);
 
 #[cfg(feature = "rocksdb-state")]
 impl PersistentFirstDedup {
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0.store_mut().checkpoint(directory).unwrap().snapshot_id
+    }
+
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksKeepFirstDedupStore::open_merged(
+            PersistentSort::config(directory, options),
+            schema,
+            &[0],
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(KeepFirstDeduplicator::new(vec![0], 2).with_store(store))
+    }
     pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
         Self::with_ttl(directory, schema, options, 0)
     }

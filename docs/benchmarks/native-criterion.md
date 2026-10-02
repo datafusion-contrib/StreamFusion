@@ -148,7 +148,7 @@ The main remaining boundaries are:
   upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
   Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
-- Persistent stores beyond temporal sort and keep-first deduplication, multi-source RocksDB rescale/compaction, TTL expiry, and each
+- Persistent stores beyond temporal sort and keep-first deduplication, multi-source RocksDB rescale/compaction, TTL migration/compaction, and each
   operator's checkpoint variants need dedicated workloads; memory checkpoint probes cannot stand in
   for their disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
@@ -299,3 +299,23 @@ are retained. Smoke checks establish output/schema and boundary behavior, withou
 timing claims; Rust-thread allocation counters exclude RocksDB C++ and background
 workers. Coverage of other persistent stores and restore/rescale operations remains
 incomplete.
+
+
+Keep-first recovery also defines 72 profiles for mixed emitted/pending state:
+three batch sizes, repeated/all-distinct keys, two payload widths and nullability,
+with checkpoint, aligned restore and key-group-filtered restore. Continuation
+checks reject late data using the restored watermark, suppress emitted keys,
+preserve pending candidates and admit a new key after the saved sequence.
+Checkpoint measurement excludes initial population; restore measurement includes
+opening/closing the restored store, but not continuation checks. Single-source,
+all-key-group recovery does not establish multi-source rescale coverage.
+All 72 new recovery profiles pass release smoke checks on 2026-10-02;
+existing fixture allocation/correctness assertions also rerun successfully.
+[Recovery allocation probes](persistent-dedup-recovery-probes-2026-10-02.csv)
+retain every case. For 16,384 distinct keys with nullable 264-byte payloads,
+aligned opening requests 4,245 Rust bytes versus 2,626,189 for key-group rebuilding.
+These characterize different existing recovery paths, not an optimization speedup.
+RocksDB C++/background allocations and filesystem I/O are outside Rust counters.
+The suite now defines 240 profiles; this run filters timing smoke to the 72 new
+recovery profiles. Cargo metadata confirms 24 workspace benchmark targets, without
+establishing exhaustive operation coverage.
