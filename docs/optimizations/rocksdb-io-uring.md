@@ -96,3 +96,21 @@ runner method. Verification additionally uses a cold-SST pinned-read test with
 block caching disabled and the pinned read executed before the legacy read,
 so a warmed cache cannot hide whether the ring is used. Test-only cache
 settings do not affect production options or benchmark jobs.
+
+## Integration validation on canonical main
+
+The PR branch was rebuilt separately in release mode with the optional feature.
+The cold-SST pinned-read test passed with unset, false, true and invalid runtime
+settings, and with `io_uring_setup` forced to return EPERM. Syscall tracing
+observed six `io_uring_enter` calls in the enabled case and none in the other
+cases; the denied case preserved read correctness through upstream fallback.
+Fresh-process checks also confirmed the runtime setting remains cached after
+an environment change. Disabled settings may still observe RocksDB's initial
+capability probe; absence of submissions is the relevant read-path distinction.
+
+All 31 native RocksDB SQL parity tests and five checkpoint/restore operator
+tests passed in both modes, with no skips. Rust formatting, whitespace and
+new documentation links passed. The
+[PR validation record](../benchmarks/io-uring-2026-10-01-row-blackhole-best3-2m/pr-validation.json)
+retains the rebuilt library hash, mode-specific syscall counts and test totals;
+its library is distinct from the frozen performance-measurement binary.
