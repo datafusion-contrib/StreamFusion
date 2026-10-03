@@ -22,8 +22,11 @@ of the original requested bytes). These counters exclude C++ and worker threads.
 Eight 16,384-row update shapes were measured sequentially as original, candidate
 and restored-original control. Each used 100 samples, three seconds of warmup
 and a five-second measurement target, with the System counting allocator.
-The full untimed fixture/oracle prelude ran before each selected timing, source
-hashes were checked at completion and no heavy local workload overlapped timing.
+Untimed fixture/oracle validation interleaves with benchmark registration; it
+does not all precede the selected timings. The original run emitted 1,689
+diagnostics before its first timing and 39 afterward. All 1,728 diagnostics
+passed by completion in each run. Source hashes were checked at completion,
+and no heavy local workload overlapped timing.
 
 | Case | Original, ms | Candidate, ms | Restored original, ms |
 | --- | ---: | ---: | ---: |

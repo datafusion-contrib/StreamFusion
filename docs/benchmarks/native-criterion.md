@@ -1106,9 +1106,10 @@ The unchanged-production buffer-reuse baseline additionally measured all eight
 with 100 samples, a three-second warmup and a five-second target per case.
 [The eight estimates](persistent-tumbling-buffer-original-timing-2026-10-02.csv)
 and [all 800 samples](persistent-tumbling-buffer-original-samples-2026-10-02.csv)
-are retained. The full 1,728 untimed fixtures ran before these selected timings;
-source hashes stayed unchanged throughout the run. These baseline results
-establish no speedup.
+are retained. Fixture validation interleaves with benchmark registration: the
+first selected timing followed 1,689 diagnostics, with 39 diagnostics still to
+run. All 1,728 diagnostics passed by completion, and source hashes stayed
+unchanged throughout the run. These baseline results establish no speedup.
 
 The within-call buffer-reuse experiment passed 104 release Rust state tests
 (two profiling tests ignored) and the full 1,728 Criterion fixture diagnostics.
@@ -1304,3 +1305,11 @@ The candidate is rejected despite lower allocation counts. No candidate whole-jo
 speedup is claimed. The repository decision record at
 `.claude/wontdos/session-contiguous-value-slices.md` retains the scope and
 conditions for revisiting this experiment.
+
+## CI smoke runtime
+
+The release fixture job has a 150-minute timeout, including compilation and
+all suites. The previous 60-minute job was cancelled during the persistent-state
+suite on a run with no restored Rust cache. This is a wall-time allowance, not
+a performance threshold or a reason to skip fixtures. Full-suite completion
+and retained diagnostics remain required.
