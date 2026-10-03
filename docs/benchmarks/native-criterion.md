@@ -104,6 +104,7 @@ Some historical suites use
 | Memory checkpoints | `keys_and_checkpoints`, `data_movement` | Group aggregate and append Top-N snapshot/restore, temporal-join snapshot |
 | Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank, temporal join and rowtime running-SUM OVER; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | Persistent window aggregation | `persistent_state` | Tumbling and session Int64 SUM; partial firing, checkpoint and aligned/rebuilt single-source recovery; session bridge merging, independent event-list oracle, saved watermark and continued processing |
+| Persistent window join | `persistent_state` | INNER join with unique UTF-8 keys; right arrival, partial firing, checkpoint and aligned/rebuilt single-source recovery; independent multiset/schema oracle, pre-replay arrivals, post-replay late rejection and continued processing |
 | Persistent group aggregation | `persistent_state` | Mini-batch COUNT(*) and nullable Int64 SUM with UTF-8 keys; ingestion/flush, checkpoint and aligned/rebuilt single-source restore; independent continued-changelog oracle and per-key row-kind order checks |
 | Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
@@ -120,9 +121,10 @@ Some historical suites use
 | ORC post-decode normalization | `normalization` | CHAR trimming, string pass-through, full-range timestamp conversion |
 | Historical operator experiments | `operators`, `calc_selection`, `scalar_functions` | Typed distinct, mini-batch sizes, aggregate layouts, selection strategies, DATE_FORMAT and string comparisons |
 
-Persistent tumbling and session SUM lifecycle fixtures are now validated.
-Window/session aggregation with other shapes or aggregate kinds, updating joins
-and window joins still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*)
+Persistent tumbling/session SUM and unique-key INNER window-join lifecycle
+fixtures are now validated. Window/session aggregation with other shapes or
+aggregate kinds, updating joins and other window-join kinds, duplicate keys,
+residual predicates and TTL still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*)
 and SUM only; other aggregate kinds, retractions, DISTINCT views and TTL still
 need dedicated persistent benchmarks. The operation inventory is not a claim of
 exhaustive type, option or state-backend coverage.
@@ -160,7 +162,7 @@ The main remaining boundaries are:
   integration harnesses remain the whole-job timing authority for those boundaries.
 - Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank,
   temporal join, rowtime running-SUM OVER, COUNT(*)/SUM GROUP BY, tumbling SUM
-  and session SUM
+  and session SUM or unique-key INNER window joins
   need dedicated workloads. Partial-firing recovery is covered for the running-SUM
   OVER and tumbling SUM fixtures described below; other aggregate/window shapes,
   multi-source RocksDB rescale/compaction, TTL migration/compaction and unlisted
@@ -1305,6 +1307,84 @@ The candidate is rejected despite lower allocation counts. No candidate whole-jo
 speedup is claimed. The repository decision record at
 `.claude/wontdos/session-contiguous-value-slices.md` retains the scope and
 conditions for revisiting this experiment.
+
+
+## Persistent window-join lifecycle
+
+The validated matrix has 60 profiles: 16/1,024/16,384 rows, unique UTF8 keys
+with 8/264-byte suffixes, nullable/non-null inputs and five phases (right
+arrival, firing, checkpoint after partial firing, aligned restore and rebuilt
+restore). Independent tuples check both sides, exact output schema, window
+bounds, nullable payloads and NULL-key non-matches. Inputs have nonzero slice
+offsets. Duplicate keys, outer joins, residual predicates, TTL and multi-source
+rescaling are outside this matrix.
+
+Each iteration starts with a fresh temporary destination database. Input batch
+construction, initial arrivals and the first window firing are setup work;
+right arrival times the remaining right-side push, and firing times the pending
+window flush. Checkpoint timing includes the production snapshot after partial
+firing. Restore timing includes opening/copying the checkpoint or rebuilding its
+key group, with the source checkpoint prepared outside timing. Production state
+serialization and RocksDB work within these calls remain measured. Fresh-store
+setup and fixture validation can make wall time substantially exceed Criterion's
+measurement target.
+
+The untimed oracle checks the complete output multiset, schema and window bounds,
+then continues through pending and future windows. Recovery checks new matching
+arrivals before watermark replay and rejects arrivals after replay; repeated
+flushes without new input must emit nothing. Allocation requests describe the
+Rust calling thread under the System counting allocator, excluding RocksDB C++
+and background workers. They are not measurements of bytes copied or peak memory.
+
+The first full release smoke run passed 1,908 unique diagnostics, including all
+60 new profiles, with frozen sources. Its facade artificially restored an
+event-time watermark, so those results remain provisional and are not accepted
+as production recovery coverage. That assignment has been removed. Production
+window-join snapshots preserve side buffers, arrival sequences and the
+processing-time timer deadline; watermarks are replayed after recovery.
+
+The corrected fixture checks acceptance before watermark replay, late-row
+rejection afterward, retained pending rows, continued arrivals and no refiring.
+A released-host harness independently checks this lifecycle alongside raw-native
+and direct RocksDB cases, asserting the native backend before and after restore.
+All three unskipped cases pass on both released Flink 2.2.1 and 1.18.1,
+including normal Javadoc checks. The initial stock harness key-representation error is retained in
+its separate log; it did not test recovery semantics. The corrected full release
+smoke run passes all 1,908 unique diagnostics, including the 60 window-join
+profiles, with unchanged sources. [All allocation diagnostics](persistent-window-join-allocations-2026-10-02.csv)
+are retained. For 16,384 rows with 264-byte key suffixes and nullable input:
+
+| Phase | Rust allocation requests | Requested bytes | New output-buffer bytes |
+| --- | ---: | ---: | ---: |
+| Right arrival | 16,407 | 10,271,856 | 0 |
+| Pending-window firing | 157,142 | 171,184,850 | 8,979,512 |
+| Checkpoint after partial firing | 32 | 796 | 0 |
+| Aligned restore | 93 | 4,734 | 0 |
+| Rebuilt restore | 65,585 | 10,545,645 | 0 |
+
+These are baseline allocation observations, not before/after savings.
+
+The same wide nullable profile has five completed release Criterion timings,
+using the System counting allocator, 100 samples per phase, three seconds of
+warmup and a five-second measurement target. Fresh-store setup causes Criterion
+to exceed that target when collecting the minimum samples. All 1,908 fixture
+diagnostics pass at completion, and source hashes remain unchanged. No heavy
+local workload overlaps timing. Fixture validation and benchmark registration
+interleave; this is not a full untimed prelude preceding every timing.
+
+| Phase | Mean, ms | 95% confidence interval, ms |
+| --- | ---: | ---: |
+| Checkpoint after partial firing | 38.343 | 33.733–43.467 |
+| Pending-window firing | 74.263 | 73.906–74.628 |
+| Right arrival | 65.676 | 45.167–88.212 |
+| Aligned restore | 17.697 | 17.384–18.053 |
+| Rebuilt restore | 51.356 | 49.225–54.074 |
+
+[All five estimates](persistent-window-join-original-timing-2026-10-02.csv) and
+[all 500 samples](persistent-window-join-original-samples-2026-10-02.csv) are
+retained, including variability and outliers. These baseline timings establish
+no before/after or whole-job speedup. No window-join production optimization
+is accepted from this coverage work.
 
 ## CI smoke runtime
 

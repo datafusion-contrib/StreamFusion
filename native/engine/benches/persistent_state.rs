@@ -18,6 +18,8 @@ mod session;
 mod temporal_join;
 #[path = "persistent_state/tumbling.rs"]
 mod tumbling;
+#[path = "persistent_state/window_join.rs"]
+mod window_join;
 #[path = "persistent_state/window_rank.rs"]
 mod window_rank;
 fn persistent(c: &mut Criterion) {
@@ -455,6 +457,7 @@ criterion_group!(
     over::over_fold_recovery,
     group::group,
     tumbling::tumbling,
-    session::session
+    session::session,
+    window_join::window_join
 );
 criterion_main!(benches);

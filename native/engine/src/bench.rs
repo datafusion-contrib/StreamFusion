@@ -735,6 +735,72 @@ impl WindowJoin {
     }
 }
 
+/// Fixed-schema production window join backed by the shared two-sided RocksDB buffer.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentWindowJoin(WindowJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentWindowJoin {
+    fn operator(schema: SchemaRef) -> WindowJoiner {
+        WindowJoin::new(vec![0], vec![0], 2, 3, 2, 3, schema.clone(), schema).0
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksWindowBuffer::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+        )
+        .unwrap();
+        Self(Self::operator(schema).with_store(store))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksWindowBuffer::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(Self::operator(schema).with_store(store))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch.clone()).unwrap();
+        } else {
+            self.0.push_right(batch.clone()).unwrap();
+        }
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str, deadline: i64) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(deadline, directory)
+            .unwrap()
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&mut self) -> i64 {
+        self.0.store_mut().timer_deadline()
+    }
+}
+
 /// Production IPC serialization, including the stream header and owned output buffer.
 pub fn encode_ipc(batch: &RecordBatch) -> Vec<u8> {
     crate::ipc::write_ipc(batch)
