@@ -826,4 +826,46 @@ mod tests {
         assert_eq!(clipped.timer_deadline(), 7500);
         assert_eq!(sums(&clipped.scan_all().unwrap()), vec![10]);
     }
+    #[test]
+    fn state_values_keep_variable_lengths_nulls_and_prefixes_across_write_flushes() {
+        for cap in [0, 1, 96] {
+            let mut store = RocksWindowAggStore::create(
+                test_config(&format!("value-buffer-{cap}")),
+                &[DataType::Utf8],
+                0..=127,
+            )
+            .unwrap();
+            store.write_batch_size = cap;
+            let keys = key_rows(&(0..12).collect::<Vec<_>>());
+            let entries = keys
+                .iter()
+                .enumerate()
+                .map(|(i, key)| (store.db_key(7, 1000, key), i as i64 * 17))
+                .collect::<Vec<_>>();
+            for wave in [0, 1] {
+                let values = (0..12)
+                    .map(|i| {
+                        if (i + wave) % 5 == 0 {
+                            None
+                        } else {
+                            Some(format!(
+                                "{wave}/{i}/中\0{}",
+                                "x".repeat([0, 1, 264, 4096][i % 4])
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let column: ArrayRef = Arc::new(arrow::array::StringArray::from(values.clone()));
+                store.put(&entries, &[column]).unwrap();
+                let fetched = store
+                    .get(&entries.iter().map(|e| e.0.clone()).collect::<Vec<_>>())
+                    .unwrap();
+                for (i, group) in fetched.iter().enumerate() {
+                    let (start, state) = group.as_ref().unwrap();
+                    assert_eq!(*start, i as i64 * 17);
+                    assert_eq!(state.as_slice(), &[ScalarValue::Utf8(values[i].clone())]);
+                }
+            }
+        }
+    }
 }

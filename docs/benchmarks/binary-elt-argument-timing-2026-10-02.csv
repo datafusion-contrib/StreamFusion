@@ -1,0 +1,3 @@
+case,mean_ns,ci_lower_ns,ci_upper_ns,confidence_level,samples
+binary_expressions/elt_arguments/elt_arguments/scalar/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,5475.373582229223,5456.074017839909,5496.7917802789625,0.95,100
+binary_expressions/elt_arguments/elt_arguments/expanded_control/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,4948.1876417771255,4933.605854012273,4964.867311417863,0.95,100

@@ -1,0 +1,11 @@
+revision,rows,width,domain,container_null_every,element_null_every,engine,trial,seconds
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,stock_flink,1,2.294879539
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,stock_flink,2,2.28132559
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,stock_flink,3,2.3369781
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,stock_flink,4,2.246153659
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,stock_flink,5,2.25745781
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,native_generated_boolean_array_exit,1,2.362985504
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,native_generated_boolean_array_exit,2,2.362853204
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,native_generated_boolean_array_exit,3,2.347222933
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,native_generated_boolean_array_exit,4,2.352091654
+acafdbd0+removed_boolean_array_projection,10000000,8,2,8,7,native_generated_boolean_array_exit,5,2.36403117

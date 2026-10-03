@@ -1,0 +1,7 @@
+case,mean_ns,ci_lower_ns,ci_upper_ns,confidence_level,samples,sampling_mode
+engine/rocksdb/interval/append_left/16384/domain=16384/bytes=264/nulls=true/outer=true,4144706.185,4096981.0922499998,4199580.24025,0.95,100,Flat
+engine/rocksdb/interval/checkpoint/16384/domain=16384/bytes=264/nulls=true/outer=true,37136304.91,30709908.648000002,43954581.24325,0.95,100,Flat
+engine/rocksdb/interval/probe_right/16384/domain=16384/bytes=264/nulls=true/outer=true,27973480.56,23915136.082500003,32159208.15625,0.95,100,Flat
+engine/rocksdb/interval/restore/16384/domain=16384/bytes=264/nulls=true/outer=true/aligned=false,80690265.205,71076407.77,90525222.09662499,0.95,100,Flat
+engine/rocksdb/interval/restore/16384/domain=16384/bytes=264/nulls=true/outer=true/aligned=true,10938088.370000003,10804712.9324,11150036.741949996,0.95,100,Flat
+engine/rocksdb/interval/watermark_expire/16384/domain=16384/bytes=264/nulls=true/outer=true,14129626.68,14024375.86925,14242288.411,0.95,100,Flat

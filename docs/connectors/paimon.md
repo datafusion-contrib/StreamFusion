@@ -722,6 +722,35 @@ That rolled-file fixture uses stock fixed-bucket ingestion as its arrival-order 
 Java postpone writers can give two files the same millisecond creation time and replay them out
 of order. Native postpone files use strictly increasing creation times as described above.
 
+### Released Paimon 2.0 split-commit recovery diagnostic
+
+Released Paimon 2.0.0 can lose the final full-compaction changelog when filesystem access
+fails between its separate APPEND and COMPACT snapshot commits. A deterministic stock-only
+test writes `10`, then `20`, and injects one manifest-read failure after the second APPEND.
+Recovery through `filterAndCommit` retains the newest data but exposes only `+I(1,10)` in
+the stream; the no-failure control also exposes `-U(1,10)` and `+U(1,20)`.
+This test uses released Java Paimon directly, without the StreamFusion planner or native writer.
+
+Run the diagnostic with JDK 17. The recovery case **is expected to fail on 2.0.0**; the
+control passes. The diagnostic is opt-in because it asserts the missing upstream contract:
+
+```bash
+mvn -pl streamfusion-paimon -am -Ppaimon test \
+  -Dtest=PaimonFullCompactionCommitRecoveryTest \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dsf.paimon.reproduceSplitCommit=true
+```
+
+The upstream randomized streaming full-compaction test timed out in both attempts of
+[CI run 36985518414](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36985518414).
+In the second attempt the producer recovered from injected I/O failures and finished about
+50 seconds before the timeout, but committed no snapshots after the second recovery.
+That evidence is consistent with this split-commit failure; it does not prove an identical
+cause or rule out a native-path defect. The randomized test remains enabled with its original
+assertions and deadline. A separate stock/native test passes when restarting immediately before
+or after scheduled full compaction and continuing only idle checkpoints through checkpoint 12;
+it does not inject the split-commit failure. No connector admission or production behavior changes
+as a result of these diagnostics.
+
 ### Dynamic partition routing and clustering options
 
 Partitioned bucket-unaware append tables support `partition.sink-strategy = PARTITION_DYNAMIC`.

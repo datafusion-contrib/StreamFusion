@@ -35,3 +35,17 @@ or processing-time clock after applying the fixed offset and fires at the window
 millisecond. Both inputs must use the same time domain. Late rows are rejected using that same
 threshold, including after recovery. See the [state upgrade contract](../../backends/canonical-state.md#timestamp-layout-upgrade)
 for checkpoints written before the boundary correction.
+
+
+## Recovery and watermarks
+
+Checkpoints preserve pending rows on both sides and processing-time timer
+metadata. Event-time watermarks are replayed after recovery. Rows arriving
+before that replay are evaluated against the restarted operator's watermark;
+a previously fired window is not automatically classified as late from the
+checkpoint alone. Once both input watermarks advance, late rows are rejected
+and pending windows fire normally. Released Flink 2.2.1 and 1.18.1 harness
+checks cover this sequence for INNER joins on the stock operator and both raw
+native and direct RocksDB recovery, including partial firing and no refiring
+without new matching rows. This does not establish other join kinds or
+multi-source rescaling through this particular regression.

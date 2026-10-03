@@ -21,6 +21,11 @@ class DynamicCollectionBenchmark {
   private static final int WIDTH = Integer.getInteger("collection.width", 0);
   private static final int DOMAIN = Integer.getInteger("collection.domain", WIDTH);
   private static final boolean INTS = Boolean.getBoolean("collection.int");
+  private static final String ELEMENT_TYPE =
+      System.getProperty("collection.type", INTS ? "INT" : "BIGINT");
+  private static final int NULL_EVERY = Integer.getInteger("collection.nullEvery", 8);
+  private static final int ELEMENT_NULL_EVERY = Integer.getInteger("collection.elementNullEvery", 7);
+  private static final String[] STRING_VALUES = strings();
   private static final boolean EXPECT_NATIVE =
       Boolean.parseBoolean(System.getProperty("collection.native", "true"));
 
@@ -108,12 +113,39 @@ class DynamicCollectionBenchmark {
   }
 
   private static Object inputArray(long row) {
-    if (!INTS) return array(row);
+    if (ELEMENT_TYPE.equals("STRING")) {
+      if (WIDTH == 0) return new String[] {STRING_VALUES[0], null, "tail"};
+      String[] values = new String[WIDTH];
+      for (int i = 0; i < WIDTH; i++) {
+        values[i] = elementNull(i) ? null : STRING_VALUES[(int) ((31L * i + row) % DOMAIN)];
+      }
+      return values;
+    }
+    if (ELEMENT_TYPE.equals("BOOLEAN")) {
+      if (WIDTH == 0) return new Boolean[] {true, null, false};
+      Boolean[] values = new Boolean[WIDTH];
+      for (int i = 0; i < WIDTH; i++) {
+        values[i] = elementNull(i) ? null : (31L * i + row) % 2 == 0;
+      }
+      return values;
+    }
+    if (ELEMENT_TYPE.equals("BIGINT")) return array(row);
     if (WIDTH == 0) return new Integer[] {(int) row, null, -(int) row};
     Integer[] values = new Integer[WIDTH];
     for (int i = 0; i < WIDTH; i++) {
-      values[i] = i % 7 == 0 ? null : (int) ((31L * i + row) % DOMAIN - DOMAIN / 2);
+      values[i] = elementNull(i) ? null : (int) ((31L * i + row) % DOMAIN - DOMAIN / 2);
     }
+    return values;
+  }
+
+  private static boolean elementNull(int index) {
+    return ELEMENT_NULL_EVERY > 0 && index % ELEMENT_NULL_EVERY == 0;
+  }
+
+  private static String[] strings() {
+    String[] values = new String[Math.max(1, DOMAIN)];
+    String suffix = "x".repeat(Integer.getInteger("collection.bytes", 264));
+    for (int i = 0; i < values.length; i++) values[i] = "中\0" + i + suffix;
     return values;
   }
 
@@ -121,7 +153,7 @@ class DynamicCollectionBenchmark {
     if (WIDTH == 0) return new Long[] {row, null, -row};
     Long[] values = new Long[WIDTH];
     for (int i = 0; i < WIDTH; i++) {
-      values[i] = i % 7 == 0 ? null : (31L * i + row) % DOMAIN - DOMAIN / 2;
+      values[i] = elementNull(i) ? null : (31L * i + row) % DOMAIN - DOMAIN / 2;
     }
     return values;
   }
@@ -147,15 +179,20 @@ class DynamicCollectionBenchmark {
                       Types.MAP(Types.STRING, Types.LONG),
                       Types.STRING)));
     } else {
-      org.apache.flink.api.common.typeinfo.TypeInformation<?> arrayType =
-          INTS ? Types.OBJECT_ARRAY(Types.INT) : Types.OBJECT_ARRAY(Types.LONG);
+      org.apache.flink.api.common.typeinfo.TypeInformation<?> arrayType = switch (ELEMENT_TYPE) {
+        case "INT" -> Types.OBJECT_ARRAY(Types.INT);
+        case "BIGINT" -> Types.OBJECT_ARRAY(Types.LONG);
+        case "STRING" -> Types.OBJECT_ARRAY(Types.STRING);
+        case "BOOLEAN" -> Types.OBJECT_ARRAY(Types.BOOLEAN);
+        default -> throw new IllegalArgumentException("Unsupported collection.type: " + ELEMENT_TYPE);
+      };
       table.createTemporaryView(
           "inputs",
           env.fromSequence(0, ROWS - 1)
               .map(
                   i ->
                       Row.of(
-                          i % 8 == 0 ? null : inputArray(i), i % 7 == 0 ? null : (int) (i % 6 - 1)))
+                          NULL_EVERY > 0 && i % NULL_EVERY == 0 ? null : inputArray(i), i % 7 == 0 ? null : (int) (i % 6 - 1)))
               .returns(Types.ROW_NAMED(new String[] {"arr", "idx"}, arrayType, Types.INT)));
     }
     return table;

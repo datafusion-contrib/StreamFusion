@@ -1,0 +1,6 @@
+inclusive_frame_marker,cpu_samples,total_cpu_samples,percent
+pushRocksDBWindowAggregator,26825,38467,69.7350976161385
+flushRocksDBWindowAggregator,289,38467,0.7512933163490785
+RocksWindowAggStore,6976,38467,18.13502482647464
+RowDataToArrow,2456,38467,6.384693373540958
+ArrowToRowData,12,38467,0.03119557022902748

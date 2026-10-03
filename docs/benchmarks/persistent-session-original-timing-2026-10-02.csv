@@ -1,0 +1,6 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+engine/rocksdb/session_sum/session/checkpoint_after_fire/16384/domain=16384/bytes=264/nulls=true,12693183.78,12044961.34075,13367354.038749998,0.95
+engine/rocksdb/session_sum/session/fire/16384/domain=16384/bytes=264/nulls=true,57409052.67,46822690.313999996,69202882.41524999,0.95
+engine/rocksdb/session_sum/session/merge/16384/domain=16384/bytes=264/nulls=true,291553818.17,264565643.42200002,321756499.646,0.95
+engine/rocksdb/session_sum/session/restore_aligned/16384/domain=16384/bytes=264/nulls=true,14007898.375,13833559.7138125,14279042.325625,0.95
+engine/rocksdb/session_sum/session/restore_rebuilt/16384/domain=16384/bytes=264/nulls=true,36745063.43,36409962.6175,37095863.52375,0.95

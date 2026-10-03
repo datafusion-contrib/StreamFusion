@@ -3,6 +3,7 @@ package tech.streamfusion.planner;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.RowDataToArrowOperator;
+import tech.streamfusion.operator.SynchronousArrowInput;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -56,7 +57,7 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<RowData> input =
         (Transformation<RowData>) getInputEdges().get(0).translateToPlan(planner);
     return ExecNodeUtil.createOneInputTransformation(
-        input,
+        SynchronousArrowInput.forTranspose(input, sourceType == null ? rowType : sourceType),
         createTransformationMeta(TRANSFORMATION, config),
         new RowDataToArrowOperator(rowType, batchRows, carryRowKind, sourceType),
         ArrowBatchTypeInformation.INSTANCE,

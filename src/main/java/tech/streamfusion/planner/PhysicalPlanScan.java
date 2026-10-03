@@ -157,7 +157,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   private RelNode substitute(RelNode root, Set<String> repeatedSources, boolean finalOutput) {
     if (LegacyBinaryResults.crossesBoundary(root, finalOutput)) {
       recordFallback(
-          "legacy ENCODE variable bytes require a final projection or fused scalar consumer");
+          "legacy binary variable bytes require a final projection or fused scalar consumer");
       return root;
     }
     if (JsonStringIdentity.crossesOperatorBoundary(root, finalOutput)) {
@@ -174,7 +174,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       substitutions = previousSubstitutions;
       recordFallback(
           LegacyBinaryResults.reachesSink(root)
-              ? "legacy ENCODE variable bytes require a row sink"
+              ? "legacy binary variable bytes require a row sink"
               : "binary-backed STRING requires a row sink");
       return root;
     }

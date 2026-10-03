@@ -1,0 +1,11 @@
+revision,element_type,rows,width,domain,container_null_every,element_null_every,engine,trial,seconds
+1b1b5ed8,STRING,200000,64,64,0,0,stock_flink,1,7.418639954
+1b1b5ed8,STRING,200000,64,64,0,0,stock_flink,2,7.64227732
+1b1b5ed8,STRING,200000,64,64,0,0,stock_flink,3,8.228943496
+1b1b5ed8,STRING,200000,64,64,0,0,stock_flink,4,7.032608748
+1b1b5ed8,STRING,200000,64,64,0,0,stock_flink,5,7.065717514
+1b1b5ed8,STRING,200000,64,64,0,0,previous_streamfusion_fallback,1,7.117097188
+1b1b5ed8,STRING,200000,64,64,0,0,previous_streamfusion_fallback,2,6.95113319
+1b1b5ed8,STRING,200000,64,64,0,0,previous_streamfusion_fallback,3,7.371126155
+1b1b5ed8,STRING,200000,64,64,0,0,previous_streamfusion_fallback,4,6.882820018
+1b1b5ed8,STRING,200000,64,64,0,0,previous_streamfusion_fallback,5,6.761621665

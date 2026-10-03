@@ -248,7 +248,8 @@ serialization, lifecycle and exceptions use the same task binding as other scala
 
 This complete-row path executes on the JVM, including sibling expressions. It admits only
 inputs and outputs supported by the scalar bridge: primitive numeric/boolean, character,
-VARBINARY, DECIMAL, date/time/timestamp and interval values. Collection and nested ROW inputs
+BINARY/VARBINARY, DECIMAL, date/time/timestamp and interval values. Fixed BINARY result
+projections use this row path to retain their declared Arrow width. Collection and nested ROW inputs
 or outputs still fall back, as do unsupported UDF signatures and specialized functions. Temporal
 columns and builtin expressions are supported here; temporal **user-function signatures** retain
 the restriction above. The path preserves columnar operator boundaries and avoids a separate
@@ -613,7 +614,7 @@ Integer formatting uses canonical decimal text, including signed minima and zero
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
 Flink. Other TRY_CAST pairs, except the BOOLEAN and temporal forms described here and
-the DECIMAL forms below, still fall back. Bare encoders without table configuration
+the binary and DECIMAL forms below, still fall back. Bare encoders without table configuration
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
 
@@ -648,7 +649,7 @@ Runtime-source parity covers DATE, TIME(0/3), TIMESTAMP(0/3/6/9) and
 TIMESTAMP_LTZ(0/3/6/9), NULL and NOT NULL character inputs, invalid dates, year/range
 boundaries, pre-epoch nanoseconds, UTC, Asia/Shanghai and America/Los_Angeles.
 Multi-batch tests verify NativeCalc input/output counters as well as values.
-Binary TRY_CAST remains outside this whitelist.
+Binary TRY_CAST is described separately below.
 
 The initial, pre-optimization release+mimalloc benchmark on Flink 2.2.1/JDK 17, Linux x86_64
 (Core i7-12650H), used 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
@@ -668,10 +669,60 @@ the canonical parser now improve the timestamp cases; see the [current measureme
 Boolean TRY_CAST remains slower and keeps this coverage work in draft pending optimization.
 The parser fast path does not establish a speedup for noncanonical formats or composed expressions.
 
+### Binary casts and fixed-width generated expressions
+
+CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
+use a native byte-copy kernel when their operands do not require Flink's rowwise error handling.
+Default-mode BINARY(n) zero-pads or truncates
+raw bytes to exactly n bytes; VARBINARY(n) only truncates. Character inputs use their
+UTF-8 bytes, including embedded zeros and multibyte sequences cut at a byte boundary.
+NULLs and declared result types are preserved. Failures in the operand expression still
+propagate; CASE and filters suppress unselected failing expressions.
+
+Generated expressions can read fixed-size Arrow binary vectors through the existing
+batch callback. Native casts and binary ELT produce their declared fixed-size Arrow columns directly.
+Other fixed BINARY result projections use the generated row's declared schema, so default-mode results can feed another native operator,
+including grouping. Fixed BINARY nested inside ARRAY/ROW callback arguments or results
+remains outside this whitelist. This does not widen user-defined function signature admission.
+
+Legacy casts leave the input byte length unchanged even when the SQL result declares
+BINARY(n). Their final projections use the existing variable-binary representation, as
+Flink 1.18 ENCODE does. Fused scalar consumers and row sinks preserve all bytes; a legacy
+fixed-width result crossing another operator boundary or entering a native columnar sink
+falls back before execution. The reported reason starts with `legacy binary variable bytes`.
+
+Runtime-source tests cover widths 1/2/4/16, NULLs, zero padding, truncation, non-text bytes,
+typed literals, ELT selection, short-circuiting, and 5,003-row inputs. Bridge tests cover
+sliced fixed/variable vectors, output ownership after input closure, and allocator balance.
+
+[Low-cardinality grouped-count measurements](../optimizations/scalar-function-kernels.md#binary-keys-composed-with-grouped-counts)
+show 19–35% less native time at 2M rows and 22–26% less at 5M for binary-cast and
+ELT keys, retaining both transposes. These composed workloads are faster than Flink;
+the [synchronous entry optimization](../optimizations/projection-pruning-transpose.md#borrowing-at-the-synchronous-consumer)
+also makes the measured non-null standalone STRING-to-BINARY cast faster than both baselines.
+Standalone ELT and the sustained BINARY identity control remain slower. This does not establish
+a speedup for arbitrary binary projections or high-cardinality grouping.
+
+The original callback-only release+mimalloc measurements on Flink 2.2.1/JDK 17,
+Linux x86_64 (Core i7-12650H), use 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
+trials. The harness requires NativeCalc and both row/Arrow transposes. Median seconds:
+
+| Query | Flink | Native island | Flink/native |
+|---|---:|---:|---:|
+| String identity (264-byte payload) | 0.825 | 1.194 | 0.691x |
+| BINARY(16) identity | 0.323 | 0.536 | 0.603x |
+| TRY_CAST string to BINARY(16) | 0.840 | 1.852 | 0.454x |
+| Dynamic ELT over BINARY(16) | 0.335 | 0.682 | 0.491x |
+
+Those callback-only standalone cases are slower than stock Flink. The native kernels remove
+the callback for the admitted casts and selections; their current measurements and remaining
+performance gap are recorded in the [kernel ledger](../optimizations/scalar-function-kernels.md#binary-casts-and-selection).
+
 ```bash
 SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
   -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
   -Dscalar.functions=TRY_STRING_TO_BOOLEAN,TRY_STRING_TO_TIMESTAMP,TRY_STRING_TO_TIMESTAMP_LTZ \
+  -Dscalar.functions=TRY_STRING_TO_FIXED_BINARY,ELT_FIXED_BINARY \
   -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
 ```
 
@@ -941,7 +992,7 @@ Integer and character inputs are admitted. All four signed integer widths preser
 Character strings and binary columns are encoded as padded RFC 4648 Base64 without line wrapping.
 Strings use their UTF-8 bytes; binary inputs preserve every byte, including invalid UTF-8.
 Both overloads share the direct-output encoder. Empty input stays empty and NULL propagates.
-VARBINARY literals are native; fixed-size BINARY literals retain the literal encoder's fallback.
+VARBINARY and fixed-size BINARY literals are native, including typed NULLs.
 
 `FROM_BASE64` accepts character and binary inputs through Flink-generated evaluation. Invalid
 encoding raises the same host exception; empty input and NULL retain their host results. Decoded
@@ -957,7 +1008,7 @@ and Unicode classification, including non-nullable FALSE for NULL and empty inpu
 
 ### UNHEX
 
-Character inputs produce BYTES. Either hex letter case is accepted; invalid bytes, whitespace, `0x` prefixes, and non-ASCII digits return NULL. Empty input produces empty bytes. Flink validates but discards an odd leading digit, emitting zero: `UNHEX('A') = 00`, `UNHEX('ABC') = 00 BC`. Folded VARBINARY constants carry bytes directly as typed binary literals, including empty values and NULLs; fixed-size BINARY literals retain the existing fallback.
+Character inputs produce BYTES. Either hex letter case is accepted; invalid bytes, whitespace, `0x` prefixes, and non-ASCII digits return NULL. Empty input produces empty bytes. Flink validates but discards an odd leading digit, emitting zero: `UNHEX('A') = 00`, `UNHEX('ABC') = 00 BC`. Folded binary constants carry bytes directly as typed binary literals, including fixed BINARY values and typed NULLs.
 
 ### GREATEST
 
@@ -999,11 +1050,16 @@ Column trim sets fall back for the same Flink representation-dependent behavior 
 
 ### ELT
 
-The binary-result overload also runs through Flink-generated code. Dynamic INT indices retain
+The binary-result overload uses a native columnar selector. Dynamic INT indices retain
 one-based selection, out-of-range NULLs and NULL operands. Multiple binary result columns retain
-independent byte arrays across rows and batches.
+independent byte arrays across rows and batches. Fixed-length BINARY arguments and results
+are admitted alongside BYTES; embedded zero/high bytes remain binary. Expressions requiring
+Flink's rowwise exception or shared-function ordering retain the generated callback.
 
 An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
+
+Fixed-binary ELT regression tests assert native result parity; the unverified BIGINT index
+overload retains its explicit fallback check.
 
 ### URL_ENCODE
 
@@ -1526,15 +1582,21 @@ is available on both supported Flink lines. The broader work remains in
 
 ### ARRAY_DISTINCT
 
-Integer arrays (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`) use a typed kernel following
-DataFusion's ordered membership and batch-gather structure. Arrays of at most
-eight elements use a bounded stack search with a collision-checked fingerprint;
-larger arrays use a reusable hash set. The first occurrence of each value is retained,
+Boolean, integer (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`), and VARCHAR/STRING arrays use typed kernels following
+DataFusion's ordered membership and batch-gather structure. Boolean membership uses two bits;
+integer and string arrays of at most eight elements use a bounded stack search with a
+collision-checked fingerprint, and larger arrays use a reusable hash set. The first occurrence of each value is retained,
 including one NULL element. NULL containers remain NULL and empty arrays remain
-empty. The result preserves the element width and nullability. Other element
-types retain explicit fallback until their equality rules have been verified.
+empty. The result preserves the element width, field metadata, and nullability. Boolean equality
+compares values; string equality compares UTF-8 bytes without trimming or Unicode normalization.
+CHAR, floating, decimal, temporal, binary, and nested element types retain explicit fallback.
+Nine runtime SQL parity checks pass against released Flink 2.2.1; whole-job performance
+admission remains pending.
 [Whole-job measurements](../benchmarks/scalar-functions.md#integer-array_distinct-2026-09-28)
-show large-array gains and small-array sensitivity to run-to-run variation.
+show large-array gains and small-array sensitivity to run-to-run variation. With
+[synchronous entry borrowing](../optimizations/projection-pruning-transpose.md#borrowing-at-the-synchronous-consumer),
+the nullable width-eight Boolean diagnostic also beats stock and previous production in two
+ten-million-row candidate runs; STRING performance admission remains unresolved.
 
 `MAP_KEYS` and `MAP_VALUES` remain on Flink: a zero-copy native prototype passed
 parity but regressed whole-job performance with row sources and sinks. See the
@@ -1749,3 +1811,54 @@ are covered by SQL parity tests.
 This compatibility normalization also applies when an installed planner has native
 substitutions disabled, so rowwise Flink execution can run the same mixed comparison.
 The Flink 2.2 line uses its released code generator's existing coercion.
+
+### Exact DOUBLE TRUNCATE
+
+`TRUNCATE` with a DOUBLE operand/result and an optional INT scale uses a generated evaluator
+through the existing Arrow-batch JVM scalar bridge. It borrows the imported Arrow rows, avoiding
+reflective argument-column materialization. A bounded shortcut brackets the scaled value using outward-rounded adjacent
+doubles. Only when both bounds truncate to the same exactly representable integer does it avoid
+Flink's decimal conversion. The draft shortcut domain uses scales -6 through 6 and
+`abs(value) <= 1e15 / 10^max(scale,0)`, keeping the coefficient bounded while
+allowing larger values at coarser scales. Its whole-job acceptance remains pending;
+values below one include a half-unit scale-18 decimal rounding margin in their bounds.
+For nonnegative scales, an integral power-of-two-scaled operand additionally proves the value
+already has at most the requested fractional decimal digits, so it returns unchanged.
+At ambiguous nonnegative scales, an integral decimal-scaled coefficient whose division
+round-trips to the input proves a canonical bounded decimal-grid identity. Remaining
+ambiguous bounded values use the same canonical decimal text as released Flink, retaining
+its scale-18 HALF_UP rounding carry before truncation without constructing decimal objects.
+Values outside this bounded signature use released Flink `struncate`. This retains
+NULLs, signed-zero results, nonfinite behavior, extreme positions and errors. FLOAT and other
+unverified signatures retain their existing gates. An omitted scale is generated as primitive
+INT zero without another Arrow argument. No incompatible opt-in is used.
+
+Generated scalar consumers substitute only verified DOUBLE invocations, retaining released
+NULL guards and operand evaluation. Whole-row consumers bind verified DOUBLE TRUNCATE calls
+to the same helper through Flink's released scalar-function bridge; other overloads and
+original expression types remain intact. The released generated Criterion control explicitly
+disables this substitution. CASE and COALESCE retain generated row evaluation when this callback can throw.
+AND/OR consumers retain the existing planner fallback for fallible operands; they preserve
+released Flink's short-circuit behavior. Programs with multiple failing evaluations retain the
+existing row-order gate. This extension remains draft. Nullable COALESCE and nested TRUNCATE samples beat
+stock and previous production behavior; CASE ties both, and large-domain
+consumers still lose. See the [consumer results](../optimizations/host-exact-builtins-upcall.md#generated-consumer-evaluation)
+for retained trials and validation limits.
+
+`FollowupExpressionPlanTest` checks runtime-source SQL planning for fixed binary casts/ELT,
+Boolean/string ARRAY_DISTINCT, and DOUBLE TRUNCATE including consumer evaluation and exception behavior. It requires native
+Calc and both transposes without starting a job. Plan checks supplement, rather than replace,
+runtime parity and performance checks. All eight plans pass on Flink 2.2.1 against
+the integrated release library. Seven plans also pass on Flink 1.18.1, with its unavailable
+ELT function skipped. Seven in-process Arrow/JNI ownership tests and three DOUBLE TRUNCATE
+helper/admission tests pass on each line.
+Two generated-evaluator checks additionally validate omitted and dynamic scales, NULLs, bits
+and errors on each released line. Exception-message correctness runs retain
+`-XX:-OmitStackTraceInFastThrow`; the `bench` profile normally clears that correctness flag.
+
+Nonfinite DOUBLE TRUNCATE consumer checks compare independent released Flink and native executions, including matching failures when Flink evaluates an otherwise guarded operand. SQL AND/OR optimizations must not be assumed to suppress evaluation.
+
+The recovered release revision passes the complete 54-check selected suite on Flink 1.18.1
+with four unavailable-ELT checks skipped, and the corresponding Flink 2.2.1 checks pass.
+Eleven DOUBLE TRUNCATE runtime checks and nine Boolean/string ARRAY_DISTINCT checks pass on
+both released lines. These are correctness results; performance admission remains pending.
