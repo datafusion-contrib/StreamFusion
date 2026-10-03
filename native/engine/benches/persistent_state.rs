@@ -18,6 +18,8 @@ mod session;
 mod temporal_join;
 #[path = "persistent_state/tumbling.rs"]
 mod tumbling;
+#[path = "persistent_state/updating_join.rs"]
+mod updating_join;
 #[path = "persistent_state/window_join.rs"]
 mod window_join;
 #[path = "persistent_state/window_rank.rs"]
@@ -445,6 +447,7 @@ fn dedup_recovery(c: &mut Criterion) {
 }
 criterion_group!(
     benches,
+    updating_join::updating_join,
     persistent,
     dedup,
     dedup_ttl,

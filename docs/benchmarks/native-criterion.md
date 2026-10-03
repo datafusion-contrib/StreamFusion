@@ -1393,3 +1393,82 @@ all suites. The previous 60-minute job was cancelled during the persistent-state
 suite on a run with no restored Rust cache. This is a wall-time allowance, not
 a performance threshold or a reason to skip fixtures. Full-suite completion
 and retained diagnostics remain required.
+
+## Persistent updating-join state
+
+The 360-profile matrix covers immediate multiset INNER joins and admitted
+unique-key mini-batch INNER joins using paired production RocksDB state. Shapes
+combine 16, 1,024 and 16,384 incoming rows, declared key domains of 1, 8 and
+the incoming row count, 8/264-byte ASCII key suffixes, nullable/nonnullable
+values, both execution modes and five phases: right insertion, right
+retraction, checkpoint, aligned restore and rebuilt restore.
+
+In unique-key mode, right-side UPDATE_AFTER rows replace prior values; an
+independent oracle retains the final value per non-NULL key. Both sides receive
+uniqueness hints matching planner admission. Immediate mode retains duplicate
+multiplicity. Both inputs use the same explicitly nullable schema and sliced
+arrays. Continuation checks retract retained state, clear both sides, reinsert
+rows and compare the output schema and full multiset after recovery.
+
+Two failed fixture investigations are retained separately: a non-unique
+changelog mini-batch configuration excluded by production admission, and a
+schema incorrectly inferred from a left input without NULLs. Neither
+establishes a production bug. The validated fixture corrects both conditions
+and registers updating joins first while retaining the complete existing matrix.
+
+The corrected full release smoke run passed all 2,268 profiles, including
+all 360 updating-join profiles covering
+nullable wide inputs, duplicate immediate-mode changelogs, unique-key mini-batch
+replacement/retraction and paired aligned/rebuilt recovery continuation. The
+allocation diagnostics are exported in
+[`persistent-updating-join-allocations-2026-10-02.csv`](persistent-updating-join-allocations-2026-10-02.csv).
+All eight source-provenance hashes matched the tested build. Recovery validation
+passed against released Flink 2.2.1 and 1.18.1: eight SQL cases crossing two
+restores and one raw keyed-state recovery case per version, with zero failures,
+errors or skips. Source and native-library hashes matched before and after each
+run. These recovery tests validate the production recovery paths; they do not
+use the exact Criterion fixture data. The timing baseline also passed; these
+allocation counts do not establish a speedup.
+
+The completed timing baseline selects 30 cases: 16,384 incoming rows, declared
+key domains of 1, 8 and 16,384, a 264-byte ASCII suffix plus a numeric prefix,
+Unicode and an embedded NUL, nullable keys/payloads, both execution modes, and
+all five phases. Each case uses 100 samples, a three-second warmup and a
+five-second measurement target.
+Criterion extends collection beyond that target when 100 iterations require
+more time; the sample count remains 100. The target is not a wall-time cap.
+Fresh databases, prepopulated input state and
+the recovery source checkpoint are prepared outside timing with
+`iter_batched_ref`; this setup can dominate wall time. Push and retraction
+include flushing and output materialization. Checkpoint and recovery measure
+their production state operations. The complete 2,268-profile registration
+remains enabled, with validation and allocation diagnostics interleaved with
+the selected timings.
+
+The two modes represent different changelog contracts: immediate mode retains
+duplicate rows, while unique-key mini-batches retain the final right-side value
+per key. Their output sizes therefore differ. These timings characterize each
+contract separately and cannot establish that one mode speeds up the other.
+Counting covers allocations requested on the measured Rust thread using the
+System allocator; it excludes RocksDB C++ allocations and background workers.
+Requested bytes are neither copied bytes nor peak resident memory. These are
+native operation baselines, without Java/JNI or either row/Arrow transpose;
+whole-job acceleration still requires separate end-to-end comparisons.
+
+Updating-join coverage here is limited to INNER joins with one key column,
+no residual predicate, disabled TTL and one checkpoint source. It does not
+cover outer, semi or anti joins, insert-only mini-batches, pending unflushed
+bundles, expiration, multiple-source recovery, rescaling, or the in-memory
+backend. The largest declared domain also does not make every incoming right
+row unique: adjacent right rows share a key and payload. Completing these
+fixtures does not complete Criterion coverage across all Rust operations or
+close the remaining updating-join performance work.
+
+The full timing command and exporter passed with unchanged source guards and
+all 2,268 diagnostics. Retained artifacts contain
+[30 baseline estimates](persistent-updating-join-original-timing-2026-10-02.csv)
+and [3,000 samples](persistent-updating-join-original-samples-2026-10-02.csv).
+For the large-domain, nullable wide-key immediate workload, right insertion
+averaged 169.347 ms and retraction averaged 5,698.637 ms (95% mean confidence
+interval 5,679.415–5,720.787 ms). This identifies retraction as a profiling
+target; it does not attribute the cost to copying or demonstrate an optimization.

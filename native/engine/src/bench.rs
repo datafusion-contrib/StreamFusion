@@ -382,6 +382,96 @@ impl UniqueUpdatingJoin {
     }
 }
 
+/// Production paired RocksDB state for immediate and mini-batch INNER updating joins.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentUpdatingJoin(UpdatingJoiner<crate::updating_join::RocksJoinStore>);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentUpdatingJoin {
+    fn operator(
+        schema: SchemaRef,
+        mini_batch: bool,
+        stores: (
+            crate::state::RocksStore<crate::updating_join::JoinStateCodec>,
+            crate::state::RocksStore<crate::updating_join::JoinStateCodec>,
+        ),
+    ) -> Self {
+        Self(
+            UpdatingJoiner::new(
+                vec![0],
+                vec![0],
+                JoinKind::Inner,
+                schema.clone(),
+                schema,
+                None,
+            )
+            .with_mini_batch(mini_batch)
+            .with_unique_join_keys(mini_batch, mini_batch)
+            .with_backend(
+                crate::updating_join::RocksJoinStore::new(stores.0, !mini_batch),
+                crate::updating_join::RocksJoinStore::new(stores.1, !mini_batch),
+            ),
+        )
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str, mini_batch: bool) -> Self {
+        let stores = crate::state::RocksStore::create_pair(
+            PersistentSort::config(directory, options),
+            0,
+            (
+                crate::updating_join::JoinStateCodec,
+                crate::updating_join::JoinStateCodec,
+            ),
+        )
+        .unwrap();
+        Self::operator(schema, mini_batch, stores)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        mini_batch: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let stores = crate::state::RocksStore::open_merged_pair(
+            PersistentSort::config(directory, options),
+            0,
+            (
+                crate::updating_join::JoinStateCodec,
+                crate::updating_join::JoinStateCodec,
+            ),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+            0,
+        )
+        .unwrap();
+        Self::operator(schema, mini_batch, stores)
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) -> RecordBatch {
+        let (left_store, right_store) = self.0.stores_mut();
+        left_store.set_clock(0);
+        right_store.set_clock(0);
+        self.0.push(batch, left, 0).unwrap()
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_mini_batch().unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        let (left, right) = self.0.stores_mut();
+        crate::updating_join::RocksJoinStore::checkpoint_pair(left, right, directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
 /// Append-only Top-N with explicit logical mini-batch flushes.
 pub struct AppendTopN(TopNRanker);
 
