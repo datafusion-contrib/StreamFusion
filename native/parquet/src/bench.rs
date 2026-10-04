@@ -1,5 +1,7 @@
-//! In-memory adapters around the production file encoder and decoder.
+//! Benchmark adapters around the production file encoder and decoder.
+mod host_reader;
 use arrow::record_batch::RecordBatch;
+pub use host_reader::HostDecoder;
 pub fn encode(batch: &RecordBatch, selected: Option<&[usize]>) -> Vec<u8> {
     encode_with_int96(batch, selected, false)
 }

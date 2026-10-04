@@ -1,0 +1,5 @@
+profile,mean_ms,lower_95_ms,upper_95_ms
+format/parquet/host_reader/decode/16384/bytes=264/filesystem=false/batch=4096,0.4774569616392575,0.47561369778222634,0.4793735073345537
+format/parquet/host_reader/decode/16384/bytes=264/filesystem=true/batch=64,1.1095657485307593,1.1032218232670172,1.1164756353790897
+format/parquet/host_reader/decode/16384/bytes=264/filesystem=true/batch=4096,0.5094505012673068,0.5071288180545909,0.5119760332574348
+format/parquet/host_reader/decode/16384/bytes=264/filesystem=false/batch=64,1.0624648224935072,1.0584929568273107,1.0664860868756338

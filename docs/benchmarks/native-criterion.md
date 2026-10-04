@@ -158,7 +158,9 @@ The main remaining boundaries are:
 
 - JVM upcalls and host-owned reader callbacks: `jvm_truncate` exercises reflective scalar
   upcalls and generated row evaluation, while the scalar registry retains SQL/JSON recycler calls.
-  Arbitrary UDF types and reader callbacks still need dedicated workloads. Existing release
+  The `parquet_host_reader` suite exercises synchronous memory and local-file
+  reader callbacks. Arbitrary UDF types and remote reader callbacks still need
+  dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
 - Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank,
   temporal join, rowtime running-SUM OVER, COUNT(*)/SUM GROUP BY, tumbling SUM
@@ -169,8 +171,10 @@ The main remaining boundaries are:
   checkpoint variants remain unmeasured. Memory checkpoint probes cannot stand in
   for disk I/O and native worker allocations.
 - ORC file reading remains JVM-backed; normalization is not an ORC decoder throughput benchmark.
-  Parquet INT96 fixtures cover paired decoding from an in-memory file; host filesystem callbacks
-  and nested timestamp profiles remain unmeasured.
+  Parquet INT96 fixtures cover paired decoding from an in-memory file. The
+  `parquet_host_reader` suite covers memory and local-file callback decoding of
+  BIGINT and nullable STRING columns; remote callbacks and nested timestamp
+  profiles remain unmeasured.
 - Codec option/type combinations, CDC envelopes, nested encoder profiles, temporal arithmetic,
   decimal division, and parameterized scalar variants beyond the listed witnesses need additional cases. Registry completeness covers the factory, not all Calc opcodes.
 
@@ -1472,3 +1476,56 @@ For the large-domain, nullable wide-key immediate workload, right insertion
 averaged 169.347 ms and retraction averaged 5,698.637 ms (95% mean confidence
 interval 5,679.415–5,720.787 ms). This identifies retraction as a profiling
 target; it does not attribute the cost to copying or demonstrate an optimization.
+
+### Host-reader callback profiles
+
+`ParquetBenchmarkInput` is the Java test fixture for the `parquet_host_reader`
+Criterion workload. Its memory and local-file modes implement the synchronous
+`readFully(long, ByteBuffer)` signature consumed by the production Rust Parquet
+reader, with read-call and byte-count witnesses. Fixture construction and local
+file creation belong outside timing; decoder construction and decoding must
+retain production JNI calls and direct-buffer creation. The suite has 48 profiles: 16, 1,024 and 16,384 rows; 8- and 264-byte ASCII
+suffixes plus Unicode and embedded NUL; nullable string payloads; memory and
+local-file callbacks; batch sizes 64 and 4,096; open/close and decode phases. It does not emulate
+remote filesystems, credentials, or Paimon checkpoint semantics.
+The three Java 17 fixture tests pass with zero failures, errors or skips:
+requested direct-buffer range fidelity, out-of-bounds rejection without changing
+counters, and rejection of callbacks after the host input closes.
+The Rust `HostDecoder` benchmark adapter calls the production JNI create,
+next-batch and close entry points, retaining the host callback and Arrow C Data
+export/import. It ties the native handle to the live JVM and closes it on drop;
+the host input must remain open until the decoder is dropped. Its locked Cargo
+check and all 48 release smoke cases pass. Decode setup creates the decoder
+outside allocation measurement and timing; the measured loop retains callback
+reads, Arrow export/import, output release and decoder teardown. Open/close
+measures construction and teardown. Exact Arrow output validation runs outside
+both probes and timing; the retained validation batches provide the separate
+Arrow-buffer ownership diagnostics.
+
+[Allocation probes](parquet-host-reader-allocation-2026-10-04.csv) and
+[callback witnesses](parquet-host-reader-callbacks-2026-10-04.csv) retain all
+48 cases. The runner prepares the runtime test classes and JVM classpath.
+Smoke mode provides no timing evidence or whole-job acceleration claim.
+These local warm-cache fixtures do not cover projections or nested columns.
+
+### Host-reader release timing baseline
+
+A focused optimized/mimalloc run retains [four decode estimates](parquet-host-reader-timing-2026-10-04.csv)
+and [400 samples](parquet-host-reader-samples-2026-10-04.csv) for 16,384 rows
+and the nullable 264-byte suffix fixture. Source and executable hashes remain
+unchanged; symbol inspection confirms `malloc` and `mi_malloc` resolve to the
+same address. Each profile uses a three-second warmup, five-second measurement
+target and 100 samples. JVM setup and host input creation stay outside timing.
+
+| Host input | Batch rows | Mean ms | 95% interval ms |
+|---|---:|---:|---:|
+| Memory | 64 | 1.0625 | 1.0585–1.0665 |
+| Memory | 4,096 | 0.4775 | 0.4756–0.4794 |
+| Local file | 64 | 1.1096 | 1.1032–1.1165 |
+| Local file | 4,096 | 0.5095 | 0.5071–0.5120 |
+
+These describe existing host callback decoding with warm local caches. Batch
+size changes the output-batch and callback behavior; this comparison neither
+isolates an avoidable copy nor establishes a production optimization. It has no
+stock Flink or previous-version whole-job comparison, no row/Arrow transposes,
+and no remote filesystem or projection workload.

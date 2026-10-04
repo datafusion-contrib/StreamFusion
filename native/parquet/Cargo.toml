@@ -29,7 +29,12 @@ mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
 [dev-dependencies]
 criterion.workspace = true
 streamfusion-benchmark-support.workspace = true
+jni = { workspace = true, features = ["invocation"] }
 
 [[bench]]
 name = "parquet_io"
+harness = false
+
+[[bench]]
+name = "parquet_host_reader"
 harness = false
