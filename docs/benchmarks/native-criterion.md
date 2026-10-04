@@ -1922,3 +1922,32 @@ The CSV preserves configured width and effective width separately. No unfavorabl
 trials are discarded or normalized away. Production keeps the array-cast fallback;
 performance validation of the entry writer on already-supported operations
 continues independently.
+
+
+## Narrow primitive exit rejection
+
+A profile-guided attempt to bypass the generated binary-row projection for up
+to four primitive fields passed 39 ownership, parity and failure checks on each
+released Flink version (2.2.1 and 1.18.1), but slowed all nine COSH/SINH/TANH
+comparisons by 10.45–14.54% against the previous native exit. The original exit
+is restored. This experiment does not admit the hyperbolic prototype.
+
+[All 480 trials](narrow-primitive-exit-trials-2026-10-04.csv) and
+[12 summaries with ranges and stock controls](narrow-primitive-exit-summary-2026-10-04.csv)
+retain candidate/original/original/candidate blocks for ten million TINYINT,
+nullable SMALLINT and DOUBLE rows. Each block uses two warmups and five repeats
+per engine, Java 17, Flink 2.2.1, two CPUs, a 2 GiB heap, release/mimalloc, both
+transposes and a rowwise blackhole. No heavy work overlaps timing. Native
+alternatives use the same hyperbolic planner and immutable native library; only
+the Java exit changes. The previous native exit is experimental, not the
+shipping fallback. Stock controls also shift substantially between blocks; all
+results remain retained without normalization or a causal claim about that shift.
+
+For reproduction, apply the [experimental hyperbolic baseline patch](strict-hyperbolic-baseline-prototype.patch)
+to commit be309d83, then the [exit and ownership-test patch](narrow-primitive-exit-prototype.patch).
+Both patches apply cleanly together and pass whitespace checks. Neither patch
+is production code. Profile evidence also rules out local StreamRecord reuse
+as a substantial allocation improvement: its own temporary carrier is about
+0.01% of weighted allocation samples, while downstream Flink ownership copies
+account for most remaining record carriers. The broader floating-function
+performance work remains pending.
