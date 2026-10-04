@@ -1,6 +1,6 @@
 # Aggregate specialization fast paths
 
-**Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX; grouped-value state and
+**Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX; deleted retracting MIN/MAX groups; grouped-value state and
 immediate changelog output; and mini-batch group-aggregate `DISTINCT` (q15/q16/q17-shaped queries)
 
 Two of the local aggregate's hot leaves were paying for generality their actual input doesn't need:
@@ -758,3 +758,35 @@ The same final implementation's 2M-row COUNT/SUM DISTINCT check measures 1.387 s
 workload does not establish a speedup. All trials, including the slower native samples, remain
 in the CSV. Validation passes 592 native tests with one ignored, plus 55 focused SQL/operator
 checks on Flink 2.2.1 and 54 on Flink 1.18.1 with one documented host-capability skip.
+
+## Deleted groups avoid replacement-extreme lookups
+
+A retracting group whose record count reaches zero emits its cached previous
+aggregate row and is removed. Finding a new minimum or maximum for that group
+serves no output. Capturing liveness in the existing mutable-state borrow skips
+the RocksDB multiset reseeks for deleted groups; surviving groups still resolve
+their extrema. Deletion, reinsertion, NULL-only groups, duplicate values and
+checkpoint continuation retain their existing semantics.
+
+The release/mimalloc whole-job ABBA comparison on 2026-10-04 measured a pooled
+candidate median of 26.104 s versus 45.103 s for prior native (42.12% lower).
+Candidate rounds also beat stock Flink by 11.70–12.41%. It uses 2,097,152
+changelog rows, 16,384 keys, 264-byte suffixes, nullable inputs and immediate
+emission, retaining both transposes, JNI, RocksDB state and a rowwise blackhole
+sink. Each engine has two CPUs and a 2-GB heap; two warmups precede five
+measurements per engine per round. Four library load traces verify the intended
+immutable builds. Released Flink 2.2.1 and 1.18.1 kinded-changelog parity checks
+pass for immediate and mini-batch deletion/reinsertion.
+
+Unique-group kernel half/full deletion improves 39.70%/34.79%; full-deletion
+Rust-thread allocation requests fall from 839,399 calls / 218,098,581 bytes to
+454,219 calls / 173,771,325 bytes. Allocation requests are not copied bytes and
+exclude RocksDB C++ workers. Initial surviving-group and recovery controls
+contain unfavorable observations. Focused ABBA repeats measure surviving-group
+half deletion -0.83%, rebuilt recovery +0.59%, and aligned recovery -5.89%;
+the original observations remain retained and their causes unproven.
+
+See the [complete benchmark evidence](../benchmarks/native-criterion.md#deleted-group-minmax-reseeks)
+for all measured trials, raw samples, configuration and limits. These results
+cover the tested immediate-emission COUNT/MIN/MAX shape; other aggregate types,
+TTL, rescaling and mini-batch performance are not established by this workload.

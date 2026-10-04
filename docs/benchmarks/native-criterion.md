@@ -181,8 +181,9 @@ The main remaining boundaries are:
   dedicated workloads. Existing release
   integration harnesses remain the whole-job timing authority for those boundaries.
 - Persistent stores beyond temporal sort, keep-first deduplication, interval join, window rank,
-  temporal join, rowtime running-SUM OVER, COUNT(*)/SUM GROUP BY, tumbling SUM
-  and session SUM or unique-key INNER window joins
+  temporal join, rowtime running-SUM OVER, COUNT(*)/SUM and COUNT(*)/MIN/MAX
+  GROUP BY (including half/full retractions), tumbling SUM and session SUM
+  or unique-key INNER window joins
   need dedicated workloads. Partial-firing recovery is covered for the running-SUM
   OVER and tumbling SUM fixtures described below; other aggregate/window shapes,
   multi-source RocksDB rescale/compaction, TTL migration/compaction and unlisted
@@ -1637,3 +1638,91 @@ The unique-key all-row case is variable: per-sample median 339.839 ms, range
 outlier is retained in [600 samples](persistent-group-extrema-samples-2026-10-04.csv)
 and [mean intervals](persistent-group-extrema-timing-2026-10-04.csv). These measure
 existing behavior, not a before/after optimization or SQL acceleration claim.
+
+### Deleted-group MIN/MAX reseeks
+
+The aggregate update path skips resolving replacement extrema when the updated
+record count is zero. Deleted groups emit their cached preimage, so opening
+MIN/MAX RocksDB iterators immediately before removing the group is unnecessary.
+Liveness is captured inside the existing mutable-state borrow, without another
+state lookup. Surviving groups retain their normal extrema resolution.
+
+Validation includes 17 RocksDB multiset tests and 24 broader GROUP BY tests,
+plus all 144 COUNT/MIN/MAX Criterion fixtures checked against an independent
+value-list oracle. All 288 allocation probes, including legacy COUNT/SUM,
+are present. The SQL deletion/reinsertion fixtures pass on released Flink 2.2.1
+and 1.18.1 under JDK 17 (two checks per line, no skips). They compare full
+kinded changelogs for immediate and deterministic two-row mini-batches,
+including duplicate minima, surviving-extreme reseeks, complete deletion,
+reinsertion, NULL-only groups, a NULL key and a wide Unicode/NUL key.
+An explicit rowwise blackhole INSERT plan must contain native GROUP BY and
+both transposes before the SELECT changelog comparison runs.
+
+The [144-profile allocation comparison](deleted-group-extrema-allocation-comparison-2026-10-04.csv)
+retains unchanged output-buffer metrics across all cases and unchanged
+non-retraction allocation probes. Full deletion of 16,384 unique groups with
+264-byte key suffixes and nullable values reduces Rust-thread allocation
+requests from 839,399 calls / 218,098,581 bytes to 454,219 calls /
+173,771,325 bytes. Half deletion reduces 416,236 calls / 108,655,867 bytes
+to 224,776 calls / 86,573,155 bytes. The repeated-eight-key half-deletion
+control remains exactly 60,513 calls / 21,468,954 bytes. These counts exclude
+RocksDB C++ and background allocations; they do not measure copied bytes.
+
+Release/mimalloc kernel comparisons use immutable executables in matched
+candidate/original/original/candidate order, 100 samples per profile, three
+seconds of warmup and a five-second collection target (extended by Criterion
+when needed). All [24 estimates](deleted-group-extrema-timing-2026-10-04.csv)
+and [2,400 samples](deleted-group-extrema-samples-2026-10-04.csv) are retained.
+Unique-group half/full deletion combined means improve 39.70%/34.79%;
+repeated-eight-key full deletion improves 4.84%. The surviving-group half
+control initially increases 2.73%, and the final rebuilt-recovery candidate
+round measures 102.712 ms versus 45–48 ms in the other rounds. These
+unfavorable observations are retained rather than discarded.
+
+Focused repeats retain [eight recovery estimates](deleted-group-extrema-recovery-repeat-timing-2026-10-04.csv)
+and [800 recovery samples](deleted-group-extrema-recovery-repeat-samples-2026-10-04.csv),
+plus [four surviving-group estimates](deleted-group-extrema-surviving-repeat-timing-2026-10-04.csv)
+and [400 surviving-group samples](deleted-group-extrema-surviving-repeat-samples-2026-10-04.csv).
+Rebuilt recovery means are original 48.389/46.522 ms versus candidate
+49.631/45.840 ms (combined +0.59%); aligned recovery improves 5.89%.
+The surviving-group control is original 7.872/7.582 ms versus candidate
+7.700/7.625 ms (combined -0.83%). Neither earlier slowdown reproduces in
+these focused repeats; the cause of the original observations remains unproven.
+
+The whole-job harness has an opt-in `-Dpersistent.group.extrema=true` mode.
+Each cycle inserts a low and high value per key, retracts the low value,
+then retracts the high value and deletes the group. Repeated cycles exercise
+reinsertion. Nullable inputs include NULL-only groups and a shared NULL key.
+Rows must be divisible by four times `persistent.group.keys`. This mode defaults
+to immediate emission; `persistent.group.miniBatch=true` permits the existing
+1,024-row mini-batch setting. The legacy append-only COUNT/SUM mode is unchanged.
+
+A separate worktree isolates this production change from other pending
+experiments. Both release/mimalloc libraries are immutable, hashed, and have
+verified allocator aliases. All four timed rounds retain JVM load traces
+explicitly identifying the intended library and its hash. The small smoke
+check compiles the harness and verifies its native GROUP BY and both-transpose
+plan; its startup-dominated result is excluded from the sustained comparison.
+
+Whole-job ABBA uses released Flink 2.2.1/JDK 17, 2,097,152 changelog rows,
+16,384 keys, 264-byte suffixes, nullable inputs, parallelism one, immediate
+emission, two warmups and five alternating measurements per engine per round.
+Each engine has two active processors, a 2-GB heap, 256-MB task off-heap budget
+and 128-MB RocksDB budget. Both transposes, JNI, state and the rowwise blackhole
+sink stay in the measured path. All [40 trials](deleted-group-extrema-wholejob-trials-2026-10-04.csv)
+and [four summaries](deleted-group-extrema-wholejob-summary-2026-10-04.csv) are retained.
+
+| Round | Library | Stock median (s) | Native median (s) |
+| --- | --- | ---: | ---: |
+| 1 | Candidate | 29.853597 | 26.361456 |
+| 2 | Original | 30.221409 | 45.242764 |
+| 3 | Original | 30.329171 | 44.758378 |
+| 4 | Candidate | 29.504734 | 25.843561 |
+
+The candidate rounds improve 11.70–12.41% versus stock. Pooling ten native
+trials per variant gives candidate median 26.104207 s versus original
+45.103323 s (42.12% lower). Corresponding pooled stock medians differ by
+2.08%; the complete native trial ranges remain disjoint. These results establish
+this deletion optimization for the tested workload, not other aggregate types,
+mini-batch performance, TTL, rescaling, or complete Criterion coverage of all
+Rust operations. They do not close the pending BINARY/collection/floating work.

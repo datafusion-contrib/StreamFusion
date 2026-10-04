@@ -1,0 +1,9 @@
+round,variant,case,mean_ns,lower_ns,upper_ns,confidence_level
+1,candidate,engine/rocksdb/group_extrema/group_extrema/restore_aligned/16384/domain=16384/bytes=264/nulls=true,17677832.763333336,17418028.00800001,18002455.833416663,0.95
+1,candidate,engine/rocksdb/group_extrema/group_extrema/restore_rebuilt/16384/domain=16384/bytes=264/nulls=true,49630960.43,48864259.67725,50613110.61075,0.95
+2,original,engine/rocksdb/group_extrema/group_extrema/restore_aligned/16384/domain=16384/bytes=264/nulls=true,19127513.40333333,18408115.95183333,19982703.37691666,0.95
+2,original,engine/rocksdb/group_extrema/group_extrema/restore_rebuilt/16384/domain=16384/bytes=264/nulls=true,48389174.55,47779568.687249996,49021150.1625,0.95
+3,original,engine/rocksdb/group_extrema/group_extrema/restore_aligned/16384/domain=16384/bytes=264/nulls=true,17094443.895,16850049.76,17367690.071875,0.95
+3,original,engine/rocksdb/group_extrema/group_extrema/restore_rebuilt/16384/domain=16384/bytes=264/nulls=true,46522138.06,45973023.23025,47105093.74475,0.95
+4,candidate,engine/rocksdb/group_extrema/group_extrema/restore_aligned/16384/domain=16384/bytes=264/nulls=true,16410112.376666658,16192104.27666667,16719289.477083335,0.95
+4,candidate,engine/rocksdb/group_extrema/group_extrema/restore_rebuilt/16384/domain=16384/bytes=264/nulls=true,45840214.92,45424046.895500004,46257924.2025,0.95

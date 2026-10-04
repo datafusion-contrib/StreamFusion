@@ -1,0 +1,5 @@
+round,variant,case,mean_ns,lower_ns,upper_ns,confidence_level
+1,candidate,engine/rocksdb/group_extrema/group_extrema/retract_half/16384/domain=8/bytes=264/nulls=true,7699985.575,7629312.248625,7776865.96,0.95
+2,original,engine/rocksdb/group_extrema/group_extrema/retract_half/16384/domain=8/bytes=264/nulls=true,7871770.88,7806193.508,7942853.515,0.95
+3,original,engine/rocksdb/group_extrema/group_extrema/retract_half/16384/domain=8/bytes=264/nulls=true,7581932.46,7531280.214375,7636341.8440000005,0.95
+4,candidate,engine/rocksdb/group_extrema/group_extrema/retract_half/16384/domain=8/bytes=264/nulls=true,7625328.325,7559235.5397499995,7704682.626125,0.95

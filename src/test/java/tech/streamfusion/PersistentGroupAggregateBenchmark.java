@@ -8,9 +8,12 @@ import java.util.Locale;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tech.streamfusion.planner.NativePlanner;
@@ -27,8 +30,15 @@ class PersistentGroupAggregateBenchmark {
   private static final String OFF_HEAP = System.getProperty("persistent.group.offHeap", "256m");
   private static final String ROCKS_MEMORY =
       System.getProperty("persistent.group.rocksMemory", "128m");
+  private static final boolean EXTREMA =
+      Boolean.parseBoolean(System.getProperty("persistent.group.extrema", "false"));
+  private static final boolean MINI_BATCH =
+      Boolean.parseBoolean(
+          System.getProperty("persistent.group.miniBatch", EXTREMA ? "false" : "true"));
   private static final String SQL =
-      "INSERT INTO sink SELECT k, COUNT(*), SUM(v) FROM inputs GROUP BY k";
+      EXTREMA
+          ? "INSERT INTO sink SELECT k, COUNT(*), MIN(v), MAX(v) FROM inputs GROUP BY k"
+          : "INSERT INTO sink SELECT k, COUNT(*), SUM(v) FROM inputs GROUP BY k";
 
   @Test
   void persistentCountAndSum() throws Exception {
@@ -43,12 +53,14 @@ class PersistentGroupAggregateBenchmark {
     }
     System.out.printf(
         Locale.ROOT,
-        "[persistent-group] rows=%d keys=%d bytes=%d nullable=%s Flink=%.6fs Native=%.6fs"
+        "[persistent-group] rows=%d keys=%d bytes=%d nullable=%s extrema=%s miniBatch=%s Flink=%.6fs Native=%.6fs"
             + " flink_trials=%s native_trials=%s%n",
         ROWS,
         KEYS,
         WIDTH,
         NULLABLE,
+        EXTREMA,
+        MINI_BATCH,
         median(times[0]),
         median(times[1]),
         Arrays.toString(times[0]),
@@ -86,6 +98,9 @@ class PersistentGroupAggregateBenchmark {
   private static void assertPlan() {
     if (ROWS <= 0 || KEYS <= 0 || WIDTH < 0 || WARMUP < 0 || RUNS <= 0) {
       throw new IllegalArgumentException("Invalid persistent group benchmark configuration");
+    }
+    if (EXTREMA && ROWS % (4L * KEYS) != 0) {
+      throw new IllegalArgumentException("Extrema rows must contain complete four-phase key cycles");
     }
     String plan = NativePlanner.explain(environment(), SQL);
     if (!plan.contains("NativeColumnarGroupAggregate")
@@ -125,10 +140,35 @@ class PersistentGroupAggregateBenchmark {
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
-    table.getConfig().set("table.exec.mini-batch.enabled", "true");
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(MINI_BATCH));
     table.getConfig().set("table.exec.mini-batch.size", "1024");
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
     String suffix = "x".repeat(WIDTH);
+    if (EXTREMA) {
+      var input =
+          env.fromSequence(0, ROWS - 1)
+              .map(
+                  i -> {
+                    long key = i % KEYS;
+                    long phase = (i / KEYS) % 4;
+                    Long value = NULLABLE && key % 7 == 0 ? null : (phase % 2 == 0 ? -50L : 50L);
+                    return Row.ofKind(
+                        phase < 2 ? RowKind.INSERT : RowKind.DELETE,
+                        NULLABLE && key % 11 == 0 ? null : key + "/中\0" + suffix,
+                        value);
+                  })
+              .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.STRING, Types.LONG));
+      var schema =
+          Schema.newBuilder()
+              .column("k", DataTypes.STRING())
+              .column("v", DataTypes.BIGINT())
+              .build();
+      table.createTemporaryView("inputs", table.fromChangelogStream(input, schema));
+      table.executeSql(
+          "CREATE TABLE sink (k STRING, n BIGINT, minimum BIGINT, maximum BIGINT)"
+              + " WITH ('connector' = 'blackhole')");
+      return table;
+    }
     table.createTemporaryView(
         "inputs",
         env.fromSequence(0, ROWS - 1)
