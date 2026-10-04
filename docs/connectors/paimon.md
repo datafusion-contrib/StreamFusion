@@ -722,6 +722,35 @@ That rolled-file fixture uses stock fixed-bucket ingestion as its arrival-order 
 Java postpone writers can give two files the same millisecond creation time and replay them out
 of order. Native postpone files use strictly increasing creation times as described above.
 
+### Released Paimon 2.0 split-commit recovery diagnostic
+
+Released Paimon 2.0.0 can lose the final full-compaction changelog when filesystem access
+fails between its separate APPEND and COMPACT snapshot commits. A deterministic stock-only
+test writes `10`, then `20`, and injects one manifest-read failure after the second APPEND.
+Recovery through `filterAndCommit` retains the newest data but exposes only `+I(1,10)` in
+the stream; the no-failure control also exposes `-U(1,10)` and `+U(1,20)`.
+This test uses released Java Paimon directly, without the StreamFusion planner or native writer.
+
+Run the diagnostic with JDK 17. The recovery case **is expected to fail on 2.0.0**; the
+control passes. The diagnostic is opt-in because it asserts the missing upstream contract:
+
+```bash
+mvn -pl streamfusion-paimon -am -Ppaimon test \
+  -Dtest=PaimonFullCompactionCommitRecoveryTest \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dsf.paimon.reproduceSplitCommit=true
+```
+
+The upstream randomized streaming full-compaction test timed out in both attempts of
+[CI run 36985518414](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36985518414).
+In the second attempt the producer recovered from injected I/O failures and finished about
+50 seconds before the timeout, but committed no snapshots after the second recovery.
+That evidence is consistent with this split-commit failure; it does not prove an identical
+cause or rule out a native-path defect. The randomized test remains enabled with its original
+assertions and deadline. A separate stock/native test passes when restarting immediately before
+or after scheduled full compaction and continuing only idle checkpoints through checkpoint 12;
+it does not inject the split-commit failure. No connector admission or production behavior changes
+as a result of these diagnostics.
+
 ### Dynamic partition routing and clustering options
 
 Partitioned bucket-unaware append tables support `partition.sink-strategy = PARTITION_DYNAMIC`.
@@ -1265,3 +1294,92 @@ SF_PAIMON_FILE_FORMAT=parquet SF_PAIMON1_SQL_SOURCE_BENCHMARK=true \
 Use `SF_PAIMON_FILE_FORMAT=orc` and `SF_PAIMON1_BENCH_ROWS=200000` for the other
 configurations. `SF_PAIMON1_SOURCE_PROJECT_VALUE=true` selects the additional
 projection diagnostic. The default reader diagnostic keeps all columns.
+
+### Focused streaming full-compaction diagnostic
+
+A focused reproduction on 2026-10-03 ran the exact released Paimon 1.0.0 `PrimaryKeyFileStoreTableITCase.testFullCompactionChangelogProducerStreamingRandom` test with Flink 1.18 and Java 17, stock first and StreamFusion second. Both ran one test with zero failures, errors, or skips. Native bundle and level-0 file writes were observed in the accelerated run. [Retained results](../benchmarks/paimon-full-compaction-streaming-focused-2026-10-03.csv) record test durations; these correctness-test durations are not a performance benchmark.
+
+The previously observed 180-second upstream CI timeout did not reproduce in this isolated pair. It remains unresolved: the test uses randomized parameters and checkpoint/restart behavior, and the CI failure occurred within a larger suite. One passing pair neither proves the timeout fixed nor replaces the full upstream parity requirement. Both runs' Surefire reports and diagnostics were retained separately for investigation.
+
+The follow-up full `PrimaryKeyFileStoreTableITCase` reproduction also passed all 17 tests under stock and native execution (zero failures, errors, or skips). All [34 per-test results](../benchmarks/paimon-primary-key-class-reproduction-2026-10-03.csv) are retained, including full-compaction streaming at 18.631 seconds stock and 18.799 seconds native. Native bundle and level-0 writes were observed, and all 10 retained release-library hashes remained unchanged. These are randomized correctness tests, not controlled performance measurements. The timeout remains unresolved: it reproduced in the broader upstream CI suite but not in this isolated test or class.
+
+The subsequent complete default released upstream suite passed all 242 tests with
+zero failures, errors, or skips under native execution. It used Java 17, Flink
+1.18, Paimon 1.0.0, one test fork, two active processors and a 2 GiB test heap;
+`SF_PAIMON1_TESTS` was unset. The command was
+`bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true`, reusing the verified
+release libraries. All ten library hashes remained unchanged. Native bundle,
+level-0 file and merged snapshot witnesses were present. The complete
+[242 per-test outcomes](../benchmarks/paimon-full-upstream-suite-reproduction-2026-10-03.csv)
+include both former CI timeout cases passing; the archived Surefire reports and
+upstream diagnostics retain the broader suite context. This single randomized
+suite draw does not identify the CI timeout's cause or establish a fix. Its test
+durations are correctness diagnostics, not performance comparisons.
+
+The aggregate parity workflow for evidence commit `f4245e54` subsequently failed
+the same full-compaction streaming case with an assertion mismatch rather than
+a timeout: expected `10000|10000.str`, observed `477|3948.str` after 28.892
+seconds. The released upstream suite reported 242 tests, one failure, zero
+errors and zero skips; the primary-key class reported 17 tests and one failure.
+The separate Flink 1.18 Paimon check passed, so that green check must not be used
+to claim aggregate parity. The failing workflow is
+[run 37175053239](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37175053239);
+its exact Surefire reports and upstream diagnostics were retained from artifact
+`11294760131`. The cause remains under investigation. This evidence contradicts
+any claim that the earlier passing local suite establishes complete streaming
+changelog correctness.
+
+The failing invocation ran two concurrent writers. Its runtime diagnostics show
+Paimon 1.0.0 rejecting a compaction commit with `File deletion conflicts detected!
+Give up committing.` at 04:57:53.725 UTC, followed by the affected writer restoring
+checkpoint 6 at 04:57:54.751 UTC. The exception originates in the released Paimon
+commit implementation and reports different base and current commit users. These
+logs establish a commit conflict and recovery, but do not establish that recovery
+caused the incorrect final value, or that this is the same failure as the
+stock-only split-commit reproduction above. The retained artifact has no table
+snapshot or manifest files with which to prove that sequence.
+
+For a focused native upstream-suite reproduction, opt in to retaining a failed
+fixture’s local warehouse before teardown with
+`-Dstreamfusion.flink-suite.retain-failed-warehouse=true`. The test agent copies
+the released fixture’s `path` directory under its configured diagnostics directory
+as `failed-warehouses/<test>-<unique-id>`, including table snapshots, manifests,
+and data files. Capture is disabled by default and occurs after a test failure;
+capture errors are reported without replacing the original failure. A copy made
+while background jobs are still active is diagnostic evidence, not an atomic
+checkpoint or a guaranteed consistent table backup.
+
+Java 17 validation of the retention hook passes all seven selected tests with
+zero failures, errors or skips: four warehouse-capture cases and three existing
+test-watch diagnostics cases. These validate the diagnostic hook, not recovery
+correctness in the failing released upstream test.
+
+A focused local run with warehouse capture enabled also passes the released
+full-compaction streaming test on Flink 1.18.1/Paimon 1.0.0: one test, zero
+failures, errors or skips, 34.042 seconds. The Surefire report confirms the
+capture property, native bundle and level-0 write witnesses are present, and
+all ten release library hashes match the earlier full-suite reproduction before
+and after this run. Reports, inventory and runtime diagnostics are retained.
+No failure warehouse is generated for a passing test; this randomized draw
+does not explain the CI assertion mismatch or establish a recovery fix.
+
+A subsequent PR-head CI run also fails the released Flink 2.2 Paimon
+full-compaction changelog test. On `505e94d5`, [job 111379754377](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37182358006/job/111379754377)
+reports `testFullCompactionChangelogProducerStreamingRandom` expected
+`10000|10000.str` but observed `289|9496.str` after 41.774 seconds.
+This is an actual value mismatch, not a timeout. The preceding 260-test shard
+passes; the failing focused shard has one failure and subsequent shards pass.
+These passes do not resolve the mismatch or establish a native cause. Exact job
+logs are retained; artifact/runtime and retained-warehouse evidence must be
+examined before attributing the failure or accepting connector parity.
+
+The upstream Paimon suite now forwards the opt-in
+`FLINK_SUITE_RETAIN_FAILED_WAREHOUSE=true` to its existing failure-capture
+hook. Canonical upstream CI enables it on both released Flink lines; local
+suite runs retain the previous default of false. The existing diagnostics
+artifact path includes captured warehouses. Capture occurs after a test fails,
+before fixture cleanup, and capture errors preserve the original failure.
+It does not alter upstream queries or assertions, repair the value mismatch,
+or provide an atomic snapshot while background jobs are active. This change
+makes future failed table files available for diagnosis; the prior artifact
+has no such files.

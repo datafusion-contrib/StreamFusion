@@ -26,7 +26,7 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  * native columnar operator feeds a rowwise (host) one, so the Arrow→row conversion happens once at
  * the boundary. It consumes (and closes) each batch it receives.
  *
- * <p>Fixed-width outputs use Flink's generated binary-row projection so downstream copying avoids
+ * <p>Primitive and binary outputs use Flink's generated binary-row projection so downstream copying avoids
  * generic field getters and boxing. Other outputs retain the reusable Arrow-backed row view.
  * Chained Flink operators may retain a collected {@code RowData}. With object reuse disabled,
  * Flink's chained output copies the reusable row synchronously; with reuse enabled this boundary
@@ -46,13 +46,13 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
 
   public ArrowToRowDataOperator(RowType rowType) {
     this.rowType = rowType;
-    boolean fixedWidth = rowType.getChildren().stream().allMatch(type -> switch (type.getTypeRoot()) {
-      case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE, DATE,
+    boolean projectBinaryRow = rowType.getChildren().stream().allMatch(type -> switch (type.getTypeRoot()) {
+      case BINARY, VARBINARY, BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE, DATE,
           TIME_WITHOUT_TIME_ZONE, INTERVAL_YEAR_MONTH, INTERVAL_DAY_TIME -> true;
       case DECIMAL -> ((DecimalType) type).getPrecision() <= 18;
       default -> false;
     });
-    generatedProjection = fixedWidth
+    generatedProjection = projectBinaryRow
         ? ProjectionCodeGenerator.generateProjection(
             new CodeGeneratorContext(new Configuration(), getClass().getClassLoader()),
             "NativeExitRow", rowType, rowType,

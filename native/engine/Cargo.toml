@@ -97,5 +97,22 @@ harness = false
 required-features = ["rocksdb-state"]
 
 [[bench]]
+name = "persistent_group"
+harness = false
+required-features = ["rocksdb-state"]
+
+[[bench]]
 name = "calc_expressions"
+harness = false
+
+[[bench]]
+name = "binary_expressions"
+harness = false
+
+[[bench]]
+name = "collection_expressions"
+harness = false
+
+[[bench]]
+name = "jvm_truncate"
 harness = false

@@ -241,11 +241,24 @@ public final class ArrowConversion {
   /** A writer that appends {@link RowData} rows into the (pre-built, matching) Arrow vectors. */
   public static ArrowWriter<RowData> createRowDataArrowWriter(
       VectorSchemaRoot root, RowType rowType) {
+    return createRowDataArrowWriter(root, rowType, -1);
+  }
+
+  /** Sizes top-level fixed-width buffers for a known batch limit; safe writes can still grow. */
+  public static ArrowWriter<RowData> createRowDataArrowWriter(
+      VectorSchemaRoot root, RowType rowType, int fixedWidthCapacity) {
+    if (fixedWidthCapacity < -1) {
+      throw new IllegalArgumentException("Fixed-width capacity must be non-negative or unspecified");
+    }
     ArrowFieldWriter<RowData>[] fieldWriters = new ArrowFieldWriter[root.getFieldVectors().size()];
     List<FieldVector> vectors = root.getFieldVectors();
     for (int i = 0; i < vectors.size(); i++) {
       FieldVector vector = vectors.get(i);
-      vector.allocateNew();
+      if (fixedWidthCapacity >= 0 && vector instanceof org.apache.arrow.vector.BaseFixedWidthVector fixed) {
+        fixed.allocateNew(fixedWidthCapacity);
+      } else {
+        vector.allocateNew();
+      }
       fieldWriters[i] = createArrowFieldWriterForRow(vector, rowType.getTypeAt(i));
     }
     return new ArrowWriter<>(root, fieldWriters);

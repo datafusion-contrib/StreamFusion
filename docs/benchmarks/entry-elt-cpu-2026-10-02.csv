@@ -1,0 +1,12 @@
+component,samples,native_task_samples,percent,excluded_frame
+entry_inclusive,26922,42929,62.712851,
+entry_excluding_calc,7852,42929,18.290666,NativeCalcOperator
+calc_inclusive,19075,42929,44.433833,
+calc_excluding_exit,7728,42929,18.001817,ArrowToRowDataOperator
+exit_inclusive,11438,42929,26.643994,
+row_data_serializer,3245,42929,7.558993,
+external_row_serializer,3424,42929,7.975960,
+input_conversion,3256,42929,7.584616,
+generated_exit_projection,4704,42929,10.957628,
+binary_elt_kernel,2265,42929,5.276154,
+fixed_width_safe_write,3276,42929,7.631205,

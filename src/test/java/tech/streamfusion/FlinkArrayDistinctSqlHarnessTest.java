@@ -25,6 +25,47 @@ class FlinkArrayDistinctSqlHarnessTest {
         () -> environment(type), "SELECT ARRAY_DISTINCT(a) FROM src WHERE id < 0");
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"BOOLEAN"})
+  void booleanEqualityPreservesOrderAndNulls(String kind) throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ARRAY_DISTINCT");
+    BuiltinFunctionParity.assertParity(
+        () -> scalarEnvironment(kind), "SELECT id, ARRAY_DISTINCT(a) FROM src");
+    BuiltinFunctionParity.assertParity(
+        () -> scalarEnvironment(kind),
+        "SELECT id, ARRAY_DISTINCT(ARRAY_DISTINCT(a))[2] FROM src WHERE MOD(id, 3) <> 0");
+    BuiltinFunctionParity.assertParity(
+        () -> scalarEnvironment(kind), "SELECT ARRAY_DISTINCT(a) FROM src WHERE id < 0");
+  }
+
+  @Test
+  void stringDistinctKeepsStockExecutionUntilPerformanceAdmission() throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ARRAY_DISTINCT");
+    NativeParity.assertFallbackReasonContains(
+        () -> scalarEnvironment("STRING"), "SELECT ARRAY_DISTINCT(a) FROM src",
+        "ARRAY_DISTINCT requires a BOOLEAN or integer ARRAY");
+  }
+
+  static TableEnvironment scalarEnvironment(String kind) {
+    boolean strings = kind.equals("STRING");
+    DataType element = strings ? STRING() : BOOLEAN();
+    List<Row> rows = new ArrayList<>();
+    for (int i = 0; i < 5003; i++) {
+      Object[] values = null;
+      if (i % 7 != 0) {
+        int length = switch (i % 5) { case 0 -> 0; case 1 -> 2; case 2 -> 8; default -> 64; };
+        values = strings ? new String[length] : new Boolean[length];
+        String[] text = {"", "é中😀", "a\0b", "same", "same ", "x".repeat(264)};
+        for (int j = 0; j < length; j++) {
+          if (j % 9 != 0) values[j] = strings ? text[(j+i)%text.length] : (j+i)%3 == 0;
+        }
+      }
+      rows.add(Row.of(i, values));
+    }
+    return BuiltinFunctionParity.environment(
+        ROW(FIELD("id", INT()), FIELD("a", ARRAY(element))), rows);
+  }
+
   @Test
   void composedLookupKeepsNativeRouting() throws Exception {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ARRAY_DISTINCT");
@@ -56,7 +97,7 @@ class FlinkArrayDistinctSqlHarnessTest {
                 ROW(FIELD("a", ARRAY(DOUBLE()))),
                 List.of(Row.of((Object) new Double[] {0.0, -0.0, Double.NaN, Double.NaN, null}))),
         "SELECT ARRAY_DISTINCT(a) FROM src",
-        "ARRAY_DISTINCT requires an integer ARRAY");
+        "ARRAY_DISTINCT requires a BOOLEAN or integer ARRAY");
   }
 
   static TableEnvironment environment(String kind) {

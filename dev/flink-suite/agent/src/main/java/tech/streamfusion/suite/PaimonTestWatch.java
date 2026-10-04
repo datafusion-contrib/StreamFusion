@@ -19,6 +19,7 @@ public final class PaimonTestWatch {
           });
 
   private final String test;
+  private final Object fixture;
   private final long started = System.nanoTime();
   private final ScheduledFuture<?> diagnostic;
   private boolean finished;
@@ -30,6 +31,7 @@ public final class PaimonTestWatch {
 
   private PaimonTestWatch(String test, Object fixture) {
     this.test = test;
+    this.fixture = fixture;
     diagnostics.println(
         "StreamFusion upstream test started "
             + test
@@ -106,6 +108,50 @@ public final class PaimonTestWatch {
             + (failure == null ? "passed" : failure.getClass().getName()));
     if (failure != null) {
       failure.printStackTrace(diagnostics);
+      retainWarehouse();
+    }
+  }
+
+  private void retainWarehouse() {
+    if (!Boolean.getBoolean("streamfusion.flink-suite.retain-failed-warehouse")) {
+      return;
+    }
+    String destination = System.getProperty("streamfusion.flink-suite.diagnostics");
+    if (destination == null) {
+      diagnostics.println("Cannot retain failed Paimon warehouse: diagnostics directory is unset");
+      return;
+    }
+    for (Class<?> type = fixture.getClass(); type != null; type = type.getSuperclass()) {
+      try {
+        var field = type.getDeclaredField("path");
+        field.setAccessible(true);
+        Object value = field.get(fixture);
+        if (!(value instanceof String path)) {
+          return;
+        }
+        var source = java.nio.file.Path.of(path);
+        var target = java.nio.file.Path.of(destination)
+            .resolve("failed-warehouses")
+            .resolve(test + "-" + java.util.UUID.randomUUID());
+        java.nio.file.Files.createDirectories(target);
+        try (var paths = java.nio.file.Files.walk(source)) {
+          for (var entry : paths.toList()) {
+            var copy = target.resolve(source.relativize(entry));
+            if (java.nio.file.Files.isDirectory(entry)) {
+              java.nio.file.Files.createDirectories(copy);
+            } else if (java.nio.file.Files.isRegularFile(entry)) {
+              java.nio.file.Files.copy(entry, copy);
+            }
+          }
+        }
+        diagnostics.println("Retained failed Paimon warehouse at " + target);
+        return;
+      } catch (NoSuchFieldException ignored) {
+        // The released primary-key fixture stores its local warehouse in this field.
+      } catch (Exception failure) {
+        diagnostics.println("Failed to retain Paimon warehouse: " + failure);
+        return;
+      }
     }
   }
 

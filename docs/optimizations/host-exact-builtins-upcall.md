@@ -1,6 +1,7 @@
 # Host-exact builtins over the same upcall, with a faster pure-Rust opt-in
 
-**Applies to:** REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts
+**Applies to:** REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts,
+DOUBLE TRUNCATE (under validation)
 
 Builtins whose Rust implementation can diverge from the JVM's — REGEXP_EXTRACT (regex dialects),
 UPPER/LOWER (locale case folding), DATE_FORMAT/EXTRACT over `TIMESTAMP_LTZ` (time-zone database
@@ -101,3 +102,374 @@ SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
 All 91 parser/SQL checks pass on each released Flink line. They cover precisions 0–9, four zones,
 random dates, range limits, pre-epoch fractions, DST, normalization, short fractions, unpadded
 dates, legacy settings, stateful child evaluation, input failures, NULLs and guarded branches.
+
+## Bounded DOUBLE TRUNCATE shortcut
+
+The existing JVM scalar upcall can avoid decimal conversion for DOUBLE TRUNCATE when
+outward-rounded adjacent-double bounds give the same truncated integer. Absolute values
+at most `1e15 / 10^max(scale,0)` for scales -6 through 6 keep the intermediate
+integer exactly representable. This scale-dependent expansion is a draft prototype:
+exact oracle and SQL checks pass on both released Flink versions, while whole-job
+acceptance is pending. The previous uniform 1e9 domain remains the historical baseline.
+Small values include the scale-18 rounding margin, dyadic identities return directly, and
+ambiguous intervals parse canonical decimal text without decimal objects. Values outside this
+domain use released Flink evaluation. Historical measurements below precede these followups. NULL
+handling and row short-circuit/order gates remain in place; the Arrow/JNI bridge is unchanged.
+
+September 30, 2026, JDK 17, Flink 2.2.1, release Criterion, 1,024 sliced non-NULL rows:
+production Rust Calc exports both arguments, invokes Java, imports the Arrow result and disposes
+of it inside measurement. Fixture setup, JVM startup and registration are outside it. Each case
+uses three seconds of warmup and 100 samples over at least five seconds. Reference runs precede
+shortcut runs in one embedded JVM. These are Criterion **means**, with 95% confidence intervals
+partially recovered in the [task-log excerpts](../benchmarks/recovered-historical-diagnostics-2026-10-01.txt).
+
+| Profile | Released Flink upcall | Bounded shortcut | Change |
+| --- | ---: | ---: | ---: |
+| Bounded values, dynamic scales -3 through 3 | 368.029 µs | 168.769 µs | -54.1% |
+| Exact decimal boundaries (fallback) | 316.862 µs | 317.230 µs | +0.1%, overlapping intervals |
+| Values outside the domain (fallback) | 238.473 µs | 232.739 µs | -2.4% |
+
+Both paths request 5,248 Rust bytes across 84 allocation calls and produce a new 8,192-byte
+output payload. Rust counters do not measure Java allocations, so these figures do not quantify
+the avoided decimal objects or copied bytes. All 36 fixtures validate nullable slices and three
+batch sizes; only the six cases above were timed. Exact helper tests pass against released
+Flink 2.2.1 and 1.18.1. Runtime SQL parity now passes on Flink 2.2.1; complete-job comparisons with stock Flink and
+previous StreamFusion remain pending.
+These measurements establish an upcall improvement, not end-to-end acceleration admission.
+
+```sh
+python3 bin/bench-native.py --bench jvm_truncate --smoke
+python3 bin/bench-native.py --bench jvm_truncate --filter '/1024/.*/nulls=false$'
+```
+
+An expanded run registers the production generated Flink expression evaluator alongside the
+reflective reference and shortcut. All 54 fixtures compare exact outputs. JVM generation/opening
+remain outside measurement; the generated evaluator uses the existing imported Arrow-row reader
+inside the production upcall. Same machine, heap, batch size and sampling settings as above, fresh
+JVM, with reference/shortcut/generated cases run in that order. Remeasured means:
+
+| Profile | Reflective Flink | Shortcut | Generated Flink |
+| --- | ---: | ---: | ---: |
+| Bounded values | 351.421 µs | 155.387 µs | 351.387 µs |
+| Decimal boundaries | 326.910 µs | 321.720 µs | 295.411 µs |
+| Outside domain | 227.612 µs | 228.559 µs | 224.495 µs |
+
+The bounded shortcut improves 55.8% against the generated evaluator. Decimal-boundary fallback
+is 8.9% slower than generated evaluation, with disjoint mean confidence intervals: this remains
+an optimization blocker, rather than an admitted default acceleration. The generated path borrows
+Arrow rows, while reflective evaluation materializes argument columns; Java allocations are not
+captured by the Rust counter. All three retain identical 5,248-byte/84-call Rust probes and
+8,192-byte new output payloads. [All nine means and confidence intervals](../benchmarks/recovered-historical-diagnostics-2026-10-01.txt)
+are retained, including unfavorable profiles. The earlier two-way run remains above; movement
+between JVM runs does not establish a code improvement. Whole-job gates remain pending.
+
+### Borrow input rows in the shortcut evaluator
+
+The shortcut now runs inside the existing generated-expression class, using the same imported
+Arrow-row reader as the generated reference. Generated primitive operands call the exact helper
+directly, eliminating reflective argument-column materialization. NULL guards precede the helper;
+an omitted scale is primitive INT zero, with no additional Arrow argument. Lazy consumers and
+multi-failure row programs retain the existing generated row-order path. Comet's owned C Data
+import/evaluate/export contract is unchanged.
+
+Fresh four-way release Criterion run, same configuration and sampling, reference/reflective
+shortcut/generated/borrowed order, 1,024 sliced non-NULL rows, means:
+
+| Profile | Reflective shortcut | Generated Flink | Borrowed shortcut |
+| --- | ---: | ---: | ---: |
+| Bounded values | 167.718 µs | 364.370 µs | 163.116 µs |
+| Decimal boundaries | 315.334 µs | 292.829 µs | 302.161 µs |
+| Outside domain | 226.298 µs | 222.645 µs | 227.079 µs |
+
+Borrowing improves bounded and decimal-boundary times 2.7% and 4.2% over the same-run reflective
+shortcut. Bounded values remain 55.2% faster than generated Flink. Decimal-boundary fallback is
+still 3.2% slower than generated Flink, and outside-domain values 2.0% slower, with disjoint
+confidence intervals. This is partial optimization, not removal of the performance blocker.
+[All twelve means and confidence intervals](../benchmarks/recovered-historical-diagnostics-2026-10-01.txt)
+retain the unfavorable cases. Rust allocation/payload probes remain unchanged and do not count
+Java argument objects. All 72 upcall fixtures pass bit-exact checks. Twenty in-process checks pass
+on Flink 2.2.1; nineteen pass on 1.18.1 with unsupported ELT skipped. They include generated default
+and dynamic scale values, NULLs, signed zero, boundaries and exception messages. Eleven runtime SQL checks pass on Flink 2.2.1, including native CASE/COALESCE results and
+exceptions and the existing AND/OR fallback. Complete-job performance gates remain pending.
+
+
+The environment reset removed temporary benchmark artifacts. Historical links above now point to surviving task-log excerpts; complete raw CSVs and Criterion samples must be regenerated.
+
+## Whole-job DOUBLE TRUNCATE controls
+
+`ScalarFunctionBenchmark` includes `DOUBLE_TRUNCATE_BOUNDED`, `DOUBLE_TRUNCATE_BOUNDARY`,
+and `DOUBLE_TRUNCATE_OUTSIDE`. Runtime sequence sources generate alternating signs, dynamic
+INT scales and optional NULL operands. Boundary inputs use half-integers at scale one; outside
+inputs use absolute value 0.46. Each has a source-matched DOUBLE identity control. The existing
+blackhole sink, release JNI library and both transposes stay in the native measured path, and
+plan assertions require native Calc. These fixtures provide end-to-end evidence for the same
+three profiles as the four-way JNI Criterion controls; no whole-job speedup is assumed.
+
+Run with `SF_BENCHMARK=true`, `-Pbench`,
+`-Dtest=ScalarFunctionBenchmark#individualFunctions`, and
+`-Dscalar.functions=DOUBLE_TRUNCATE_BOUNDED,DOUBLE_TRUNCATE_BOUNDARY,DOUBLE_TRUNCATE_OUTSIDE`.
+Use identical rows, warmups and trials for stock Flink and previous/candidate StreamFusion,
+and retain the per-trial CSV with `-Dscalar.output=...`.
+
+All three profiles and their identity controls execute successfully with 5,003 runtime rows
+on released Flink 2.2.1. This single-trial fixture smoke check validates plan admission and
+execution only; its startup-dominated durations are not performance-admission evidence.
+
+When the previous production revision falls back for a newly supported function, run the same
+fixture with `-Dscalar.native.expected=false`. This explicit control requires the selected
+function to lack native Calc and runtime substitution while identity controls still require
+native execution. The default remains strict native admission. Label those native-enabled
+trials as previous-version fallback in retained comparisons; they do not represent native
+acceleration or replace stock-Flink measurements.
+
+## Recovered release whole-job measurements, 2026-10-01
+
+Released Flink 2.2.1, JDK 17 and the candidate at `ee58ff55`, with release Rust/mimalloc,
+run two million runtime rows, two warmups and five measured trials per engine. Execution
+alternates engine order each trial. The existing blackhole sink, JNI and both transposes
+remain measured; plan assertions require native Calc. The host was quiet before starting.
+Source values have alternating signs, dynamic scales, no NULLs and the three profiles above.
+[All trials and source-matched identity controls](../benchmarks/expression-wholejob-candidate-2026-10-01.csv)
+are retained.
+
+| Expression/profile | Stock Flink median | Candidate median | Stock/candidate |
+| --- | ---: | ---: | ---: |
+| STRING to BINARY(16), 264-byte source strings | 0.950 s | 1.007 s | 0.94× |
+| Fixed BINARY ELT | 0.334 s | 0.416 s | 0.80× |
+| DOUBLE TRUNCATE, bounded | 0.786 s | 0.457 s | 1.72× |
+| DOUBLE TRUNCATE, half-integer boundaries | 0.691 s | 0.766 s | 0.90× |
+| DOUBLE TRUNCATE, outside domain | 0.518 s | 0.591 s | 0.88× |
+
+These durations include startup and deployment. Retain the slow standalone binary and
+TRUNCATE fallback profiles; a bounded-domain win does not satisfy their admission gate.
+The source-matched native identity controls also lose to stock Flink, showing the remaining
+row/Arrow conversion floor. Profile and optimize before treating these candidates as complete.
+Previous-production comparisons and broader nullable/composition profiles remain pending.
+
+The previous production revision (`1b1b5ed8`, including canonical main `0b38269e`) runs
+identical fixture-only benchmark code with explicit expected fallback for the new functions.
+[All previous-version trials](../benchmarks/expression-wholejob-previous-2026-10-01.csv)
+retain stock and native-enabled fallback controls on the same host and configuration.
+Previous native-enabled medians are 0.939 s (cast), 0.350 s (ELT), 0.774 s (bounded TRUNCATE),
+0.689 s (boundary) and 0.529 s (small fractions). Thus the initial candidate's bounded
+TRUNCATE beats both references, while every other listed profile still requires optimization.
+The native identity controls are verified separately rather than bypassing all route assertions.
+Linux/Core i7-12650H, Rust 1.94.0 and JDK 17; the native library uses production mimalloc.
+
+## Exact dyadic boundary shortcut
+
+Within the bounded shortcut domain at scale 0..6, multiplication by `2^scale`
+is exact and remains below `2^53`. If that result is an integer, the operand has at most
+`scale` fractional decimal digits. Flink's scale-18 decimal conversion and truncation therefore
+leave it unchanged. This avoids unnecessary decimal fallback at half-integer and other dyadic
+boundaries without treating arbitrary decimal boundaries as exact.
+
+The helper regression compares all scales and immediate neighbors of 7,000 sampled dyadic
+operands against released Flink, in addition to the existing random/raw-bit/domain tests.
+The JNI suite now adds `decimal_ambiguous` inputs ending in .1, while retaining half-integer
+`decimal_boundary` inputs. Four evaluators, four profiles, three sizes and two NULL profiles
+produce 96 fixtures. Whole-job `DOUBLE_TRUNCATE_AMBIGUOUS` retains the non-dyadic ambiguous-interval
+control. The older 72-fixture results and unfavorable whole-job measurements above
+remain historical evidence for the revision before this shortcut, not claims for the new one.
+
+The revised bound also covers finite magnitudes below one, including zero and subnormals.
+It extends each adjacent-double interval outward by half a scale-18 decimal unit before
+multiplication/division, then rounds the arithmetic outward again. This brackets Flink's
+decimal conversion rounding; equality of the two truncated integers remains required.
+Zero results explicitly return positive zero. Nonfinite values, larger magnitudes, extreme
+scales and ambiguous bounds still use the released implementation. The historical
+`outside_domain`/`DOUBLE_TRUNCATE_OUTSIDE` profile retains its 0.46 input for comparison;
+it now denotes values outside the original domain, rather than the expanded domain.
+
+Ambiguous bounded intervals now parse the canonical `Double.toString` text that released
+Flink passes to `BigDecimal.valueOf`. The retained coefficient has at most 16 digits in this
+domain, so it fits an exact double integer. Before truncation, the parser preserves Flink's
+scale-18 HALF_UP carry: only omitted digits consisting entirely of nines followed by a rounding
+digit at position 19 can increment the retained coefficient. It then divides/multiplies by the
+same exact power of ten and returns positive zero for a zero coefficient. This avoids decimal
+objects without assuming decimal-grid arithmetic is exact. Other signatures and domains keep
+released fallback. Boundary and immediate-neighbor tests cover scientific notation, signs and
+small values that round across a scale-6 boundary before truncation.
+
+All 96 expanded JNI fixtures pass exact DOUBLE-bit, NULL and schema comparisons against
+released Flink. Eighteen helper/generated/runtime-SQL checks pass on each released line.
+The canonical-text path is additionally compared directly against Flink throughout the
+bounded helper corpus, even where the interval shortcut would normally avoid that path.
+
+## Revised helper whole-job measurements
+
+The canonical-text revision `26fe2647` repeats the same two-million-row, two-warmup,
+five-trial alternating-engine release comparison.
+[All revised trials](../benchmarks/double-truncate-decimal-text-wholejob-2026-10-01.csv)
+and the [intermediate interval-only trials](../benchmarks/double-truncate-interval-wholejob-2026-10-01.csv)
+retain variability and unfavorable observations. Other shared-host jobs were active during
+parts of these runs, so these are directional evidence requiring a controlled repeat.
+
+| Profile | Same-run stock median | Revised native median | Stock/native |
+| --- | ---: | ---: | ---: |
+| Bounded | 0.734 s | 0.449 s | 1.63× |
+| Half-integer boundaries | 0.677 s | 0.430 s | 1.57× |
+| Small fractions, original outside-domain control | 0.528 s | 0.515 s | 1.02× |
+| Non-dyadic ambiguous intervals | 0.752 s | 0.649 s | 1.16× |
+
+The earlier previous-production native-enabled fallback medians are 0.774/0.689/0.529 s
+for the first three profiles; the ambiguous profile still needs its explicit previous-version
+measurement. The small-fraction native trials span 0.457–0.651 s versus stock 0.469–0.568 s,
+so its narrow median difference does not establish the performance gate. Larger magnitudes,
+other scales, nullable/composed jobs and binary boundary regressions remain to be evaluated.
+Keep the PR draft; none of these partial results closes the broad floating-function issue.
+
+
+## Exact bounded decimal-grid identity
+
+At an ambiguous interval and a nonnegative scale, the helper additionally checks
+whether multiplying by the exact power of ten produces an integral coefficient
+and dividing that coefficient back produces the identical input double. Within
+the existing finite magnitude/scale bounds, the coefficient has at most 15
+significant decimal digits except the already-admitted exact power-of-ten endpoint.
+This identifies the canonical decimal grid value without allocating its text.
+Both conditions are required: a rounded integral multiplication alone could admit
+an adjacent double whose canonical decimal truncates differently. Zero continues
+through the existing path to preserve Flink's positive-zero result.
+
+The shortcut retains the released oracle outside its existing bounds and the
+canonical-text parser for unresolved intervals. Its regression samples decimal
+coefficients across every admitted scale and both immediate neighbors/signs,
+including the upper bound; comparison checks output DOUBLE bits against released
+Flink, while the text parser remains independently checked throughout the corpus.
+
+All 19 helper/generated/SQL checks pass on each released line, Flink 2.2.1 and
+1.18.1, including the
+new 105,000 signed grid/neighbor comparisons. All 96 four-way JNI profiles pass
+bit, NULL and schema checks with the new helper class first on the embedded JVM
+classpath. [Allocation probes](../benchmarks/double-truncate-decimal-grid-probes-2026-10-01.csv)
+are retained; these counters exclude JVM allocation and do not establish timing
+or whole-job improvements. Repeated representative whole-job coverage remains
+required before completing the broader floating-function work.
+
+
+The new grid candidate is measured in complete release jobs against stock Flink and
+previous-production `1b1b5ed8` (main plus benchmark foundation, only current fixtures
+copied). Both runs use Flink 2.2.1/JDK 17, release/mimalloc, a 2 GiB heap, parallelism
+one, two million non-null rows, 1,024-row transpose batches, two warmups and five alternating
+trials. Native candidate plans/runtimes include both transposes, JNI and the runtime
+row source/blackhole sink. Previous-version controls explicitly verify expression
+fallback; identity controls still require native execution.
+
+| Input profile | Candidate-run stock median | Candidate native median | Previous fallback median |
+| --- | ---: | ---: | ---: |
+| Non-dyadic decimal boundary (`1000.1`, scale 1, signed) | 0.618441 s | 0.428697 s | 0.643712 s |
+| Small fractions (`0.46`, dynamic scale -3..3, signed) | 0.455085 s | 0.423644 s | 0.448214 s |
+
+For non-dyadic boundaries, same-run speedup is 1.44x; stock trials range
+0.613260–0.627500 s and native 0.413980–0.436568 s. Small fractions yield 1.07x,
+with stock 0.454107–0.476213 s and native 0.421175–0.437192 s. Previous-run stock
+medians are 0.641638 s and 0.449402 s; fallback ranges are 0.636772–0.681802 s
+and 0.440072–0.462538 s respectively. Other host jobs were active, so retain
+[every candidate trial](../benchmarks/double-truncate-decimal-grid-wholejob-candidate-2026-10-01.csv)
+and [every previous-version trial](../benchmarks/double-truncate-decimal-grid-wholejob-previous-2026-10-01.csv).
+These two representative samples beat both required baselines, including production
+conversion costs; they do not validate all signatures or nullable/composed workloads.
+Native identity controls remain slower than stock. Wider-domain fallback profiles,
+consumer workload performance and repeated coverage remain draft gates. Historical
+results above describe earlier helpers and are retained as such.
+
+
+## Generated consumer evaluation
+
+Consumer benchmarks revealed that root-only substitution left nested calls and
+conditional COALESCE evaluation using released decimal allocation. Scalar generation
+now substitutes the verified DOUBLE invocation within the generated expression,
+retaining its NULL guards, result type and preceding operand code. It replaces
+only that invocation, so nested DECIMAL overloads retain their released callee.
+The dedicated root factory uses the same generator for operands; the Criterion
+released-generated reference explicitly disables substitution.
+
+Whole-row evaluation still uses Flink's released Calc generator. A Rex visitor
+binds only verified DOUBLE TRUNCATE calls to the existing nullable helper through
+Flink's released scalar-function bridge, adding an INT-zero operand only for the
+omitted-scale form. It preserves the original expression result type and all
+parent CASE/COALESCE/filter control flow. Dependency capture and lifecycle stay
+with the existing function context; other overloads are unchanged. This avoids
+reimplementing Calc execution or evaluating fallible branches eagerly.
+
+The regression corpus includes nullable CASE, COALESCE, runtime-scale nesting
+and a mixed DECIMAL/DOUBLE nesting case, alongside nonfinite failures. All 23
+helper/generated/SQL checks pass on released Flink 2.2.1 and 1.18.1.
+Whole-job performance remains a required gate. The pre-change consumer run shows
+COALESCE slower than stock; scalar-only substitution improves nesting but leaves
+that whole-row regression. All before/after trials are retained rather than
+presenting root-only measurements as proof of consumer performance.
+
+
+The nullable consumer comparison uses two million runtime rows, value NULLs every
+eight rows, scale NULLs every seven rows, two warmups and five alternating trials
+with the release native library, a 2 GB JVM heap and both transposes. Median
+seconds below retain source, sink, JNI and conversion costs:
+
+| Consumer | Root helper: stock / native | Scalar substitution: stock / native | Whole-row bridge: stock / native |
+|---|---:|---:|---:|
+| CASE | 0.453 / 0.443 | 0.444 / 0.446 | 0.468 / 0.486 |
+| COALESCE | 0.629 / 0.722 | 0.642 / 0.727 | 0.697 / 0.814 |
+| Nested TRUNCATE | 0.931 / 0.745 | 0.937 / 0.452 | 0.996 / 0.477 |
+| Large values | 0.863 / 0.953 | 0.851 / 0.949 | 0.952 / 1.066 |
+
+Scalar substitution improves the nested workload, but the whole-row bridge does
+not establish an improvement for COALESCE. CASE remains close to stock and large
+values outside the bounded helper still lose. Other host workloads were active;
+these comparisons do not establish a quiet-host performance gate or improvement
+against previous production behavior. All trials, including identity controls,
+are retained in [root-helper results](../benchmarks/truncate-consumer-candidate-2026-10-01.csv),
+[scalar-substitution results](../benchmarks/truncate-consumer-generator-candidate-2026-10-01.csv)
+and [whole-row results](../benchmarks/truncate-consumer-wholerow-candidate-2026-10-01.csv).
+The first file predates the scale-NULL CSV column; its configured interval is seven.
+These consumer changes remain draft pending profiling and comparison against both
+stock Flink and previous production StreamFusion.
+
+
+A subsequent 30-second CPU profile of the nullable COALESCE workload used the
+same two-million-row release setup. Of 40,370 total samples, 10,968 (27.17%)
+included `SqlFunctionUtils`, 10,650 (26.38%) included `BigDecimal`, and none
+included the exact helper. Inclusive frames overlap; these percentages must not
+be added. This establishes that the measured evaluator still reaches the released
+decimal path despite the attempted substitution. The next optimization must fix
+that generated call path before attributing the remaining loss solely to row
+conversion or helper boxing.
+
+
+The missed call came from overriding the top-level expression entry point:
+Flink visits conditional operands through the Rex visitor directly. The candidate
+now overrides the call visitor, so both top-level and scoped conditional calls
+receive the typed substitution. A generated-code regression check verifies the
+conditional operand uses the helper while the benchmark reference retains the
+released callee. All 24 targeted checks pass on released Flink 2.2.1 and 1.18.1.
+
+
+With the visitor correction, the same nullable release setup gives COALESCE
+stock/native medians of 0.698/0.472 seconds (1.480x), CASE 0.494/0.496 seconds
+(0.998x), and nested TRUNCATE 1.042/0.492 seconds (2.118x). All five alternating
+trials and the slower native identity control are retained in the
+[corrected candidate results](../benchmarks/truncate-call-visitor-candidate-2026-10-01.csv).
+The CASE ranges overlap; this is not evidence of acceleration for that consumer.
+Previous-production comparison and a follow-up profile remain required before
+accepting the corrected consumer optimization.
+
+
+The matching previous-production checkout (production code unchanged, current
+fixtures only) verified the expected fallback for these consumers. Its stock /
+previous medians were COALESCE 0.745 / 0.815 seconds, CASE 0.496 / 0.493 seconds,
+and nested TRUNCATE 1.040 / 1.037 seconds. The corrected candidate therefore beats
+both measured baselines for COALESCE and nesting; CASE remains a tie with both.
+[Previous-production trials](../benchmarks/truncate-call-visitor-previous-2026-10-01.csv)
+retain the same nullable inputs, resources, warmups and repeated measurements.
+Host load varied between runs, so this remains evidence for these sampled
+workloads rather than a general guarantee.
+
+
+A matching 30-second follow-up CPU profile records 41,907 samples. No sample
+includes `SqlFunctionUtils`; six (0.014%) include `BigDecimal` and 264 (0.630%)
+include the exact helper. Inlining and inclusive sampling prevent interpreting
+helper-frame counts as an execution count, but the disappearance of released
+decimal frames supports the generated-code regression check and measured
+COALESCE improvement. Both raw JFR recordings and collapsed stacks are retained
+with the local benchmark artifacts.

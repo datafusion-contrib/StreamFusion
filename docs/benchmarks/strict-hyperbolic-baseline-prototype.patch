@@ -1,0 +1,1055 @@
+diff --git a/native/Cargo.lock b/native/Cargo.lock
+index 1a9f1da6..47d0667c 100644
+--- a/native/Cargo.lock
++++ b/native/Cargo.lock
+@@ -3670,6 +3670,7 @@ dependencies = [
+  "datafusion",
+  "futures",
+  "jni",
++ "libm",
+  "libmimalloc-sys",
+  "log",
+  "lz4_flex 0.13.1",
+diff --git a/native/engine/Cargo.toml b/native/engine/Cargo.toml
+index 623d663b..48825a5d 100644
+--- a/native/engine/Cargo.toml
++++ b/native/engine/Cargo.toml
+@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
+ 
+ [dependencies]
+ base64.workspace = true
++libm = "=0.2.16"
+ streamfusion-bridge = { path = "../bridge" }
+ arrow = { workspace = true, features = ["json"] }
+ arrow-ord.workspace = true
+@@ -83,6 +84,10 @@ harness = false
+ name = "scalar_registry"
+ harness = false
+ 
++[[bench]]
++name = "hyperbolic_expressions"
++harness = false
++
+ [[bench]]
+ name = "keys_and_checkpoints"
+ harness = false
+diff --git a/native/engine/benches/scalar_registry.rs b/native/engine/benches/scalar_registry.rs
+index 6b65e843..e3a19b56 100644
+--- a/native/engine/benches/scalar_registry.rs
++++ b/native/engine/benches/scalar_registry.rs
+@@ -170,6 +170,17 @@ fn fixtures(rows: usize, nulls: bool, unicode: bool) -> Vec<(i64, Vec<ColumnarVa
+         (162, vec![string(&text)]),
+         (165, vec![array(list.finish(), rows)]),
+     ];
++    for op in [166, 167, 168] {
++        cases.push((
++            op,
++            vec![array(
++                Float64Array::from_iter(
++                    (0..rows + 1).map(|i| valid(i).then_some(i as f64 / 8.0 - 2.0)),
++                ),
++                rows,
++            )],
++        ));
++    }
+     for op in [144, 145, 146, 147] {
+         cases.push((op, vec![string("{\"a\":1}"), literal("13.0")]));
+     }
+diff --git a/native/engine/src/flink_functions/mod.rs b/native/engine/src/flink_functions/mod.rs
+index dbd12989..2ed2e5fe 100644
+--- a/native/engine/src/flink_functions/mod.rs
++++ b/native/engine/src/flink_functions/mod.rs
+@@ -38,6 +38,7 @@ mod binary_strings;
+ mod charset;
+ mod chr;
+ mod hash_code;
++mod hyperbolic;
+ mod if_null;
+ mod instr;
+ pub(crate) mod integer_divide;
+@@ -186,6 +187,24 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
+         161 => instr::function(arity),
+         162 => hash_code::function(),
+         165 => array_distinct::function(),
++        166 => udf(
++            "flink_cosh",
++            vec![DataType::Float64],
++            DataType::Float64,
++            hyperbolic::cosh,
++        ),
++        167 => udf(
++            "flink_sinh",
++            vec![DataType::Float64],
++            DataType::Float64,
++            hyperbolic::sinh,
++        ),
++        168 => udf(
++            "flink_tanh",
++            vec![DataType::Float64],
++            DataType::Float64,
++            hyperbolic::tanh,
++        ),
+         _ => return None,
+     })
+ }
+diff --git a/src/main/java/tech/streamfusion/planner/RexExpression.java b/src/main/java/tech/streamfusion/planner/RexExpression.java
+index d739a0e9..2f45c718 100644
+--- a/src/main/java/tech/streamfusion/planner/RexExpression.java
++++ b/src/main/java/tech/streamfusion/planner/RexExpression.java
+@@ -1368,6 +1368,18 @@ final class RexExpression {
+     if ("CEIL".equals(functionName) || "CEILING".equals(functionName)) {
+       return emitFloatUnary(call, 64);
+     }
++    if ("COSH".equals(functionName) || "SINH".equals(functionName)
++        || "TANH".equals(functionName)) {
++      if (call.getOperands().size() != 1) return reject(functionName + " requires one argument");
++      RexNode input = call.getOperands().get(0);
++      switch (input.getType().getSqlTypeName()) {
++        case TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, REAL, DOUBLE -> { }
++        default -> { return reject(functionName + " requires a verified primitive numeric argument"); }
++      }
++      add(KIND_CALL, "COSH".equals(functionName) ? 166 : "SINH".equals(functionName) ? 167 : 168, 1);
++      add(KIND_CAST, CAST_DOUBLE, 1);
++      return emit(input);
++    }
+     if ("SIGN".equals(functionName)) {
+       return emitFloatUnary(call, 65);
+     }
+diff --git a/src/test/java/tech/streamfusion/ScalarFunctionBenchmark.java b/src/test/java/tech/streamfusion/ScalarFunctionBenchmark.java
+index 9fe31dbd..bc97d8db 100644
+--- a/src/test/java/tech/streamfusion/ScalarFunctionBenchmark.java
++++ b/src/test/java/tech/streamfusion/ScalarFunctionBenchmark.java
+@@ -69,6 +69,27 @@ class ScalarFunctionBenchmark {
+ 
+   private static final List<Query> SCALAR_FUNCTIONS =
+       List.of(
++          new Query("COSH_TINYINT", "tt_hyperbolic_tinyint", "COSH(n)", "DOUBLE"),
++          new Query("SINH_TINYINT", "tt_hyperbolic_tinyint", "SINH(n)", "DOUBLE"),
++          new Query("TANH_TINYINT", "tt_hyperbolic_tinyint", "TANH(n)", "DOUBLE"),
++          new Query("COSH_SMALLINT", "tt_hyperbolic_smallint", "COSH(n)", "DOUBLE"),
++          new Query("SINH_SMALLINT", "tt_hyperbolic_smallint", "SINH(n)", "DOUBLE"),
++          new Query("TANH_SMALLINT", "tt_hyperbolic_smallint", "TANH(n)", "DOUBLE"),
++          new Query("COSH_INTEGER", "tt_hyperbolic_integer", "COSH(n)", "DOUBLE"),
++          new Query("SINH_INTEGER", "tt_hyperbolic_integer", "SINH(n)", "DOUBLE"),
++          new Query("TANH_INTEGER", "tt_hyperbolic_integer", "TANH(n)", "DOUBLE"),
++          new Query("COSH_BIGINT", "tt_hyperbolic_bigint", "COSH(n)", "DOUBLE"),
++          new Query("SINH_BIGINT", "tt_hyperbolic_bigint", "SINH(n)", "DOUBLE"),
++          new Query("TANH_BIGINT", "tt_hyperbolic_bigint", "TANH(n)", "DOUBLE"),
++          new Query("COSH_FLOAT", "tt_hyperbolic_float", "COSH(n)", "DOUBLE"),
++          new Query("SINH_FLOAT", "tt_hyperbolic_float", "SINH(n)", "DOUBLE"),
++          new Query("TANH_FLOAT", "tt_hyperbolic_float", "TANH(n)", "DOUBLE"),
++          new Query("COSH_SMALL", "tt_hyperbolic_small", "COSH(n)", "DOUBLE"),
++          new Query("COSH_RANGE", "tt_hyperbolic_range", "COSH(n)", "DOUBLE"),
++          new Query("SINH_SMALL", "tt_hyperbolic_small", "SINH(n)", "DOUBLE"),
++          new Query("SINH_RANGE", "tt_hyperbolic_range", "SINH(n)", "DOUBLE"),
++          new Query("TANH_SMALL", "tt_hyperbolic_small", "TANH(n)", "DOUBLE"),
++          new Query("TANH_RANGE", "tt_hyperbolic_range", "TANH(n)", "DOUBLE"),
+           new Query("DOUBLE_TRUNCATE_BOUNDED", "tt_double_bounded", "TRUNCATE(n,s)", "DOUBLE"),
+           new Query("DOUBLE_TRUNCATE_BOUNDARY", "tt_double_boundary", "TRUNCATE(n,s)", "DOUBLE"),
+           new Query("DOUBLE_TRUNCATE_AMBIGUOUS", "tt_double_ambiguous", "TRUNCATE(n,s)", "DOUBLE"),
+diff --git a/src/test/java/tech/streamfusion/TextTimeBenchmarkInputs.java b/src/test/java/tech/streamfusion/TextTimeBenchmarkInputs.java
+index a78cdf54..8e97a568 100644
+--- a/src/test/java/tech/streamfusion/TextTimeBenchmarkInputs.java
++++ b/src/test/java/tech/streamfusion/TextTimeBenchmarkInputs.java
+@@ -35,11 +35,13 @@ final class TextTimeBenchmarkInputs {
+   }
+ 
+   static String baselineExpression(String input) {
++    if (isHyperbolicTypeInput(input)) return "n";
+     return switch (input) {
+       case "tt_bytes", "tt_fixed_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
+       case "tt_boolean" -> "b";
+       case "tt_decimal", "tt_decimal_scale", "tt_unix_time",
+-          "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large" -> "n";
++          "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large",
++          "tt_hyperbolic_small", "tt_hyperbolic_range" -> "n";
+       case "tt_decimal_array" -> "a";
+       case "tt_json_array" -> "a";
+       case "tt_timestamp", "tt_timestamp_ltz" -> "ts";
+@@ -48,13 +50,18 @@ final class TextTimeBenchmarkInputs {
+   }
+ 
+   static String baselineType(String input) {
++    if (isHyperbolicTypeInput(input)) {
++      String type = input.substring("tt_hyperbolic_".length());
++      return type.equals("integer") ? "INT" : type.toUpperCase(java.util.Locale.ROOT);
++    }
+     return switch (input) {
+       case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "BYTES";
+       case "tt_boolean" -> "BOOLEAN";
+       case "tt_fixed_bytes" -> "BINARY(" + fixedBinaryWidth() + ")";
+       case "tt_decimal", "tt_decimal_scale" -> "DECIMAL(38,9)";
+       case "tt_unix_time" -> "BIGINT";
+-      case "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large" -> "DOUBLE";
++      case "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large",
++          "tt_hyperbolic_small", "tt_hyperbolic_range" -> "DOUBLE";
+       case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
+       case "tt_json_array" -> "ARRAY<STRING>";
+       case "tt_timestamp" -> "TIMESTAMP(9)";
+@@ -63,6 +70,11 @@ final class TextTimeBenchmarkInputs {
+     };
+   }
+ 
++  private static boolean isHyperbolicTypeInput(String input) {
++    return java.util.List.of("tt_hyperbolic_tinyint", "tt_hyperbolic_smallint",
++        "tt_hyperbolic_integer", "tt_hyperbolic_bigint", "tt_hyperbolic_float").contains(input);
++  }
++
+   static TableEnvironment environment(
+       String input, long rows, int bytes, boolean unicode, int nullEvery) {
+     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+@@ -118,13 +130,39 @@ final class TextTimeBenchmarkInputs {
+           .map(i -> Row.of((Object) (isNull(i, nullEvery) ? null : values)))
+           .returns(Types.ROW_NAMED(new String[] {"a"}, Types.OBJECT_ARRAY(Types.BIG_DEC))),
+           Schema.newBuilder().column("a", DataTypes.ARRAY(DataTypes.DECIMAL(38, 9))).build());
++    } else if (isHyperbolicTypeInput(input)) {
++      String type = input.substring("tt_hyperbolic_".length());
++      org.apache.flink.api.common.typeinfo.TypeInformation<?> info = switch (type) {
++        case "tinyint" -> Types.BYTE;
++        case "smallint" -> Types.SHORT;
++        case "integer" -> Types.INT;
++        case "bigint" -> Types.LONG;
++        case "float" -> Types.FLOAT;
++        default -> throw new IllegalArgumentException(type);
++      };
++      tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
++          .map(i -> {
++            long integer = i % 129 - 64;
++            Number value = switch (type) {
++              case "tinyint" -> (byte) integer;
++              case "smallint" -> (short) integer;
++              case "integer" -> (int) integer;
++              case "bigint" -> integer;
++              case "float" -> (float) ((i % 16384) * 48.0 / 16383.0 - 24.0);
++              default -> throw new IllegalArgumentException(type);
++            };
++            return Row.of(isNull(i, nullEvery) ? null : value);
++          }).returns(Types.ROW_NAMED(new String[] {"n"}, info)));
+     } else if (input.equals("tt_double_bounded") || input.equals("tt_double_boundary")
+         || input.equals("tt_double_ambiguous") || input.equals("tt_double_outside")
+-        || input.equals("tt_double_large")) {
++        || input.equals("tt_double_large") || input.equals("tt_hyperbolic_small")
++        || input.equals("tt_hyperbolic_range")) {
+       int nullScaleEvery = Integer.getInteger("scalar.scaleNullEvery", 0);
+       tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
+           .map(i -> {
+             double magnitude = switch (input) {
++              case "tt_hyperbolic_small" -> (i % 16384) * 1.125 / 16383.0;
++              case "tt_hyperbolic_range" -> (i % 16384) * 24.0 / 16383.0;
+               case "tt_double_boundary" -> 1000.5 + i % 1024;
+               case "tt_double_ambiguous" -> 1000.1 + i % 1024;
+               case "tt_double_outside" -> 0.46;
+diff --git a/native/engine/src/flink_functions/hyperbolic.rs b/native/engine/src/flink_functions/hyperbolic.rs
+new file mode 100644
+--- /dev/null
++++ b/native/engine/src/flink_functions/hyperbolic.rs
+@@ -0,0 +1,68 @@
++mod cosh_sinh;
++mod tanh;
++
++use arrow::array::ArrayRef;
++use arrow::datatypes::Float64Type;
++use datafusion::common::{cast::as_primitive_array, exec_err, Result};
++use std::sync::Arc;
++
++fn apply(args: &[ArrayRef], function: fn(f64) -> f64) -> Result<ArrayRef> {
++    if args.len() != 1 {
++        return exec_err!("Hyperbolic functions require one argument");
++    }
++    Ok(Arc::new(
++        as_primitive_array::<Float64Type>(&args[0])?.unary::<_, Float64Type>(function),
++    ))
++}
++pub(super) fn cosh(args: &[ArrayRef]) -> Result<ArrayRef> {
++    apply(args, cosh_sinh::cosh)
++}
++pub(super) fn sinh(args: &[ArrayRef]) -> Result<ArrayRef> {
++    apply(args, cosh_sinh::sinh)
++}
++pub(super) fn tanh(args: &[ArrayRef]) -> Result<ArrayRef> {
++    apply(args, tanh::tanh)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use arrow::array::{Array, Float64Array};
++    #[test]
++    fn preserves_nulls_slices_and_owned_output() {
++        type Kernel = fn(&[ArrayRef]) -> Result<ArrayRef>;
++        for (function, expected) in [
++            (cosh as Kernel, [1.0, 1.0, f64::INFINITY, f64::INFINITY]),
++            (
++                sinh as Kernel,
++                [-0.0, 0.0, f64::INFINITY, f64::NEG_INFINITY],
++            ),
++            (tanh as Kernel, [-0.0, 0.0, 1.0, -1.0]),
++        ] {
++            let input: ArrayRef = Arc::new(Float64Array::from(vec![
++                Some(99.0),
++                None,
++                Some(-0.0),
++                Some(0.0),
++                Some(f64::INFINITY),
++                Some(f64::NEG_INFINITY),
++            ]));
++            let result = function(&[input.slice(1, 5)]).unwrap();
++            drop(input);
++            let result = as_primitive_array::<Float64Type>(&result).unwrap();
++            assert_eq!(result.len(), 5);
++            assert!(result.is_null(0));
++            for (i, value) in expected.into_iter().enumerate() {
++                assert_eq!(result.value(i + 1).to_bits(), value.to_bits());
++            }
++            let empty: ArrayRef = Arc::new(Float64Array::from(Vec::<Option<f64>>::new()));
++            assert_eq!(function(&[empty]).unwrap().len(), 0);
++        }
++    }
++    #[test]
++    fn rejects_wrong_arity_and_type() {
++        assert!(cosh(&[]).is_err());
++        let values: ArrayRef = Arc::new(arrow::array::Int32Array::from(vec![1]));
++        assert!(tanh(&[values]).is_err());
++    }
++}
+diff --git a/native/engine/src/flink_functions/hyperbolic/cosh_sinh.rs b/native/engine/src/flink_functions/hyperbolic/cosh_sinh.rs
+new file mode 100644
+--- /dev/null
++++ b/native/engine/src/flink_functions/hyperbolic/cosh_sinh.rs
+@@ -0,0 +1,63 @@
++// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
++// Developed at SunSoft, a Sun Microsystems, Inc. business.
++// Permission to use, copy, modify, and distribute this software is freely
++// granted, provided that this notice is preserved.
++// Adapted from original netlib fdlibm e_cosh.c and e_sinh.c.
++pub fn cosh(x: f64) -> f64 {
++    let magnitude = x.to_bits() & 0x7fff_ffff_ffff_ffff;
++    let high = (magnitude >> 32) as u32;
++    if high >= 0x7ff0_0000 {
++        return x * x;
++    }
++    let absolute = x.abs();
++    if high < 0x3fd6_2e43 {
++        let t = libm::expm1(absolute);
++        let w = 1.0 + t;
++        if high < 0x3c80_0000 {
++            return w;
++        }
++        return 1.0 + (t * t) / (w + w);
++    }
++    if high < 0x4036_0000 {
++        let t = libm::exp(absolute);
++        return 0.5 * t + 0.5 / t;
++    }
++    if high < 0x4086_2e42 {
++        return 0.5 * libm::exp(absolute);
++    }
++    if magnitude <= 0x4086_33ce_8fb9_f87d {
++        let w = libm::exp(0.5 * absolute);
++        let t = 0.5 * w;
++        return t * w;
++    }
++    f64::INFINITY
++}
++pub fn sinh(x: f64) -> f64 {
++    let magnitude = x.to_bits() & 0x7fff_ffff_ffff_ffff;
++    let high = (magnitude >> 32) as u32;
++    if high >= 0x7ff0_0000 {
++        return x + x;
++    }
++    let h = if x.is_sign_negative() { -0.5 } else { 0.5 };
++    let absolute = x.abs();
++    if high < 0x4036_0000 {
++        if high < 0x3e30_0000 {
++            return x;
++        }
++        let t = libm::expm1(absolute);
++        return if high < 0x3ff0_0000 {
++            h * (2.0 * t - t * t / (t + 1.0))
++        } else {
++            h * (t + t / (t + 1.0))
++        };
++    }
++    if high < 0x4086_2e42 {
++        return h * libm::exp(absolute);
++    }
++    if magnitude <= 0x4086_33ce_8fb9_f87d {
++        let w = libm::exp(0.5 * absolute);
++        let t = h * w;
++        return t * w;
++    }
++    f64::INFINITY.copysign(x)
++}
+diff --git a/native/engine/src/flink_functions/hyperbolic/tanh.rs b/native/engine/src/flink_functions/hyperbolic/tanh.rs
+new file mode 100644
+--- /dev/null
++++ b/native/engine/src/flink_functions/hyperbolic/tanh.rs
+@@ -0,0 +1,34 @@
++// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
++// Developed at SunSoft, a Sun Microsystems, Inc. business.
++// Permission to use, copy, modify, and distribute this software is freely
++// granted, provided that this notice is preserved.
++// Adapted from netlib fdlibm s_tanh.c, version 1.3 (1995-01-18).
++pub fn tanh(x: f64) -> f64 {
++    let high = (x.to_bits() >> 32) as u32;
++    let magnitude = high & 0x7fff_ffff;
++    let negative = high >> 31 != 0;
++    if magnitude >= 0x7ff0_0000 {
++        return if negative {
++            1.0 / x - 1.0
++        } else {
++            1.0 / x + 1.0
++        };
++    }
++    if magnitude < 0x3c80_0000 {
++        return x * (1.0 + x);
++    }
++    let result = if magnitude >= 0x4036_0000 {
++        1.0
++    } else if magnitude >= 0x3ff0_0000 {
++        let t = libm::expm1(2.0 * x.abs());
++        1.0 - 2.0 / (t + 2.0)
++    } else {
++        let t = libm::expm1(-2.0 * x.abs());
++        -t / (t + 2.0)
++    };
++    if negative {
++        -result
++    } else {
++        result
++    }
++}
+diff --git a/native/engine/benches/hyperbolic_expressions.rs b/native/engine/benches/hyperbolic_expressions.rs
+new file mode 100644
+--- /dev/null
++++ b/native/engine/benches/hyperbolic_expressions.rs
+@@ -0,0 +1,117 @@
++//! Production Calc evaluation against frozen Java 17 Math output bits.
++use arrow::array::{Array, ArrayRef, Float64Array, RecordBatch};
++use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
++use std::sync::Arc;
++use streamfusion::bench::CalcProgram;
++use streamfusion_benchmark_support::{header, measure, report, CountingAllocator};
++
++#[global_allocator]
++static ALLOCATOR: CountingAllocator = CountingAllocator;
++
++fn fixtures() -> Vec<[u64; 4]> {
++    include_str!("hyperbolic_expressions/java17-oracle.csv")
++        .lines()
++        .skip(1)
++        .map(|line| {
++            let fields: Vec<_> = line
++                .split(',')
++                .map(|field| u64::from_str_radix(field, 16).unwrap())
++                .collect();
++            fields.try_into().unwrap()
++        })
++        .collect()
++}
++
++fn run(c: &mut Criterion) {
++    header();
++    let oracle = fixtures();
++    let mut group = c.benchmark_group("hyperbolic_expressions");
++    for (op, name, column) in [(166, "cosh", 1), (167, "sinh", 2), (168, "tanh", 3)] {
++        for rows in [0, 16, 1024, 16384] {
++            for nulls in [false, true] {
++                for offset in [0, 1, 5] {
++                    let values: ArrayRef =
++                        Arc::new(Float64Array::from_iter((0..rows + offset).map(|i| {
++                            (!(nulls && i % 7 == 0))
++                                .then(|| f64::from_bits(oracle[i % oracle.len()][0]))
++                        })));
++                    let input = values.slice(offset, rows);
++                    let batch = RecordBatch::try_from_iter([("value", input)]).unwrap();
++                    let mut plan = CalcProgram::new(
++                        vec![6, 11, 0],
++                        vec![op, 5, 0],
++                        vec![1, 1, 0],
++                        vec![],
++                        vec![],
++                        vec![],
++                    );
++                    let output = plan.run(batch.clone());
++                    let result = output
++                        .column(0)
++                        .as_any()
++                        .downcast_ref::<Float64Array>()
++                        .unwrap();
++                    assert_eq!(result.len(), rows);
++                    for i in 0..rows {
++                        let source = i + offset;
++                        assert_eq!(result.is_null(i), nulls && source % 7 == 0);
++                        if result.is_valid(i) {
++                            assert_eq!(
++                                result.value(i).to_bits(),
++                                oracle[source % oracle.len()][column],
++                                "{name}, row={i}, offset={offset}"
++                            );
++                        }
++                    }
++                    let label = format!("{name}/{rows}/nulls={nulls}/offset={offset}");
++                    let (output, allocations) = measure(|| plan.run(batch.clone()));
++                    report(&label, batch.columns(), output.columns(), allocations);
++                    group.throughput(Throughput::Elements(rows as u64));
++                    group.bench_function(BenchmarkId::from_parameter(label), |b| {
++                        b.iter(|| {
++                            std::hint::black_box(plan.run(std::hint::black_box(batch.clone())))
++                        });
++                    });
++                }
++            }
++            for bits in [0x3ff0_0000_0000_0000, 0x8000_0000_0000_0000] {
++                let reference = oracle.iter().find(|row| row[0] == bits).unwrap();
++                let batch = RecordBatch::try_from_iter([(
++                    "value",
++                    Arc::new(Float64Array::from(vec![0.0; rows])) as ArrayRef,
++                )])
++                .unwrap();
++                let mut plan = CalcProgram::new(
++                    vec![6, 11, 2],
++                    vec![op, 5, 0],
++                    vec![1, 1, 0],
++                    vec![],
++                    vec![f64::from_bits(bits)],
++                    vec![],
++                );
++                let output = plan.run(batch.clone());
++                let result = output
++                    .column(0)
++                    .as_any()
++                    .downcast_ref::<Float64Array>()
++                    .unwrap();
++                assert_eq!(result.len(), rows);
++                assert_eq!(result.null_count(), 0);
++                for value in result.values() {
++                    assert_eq!(value.to_bits(), reference[column]);
++                }
++                let label = format!("{name}/{rows}/scalar={bits:016x}");
++                let (output, allocations) = measure(|| plan.run(batch.clone()));
++                report(&label, batch.columns(), output.columns(), allocations);
++                group.throughput(Throughput::Elements(rows as u64));
++                group.bench_function(BenchmarkId::from_parameter(label), |b| {
++                    b.iter(|| std::hint::black_box(plan.run(std::hint::black_box(batch.clone()))));
++                });
++            }
++        }
++    }
++    group.finish();
++}
++
++criterion_group!(benches, run);
++criterion_main!(benches);
+diff --git a/src/test/java/tech/streamfusion/FlinkHyperbolicSqlHarnessTest.java b/src/test/java/tech/streamfusion/FlinkHyperbolicSqlHarnessTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/tech/streamfusion/FlinkHyperbolicSqlHarnessTest.java
+@@ -0,0 +1,105 @@
++package tech.streamfusion;
++
++import static org.apache.flink.table.api.DataTypes.*;
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.util.ArrayList;
++import java.util.List;
++import org.apache.flink.table.api.TableEnvironment;
++import org.apache.flink.types.Row;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++import tech.streamfusion.planner.NativePlanner;
++
++class FlinkHyperbolicSqlHarnessTest {
++  @Test
++  void decimalOperandsKeepSafeHostFallback() throws Exception {
++    NativeParity.assertFallback(
++        () -> BuiltinFunctionParity.environment(ROW(FIELD("x", DECIMAL(20, 9))),
++            java.util.Arrays.asList(Row.of(new java.math.BigDecimal("0.460000000")),
++                Row.of(new java.math.BigDecimal("-22.000000000")), Row.of((Object) null))),
++        "SELECT COSH(x), SINH(x), TANH(x) FROM src");
++  }
++
++  @Test
++  void unselectedBranchesAndFilteredRowsDoNotEvaluateFailures() throws Exception {
++    String failure = "CAST(1 / (id - id) AS DOUBLE)";
++    BuiltinFunctionParity.assertParity(FlinkHyperbolicSqlHarnessTest::input,
++        "SELECT id, CASE WHEN id >= 0 THEN COSH(d) ELSE COSH(" + failure + ") END, "
++            + "CASE WHEN id >= 0 THEN SINH(d) ELSE SINH(" + failure + ") END, "
++            + "CASE WHEN id >= 0 THEN TANH(d) ELSE TANH(" + failure + ") END FROM src");
++    BuiltinFunctionParity.assertParity(FlinkHyperbolicSqlHarnessTest::input,
++        "SELECT COSH(" + failure + "), SINH(" + failure + "), TANH(" + failure
++            + ") FROM src WHERE id < 0");
++  }
++
++  @ParameterizedTest
++  @ValueSource(strings = {"b", "s", "i", "l", "f", "d"})
++  void primitiveInputsMatchHostBitsAcrossBatches(String column) throws Exception {
++    String sql = "SELECT id, COSH(" + column + "), SINH(" + column + "), TANH(" + column + ") FROM src";
++    var host = input();
++    var nativeTable = input();
++    var scan = NativePlanner.install(nativeTable);
++    var schema = host.sqlQuery(sql).getResolvedSchema();
++    assertEquals(schema, nativeTable.sqlQuery(sql).getResolvedSchema());
++    for (int index = 1; index < 4; index++) {
++      assertEquals(DOUBLE(), schema.getColumnDataTypes().get(index));
++    }
++    var expected = collect(host, sql);
++    var actual = collect(nativeTable, sql);
++    assertTrue(scan.operatorTypes().stream().anyMatch(name -> name.contains("Calc")),
++        "No runtime native Calc: " + scan.operatorTypes());
++    assertEquals(5003, actual.size());
++    assertEquals(NativeParity.multiset(expected), NativeParity.multiset(actual), sql);
++    var sinkTable = input();
++    sinkTable.executeSql("CREATE TABLE sink (id INT, c DOUBLE, s DOUBLE, t DOUBLE) "
++        + "WITH ('connector' = 'blackhole')");
++    String plan = NativePlanner.explain(sinkTable, "INSERT INTO sink " + sql);
++    assertTrue(plan.contains("NativeCalc"), plan);
++    assertTrue(plan.contains("RowDataToArrow"), plan);
++    assertTrue(plan.contains("ArrowToRowData"), plan);
++  }
++
++  private static List<List<Object>> collect(TableEnvironment table, String sql) throws Exception {
++    List<List<Object>> rows = new ArrayList<>();
++    try (var iterator = table.executeSql(sql).collect()) {
++      while (iterator.hasNext()) {
++        Row row = iterator.next();
++        List<Object> values = new ArrayList<>();
++        values.add(row.getField(0));
++        for (int index = 1; index < 4; index++) {
++          Double value = (Double) row.getField(index);
++          values.add(value == null ? null : Double.doubleToRawLongBits(value));
++        }
++        rows.add(values);
++      }
++    }
++    return rows;
++  }
++
++  private static TableEnvironment input() {
++    double[] samples = {0.0, -0.0, 1.0, -1.0, 0.269864, 0.5, -0.5,
++        Math.nextDown(1.0), Math.nextUp(1.0), 22.0, -22.0,
++        Math.scalb(1.0, -55), Math.scalb(1.0, -28), Double.MIN_VALUE,
++        -Double.MIN_VALUE, Double.MIN_NORMAL, Double.MAX_VALUE, -Double.MAX_VALUE,
++        709.782712893384, 710.4758600739439, -710.4758600739439,
++        Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN};
++    List<Row> rows = new ArrayList<>();
++    for (int id = 0; id < 5003; id++) {
++      if (id % 29 == 0) {
++        rows.add(Row.of(id, null, null, null, null, null, null));
++      } else {
++        double value = samples[id % samples.length];
++        rows.add(Row.of(id, (byte) (id % 256 - 128), (short) (id * 31),
++            id % 3 == 0 ? Integer.MIN_VALUE : id % 3 == 1 ? Integer.MAX_VALUE : id - 2500,
++            id % 3 == 0 ? Long.MIN_VALUE : id % 3 == 1 ? Long.MAX_VALUE : (long) id - 2500,
++            (float) value, value));
++      }
++    }
++    return BuiltinFunctionParity.environment(
++        ROW(FIELD("id", INT()), FIELD("b", TINYINT()), FIELD("s", SMALLINT()),
++            FIELD("i", INT()), FIELD("l", BIGINT()), FIELD("f", FLOAT()), FIELD("d", DOUBLE())),
++        rows);
++  }
++}
+diff --git a/native/engine/benches/hyperbolic_expressions/README.md b/native/engine/benches/hyperbolic_expressions/README.md
+new file mode 100644
+--- /dev/null
++++ b/native/engine/benches/hyperbolic_expressions/README.md
+@@ -0,0 +1,17 @@
++Generate the independent reference with released Java 17:
++
++```sh
++java StrictHyperbolicOracle.java > full-oracle.csv
++python3 - <<'PY'
++import csv
++with open("full-oracle.csv") as source:
++    rows = list(csv.reader(source))
++selected = sorted(set(range(1, 201)) | set(range(201, len(rows), 200)))
++with open("java17-oracle.csv", "w", newline="") as target:
++    writer = csv.writer(target, lineterminator="\n")
++    writer.writerow(rows[0])
++    writer.writerows(rows[index] for index in selected)
++PY
++```
++
++The frozen 324 inputs retain boundary cases and sample randomized raw doubles, bounded doubles, and promoted floats. Expected outputs use raw bits from Java Math; the benchmark does not calculate expected values using the Rust implementations. Run the release Criterion target `hyperbolic_expressions` with the `mimalloc` feature. Its 96 cases include production CALL and DOUBLE cast evaluation, output allocation, NULLs, empty batches, and offsets 0, 1, and 5, plus literal scalar adaptation for 1.0 and negative zero. These are kernel diagnostics; Flink performance requires separate complete-query measurements with both transposes.
+diff --git a/native/engine/benches/hyperbolic_expressions/StrictHyperbolicOracle.java b/native/engine/benches/hyperbolic_expressions/StrictHyperbolicOracle.java
+new file mode 100644
+--- /dev/null
++++ b/native/engine/benches/hyperbolic_expressions/StrictHyperbolicOracle.java
+@@ -0,0 +1,45 @@
++import java.util.LinkedHashSet;
++import java.util.Locale;
++import java.util.Random;
++
++public final class StrictHyperbolicOracle {
++  public static void main(String[] args) {
++    if (Runtime.version().feature() != 17) {
++      throw new IllegalStateException("Generate the reference with released Java 17");
++    }
++    var inputs = new LinkedHashSet<Long>();
++    double[] boundaries = {
++      0.0, Double.MIN_VALUE, Double.MIN_NORMAL, Math.scalb(1.0, -55),
++      Math.scalb(1.0, -28), Math.scalb(1.0, -26), 0.34657359027997265,
++      0.6931471805599453, 1.0, 22.0, 709.0, 709.782712893384,
++      710.0, 710.4758600739439, Double.MAX_VALUE, Double.POSITIVE_INFINITY
++    };
++    for (double boundary : boundaries) {
++      for (double sign : new double[] {1.0, -1.0}) {
++        long center = Double.doubleToRawLongBits(boundary * sign);
++        for (long offset = -4; offset <= 4; offset++) inputs.add(center + offset);
++      }
++    }
++    for (long bits : new long[] {
++        0x7ff8000000000000L, 0xfff8000000000000L,
++        0x7ff0000000000001L, 0xfff0000000000001L}) inputs.add(bits);
++    for (long value : new long[] {Long.MIN_VALUE, Long.MAX_VALUE, Integer.MIN_VALUE,
++        Integer.MAX_VALUE, -129, -128, -1, 0, 1, 127, 128}) {
++      inputs.add(Double.doubleToRawLongBits((double) value));
++    }
++    var random = new Random(236);
++    for (int i = 0; i < 8192; i++) {
++      inputs.add(random.nextLong());
++      inputs.add(Double.doubleToRawLongBits(random.nextDouble() * 1500.0 - 750.0));
++      inputs.add(Double.doubleToRawLongBits((double) Float.intBitsToFloat(random.nextInt())));
++    }
++    System.out.println("input_bits,cosh_bits,sinh_bits,tanh_bits");
++    for (long bits : inputs) {
++      double value = Double.longBitsToDouble(bits);
++      System.out.printf(Locale.ROOT, "%016x,%016x,%016x,%016x%n", bits,
++          Double.doubleToRawLongBits(Math.cosh(value)),
++          Double.doubleToRawLongBits(Math.sinh(value)),
++          Double.doubleToRawLongBits(Math.tanh(value)));
++    }
++  }
++}
+diff --git a/native/engine/benches/hyperbolic_expressions/java17-oracle.csv b/native/engine/benches/hyperbolic_expressions/java17-oracle.csv
+new file mode 100644
+--- /dev/null
++++ b/native/engine/benches/hyperbolic_expressions/java17-oracle.csv
+@@ -0,0 +1,325 @@
++input_bits,cosh_bits,sinh_bits,tanh_bits
++fffffffffffffffc,fffffffffffffffc,fffffffffffffffc,fffffffffffffffc
++fffffffffffffffd,fffffffffffffffd,fffffffffffffffd,fffffffffffffffd
++fffffffffffffffe,fffffffffffffffe,fffffffffffffffe,fffffffffffffffe
++ffffffffffffffff,ffffffffffffffff,ffffffffffffffff,ffffffffffffffff
++0000000000000000,3ff0000000000000,0000000000000000,0000000000000000
++0000000000000001,3ff0000000000000,0000000000000001,0000000000000001
++0000000000000002,3ff0000000000000,0000000000000002,0000000000000002
++0000000000000003,3ff0000000000000,0000000000000003,0000000000000003
++0000000000000004,3ff0000000000000,0000000000000004,0000000000000004
++7ffffffffffffffc,7ffffffffffffffc,7ffffffffffffffc,7ffffffffffffffc
++7ffffffffffffffd,7ffffffffffffffd,7ffffffffffffffd,7ffffffffffffffd
++7ffffffffffffffe,7ffffffffffffffe,7ffffffffffffffe,7ffffffffffffffe
++7fffffffffffffff,7fffffffffffffff,7fffffffffffffff,7fffffffffffffff
++8000000000000000,3ff0000000000000,8000000000000000,8000000000000000
++8000000000000001,3ff0000000000000,8000000000000001,8000000000000001
++8000000000000002,3ff0000000000000,8000000000000002,8000000000000002
++8000000000000003,3ff0000000000000,8000000000000003,8000000000000003
++8000000000000004,3ff0000000000000,8000000000000004,8000000000000004
++0000000000000005,3ff0000000000000,0000000000000005,0000000000000005
++8000000000000005,3ff0000000000000,8000000000000005,8000000000000005
++000ffffffffffffc,3ff0000000000000,000ffffffffffffc,000ffffffffffffc
++000ffffffffffffd,3ff0000000000000,000ffffffffffffd,000ffffffffffffd
++000ffffffffffffe,3ff0000000000000,000ffffffffffffe,000ffffffffffffe
++000fffffffffffff,3ff0000000000000,000fffffffffffff,000fffffffffffff
++0010000000000000,3ff0000000000000,0010000000000000,0010000000000000
++0010000000000001,3ff0000000000000,0010000000000001,0010000000000001
++0010000000000002,3ff0000000000000,0010000000000002,0010000000000002
++0010000000000003,3ff0000000000000,0010000000000003,0010000000000003
++0010000000000004,3ff0000000000000,0010000000000004,0010000000000004
++800ffffffffffffc,3ff0000000000000,800ffffffffffffc,800ffffffffffffc
++800ffffffffffffd,3ff0000000000000,800ffffffffffffd,800ffffffffffffd
++800ffffffffffffe,3ff0000000000000,800ffffffffffffe,800ffffffffffffe
++800fffffffffffff,3ff0000000000000,800fffffffffffff,800fffffffffffff
++8010000000000000,3ff0000000000000,8010000000000000,8010000000000000
++8010000000000001,3ff0000000000000,8010000000000001,8010000000000001
++8010000000000002,3ff0000000000000,8010000000000002,8010000000000002
++8010000000000003,3ff0000000000000,8010000000000003,8010000000000003
++8010000000000004,3ff0000000000000,8010000000000004,8010000000000004
++3c7ffffffffffffc,3ff0000000000000,3c7ffffffffffffc,3c7ffffffffffffc
++3c7ffffffffffffd,3ff0000000000000,3c7ffffffffffffd,3c7ffffffffffffd
++3c7ffffffffffffe,3ff0000000000000,3c7ffffffffffffe,3c7ffffffffffffe
++3c7fffffffffffff,3ff0000000000000,3c7fffffffffffff,3c7fffffffffffff
++3c80000000000000,3ff0000000000000,3c80000000000000,3c80000000000000
++3c80000000000001,3ff0000000000000,3c80000000000001,3c80000000000001
++3c80000000000002,3ff0000000000000,3c80000000000002,3c80000000000002
++3c80000000000003,3ff0000000000000,3c80000000000003,3c80000000000003
++3c80000000000004,3ff0000000000000,3c80000000000004,3c80000000000004
++bc7ffffffffffffc,3ff0000000000000,bc7ffffffffffffc,bc7ffffffffffffc
++bc7ffffffffffffd,3ff0000000000000,bc7ffffffffffffd,bc7ffffffffffffd
++bc7ffffffffffffe,3ff0000000000000,bc7ffffffffffffe,bc7ffffffffffffe
++bc7fffffffffffff,3ff0000000000000,bc7fffffffffffff,bc7fffffffffffff
++bc80000000000000,3ff0000000000000,bc80000000000000,bc80000000000000
++bc80000000000001,3ff0000000000000,bc80000000000001,bc80000000000001
++bc80000000000002,3ff0000000000000,bc80000000000002,bc80000000000002
++bc80000000000003,3ff0000000000000,bc80000000000003,bc80000000000003
++bc80000000000004,3ff0000000000000,bc80000000000004,bc80000000000004
++3e2ffffffffffffc,3ff0000000000000,3e2ffffffffffffc,3e2ffffffffffffc
++3e2ffffffffffffd,3ff0000000000000,3e2ffffffffffffd,3e2ffffffffffffd
++3e2ffffffffffffe,3ff0000000000000,3e2ffffffffffffe,3e2ffffffffffffe
++3e2fffffffffffff,3ff0000000000000,3e2fffffffffffff,3e2fffffffffffff
++3e30000000000000,3ff0000000000000,3e30000000000000,3e30000000000000
++3e30000000000001,3ff0000000000000,3e30000000000001,3e30000000000001
++3e30000000000002,3ff0000000000000,3e30000000000002,3e30000000000002
++3e30000000000003,3ff0000000000000,3e30000000000003,3e30000000000003
++3e30000000000004,3ff0000000000000,3e30000000000004,3e30000000000004
++be2ffffffffffffc,3ff0000000000000,be2ffffffffffffc,be2ffffffffffffc
++be2ffffffffffffd,3ff0000000000000,be2ffffffffffffd,be2ffffffffffffd
++be2ffffffffffffe,3ff0000000000000,be2ffffffffffffe,be2ffffffffffffe
++be2fffffffffffff,3ff0000000000000,be2fffffffffffff,be2fffffffffffff
++be30000000000000,3ff0000000000000,be30000000000000,be30000000000000
++be30000000000001,3ff0000000000000,be30000000000001,be30000000000001
++be30000000000002,3ff0000000000000,be30000000000002,be30000000000002
++be30000000000003,3ff0000000000000,be30000000000003,be30000000000003
++be30000000000004,3ff0000000000000,be30000000000004,be30000000000004
++3e4ffffffffffffc,3ff0000000000000,3e4ffffffffffffc,3e4ffffffffffffb
++3e4ffffffffffffd,3ff0000000000000,3e4ffffffffffffe,3e4ffffffffffffc
++3e4ffffffffffffe,3ff0000000000000,3e4ffffffffffffe,3e4ffffffffffffd
++3e4fffffffffffff,3ff0000000000000,3e50000000000000,3e4ffffffffffffe
++3e50000000000000,3ff0000000000000,3e50000000000000,3e4fffffffffffff
++3e50000000000001,3ff0000000000001,3e50000000000001,3e50000000000001
++3e50000000000002,3ff0000000000001,3e50000000000002,3e50000000000002
++3e50000000000003,3ff0000000000001,3e50000000000003,3e50000000000003
++3e50000000000004,3ff0000000000001,3e50000000000004,3e50000000000004
++be4ffffffffffffc,3ff0000000000000,be4ffffffffffffc,be4ffffffffffffb
++be4ffffffffffffd,3ff0000000000000,be4ffffffffffffe,be4ffffffffffffc
++be4ffffffffffffe,3ff0000000000000,be4ffffffffffffe,be4ffffffffffffd
++be4fffffffffffff,3ff0000000000000,be50000000000000,be4ffffffffffffe
++be50000000000000,3ff0000000000000,be50000000000000,be4fffffffffffff
++be50000000000001,3ff0000000000001,be50000000000001,be50000000000001
++be50000000000002,3ff0000000000001,be50000000000002,be50000000000002
++be50000000000003,3ff0000000000001,be50000000000003,be50000000000003
++be50000000000004,3ff0000000000001,be50000000000004,be50000000000004
++3fd62e42fefa39eb,3ff0f876ccdf6cd9,3fd6a09e667f3bc8,3fd5555555555552
++3fd62e42fefa39ec,3ff0f876ccdf6cd9,3fd6a09e667f3bca,3fd5555555555552
++3fd62e42fefa39ed,3ff0f876ccdf6cd9,3fd6a09e667f3bca,3fd5555555555554
++3fd62e42fefa39ee,3ff0f876ccdf6cd9,3fd6a09e667f3bcb,3fd5555555555555
++3fd62e42fefa39ef,3ff0f876ccdf6cd9,3fd6a09e667f3bcc,3fd5555555555555
++3fd62e42fefa39f0,3ff0f876ccdf6cda,3fd6a09e667f3bce,3fd5555555555555
++3fd62e42fefa39f1,3ff0f876ccdf6cda,3fd6a09e667f3bce,3fd5555555555557
++3fd62e42fefa39f2,3ff0f876ccdf6cda,3fd6a09e667f3bd0,3fd5555555555557
++3fd62e42fefa39f3,3ff0f876ccdf6cda,3fd6a09e667f3bd1,3fd5555555555559
++bfd62e42fefa39eb,3ff0f876ccdf6cd9,bfd6a09e667f3bc8,bfd5555555555552
++bfd62e42fefa39ec,3ff0f876ccdf6cd9,bfd6a09e667f3bca,bfd5555555555552
++bfd62e42fefa39ed,3ff0f876ccdf6cd9,bfd6a09e667f3bca,bfd5555555555554
++bfd62e42fefa39ee,3ff0f876ccdf6cd9,bfd6a09e667f3bcb,bfd5555555555555
++bfd62e42fefa39ef,3ff0f876ccdf6cd9,bfd6a09e667f3bcc,bfd5555555555555
++bfd62e42fefa39f0,3ff0f876ccdf6cda,bfd6a09e667f3bce,bfd5555555555555
++bfd62e42fefa39f1,3ff0f876ccdf6cda,bfd6a09e667f3bce,bfd5555555555557
++bfd62e42fefa39f2,3ff0f876ccdf6cda,bfd6a09e667f3bd0,bfd5555555555557
++bfd62e42fefa39f3,3ff0f876ccdf6cda,bfd6a09e667f3bd1,bfd5555555555559
++3fe62e42fefa39eb,3ff3fffffffffffe,3fe7fffffffffffb,3fe3333333333331
++3fe62e42fefa39ec,3ff3ffffffffffff,3fe7fffffffffffc,3fe3333333333331
++3fe62e42fefa39ed,3ff3ffffffffffff,3fe7fffffffffffe,3fe3333333333332
++3fe62e42fefa39ee,3ff4000000000000,3fe7ffffffffffff,3fe3333333333333
++3fe62e42fefa39ef,3ff4000000000000,3fe8000000000000,3fe3333333333333
++3fe62e42fefa39f0,3ff4000000000000,3fe8000000000001,3fe3333333333333
++3fe62e42fefa39f1,3ff4000000000001,3fe8000000000002,3fe3333333333334
++3fe62e42fefa39f2,3ff4000000000001,3fe8000000000004,3fe3333333333336
++3fe62e42fefa39f3,3ff4000000000002,3fe8000000000005,3fe3333333333336
++bfe62e42fefa39eb,3ff3fffffffffffe,bfe7fffffffffffb,bfe3333333333331
++bfe62e42fefa39ec,3ff3ffffffffffff,bfe7fffffffffffc,bfe3333333333331
++bfe62e42fefa39ed,3ff3ffffffffffff,bfe7fffffffffffe,bfe3333333333332
++bfe62e42fefa39ee,3ff4000000000000,bfe7ffffffffffff,bfe3333333333333
++bfe62e42fefa39ef,3ff4000000000000,bfe8000000000000,bfe3333333333333
++bfe62e42fefa39f0,3ff4000000000000,bfe8000000000001,bfe3333333333333
++bfe62e42fefa39f1,3ff4000000000001,bfe8000000000002,bfe3333333333334
++bfe62e42fefa39f2,3ff4000000000001,bfe8000000000004,bfe3333333333336
++bfe62e42fefa39f3,3ff4000000000002,bfe8000000000005,bfe3333333333336
++3feffffffffffffc,3ff8b07551d9f54e,3ff2cd9fc44eb97f,3fe85efab514f393
++3feffffffffffffd,3ff8b07551d9f54f,3ff2cd9fc44eb980,3fe85efab514f393
++3feffffffffffffe,3ff8b07551d9f54f,3ff2cd9fc44eb981,3fe85efab514f393
++3fefffffffffffff,3ff8b07551d9f550,3ff2cd9fc44eb982,3fe85efab514f394
++3ff0000000000000,3ff8b07551d9f551,3ff2cd9fc44eb982,3fe85efab514f394
++3ff0000000000001,3ff8b07551d9f552,3ff2cd9fc44eb984,3fe85efab514f395
++3ff0000000000002,3ff8b07551d9f553,3ff2cd9fc44eb986,3fe85efab514f396
++3ff0000000000003,3ff8b07551d9f554,3ff2cd9fc44eb987,3fe85efab514f397
++3ff0000000000004,3ff8b07551d9f555,3ff2cd9fc44eb989,3fe85efab514f398
++bfeffffffffffffc,3ff8b07551d9f54e,bff2cd9fc44eb97f,bfe85efab514f393
++bfeffffffffffffd,3ff8b07551d9f54f,bff2cd9fc44eb980,bfe85efab514f393
++bfeffffffffffffe,3ff8b07551d9f54f,bff2cd9fc44eb981,bfe85efab514f393
++bfefffffffffffff,3ff8b07551d9f550,bff2cd9fc44eb982,bfe85efab514f394
++bff0000000000000,3ff8b07551d9f551,bff2cd9fc44eb982,bfe85efab514f394
++bff0000000000001,3ff8b07551d9f552,bff2cd9fc44eb984,bfe85efab514f395
++bff0000000000002,3ff8b07551d9f553,bff2cd9fc44eb986,bfe85efab514f396
++bff0000000000003,3ff8b07551d9f554,bff2cd9fc44eb987,bfe85efab514f397
++bff0000000000004,3ff8b07551d9f555,bff2cd9fc44eb989,bfe85efab514f398
++4035fffffffffffc,41dab5adb9c43595,41dab5adb9c43595,3ff0000000000000
++4035fffffffffffd,41dab5adb9c435b0,41dab5adb9c435b0,3ff0000000000000
++4035fffffffffffe,41dab5adb9c435ca,41dab5adb9c435ca,3ff0000000000000
++4035ffffffffffff,41dab5adb9c435e5,41dab5adb9c435e5,3ff0000000000000
++4036000000000000,41dab5adb9c43600,41dab5adb9c43600,3ff0000000000000
++4036000000000001,41dab5adb9c4361a,41dab5adb9c4361a,3ff0000000000000
++4036000000000002,41dab5adb9c43635,41dab5adb9c43635,3ff0000000000000
++4036000000000003,41dab5adb9c43650,41dab5adb9c43650,3ff0000000000000
++4036000000000004,41dab5adb9c4366a,41dab5adb9c4366a,3ff0000000000000
++c035fffffffffffc,41dab5adb9c43595,c1dab5adb9c43595,bff0000000000000
++c035fffffffffffd,41dab5adb9c435b0,c1dab5adb9c435b0,bff0000000000000
++c035fffffffffffe,41dab5adb9c435ca,c1dab5adb9c435ca,bff0000000000000
++c035ffffffffffff,41dab5adb9c435e5,c1dab5adb9c435e5,bff0000000000000
++c036000000000000,41dab5adb9c43600,c1dab5adb9c43600,bff0000000000000
++c036000000000001,41dab5adb9c4361a,c1dab5adb9c4361a,bff0000000000000
++c036000000000002,41dab5adb9c43635,c1dab5adb9c43635,bff0000000000000
++c036000000000003,41dab5adb9c43650,c1dab5adb9c43650,bff0000000000000
++c036000000000004,41dab5adb9c4366a,c1dab5adb9c4366a,bff0000000000000
++408627fffffffffc,7fcd422d2be5cdfa,7fcd422d2be5cdfa,3ff0000000000000
++408627fffffffffd,7fcd422d2be5d1a2,7fcd422d2be5d1a2,3ff0000000000000
++408627fffffffffe,7fcd422d2be5d54a,7fcd422d2be5d54a,3ff0000000000000
++408627ffffffffff,7fcd422d2be5d8f2,7fcd422d2be5d8f2,3ff0000000000000
++4086280000000000,7fcd422d2be5dc9b,7fcd422d2be5dc9b,3ff0000000000000
++4086280000000001,7fcd422d2be5e043,7fcd422d2be5e043,3ff0000000000000
++4086280000000002,7fcd422d2be5e3eb,7fcd422d2be5e3eb,3ff0000000000000
++4086280000000003,7fcd422d2be5e794,7fcd422d2be5e794,3ff0000000000000
++4086280000000004,7fcd422d2be5eb3c,7fcd422d2be5eb3c,3ff0000000000000
++c08627fffffffffc,7fcd422d2be5cdfa,ffcd422d2be5cdfa,bff0000000000000
++c08627fffffffffd,7fcd422d2be5d1a2,ffcd422d2be5d1a2,bff0000000000000
++c08627fffffffffe,7fcd422d2be5d54a,ffcd422d2be5d54a,bff0000000000000
++c08627ffffffffff,7fcd422d2be5d8f2,ffcd422d2be5d8f2,bff0000000000000
++c086280000000000,7fcd422d2be5dc9b,ffcd422d2be5dc9b,bff0000000000000
++c086280000000001,7fcd422d2be5e043,ffcd422d2be5e043,bff0000000000000
++c086280000000002,7fcd422d2be5e3eb,ffcd422d2be5e3eb,bff0000000000000
++c086280000000003,7fcd422d2be5e794,ffcd422d2be5e794,bff0000000000000
++c086280000000004,7fcd422d2be5eb3c,ffcd422d2be5eb3c,bff0000000000000
++40862e42fefa39eb,7fdfffffffffef2a,7fdfffffffffef2a,3ff0000000000000
++40862e42fefa39ec,7fdffffffffff32a,7fdffffffffff32a,3ff0000000000000
++40862e42fefa39ed,7fdffffffffff72a,7fdffffffffff72a,3ff0000000000000
++40862e42fefa39ee,7fdffffffffffb2a,7fdffffffffffb2a,3ff0000000000000
++40862e42fefa39ef,7fdfffffffffff2a,7fdfffffffffff2a,3ff0000000000000
++40862e42fefa39f0,7fe0000000000196,7fe0000000000196,3ff0000000000000
++40862e42fefa39f1,7fe0000000000396,7fe0000000000396,3ff0000000000000
++40862e42fefa39f2,7fe0000000000596,7fe0000000000596,3ff0000000000000
++40862e42fefa39f3,7fe0000000000796,7fe0000000000796,3ff0000000000000
++c0862e42fefa39eb,7fdfffffffffef2a,ffdfffffffffef2a,bff0000000000000
++c0862e42fefa39ec,7fdffffffffff32a,ffdffffffffff32a,bff0000000000000
++c0862e42fefa39ed,7fdffffffffff72a,ffdffffffffff72a,bff0000000000000
++c0862e42fefa39ee,7fdffffffffffb2a,ffdffffffffffb2a,bff0000000000000
++c0862e42fefa39ef,7fdfffffffffff2a,ffdfffffffffff2a,bff0000000000000
++c0862e42fefa39f0,7fe0000000000196,ffe0000000000196,bff0000000000000
++c0862e42fefa39f1,7fe0000000000396,ffe0000000000396,bff0000000000000
++c0862e42fefa39f2,7fe0000000000596,ffe0000000000596,bff0000000000000
++c0862e42fefa39f3,7fe0000000000796,ffe0000000000796,bff0000000000000
++40862ffffffffffc,7fe3e21a4644fe08,7fe3e21a4644fe08,3ff0000000000000
++478ae669a0000000,7ff0000000000000,7ff0000000000000,3ff0000000000000
++402b8f84f2bbbb00,411d7649d8faafde,411d7649d8fa6a5a,3fefffffffffb480
++0a0c01680fac6f65,3ff0000000000000,0a0c01680fac6f65,0a0c01680fac6f65
++bea3478b20000000,3ff00000000002e7,bea3478b2000012a,bea3478b1ffffdab
++40823dfe1b29ed92,7482064cb6da0f30,7482064cb6da0f30,3ff0000000000000
++2688fac62506c9f1,3ff0000000000000,2688fac62506c9f1,2688fac62506c9f1
++398c7d9b40000000,3ff0000000000000,398c7d9b40000000,398c7d9b40000000
++c05918c9802d7318,48ec689cacd3af69,c8ec689cacd3af69,bff0000000000000
++d7107416184b9c3e,7ff0000000000000,fff0000000000000,bff0000000000000
++40623d5d60000000,4d06dbcfc3e3e7be,4d06dbcfc3e3e7be,3ff0000000000000
++c07eebef90e03ece,6c7b3d17dfc6da3c,ec7b3d17dfc6da3c,bff0000000000000
++0f5bc88792e7e9be,3ff0000000000000,0f5bc88792e7e9be,0f5bc88792e7e9be
++3d61414560000000,3ff0000000000000,3d61414560000000,3d61414560000000
++c0291a70c557d3c0,41013efad4de7633,c1013efad4dc9b31,bfeffffffffc8e9f
++5180bff3446e4fbb,7ff0000000000000,7ff0000000000000,3ff0000000000000
++395f5cc7e0000000,3ff0000000000000,395f5cc7e0000000,395f5cc7e0000000
++404e395adadf1e00,45527bbb71ea0969,45527bbb71ea0969,3ff0000000000000
++3978dd4e39ba71d1,3ff0000000000000,3978dd4e39ba71d1,3978dd4e39ba71d1
++c194c1a9c0000000,7ff0000000000000,fff0000000000000,bff0000000000000
++40810de7d5e1ab2a,71142a4acc86c836,71142a4acc86c836,3ff0000000000000
++6b6abd365b15366f,7ff0000000000000,7ff0000000000000,3ff0000000000000
++bfe9b75060000000,3ff5735d3af0d220,bfec932713e86892,bfe5505c69360f5b
++4083ea265c554102,7954e2b795cca822,7954e2b795cca822,3ff0000000000000
++a69f846addfbd359,3ff0000000000000,a69f846addfbd359,a69f846addfbd359
++3f840411e0000000,3ff00032147591f1,3f840426c216515b,3f8403e81c4903b1
++408687158ea81822,7ff0000000000000,7ff0000000000000,3ff0000000000000
++954e5e53306baa29,3ff0000000000000,954e5e53306baa29,954e5e53306baa29
++3cd7488480000000,3ff0000000000000,3cd7488480000000,3cd7488480000001
++c07340652487f439,5ba4e7630be3c861,dba4e7630be3c861,bff0000000000000
++2fa80b74e4d4f4ca,3ff0000000000000,2fa80b74e4d4f4ca,2fa80b74e4d4f4ca
++3b038ccf40000000,3ff0000000000000,3b038ccf40000000,3b038ccf40000000
++40677046883e7594,50c6e84b26b56828,50c6e84b26b56828,3ff0000000000000
++2ecc7fff6f1641fb,3ff0000000000000,2ecc7fff6f1641fb,2ecc7fff6f1641fb
++c7d53ff9c0000000,7ff0000000000000,fff0000000000000,bff0000000000000
++c05492c56595caa8,474a6e36d566dfc6,c74a6e36d566dfc6,bff0000000000000
++1a9492411422c1d2,3ff0000000000000,1a9492411422c1d2,1a9492411422c1d2
++3c41e93bc0000000,3ff0000000000000,3c41e93bc0000000,3c41e93bc0000000
++c062f0bb299714b0,4d8845cc9c3f8fee,cd8845cc9c3f8fee,bff0000000000000
++f359b92f47356237,7ff0000000000000,fff0000000000000,bff0000000000000
++c0c4cb4de0000000,7ff0000000000000,fff0000000000000,bff0000000000000
++c0845b8ebd2aa156,7a9c8fea024efef7,fa9c8fea024efef7,bff0000000000000
++5725dae2d0b2bb64,7ff0000000000000,7ff0000000000000,3ff0000000000000
++3b86b9b900000000,3ff0000000000000,3b86b9b900000000,3b86b9b900000000
++c07a90af721cda92,66327891b055bff5,e6327891b055bff5,bff0000000000000
++47f52b18841bcc6c,7ff0000000000000,7ff0000000000000,3ff0000000000000
++c1c4602680000000,7ff0000000000000,fff0000000000000,bff0000000000000
++c065a376ca3a47d0,4f7ac4802f727a87,cf7ac4802f727a87,bff0000000000000
++66f419b1fbb387b1,7ff0000000000000,7ff0000000000000,3ff0000000000000
++3e6e3bb060000000,3ff0000000000007,3e6e3bb060000005,3e6e3bb05ffffff7
++4075fb302c96edd4,5f95092f4b983125,5f95092f4b983125,3ff0000000000000
++8ee35130c9b92f6c,3ff0000000000000,8ee35130c9b92f6c,8ee35130c9b92f6c
++3d85863120000000,3ff0000000000000,3d85863120000000,3d85863120000000
++4083e565e545ca7e,7947102264c0f34f,7947102264c0f34f,3ff0000000000000
++360bc540d0598229,3ff0000000000000,360bc540d0598229,360bc540d0598229
++be415393a0000000,3ff0000000000000,be415393a0000000,be415393a0000000
++4081be6e03bec2ea,7311f89b33b4ff8d,7311f89b33b4ff8d,3ff0000000000000
++e66cd12cfab8b748,7ff0000000000000,fff0000000000000,bff0000000000000
++458f212380000000,7ff0000000000000,7ff0000000000000,3ff0000000000000
++c0803c27ec9a7753,6eb6c1a0e9ce157c,eeb6c1a0e9ce157c,bff0000000000000
++690e666562b74b7e,7ff0000000000000,7ff0000000000000,3ff0000000000000
++c70a16dc80000000,7ff0000000000000,fff0000000000000,bff0000000000000
++4081c19476419ac6,731aa4b199d4c4a6,731aa4b199d4c4a6,3ff0000000000000
++f7a14b0008539d51,7ff0000000000000,fff0000000000000,bff0000000000000
++3c0c3abb20000000,3ff0000000000000,3c0c3abb20000000,3c0c3abb20000000
++c084381d193cc967,7a35c4cfcadcd50a,fa35c4cfcadcd50a,bff0000000000000
++e5d76834a0ca59a0,7ff0000000000000,fff0000000000000,bff0000000000000
++c704d60c60000000,7ff0000000000000,fff0000000000000,bff0000000000000
++c045f8ab517d91b0,43d50d937a12d183,c3d50d937a12d183,bff0000000000000
++ba1e28e0acd7b818,3ff0000000000000,ba1e28e0acd7b818,ba1e28e0acd7b818
++bcc74cbdc0000000,3ff0000000000000,bcc74cbdc0000000,bcc74cbdc0000000
++4087151d6370dede,7ff0000000000000,7ff0000000000000,3ff0000000000000
++9ba4e803f6bb87c0,3ff0000000000000,9ba4e803f6bb87c0,9ba4e803f6bb87c0
++be0da6ad20000000,3ff0000000000000,be0da6ad20000000,be0da6ad1fffffff
++c07e8964eefe3688,6bed7ded0c2f4132,ebed7ded0c2f4132,bff0000000000000
++51d96f43d1e20b6e,7ff0000000000000,7ff0000000000000,3ff0000000000000
++c0f20af900000000,7ff0000000000000,fff0000000000000,bff0000000000000
++c0819df3b7e49334,72b3d83a6c0e7ab9,f2b3d83a6c0e7ab9,bff0000000000000
++cfc48567f753a650,7ff0000000000000,fff0000000000000,bff0000000000000
++44aa6d5040000000,7ff0000000000000,7ff0000000000000,3ff0000000000000
++407d22a5467348a8,69e72c8f8a1ca3f7,69e72c8f8a1ca3f7,3ff0000000000000
++6bf08cdda34d5864,7ff0000000000000,7ff0000000000000,3ff0000000000000
++3959ad4260000000,3ff0000000000000,3959ad4260000000,3959ad4260000000
++4067889060ee2590,50d877904d459036,50d877904d459036,3ff0000000000000
++73c43235a9a40b00,7ff0000000000000,7ff0000000000000,3ff0000000000000
++ba51678f60000000,3ff0000000000000,ba51678f60000000,ba51678f60000000
++406f582533792b00,567b23c388016de8,567b23c388016de8,3ff0000000000000
++bf7b2aa48fd4ad4b,3ff000171034106e,bf7b2ab19d6df4c7,bf7b2a8a74c3fc52
++c2a7b977a0000000,7ff0000000000000,fff0000000000000,bff0000000000000
++c074ca274567ed96,5ddda807cccf22fd,dddda807cccf22fd,bff0000000000000
++4a2702835ce320c2,7ff0000000000000,7ff0000000000000,3ff0000000000000
++c28c360c40000000,7ff0000000000000,fff0000000000000,bff0000000000000
++4085f5ae0bc87160,7f3bc8d4d69213ea,7f3bc8d4d69213ea,3ff0000000000000
++9761fbccb869f5b4,3ff0000000000000,9761fbccb869f5b4,9761fbccb869f5b4
++bf4f4d7e60000000,3ff000007a7b82ad,bf4f4d7eafe02cd7,bf4f4d7dc03faa9f
++408762252d840322,7ff0000000000000,7ff0000000000000,3ff0000000000000
++de9dfca3237cf7c6,7ff0000000000000,fff0000000000000,bff0000000000000
++4097667040000000,7ff0000000000000,7ff0000000000000,3ff0000000000000
++40599473afa7d0a0,49188546e154e2c0,49188546e154e2c0,3ff0000000000000
++8a398dca8f408a70,3ff0000000000000,8a398dca8f408a70,8a398dca8f408a70
++bac6e94420000000,3ff0000000000000,bac6e94420000000,bac6e94420000000
++4076f59aac314fe4,60ff6fecb205ff5a,60ff6fecb205ff5a,3ff0000000000000
++96c4e92d5657d57e,3ff0000000000000,96c4e92d5657d57e,96c4e92d5657d57e
++391e7d6d20000000,3ff0000000000000,391e7d6d20000000,391e7d6d20000000
++c086a2caf27d4fb0,7ff0000000000000,fff0000000000000,bff0000000000000
++c5211853a78bc190,7ff0000000000000,fff0000000000000,bff0000000000000
++41aeb8bea0000000,7ff0000000000000,7ff0000000000000,3ff0000000000000
++40627baa6c83cb50,4d34056f002166b3,4d34056f002166b3,3ff0000000000000
++606322f2c14cc49a,7ff0000000000000,7ff0000000000000,3ff0000000000000
++39b480bca0000000,3ff0000000000000,39b480bca0000000,39b480bca0000000
++c05df5d12a678818,4aadbaf1d0b06cd7,caadbaf1d0b06cd7,bff0000000000000
++8ea54d5df6f17e64,3ff0000000000000,8ea54d5df6f17e64,8ea54d5df6f17e64
++42835deb80000000,7ff0000000000000,7ff0000000000000,3ff0000000000000
++c084840cbc14b53c,7b119bfab493bac2,fb119bfab493bac2,bff0000000000000
++c230670d59d4250b,7ff0000000000000,fff0000000000000,bff0000000000000
++3da9012040000000,3ff0000000000000,3da9012040000000,3da9012040000000
++4076b1d8fcd88698,609d23ab1c124603,609d23ab1c124603,3ff0000000000000
++e6a7291d09b0c17f,7ff0000000000000,fff0000000000000,bff0000000000000
++427d3ad040000000,7ff0000000000000,7ff0000000000000,3ff0000000000000
++40807fb8e9032cba,6f79dd51c986a9e2,6f79dd51c986a9e2,3ff0000000000000
++541da4cea0e63c04,7ff0000000000000,7ff0000000000000,3ff0000000000000
++3fd9a461a0000000,3ff14d2e35e324dc,3fda556c487a7901,3fd85a4e722be241
++c044f43908e7b960,43a603fa434a2ad0,c3a603fa434a2ad0,bff0000000000000
++6846c205ea7c38b1,7ff0000000000000,7ff0000000000000,3ff0000000000000

@@ -1,0 +1,5 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+engine/rocksdb/group_retractions/group_retract/1024/domain=1024/bytes=264/nulls=true/all=false,916958.196666667,910481.0866666669,923664.794333333,0.95
+engine/rocksdb/group_retractions/group_retract/1024/domain=1024/bytes=264/nulls=true/all=true,2051926.0333333334,2024097.6683333332,2080200.7015000004,0.95
+engine/rocksdb/group_retractions/group_retract/16384/domain=16384/bytes=264/nulls=true/all=false,20139671.85,19973833.28425,20308421.667999998,0.95
+engine/rocksdb/group_retractions/group_retract/16384/domain=16384/bytes=264/nulls=true/all=true,47656871.05,46229783.83375,49314251.12925,0.95

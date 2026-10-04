@@ -1,0 +1,6 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+engine/rocksdb/temporal_join/temporal_join/build/16384/domain=16384/bytes=264/nulls=true,5534510.57,5407621.905,5697331.17925,0.95
+engine/rocksdb/temporal_join/temporal_join/fire/16384/domain=16384/bytes=264/nulls=true,46380500.11,46082777.101,46693073.924,0.95
+engine/rocksdb/temporal_join/temporal_join/probe/16384/domain=16384/bytes=264/nulls=true,11694761.225,10724201.677875001,12902087.872624997,0.95
+engine/rocksdb/temporal_join/temporal_join/restore_aligned/16384/domain=16384/bytes=264/nulls=true,27901763.74,27180447.63975,28741235.318749998,0.95
+engine/rocksdb/temporal_join/temporal_join/restore_clipped/16384/domain=16384/bytes=264/nulls=true,38430216.57,38024067.81925,38869377.32475,0.95

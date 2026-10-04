@@ -1,0 +1,678 @@
+event,engine,frame,weight,percent,scope
+cpu,stock,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator_[i],42875,86.70549454994034,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.collect_[i],42875,86.70549454994034,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy_[j],17918,36.235313150923176,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy_[i],16239,32.8398956500637,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copyRowData_[i],16080,32.518352241703575,inclusive overlapping CPU samples
+cpu,stock,StreamExecCalc$3.processElement_[j],15806,31.964245990818824,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copy_[j],4258,8.6108920301725,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copyPositionBased_[i],4019,8.127565774838724,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copy_[i],4019,8.127565774838724,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/streaming/runtime/streamrecord/StreamRecord.copy_[i],3678,7.437966389613541,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/common/typeutils/base/array/BytePrimitiveArraySerializer.copy_[i],3624,7.328762967906328,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/common/typeutils/base/array/BytePrimitiveArraySerializer.copy_[j],3511,7.1002446965560475,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/common/typeutils/base/IntSerializer.copy_[i],2684,5.427814515965944,inclusive overlapping CPU samples
+cpu,stock,jlong_disjoint_arraycopy,2577,5.211429958138688,inclusive overlapping CPU samples
+cpu,stock,tech/streamfusion/ScalarFunctionBenchmark.profileFunction_[0],439,0.8877833727679023,inclusive overlapping CPU samples
+cpu,stock,tech/streamfusion/ScalarFunctionBenchmark.run_[0],438,0.8857610871807317,inclusive overlapping CPU samples
+cpu,stock,tech/streamfusion/TextTimeBenchmarkInputs$$Lambda$2774.0x000070ac78cea4a8.map_[i],321,0.6491536734817691,inclusive overlapping CPU samples
+cpu,stock,tech/streamfusion/TextTimeBenchmarkInputs.lambda$environment$26b726b7$1_[i],321,0.6491536734817691,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/common/typeutils/base/LongSerializer.copy_[j],235,0.47523711298509574,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/data/BoxedWrapperRowData.getBinary_[i],187,0.378167404800906,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/common/typeutils/base/BooleanSerializer.copy_[j],107,0.21638455782725635,inclusive overlapping CPU samples
+cpu,stock,PhaseChaitin::post_allocate_copy_removal,106,0.21436227224008575,inclusive overlapping CPU samples
+cpu,stock,tech/streamfusion/ScalarFunctionBenchmark.environment_[0],106,0.21436227224008575,inclusive overlapping CPU samples
+cpu,stock,tech/streamfusion/TextTimeBenchmarkInputs.environment_[0],103,0.2082954154785739,inclusive overlapping CPU samples
+cpu,stock,"G1ParCopyClosure<(G1Barrier)0, false>::do_oop",102,0.20627312989140326,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/common/typeutils/base/IntSerializer.copy_[j],97,0.19616170195555016,inclusive overlapping CPU samples
+cpu,stock,PhaseChaitin::elide_copy,55,0.11122570729438411,inclusive overlapping CPU samples
+cpu,stock,PhaseConservativeCoalesce::copy_copy,37,0.07482456672531294,inclusive overlapping CPU samples
+cpu,stock,java/util/stream/AbstractPipeline.copyInto_[i],31,0.06269085320228923,inclusive overlapping CPU samples
+cpu,stock,java/util/stream/AbstractPipeline.wrapAndCopyInto_[j],30,0.06066856761511861,inclusive overlapping CPU samples
+cpu,stock,CodeBuffer::copy_code_to,22,0.04449028291775364,inclusive overlapping CPU samples
+cpu,stock,JNIHandleBlock::oops_do,18,0.036401140569071164,inclusive overlapping CPU samples
+cpu,stock,G1Policy::predict_region_non_copy_time_ms,18,0.036401140569071164,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/exec/common/CommonExecCalc.translateToPlanInternal_[0],18,0.036401140569071164,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/core/Calc.<init>_[0],17,0.03437885498190055,inclusive overlapping CPU samples
+cpu,stock,"G1ParCopyClosure<(G1Barrier)1, false>::do_oop",14,0.028311998220388684,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/core/Calc.isValid_[0],13,0.026289712633218065,inclusive overlapping CPU samples
+cpu,stock,java/util/stream/AbstractPipeline.copyIntoWithCancel_[i],12,0.02426742704604744,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/parse/CalciteParser.parseSqlList_[0],12,0.02426742704604744,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalcBase.<init>_[0],11,0.02224514145887682,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/core/Calc.copy_[0],11,0.02224514145887682,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.copy_[0],11,0.02224514145887682,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.<init>_[0],11,0.02224514145887682,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator.generateCalcOperator_[0],11,0.02224514145887682,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.generateCalcOperator_[0],11,0.02224514145887682,inclusive overlapping CPU samples
+cpu,stock,PhaseChaitin::get_spillcopy_wide,10,0.0202228558717062,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.<init>_[0],10,0.0202228558717062,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/rules/ProjectToCalcRule.onMatch_[0],10,0.0202228558717062,inclusive overlapping CPU samples
+cpu,stock,G1ParScanThreadState::copy_to_survivor_space,9,0.018200570284535582,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.generateProcessCode_[0],9,0.018200570284535582,inclusive overlapping CPU samples
+cpu,stock,Compile::copy_node_notes_to,8,0.016178284697364962,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn1_[0],8,0.016178284697364962,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn_[0],8,0.016178284697364962,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.produceProjectionCode$1_[0],8,0.016178284697364962,inclusive overlapping CPU samples
+cpu,stock,copy_process_[k],7,0.014155999110194342,inclusive overlapping CPU samples
+cpu,stock,org/snakeyaml/engine/v2/serializer/Serializer.serializeDocument_[0],7,0.014155999110194342,inclusive overlapping CPU samples
+cpu,stock,org/apache/logging/log4j/internal/map/UnmodifiableArrayBackedMap.copyAndPutAll_[i],6,0.01213371352302372,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.<init>_[1],6,0.01213371352302372,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.explainTerms_[1],6,0.01213371352302372,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/sql/util/SqlShuttle$CallCopyingArgHandler.visitChild_[1],6,0.01213371352302372,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/data/GenericRowData.getBinary_[j],5,0.0101114279358531,inclusive overlapping CPU samples
+cpu,stock,org/snakeyaml/engine/v2/serializer/Serializer.serializeNode_[0],5,0.0101114279358531,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalc.<init>_[0],5,0.0101114279358531,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/calcite/RelTimeIndicatorConverter.visitCalc_[0],5,0.0101114279358531,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/core/Project.copy_[0],5,0.0101114279358531,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.projectionToString_[1],5,0.0101114279358531,inclusive overlapping CPU samples
+cpu,stock,MachSpillCopyNode::implementation,4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,GraphBuilder::copy_state_for_exception_with_bci,4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,nmethod::copy_scopes_pcs,4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,StreamExecCalc$3.<init>_[0],4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,java/util/stream/AbstractPipeline.wrapAndCopyInto_[i],4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/logical/LogicalProject.copy_[0],4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.explainTerms_[0],4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/core/Calc.isValid_[1],4,0.008089142348682481,inclusive overlapping CPU samples
+cpu,stock,MachSpillCopyNode::ideal_reg,3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,_copy_from_user_[k],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/slf4j/MDC.getCopyOfContextMap_[i],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,java/util/stream/AbstractPipeline.copyInto_[1],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalc.copy_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc$$Lambda$2448.0x000070ac78b5ea90.apply_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.projectionToString_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.$anonfun$projectionToString$1_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.getExpressionString_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.computeSelfCost_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.$anonfun$generateProcessCode$4_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$$$Lambda$2709.0x000070ac78caa808.apply_[0],3,0.00606685676151186,inclusive overlapping CPU samples
+cpu,stock,LibraryCallKit::inline_string_copy,2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,JNIHandles::make_local,2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,JNIHandles::is_weak_global_handle,2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,java/util/Arrays.copyOf_[j],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/logging/slf4j/Log4jMDCAdapter.getCopyOfContextMap_[i],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/logging/log4j/spi/DefaultThreadContextMap.getCopy_[1],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,jbyte_disjoint_arraycopy,2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/delegation/PlannerContext.getCalciteConfig_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/core/Calc.copy_[1],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/core/Calc.copy_[i],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,scala/collection/AbstractTraversable.copyToArray_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,scala/collection/TraversableOnce.copyToArray$_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalcConverter.convert_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalc$.create_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/calcite/shaded/com/google/common/collect/ImmutableList.copyOf_[j],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/InternalSerializers.create_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/InternalSerializers.createInternal_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/delegation/PlannerContext.createCalciteParser_[0],2,0.0040445711743412405,inclusive overlapping CPU samples
+cpu,stock,"G1ParCopyClosure<(G1Barrier)2, false>::do_oop",1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,G1ParScanThreadState::allocate_copy_slow,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,CodeBuffer::copy_relocations_to,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,MachSpillCopyNode::in_RegMask,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,memcpy@plt,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,JNIHandleBlock::allocate_handle,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,IdealKit::copy_cvstate,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,LibraryCallKit::inline_arraycopy,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,OopMap::deep_copy,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,ValueStack::copy,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,ValueRecorder<_jobject*>::copy_values_to,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,JNIHandleBlock::release_block,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/api/java/typeutils/runtime/RowSerializer.readObject_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/runtime/executiongraph/ArchivedExecutionVertex.getCopyOfExecutionHistory_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,ConstantPool::copy_bootstrap_arguments_at_impl,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/logging/slf4j/Log4jMDCAdapter.getCopyOfContextMap_[j],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/logging/log4j/spi/DefaultThreadContextMap.getCopy_[i],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/logging/log4j/internal/map/UnmodifiableArrayBackedMap.copyAndPutAll_[1],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,java/lang/System.arraycopy_[j],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/runtime/metrics/scope/ScopeFormat.copyTemplate_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,JVM_ArrayCopy,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,ObjArrayKlass::copy_array,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,java/util/Arrays.copyOfRange_[1],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.<init>_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/streaming/api/graph/StreamNode.setSerializersIn_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/streaming/api/graph/StreamGraph.setSerializers_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/snakeyaml/engine/v2/serializer/Serializer.serializeComments_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,java/util/Arrays.copyOf_[i],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/logical/LogicalProject.copy_[1],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.getRelDetailedDescription_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/config/CalciteConnectionProperty.wrap_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/FlinkCalciteCatalogReader.<init>_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/config/CalciteConnectionConfigImpl.caseSensitive_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalSink.copy_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc$$Lambda$2448.0x000070ac78b5ea90.apply_[1],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.$anonfun$projectionToString$1_[1],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.convertToExpressionDetail_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.getExpressionString_[1],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/rules/logical/RemoteCalcRewriteProjectionRule.matches_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/schema/TableSourceTable.copy_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,scala/collection/IterableLike.copyToArray$_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,scala/collection/IterableLike.copyToArray_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,scala/collection/TraversableOnce.copyToArray_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,scala/collection/AbstractIterable.copyToArray_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/logical/LogicalCalc.create_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/rel/logical/LogicalCalc.<init>_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalcBase.translateToExecNode_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.translateToExecNode_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/snakeyaml/engine/v2/serializer/Serializer.emitStreamEnd_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.<init>_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.lambda$new$2_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer$$Lambda$2580.0x000070ac78c4bb90.apply_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/calcite/FlinkCalciteSqlValidator.<init>_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/jdbc/CalciteSchema.getSubSchema_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/calcite/prepare/CalciteCatalogReader.unwrap_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/shaded/guava33/com/google/common/collect/Iterables.castOrCopyToCollection_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,copy_statx_attributes,1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,org/apache/flink/table/planner/utils/TableConfigUtils.getCalciteConfig_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,stock,tech/streamfusion/ScalarFunctionBenchmark.profileCommand_[0],1,0.0020222855871706203,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator_[i],41371,84.8200922603793,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.collect_[i],41371,84.8200922603793,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/RowDataToArrowOperator.processElement_[j],29395,60.26652998462327,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/RowDataToArrowOperator.flush_[j],21016,43.087647360328035,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ColumnarRecordMetrics.emit_[i],20944,42.940030753459766,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/NativeCalcOperator.processElement_[j],20929,42.90927729369554,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ColumnarRecordMetrics.emit_[j],16930,34.710404920553565,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ArrowToRowDataOperator.processElement_[j],16905,34.65914915427986,inclusive overlapping CPU samples
+cpu,native,jlong_disjoint_arraycopy,5024,10.300358790363916,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy_[j],4570,9.369554074833419,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/binary/BinaryRowData.copy_[i],4421,9.064069707842132,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy_[i],4421,9.064069707842132,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion.createRowDataArrowWriter_[j],3309,6.784213223987699,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/ArrowBuf.setZero_[i],3215,6.591491542798565,inclusive overlapping CPU samples
+cpu,native,Copy::fill_to_memory_atomic,3180,6.519733470015376,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/streaming/runtime/streamrecord/StreamRecord.copy_[i],2903,5.9518195797027165,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.reset_[i],2681,5.496668375192209,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copy_[j],2650,5.433111225012814,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowWriter.write_[i],2649,5.431060994361865,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copyPositionBased_[i],2467,5.057919015889287,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copy_[i],2467,5.057919015889287,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/binary/BinaryRowData.copyInternal_[i],1502,3.079446437724244,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/api/common/typeutils/base/IntSerializer.copy_[i],1500,3.0753459764223474,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/Native.calcExpressionArrayAtWatermark_[j],1492,3.0589441312147616,inclusive overlapping CPU samples
+cpu,native,Java_tech_streamfusion_Native_calcExpressionArrayAtWatermark,1481,3.036391594054331,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/binary/BinarySegmentUtils.copyToBytes_[i],1450,2.972834443874936,inclusive overlapping CPU samples
+cpu,native,sun/misc/Unsafe.copyMemory_[i],1436,2.9441312147616605,inclusive overlapping CPU samples
+cpu,native,jdk/internal/misc/Unsafe.copyMemory_[i],1436,2.9441312147616605,inclusive overlapping CPU samples
+cpu,native,jdk/internal/misc/Unsafe.copyMemoryChecks_[i],1344,2.7555099948744233,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/columnar/ColumnarRowData.getBinary_[i],1079,2.212198872373142,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/vectors/ArrowVarBinaryColumnVector.getBytes_[i],1076,2.2060481804202974,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ReferenceCountedArrowArray$1.release0_[i],819,1.6791389031266017,inclusive overlapping CPU samples
+cpu,native,streamfusion::calc::CalcExpression::evaluate,730,1.4966683751922092,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/columnar/ColumnarRowData.isNullAt_[i],608,1.246540235776525,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ReferenceCountedArrowArray.release_[j],588,1.2055356227575602,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.release_[i],559,1.1460789338800614,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/PrunedRowData.clear_[i],527,1.0804715530497182,inclusive overlapping CPU samples
+cpu,native,streamfusion::calc::evaluate_projection,479,0.982060481804203,inclusive overlapping CPU samples
+cpu,native,streamfusion_bridge::bridge::export_record_batch,414,0.8487954894925679,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/ArrowBuf.close_[i],346,0.7093798052280882,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.writeBinary_[i],342,0.7011788826242953,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/ScalarFunctionBenchmark.profileFunction_[0],322,0.6601742696053307,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/ScalarFunctionBenchmark.run_[0],321,0.6581240389543823,inclusive overlapping CPU samples
+cpu,native,streamfusion_bridge::bridge::import_record_batch_with_schema,296,0.6068682726806766,inclusive overlapping CPU samples
+cpu,native,<streamfusion::flink_functions::binary_cast::BinaryCast as datafusion_expr::udf::ScalarUDFImpl>::invoke_with_args,275,0.5638134290107637,inclusive overlapping CPU samples
+cpu,native,unsafe_arraycopy,262,0.5371604305484367,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion.toArrowSchema_[j],250,0.5125576627370579,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.allocateNew_[i],241,0.49410558687852385,inclusive overlapping CPU samples
+cpu,native,void (anonymous namespace)::release_exported<ArrowArray>,221,0.4531009738595592,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/vectors/ArrowBooleanColumnVector.isNullAt_[i],216,0.44284982060481803,inclusive overlapping CPU samples
+cpu,native,jlong_arraycopy,215,0.4407995899538698,inclusive overlapping CPU samples
+cpu,native,java/util/stream/AbstractPipeline.wrapAndCopyInto_[i],195,0.3997949769349052,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/pojo/ArrowType$Binary.accept_[j],189,0.38749359302921577,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/binary/BinaryRowData.setRowKind_[i],186,0.3813429010763711,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/api/common/typeutils/base/array/BytePrimitiveArraySerializer.copy_[i],171,0.35058944131214764,inclusive overlapping CPU samples
+cpu,native,java/util/stream/AbstractPipeline.copyInto_[i],165,0.33828805740645823,inclusive overlapping CPU samples
+cpu,native,arrow_array::ffi::ImportedArrowArray::consume,158,0.3239364428498206,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ReferenceCountedArrowArray.unsafeAssociateAllocation_[i],158,0.3239364428498206,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/SynchronousArrowInput$InputSerializer.copy_[j],135,0.2767811378780113,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/api/common/typeutils/base/LongSerializer.copy_[j],134,0.27473090722706306,inclusive overlapping CPU samples
+cpu,native,JNIEnv_::CallObjectMethod,132,0.2706304459251666,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion.createArrowReader_[i],125,0.25627883136852897,inclusive overlapping CPU samples
+cpu,native,<arrow_schema::ffi::FFI_ArrowSchema as core::convert::TryFrom<&arrow_schema::datatype::DataType>>::try_from,125,0.25627883136852897,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/columnar/ColumnarRowData.getBoolean_[i],120,0.2460276781137878,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.writeBoolean_[i],119,0.24397744746283956,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/TextTimeBenchmarkInputs.lambda$environment$26b726b7$1_[i],116,0.23782675550999488,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/TextTimeBenchmarkInputs$$Lambda$2731.0x00007e4218cd2aa8.map_[i],116,0.23782675550999488,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/vectors/ArrowBooleanColumnVector.getBoolean_[i],107,0.2193746796514608,inclusive overlapping CPU samples
+cpu,native,arrow_data::ffi::FFI_ArrowArray::new,107,0.2193746796514608,inclusive overlapping CPU samples
+cpu,native,arrow_array::ffi::ImportedArrowArray::consume_children,101,0.2070732957457714,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/vectors/ArrowVarBinaryColumnVector.isNullAt_[i],99,0.20297283444387493,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/Types.getMinorTypeForArrowType_[i],93,0.19067145053818554,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/RowDataToArrowOperator.armFlushTimer_[j],89,0.1824705279343926,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.setOffsetAndSize_[i],81,0.16606868272680678,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/pojo/ArrowType$FixedSizeBinary.accept_[j],78,0.15991799077396207,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/ScalarFunctionBenchmark.environment_[0],78,0.15991799077396207,inclusive overlapping CPU samples
+cpu,native,<arrow_schema::ffi::FFI_ArrowSchema as core::convert::TryFrom<&arrow_schema::field::Field>>::try_from,77,0.15786776012301384,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/TextTimeBenchmarkInputs.environment_[0],77,0.15786776012301384,inclusive overlapping CPU samples
+cpu,native,"G1ParCopyClosure<(G1Barrier)0, false>::do_oop",76,0.15581752947206562,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/TaskOffHeapMemory.tryReserve_[i],72,0.1476166068682727,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/NativeAllocator$TaskBudgetListener.onPreAllocation_[i],72,0.1476166068682727,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/TaskOffHeapMemory.reserveArrow_[i],72,0.1476166068682727,inclusive overlapping CPU samples
+cpu,native,PhaseChaitin::post_allocate_copy_removal,71,0.14556637621732446,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.setNullAt_[i],68,0.13941568426447976,inclusive overlapping CPU samples
+cpu,native,arrow_schema::ffi::FFI_ArrowSchema::try_new,65,0.13326499231163505,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.setNullBit_[i],64,0.13121476166068682,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.close_[j],63,0.1291645310097386,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/ArrowBuf.getBytes_[i],60,0.1230138390568939,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/util/MemoryUtil.copyMemory_[i],60,0.1230138390568939,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/util/MemoryUtil.copyFromMemory_[i],60,0.1230138390568939,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.close_[i],58,0.11891337775499744,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/pojo/ArrowType$Bool.accept_[j],54,0.11071245515120451,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowSchema.release_[i],53,0.10866222450025628,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowSchema.allocateNew_[i],50,0.10251153254741159,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/ipc/message/ArrowRecordBatch.<init>_[j],49,0.10046130189646335,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowSchema.close_[i],47,0.09636084059456688,inclusive overlapping CPU samples
+cpu,native,java/util/Arrays.copyOf_[i],45,0.09226037929267042,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.directBuffer_[i],45,0.09226037929267042,inclusive overlapping CPU samples
+cpu,native,PhaseChaitin::elide_copy,45,0.09226037929267042,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/columnar/ColumnarRowData.getRowKind_[i],43,0.08815991799077397,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowWriter.finish_[i],38,0.07790876473603281,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ArrowBatch.<init>_[i],35,0.0717580727831881,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/ipc/message/ArrowRecordBatch.close_[j],29,0.05945668887749872,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ArrowToRowDataOperator.open_[0],28,0.05740645822655049,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/ipc/message/ArrowRecordBatch.<init>_[i],27,0.055356227575602254,inclusive overlapping CPU samples
+cpu,native,"G1ParCopyClosure<(G1Barrier)1, false>::do_oop",26,0.05330599692465402,inclusive overlapping CPU samples
+cpu,native,JNIHandles::make_global,25,0.051255766273705795,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.complete_[i],23,0.04715530497180933,inclusive overlapping CPU samples
+cpu,native,streamfusion_bridge::bridge::capture_jvm,20,0.04100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.snapshot_[i],19,0.038954382368016405,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.markReleased_[i],18,0.03690415171706817,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/ArrowBuf.close_[j],18,0.03690415171706817,inclusive overlapping CPU samples
+cpu,native,CodeBuffer::copy_code_to,18,0.03690415171706817,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.save_[i],15,0.030753459764223477,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/ArrowBuf.setOne_[i],14,0.028703229113275244,inclusive overlapping CPU samples
+cpu,native,checkcast_arraycopy_uninit,14,0.028703229113275244,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/writer/BinaryRowWriter.getFieldOffset_[i],14,0.028703229113275244,inclusive overlapping CPU samples
+cpu,native,JNIHandleBlock::oops_do,14,0.028703229113275244,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/ipc/message/ArrowRecordBatch.close_[i],13,0.02665299846232701,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowSchema.directBuffer_[i],13,0.02665299846232701,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/TaskOffHeapMemory.releaseArrow_[i],12,0.02460276781137878,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/TaskOffHeapMemory.release_[i],12,0.02460276781137878,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/NativeAllocator$TaskBudgetListener.onRelease_[i],12,0.02460276781137878,inclusive overlapping CPU samples
+cpu,native,G1Policy::predict_region_non_copy_time_ms,11,0.02255253716043055,inclusive overlapping CPU samples
+cpu,native,PhaseConservativeCoalesce::copy_copy,11,0.02255253716043055,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.<init>_[0],11,0.02255253716043055,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion$$Lambda$2522.0x00007e4218b88000.apply_[j],10,0.020502306509482315,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/pojo/ArrowType$FixedSizeBinary.hashCode_[j],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,JNIHandleBlock::allocate_block,9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowSchema.snapshot_[i],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ArrowToRowDataOperator.<init>_[0],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/ArrowToRowDataExecNode.translateToPlanInternal_[0],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalcBase.<init>_[0],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.<init>_[0],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.projectionToString_[0],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.explainTerms_[0],9,0.018452075858534086,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/ArrowBuf.getInt_[i],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,jbyte_disjoint_arraycopy,8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/pojo/ArrowType$Binary.hashCode_[j],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/pojo/ArrowType$Bool.hashCode_[j],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,java/util/stream/AbstractPipeline.wrapAndCopyInto_[j],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/core/Calc.copy_[0],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.copy_[0],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/core/Calc.isValid_[1],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/parse/CalciteParser.parseSqlList_[0],8,0.016401845207585853,inclusive overlapping CPU samples
+cpu,native,JNIHandles::destroy_global,7,0.014351614556637622,inclusive overlapping CPU samples
+cpu,native,org/snakeyaml/engine/v2/serializer/Serializer.serializeDocument_[0],7,0.014351614556637622,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/core/Calc.<init>_[0],7,0.014351614556637622,inclusive overlapping CPU samples
+cpu,native,arrow_array::ffi::ImportedArrowArray::buffer_len,6,0.01230138390568939,inclusive overlapping CPU samples
+cpu,native,PhaseChaitin::get_spillcopy_wide,6,0.01230138390568939,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.optimizeRoots_[0],6,0.01230138390568939,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.optimize_[0],6,0.01230138390568939,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.optimizeConfigured_[0],6,0.01230138390568939,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/core/Calc.isValid_[0],6,0.01230138390568939,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/rules/ProjectToCalcRule.onMatch_[0],6,0.01230138390568939,inclusive overlapping CPU samples
+cpu,native,jint_disjoint_arraycopy,5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,<arrow_data::ffi::FFI_ArrowArray as core::ops::drop::Drop>::drop,5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,arrow_schema::ffi::FFI_ArrowSchema::with_metadata,5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/vector/types/pojo/ArrowType$Struct.accept_[j],5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,jbyte_arraycopy,5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion$$Lambda$2523.0x00007e4218b88240.get_[j],5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,_copy_from_user_[k],5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,org/snakeyaml/engine/v2/serializer/Serializer.serializeNode_[0],5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.substitute_[0],5,0.010251153254741158,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ArrowBatch.<init>_[j],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowSchema.markReleased_[i],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion.createArrowFieldWriterForRow_[j],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion.lambda$toArrowSchema$0_[i],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion.toArrowField_[i],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,G1ParScanThreadState::copy_to_survivor_space,4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.rewrite_[0],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/Substitution.apply_[1],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.apply_[0],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/core/Calc.<init>_[1],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc$$Lambda$2439.0x00007e4218b5b1d0.apply_[0],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.$anonfun$projectionToString$1_[0],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.getExpressionString_[0],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/FlinkCalciteCatalogReader.<init>_[0],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/config/CalciteConnectionConfigImpl.caseSensitive_[0],4,0.008200922603792926,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ColumnarRecordMetrics.countIngested_[i],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,JNI_ArgumentPusherVaArg::~JNI_ArgumentPusherVaArg,3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn_[0],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn1_[0],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/TaskOffHeapMemory.registerMetrics_[0],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/NativeAllocator.initializeFor_[0],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,copy_process_[k],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/logging/log4j/internal/map/UnmodifiableArrayBackedMap.copyAndPutAll_[1],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ArrowBatch$Backstop.run_[j],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,PhaseMacroExpand::expand_arraycopy_node,3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,OopMap::deep_copy,3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/logging/slf4j/Log4jMDCAdapter.getCopyOfContextMap_[i],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/logging/log4j/spi/DefaultThreadContextMap.getCopy_[i],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/slf4j/MDC.getCopyOfContextMap_[i],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,java/util/stream/AbstractPipeline.copyInto_[j],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/config/CalciteConnectionProperty.wrap_[0],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/sql/util/SqlShuttle$CallCopyingArgHandler.visitChild_[0],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/calcite/shaded/com/google/common/collect/ImmutableList.copyOf_[j],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/NativePlanner.install_[0],3,0.006150691952844695,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/ArrowBatch.root_[i],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,core::ptr::drop_in_place<arrow_data::ffi::FFI_ArrowArray>,2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,JNI_ArgumentPusherVaArg::push_arguments_on,2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ArrowArray.markReleased_[j],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/util/Collections2.immutableMapCopy_[i],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.<init>_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/RowDataToArrowOperator.open_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/NativeCalcOperator.open_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,PhaseMacroExpand::generate_arraycopy,2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,GraphBuilder::copy_state_for_exception_with_bci,2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/logging/log4j/internal/map/UnmodifiableArrayBackedMap.copyAndPutAll_[i],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/CalcMatcher.outputTypeMismatch_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/CalcMatcher.matches_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan$$Lambda$2074.0x00007e4218a431b8.test_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/CalcOutputTypeCheck.mismatch_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan$$Lambda$2073.0x00007e4218a42f98.plan_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/CalcMatcher.substitute_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/CalcProjectionPruner.compute_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/core/Project.copy_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/logical/LogicalProject.copy_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.computeSelfCost_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalc.<init>_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalcConverter.convert_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalc$.create_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/config/CalciteConnectionConfigImpl.lex_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/prepare/CalciteCatalogReader.getTable_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/prepare/CalciteCatalogReader.getTableForMember_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/FlinkCalciteCatalogReader.getTable_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/parse/CalciteParser.parseIdentifier_[0],2,0.004100461301896463,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/RowDataToArrowOperator.processWatermark_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/Native.createCalcExpression_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,Java_tech_streamfusion_Native_createCalcExpression,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,streamfusion_bridge::bridge::read_strings,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowConversion.createColumnVector_[j],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowReader.<init>_[i],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/memory/ArrowBuf.addr_[i],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/data/columnar/ColumnarRowData.setRowId_[i],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/arrow/ArrowReader.read_[i],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/Native.calcExpressionAtWatermark_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,streamfusion_bridge::bridge::import_record_batch,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,void (anonymous namespace)::release_exported<ArrowSchema>,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,Java_tech_streamfusion_Native_calcExpressionAtWatermark,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/arrow/c/ReferenceCountedArrowArray.<init>_[j],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/PrunedRowData.of_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/runtime/executiongraph/DefaultExecutionGraph.createCheckpointPlanCalculator_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/runtime/checkpoint/DefaultCheckpointPlanCalculator.<init>_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,G1ParScanThreadState::allocate_copy_slow,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,memcpy@plt,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,Compile::copy_node_notes_to,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,PhaseMacroExpand::generate_unchecked_arraycopy,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,PhaseMacroExpand::generate_slow_arraycopy,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,MachSpillCopyNode::size,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,MachSpillCopyNode::implementation,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,MachSpillCopyNode::out_RegMask,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,MachSpillCopyNode::oper_input_base,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,ArrayCopyNode::connect_outputs,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,LibraryCallKit::inline_arraycopy,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,IdealKit::copy_cvstate,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,CodeBuffer::copy_relocations_to,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,java/lang/invoke/StringConcatFactory.generateMHInlineCopy_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,ConstantPool::copy_bootstrap_arguments_at_impl,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,java/util/stream/AbstractPipeline.copyIntoWithCancel_[i],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/operator/SynchronousArrowInput$InputType.toString_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,scala/collection/mutable/ResizableArray.copyToArray$_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,scala/collection/mutable/ArrayBuffer.copyToArray_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,scala/Array$.copy_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,scala/collection/mutable/ResizableArray.copyToArray_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,JNIHandleBlock::allocate_handle,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/reuse/ReplaceScanWithCalcShuttle.visit_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.lambda$repeatedSourceKeys$0_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan$$Lambda$2509.0x00007e4218b7e070.accept_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.repeatedSourceKeys_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/PhysicalPlanScan.collectSourceKeys_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/JsonStringIdentity.crossesOperatorBoundary_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/Native.inferCalcOutputSchema_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,streamfusion::expr::try_compile_expr,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,streamfusion::calc::infer_calc_output_schema::{{closure}},1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,Java_tech_streamfusion_Native_inferCalcOutputSchema,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,scala/collection/AbstractTraversable.copyToArray_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,scala/collection/TraversableOnce.copyToArray$_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/CalcProjectionPruner.prunedType_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/planner/CalcProjectionPruner.collectUses_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.convertToExpressionDetail_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/rules/physical/stream/StreamPhysicalCalcRule.matches_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/rel/logical/LogicalCalc.create_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/rules/physical/stream/StreamPhysicalCalcRule.convert_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc$$Lambda$2443.0x00007e4218b5c468.apply_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/types/logical/RowType.copy_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/calcite/RelTimeIndicatorConverter.visitCalc_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/calcite/shaded/com/google/common/collect/ImmutableMap.copyOf_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,JNIHandles::make_weak_global,1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/jdbc/SimpleCalciteSchema.getImplicitSubSchema_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/jdbc/CalciteSchema.getSubSchema_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/jdbc/SimpleCalciteSchema.<init>_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/calcite/jdbc/CalciteSchema.<init>_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/delegation/PlannerContext.createCalciteParser_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,java/lang/reflect/ReflectAccess.copyMethod_[i],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,java/lang/reflect/Method.copy_[j],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,jdk/internal/reflect/ReflectionFactory.copyMethod_[i],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,java/lang/Class.copyMethods_[1],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,org/apache/flink/table/planner/parse/CalciteParser.createFlinkParser_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,copy_page_to_iter_[k],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,_copy_to_iter_[k],1,0.0020502306509482316,inclusive overlapping CPU samples
+cpu,native,tech/streamfusion/ScalarFunctionBenchmark.profileCommand_[0],1,0.0020502306509482316,inclusive overlapping CPU samples
+alloc,stock,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator_[j],368509797986,97.75703924172988,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.collect_[j],368509797986,97.75703924172988,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/api/common/typeutils/base/array/BytePrimitiveArraySerializer.copy_[j],238473514811,63.26145158934917,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy_[j],191273004775,50.74025910807296,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copyRowData_[j],158904049682,42.153531616609065,inclusive overlapping sampled allocation weights
+alloc,stock,StreamExecCalc$3.processElement_[j],106393036623,28.223586762261736,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copyPositionBased_[j],98779340809,26.203851155416164,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copy_[j],98779340809,26.203851155416164,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/streaming/runtime/streamrecord/StreamRecord.copy_[j],42945396744,11.392410344851566,inclusive overlapping sampled allocation weights
+alloc,stock,tech/streamfusion/TextTimeBenchmarkInputs$$Lambda$2773.0x000076ee00ceada0.map_[j],19369783215,5.138350915501283,inclusive overlapping sampled allocation weights
+alloc,stock,tech/streamfusion/TextTimeBenchmarkInputs.lambda$environment$26b726b7$1_[j],19369783215,5.138350915501283,inclusive overlapping sampled allocation weights
+alloc,stock,tech/streamfusion/ScalarFunctionBenchmark.profileFunction_[j],93847373,0.02489551533021328,inclusive overlapping sampled allocation weights
+alloc,stock,tech/streamfusion/ScalarFunctionBenchmark.run_[j],93847373,0.02489551533021328,inclusive overlapping sampled allocation weights
+alloc,stock,tech/streamfusion/ScalarFunctionBenchmark.environment_[j],51904413,0.013769028031793938,inclusive overlapping sampled allocation weights
+alloc,stock,tech/streamfusion/TextTimeBenchmarkInputs.environment_[j],50855839,0.013490865849333454,inclusive overlapping sampled allocation weights
+alloc,stock,java/util/Arrays.copyOf_[j],15728610,0.004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/logging/slf4j/Log4jMDCAdapter.getCopyOfContextMap_[j],11534314,0.0030597840070653195,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/logging/log4j/spi/DefaultThreadContextMap.getCopy_[j],11534314,0.0030597840070653195,inclusive overlapping sampled allocation weights
+alloc,stock,org/slf4j/MDC.getCopyOfContextMap_[j],11534314,0.0030597840070653195,inclusive overlapping sampled allocation weights
+alloc,stock,java/util/Arrays.copyOfRange_[j],6815731,0.0018080541859931433,inclusive overlapping sampled allocation weights
+alloc,stock,jdk/internal/reflect/ReflectionFactory.copyMethod_[j],5242870,0.001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,java/lang/reflect/Method.copy_[j],5242870,0.001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,java/lang/reflect/ReflectAccess.copyMethod_[j],5242870,0.001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,java/lang/Class.copyMethods_[j],4718583,0.0012517298210721762,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/rel/core/Calc.isValid_[j],3670009,0.0009735676386116926,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/rel/core/Calc.<init>_[j],3670009,0.0009735676386116926,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/exec/common/CommonExecCalc.translateToPlanInternal_[j],3145722,0.0008344865473814508,inclusive overlapping sampled allocation weights
+alloc,stock,org/snakeyaml/engine/v2/serializer/Serializer.serializeNode_[j],2621435,0.000695405456151209,inclusive overlapping sampled allocation weights
+alloc,stock,org/snakeyaml/engine/v2/serializer/Serializer.serializeDocument_[j],2621435,0.000695405456151209,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.generateCalcOperator_[j],2621435,0.000695405456151209,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator.generateCalcOperator_[j],2621435,0.000695405456151209,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.<init>_[j],2097148,0.0005563243649209672,inclusive overlapping sampled allocation weights
+alloc,stock,java/util/stream/AbstractPipeline.wrapAndCopyInto_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,java/util/stream/AbstractPipeline.copyInto_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn1_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalcBase.<init>_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/rel/core/Calc.copy_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.<init>_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/rel/logical/LogicalCalc.create_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/rel/rules/ProjectToCalcRule.onMatch_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/rel/logical/LogicalCalc.<init>_[j],1572861,0.0004172432736907254,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/streaming/api/graph/StreamConfig.getStateKeySerializer_[j],1048574,0.0002781621824604836,inclusive overlapping sampled allocation weights
+alloc,stock,java/lang/reflect/ReflectAccess.copyConstructor_[j],1048574,0.0002781621824604836,inclusive overlapping sampled allocation weights
+alloc,stock,jdk/internal/reflect/ReflectionFactory.copyConstructor_[j],1048574,0.0002781621824604836,inclusive overlapping sampled allocation weights
+alloc,stock,java/lang/reflect/Constructor.copy_[j],1048574,0.0002781621824604836,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.explainTerms_[j],1048574,0.0002781621824604836,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.copy_[j],1048574,0.0002781621824604836,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/api/java/typeutils/runtime/RowSerializer.readObject_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/parse/CalciteParser.parseIdentifier_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/parse/CalciteParser.createFlinkParser_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/streaming/api/graph/StreamNode.setSerializersIn_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/streaming/api/graph/StreamGraph.setSerializers_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/snakeyaml/engine/v2/serializer/Serializer.emitStreamEnd_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/runtime/typeutils/InternalSerializers.createInternal_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer$$Lambda$2579.0x000076ee00c50588.apply_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.<init>_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/runtime/typeutils/InternalSerializers.create_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/runtime/typeutils/RowDataSerializer.lambda$new$2_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.$anonfun$generateProcessCode$4_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$$$Lambda$2708.0x000076ee00caee98.apply_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.produceProjectionCode$1_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/codegen/CalcCodeGenerator$.generateProcessCode_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.projectionToString_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/rules/physical/stream/StreamPhysicalCalcRule.convert_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalc.copy_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalCalc.<init>_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/calcite/shaded/com/google/common/collect/ImmutableList.copyOf_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/plan/nodes/logical/FlinkLogicalSink.copy_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/jdbc/CalciteSchema.getTable_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/calcite/jdbc/SimpleCalciteSchema.getImplicitTable_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,stock,org/apache/flink/table/planner/catalog/DatabaseCalciteSchema.getTable_[j],524287,0.0001390810912302418,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator_[j],278726173523,97.9324052736192,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.collect_[j],278726173523,97.9324052736192,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/RowDataToArrowOperator.processElement_[j],161302138420,56.67464304332849,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/RowDataToArrowOperator.flush_[j],160942477538,56.548273657877914,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/ColumnarRecordMetrics.emit_[j],160908398883,56.536299882288574,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/NativeCalcOperator.processElement_[j],160897388856,56.532431431713555,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/ArrowToRowDataOperator.processElement_[j],156928536266,55.137947105385805,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/data/binary/BinaryRowData.copy_[j],92964473692,32.66372295999101,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy_[j],92964473692,32.66372295999101,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/data/binary/BinaryRowData.copyInternal_[j],85281571994,29.96428130635734,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copyPositionBased_[j],69598574963,24.45394978014306,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/api/java/typeutils/runtime/RowSerializer.copy_[j],69598574963,24.45394978014306,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/data/binary/BinarySegmentUtils.copyToBytes_[j],62317801394,21.8957986784636,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/api/common/typeutils/base/array/BytePrimitiveArraySerializer.copy_[j],56119156193,19.71786100472872,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/data/columnar/ColumnarRowData.getBinary_[j],56027405968,19.685623916603575,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/vectors/ArrowVarBinaryColumnVector.getBytes_[j],56027405968,19.685623916603575,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/streaming/runtime/streamrecord/StreamRecord.copy_[j],30720072478,10.79371395202753,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/TextTimeBenchmarkInputs$$Lambda$2734.0x000077df54cd3a78.map_[j],13557537533,4.763536353303749,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/TextTimeBenchmarkInputs.lambda$environment$26b726b7$1_[j],13557537533,4.763536353303749,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.flink.table.data.binary.BinaryRowData_[i],7682901698,2.6994416536336723,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.memory.ArrowBuf_[i],490208345,0.17223815655435265,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowArray.allocateNew_[j],330825097,0.11623772918267007,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowArray.directBuffer_[j],284687841,0.10002707915402512,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ReferenceCountedArrowArray.unsafeAssociateAllocation_[j],245366316,0.08621118424324817,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/vector/types/pojo/ArrowType$Binary.accept_[j],213384809,0.07497425638248292,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/memory/BufferLedger.newArrowBuf_[j],178257580,0.06263205692885551,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowArray.snapshot_[j],146276073,0.05139512906809025,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowArray.markReleased_[j],133168898,0.04678983076449794,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion.toArrowSchema_[j],117964575,0.041447684732330854,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowSchema.directBuffer_[j],112721705,0.039605565410893925,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowSchema.allocateNew_[j],98041669,0.03444763131087053,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion.createRowDataArrowWriter_[j],95944521,0.03371078358229576,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/vector/types/pojo/ArrowType$Bool.accept_[j],93323086,0.03278972392157729,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/vector/ipc/message/ArrowRecordBatch.<init>_[j],86507355,0.03039496880370929,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowSchema.snapshot_[j],81264485,0.028552849482272366,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/ScalarFunctionBenchmark.run_[j],80740198,0.02836863755012867,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/ScalarFunctionBenchmark.profileFunction_[j],80740198,0.02836863755012867,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowArray.save_[j],77070189,0.02707915402512282,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.c.ArrowArray$Snapshot_[i],71827319,0.025237034703685896,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/RowDataToArrowOperator.armFlushTimer_[j],58195857,0.020447524467949885,inclusive overlapping sampled allocation weights
+alloc,native,java/util/stream/AbstractPipeline.wrapAndCopyInto_[j],54525848,0.019158040942944037,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.ipc.message.ArrowBuffer_[i],49807265,0.017500133553650803,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion.createArrowReader_[j],49807265,0.017500133553650803,inclusive overlapping sampled allocation weights
+alloc,native,java/util/stream/AbstractPipeline.copyInto_[j],46137256,0.016210650028644955,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.operator.ArrowBatch_[i],43515821,0.015289590367926492,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowSchema.wrap_[j],40894386,0.01436853070720803,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/ScalarFunctionBenchmark.environment_[j],40370099,0.014184318775064335,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/TextTimeBenchmarkInputs.environment_[j],39321525,0.01381589491077695,inclusive overlapping sampled allocation weights
+alloc,native,java/util/Arrays.copyOf_[j],34602942,0.012157987521483716,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/ArrowBatch.<init>_[j],33030081,0.01160535172505264,inclusive overlapping sampled allocation weights
+alloc,native,java/util/Arrays.copyOfRange_[j],31981507,0.011236927860765253,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/memory/ArrowBuf.slice_[j],31981507,0.011236927860765253,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowSchema.markReleased_[j],31457220,0.011052715928621561,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.c.ReferenceCountedArrowArray$1_[i],30932933,0.010868503996477867,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.ipc.message.ArrowFieldNode_[i],30408646,0.010684292064334175,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ArrowArray.wrap_[j],28311498,0.009947444335759404,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/vector/types/Types.getMinorTypeForArrowType_[j],24641489,0.008657960810753556,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.ipc.message.ArrowRecordBatch_[i],21495767,0.0075526892178914,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.c.ArrowArray_[i],19922906,0.0070000534214603215,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion$$Lambda$2525.0x000077df54b8bab8.apply_[j],18350045,0.006447417625029244,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion.toArrowField_[j],18350045,0.006447417625029244,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion.lambda$toArrowSchema$0_[j],18350045,0.006447417625029244,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.memory.ArrowBuf[]_[i],16252897,0.005710569896454473,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/util/Collections2.immutableMapCopy_[j],15728610,0.0055263579643107805,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.c.ArrowSchema_[i],12582888,0.004421086371448624,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.operator.ArrowBatch$Backstop_[i],11010027,0.003868450575017546,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.c.ReferenceCountedArrowArray_[i],9437166,0.003315814778586468,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowReader.<init>_[j],9437166,0.003315814778586468,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/logging/slf4j/Log4jMDCAdapter.getCopyOfContextMap_[j],8912879,0.0031316028464427755,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/logging/log4j/spi/DefaultThreadContextMap.getCopy_[j],8912879,0.0031316028464427755,inclusive overlapping sampled allocation weights
+alloc,native,org/slf4j/MDC.getCopyOfContextMap_[j],8912879,0.0031316028464427755,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/ArrowToRowDataOperator.open_[j],8388592,0.002947390914299083,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion$$Lambda$2526.0x000077df54b8bcf8.get_[j],7340018,0.0025789670500116976,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion.createColumnVector_[j],6815731,0.0023947551178680046,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/writers/BinaryWriter.forRow_[j],6291444,0.002210543185724312,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.arrow.writers.BinaryWriter$BinaryWriterForRow_[i],6291444,0.002210543185724312,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion.createArrowFieldWriterForRow_[j],6291444,0.002210543185724312,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/vector/types/pojo/ArrowType$Struct.accept_[j],5767157,0.0020263312535806193,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.ipc.message.ArrowBodyCompression_[i],5767157,0.0020263312535806193,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.arrow.writers.ArrowFieldWriter[]_[i],5767157,0.0020263312535806193,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.operator.RowDataToArrowOperator$$Lambda$3234.0x000077df54e04018_[i],5767157,0.0020263312535806193,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/vector/ipc/message/ArrowRecordBatch.close_[j],5242870,0.0018421193214369267,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.arrow.ArrowWriter_[i],5242870,0.0018421193214369267,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.types.pojo.ArrowType$Bool_[i],4718583,0.001657907389293234,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/c/ReferenceCountedArrowArray.<init>_[j],4718583,0.001657907389293234,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.arrow.vectors.ArrowBooleanColumnVector_[i],4718583,0.001657907389293234,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.types.pojo.ArrowType$FixedSizeBinary_[i],4194296,0.0014736954571495414,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/arrow/ArrowConversion$TypeConverter.visit_[j],4194296,0.0014736954571495414,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.flink.table.data.columnar.ColumnarRowData_[i],4194296,0.0014736954571495414,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/arrow/vector/types/pojo/ArrowType$FixedSizeBinary.equals_[j],3670009,0.0012894835250058488,inclusive overlapping sampled allocation weights
+alloc,native,jdk/internal/reflect/ReflectionFactory.copyMethod_[j],3670009,0.0012894835250058488,inclusive overlapping sampled allocation weights
+alloc,native,java/lang/reflect/Method.copy_[j],3670009,0.0012894835250058488,inclusive overlapping sampled allocation weights
+alloc,native,java/lang/reflect/ReflectAccess.copyMethod_[j],3670009,0.0012894835250058488,inclusive overlapping sampled allocation weights
+alloc,native,java/lang/Class.copyMethods_[j],3670009,0.0012894835250058488,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.types.pojo.ArrowType$Binary_[i],2621435,0.0009210596607184633,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/parse/CalciteParser.parseSqlList_[j],2621435,0.0009210596607184633,inclusive overlapping sampled allocation weights
+alloc,native,org.apache.arrow.vector.types.pojo.ArrowType$Struct_[i],2097148,0.0007368477285747707,inclusive overlapping sampled allocation weights
+alloc,native,tech.streamfusion.arrow.vectors.ArrowVarBinaryColumnVector_[i],2097148,0.0007368477285747707,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/RowDataToArrowOperator.processWatermark_[j],1572861,0.000552635796431078,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn_[j],1572861,0.000552635796431078,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/streaming/api/graph/StreamConfig.getTypeSerializerIn1_[j],1572861,0.000552635796431078,inclusive overlapping sampled allocation weights
+alloc,native,org/snakeyaml/engine/v2/serializer/Serializer.serializeNode_[j],1048574,0.00036842386428738536,inclusive overlapping sampled allocation weights
+alloc,native,org/snakeyaml/engine/v2/serializer/Serializer.serializeDocument_[j],1048574,0.00036842386428738536,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/calcite/rel/core/Calc.isValid_[j],1048574,0.00036842386428738536,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/parse/CalciteParser.parseIdentifier_[j],1048574,0.00036842386428738536,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/parse/CalciteParser.createFlinkParser_[j],1048574,0.00036842386428738536,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/logging/log4j/internal/map/UnmodifiableArrayBackedMap.copyAndPutAll_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/streaming/api/graph/StreamConfig.getStateKeySerializer_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/api/java/typeutils/runtime/RowSerializer.readObject_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/SynchronousArrowInput$InputType.toString_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,java/util/stream/AbstractPipeline.copyIntoWithCancel_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/calcite/rel/core/Calc.<init>_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalcBase.<init>_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.<init>_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/calcite/rel/core/Calc.copy_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.copy_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/physical/stream/StreamPhysicalCalc.<init>_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.explainTerms_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.projectionToString_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc.$anonfun$projectionToString$2_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/nodes/common/CommonCalc$$Lambda$2444.0x000077df54b60000.apply_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/calcite/rel/rules/ProjectToCalcRule.onMatch_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/rules/physical/stream/StreamPhysicalCalcRule.$anonfun$matches$1_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/rules/physical/stream/StreamPhysicalCalcRule.$anonfun$matches$1$adapted_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/rules/physical/stream/StreamPhysicalCalcRule$$Lambda$2479.0x000077df54b6dc68.apply_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/plan/rules/physical/stream/StreamPhysicalCalcRule.matches_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/KafkaPlannerExtension.lambda$addSubstitutions$1_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/PhysicalPlanScan.substitute_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/PhysicalPlanScan.optimizeRoots_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/PhysicalPlanScan.apply_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/FilesystemTables.options_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/KafkaPlannerExtension$$Lambda$2143.0x000077df54a55df8.test_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/KafkaTables.isCdcDecode_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/PhysicalPlanScan.optimizeConfigured_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/PhysicalPlanScan.optimize_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/PhysicalPlanScan.rewrite_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/Substitution.apply_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,org/apache/flink/table/planner/calcite/RelTimeIndicatorConverter.visitCalc_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/planner/ArrowToRowDataExecNode.translateToPlanInternal_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights
+alloc,native,tech/streamfusion/operator/ArrowToRowDataOperator.<init>_[j],524287,0.00018421193214369268,inclusive overlapping sampled allocation weights

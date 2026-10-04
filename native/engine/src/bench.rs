@@ -5,6 +5,11 @@ pub fn flink_scalar_function(op: i64, arity: usize) -> datafusion::logical_expr:
     crate::flink_functions::function(op, arity).expect("registered scalar benchmark")
 }
 
+/// Binary ELT adaptation and allocation, through the same production UDF used by Calc.
+pub fn binary_elt_function(arity: usize, width: i32) -> datafusion::logical_expr::ScalarUDF {
+    crate::flink_functions::binary_elt::function(arity, width)
+}
+
 /// A filter predicate compiled once (on the first `run`) and reused, as the operator uses it.
 pub struct Filter(FilterExpression);
 
@@ -70,6 +75,146 @@ impl Tumbling {
 
     pub fn flush(&mut self, watermark: i64) -> RecordBatch {
         self.0.flush(watermark).expect("memory-backed flush")
+    }
+}
+
+/// Persistent tumbling SUM through the production window-state lifecycle.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentTumbling(TumblingAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentTumbling {
+    fn state_types() -> Vec<DataType> {
+        crate::aggregates::build_aggregates(&[0], &[0])
+            .iter()
+            .flat_map(crate::aggregates::WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect()
+    }
+
+    fn operator(store: crate::state::RocksWindowAggStore) -> Self {
+        Self(
+            TumblingAggregator::new(1000, 1000, false, vec![0], vec![0])
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store, vec![DataType::Utf8]),
+        )
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        let store = crate::state::RocksWindowAggStore::create(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+        )
+        .expect("persistent tumbling create");
+        Self::operator(store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksWindowAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .expect("persistent tumbling restore");
+        Self::operator(store)
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) {
+        self.0.update(batch).expect("persistent tumbling update");
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).expect("persistent tumbling flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(12345, directory)
+            .expect("persistent tumbling checkpoint")
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
+    }
+}
+
+/// Persistent session SUM through the production window-state lifecycle.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentSession(SessionAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentSession {
+    fn state_types() -> Vec<DataType> {
+        crate::aggregates::build_aggregates(&[0], &[0])
+            .iter()
+            .flat_map(crate::aggregates::WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect()
+    }
+
+    fn operator(store: crate::state::RocksSessionAggStore) -> Self {
+        Self(
+            SessionAggregator::new(1000, vec![0], vec![0])
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store, vec![DataType::Utf8]),
+        )
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        let store = crate::state::RocksSessionAggStore::create(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+        )
+        .expect("persistent session create");
+        Self::operator(store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksSessionAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .expect("persistent session restore");
+        Self::operator(store)
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) {
+        self.0.update(batch).expect("persistent session update");
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).expect("persistent session flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(12345, directory)
+            .expect("persistent session checkpoint")
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
     }
 }
 
@@ -237,6 +382,96 @@ impl UniqueUpdatingJoin {
     }
 }
 
+/// Production paired RocksDB state for immediate and mini-batch INNER updating joins.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentUpdatingJoin(UpdatingJoiner<crate::updating_join::RocksJoinStore>);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentUpdatingJoin {
+    fn operator(
+        schema: SchemaRef,
+        mini_batch: bool,
+        stores: (
+            crate::state::RocksStore<crate::updating_join::JoinStateCodec>,
+            crate::state::RocksStore<crate::updating_join::JoinStateCodec>,
+        ),
+    ) -> Self {
+        Self(
+            UpdatingJoiner::new(
+                vec![0],
+                vec![0],
+                JoinKind::Inner,
+                schema.clone(),
+                schema,
+                None,
+            )
+            .with_mini_batch(mini_batch)
+            .with_unique_join_keys(mini_batch, mini_batch)
+            .with_backend(
+                crate::updating_join::RocksJoinStore::new(stores.0, !mini_batch),
+                crate::updating_join::RocksJoinStore::new(stores.1, !mini_batch),
+            ),
+        )
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str, mini_batch: bool) -> Self {
+        let stores = crate::state::RocksStore::create_pair(
+            PersistentSort::config(directory, options),
+            0,
+            (
+                crate::updating_join::JoinStateCodec,
+                crate::updating_join::JoinStateCodec,
+            ),
+        )
+        .unwrap();
+        Self::operator(schema, mini_batch, stores)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        mini_batch: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let stores = crate::state::RocksStore::open_merged_pair(
+            PersistentSort::config(directory, options),
+            0,
+            (
+                crate::updating_join::JoinStateCodec,
+                crate::updating_join::JoinStateCodec,
+            ),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+            0,
+        )
+        .unwrap();
+        Self::operator(schema, mini_batch, stores)
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) -> RecordBatch {
+        let (left_store, right_store) = self.0.stores_mut();
+        left_store.set_clock(0);
+        right_store.set_clock(0);
+        self.0.push(batch, left, 0).unwrap()
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_mini_batch().unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        let (left, right) = self.0.stores_mut();
+        crate::updating_join::RocksJoinStore::checkpoint_pair(left, right, directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
 /// Append-only Top-N with explicit logical mini-batch flushes.
 pub struct AppendTopN(TopNRanker);
 
@@ -364,6 +599,128 @@ impl GroupBy {
 
     pub fn flush(&mut self) -> RecordBatch {
         self.0.flush_mini_batch().expect("budget exceeded")
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentGroupBy(GroupAggregator<crate::group_agg::RocksGroupStore>);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentGroupBy {
+    fn codec(kinds: &[i64], columns: &[i64]) -> crate::group_agg::GroupStateCodec {
+        crate::group_agg::GroupStateCodec::new(
+            kinds.to_vec(),
+            vec![DataType::Int64; kinds.len()],
+            columns.to_vec(),
+            vec![-1; kinds.len()],
+        )
+    }
+
+    fn operator(kinds: &[i64], columns: &[i64], store: crate::group_agg::RocksGroupStore) -> Self {
+        Self(
+            GroupAggregator::new(
+                kinds.to_vec(),
+                vec![0; kinds.len()],
+                columns.to_vec(),
+                vec![0],
+                true,
+            )
+            .with_key_timestamp_precisions(vec![-1])
+            .with_mini_batch()
+            .with_backend(store),
+        )
+    }
+
+    fn create_configured(directory: &str, options: &str, kinds: &[i64], columns: &[i64]) -> Self {
+        let store = crate::group_agg::RocksGroupStore::create(
+            PersistentSort::config(directory, options),
+            Self::codec(kinds, columns),
+        )
+        .expect("persistent GROUP BY create");
+        Self::operator(kinds, columns, store)
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        Self::create_configured(directory, options, &[3, 0], &[-1, 1])
+    }
+
+    pub fn new_extrema(directory: &str, options: &str) -> Self {
+        Self::create_configured(directory, options, &[3, 1, 2], &[-1, 1, 1])
+    }
+
+    fn restore_configured(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+        kinds: &[i64],
+        columns: &[i64],
+    ) -> Self {
+        let store = crate::group_agg::RocksGroupStore::open_merged(
+            PersistentSort::config(directory, options),
+            Self::codec(kinds, columns),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+            0,
+        )
+        .expect("persistent GROUP BY restore");
+        Self::operator(kinds, columns, store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        Self::restore_configured(
+            directory,
+            options,
+            source,
+            generation,
+            aligned,
+            &[3, 0],
+            &[-1, 1],
+        )
+    }
+
+    pub fn restore_extrema(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        Self::restore_configured(
+            directory,
+            options,
+            source,
+            generation,
+            aligned,
+            &[3, 1, 2],
+            &[-1, 1, 1],
+        )
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.update(batch, 0).expect("persistent GROUP BY update")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0
+            .flush_mini_batch()
+            .expect("persistent GROUP BY flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .expect("persistent GROUP BY checkpoint")
+            .snapshot_id
     }
 }
 
@@ -520,6 +877,72 @@ impl WindowJoin {
     }
 }
 
+/// Fixed-schema production window join backed by the shared two-sided RocksDB buffer.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentWindowJoin(WindowJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentWindowJoin {
+    fn operator(schema: SchemaRef) -> WindowJoiner {
+        WindowJoin::new(vec![0], vec![0], 2, 3, 2, 3, schema.clone(), schema).0
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksWindowBuffer::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+        )
+        .unwrap();
+        Self(Self::operator(schema).with_store(store))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksWindowBuffer::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(Self::operator(schema).with_store(store))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch.clone()).unwrap();
+        } else {
+            self.0.push_right(batch.clone()).unwrap();
+        }
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str, deadline: i64) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(deadline, directory)
+            .unwrap()
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&mut self) -> i64 {
+        self.0.store_mut().timer_deadline()
+    }
+}
+
 /// Production IPC serialization, including the stream header and owned output buffer.
 pub fn encode_ipc(batch: &RecordBatch) -> Vec<u8> {
     crate::ipc::write_ipc(batch)
@@ -601,6 +1024,76 @@ impl TemporalJoin {
     }
     pub fn snapshot(&self) -> Vec<u8> {
         self.0.snapshot()
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub struct TemporalJoinState(crate::temporal_join::TemporalJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl TemporalJoinState {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksTemporalJoinStore::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[0],
+        )
+        .unwrap();
+        Self(
+            TemporalJoin::new(schema)
+                .0
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksTemporalJoinStore::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[0],
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(
+            TemporalJoin::new(schema)
+                .0
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch, 0)
+        } else {
+            self.0.push_right(batch, 0)
+        }
+        .unwrap();
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark, 0).unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
     }
 }
 
@@ -787,16 +1280,187 @@ impl UpsertMerge {
 #[cfg(feature = "rocksdb-state")]
 pub struct PersistentSort(crate::sorter::TemporalSorter);
 #[cfg(feature = "rocksdb-state")]
-impl PersistentSort {
+pub struct PersistentFirstDedup(KeepFirstDeduplicator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentFirstDedup {
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
+    }
+
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksKeepFirstDedupStore::open_merged(
+            PersistentSort::config(directory, options),
+            schema,
+            &[0],
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(KeepFirstDeduplicator::new(vec![0], 2).with_store(store))
+    }
     pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
-        let config = crate::state::rocks_store::RocksStoreConfig {
+        Self::with_ttl(directory, schema, options, 0)
+    }
+
+    pub fn with_ttl(directory: &str, schema: SchemaRef, options: &str, ttl_ms: i64) -> Self {
+        let mut config = PersistentSort::config(directory, options);
+        config.ttl_ms = ttl_ms;
+        let store = crate::state::RocksKeepFirstDedupStore::create(config, schema, &[0]).unwrap();
+        Self(
+            KeepFirstDeduplicator::new(vec![0], 2)
+                .with_store(store)
+                .with_state_ttl(ttl_ms),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.push_at(batch, 0);
+    }
+
+    pub fn push_at(&mut self, batch: &RecordBatch, now_ms: i64) {
+        self.0.push(batch, now_ms).unwrap();
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.flush_at(watermark, 0)
+    }
+
+    pub fn flush_at(&mut self, watermark: i64, now_ms: i64) -> RecordBatch {
+        self.0.flush(watermark, now_ms).unwrap()
+    }
+}
+
+/// Fixed-schema interval state probes share the production joiner with the memory oracle.
+#[cfg(feature = "rocksdb-state")]
+pub struct IntervalState(IntervalJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl IntervalState {
+    pub fn memory(schema: SchemaRef, outer: bool) -> Self {
+        Self(
+            IntervalJoiner::new(
+                vec![0],
+                vec![0],
+                2,
+                2,
+                -100,
+                100,
+                None,
+                if outer {
+                    JoinKind::LeftOuter
+                } else {
+                    JoinKind::Inner
+                },
+                schema.clone(),
+                schema,
+            )
+            .with_key_timestamp_precisions(vec![-1]),
+        )
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str, outer: bool) -> Self {
+        let store = crate::state::RocksIntervalBuffer::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+        )
+        .unwrap();
+        Self(Self::memory(schema, outer).0.with_store(store))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        outer: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksIntervalBuffer::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(Self::memory(schema, outer).0.with_store(store))
+    }
+
+    pub fn push_left(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push_left(batch.clone(), None).unwrap()
+    }
+
+    pub fn push_right(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push_right(batch.clone(), None).unwrap()
+    }
+
+    pub fn advance(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark).unwrap()
+    }
+
+    pub fn timer_deadline(&mut self) -> i64 {
+        self.0.store_mut().timer_deadline()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(500, directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentSort {
+    fn config(directory: &str, options: &str) -> crate::state::rocks_store::RocksStoreConfig {
+        crate::state::rocks_store::RocksStoreConfig {
             table_dir: directory.into(),
             max_parallelism: 1,
             options_json: options.into(),
             ttl_ms: 0,
             shared_resources: 0,
-        };
-        let store = crate::state::RocksTemporalSortBuffer::create(config, schema).unwrap();
+        }
+    }
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store =
+            crate::state::RocksTemporalSortBuffer::create(Self::config(directory, options), schema)
+                .unwrap();
+        Self(crate::sorter::TemporalSorter::new(1).with_store(store))
+    }
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksTemporalSortBuffer::open_merged(
+            Self::config(directory, options),
+            schema,
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
         Self(crate::sorter::TemporalSorter::new(1).with_store(store))
     }
     pub fn push(&mut self, batch: &RecordBatch) {
@@ -805,8 +1469,100 @@ impl PersistentSort {
     pub fn flush(&mut self) -> RecordBatch {
         self.0.flush(i64::MAX).unwrap()
     }
-    pub fn checkpoint(&mut self, directory: &str) {
-        self.0.store_mut().checkpoint(directory).unwrap();
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
+/// Production window rank with matched memory and disk configurations.
+#[cfg(feature = "rocksdb-state")]
+pub struct WindowRankState(crate::topn::WindowRanker);
+
+#[cfg(feature = "rocksdb-state")]
+impl WindowRankState {
+    pub fn memory(limit: i64, keep_last: bool) -> Self {
+        let mut ranker = crate::topn::WindowRanker::new(
+            0,
+            1,
+            vec![2],
+            vec![SortColumn {
+                index: 3,
+                ascending: true,
+                nulls_first: false,
+            }],
+            limit,
+            true,
+        );
+        ranker.set_keep_last_on_tie(keep_last);
+        Self(ranker.with_key_timestamp_precisions(vec![-1]))
+    }
+
+    pub fn new(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        limit: i64,
+        keep_last: bool,
+    ) -> Self {
+        let types = schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect::<Vec<_>>();
+        let store = crate::state::RocksWindowRankStore::create(
+            PersistentSort::config(directory, options),
+            &types,
+            0..=0,
+        )
+        .unwrap();
+        Self(Self::memory(limit, keep_last).0.with_store(store, schema))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        limit: i64,
+        keep_last: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let types = schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect::<Vec<_>>();
+        let store = crate::state::RocksWindowRankStore::open_merged(
+            PersistentSort::config(directory, options),
+            &types,
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .unwrap();
+        Self(Self::memory(limit, keep_last).0.with_store(store, schema))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch).unwrap();
+    }
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+    pub fn late_drops(&self) -> u64 {
+        self.0.late_drops
+    }
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
+    }
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0.checkpoint_store(200, directory).unwrap().snapshot_id
     }
 }
 
@@ -836,5 +1592,70 @@ impl CalcProgram {
     }
     pub fn run(&mut self, batch: RecordBatch) -> RecordBatch {
         self.0.evaluate(batch)
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentOver(OverWindowAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentOver {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksOverAggStore::create(
+            PersistentSort::config(directory, options),
+            &rocks_over_state_types(&[0], &[0], 0, false).unwrap(),
+            &[],
+            &[],
+            schema,
+            0..=0,
+        )
+        .expect("persistent OVER fixture");
+        Self(Self::operator().with_store(store, vec![DataType::Int64]))
+    }
+
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksOverAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &rocks_over_state_types(&[0], &[0], 0, false).unwrap(),
+            &[],
+            &[],
+            schema,
+            0..=0,
+            &[(source.to_owned(), generation)],
+            aligned,
+        )
+        .expect("persistent OVER restore");
+        Self(Self::operator().with_store(store, vec![DataType::Int64]))
+    }
+
+    fn operator() -> OverWindowAggregator {
+        OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false)
+            .with_key_timestamp_precisions(vec![-1])
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch.clone(), 0).expect("persistent OVER push");
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.advance(i64::MAX)
+    }
+
+    pub fn advance(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark, 0).expect("persistent OVER flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(directory)
+            .expect("persistent OVER checkpoint")
+            .snapshot_id
     }
 }

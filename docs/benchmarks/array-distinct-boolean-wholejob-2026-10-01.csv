@@ -1,0 +1,11 @@
+revision,element_type,rows,width,domain,container_null_every,element_null_every,engine,trial,seconds
+6160a21b,BOOLEAN,2000000,64,2,8,7,stock_flink,1,3.427701816
+6160a21b,BOOLEAN,2000000,64,2,8,7,stock_flink,2,4.344118024
+6160a21b,BOOLEAN,2000000,64,2,8,7,stock_flink,3,3.311263814
+6160a21b,BOOLEAN,2000000,64,2,8,7,stock_flink,4,3.978981381
+6160a21b,BOOLEAN,2000000,64,2,8,7,stock_flink,5,3.186608809
+6160a21b,BOOLEAN,2000000,64,2,8,7,candidate_native,1,3.035910858
+6160a21b,BOOLEAN,2000000,64,2,8,7,candidate_native,2,2.419405517
+6160a21b,BOOLEAN,2000000,64,2,8,7,candidate_native,3,2.816673458
+6160a21b,BOOLEAN,2000000,64,2,8,7,candidate_native,4,2.770216694
+6160a21b,BOOLEAN,2000000,64,2,8,7,candidate_native,5,1.819923755

@@ -1,0 +1,5 @@
+case,mean_ns,lower_ns,upper_ns,mean_change,lower_change,upper_change
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,76512.60963445401,76250.94036023946,76848.29615623532,-0.010612751156603428,-0.016024728159731553,-0.0047043998200432735
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,164494.51611570598,164006.525955109,164958.35047703117,-0.004258551782055919,-0.01100743293544682,0.002309016538645691
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=256/nulls=true/fixed_literal=false/literal_null=false/index=dynamic,186695.61686740592,186090.67432686,187336.295703536,0.1261674588370243,0.11775077464644221,0.13330580785968427
+binary_expressions/elt_arguments/elt_arguments/scalar/16384/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,69301.20712405749,69037.49699783526,69611.7367806047,0.0014960249183866292,-0.00416141614661262,0.006944474957783031

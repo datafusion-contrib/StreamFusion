@@ -1,0 +1,6 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+engine/rocksdb/window_join/window_join/checkpoint_after_fire/16384/bytes=264/nulls=true,38343246.96,33732526.50825,43466915.834,0.95
+engine/rocksdb/window_join/window_join/fire/16384/bytes=264/nulls=true,74263378.8,73906284.83950001,74627905.26425,0.95
+engine/rocksdb/window_join/window_join/push_right/16384/bytes=264/nulls=true,65675611.02,45166529.222,88212136.89449997,0.95
+engine/rocksdb/window_join/window_join/restore_aligned/16384/bytes=264/nulls=true,17696502.20333333,17383988.822416667,18052629.948333334,0.95
+engine/rocksdb/window_join/window_join/restore_rebuilt/16384/bytes=264/nulls=true,51356151.49,49225044.8075,54073790.9055,0.95

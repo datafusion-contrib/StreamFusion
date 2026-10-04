@@ -1,0 +1,13 @@
+variant,case,mean_ns,ci_lower_ns,ci_upper_ns,confidence_level,samples
+unconditional_hints,binary_expressions/elt_all_scalar/elt_all_scalar/width=0/values=3/fixed_literal=false/nulls=false/index=Some(1),1017.5569955133814,1013.824895652522,1021.8092165391976,0.95,100
+unconditional_hints,binary_expressions/elt_all_scalar/elt_all_scalar/width=16/values=3/fixed_literal=false/nulls=false/index=Some(1),1175.7102330049338,1170.2165842384,1181.659121823579,0.95,100
+unconditional_hints,binary_expressions/elt_arguments/elt_arguments/expanded_control/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,5276.974699583502,5254.207351784406,5302.715856469737,0.95,100
+unconditional_hints,binary_expressions/elt_arguments/elt_arguments/scalar/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,5179.078443900922,5137.883108169745,5248.6617048219605,0.95,100
+published_control_f0aa2c43,binary_expressions/elt_all_scalar/elt_all_scalar/width=0/values=3/fixed_literal=false/nulls=false/index=Some(1),1102.3451875709818,1099.0205896072168,1106.1881240696805,0.95,100
+published_control_f0aa2c43,binary_expressions/elt_all_scalar/elt_all_scalar/width=16/values=3/fixed_literal=false/nulls=false/index=Some(1),1148.3771340748892,1141.4569191415976,1156.7316370829863,0.95,100
+published_control_f0aa2c43,binary_expressions/elt_arguments/elt_arguments/expanded_control/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,5535.356365119876,5507.254551231788,5567.030844050772,0.95,100
+published_control_f0aa2c43,binary_expressions/elt_arguments/elt_arguments/scalar/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,5723.529049171921,5706.332549879629,5741.638961234958,0.95,100
+mixed_hints,binary_expressions/elt_all_scalar/elt_all_scalar/width=0/values=3/fixed_literal=false/nulls=false/index=Some(1),1040.9102889282947,1038.333918033379,1043.7226938178278,0.95,100
+mixed_hints,binary_expressions/elt_all_scalar/elt_all_scalar/width=16/values=3/fixed_literal=false/nulls=false/index=Some(1),1155.4287499098418,1151.069553946816,1159.6748347829994,0.95,100
+mixed_hints,binary_expressions/elt_arguments/elt_arguments/expanded_control/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,4883.025323901242,4858.247633715237,4913.264882606357,0.95,100
+mixed_hints,binary_expressions/elt_arguments/elt_arguments/scalar/1024/width=16/nulls=false/fixed_literal=false/literal_null=false/index=dynamic,4992.027937492452,4974.907976960067,5012.100770314561,0.95,100

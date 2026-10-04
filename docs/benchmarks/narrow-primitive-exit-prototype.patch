@@ -1,0 +1,85 @@
+diff --git a/src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java b/src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java
+index efa4bc29..20acb4d6 100644
+--- a/src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java
++++ b/src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java
+@@ -26,8 +26,9 @@ import tech.streamfusion.compat.FlinkStreamOperator;
+  * native columnar operator feeds a rowwise (host) one, so the Arrow→row conversion happens once at
+  * the boundary. It consumes (and closes) each batch it receives.
+  *
+- * <p>Primitive and binary outputs use Flink's generated binary-row projection so downstream copying avoids
+- * generic field getters and boxing. Other outputs retain the reusable Arrow-backed row view.
++ * <p>Narrow primitive outputs retain the reusable Arrow-backed row view so downstream copying avoids
++ * binary-row container allocations. Wider primitive, binary and compact decimal outputs use Flink's
++ * generated binary-row projection. Other outputs retain the reusable Arrow-backed row view.
+  * Chained Flink operators may retain a collected {@code RowData}. With object reuse disabled,
+  * Flink's chained output copies the reusable row synchronously; with reuse enabled this boundary
+  * supplies the owned copy.
+@@ -46,7 +47,13 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
+ 
+   public ArrowToRowDataOperator(RowType rowType) {
+     this.rowType = rowType;
+-    boolean projectBinaryRow = rowType.getChildren().stream().allMatch(type -> switch (type.getTypeRoot()) {
++    boolean narrowPrimitiveRow = rowType.getFieldCount() <= 4
++        && rowType.getChildren().stream().allMatch(type -> switch (type.getTypeRoot()) {
++          case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE -> true;
++          default -> false;
++        });
++    boolean projectBinaryRow = !narrowPrimitiveRow
++        && rowType.getChildren().stream().allMatch(type -> switch (type.getTypeRoot()) {
+       case BINARY, VARBINARY, BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE, DATE,
+           TIME_WITHOUT_TIME_ZONE, INTERVAL_YEAR_MONTH, INTERVAL_DAY_TIME -> true;
+       case DECIMAL -> ((DecimalType) type).getPrecision() <= 18;
+diff --git a/src/test/java/tech/streamfusion/operator/TransposeOperatorsTest.java b/src/test/java/tech/streamfusion/operator/TransposeOperatorsTest.java
+index 848c4198..b177f888 100644
+--- a/src/test/java/tech/streamfusion/operator/TransposeOperatorsTest.java
++++ b/src/test/java/tech/streamfusion/operator/TransposeOperatorsTest.java
+@@ -86,6 +86,49 @@ class TransposeOperatorsTest {
+     }
+   }
+ 
++  @ParameterizedTest
++  @ValueSource(booleans = {false, true})
++  void narrowPrimitiveExitOwnsRowsAfterBatchClose(boolean objectReuse) throws Exception {
++    var schema = RowType.of(new org.apache.flink.table.types.logical.FloatType(),
++        new org.apache.flink.table.types.logical.DoubleType(), new BigIntType(),
++        new org.apache.flink.table.types.logical.BooleanType());
++    List<RowData> input = List.of(
++        GenericRowData.of(-0.0f, -0.0d, Long.MIN_VALUE, true),
++        GenericRowData.of(Float.intBitsToFloat(0x7fc00001),
++            Double.longBitsToDouble(0x7ff8000000000001L), Long.MAX_VALUE, null),
++        GenericRowData.of(Float.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, null, false),
++        GenericRowData.of(null, null, 0L, true));
++    var kinds = org.apache.flink.types.RowKind.values();
++    for (int i = 0; i < input.size(); i++) input.get(i).setRowKind(kinds[i]);
++    try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, RowData>(
++        new ArrowToRowDataOperator(schema), new ArrowBatchSerializer())) {
++      if (objectReuse) harness.getExecutionConfig().enableObjectReuse();
++      harness.setup(new RowDataSerializer(schema));
++      harness.open();
++      for (int start = 0; start < input.size(); start += 2) {
++        var root = RowDataArrowConverter.write(input.subList(start, start + 2), schema,
++            NativeAllocator.SHARED, true);
++        harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
++      }
++      List<RowData> output = values(harness);
++      assertEquals(input.size(), output.size());
++      for (int row = 0; row < input.size(); row++) {
++        RowData expected = input.get(row);
++        RowData actual = output.get(row);
++        assertEquals(expected.getRowKind(), actual.getRowKind());
++        for (int column = 0; column < 4; column++) {
++          assertEquals(expected.isNullAt(column), actual.isNullAt(column));
++        }
++        if (!expected.isNullAt(0)) assertEquals(Float.floatToRawIntBits(expected.getFloat(0)),
++            Float.floatToRawIntBits(actual.getFloat(0)));
++        if (!expected.isNullAt(1)) assertEquals(Double.doubleToRawLongBits(expected.getDouble(1)),
++            Double.doubleToRawLongBits(actual.getDouble(1)));
++        if (!expected.isNullAt(2)) assertEquals(expected.getLong(2), actual.getLong(2));
++        if (!expected.isNullAt(3)) assertEquals(expected.getBoolean(3), actual.getBoolean(3));
++      }
++    }
++  }
++
+   @ParameterizedTest
+   @ValueSource(booleans = {false, true})
+   void fixedWidthExitPreservesNullsKindsAndFloatingBitsAfterBatchClose(boolean objectReuse)

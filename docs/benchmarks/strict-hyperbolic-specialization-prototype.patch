@@ -1,0 +1,11 @@
+--- a/native/engine/src/flink_functions/hyperbolic.rs
++++ b/native/engine/src/flink_functions/hyperbolic.rs
+@@ -67,7 +67,7 @@
+     }
+ }
+
+-fn apply(args: &[ArrayRef], function: fn(f64) -> f64) -> Result<ArrayRef> {
++fn apply<F: Fn(f64) -> f64>(args: &[ArrayRef], function: F) -> Result<ArrayRef> {
+     if args.len() != 1 {
+         return exec_err!("Hyperbolic functions require one argument");
+     }

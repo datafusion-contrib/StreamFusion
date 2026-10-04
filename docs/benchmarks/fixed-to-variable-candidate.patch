@@ -1,0 +1,86 @@
+diff --git a/native/engine/src/flink_functions/binary_cast.rs b/native/engine/src/flink_functions/binary_cast.rs
+index e1337f94..8c5086f8 100644
+--- a/native/engine/src/flink_functions/binary_cast.rs
++++ b/native/engine/src/flink_functions/binary_cast.rs
+@@ -1,7 +1,7 @@
+ use arrow::array::{
+     Array, ArrayRef, BinaryArray, BinaryBuilder, FixedSizeBinaryArray, NullBufferBuilder,
+ };
+-use arrow::buffer::MutableBuffer;
++use arrow::buffer::{MutableBuffer, OffsetBuffer, ScalarBuffer};
+ use arrow::datatypes::DataType;
+ use datafusion::common::{exec_err, Result};
+ use datafusion::logical_expr::{
+@@ -54,9 +54,30 @@ impl BinaryCast {
+             if self.pad && values.value_length() as usize == self.length {
+                 return Ok(input.clone());
+             }
+-            if self.length != usize::MAX {
+-                return self.from_values(values.iter(), values.len(), values.values().len());
++            if !self.pad
++                && (self.length == usize::MAX
++                    || self.length == i32::MAX as usize
++                        && values.values().len() <= i32::MAX as usize)
++            {
++                let width = values.value_length() as usize;
++                values
++                    .len()
++                    .checked_mul(width)
++                    .filter(|&bytes| bytes <= i32::MAX as usize)
++                    .ok_or_else(|| {
++                        arrow::error::ArrowError::ComputeError(
++                            "FixedSizeBinary array too large to cast to Binary array".into(),
++                        )
++                    })?;
++                let offsets: Vec<i32> =
++                    (0..=values.len()).map(|row| (row * width) as i32).collect();
++                return Ok(Arc::new(BinaryArray::new(
++                    OffsetBuffer::new(ScalarBuffer::from(offsets)),
++                    values.values().clone(),
++                    values.nulls().cloned(),
++                )));
+             }
++            return self.from_values(values.iter(), values.len(), values.values().len());
+         }
+         let binary = arrow::compute::cast(input, &DataType::Binary)?;
+         if self.length == usize::MAX {
+@@ -173,6 +194,39 @@ mod tests {
+         assert_eq!(output.len(), 2);
+     }
+
++    #[test]
++    fn unbounded_cast_retains_sliced_payload_after_input_drop() {
++        for length in [usize::MAX, i32::MAX as usize] {
++            let cast = BinaryCast {
++                length,
++                pad: false,
++                signature: Signature::any(1, Volatility::Immutable),
++            };
++            for rows in [0, 1, 3] {
++                for all_null in [false, true] {
++                    let input = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
++                        [Some([9, 9]), None, Some([0xff, 0]), Some([0, 0x80])]
++                            .into_iter()
++                            .map(|value| if all_null { None } else { value }),
++                        2,
++                    )
++                    .unwrap()
++                    .slice(1, rows);
++                    let expected = BinaryArray::from_iter(input.iter());
++                    let payload = input.values().as_ptr();
++                    let output = cast.cast(&[Arc::new(input)]).unwrap();
++                    let output = output.as_any().downcast_ref::<BinaryArray>().unwrap();
++                    assert_eq!(output, &expected);
++                    assert_eq!(output.values().as_ptr(), payload);
++                    assert_eq!(
++                        output.value_offsets(),
++                        &(0..=rows as i32).map(|i| i * 2).collect::<Vec<_>>()
++                    );
++                }
++            }
++        }
++    }
++
+     #[test]
+     fn variable_and_legacy_casts_do_not_pad_and_fixed_inputs_keep_raw_bytes() {
+         let input: ArrayRef = Arc::new(

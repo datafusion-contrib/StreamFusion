@@ -5249,6 +5249,139 @@ mod tests {
     }
 
     #[test]
+    fn window_rank_string_sort_and_secondary_ties_survive_restore() {
+        use super::*;
+        use arrow::array::StringArray;
+        let values = [
+            None,
+            Some("z"),
+            Some("a"),
+            Some("a"),
+            Some("a"),
+            None,
+            Some("a"),
+        ];
+        let secondary = [1, 9, 2, 2, 1, 0, 2];
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "sort",
+                Arc::new(StringArray::from(values.to_vec())) as ArrayRef,
+            ),
+            (
+                "secondary",
+                Arc::new(Int64Array::from(secondary.to_vec())) as ArrayRef,
+            ),
+            (
+                "id",
+                Arc::new(Int64Array::from_iter_values(0..7)) as ArrayRef,
+            ),
+            (
+                "payload",
+                Arc::new(StringArray::from_iter_values(
+                    (0..7).map(|id| format!("{id}/中\0")),
+                )) as ArrayRef,
+            ),
+            ("start", Arc::new(Int64Array::from(vec![0; 7])) as ArrayRef),
+            ("end", Arc::new(Int64Array::from(vec![100; 7])) as ArrayRef),
+        ])
+        .unwrap();
+        for ascending in [false, true] {
+            for nulls_first in [false, true] {
+                for keep_last in [false, true] {
+                    for limit in [1, 3] {
+                        if keep_last && limit != 1 {
+                            continue;
+                        }
+                        let sort = vec![
+                            SortColumn {
+                                index: 0,
+                                ascending,
+                                nulls_first,
+                            },
+                            SortColumn {
+                                index: 1,
+                                ascending: true,
+                                nulls_first: false,
+                            },
+                        ];
+                        let mut ranker = WindowRanker::new(4, 5, vec![], sort.clone(), limit, true);
+                        ranker.set_keep_last_on_tie(keep_last);
+                        ranker.push(&batch.slice(0, 3)).unwrap();
+                        let snapshots = ranker
+                            .raw_snapshot_partitions(128, &[])
+                            .into_values()
+                            .collect::<Vec<_>>();
+                        let mut restored = WindowRanker::restore_partitions(
+                            4,
+                            5,
+                            vec![],
+                            sort,
+                            limit,
+                            true,
+                            &snapshots,
+                        );
+                        restored.set_keep_last_on_tie(keep_last);
+                        restored.push(&batch.slice(3, 4)).unwrap();
+                        let mut expected: Vec<usize> = (0..7).collect();
+                        expected.sort_by(|&left, &right| {
+                            let order = match (values[left], values[right]) {
+                                (None, None) => std::cmp::Ordering::Equal,
+                                (None, Some(_)) => {
+                                    if nulls_first {
+                                        std::cmp::Ordering::Less
+                                    } else {
+                                        std::cmp::Ordering::Greater
+                                    }
+                                }
+                                (Some(_), None) => {
+                                    if nulls_first {
+                                        std::cmp::Ordering::Greater
+                                    } else {
+                                        std::cmp::Ordering::Less
+                                    }
+                                }
+                                (Some(left), Some(right)) => {
+                                    if ascending {
+                                        left.cmp(right)
+                                    } else {
+                                        right.cmp(left)
+                                    }
+                                }
+                            };
+                            order
+                                .then_with(|| secondary[left].cmp(&secondary[right]))
+                                .then_with(|| {
+                                    if keep_last {
+                                        right.cmp(&left)
+                                    } else {
+                                        left.cmp(&right)
+                                    }
+                                })
+                        });
+                        expected.truncate(limit as usize);
+                        let output = restored.flush(100).unwrap();
+                        assert_eq!(output.num_rows(), expected.len());
+                        for (rank, row) in expected.into_iter().enumerate() {
+                            for column in 0..batch.num_columns() {
+                                assert_eq!(
+                                    ScalarValue::try_from_array(output.column(column), rank)
+                                        .unwrap(),
+                                    ScalarValue::try_from_array(batch.column(column), row).unwrap()
+                                );
+                            }
+                            assert_eq!(
+                                ScalarValue::try_from_array(output.column(6), rank).unwrap(),
+                                ScalarValue::Int64(Some(rank as i64 + 1))
+                            );
+                        }
+                        assert_eq!(restored.flush(100).unwrap().num_rows(), 0);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn window_dedup_ties_across_batches_and_raw_restore() {
         use super::*;
         let batch = |ids: Vec<i64>| {

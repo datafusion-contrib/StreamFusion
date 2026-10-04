@@ -1,0 +1,9 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=16384/bytes=264/nulls=false,58610202.96,58157768.39749999,59073903.251499996,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=16384/bytes=264/nulls=true,52960422.86,52632359.943,53317313.84275,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=16384/bytes=8/nulls=false,30240153.47,30012566.160249997,30484665.07025,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=16384/bytes=8/nulls=true,28398659.0,28246626.519750003,28563717.915,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=8/bytes=264/nulls=false,1462679.1233333328,1419696.3289166663,1506735.380833333,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=8/bytes=264/nulls=true,1740917.45,1669523.247,1815587.959875,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=8/bytes=8/nulls=false,410620.1675,406360.8895625,415404.2375,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=8/bytes=8/nulls=true,450259.10333333316,446786.9665833334,454312.67683333345,0.95

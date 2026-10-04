@@ -1,0 +1,3 @@
+variant,test,tests,failures,errors,skipped,test_seconds,native_bundle_observed,native_level0_observed
+stock,PrimaryKeyFileStoreTableITCase.testFullCompactionChangelogProducerStreamingRandom,1,0,0,0,16.028,False,False
+native,PrimaryKeyFileStoreTableITCase.testFullCompactionChangelogProducerStreamingRandom,1,0,0,0,22.528,True,True

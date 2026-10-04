@@ -1,0 +1,5 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+binary_expressions/fixed_to_variable/1024/width=1/nulls=true/offset=1,5167.874262371992,5100.746877422894,5262.769501109079,0.95
+binary_expressions/fixed_to_variable/1024/width=256/nulls=true/offset=1,14095.074005565342,14039.265619850039,14160.056377388315,0.95
+binary_expressions/fixed_to_variable/16384/width=1/nulls=true/offset=1,69636.56641101255,69397.62791571351,69904.43723659257,0.95
+binary_expressions/fixed_to_variable/16384/width=256/nulls=true/offset=1,300947.3947094856,298126.93951064727,304409.77262511273,0.95
