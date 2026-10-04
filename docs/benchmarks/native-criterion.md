@@ -2018,3 +2018,23 @@ kernels improve 11.92–14.11%, but complete jobs still lose to shipping by
 and stock. The 816 oracle fixtures and allocation probes and both released
 Flink SQL suites pass; allocation traffic is unchanged. Production admission
 remains unchanged and the broader performance goal remains pending.
+
+
+## Typed NULL hyperbolic scalar coverage
+
+A [portable benchmark extension](strict-hyperbolic-typed-null-benchmarks.patch)
+adds 72 production Calc cases for typed NULL scalar inputs: all six numeric
+types, COSH/SINH/TANH, and batch sizes 0/16/1024/16384. Each case uses the
+planner's kind-31 typed NULL encoding with an Arrow IPC stream schema, checks
+one DOUBLE output column, row count and a completely NULL result, and keeps
+evaluation and output allocation/disposal inside its Criterion closure.
+Inputs and encoded schemas are prepared outside measurement.
+
+All 888 cases and [888 allocation probes](hyperbolic-typed-null-allocations-2026-10-04.csv)
+pass release/mimalloc smoke validation. The new expected results follow NULL
+propagation independently of the production helper; the existing numerical
+fixtures retain their frozen Java 17 bit oracle. These are correctness and
+allocation witnesses, not timing or complete-job speedup evidence. Apply the
+extension after the baseline, typed, fusion and specialization prototype
+patches described in the [specialization diagnostic](hyperbolic-specialization.md).
+Production admission is unchanged.
