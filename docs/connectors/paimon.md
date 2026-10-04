@@ -1353,3 +1353,33 @@ Java 17 validation of the retention hook passes all seven selected tests with
 zero failures, errors or skips: four warehouse-capture cases and three existing
 test-watch diagnostics cases. These validate the diagnostic hook, not recovery
 correctness in the failing released upstream test.
+
+A focused local run with warehouse capture enabled also passes the released
+full-compaction streaming test on Flink 1.18.1/Paimon 1.0.0: one test, zero
+failures, errors or skips, 34.042 seconds. The Surefire report confirms the
+capture property, native bundle and level-0 write witnesses are present, and
+all ten release library hashes match the earlier full-suite reproduction before
+and after this run. Reports, inventory and runtime diagnostics are retained.
+No failure warehouse is generated for a passing test; this randomized draw
+does not explain the CI assertion mismatch or establish a recovery fix.
+
+A subsequent PR-head CI run also fails the released Flink 2.2 Paimon
+full-compaction changelog test. On `505e94d5`, [job 111379754377](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37182358006/job/111379754377)
+reports `testFullCompactionChangelogProducerStreamingRandom` expected
+`10000|10000.str` but observed `289|9496.str` after 41.774 seconds.
+This is an actual value mismatch, not a timeout. The preceding 260-test shard
+passes; the failing focused shard has one failure and subsequent shards pass.
+These passes do not resolve the mismatch or establish a native cause. Exact job
+logs are retained; artifact/runtime and retained-warehouse evidence must be
+examined before attributing the failure or accepting connector parity.
+
+The upstream Paimon suite now forwards the opt-in
+`FLINK_SUITE_RETAIN_FAILED_WAREHOUSE=true` to its existing failure-capture
+hook. Canonical upstream CI enables it on both released Flink lines; local
+suite runs retain the previous default of false. The existing diagnostics
+artifact path includes captured warehouses. Capture occurs after a test fails,
+before fixture cleanup, and capture errors preserve the original failure.
+It does not alter upstream queries or assertions, repair the value mismatch,
+or provide an atomic snapshot while background jobs are active. This change
+makes future failed table files available for diagnosis; the prior artifact
+has no such files.

@@ -156,6 +156,7 @@ jobs:
           FLINK_VERSION: ${{ matrix.version }}
           SUITES: ${{ matrix.suites }}
           FLINK_SUITE_IT_FORKS: ${{ matrix.label == 'paimon' && matrix.line == '2.2' && '2' || '1' }}
+          FLINK_SUITE_RETAIN_FAILED_WAREHOUSE: 'true'
           FLINK_SUITE_REUSE_COMMON_BUILD: 'true'
           FLINK_SUITE_SHARD: ${{ matrix.shard }}
           FLINK_SUITE_SQL_INVENTORY: ${{ inputs.sql_inventory || false }}
