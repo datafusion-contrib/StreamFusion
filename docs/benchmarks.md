@@ -346,3 +346,10 @@ retains all cache policies, unfavorable results, and library hashes. It uses the
 existing shared-cluster 48 GiB task off-heap ceiling, equal for all policies,
 alongside 512 MiB managed memory and a 3 GiB heap. That ceiling is not an allocation
 and these timings do not establish performance under a 512 MiB total native pool.
+
+## Native operation profiling
+
+Use the [native Criterion suites](benchmarks/native-criterion.md) to isolate Rust execution,
+allocation requests, and Arrow buffer sharing before optimizing an end-to-end regression.
+`python3 bin/bench-native.py --list` discovers every suite; `--smoke` checks fixtures in a release
+build. These measurements complement the Flink comparisons on this page.

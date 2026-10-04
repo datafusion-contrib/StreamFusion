@@ -442,3 +442,21 @@ mod timestamp_tests {
         }
     }
 }
+
+/// In-memory fixture adapter; retains the production projection and INT96 reader selection.
+pub(crate) fn decode_for_benchmark(bytes: &[u8], batch_rows: usize) -> Vec<RecordBatch> {
+    let file = bytes::Bytes::copy_from_slice(bytes);
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file.clone()).unwrap();
+    let roots: Vec<_> = (0..builder.schema().fields().len()).collect();
+    let (builder, fractions) = full_range_readers(file, builder, &roots, batch_rows);
+    assert!(
+        fractions.is_none(),
+        "This fixture uses the ordinary timestamp encoding"
+    );
+    builder
+        .with_batch_size(batch_rows)
+        .build()
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}

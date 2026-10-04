@@ -33,8 +33,13 @@ default = []
 mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
 
 [dev-dependencies]
-criterion = "0.5"
+criterion.workspace = true
+streamfusion-benchmark-support.workspace = true
 
 [[bench]]
 name = "kafka_sink"
+harness = false
+
+[[bench]]
+name = "format_encode"
 harness = false

@@ -154,3 +154,5 @@ pub extern "system" fn Java_tech_streamfusion_paimon_NativePaimon_closeSnapshotM
         drop(from_handle::<SnapshotMerger>(handle));
     })
 }
+
+pub mod bench;

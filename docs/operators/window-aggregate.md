@@ -23,7 +23,9 @@ count fields; later aggregates and an optional synthetic row count start after t
 The global merges each pair together before dividing. Integral sums widen to BIGINT with Java's
 wrapping arithmetic, but the average retains its declared integral result type. FLOAT sums widen
 to DOUBLE and narrow only the result. DECIMAL preserves the sum scale, sticky overflow, exact
-division and Flink's result scale. Empty/all-NULL groups keep the host NULL/count behavior.
+division and Flink's result scale. Empty/all-NULL groups keep the host NULL/count behavior. Session output declares aggregate
+fields nullable, allowing an all-NULL SUM/MIN/MAX group to cross the Arrow boundary while
+COUNT and COUNT(DISTINCT) still emit zero.
 
 Partials remain Arrow through the local, exchange and global operators. A checkpoint barrier
 drains local slices into the global before snapshotting; AVG pairs use the existing flattened

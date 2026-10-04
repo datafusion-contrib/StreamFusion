@@ -1,0 +1,27 @@
+{
+  "maxBackgroundThreads": 2,
+  "maxOpenFiles": -1,
+  "logMaxFileSize": 0,
+  "logFileNum": 1,
+  "logDirectory": null,
+  "logLevel": "INFO_LEVEL",
+  "compactionStyle": "LEVEL",
+  "compressionPerLevel": [
+    "NO_COMPRESSION"
+  ],
+  "useDynamicLevelSize": true,
+  "targetFileSizeBase": 4194304,
+  "maxSizeLevelBase": 16777216,
+  "writeBufferSize": 4194304,
+  "maxWriteBufferNumber": 2,
+  "minWriteBufferNumberToMerge": 1,
+  "writeBatchSize": 2097152,
+  "compactionFilterQueryTimeAfterNumEntries": 1000,
+  "periodicCompactionSeconds": 0,
+  "blockSize": 4096,
+  "metadataBlockSize": 4096,
+  "blockCacheSize": 8388608,
+  "useBloomFilter": false,
+  "bloomFilterBitsPerKey": 10.0,
+  "bloomFilterBlockBasedMode": false
+}
