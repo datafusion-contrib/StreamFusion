@@ -11,6 +11,7 @@ import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.FixedSizeBinaryVector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.complex.StructVector;
@@ -279,8 +280,9 @@ class NativeUdfExactTypesBridgeTest {
     assertEquals(before, NativeAllocator.SHARED.getAllocatedMemory());
   }
 
-  @Test
-  void binarySlicePreservesNullAndEmptyBytesAfterInputRelease() throws Exception {
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void binarySlicePreservesNullAndEmptyBytesAfterInputRelease(boolean fixed) throws Exception {
     long before = NativeAllocator.SHARED.getAllocatedMemory();
     int id =
         NativeUdf.register(
@@ -290,12 +292,17 @@ class NativeUdfExactTypesBridgeTest {
             NativeUdf.TYPE_BINARY);
     try (ArrowArray output = ArrowArray.allocateNew(NativeAllocator.SHARED);
         ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      try (VarBinaryVector values = new VarBinaryVector("b", NativeAllocator.SHARED);
+      try (org.apache.arrow.vector.FieldVector values = fixed
+              ? new FixedSizeBinaryVector("b", NativeAllocator.SHARED, 4)
+              : new VarBinaryVector("b", NativeAllocator.SHARED);
           VectorSchemaRoot input = VectorSchemaRoot.of(values)) {
         values.allocateNew();
-        values.setSafe(0, new byte[] {99});
-        values.setSafe(1, new byte[] {0, (byte) 0xff, (byte) 0x80, 0});
-        values.setSafe(2, new byte[0]);
+        byte[][] samples = {new byte[] {99, 0, 0, 0},
+            new byte[] {0, (byte) 0xff, (byte) 0x80, 0}, fixed ? new byte[4] : new byte[0]};
+        for (int i = 0; i < samples.length; i++) {
+          if (values instanceof FixedSizeBinaryVector binary) binary.setSafe(i, samples[i]);
+          else ((VarBinaryVector) values).setSafe(i, samples[i]);
+        }
         values.setNull(3);
         input.setRowCount(4);
         try (VectorSchemaRoot slice = input.slice(1, 3)) {
@@ -308,7 +315,7 @@ class NativeUdfExactTypesBridgeTest {
         VarBinaryVector bytes = (VarBinaryVector) result.getVector(0);
         assertEquals(3, result.getRowCount());
         assertArrayEquals(new byte[] {0, (byte) 0xff, (byte) 0x80, 0}, bytes.get(0));
-        assertArrayEquals(new byte[0], bytes.get(1));
+        assertArrayEquals(fixed ? new byte[4] : new byte[0], bytes.get(1));
         assertTrue(bytes.isNull(2));
       }
     } finally {

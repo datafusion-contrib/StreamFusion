@@ -84,6 +84,7 @@ Some historical suites use
 | Arrow C Data ownership | `handoffs` | Full-schema and cached-schema export/import; nullable sliced string and integer batches |
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
 | Calc evaluation and compilation | `calc_expressions` | Arithmetic, booleans, CASE, casts, hashes, regex, date formatting/extraction, string and floating builtins; warm execution and first-batch compilation |
+| Fixed binary expressions | `binary_expressions` | Production Calc casts from string/variable/fixed binary and fixed ELT; sliced inputs, nulls, invalid indices, byte truncation/padding, widths 1/16/256 |
 | Calc and column movement | `data_movement` | Compiled projection, grouping-set EXPAND, inner/left array UNNEST, Arrow IPC encode/decode |
 | Stateful processing | `operator_allocations` | Filter, local/global SUM, tumble/session aggregate, running/bounded OVER, append/retract Top-N, first/last dedup, normalize, updating/interval/window joins, Paimon upsert merge |
 | Further stateful processing | `data_movement`, `keys_and_checkpoints` | First-N, event-time sort, temporal join, window rank |

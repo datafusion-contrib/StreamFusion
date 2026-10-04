@@ -182,3 +182,98 @@ Flink took 1.047s. The 256-element case took 0.924s versus stock 13.388s. With b
 row/Arrow transposes retained, twenty million eight-element arrays were effectively
 tied in the repeat (5.413s native, 5.430s stock). Small-array gains are not stable
 across runs; the benchmark page retains the unfavorable intermediate results.
+
+## Binary casts and selection
+
+Binary casts and INT-indexed binary ELT operate on Arrow byte arrays. Casts truncate bytes,
+zero-pad BINARY, and retain unpadded VARBINARY/legacy results. ELT copies only the selected
+value into the output, preserving selected NULLs and out-of-range NULLs. Fixed and variable
+binary inputs are borrowed directly during selection, avoiding a full fixed-to-variable
+conversion of every input column. The existing result cast still enforces the declared width. Fixed results carry
+their declared Arrow width, so the planner need not generate a whole Java Calc merely to
+materialize that width. Flink evaluation remains responsible for expressions whose operands
+can fail in ways requiring its rowwise evaluation order; fixed-binary TO_BASE64 retains its
+verified generated path.
+
+The previous cast decoded Arrow UTF-8 into a Java string and encoded it back into bytes.
+A 20-second async-profiler CPU recording attributed 45% of samples to stacks containing
+Flink's UTF-8 encoder, including both source conversion and callback work. The native cast
+removes the callback conversion while retaining the source transpose. Released Flink's
+StringToBinaryCastRule/BinaryToBinaryCastRule and EltFunction define the byte and index contracts.
+The batch ownership model follows Comet's import/evaluate/export bridge; no ownership protocol changes.
+
+Release+mimalloc, Core i7-12650H/Linux, JDK17/Flink2.2.1, 2 GiB heap, parallelism 1,
+2M runtime rows, 264-byte text, no NULL injection, 1,024-row batches, two warmups and five
+alternating trials. Row source, row sink and both transposes remain measured. Seconds:
+
+| Query | Previous native median | Optimized native median (range) | Flink median (range) |
+|---|---:|---:|---:|
+| String to BINARY(16) | 1.748 | 0.969 (0.953–0.975) | 0.881 (0.857–0.889) |
+| BINARY(16) ELT | 0.565 | 0.438 (0.431–0.440) | 0.312 (0.312–0.321) |
+
+Native elapsed time improves 44.6% and 22.4%, respectively. Both remain slower than Flink;
+these results do not establish merge readiness under the performance requirement. The same-run
+identity controls are 1.012s native / 0.875s Flink for text and 0.407s / 0.314s for fixed binary.
+The previous-run Flink medians were 0.906s and 0.330s; control variation does not explain the
+large cast improvement but limits conclusions about small differences.
+
+Reproduce with `ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
+`-Dscalar.functions=TRY_STRING_TO_FIXED_BINARY,ELT_FIXED_BINARY`, `-Dscalar.rows=2000000`,
+`-Dscalar.nullEvery=0`, `-Dscalar.warmup=2`, `-Dscalar.runs=5`,
+`-Dsf.extraJvmArgs=-Xmx2g`, and `SF_BENCHMARK=true`.
+
+A later ELT CPU profile (20 seconds per engine) attributed 2.4% of native samples to
+fixed-to-variable binary conversion of input columns and 1.7% to the result conversion.
+Removing the input conversions reduces the native ELT median from 0.420s (0.412–0.424)
+to 0.399s (0.393–0.403), a 4.9% reduction with non-overlapping ranges. The matched Flink
+control stays at 0.308s (previous 0.307–0.320, candidate 0.301–0.316). Both runs include the
+[generated binary exit](zero-copy-exit-transpose.md#binary-output-measurements), so this
+comparison isolates the additional input-copy removal. Native ELT still trails Flink by
+about 30%; this is a partial optimization, not evidence that the PR is ready to merge.
+The unchanged cast measures 0.926s native / 0.856s Flink. Identity controls remain unfavorable:
+text 1.008s / 0.883s and fixed binary 0.374s / 0.308s. Configuration is unchanged from the
+2M-row comparison above. [Raw trials](../benchmarks/scalar-binary-exit-2026-09-28.csv) include
+both the exit-only and borrowed-input runs. Native tests cover mixed fixed/variable inputs,
+slices, empty values, NULLs and invalid indexes.
+
+
+### Binary keys composed with grouped counts
+
+A September 28 follow-up measures `COUNT(*)` grouped by
+`TRY_CAST(s AS BINARY(16))` or `ELT(n,b,X'00112233445566778899AABBCCDDEEFF')`.
+It retains the source inputs from the standalone benchmark, yielding two text-cast
+keys and three ELT groups (including the NULL group from invalid indexes). These
+are low-cardinality composition diagnostics, not high-cardinality grouping results.
+There is no additional NULL injection. Both engines use identical mini-batch settings
+(1,024 rows, maximum latency five seconds). The native plan must include NativeCalc,
+NativeColumnarGroupAggregate, and both row transposes. The release+mimalloc, Flink
+2.2.1/JDK 17, parallelism one, 2 GiB heap, two warmups and five alternating trials
+match the standalone configuration. Complete-job medians and trial ranges in seconds:
+
+| Query | Rows | Native median (range) | Flink median (range) |
+| --- | ---: | ---: | ---: |
+| String to BINARY(16), grouped COUNT | 2M | 0.985 (0.960–0.986) | 1.217 (1.198–1.231) |
+| BINARY(16) ELT, grouped COUNT | 2M | 0.431 (0.427–0.447) | 0.666 (0.647–0.693) |
+| Text identity | 2M | 0.988 (0.985–1.014) | 0.872 (0.853–1.011) |
+| Fixed binary identity | 2M | 0.388 (0.384–0.400) | 0.327 (0.307–0.330) |
+| String to BINARY(16), grouped COUNT | 5M | 2.298 (2.281–2.314) | 2.962 (2.908–2.983) |
+| BINARY(16) ELT, grouped COUNT | 5M | 1.180 (1.176–1.183) | 1.597 (1.574–1.689) |
+| Text identity | 5M | 2.403 (2.357–2.419) | 2.097 (2.074–2.143) |
+| Fixed binary identity | 5M | 0.820 (0.818–0.837) | 0.641 (0.641–1.021) |
+
+The grouped queries take 19–35% less native elapsed time at 2M rows and 22–26%
+less at 5M, with disjoint observed ranges. This benefit belongs to the complete
+native expression-plus-aggregate pipeline. It does not erase the slower standalone
+binary projections or identity controls, nor measure a previous-StreamFusion
+composition baseline. The standalone performance requirement remains unresolved.
+
+Grouped parity tests compare materialized results on NULLs, invalid ELT indexes,
+non-text bytes, zero padding, UTF-8 truncation and multiple input batches. Both
+cases pass on Flink 2.2; the cast case passes on 1.18, where ELT is unavailable and
+its case is explicitly skipped. Existing tests retain rowwise failure-order coverage.
+
+[Raw trials](../benchmarks/binary-composition-2026-09-28.csv) include both engines
+and identity controls. Reproduce with the same `ScalarFunctionBenchmark#individualFunctions`
+release command above, setting
+`-Dscalar.functions=TRY_FIXED_BINARY_GROUPED_COUNT,ELT_FIXED_BINARY_GROUPED_COUNT`
+and `-Dscalar.rows=2000000` or `5000000`. The Nexmark harness is unchanged.

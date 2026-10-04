@@ -18,6 +18,7 @@ import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.FixedSizeBinaryVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
@@ -594,6 +595,12 @@ public final class NativeUdf {
         }
       case TYPE_BINARY:
         {
+          if (vector instanceof FixedSizeBinaryVector fixed) {
+            for (int r = 0; r < rows; r++) {
+              if (!fixed.isNull(r)) out[r] = fixed.get(r);
+            }
+            return out;
+          }
           VarBinaryVector v = (VarBinaryVector) vector;
           for (int r = 0; r < rows; r++) {
             if (!v.isNull(r)) {

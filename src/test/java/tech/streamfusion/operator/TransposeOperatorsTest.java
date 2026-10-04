@@ -1,5 +1,6 @@
 package tech.streamfusion.operator;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -124,6 +125,48 @@ class TransposeOperatorsTest {
         if (!expected.isNullAt(1)) assertEquals(Double.doubleToRawLongBits(expected.getDouble(1)),
             Double.doubleToRawLongBits(actual.getDouble(1)));
         if (!expected.isNullAt(2)) assertEquals(expected.getDecimal(2, 12, 2), actual.getDecimal(2, 12, 2));
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void binaryExitOwnsValuesAcrossBatchClosureAndBufferGrowth(boolean objectReuse) throws Exception {
+    var schema = RowType.of(new org.apache.flink.table.types.logical.BinaryType(16),
+        new org.apache.flink.table.types.logical.VarBinaryType(16384));
+    byte[] fixed = new byte[16];
+    byte[] large = new byte[16384];
+    for (int i = 0; i < fixed.length; i++) fixed[i] = (byte) (i * 19);
+    for (int i = 0; i < large.length; i++) large[i] = (byte) (i * 31);
+    List<RowData> input = List.of(
+        GenericRowData.of(fixed, new byte[] {0, -1, 3}),
+        GenericRowData.of(null, large),
+        GenericRowData.of(fixed, new byte[0]),
+        GenericRowData.of(null, null));
+    var kinds = org.apache.flink.types.RowKind.values();
+    for (int i = 0; i < input.size(); i++) input.get(i).setRowKind(kinds[i]);
+    try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, RowData>(
+        new ArrowToRowDataOperator(schema), new ArrowBatchSerializer())) {
+      if (objectReuse) harness.getExecutionConfig().enableObjectReuse();
+      harness.setup(new RowDataSerializer(schema));
+      harness.open();
+      for (int start = 0; start < input.size(); start += 2) {
+        var root = RowDataArrowConverter.write(
+            input.subList(start, start + 2), schema, NativeAllocator.SHARED, true);
+        harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
+      }
+      List<RowData> output = values(harness);
+      assertEquals(input.size(), output.size());
+      for (int i = 0; i < input.size(); i++) {
+        RowData expected = input.get(i);
+        RowData actual = output.get(i);
+        assertEquals(expected.getRowKind(), actual.getRowKind());
+        for (int field = 0; field < 2; field++) {
+          assertEquals(expected.isNullAt(field), actual.isNullAt(field));
+          if (!expected.isNullAt(field)) {
+            assertArrayEquals(expected.getBinary(field), actual.getBinary(field));
+          }
+        }
       }
     }
   }
