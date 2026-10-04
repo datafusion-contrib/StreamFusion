@@ -285,7 +285,50 @@ are retained.
 
 Flink's Row-to-internal converter constructs GenericRowData, whereas the
 candidate targets BinaryRowData. This source audit identifies an applicability
-mismatch for the selected source; runtime row-class distribution has not been
-measured. Revisit only with a workload that proves the intended copy is removed
+mismatch for the selected source. A later bounded runtime probe supports that
+mismatch for nullable BINARY(256) uniform-index ELT and its identity control:
+2,000 sampled entry calls per job all carry GenericRowData. At the writer,
+2,000 control calls carry PrunedRowData wrapping GenericRowData, while 2,000 ELT
+calls carry GenericRowData directly. Writer calls count fields, not distinct rows.
+[The four observations](../benchmarks/binary-entry-row-classes-2026-10-04.csv)
+are bounded first-call samples, not complete-stream distributions. The diagnostic
+job uses released Flink 2.2.1/JDK 17, 20 million rows, width 256, every seventh
+value NULL, runtime uniform-first index, both transposes and the row blackhole.
+The fixture passes one native-enabled harness test with zero skips/errors;
+agent transformation witnesses verify both observed classes. The requested
+release native library remains unchanged, but this diagnostic does not log an
+exact loaded-library path witness. Agent overhead invalidates its timings. Revisit only with a workload that proves the intended copy is removed
 and matched whole-job evidence, rather than assuming every binary field passes
 through binary-row storage.
+
+
+### Reproducing bounded row-class observations
+
+`dev/profiling/RowClassAgent.java` is a diagnostic-only Java agent. It samples
+2,000 entry calls and 2,000 binary-writer field calls per enclosing entry instance,
+prints `SF_ROW_CLASS` records when the limit is reached and unwraps the projection
+adapter. Writer instances are batch-scoped; their counters therefore use entry
+context. Use this probe on the row-fed binary scalar harness above, where writes
+occur synchronously inside entry processing. It is not a general allocation
+profiler and must not be attached to performance-comparison runs.
+
+Build with JDK 17 and the released Byte Buddy dependency:
+
+```sh
+row_probe_dir="$PWD/target/row-class-probe"
+mkdir -p "$row_probe_dir/classes"
+mvn -N -q org.apache.maven.plugins:maven-dependency-plugin:3.7.0:copy -Dartifact=net.bytebuddy:byte-buddy:1.17.6 -DoutputDirectory="$row_probe_dir"
+javac --release 17 -cp "$row_probe_dir/byte-buddy-1.17.6.jar" -d "$row_probe_dir/classes" dev/profiling/RowClassAgent.java
+printf '%s\n' 'Manifest-Version: 1.0' 'Premain-Class: RowClassAgent' 'Class-Path: byte-buddy-1.17.6.jar' '' > "$row_probe_dir/MANIFEST.MF"
+jar --create --file "$row_probe_dir/row-class-agent.jar" --manifest "$row_probe_dir/MANIFEST.MF" -C "$row_probe_dir/classes" .
+```
+
+Append `-javaagent:$row_probe_dir/row-class-agent.jar` to the harness's existing
+`sf.extraJvmArgs`. Use the `bench` profile, `SF_BENCHMARK=true`,
+`ScalarFunctionBenchmark#individualFunctions`, `scalar.engine=native`,
+`scalar.functions=ELT_FIXED_BINARY`, `scalar.binary.index=first`,
+`scalar.binary.width=256`, `scalar.rows=20000000`, `scalar.nullEvery=7`,
+`scalar.warmup=0` and `scalar.runs=1`. Retain the identity control, native plan,
+fresh test XML and transform/histogram records. Validate each observed context
+has 2,000 calls before interpreting it; retain NULLs, wrappers and both boundary
+transforms. The instrumented harness timings are diagnostic artifacts only.

@@ -14,8 +14,12 @@ were 0.283/0.295/0.300 seconds. Both transposes remained in the measured path.
 These results do not demonstrate acceleration. The original writer is restored.
 
 Flink's RowRowConverter constructs GenericRowData, whereas the prototype targets
-BinaryRowData. This source audit reveals an applicability mismatch for the
-selected source; runtime row-class distribution was not measured. Revisit only
+BinaryRowData. A later bounded runtime probe of nullable 20-million-row BINARY(256)
+uniform-index ELT and its identity control observes 2,000 GenericRowData entry
+calls in each job. Writer observations are GenericRowData directly for ELT and
+PrunedRowData wrapping GenericRowData for the control. These first-call samples
+support the applicability mismatch; they are not a complete stream distribution.
+No instrumented timings are used as performance evidence. Revisit only
 with a demonstrated target copy and new matched whole-job evidence. The added
 ownership/layout tests remain useful for the retained writer.
 
