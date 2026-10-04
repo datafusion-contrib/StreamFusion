@@ -16,21 +16,31 @@ class FlinkBinaryStringBuiltinsSqlHarnessTest {
   }
 
   @Test
-  void binaryPredicatesAndSelectionPreserveEveryByteAcrossBatches() throws Exception {
+  void binaryPredicatesPreserveEveryByteAcrossBatches() throws Exception {
     BuiltinFunctionParity.assertParity(this::environment,
-        "SELECT STARTSWITH(b,p), ENDSWITH(b,q), ELT(n,b,p,q), ELT(2,b,q,p), "
-            + "STARTSWITH(ELT(n,b,p,q),p), ENDSWITH(b,X'00FF'), ELT(n,b,X'FF00') FROM src");
-    BuiltinFunctionParity.assertParity(this::environment,
-        "SELECT ELT(n,b,p,q), ELT(1,q,p,b) FROM src WHERE STARTSWITH(b,p) OR ENDSWITH(b,q)");
-    BuiltinFunctionParity.assertParity(this::environment,
-        "SELECT ELT(n,b,p,q), STARTSWITH(b,p) FROM src WHERE n = 99");
+        "SELECT STARTSWITH(b,p), ENDSWITH(b,q), ENDSWITH(b,X'00FF') FROM src");
   }
 
   @Test
-  void binaryResultCompositionRetainsBytesAndNulls() throws Exception {
-    BuiltinFunctionParity.assertParity(this::environment,
+  void binarySelectionFallsBackAcrossBatches() throws Exception {
+    NativeParity.assertFallbackReasonContains(this::environment,
+        "SELECT STARTSWITH(b,p), ENDSWITH(b,q), ELT(n,b,p,q), ELT(2,b,q,p), "
+            + "STARTSWITH(ELT(n,b,p,q),p), ENDSWITH(b,X'00FF'), ELT(n,b,X'FF00') FROM src",
+        "binary ELT awaits whole-job performance admission");
+    NativeParity.assertFallbackReasonContains(this::environment,
+        "SELECT ELT(n,b,p,q), ELT(1,q,p,b) FROM src WHERE STARTSWITH(b,p) OR ENDSWITH(b,q)",
+        "binary ELT awaits whole-job performance admission");
+    NativeParity.assertFallbackReasonContains(this::environment,
+        "SELECT ELT(n,b,p,q), STARTSWITH(b,p) FROM src WHERE n = 99",
+        "binary ELT awaits whole-job performance admission");
+  }
+
+  @Test
+  void binaryResultCompositionFallsBackAndRetainsBytesAndNulls() throws Exception {
+    NativeParity.assertFallbackReasonContains(this::environment,
         "SELECT TO_BASE64(ELT(n,b,p,q)), "
-            + "CASE WHEN STARTSWITH(b,p) THEN ELT(n,b,p,q) ELSE q END FROM src");
+            + "CASE WHEN STARTSWITH(b,p) THEN ELT(n,b,p,q) ELSE q END FROM src",
+        "binary ELT awaits whole-job performance admission");
   }
 
   private TableEnvironment environment() {

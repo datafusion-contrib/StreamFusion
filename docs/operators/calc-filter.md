@@ -696,6 +696,9 @@ falls back before execution. The reported reason starts with `legacy binary vari
 Runtime-source tests cover widths 1/2/4/16, NULLs, zero padding, truncation, non-text bytes,
 typed literals, ELT selection, short-circuiting, and 5,003-row inputs. Bridge tests cover
 sliced fixed/variable vectors, output ownership after input closure, and allocator balance.
+Binary ELT SQL tests require stock execution and the performance-admission fallback
+reason while comparing results, including nested compositions and empty selections.
+Separate binary STARTSWITH/ENDSWITH tests still require native execution.
 
 [Low-cardinality grouped-count measurements](../optimizations/scalar-function-kernels.md#binary-keys-composed-with-grouped-counts)
 show 19–35% less native time at 2M rows and 22–26% less at 5M for binary-cast and

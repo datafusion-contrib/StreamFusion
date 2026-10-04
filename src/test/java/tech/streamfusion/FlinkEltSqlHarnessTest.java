@@ -24,8 +24,10 @@ class FlinkEltSqlHarnessTest {
   }
 
   @Test
-  void fixedBinaryOverloadMatchesHost() throws Exception {
-    parity("SELECT ELT(i, X'AB', X'CD') FROM texts");
+  void fixedBinaryOverloadFallsBackAndMatchesHost() throws Exception {
+    NativeParity.assertFallbackReasonContains(StringFunctionTestInputs::text,
+        "SELECT ELT(i, X'AB', X'CD') FROM texts",
+        "binary ELT awaits whole-job performance admission");
   }
 
   private static void parity(String sql) throws Exception {
