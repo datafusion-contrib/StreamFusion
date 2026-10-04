@@ -2008,6 +2008,9 @@ effects: TINYINT math improves 0.92–1.46%, nullable SMALLINT regresses
 0.38–1.63%, and DOUBLE changes -0.73% to +0.77%. This does not resolve typed
 math regressions, so production admission is unchanged.
 
+The portable entry patch includes the tested ownership and growing-writer
+fixtures at their actual operator-test path.
+
 
 ## Hyperbolic compiler specialization
 
