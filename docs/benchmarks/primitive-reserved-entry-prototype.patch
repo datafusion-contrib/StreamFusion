@@ -1,0 +1,234 @@
+diff --git a/src/main/java/tech/streamfusion/arrow/ArrowWriter.java b/src/main/java/tech/streamfusion/arrow/ArrowWriter.java
+index e5e0477a..517cf193 100644
+--- a/src/main/java/tech/streamfusion/arrow/ArrowWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/ArrowWriter.java
+@@ -65,6 +65,14 @@ public final class ArrowWriter<IN> {
+         rowCount++;
+     }
+
++    /** Caller must reserve top-level fixed-width capacity for every row in the batch. */
++    public void writeReserved(IN row) {
++        for (int i = 0; i < fieldWriters.length; i++) {
++            fieldWriters[i].writeReserved(row, i);
++        }
++        rowCount++;
++    }
++
+     /** Finishes the writing of the current row batch. */
+     public void finish() {
+         root.setRowCount(rowCount);
+diff --git a/src/main/java/tech/streamfusion/arrow/writers/ArrowFieldWriter.java b/src/main/java/tech/streamfusion/arrow/writers/ArrowFieldWriter.java
+index 6bdb9cb6..99f649f0 100644
+--- a/src/main/java/tech/streamfusion/arrow/writers/ArrowFieldWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/ArrowFieldWriter.java
+@@ -60,6 +60,16 @@ public abstract class ArrowFieldWriter<IN> {
+         count += 1;
+     }
+
++    /** Caller must have reserved capacity for this field's next value. */
++    public void writeReserved(IN row, int ordinal) {
++        doWriteReserved(row, ordinal);
++        count += 1;
++    }
++
++    protected void doWriteReserved(IN row, int ordinal) {
++        doWrite(row, ordinal);
++    }
++
+     protected void advanceCount(int amount) {
+         count += amount;
+     }
+diff --git a/src/main/java/tech/streamfusion/arrow/writers/BigIntWriter.java b/src/main/java/tech/streamfusion/arrow/writers/BigIntWriter.java
+index a509573c..ce806829 100644
+--- a/src/main/java/tech/streamfusion/arrow/writers/BigIntWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/BigIntWriter.java
+@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
+ import org.apache.flink.table.data.ArrayData;
+ import org.apache.flink.table.data.RowData;
+
++import org.apache.arrow.vector.BitVectorHelper;
+ import org.apache.arrow.vector.BigIntVector;
+
+ /** {@link ArrowFieldWriter} for BigInt. */
+@@ -60,6 +61,17 @@ public abstract class BigIntWriter<T> extends ArrowFieldWriter<T> {
+     /** {@link BigIntWriter} for {@link RowData} input. */
+     public static final class BigIntWriterForRow extends BigIntWriter<RowData> {
+
++        @Override
++        protected void doWriteReserved(RowData in, int ordinal) {
++            var vector = (BigIntVector) getValueVector();
++            if (in.isNullAt(ordinal)) {
++                BitVectorHelper.unsetBit(vector.getValidityBuffer(), getCount());
++            } else {
++                vector.set(getCount(), in.getLong(ordinal));
++            }
++        }
++
++
+         private BigIntWriterForRow(BigIntVector bigIntVector) {
+             super(bigIntVector);
+         }
+diff --git a/src/main/java/tech/streamfusion/arrow/writers/DoubleWriter.java b/src/main/java/tech/streamfusion/arrow/writers/DoubleWriter.java
+index dad79909..96633915 100644
+--- a/src/main/java/tech/streamfusion/arrow/writers/DoubleWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/DoubleWriter.java
+@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
+ import org.apache.flink.table.data.ArrayData;
+ import org.apache.flink.table.data.RowData;
+
++import org.apache.arrow.vector.BitVectorHelper;
+ import org.apache.arrow.vector.Float8Vector;
+
+ /** {@link ArrowFieldWriter} for Double. */
+@@ -60,6 +61,17 @@ public abstract class DoubleWriter<T> extends ArrowFieldWriter<T> {
+     /** {@link DoubleWriter} for {@link RowData} input. */
+     public static final class DoubleWriterForRow extends DoubleWriter<RowData> {
+
++        @Override
++        protected void doWriteReserved(RowData in, int ordinal) {
++            var vector = (Float8Vector) getValueVector();
++            if (in.isNullAt(ordinal)) {
++                BitVectorHelper.unsetBit(vector.getValidityBuffer(), getCount());
++            } else {
++                vector.set(getCount(), in.getDouble(ordinal));
++            }
++        }
++
++
+         private DoubleWriterForRow(Float8Vector doubleVector) {
+             super(doubleVector);
+         }
+diff --git a/src/main/java/tech/streamfusion/arrow/writers/FloatWriter.java b/src/main/java/tech/streamfusion/arrow/writers/FloatWriter.java
+index 33694a35..96ce0afd 100644
+--- a/src/main/java/tech/streamfusion/arrow/writers/FloatWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/FloatWriter.java
+@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
+ import org.apache.flink.table.data.ArrayData;
+ import org.apache.flink.table.data.RowData;
+
++import org.apache.arrow.vector.BitVectorHelper;
+ import org.apache.arrow.vector.Float4Vector;
+
+ /** {@link ArrowFieldWriter} for Float. */
+@@ -60,6 +61,17 @@ public abstract class FloatWriter<T> extends ArrowFieldWriter<T> {
+     /** {@link FloatWriter} for {@link RowData} input. */
+     public static final class FloatWriterForRow extends FloatWriter<RowData> {
+
++        @Override
++        protected void doWriteReserved(RowData in, int ordinal) {
++            var vector = (Float4Vector) getValueVector();
++            if (in.isNullAt(ordinal)) {
++                BitVectorHelper.unsetBit(vector.getValidityBuffer(), getCount());
++            } else {
++                vector.set(getCount(), in.getFloat(ordinal));
++            }
++        }
++
++
+         private FloatWriterForRow(Float4Vector floatVector) {
+             super(floatVector);
+         }
+diff --git a/src/main/java/tech/streamfusion/arrow/writers/IntWriter.java b/src/main/java/tech/streamfusion/arrow/writers/IntWriter.java
+index 3e02b199..8e004446 100644
+--- a/src/main/java/tech/streamfusion/arrow/writers/IntWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/IntWriter.java
+@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
+ import org.apache.flink.table.data.ArrayData;
+ import org.apache.flink.table.data.RowData;
+
++import org.apache.arrow.vector.BitVectorHelper;
+ import org.apache.arrow.vector.IntVector;
+
+ /** {@link ArrowFieldWriter} for Int. */
+@@ -60,6 +61,17 @@ public abstract class IntWriter<T> extends ArrowFieldWriter<T> {
+     /** {@link IntWriter} for {@link RowData} input. */
+     public static final class IntWriterForRow extends IntWriter<RowData> {
+
++        @Override
++        protected void doWriteReserved(RowData in, int ordinal) {
++            var vector = (IntVector) getValueVector();
++            if (in.isNullAt(ordinal)) {
++                BitVectorHelper.unsetBit(vector.getValidityBuffer(), getCount());
++            } else {
++                vector.set(getCount(), in.getInt(ordinal));
++            }
++        }
++
++
+         private IntWriterForRow(IntVector intVector) {
+             super(intVector);
+         }
+diff --git a/src/main/java/tech/streamfusion/arrow/writers/SmallIntWriter.java b/src/main/java/tech/streamfusion/arrow/writers/SmallIntWriter.java
+index 05ed5ebb..551bdb01 100644
+--- a/src/main/java/tech/streamfusion/arrow/writers/SmallIntWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/SmallIntWriter.java
+@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
+ import org.apache.flink.table.data.ArrayData;
+ import org.apache.flink.table.data.RowData;
+
++import org.apache.arrow.vector.BitVectorHelper;
+ import org.apache.arrow.vector.SmallIntVector;
+
+ /** {@link ArrowFieldWriter} for SmallInt. */
+@@ -60,6 +61,17 @@ public abstract class SmallIntWriter<T> extends ArrowFieldWriter<T> {
+     /** {@link SmallIntWriter} for {@link RowData} input. */
+     public static final class SmallIntWriterForRow extends SmallIntWriter<RowData> {
+
++        @Override
++        protected void doWriteReserved(RowData in, int ordinal) {
++            var vector = (SmallIntVector) getValueVector();
++            if (in.isNullAt(ordinal)) {
++                BitVectorHelper.unsetBit(vector.getValidityBuffer(), getCount());
++            } else {
++                vector.set(getCount(), in.getShort(ordinal));
++            }
++        }
++
++
+         private SmallIntWriterForRow(SmallIntVector intVector) {
+             super(intVector);
+         }
+diff --git a/src/main/java/tech/streamfusion/arrow/writers/TinyIntWriter.java b/src/main/java/tech/streamfusion/arrow/writers/TinyIntWriter.java
+index 61ddd6ea..1bdca166 100644
+--- a/src/main/java/tech/streamfusion/arrow/writers/TinyIntWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/TinyIntWriter.java
+@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
+ import org.apache.flink.table.data.ArrayData;
+ import org.apache.flink.table.data.RowData;
+
++import org.apache.arrow.vector.BitVectorHelper;
+ import org.apache.arrow.vector.TinyIntVector;
+
+ /** {@link ArrowFieldWriter} for TinyInt. */
+@@ -60,6 +61,17 @@ public abstract class TinyIntWriter<T> extends ArrowFieldWriter<T> {
+     /** {@link TinyIntWriter} for {@link RowData} input. */
+     public static final class TinyIntWriterForRow extends TinyIntWriter<RowData> {
+
++        @Override
++        protected void doWriteReserved(RowData in, int ordinal) {
++            var vector = (TinyIntVector) getValueVector();
++            if (in.isNullAt(ordinal)) {
++                BitVectorHelper.unsetBit(vector.getValidityBuffer(), getCount());
++            } else {
++                vector.set(getCount(), in.getByte(ordinal));
++            }
++        }
++
++
+         private TinyIntWriterForRow(TinyIntVector tinyIntVector) {
+             super(tinyIntVector);
+         }
+diff --git a/src/main/java/tech/streamfusion/operator/RowDataToArrowOperator.java b/src/main/java/tech/streamfusion/operator/RowDataToArrowOperator.java
+index 3f292647..64ed97ab 100644
+--- a/src/main/java/tech/streamfusion/operator/RowDataToArrowOperator.java
++++ b/src/main/java/tech/streamfusion/operator/RowDataToArrowOperator.java
+@@ -100,7 +100,8 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
+           kinds.setSafe(i, org.apache.flink.types.RowKind.INSERT.toByteValue());
+         }
+       }
+-      writer.write(row);
++      if (batchSize > 0) writer.writeReserved(row);
++      else writer.write(row);
+       if (kinds != null) kinds.setSafe(pendingRows, row.getRowKind().toByteValue());
+       pendingRows++;
+     } catch (RuntimeException | Error failure) {

@@ -1997,3 +1997,13 @@ the [typed benchmark extension](strict-hyperbolic-typed-benchmarks.patch), then
 the [fusion and paired-control patch](strict-hyperbolic-fusion-prototype.patch).
 The patches apply together and the resulting source passes whitespace checks.
 These remain experimental patches rather than shipping implementations.
+
+
+## Reserved primitive entry diagnostic
+
+The [reserved primitive entry experiment](primitive-reserved-entry-experiment.md)
+preserves a rejected Comet-style bounded writer prototype. Forty checks pass
+on each released Flink version. All 480 full-job trials show small, mixed
+effects: TINYINT math improves 0.92–1.46%, nullable SMALLINT regresses
+0.38–1.63%, and DOUBLE changes -0.73% to +0.77%. This does not resolve typed
+math regressions, so production admission is unchanged.
