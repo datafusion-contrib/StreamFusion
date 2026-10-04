@@ -1752,3 +1752,53 @@ nullable offset-one casts with 1,024/16,384 rows at widths one and 256, using
 5.17/69.64 microseconds at width one and 14.10/300.95 microseconds at width
 256. These are Calc-kernel baselines, with immutable executables and source
 hashes retained during validation. They establish no whole-job acceleration.
+
+### Fixed-binary cast buffer-sharing experiment
+
+The new SQL fixture checks widths 1/16/256, 5,003 runtime rows, NULLs and high
+bytes. Original and candidate libraries each pass three cases on released
+Flink 2.2.1 and 1.18.1 with Java 17. Plans assert NativeCalc and both transposes;
+exact candidate-library load witnesses are retained. Select the benchmark with
+scalar.functions=FIXED_BINARY_TO_BYTES; its fixed-binary identity control runs
+alongside it.
+
+[Candidate source](fixed-to-variable-candidate.patch) is retained as an
+experimental patch. It shares fixed payload and validity buffers for unbounded
+variable casts while constructing offsets. Normal SQL casts retain compacting
+fallback for oversized fixed buffers. Four release Rust tests cover slices,
+empty/all-NULL arrays, raw bytes and output lifetime after input drop. All
+144 Calc fixtures pass.
+
+[All 400 trials](fixed-to-variable-wholejob-trials-2026-10-04.csv) and
+[20 summaries](fixed-to-variable-wholejob-summary-2026-10-04.csv) retain stock,
+prior native, candidate and identity controls. Each configuration runs
+candidate/original/original/candidate with two warmups and five alternating
+stock/native trials per query/round. Release/mimalloc runs use Java 17,
+Flink 2.2.1, two active processors, 2 GiB heap, disabled local-exchange
+zero-copy, a rowwise source, both transposes and a blackhole sink. All rounds
+pass source/library hash guards and exact load checks; Surefire dumpstreams
+retain load witnesses when logging bypasses Maven stdout.
+
+| Rows | Width | NULL interval | Prior native s | Candidate native s | Stock in candidate rounds s |
+| --- | --- | --- | --- | --- | --- |
+| 2,000,000 | 256 | 7 | 0.439189 | 0.414566 | 0.306929 |
+| 20,000,000 | 16 | none | 2.510410 | 2.434274 | 1.978099 |
+| 20,000,000 | 16 | 7 | 2.612453 | 2.527540 | 2.037520 |
+| 20,000,000 | 256 | none | 3.702058 | 3.460246 | 2.436618 |
+| 20,000,000 | 256 | 7 | 3.719436 | 3.571197 | 2.450422 |
+
+The candidate improves native medians 3.0–6.5%, but large cases remain
+23.1–45.7% slower than stock. Identity medians change from a 1.4% reduction to
+a 1.8% increase. Kernel savings do not establish whole-job acceleration;
+production acceptance remains unresolved.
+
+[Profile frames](fixed-to-variable-profile-frames-2026-10-04.csv) come from four
+validated 45-second CPU/allocation recordings after two warmups, comparing
+stock and candidate on nullable 20-million-row BINARY(256) casts with identical
+resources. Native exit conversion appears in 34.7% of CPU samples, writer
+creation in 6.8%, buffer zeroing in 6.6% and JNI in 3.1%. Native allocation
+profiles attribute 32.7% of sampled weights to host binary-row copying and
+19.7% to variable-binary getters. Frames are inclusive and overlap; do not sum
+them. Allocation weights are sampled estimates, not copied bytes. Totals are
+not normalized by completed job count. Each recording has positive relevant
+events, a non-skipped passing test, exact library witnesses and retained hashes.

@@ -76,6 +76,29 @@ class FlinkFixedBinarySqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(ints = {1, 16, 256})
+  void unboundedBinaryCastsPreservePayloadAcrossBatches(int width) throws Exception {
+    List<Row> rows = new ArrayList<>();
+    for (int i = 0; i < 5003; i++) {
+      byte[] value = new byte[width];
+      for (int j = 0; j < width; j++) value[j] = (byte) (i + j * 128);
+      rows.add(Row.of(i % 7 == 0 ? null : value));
+    }
+    java.util.function.Supplier<TableEnvironment> source =
+        () -> BuiltinFunctionParity.environment(ROW(FIELD("b", BINARY(width))), rows);
+    String sql = "SELECT CAST(b AS BYTES), TRY_CAST(b AS BYTES), "
+        + "TO_BASE64(CAST(b AS BYTES)) FROM src";
+    TableEnvironment table = source.get();
+    table.executeSql("CREATE TABLE sink (a BYTES, b BYTES, c STRING) "
+        + "WITH ('connector' = 'blackhole')");
+    String plan = tech.streamfusion.planner.NativePlanner.explain(table, "INSERT INTO sink " + sql);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeCalc"), plan);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("RowDataToArrow"), plan);
+    org.junit.jupiter.api.Assertions.assertTrue(plan.contains("ArrowToRowData"), plan);
+    BuiltinFunctionParity.assertParity(source, sql);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 16, 256})
   void runtimeBinarySelectionRetainsLiteralWidthsAcrossBatches(int width) throws Exception {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
     byte[] source = new byte[width];
