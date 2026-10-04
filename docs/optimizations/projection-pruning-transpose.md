@@ -332,3 +332,16 @@ Append `-javaagent:$row_probe_dir/row-class-agent.jar` to the harness's existing
 fresh test XML and transform/histogram records. Validate each observed context
 has 2,000 calls before interpreting it; retain NULLs, wrappers and both boundary
 transforms. The instrumented harness timings are diagnostic artifacts only.
+
+### Fresh owned binary rows retain the host copy
+
+A fresh owned `BinaryRowData` at the Arrow exit cannot eliminate the default
+Flink chained-output copy. Released Flink 2.2.1 and 1.18.1
+`CopyingChainingOutput.pushToOperator` call the configured serializer's `copy`
+for each record regardless of whether the row already owns its storage. The
+existing profile includes that path and `BinaryRowData.copy`. Direct allocation
+would retain the host copy and introduce an allocation before it; the rejected
+generated-segment experiment already removes the temporary getter array while
+keeping the reusable writer. This API inspection does not claim new timings or
+complete the BINARY performance gate. The scoped rejection is recorded in
+`.claude/wontdos/binary-direct-owned-exit-row.md`.
