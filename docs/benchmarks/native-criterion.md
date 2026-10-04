@@ -1820,3 +1820,41 @@ Java heap allocation or exact copied bytes. Original full-schema case names rema
 stable. This smoke run validates fixtures and establishes allocation baselines;
 it provides no latency or acceleration claim. Remote filesystems and nested
 columns remain gaps.
+
+### Fixed BINARY payload initialization experiment
+
+The isolated Java prototype allocates fresh fixed-BINARY data and validity buffers
+for each batch, clearing validity up front and writing every non-NULL payload in
+full. Fresh ownership follows Comet's retained-batch requirement; previous batch
+buffers are never reused. The initial variant left NULL payload bytes untouched.
+A deterministic allocator that fills fresh buffers with `0x55` exposed those bytes
+in Arrow IPC: all three widths (1, 16, 256) failed the physical-NULL-slot check,
+while the existing implementation passed. Logical NULL masks alone had hidden
+this difference. The revised [reviewable prototype patch](fixed-binary-initialization-candidate.patch)
+clears each NULL payload slot explicitly. It is not enabled in production.
+
+The revised variant passes 33 serialization, bridge, growth, input-reuse and
+retained-buffer checks on each released Flink version (2.2.1 and 1.18.1). Fixed
+BINARY SQL parity passes 20 cases on 2.2.1 and 14 on 1.18.1, with six explicit
+ELT-syntax skips on the older release. The six new serialization and ownership
+regression cases also pass against the unchanged main Java implementation.
+
+Each variant was measured separately with 160 whole-job trials: 20 million rows,
+NULL every seventh row, widths 16 and 256, CAST and identity controls, two warmups,
+five alternating stock/native runs, and candidate/original/original/candidate
+blocks. Both transposes and the rowwise blackhole remain in the executed native
+plan. Runs use Java 17, Flink 2.2.1, two CPUs, a 2 GiB heap, release/mimalloc native
+code, and disabled local zero-copy exchange. The same immutable cast-sharing
+native library is used throughout; only Java initialization and NULL writes vary.
+No heavy builds or profiles overlap these timed trials.
+
+[All unsanitized trials](fixed-binary-initialization-wholejob-trials-2026-10-04.csv),
+[all NULL-cleared trials](fixed-binary-initialization-sanitized-wholejob-trials-2026-10-04.csv),
+and [pooled medians and ranges](fixed-binary-initialization-summary-2026-10-04.csv)
+are retained. The safe variant's native CAST median at width 256 improves from
+3.662714 s to 3.455568 s (5.66%), but remains 37.00% slower than its stock median
+of 2.522272 s. Its identity control improves 6.22%; stock CAST drifts 1.60%.
+At width 16, native CAST is 1.10% slower (2.507410 s to 2.535036 s), with stock
+at 2.085497 s. The unsafe variant's timings do not establish performance for the
+revised code. The prototype remains unaccepted: the narrow case offers no gain
+and the wide case does not satisfy the stock-Flink performance gate.

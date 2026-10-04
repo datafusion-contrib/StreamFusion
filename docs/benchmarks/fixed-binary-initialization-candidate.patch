@@ -1,0 +1,33 @@
+--- a/src/main/java/tech/streamfusion/arrow/ArrowConversion.java
++++ b/src/main/java/tech/streamfusion/arrow/ArrowConversion.java
+@@ -254,7 +254,15 @@
+     List<FieldVector> vectors = root.getFieldVectors();
+     for (int i = 0; i < vectors.size(); i++) {
+       FieldVector vector = vectors.get(i);
+-      if (fixedWidthCapacity >= 0 && vector instanceof org.apache.arrow.vector.BaseFixedWidthVector fixed) {
++      if (fixedWidthCapacity > 0 && vector instanceof FixedSizeBinaryVector fixed) {
++        try (var validity = fixed.getAllocator().buffer((fixedWidthCapacity + 7L) / 8);
++             var values = fixed.getAllocator().buffer((long) fixedWidthCapacity * fixed.getByteWidth())) {
++          validity.setZero(0, validity.capacity());
++          fixed.loadFieldBuffers(
++              new org.apache.arrow.vector.ipc.message.ArrowFieldNode(0, 0),
++              Arrays.asList(validity, values));
++        }
++      } else if (fixedWidthCapacity >= 0 && vector instanceof org.apache.arrow.vector.BaseFixedWidthVector fixed) {
+         fixed.allocateNew(fixedWidthCapacity);
+       } else {
+         vector.allocateNew();
+--- a/src/main/java/tech/streamfusion/arrow/writers/BinaryWriter.java
++++ b/src/main/java/tech/streamfusion/arrow/writers/BinaryWriter.java
+@@ -49,7 +49,10 @@
+     @Override
+     public void doWrite(T in, int ordinal) {
+         if (isNullAt(in, ordinal)) {
+-            ((FixedSizeBinaryVector) getValueVector()).setNull(getCount());
++            var vector = (FixedSizeBinaryVector) getValueVector();
++            vector.setNull(getCount());
++            vector.getDataBuffer().setZero(
++                    (long) getCount() * vector.getByteWidth(), vector.getByteWidth());
+         } else {
+             ((FixedSizeBinaryVector) getValueVector()).setSafe(getCount(), readBinary(in, ordinal));
+         }
