@@ -19,6 +19,7 @@ class DynamicCollectionBenchmark {
   private static final int WARMUP = Integer.getInteger("collection.warmup", 2);
   private static final int RUNS = Integer.getInteger("collection.runs", 5);
   private static final int WIDTH = Integer.getInteger("collection.width", 0);
+  private static final boolean EMPTY_ARRAYS = Boolean.getBoolean("collection.emptyArrays");
   private static final int DOMAIN = Integer.getInteger("collection.domain", WIDTH);
   private static final boolean INTS = Boolean.getBoolean("collection.int");
   private static final String ELEMENT_TYPE =
@@ -37,6 +38,12 @@ class DynamicCollectionBenchmark {
           System.getProperty("collection.expression", map ? "m[lookup_key]" : "arr[idx]");
       if (System.getProperty("collection.expression") != null
           && map != Boolean.parseBoolean(System.getProperty("collection.map", "true"))) continue;
+      if (EMPTY_ARRAYS && !map) {
+        if (java.lang.reflect.Array.getLength(inputArray(1)) != 0) {
+          throw new IllegalStateException("Expected empty-array fixture");
+        }
+        System.out.println("[collection-fixture] empty_arrays=true array_length=0");
+      }
       TableEnvironment check = environment(map);
       String sql = prepare(check, expression);
       String plan = NativePlanner.explain(check, sql);
@@ -113,6 +120,14 @@ class DynamicCollectionBenchmark {
   }
 
   private static Object inputArray(long row) {
+    if (EMPTY_ARRAYS) {
+      return switch (ELEMENT_TYPE) {
+        case "STRING" -> new String[0];
+        case "BOOLEAN" -> new Boolean[0];
+        case "BIGINT" -> new Long[0];
+        default -> new Integer[0];
+      };
+    }
     if (ELEMENT_TYPE.equals("STRING")) {
       if (WIDTH == 0) return new String[] {STRING_VALUES[0], null, "tail"};
       String[] values = new String[WIDTH];

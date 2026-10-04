@@ -60,6 +60,10 @@ public abstract class ArrowFieldWriter<IN> {
         count += 1;
     }
 
+    protected void advanceCount(int amount) {
+        count += amount;
+    }
+
     /** Finishes the writing of the current row batch. */
     public void finish() {
         valueVector.setValueCount(count);

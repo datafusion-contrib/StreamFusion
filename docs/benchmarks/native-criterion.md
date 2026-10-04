@@ -1883,7 +1883,8 @@ reserves child-vector capacity once per INT array and writes directly into that
 reserved range. The existing path uses a generic writer and a safe vector setter
 for each element. Fresh-batch buffers, parent/child NULL masks and ownership remain
 unchanged. Comet's Arrow writer pattern was consulted before this experiment.
-The prototype is not enabled in production.
+The original unbounded prototype is not enabled in production. The revised
+length-aware writer is documented in [bulk INT array entry](../optimizations/bulk-int-array-entry.md).
 Expanded ownership, transpose, failure and SQL tests pass 45 checks on each
 released Flink version (2.2.1 and 1.18.1), with no skips. The three new ownership
 regressions also pass against the unchanged writer on both versions; they cover
