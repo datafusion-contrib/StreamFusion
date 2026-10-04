@@ -155,5 +155,7 @@ fn run(c: &mut Criterion) {
 }
 #[path = "binary_expressions/elt_arguments.rs"]
 mod elt_arguments;
-criterion_group!(benches, run, elt_arguments::run);
+#[path = "binary_expressions/fixed_to_variable.rs"]
+mod fixed_to_variable;
+criterion_group!(benches, run, elt_arguments::run, fixed_to_variable::run);
 criterion_main!(benches);

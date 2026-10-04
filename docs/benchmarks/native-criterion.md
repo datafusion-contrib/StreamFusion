@@ -1726,3 +1726,29 @@ trials per variant gives candidate median 26.104207 s versus original
 this deletion optimization for the tested workload, not other aggregate types,
 mini-batch performance, TTL, rescaling, or complete Criterion coverage of all
 Rust operations. They do not close the pending BINARY/collection/floating work.
+
+### Fixed BINARY to variable BYTES cast allocation baseline
+
+The binary expression suite adds 144 production Calc fixtures for fixed BINARY
+to variable BYTES casts. It covers both the legacy unbounded marker and the
+normal SQL BYTES length marker, with 0/16/1,024/16,384 rows, widths 1/16/256,
+nullable/non-null inputs and slice offsets 0/1/5. Independent byte-vector
+oracles check variable Binary output, NULLs, embedded zero and high bytes.
+Each fixture validates output before measuring allocations and Criterion time.
+
+All 144 fixtures pass against the existing implementation in a release build
+with verified mimalloc aliases. [Original allocations](fixed-to-variable-sql-original-allocations-2026-10-04.csv)
+show that nullable 16,384-row width-256 offset-one casts request 4,263,399 bytes
+in 27 calls for normal SQL BYTES, and 8,441,319 bytes in 35 calls for the legacy
+marker. Neither output shares input buffers; both produce 3,662,852 new output
+buffer bytes. Requested allocation bytes measure allocator requests, not copied
+bytes. The existing fixed-to-variable cast rebuilds payload through a binary
+builder; these fixtures establish evidence for evaluating buffer reuse.
+
+[Legacy baseline timings](fixed-to-variable-baseline-timing-2026-10-04.csv)
+and [all 400 samples](fixed-to-variable-baseline-samples-2026-10-04.csv) cover
+nullable offset-one casts with 1,024/16,384 rows at widths one and 256, using
+100 samples, three-second warmup and five-second measurement. Means are
+5.17/69.64 microseconds at width one and 14.10/300.95 microseconds at width
+256. These are Calc-kernel baselines, with immutable executables and source
+hashes retained during validation. They establish no whole-job acceleration.
