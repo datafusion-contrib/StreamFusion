@@ -1061,3 +1061,24 @@ establish a clean cross-revision improvement or explain that variation.
 [All 60 trials, including identity controls](../benchmarks/fixed-binary-elt-sustained-2026-10-02.csv)
 retain unfavorable results. No new optimization or default admission is
 justified; the fixed-binary dynamic ELT performance gate remains unresolved.
+
+### Generated segment-copy exit rejected (2026-10-04)
+
+A prototype retained Flink's generated projection while exposing batch-scoped
+Arrow byte segments to the shared binary/string row writer. It removed an
+intermediate payload array and preserved SQL binary types and owned output rows.
+It passed 37 released Flink 2.2.1 wire, transpose and SQL cases; Flink 1.18.1
+passed 31 and explicitly skipped six unavailable ELT cases.
+
+An exit-only comparison held the release/mimalloc native library identical and
+kept both transposes, a rowwise blackhole sink, 20 million nullable BINARY(256)
+rows, two warmups and five measured trials. Uniform-first native medians were
+3.4689 seconds candidate and 3.5598 prior; mixed medians were 3.4257 candidate
+and 3.3924 prior. Stock medians ranged from 2.4059 to 2.5017. Native remained
+slower than stock, mixed regressed about 1%, ranges overlapped and stock times
+drifted. The small uniform improvement does not establish a safe acceleration.
+The prototype is rejected and removed; the prior generated exit remains in use.
+[All 80 trials](../benchmarks/generated-segment-wholejob-trials-2026-10-04.csv)
+and [16 summaries](../benchmarks/generated-segment-wholejob-summary-2026-10-04.csv)
+retain the identity controls and unfavorable results. This does not resolve the
+fixed-BINARY performance gate or reopen the rejected manual per-field projection.
