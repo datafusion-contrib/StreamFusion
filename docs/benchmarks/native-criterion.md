@@ -1802,3 +1802,21 @@ profiles attribute 32.7% of sampled weights to host binary-row copying and
 them. Allocation weights are sampled estimates, not copied bytes. Totals are
 not normalized by completed job count. Each recording has positive relevant
 events, a non-skipped passing test, exact library witnesses and retained hashes.
+
+### Host-reader projection profiles
+
+The release/mimalloc host-reader smoke run passes all **192 fixtures**, including
+144 new projection cases. Requests cover the integer column alone, nullable UTF-8
+alone, both columns, and reversed column order. Each decode compares the complete
+output against an independent projection of the original input batch.
+
+The matrix retains three row counts (16, 1,024, 16,384), two payload widths (8, 264),
+memory and local-file inputs, two output batch sizes (64, 4,096), and open/close
+versus decode. [All 192 allocation probes](parquet-host-reader-projection-allocation-2026-10-04.csv)
+and [192 callback witnesses](parquet-host-reader-projection-callbacks-2026-10-04.csv)
+are retained; every case executes positive Java read-call and byte-count witnesses.
+The linked records measure Rust allocation requests and callback traffic, not
+Java heap allocation or exact copied bytes. Original full-schema case names remain
+stable. This smoke run validates fixtures and establishes allocation baselines;
+it provides no latency or acceleration claim. Remote filesystems and nested
+columns remain gaps.

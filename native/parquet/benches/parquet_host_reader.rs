@@ -71,90 +71,106 @@ fn run(c: &mut Criterion) {
             let bytes = encode(&batch, None);
             for filesystem in [false, true] {
                 let host = input(&vm, &bytes, filesystem);
-                for batch_rows in [64, 4096] {
-                    group.throughput(Throughput::Elements(rows as u64));
-                    for phase in ["open_close", "decode"] {
-                        let label = format!("{phase}/{rows}/bytes={width}/filesystem={filesystem}/batch={batch_rows}");
-                        let mut output = Vec::new();
-                        if phase == "decode" {
-                            let mut decoder = HostDecoder::new(
-                                &vm,
-                                host.as_obj(),
-                                bytes.len(),
-                                batch.schema().as_ref(),
-                                batch_rows,
-                            );
-                            while let Some(batch) = decoder.next_batch() {
-                                output.push(batch);
-                            }
-                            assert_eq!(concat_batches(&batch.schema(), &output).unwrap(), batch);
-                        }
-                        let mut prepared = (phase == "decode").then(|| {
-                            HostDecoder::new(
-                                &vm,
-                                host.as_obj(),
-                                bytes.len(),
-                                batch.schema().as_ref(),
-                                batch_rows,
-                            )
-                        });
-                        let before_reads = counter(&vm, &host, "reads");
-                        let before_bytes = counter(&vm, &host, "bytesRead");
-                        let (_, allocations) = measure(|| {
-                            if let Some(mut decoder) = prepared.take() {
-                                while let Some(batch) = decoder.next_batch() {
-                                    std::hint::black_box(batch);
-                                }
+                for (projection, indices) in [
+                    ("all", vec![0, 1]),
+                    ("id", vec![0]),
+                    ("name", vec![1]),
+                    ("reordered", vec![1, 0]),
+                ] {
+                    let expected = batch.project(&indices).unwrap();
+                    for batch_rows in [64, 4096] {
+                        group.throughput(Throughput::Elements(rows as u64));
+                        for phase in ["open_close", "decode"] {
+                            let label = format!("{phase}/{rows}/bytes={width}/filesystem={filesystem}/batch={batch_rows}");
+                            let label = if projection == "all" {
+                                label
                             } else {
-                                std::hint::black_box(HostDecoder::new(
+                                format!("{label}/projection={projection}")
+                            };
+                            let mut output = Vec::new();
+                            if phase == "decode" {
+                                let mut decoder = HostDecoder::new(
                                     &vm,
                                     host.as_obj(),
                                     bytes.len(),
-                                    batch.schema().as_ref(),
+                                    expected.schema().as_ref(),
                                     batch_rows,
-                                ));
+                                );
+                                while let Some(batch) = decoder.next_batch() {
+                                    output.push(batch);
+                                }
+                                assert_eq!(
+                                    concat_batches(&expected.schema(), &output).unwrap(),
+                                    expected
+                                );
                             }
-                        });
-                        let reads = counter(&vm, &host, "reads") - before_reads;
-                        let read_bytes = counter(&vm, &host, "bytesRead") - before_bytes;
-                        assert!(reads > 0 && read_bytes > 0, "host callback must execute");
-                        println!("HOST_READS,{label},{reads},{read_bytes}");
-                        let columns: Vec<_> = output
-                            .iter()
-                            .flat_map(|b| b.columns().iter().cloned())
-                            .collect();
-                        report(&label, &[], &columns, allocations);
-                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
-                            if phase == "open_close" {
-                                b.iter(|| {
+                            let mut prepared = (phase == "decode").then(|| {
+                                HostDecoder::new(
+                                    &vm,
+                                    host.as_obj(),
+                                    bytes.len(),
+                                    expected.schema().as_ref(),
+                                    batch_rows,
+                                )
+                            });
+                            let before_reads = counter(&vm, &host, "reads");
+                            let before_bytes = counter(&vm, &host, "bytesRead");
+                            let (_, allocations) = measure(|| {
+                                if let Some(mut decoder) = prepared.take() {
+                                    while let Some(batch) = decoder.next_batch() {
+                                        std::hint::black_box(batch);
+                                    }
+                                } else {
                                     std::hint::black_box(HostDecoder::new(
                                         &vm,
                                         host.as_obj(),
                                         bytes.len(),
-                                        batch.schema().as_ref(),
+                                        expected.schema().as_ref(),
                                         batch_rows,
                                     ));
-                                });
-                            } else {
-                                b.iter_batched(
-                                    || {
-                                        HostDecoder::new(
+                                }
+                            });
+                            let reads = counter(&vm, &host, "reads") - before_reads;
+                            let read_bytes = counter(&vm, &host, "bytesRead") - before_bytes;
+                            assert!(reads > 0 && read_bytes > 0, "host callback must execute");
+                            println!("HOST_READS,{label},{reads},{read_bytes}");
+                            let columns: Vec<_> = output
+                                .iter()
+                                .flat_map(|b| b.columns().iter().cloned())
+                                .collect();
+                            report(&label, &[], &columns, allocations);
+                            group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                                if phase == "open_close" {
+                                    b.iter(|| {
+                                        std::hint::black_box(HostDecoder::new(
                                             &vm,
                                             host.as_obj(),
                                             bytes.len(),
-                                            batch.schema().as_ref(),
+                                            expected.schema().as_ref(),
                                             batch_rows,
-                                        )
-                                    },
-                                    |mut decoder| {
-                                        while let Some(batch) = decoder.next_batch() {
-                                            std::hint::black_box(batch);
-                                        }
-                                    },
-                                    BatchSize::SmallInput,
-                                );
-                            }
-                        });
+                                        ));
+                                    });
+                                } else {
+                                    b.iter_batched(
+                                        || {
+                                            HostDecoder::new(
+                                                &vm,
+                                                host.as_obj(),
+                                                bytes.len(),
+                                                expected.schema().as_ref(),
+                                                batch_rows,
+                                            )
+                                        },
+                                        |mut decoder| {
+                                            while let Some(batch) = decoder.next_batch() {
+                                                std::hint::black_box(batch);
+                                            }
+                                        },
+                                        BatchSize::SmallInput,
+                                    );
+                                }
+                            });
+                        }
                     }
                 }
                 vm.get_env()
