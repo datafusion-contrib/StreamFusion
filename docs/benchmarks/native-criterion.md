@@ -1951,3 +1951,49 @@ as a substantial allocation improvement: its own temporary carrier is about
 0.01% of weighted allocation samples, while downstream Flink ownership copies
 account for most remaining record carriers. The broader floating-function
 performance work remains pending.
+
+
+## Typed hyperbolic conversion diagnostics
+
+The isolated COSH/SINH/TANH prototype now has 816 Java-oracle Criterion fixtures:
+96 DOUBLE/scalar cases, 360 typed explicit-cast controls and 360 typed fused CALL
+cases. Types include TINYINT, SMALLINT, INTEGER, BIGINT and FLOAT; NULLs, empty
+batches, sliced offsets, integer extrema and BIGINT rounding above 2^53 remain
+checked. All fixtures and [816 allocation probes](hyperbolic-fusion-allocations-2026-10-04.csv)
+pass with release/mimalloc; eight runtime SQL checks pass without skips on each
+released Flink version, 2.2.1 and 1.18.1. Production admission is unchanged.
+
+Fusing widening into the function removes the intermediate DOUBLE array. At
+16384 non-NULL rows, each typed COSH case drops from 26 allocation requests /
+263704 requested bytes to 21 / 132331. The same 131072-byte output is produced.
+This measures allocation traffic, not copied bytes or peak memory. The first
+paired [30-case kernel summary](hyperbolic-fusion-criterion-summary-2026-10-04.csv)
+and [600 raw samples](hyperbolic-fusion-criterion-samples-2026-10-04.csv) retain
+one-second warmup and measurement with 20 samples per case. TANH improves
+1.23–7.42%; some COSH/SINH cases regress by up to 9.46%.
+
+[All 1680 complete-job trials](hyperbolic-fusion-trials-2026-10-04.csv) and
+[28 summaries with ranges and all stock controls](hyperbolic-fusion-summary-2026-10-04.csv)
+compare fusion, the previous native cast prototype and shipping fallback in
+candidate/previous/shipping/shipping/previous/candidate order. Each block has
+two warmups and five repeats per engine, ten million rows, Java 17, Flink 2.2.1,
+two CPUs, a 2 GiB heap, release/mimalloc, disabled local zero-copy exchange, both
+transposes and a rowwise blackhole. No heavy work overlaps timing. The matrix
+covers all six numeric input types, with non-NULL and nullable DOUBLE profiles.
+Source/library hashes, load witnesses and all block outputs were verified.
+An inherited final aggregation assertion expected 800 trials; independent
+validated aggregation recovered all 1680 from completed blocks without rerunning
+or discarding measurements.
+
+Integer TANH remains 8.31–10.69% slower than shipping fallback despite modest
+previous-native improvements. All three BIGINT and FLOAT functions still lose
+to shipping fallback. DOUBLE small-range cases beat shipping by 7.45–10.03%,
+and nullable larger-range cases by 3.86–5.78%. These gains do not justify broad
+primitive admission. This experiment establishes an allocation reduction,
+not completion of the floating-function performance work.
+
+For reproduction from be309d83, apply the [baseline prototype](strict-hyperbolic-baseline-prototype.patch),
+the [typed benchmark extension](strict-hyperbolic-typed-benchmarks.patch), then
+the [fusion and paired-control patch](strict-hyperbolic-fusion-prototype.patch).
+The patches apply together and the resulting source passes whitespace checks.
+These remain experimental patches rather than shipping implementations.

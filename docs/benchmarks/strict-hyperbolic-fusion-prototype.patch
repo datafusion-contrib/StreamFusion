@@ -1,0 +1,275 @@
+diff --git a/native/engine/src/flink_functions/hyperbolic.rs b/native/engine/src/flink_functions/hyperbolic.rs
+--- a/native/engine/src/flink_functions/hyperbolic.rs
++++ b/native/engine/src/flink_functions/hyperbolic.rs
+@@ -2,17 +2,92 @@
+ mod tanh;
+ 
+ use arrow::array::ArrayRef;
+-use arrow::datatypes::Float64Type;
++use arrow::datatypes::{
++    DataType, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
++};
+ use datafusion::common::{cast::as_primitive_array, exec_err, Result};
++use datafusion::logical_expr::{
++    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
++};
+ use std::sync::Arc;
++
++#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
++pub(super) enum Operation {
++    Cosh,
++    Sinh,
++    Tanh,
++}
++
++pub(super) fn function(operation: Operation) -> ScalarUDF {
++    ScalarUDF::new_from_impl(Hyperbolic {
++        operation,
++        signature: Signature::user_defined(Volatility::Immutable),
++    })
++}
++
++#[derive(Debug, PartialEq, Eq, Hash)]
++struct Hyperbolic {
++    operation: Operation,
++    signature: Signature,
++}
++
++impl ScalarUDFImpl for Hyperbolic {
++    fn name(&self) -> &str {
++        match self.operation {
++            Operation::Cosh => "flink_cosh",
++            Operation::Sinh => "flink_sinh",
++            Operation::Tanh => "flink_tanh",
++        }
++    }
++    fn signature(&self) -> &Signature {
++        &self.signature
++    }
++    fn coerce_types(&self, types: &[DataType]) -> Result<Vec<DataType>> {
++        self.return_type(types)?;
++        Ok(types.to_vec())
++    }
++    fn return_type(&self, types: &[DataType]) -> Result<DataType> {
++        match types {
++            [DataType::Int8
++            | DataType::Int16
++            | DataType::Int32
++            | DataType::Int64
++            | DataType::Float32
++            | DataType::Float64] => Ok(DataType::Float64),
++            _ => exec_err!("Hyperbolic functions require one primitive numeric argument"),
++        }
++    }
++    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
++        let kernel: fn(&[ArrayRef]) -> Result<ArrayRef> = match self.operation {
++            Operation::Cosh => cosh,
++            Operation::Sinh => sinh,
++            Operation::Tanh => tanh,
++        };
++        datafusion::functions::utils::make_scalar_function(kernel, vec![])(&args.args)
++    }
++}
+ 
+ fn apply(args: &[ArrayRef], function: fn(f64) -> f64) -> Result<ArrayRef> {
+     if args.len() != 1 {
+         return exec_err!("Hyperbolic functions require one argument");
+     }
+-    Ok(Arc::new(
+-        as_primitive_array::<Float64Type>(&args[0])?.unary::<_, Float64Type>(function),
+-    ))
++    macro_rules! primitive {
++        ($ty:ty) => {
++            Arc::new(
++                as_primitive_array::<$ty>(&args[0])?
++                    .unary::<_, Float64Type>(|value| function(value as f64)),
++            ) as ArrayRef
++        };
++    }
++    Ok(match args[0].data_type() {
++        DataType::Int8 => primitive!(Int8Type),
++        DataType::Int16 => primitive!(Int16Type),
++        DataType::Int32 => primitive!(Int32Type),
++        DataType::Int64 => primitive!(Int64Type),
++        DataType::Float32 => primitive!(Float32Type),
++        DataType::Float64 => primitive!(Float64Type),
++        other => return exec_err!("Unsupported hyperbolic input {other}"),
++    })
+ }
+ pub(super) fn cosh(args: &[ArrayRef]) -> Result<ArrayRef> {
+     apply(args, cosh_sinh::cosh)
+@@ -62,7 +137,7 @@
+     #[test]
+     fn rejects_wrong_arity_and_type() {
+         assert!(cosh(&[]).is_err());
+-        let values: ArrayRef = Arc::new(arrow::array::Int32Array::from(vec![1]));
++        let values: ArrayRef = Arc::new(arrow::array::StringArray::from(vec!["1"]));
+         assert!(tanh(&[values]).is_err());
+     }
+ }
+diff --git a/native/engine/src/flink_functions/mod.rs b/native/engine/src/flink_functions/mod.rs
+--- a/native/engine/src/flink_functions/mod.rs
++++ b/native/engine/src/flink_functions/mod.rs
+@@ -187,24 +187,9 @@
+         161 => instr::function(arity),
+         162 => hash_code::function(),
+         165 => array_distinct::function(),
+-        166 => udf(
+-            "flink_cosh",
+-            vec![DataType::Float64],
+-            DataType::Float64,
+-            hyperbolic::cosh,
+-        ),
+-        167 => udf(
+-            "flink_sinh",
+-            vec![DataType::Float64],
+-            DataType::Float64,
+-            hyperbolic::sinh,
+-        ),
+-        168 => udf(
+-            "flink_tanh",
+-            vec![DataType::Float64],
+-            DataType::Float64,
+-            hyperbolic::tanh,
+-        ),
++        166 => hyperbolic::function(hyperbolic::Operation::Cosh),
++        167 => hyperbolic::function(hyperbolic::Operation::Sinh),
++        168 => hyperbolic::function(hyperbolic::Operation::Tanh),
+         _ => return None,
+     })
+ }
+diff --git a/native/engine/benches/hyperbolic_expressions.rs b/native/engine/benches/hyperbolic_expressions.rs
+--- a/native/engine/benches/hyperbolic_expressions.rs
++++ b/native/engine/benches/hyperbolic_expressions.rs
+@@ -160,42 +160,48 @@
+                         let batch =
+                             RecordBatch::try_from_iter([("value", input.slice(offset, rows))])
+                                 .unwrap();
+-                        let mut plan = CalcProgram::new(
+-                            vec![6, 11, 0],
+-                            vec![op, 5, 0],
+-                            vec![1, 1, 0],
+-                            vec![],
+-                            vec![],
+-                            vec![],
+-                        );
+-                        let output = plan.run(batch.clone());
+-                        let result = output
+-                            .column(0)
+-                            .as_any()
+-                            .downcast_ref::<Float64Array>()
+-                            .unwrap();
+-                        assert_eq!(result.len(), rows);
+-                        for i in 0..rows {
+-                            let source = i + offset;
+-                            assert_eq!(result.is_null(i), nulls && source % 7 == 0);
+-                            if result.is_valid(i) {
+-                                assert_eq!(
+-                                    result.value(i).to_bits(),
+-                                    references[source % references.len()].1[column],
+-                                    "{input_type}/{name}, row={i}, offset={offset}"
+-                                );
+-                            }
++                        for fused in [false, true] {
++                            let mut plan = CalcProgram::new(
++                                if fused { vec![6, 0] } else { vec![6, 11, 0] },
++                                if fused { vec![op, 0] } else { vec![op, 5, 0] },
++                                if fused { vec![1, 0] } else { vec![1, 1, 0] },
++                                vec![],
++                                vec![],
++                                vec![],
++                            );
++                            let output = plan.run(batch.clone());
++                            let result = output
++                                .column(0)
++                                .as_any()
++                                .downcast_ref::<Float64Array>()
++                                .unwrap();
++                            assert_eq!(result.len(), rows);
++                            for i in 0..rows {
++                                let source = i + offset;
++                                assert_eq!(result.is_null(i), nulls && source % 7 == 0);
++                                if result.is_valid(i) {
++                                    assert_eq!(
++                                        result.value(i).to_bits(),
++                                        references[source % references.len()].1[column],
++                                        "{input_type}/{name}, row={i}, offset={offset}"
++                                    );
++                                }
++                            }
++                            let label = format!(
++                                "{input_type}/{name}/{rows}/nulls={nulls}/offset={offset}{}",
++                                if fused { "/fused" } else { "" }
++                            );
++                            let (output, allocations) = measure(|| plan.run(batch.clone()));
++                            report(&label, batch.columns(), output.columns(), allocations);
++                            group.throughput(Throughput::Elements(rows as u64));
++                            group.bench_function(BenchmarkId::from_parameter(label), |b| {
++                                b.iter(|| {
++                                    std::hint::black_box(
++                                        plan.run(std::hint::black_box(batch.clone())),
++                                    )
++                                });
++                            });
+                         }
+-                        let label =
+-                            format!("{input_type}/{name}/{rows}/nulls={nulls}/offset={offset}");
+-                        let (output, allocations) = measure(|| plan.run(batch.clone()));
+-                        report(&label, batch.columns(), output.columns(), allocations);
+-                        group.throughput(Throughput::Elements(rows as u64));
+-                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+-                            b.iter(|| {
+-                                std::hint::black_box(plan.run(std::hint::black_box(batch.clone())))
+-                            });
+-                        });
+                     }
+                 }
+             }
+diff --git a/src/main/java/tech/streamfusion/planner/RexExpression.java b/src/main/java/tech/streamfusion/planner/RexExpression.java
+--- a/src/main/java/tech/streamfusion/planner/RexExpression.java
++++ b/src/main/java/tech/streamfusion/planner/RexExpression.java
+@@ -1377,7 +1377,6 @@
+         default -> { return reject(functionName + " requires a verified primitive numeric argument"); }
+       }
+       add(KIND_CALL, "COSH".equals(functionName) ? 166 : "SINH".equals(functionName) ? 167 : 168, 1);
+-      add(KIND_CAST, CAST_DOUBLE, 1);
+       return emit(input);
+     }
+     if ("SIGN".equals(functionName)) {
+diff --git a/native/engine/benches/hyperbolic_expressions/README.md b/native/engine/benches/hyperbolic_expressions/README.md
+--- a/native/engine/benches/hyperbolic_expressions/README.md
++++ b/native/engine/benches/hyperbolic_expressions/README.md
+@@ -15,3 +15,33 @@
+ ```
+ 
+ The frozen 324 inputs retain boundary cases and sample randomized raw doubles, bounded doubles, and promoted floats. Expected outputs use raw bits from Java Math; the benchmark does not calculate expected values using the Rust implementations. Run the release Criterion target `hyperbolic_expressions` with the `mimalloc` feature. Its 96 cases include production CALL and DOUBLE cast evaluation, output allocation, NULLs, empty batches, and offsets 0, 1, and 5, plus literal scalar adaptation for 1.0 and negative zero. These are kernel diagnostics; Flink performance requires separate complete-query measurements with both transposes.
++
++The typed extension uses `TypedHyperbolicOracle.java`:
++
++```sh
++java TypedHyperbolicOracle.java > java17-typed-oracle.csv
++```
++
++Its 797 frozen rows cover TINYINT, SMALLINT, INTEGER, BIGINT and FLOAT, with
++bounded values, integer extrema and BIGINT rounding boundaries above 2^53.
++FLOAT cases include signed zero, subnormals, finite extrema, infinities and
++canonical signed NaNs. The 360 typed fixtures retain the production DOUBLE cast
++before CALL for all three functions, with sizes 0/16/1024/16384, NULLs, and
++slice offsets 0/1/5. This makes the intermediate conversion allocation visible
++in the untimed diagnostics and retains it in timed execution. Scalar literal
++adaptation remains covered by the existing DOUBLE fixtures.
++
++The isolated fusion experiment doubles the typed matrix to 720 cases, retaining
++360 explicit-cast controls and adding 360 direct typed CALL cases. Together
++with 96 DOUBLE/scalar cases, all 816 fixtures pass with independent Java raw-bit
++checks. At 16384 non-NULL rows, every typed COSH case reduces Rust allocation
++requests from 26 / 263704 bytes to 21 / 132331 bytes. These counters measure
++allocation traffic, not copied bytes or peak memory.
++
++The first paired timing run retains 30 cases and 600 samples, with one-second
++warmup and measurement and 20 samples per case. It is mixed: TANH improves
++1.23–7.42%, while several COSH/SINH cases regress (up to 9.46%). All 1680 full-job trials are retained. Fusion improves some integer cases
++by about 1–2% versus the previous prototype, but typed TANH still loses to
++shipping fallback by up to 10.69%. DOUBLE cases beat shipping; these wins do
++not establish broad primitive admission.
++Fusion is experimental and does not change production admission.
