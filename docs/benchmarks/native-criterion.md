@@ -2007,3 +2007,14 @@ on each released Flink version. All 480 full-job trials show small, mixed
 effects: TINYINT math improves 0.92–1.46%, nullable SMALLINT regresses
 0.38–1.63%, and DOUBLE changes -0.73% to +0.77%. This does not resolve typed
 math regressions, so production admission is unchanged.
+
+
+## Hyperbolic compiler specialization
+
+The [compiler specialization diagnostic](hyperbolic-specialization.md) retains
+all 1680 full-job trials and 1200 interleaved Criterion samples. Integer TANH
+kernels improve 11.92–14.11%, but complete jobs still lose to shipping by
+4.69–8.84%. All BIGINT and FLOAT functions also remain slower than shipping
+and stock. The 816 oracle fixtures and allocation probes and both released
+Flink SQL suites pass; allocation traffic is unchanged. Production admission
+remains unchanged and the broader performance goal remains pending.
