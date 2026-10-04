@@ -1568,8 +1568,26 @@ record Rust-thread allocation requests and Arrow output sharing; they exclude
 RocksDB C++ and background threads and do not measure copied bytes. The nullable
 16,384-row wide unique-key case requests 37,268,964 bytes for half-row retraction
 and 74,995,124 bytes for all-row retraction. These characterize existing behavior,
-not a before/after optimization. Release timings and the concurrently running
-comprehensive persistent-state smoke result remain pending.
+not a before/after optimization. The comprehensive persistent-state smoke also
+completes successfully: 2,316 allocation probes, with all 48 retraction profiles
+matching the focused executable's allocation metrics.
+
+Focused optimized release/mimalloc timings retain three seconds of warmup,
+100 samples per case and a five-second target measurement, on a quiet host.
+Source/executable hashes and allocator aliases pass before/after guards.
+Database creation and prior inserts are outside the measured update/flush path;
+Criterion's wall-clock run still includes that setup. Nullable unique-key inputs
+use 264-byte suffixes with Unicode/prefix/embedded-zero key bytes.
+
+| Initial rows | Retract half: mean | Retract all: mean |
+| --- | --- | --- |
+| 1,024 | 0.917 ms | 2.052 ms |
+| 16,384 | 20.140 ms | 47.657 ms |
+
+[Mean confidence intervals](group-retractions-timing-2026-10-04.csv) and
+[all 400 samples](group-retractions-samples-2026-10-04.csv) retain variability and
+outliers. These are baseline measurements of current COUNT/SUM retractions,
+not a before/after comparison or whole-job acceleration claim.
 
 The runner-level release smoke with `--features mimalloc` also passes all 48
 retraction cases. Its retained metadata records the requested feature and exact
