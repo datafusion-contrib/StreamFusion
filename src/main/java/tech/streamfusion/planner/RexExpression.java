@@ -1035,13 +1035,8 @@ final class RexExpression {
       return emit(call.getOperands().get(0));
     }
     if ("ELT".equals(call.getOperator().getName())
-        && SqlTypeFamily.BINARY.contains(call.getType())
-        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.INTEGER
-        && call.getOperands().stream().noneMatch(this::requiresRowShortCircuit)) {
-      add(KIND_BINARY_ELT, call.getType().getSqlTypeName() == SqlTypeName.BINARY
-          ? call.getType().getPrecision() : 0, call.getOperands().size());
-      for (RexNode operand : call.getOperands()) if (!emit(operand)) return false;
-      return true;
+        && SqlTypeFamily.BINARY.contains(call.getType())) {
+      return reject("binary ELT awaits whole-job performance admission");
     }
     if (isExactDoubleTruncate(call)) return emitExactDoubleTruncate(call);
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {
@@ -1221,9 +1216,9 @@ final class RexExpression {
       if (call.getOperands().size() != 1
           || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.ARRAY
           || !java.util.Set.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
-                  SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.BOOLEAN, SqlTypeName.VARCHAR)
+                  SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.BOOLEAN)
               .contains(call.getOperands().get(0).getType().getComponentType().getSqlTypeName())) {
-        return reject("ARRAY_DISTINCT requires a BOOLEAN, integer, or VARCHAR ARRAY");
+        return reject("ARRAY_DISTINCT requires a BOOLEAN or integer ARRAY");
       }
       return emitBuiltinCall(call, 165);
     }

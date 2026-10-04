@@ -15,9 +15,7 @@ class FollowupExpressionPlanTest {
   @ParameterizedTest
   @ValueSource(strings = {
       "TRY_CAST(s AS BINARY(4))",
-      "ELT(p, b, CAST(X'00FF' AS BINARY(4)))",
       "ARRAY_DISTINCT(bs)",
-      "ARRAY_DISTINCT(ss)",
       "TRUNCATE(x)",
       "TRUNCATE(x, p)",
       "COALESCE(x, TRUNCATE(x, p))",

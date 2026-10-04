@@ -51,17 +51,17 @@ class FlinkFixedBinarySqlHarnessTest {
   @Test
   void fixedBinaryArgumentsResultsAndTypedLiteralsRetainRawBytes() throws Exception {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
-    BuiltinFunctionParity.assertParity(this::binary,
+    NativeParity.assertFallback(this::binary,
         "SELECT ELT(n,b,p), ELT(1,p,b), ELT(n,b,X'00FF'), "
             + "TO_BASE64(ELT(n,b,p)), STARTSWITH(b,p), ENDSWITH(b,X'00FF') FROM src");
-    BuiltinFunctionParity.assertParity(this::binary,
+    NativeParity.assertFallback(this::binary,
         "SELECT ELT(n,b,p), ELT(n,b,CAST(NULL AS BINARY(2))) FROM src WHERE n = 2");
-    BuiltinFunctionParity.assertParity(this::binary,
+    NativeParity.assertFallback(this::binary,
         "SELECT ELT(n,b,CAST(X'00' AS BINARY(2))), "
             + "ELT(n,b,CAST(X'FF0080' AS BINARY(2))), "
             + "ELT(n,b,TRY_CAST('é中' AS BINARY(2))), "
             + "ELT(n,b,CAST(NULL AS BINARY(1))) FROM src");
-    BuiltinFunctionParity.assertParity(this::binary,
+    NativeParity.assertFallback(this::binary,
         "SELECT ELT(n,b,p) FROM src WHERE n = 99");
   }
 
@@ -112,7 +112,7 @@ class FlinkFixedBinarySqlHarnessTest {
       rows.add(Row.of(i % 7 == 0 ? null : value, i % 4));
     }
     String literal = TextTimeBenchmarkInputs.fixedBinaryLiteral(width);
-    BuiltinFunctionParity.assertParity(
+    NativeParity.assertFallback(
         () -> BuiltinFunctionParity.environment(
             ROW(FIELD("b", BINARY(width)), FIELD("n", INT())), rows),
         "SELECT ELT(n,b," + literal + "), ELT(n,b,CAST(NULL AS BINARY(" + width + "))), "
@@ -125,7 +125,7 @@ class FlinkFixedBinarySqlHarnessTest {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
     NativeFailureParity.run(this::binary, "SELECT ELT(1 / (n - n), b, p) FROM src")
         .assertFailure(ArithmeticException.class, "zero", NativeFailureParity.Phase.ROW_EVALUATION,
-            NativeFailureParity.Route.NATIVE);
+            NativeFailureParity.Route.FALLBACK);
   }
 
   @Test
@@ -146,7 +146,7 @@ class FlinkFixedBinarySqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
+  @ValueSource(booleans = {false})
   void fixedBinaryExpressionsComposeWithGroupedCounts(boolean selection) throws Exception {
     if (selection) tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
     java.util.function.Supplier<TableEnvironment> source =
