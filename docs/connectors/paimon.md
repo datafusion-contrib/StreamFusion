@@ -1315,3 +1315,41 @@ include both former CI timeout cases passing; the archived Surefire reports and
 upstream diagnostics retain the broader suite context. This single randomized
 suite draw does not identify the CI timeout's cause or establish a fix. Its test
 durations are correctness diagnostics, not performance comparisons.
+
+The aggregate parity workflow for evidence commit `f4245e54` subsequently failed
+the same full-compaction streaming case with an assertion mismatch rather than
+a timeout: expected `10000|10000.str`, observed `477|3948.str` after 28.892
+seconds. The released upstream suite reported 242 tests, one failure, zero
+errors and zero skips; the primary-key class reported 17 tests and one failure.
+The separate Flink 1.18 Paimon check passed, so that green check must not be used
+to claim aggregate parity. The failing workflow is
+[run 37175053239](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37175053239);
+its exact Surefire reports and upstream diagnostics were retained from artifact
+`11294760131`. The cause remains under investigation. This evidence contradicts
+any claim that the earlier passing local suite establishes complete streaming
+changelog correctness.
+
+The failing invocation ran two concurrent writers. Its runtime diagnostics show
+Paimon 1.0.0 rejecting a compaction commit with `File deletion conflicts detected!
+Give up committing.` at 04:57:53.725 UTC, followed by the affected writer restoring
+checkpoint 6 at 04:57:54.751 UTC. The exception originates in the released Paimon
+commit implementation and reports different base and current commit users. These
+logs establish a commit conflict and recovery, but do not establish that recovery
+caused the incorrect final value, or that this is the same failure as the
+stock-only split-commit reproduction above. The retained artifact has no table
+snapshot or manifest files with which to prove that sequence.
+
+For a focused native upstream-suite reproduction, opt in to retaining a failed
+fixture’s local warehouse before teardown with
+`-Dstreamfusion.flink-suite.retain-failed-warehouse=true`. The test agent copies
+the released fixture’s `path` directory under its configured diagnostics directory
+as `failed-warehouses/<test>-<unique-id>`, including table snapshots, manifests,
+and data files. Capture is disabled by default and occurs after a test failure;
+capture errors are reported without replacing the original failure. A copy made
+while background jobs are still active is diagnostic evidence, not an atomic
+checkpoint or a guaranteed consistent table backup.
+
+Java 17 validation of the retention hook passes all seven selected tests with
+zero failures, errors or skips: four warehouse-capture cases and three existing
+test-watch diagnostics cases. These validate the diagnostic hook, not recovery
+correctness in the failing released upstream test.
