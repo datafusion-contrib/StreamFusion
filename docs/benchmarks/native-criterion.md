@@ -1875,3 +1875,49 @@ release/mimalloc native code and disabled local zero-copy exchange. The same
 immutable native library is used throughout, with no overlapping heavy work.
 The exit extension is removed and recorded as a rejected investigation; array
 widening remains experimental pending the complete stock/prior performance gate.
+
+### INT-array bulk entry experiment
+
+The [reviewable Java writer prototype](array-int-bulk-entry-candidate.patch)
+reserves child-vector capacity once per INT array and writes directly into that
+reserved range. The existing path uses a generic writer and a safe vector setter
+for each element. Fresh-batch buffers, parent/child NULL masks and ownership remain
+unchanged. Comet's Arrow writer pattern was consulted before this experiment.
+The prototype is not enabled in production.
+Expanded ownership, transpose, failure and SQL tests pass 45 checks on each
+released Flink version (2.2.1 and 1.18.1), with no skips. The three new ownership
+regressions also pass against the unchanged writer on both versions; they cover
+primitive/nullable elements, declared non-null elements, nested arrays, input
+mutation, growth and retained buffers across fresh batches.
+
+[All 480 trials](array-int-bulk-entry-trials-2026-10-04.csv) and
+[48 pooled engine summaries](array-int-bulk-entry-summary-2026-10-04.csv) retain
+12 matched candidate/original/original/candidate experiments. Each block uses two
+warmups and five repetitions per engine, Java 17, Flink 2.2.1, two CPUs, a 2 GiB
+heap, release/mimalloc native code, disabled local zero-copy exchange, both
+transposes and a rowwise blackhole. No heavy work overlaps timed trials. The same
+immutable native library is used throughout. Entry-only comparisons vary the
+three writer files while holding the experimental native array cast and exit
+fixed; shipping comparisons hold the entry writer fixed and vary cast admission
+between that prototype and the shipping Flink fallback.
+
+At two million rows, width 64 and domain 65536, the nullable entry-only native
+median falls from 1.480813 s to 1.181899 s (20.19%), versus matched stock 1.270637 s.
+The non-NULL case improves 19.87% versus the previous native path and 9.58% versus
+stock. Both width-eight entry-only cases improve, whereas width-one results vary.
+A fresh nullable wide-array shipping comparison records 1.164308 s native,
+1.239928 s previous fallback and 1.280440 s matched stock (6.10% and 9.07% faster).
+With domain eight, nullable width 64 improves 12.14% versus shipping and 14.32%
+versus stock.
+
+The longer controls prevent broad array-cast admission. At ten million rows and
+width one, native is 21.01% slower than shipping without NULLs and 21.73% slower
+with NULLs; matched stock is roughly level with native, but stock controls differ
+substantially between candidate and original blocks. Nullable width eight with
+domain eight is 5.80% slower than shipping despite beating its matched stock
+control by 3.55%. The width-zero configuration is the fixture's default
+three-element array, not an empty array: that case is 11.90% slower than shipping.
+The CSV preserves configured width and effective width separately. No unfavorable
+trials are discarded or normalized away. Production keeps the array-cast fallback;
+performance validation of the entry writer on already-supported operations
+continues independently.
