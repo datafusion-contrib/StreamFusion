@@ -45,6 +45,13 @@ Retain the actual diff when comparing an uncommitted implementation. Baselines m
 case names and representative data. Existing comparison suites include experimental alternatives;
 only cases explicitly calling the production implementation describe shipped behavior.
 
+For repeated persistent GROUP BY comparisons, use `--bench persistent_group`.
+This focused target registers the same production adapters, fixtures and oracles
+as `persistent_state`, including COUNT/SUM retractions, without constructing
+unrelated join, window or session fixtures. The comprehensive target retains
+those GROUP BY fixtures. Filters still restrict timing rather than fixture probes
+within the selected target.
+
 Full timing runs are intentionally long. Start with a case filter for a suspected copy, then cover
 the operation's other profiles before accepting an optimization. Run timing suites sequentially on
 an otherwise quiet host. Inspect Criterion's confidence intervals and repeat noisy comparisons;
@@ -66,7 +73,10 @@ zeroed-allocation, and reallocation requests on the measured thread. Reallocatio
 requested size, not its growth delta. This is allocation traffic, **not peak memory or copied bytes**.
 C/C++ allocations, RocksDB background workers, JVM allocations, and other threads are outside the
 counter. The allocator has a disabled counting check during timed execution; compare runs with the
-same instrumentation. These executables do not reproduce the production mimalloc configuration.
+same instrumentation. The default runner does not enable mimalloc. When a retained
+run explicitly enables the engine `mimalloc` feature, record that configuration and
+verify the executable allocator aliases; the counting wrapper still excludes
+RocksDB C++ and background-thread requests.
 
 Buffer diagnostics recursively inspect Arrow value, offset, validity, and child buffers. An output
 range wholly contained in an input buffer is classified as shared; other ranges are new. Identical
@@ -105,7 +115,7 @@ Some historical suites use
 | Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank, temporal join and rowtime running-SUM OVER; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | Persistent window aggregation | `persistent_state` | Tumbling and session Int64 SUM; partial firing, checkpoint and aligned/rebuilt single-source recovery; session bridge merging, independent event-list oracle, saved watermark and continued processing |
 | Persistent window join | `persistent_state` | INNER join with unique UTF-8 keys; right arrival, partial firing, checkpoint and aligned/rebuilt single-source recovery; independent multiset/schema oracle, pre-replay arrivals, post-replay late rejection and continued processing |
-| Persistent group aggregation | `persistent_state` | Mini-batch COUNT(*) and nullable Int64 SUM with UTF-8 keys; ingestion/flush, checkpoint and aligned/rebuilt single-source restore; independent continued-changelog oracle and per-key row-kind order checks |
+| Persistent group aggregation | `persistent_state`, `persistent_group` | Mini-batch COUNT(*) and nullable Int64 SUM with UTF-8 keys; ingestion/flush, checkpoint and aligned/rebuilt single-source restore; independent continued-changelog oracle and per-key row-kind order checks; half/all-row retractions with deletion and reinsertion oracles |
 | Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
@@ -125,7 +135,7 @@ Persistent tumbling/session SUM and unique-key INNER window-join lifecycle
 fixtures are now validated. Window/session aggregation with other shapes or
 aggregate kinds, updating joins and other window-join kinds, duplicate keys,
 residual predicates and TTL still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*)
-and SUM only; other aggregate kinds, retractions, DISTINCT views and TTL still
+and SUM only; other aggregate kinds, DISTINCT views and TTL still
 need dedicated persistent benchmarks. The operation inventory is not a claim of
 exhaustive type, option or state-backend coverage.
 
@@ -1529,3 +1539,26 @@ size changes the output-batch and callback behavior; this comparison neither
 isolates an avoidable copy nor establishes a production optimization. It has no
 stock Flink or previous-version whole-job comparison, no row/Arrow transposes,
 and no remote filesystem or projection workload.
+
+### Persistent aggregate retractions
+
+The shared GROUP BY fixtures add 48 persistent COUNT(*)/SUM retraction profiles
+across 16/1,024/16,384 rows, repeated/unique keys, 8/264-byte Unicode keys and
+nullable keys/values. Each starts from an already flushed aggregate outside
+measurement, then retracts half or all original rows through production
+update/flush. A separate map oracle rebuilds surviving groups and checks schema,
+UPDATE_BEFORE/UPDATE_AFTER versus DELETE, per-key order and empty repeated flush.
+Reinserting removed rows verifies state deletion and NULL-aware SUM continuation.
+Fixture construction, prior inserts, database creation, reinsertion checks and
+directory cleanup remain outside timing; retraction reads/writes and output
+Arrow construction are included.
+
+The focused `persistent_group` optimized release executable passes all 48
+retraction smoke cases. Its mimalloc malloc/calloc aliases and checked free/realloc
+shims are verified. [Allocation probes](group-retractions-allocation-2026-10-04.csv)
+record Rust-thread allocation requests and Arrow output sharing; they exclude
+RocksDB C++ and background threads and do not measure copied bytes. The nullable
+16,384-row wide unique-key case requests 37,268,964 bytes for half-row retraction
+and 74,995,124 bytes for all-row retraction. These characterize existing behavior,
+not a before/after optimization. Release timings and the concurrently running
+comprehensive persistent-state smoke result remain pending.

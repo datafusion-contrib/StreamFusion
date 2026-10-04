@@ -97,6 +97,11 @@ harness = false
 required-features = ["rocksdb-state"]
 
 [[bench]]
+name = "persistent_group"
+harness = false
+required-features = ["rocksdb-state"]
+
+[[bench]]
 name = "calc_expressions"
 harness = false
 

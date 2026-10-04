@@ -125,7 +125,7 @@ fn validate(batch: &RecordBatch, expected: &[Output]) {
     }
     for kinds in transitions.values() {
         assert!(
-            kinds.as_slice() == [0] || kinds.as_slice() == [1, 2],
+            kinds.as_slice() == [0] || kinds.as_slice() == [1, 2] || kinds.as_slice() == [3],
             "invalid per-key transition order: {kinds:?}"
         );
     }
@@ -229,6 +229,94 @@ pub(super) fn group(c: &mut Criterion) {
                             allocations,
                         );
                         group.throughput(Throughput::Elements(rows as u64));
+                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                            b.iter_batched_ref(
+                                &setup,
+                                |s| std::hint::black_box(run(s)),
+                                BatchSize::PerIteration,
+                            )
+                        });
+                    }
+                }
+            }
+        }
+    }
+    group.finish();
+    retractions(c);
+}
+
+fn retractions(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine/rocksdb/group_retractions");
+    for rows in [16, 1024, 16384] {
+        for domain in [8, rows] {
+            for width in [8, 264] {
+                for nullable in [false, true] {
+                    let initial = input(0, rows, domain, width, nullable);
+                    let mut before = Groups::new();
+                    advance(&mut before, 0, rows, domain, width, nullable);
+                    for all in [false, true] {
+                        let removed = if all { rows } else { rows / 2 };
+                        let base = initial.slice(0, removed);
+                        let mut fields = base.schema().fields().to_vec();
+                        fields.push(Arc::new(Field::new("$row_kind$", DataType::Int8, false)));
+                        let mut columns = base.columns().to_vec();
+                        columns.push(Arc::new(Int8Array::from(vec![3; removed])) as ArrayRef);
+                        let retract =
+                            RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+                        let mut after = Groups::new();
+                        advance(&mut after, removed, rows - removed, domain, width, nullable);
+                        let touched = (0..removed)
+                            .map(|i| key(i, domain, width, nullable))
+                            .collect::<std::collections::BTreeSet<_>>();
+                        let mut expected = Vec::new();
+                        for k in touched {
+                            let &(count, sum) = before.get(&k).unwrap();
+                            if let Some(&(next_count, next_sum)) = after.get(&k) {
+                                expected.push((k.clone(), count, sum, 1));
+                                expected.push((k, next_count, next_sum, 2));
+                            } else {
+                                expected.push((k, count, sum, 3));
+                            }
+                        }
+                        expected.sort();
+                        let setup = || {
+                            let directory = tempfile::tempdir().unwrap();
+                            let mut operator = PersistentGroupBy::new(
+                                directory.path().join("db").to_str().unwrap(),
+                                OPTIONS,
+                            );
+                            operator.update(&initial);
+                            operator.flush();
+                            (operator, directory)
+                        };
+                        let run = |state: &mut (PersistentGroupBy, tempfile::TempDir)| {
+                            state.0.update(&retract);
+                            state.0.flush()
+                        };
+                        let mut state = setup();
+                        let (output, allocations) = measure(|| run(&mut state));
+                        validate(&output, &expected);
+                        assert_eq!(state.0.flush().num_rows(), 0);
+                        // Reinsert deleted rows to prove group state and NULL-aware SUM recover.
+                        state.0.update(&base);
+                        let restored = state.0.flush();
+                        let mut expected_restored = Vec::new();
+                        for (k, &(count, sum)) in &before {
+                            if let Some(&(old_count, old_sum)) = after.get(k) {
+                                if old_count == count {
+                                    continue;
+                                }
+                                expected_restored.push((k.clone(), old_count, old_sum, 1));
+                                expected_restored.push((k.clone(), count, sum, 2));
+                            } else {
+                                expected_restored.push((k.clone(), count, sum, 0));
+                            }
+                        }
+                        expected_restored.sort();
+                        validate(&restored, &expected_restored);
+                        let label = format!("group_retract/{rows}/domain={domain}/bytes={width}/nulls={nullable}/all={all}");
+                        report(&label, retract.columns(), output.columns(), allocations);
+                        group.throughput(Throughput::Elements(removed as u64));
                         group.bench_function(BenchmarkId::from_parameter(label), |b| {
                             b.iter_batched_ref(
                                 &setup,
