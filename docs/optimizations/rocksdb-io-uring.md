@@ -9,9 +9,10 @@ operators, write batches, checkpoint protocol, or dependency source.
 
 The released `librocksdb-sys` defines a strong, always-true enable hook.
 Defining that hook again would create a duplicate symbol; the Linux linker
-wraps its calls instead. The wrapper caches the exact `true` value of
-`SF_ROCKSDB_IO_URING`. This keeps the same binary usable for OFF and ON tests,
-and leaves the path disabled until explicitly selected. Unsupported or
+wraps its calls instead. Feature-enabled Linux builds attempt io_uring by
+default. The wrapper caches `SF_ROCKSDB_IO_URING`: unset or exactly `true`
+enables it, while `false` or any other value disables it. This keeps the same
+binary usable for OFF and ON tests. Unsupported or
 sandbox-denied ring creation follows RocksDB's ordinary-read fallback.
 [Build and deployment settings](../backends/rocksdb.md#linux-io_uring-reads)
 describe the optional liburing dependency.
@@ -45,8 +46,9 @@ source were used in both modes. The complete pair took 876.8 seconds.
 q3 improved by 57.8% using best times; q17 regressed by 9.7%, q19 by 4.5%,
 and q20 by 7.2%. Only q3 had all ON trials faster than all OFF trials;
 q17 and q19 had all ON trials slower than all OFF trials. These results are
-not a claim of a broad, repeatable speedup, and the path is not enabled by
-default. Maintainer approval to submit the integration followed review of
+not a claim of a broad, repeatable speedup. The build feature remains opt-in;
+once compiled in, the runtime attempts io_uring automatically. Maintainer
+approval to submit the integration followed review of
 these measurements, including their modest aggregate gain and regressions.
 
 Five-second host sampling observed at least 4.63 GiB available RAM, zero
@@ -100,10 +102,16 @@ settings do not affect production options or benchmark jobs.
 ## Integration validation on canonical main
 
 The PR branch was rebuilt separately in release mode with the optional feature.
-The cold-SST pinned-read test passed with unset, false, true and invalid runtime
+Before the automatic runtime default was introduced, the cold-SST pinned-read
+test passed with unset, false, true and invalid runtime
 settings, and with `io_uring_setup` forced to return EPERM. Syscall tracing
 observed six `io_uring_enter` calls in the enabled case and none in the other
 cases; the denied case preserved read correctness through upstream fallback.
+Those syscall counts describe the original opt-in runtime default; unset now
+selects the same enabled path as `true`.
+Fresh-process checks of the updated wrapper passed for unset, `true`, `false`,
+invalid, empty, uppercase and non-Unicode settings, including caching after
+an environment change.
 Fresh-process checks also confirmed the runtime setting remains cached after
 an environment change. Disabled settings may still observe RocksDB's initial
 capability probe; absence of submissions is the relevant read-path distinction.

@@ -207,8 +207,10 @@ in addition to the usual `-Pbench` or `-Prelease` profile.
 Feature-enabled Linux libraries also require the liburing runtime library on
 each deployment host (for example `liburing2` on Ubuntu); missing runtime
 libraries prevent loading the native library before any read fallback applies.
-Set `SF_ROCKSDB_IO_URING=true` in each TaskManager's environment before starting
-its JVM. Unset, `false`, and other values leave the integration disabled. The
+Feature-enabled Linux libraries attempt io_uring automatically. Leave
+`SF_ROCKSDB_IO_URING` unset or set it to `true` to enable it; set it to `false`
+in each TaskManager's environment before starting its JVM to disable it.
+Other values also disable the integration. The
 setting is cached on the first use in each process; change it by restarting
 the process, not by rebuilding. Builds without the feature keep their existing
 behavior and do not need liburing. On non-Linux targets the feature does not
