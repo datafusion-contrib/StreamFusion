@@ -57,9 +57,57 @@ class NativeWindowJoinOperatorTest {
     }
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void eventTimeWindowJoinUsesReplayedWatermarksAfterRestore(boolean rocks) throws Exception {
+    OperatorSubtaskState snapshot;
+    try (var before = harness(false, rocks)) {
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      assertEquals(rocks, ((AbstractNativeStatefulOperator<?>) before.getOperator()).directRocksDBState());
+      before.processElement1(new StreamRecord<>(batch(row(1, 10, 0, 1000))));
+      before.processElement2(new StreamRecord<>(batch(row(1, 100, 0, 1000))));
+      before.processElement1(new StreamRecord<>(batch(row(1, 20, 1000, 2000))));
+      before.processElement2(new StreamRecord<>(batch(row(1, 200, 1000, 2000))));
+      before.processWatermark1(new org.apache.flink.streaming.api.watermark.Watermark(1000));
+      before.processWatermark2(new org.apache.flink.streaming.api.watermark.Watermark(1000));
+      assertEquals(List.of(List.of(1L, 10L, 1L, 100L)), collectPairs(before));
+      snapshot = before.snapshot(1, 1);
+    }
+    try (var restored = harness(false, rocks)) {
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(snapshot);
+      restored.open();
+      assertEquals(rocks, ((AbstractNativeStatefulOperator<?>) restored.getOperator()).directRocksDBState());
+      restored.processElement1(new StreamRecord<>(batch(row(1, 30, 0, 1000))));
+      restored.processElement2(new StreamRecord<>(batch(row(1, 300, 0, 1000))));
+      restored.processWatermark1(new org.apache.flink.streaming.api.watermark.Watermark(1000));
+      restored.processWatermark2(new org.apache.flink.streaming.api.watermark.Watermark(1000));
+      assertEquals(List.of(List.of(1L, 30L, 1L, 300L)), collectPairs(restored));
+      restored.processElement1(new StreamRecord<>(batch(row(1, 40, 0, 1000))));
+      restored.processElement2(new StreamRecord<>(batch(row(1, 400, 0, 1000))));
+      restored.processWatermark1(new org.apache.flink.streaming.api.watermark.Watermark(2000));
+      restored.processWatermark2(new org.apache.flink.streaming.api.watermark.Watermark(2000));
+      assertEquals(List.of(List.of(1L, 20L, 1L, 200L)), collectPairs(restored));
+      restored.processWatermark1(new org.apache.flink.streaming.api.watermark.Watermark(3000));
+      restored.processWatermark2(new org.apache.flink.streaming.api.watermark.Watermark(3000));
+      assertEquals(List.of(), collectPairs(restored));
+    }
+  }
+
   private static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
       harness() throws Exception {
-    return new KeyedTwoInputStreamOperatorTestHarness<>(
+    return harness(true);
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+      harness(boolean proctime) throws Exception {
+    return harness(proctime, false);
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+      harness(boolean proctime, boolean rocks) throws Exception {
+    var harness = new KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>(
         new NativeWindowJoinOperator(
             new int[] {0},
             new int[] {0},
@@ -71,7 +119,7 @@ class NativeWindowJoinOperatorTest {
             INPUT,
             INPUT,
             EncodedPredicate.NONE,
-            true,
+            proctime,
             1000,
             1000,
             false,
@@ -83,6 +131,13 @@ class NativeWindowJoinOperatorTest {
         MAX_PARALLELISM,
         1,
         0);
+    if (rocks) {
+      harness.setStateBackend(
+          new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+              .createFromConfig(new org.apache.flink.configuration.Configuration(),
+                  NativeWindowJoinOperatorTest.class.getClassLoader()));
+    }
+    return harness;
   }
 
   private static ArrowBatch batch(RowData... rows) {

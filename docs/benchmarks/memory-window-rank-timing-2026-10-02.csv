@@ -1,0 +1,5 @@
+case,mean_ns,ci_lower_ns,ci_upper_ns,confidence_level,samples,sampling_mode
+engine/memory/window_rank/append/16384/domain=16384/bytes=264/nulls=false/limit=1/last=false,4025762.2475,3989203.67471875,4064861.69746875,0.95,100,Flat
+engine/memory/window_rank/append/16384/domain=8/bytes=264/nulls=false/limit=1/last=false,2351120.3240909087,2343065.227727272,2359617.6679090895,0.95,100,Flat
+engine/memory/window_rank/update/16384/domain=16384/bytes=264/nulls=false/limit=1/last=false,3048901.483999999,3004920.737399998,3093676.1927999994,0.95,100,Flat
+engine/memory/window_rank/update/16384/domain=8/bytes=264/nulls=false/limit=1/last=false,2319815.7,2313358.9954545447,2326744.7977500004,0.95,100,Flat

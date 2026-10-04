@@ -1371,3 +1371,73 @@ records all ranges, the input generator, reproduction commands, control drift,
 prototype parity results and the separate profile. No timing from the instrumented
 profile is included in the raw benchmark series. This investigation does not
 remove the remaining collection gaps in [#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
+
+## DOUBLE TRUNCATE consumer and nullable workloads
+
+`ScalarFunctionBenchmark` adds `DOUBLE_TRUNCATE_CASE`, `DOUBLE_TRUNCATE_COALESCE`
+and `DOUBLE_TRUNCATE_NESTED`, all on the existing bounded signed source with
+runtime scale -3..3. They respectively select
+`CASE WHEN n > 0 THEN TRUNCATE(n,s) ELSE -1E0 END`,
+`COALESCE(TRUNCATE(n,s),1E0)`, and `TRUNCATE(TRUNCATE(n,3),s)`.
+`DOUBLE_TRUNCATE_LARGE` uses signed `1e12 + 0.12345 + row % 1024`, explicitly
+outside the helper's magnitude domain, with the same runtime scales.
+`scalar.nullEvery` controls operand NULLs; new `scalar.scaleNullEvery` controls
+scale NULLs for these DOUBLE source fixtures (default zero leaves scales non-null).
+The configuration is captured outside the source's per-row loop. Each source
+has its own matching DOUBLE identity control.
+
+The existing strict native-plan/runtime checks retain JNI, both transposes and
+the runtime row source/blackhole sink. Six workload smoke checks at 5,003 rows,
+operand NULL every eight rows and scale NULL every seven rows complete on
+released Flink 2.2.1. They prove execution/admission, not timing or output parity;
+consumer SQL parity is independently checked against released Flink. Whole-job
+comparisons use repeated alternating trials and the same fixture-only copies
+in the previous-production checkout, with fallback controls explicitly expected.
+An initial timing attempt overlapped an own native build and was stopped; it
+supplies no accepted full-run timing result. Retain its log rather than treating
+partial observations as complete samples.
+
+```sh
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dscalar.functions=DOUBLE_TRUNCATE_CASE,DOUBLE_TRUNCATE_COALESCE,DOUBLE_TRUNCATE_NESTED,DOUBLE_TRUNCATE_LARGE \
+  -Dscalar.rows=2000000 -Dscalar.warmup=2 -Dscalar.runs=5 \
+  -Dscalar.nullEvery=8 -Dscalar.scaleNullEvery=7
+```
+
+### Rejected manual BINARY exit projection
+
+A direct Arrow-segment copy prototype preserved owned Flink row bytes and passed
+29 targeted wire, lifetime, ownership and SQL parity checks on Flink 2.2.1. The
+manual per-field projection did not improve release whole-job results over the
+prior generated projection: ELT medians are stock/manual/prior-native
+0.305/0.402/0.387 seconds; string cast medians 0.570/0.615/0.613 seconds. Both native
+versions still lose to stock. These use two million rows, two warmups, five
+alternating trials, a 2 GB heap, 1,024-row batches and both transposes. All
+[manual trials](binary-direct-exit-candidate-2026-10-01.csv) and
+[prior-native trials](binary-direct-exit-prior-native-2026-10-01.csv), including
+identity controls and changing stock timings, are retained. The prototype was
+removed; production still uses the generated projection. The
+[scoped rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/binary-manual-exit-projection.md)
+records the ownership design, validation and remaining investigation. This does
+not close [#235](https://github.com/datafusion-contrib/StreamFusion/issues/235).
+
+### Rejected generated BINARY segment projection
+
+A second prototype kept Flink-generated field execution while copying binary
+payload segments directly into owned Flink rows. It passed five wire/lifetime,
+fourteen fixed-BINARY SQL and ten existing ownership checks on Flink 2.2.1, but
+still lost to stock in the release measurements. At two million rows, stock /
+prototype medians are ELT 0.314 / 0.399 seconds and cast 0.567 / 0.606 seconds for
+the 264-byte input budget. Widening the string input to 4,096 bytes gives cast
+8.496 / 8.682 seconds; the wide identity control is 9.070 / 10.345 seconds.
+All measurements keep BINARY(16) output, a 2 GB heap, 1,024-row batches, two
+warmups, five alternating trials, JNI and both transposes. The
+[small-input trials](binary-generated-segment-candidate-2026-10-01.csv) and
+[wide-input trials](binary-generated-segment-wide-candidate-2026-10-01.csv)
+retain all observations. The prototype was removed; the original generated
+projection remains. The
+[scoped rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/binary-generated-segment-projection.md)
+records validation and architecture. Wider inputs did not prove the hypothesized
+encoding advantage, and no issue is closed from this experiment.

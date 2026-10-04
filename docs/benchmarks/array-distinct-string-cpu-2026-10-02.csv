@@ -1,0 +1,12 @@
+inclusive_stack_match,samples,native_task_samples,percent
+NativeCalc,1649,10314,15.988
+RowDataToArrow,3537,10314,34.2932
+ArrowToRowData,381,10314,3.694
+VarCharWriter,1449,10314,14.0489
+ArrowVarCharColumnVector,152,10314,1.4737
+array_distinct,1040,10314,10.0834
+ArrayObjectArrayConverter,5805,10314,56.2827
+BinaryArrayWriter,5227,10314,50.6787
+StringUtf8Utils.encodeUTF8,4488,10314,43.5137
+RowDataSerializer,1064,10314,10.3161
+ArrayDataSerializer,962,10314,9.3271

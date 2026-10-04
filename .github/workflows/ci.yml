@@ -43,6 +43,32 @@ jobs:
         working-directory: native
         run: cargo fmt --all -- --check
 
+  native-benchmarks:
+    name: Native benchmark fixtures (release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          key: criterion-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Exercise every Criterion fixture without timing thresholds
+        run: python3 bin/bench-native.py --smoke --output native/target/benchmark-smoke
+      - name: Retain benchmark fixture diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-benchmark-smoke
+          path: native/target/benchmark-smoke
+          if-no-files-found: ignore
+
   java-tests:
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -321,7 +347,7 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ always() }}
-    needs: [native-tests, java-tests, lake-module-tests, image-integration, module-tests]
+    needs: [native-tests, native-benchmarks, java-tests, lake-module-tests, image-integration, module-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

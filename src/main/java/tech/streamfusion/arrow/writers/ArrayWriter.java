@@ -57,8 +57,12 @@ public abstract class ArrayWriter<T> extends ArrowFieldWriter<T> {
         if (!isNullAt(in, ordinal)) {
             ((ListVector) getValueVector()).startNewValue(getCount());
             ArrayData array = readArray(in, ordinal);
-            for (int i = 0; i < array.size(); i++) {
-                elementWriter.write(array, i);
+            if (elementWriter instanceof IntWriter.IntWriterForArray integers && array.size() > 1) {
+                integers.writeArray(array);
+            } else {
+                for (int i = 0; i < array.size(); i++) {
+                    elementWriter.write(array, i);
+                }
             }
             ((ListVector) getValueVector()).endValue(getCount(), array.size());
         }

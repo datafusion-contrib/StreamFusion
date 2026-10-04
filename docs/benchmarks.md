@@ -357,3 +357,10 @@ with io_uring OFF and ON. The measured geometric-mean throughput change was
 establish a broad, repeatable speedup. [Method, baseline disclosure, regressions
 and all individual trials](optimizations/rocksdb-io-uring.md) document the
 optional integration.
+
+## Native operation profiling
+
+Use the [native Criterion suites](benchmarks/native-criterion.md) to isolate Rust execution,
+allocation requests, and Arrow buffer sharing before optimizing an end-to-end regression.
+`python3 bin/bench-native.py --list` discovers every suite; `--smoke` checks fixtures in a release
+build. These measurements complement the Flink comparisons on this page.

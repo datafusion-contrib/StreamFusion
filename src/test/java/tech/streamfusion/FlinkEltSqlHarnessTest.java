@@ -21,10 +21,11 @@ class FlinkEltSqlHarnessTest {
         StringFunctionTestInputs::text,
         "SELECT ELT(CAST(4294967297 AS BIGINT), s, f) FROM texts",
         "ELT");
-    NativeParity.assertFallbackReasonContains(
-        StringFunctionTestInputs::text,
-        "SELECT ELT(i, X'AB', X'CD') FROM texts",
-        "unsupported generated-expression result type BINARY(1)");
+  }
+
+  @Test
+  void fixedBinaryOverloadMatchesHost() throws Exception {
+    parity("SELECT ELT(i, X'AB', X'CD') FROM texts");
   }
 
   private static void parity(String sql) throws Exception {

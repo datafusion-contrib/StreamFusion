@@ -82,6 +82,18 @@ public abstract class IntWriter<T> extends ArrowFieldWriter<T> {
             super(intVector);
         }
 
+        public void writeArray(ArrayData array) {
+            var vector = (IntVector) getValueVector();
+            int start = getCount();
+            int end = Math.addExact(start, array.size());
+            while (vector.getValueCapacity() < end) vector.reAlloc();
+            for (int i = 0; i < array.size(); i++) {
+                if (array.isNullAt(i)) vector.setNull(start + i);
+                else vector.set(start + i, array.getInt(i));
+            }
+            advanceCount(array.size());
+        }
+
         @Override
         boolean isNullAt(ArrayData in, int ordinal) {
             return in.isNullAt(ordinal);

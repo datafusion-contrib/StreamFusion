@@ -1,0 +1,5 @@
+job,boundary,sampled_calls,generic_row_calls,projected_row_calls,wrapped_generic_row_calls
+BASELINE_tt_fixed_bytes,entry,2000,2000,0,0
+ELT_FIXED_BINARY,entry,2000,2000,0,0
+BASELINE_tt_fixed_bytes,writer,2000,0,2000,2000
+ELT_FIXED_BINARY,writer,2000,2000,0,0

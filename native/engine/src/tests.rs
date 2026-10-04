@@ -9998,3 +9998,174 @@ fn component_timestamp_topn_checkpoint_preserves_fractional_order_and_payload() 
     assert_eq!(sorted.value(0).unwrap().nano_of_milli(), 999999);
     assert_eq!(sorted.value(1).unwrap().nano_of_milli(), 1);
 }
+
+#[test]
+fn session_all_null_aggregate_results_have_nullable_arrow_fields() {
+    let values: ArrayRef = Arc::new(Int64Array::from(vec![None, Some(2)]));
+    let mut columns = vec![
+        (
+            "ts".to_string(),
+            Arc::new(Int64Array::from(vec![0, 0])) as ArrayRef,
+        ),
+        (
+            "key0".to_string(),
+            Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef,
+        ),
+    ];
+    for i in 0..5 {
+        columns.push((format!("value{i}"), values.clone()));
+    }
+    let input = RecordBatch::try_from_iter(columns).unwrap();
+    let mut aggregator = SessionAggregator::new(1000, vec![0; 5], vec![0, 1, 2, 3, 7]);
+    aggregator.update(&input).unwrap();
+    let output = aggregator.flush(1000).unwrap();
+    assert_eq!(output.num_rows(), 2);
+    for i in 0..3 {
+        let column = output
+            .column(3 + i)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(column.iter().collect::<Vec<_>>(), vec![None, Some(2)]);
+        assert!(output.schema().field(3 + i).is_nullable());
+    }
+    for i in 3..5 {
+        let column = output
+            .column(3 + i)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(column.iter().collect::<Vec<_>>(), vec![Some(0), Some(1)]);
+    }
+}
+
+#[test]
+fn session_selected_values_preserve_arrival_order_nulls_and_sliced_ownership() {
+    for scattered in [false, true] {
+        let mut keys = vec![99];
+        let mut timestamps = vec![0];
+        let mut values = vec![Some(999.0)];
+        for (timestamp, value) in [
+            (0, Some(1e8f32)),
+            (200, Some(-1e8f32)),
+            (100, Some(1.0)),
+            (300, None),
+        ] {
+            keys.push(1);
+            timestamps.push(timestamp);
+            values.push(value);
+            if scattered {
+                keys.push(2);
+                timestamps.push(timestamp);
+                values.push(None);
+            }
+        }
+        keys.push(3);
+        timestamps.push(0);
+        values.push(None);
+        let input = RecordBatch::try_from_iter(vec![
+            ("ts", Arc::new(Int64Array::from(timestamps)) as ArrayRef),
+            ("key0", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            (
+                "value0",
+                Arc::new(arrow::array::Float32Array::from(values)) as ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let batch = input.slice(1, input.num_rows() - 1);
+        let mut aggregator = SessionAggregator::new(1000, vec![6], vec![0]);
+        aggregator.update(&batch).unwrap();
+        drop(batch);
+        drop(input);
+        let snapshots: Vec<Vec<u8>> = aggregator
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect();
+        let mut restored =
+            SessionAggregator::restore_partitions(1000, vec![6], vec![0], &snapshots);
+        for op in [&mut aggregator, &mut restored] {
+            let output = op.flush(1300).unwrap();
+            let keys = output
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let sums = output
+                .column(3)
+                .as_any()
+                .downcast_ref::<arrow::array::Float32Array>()
+                .unwrap();
+            assert_eq!(output.num_rows(), if scattered { 3 } else { 2 });
+            for row in 0..output.num_rows() {
+                if keys.value(row) == 1 {
+                    assert_eq!(sums.value(row).to_bits(), 1.0f32.to_bits());
+                } else {
+                    assert!(sums.is_null(row));
+                }
+            }
+            assert!(output.schema().field(3).is_nullable());
+            assert_eq!(op.flush(1300).unwrap().num_rows(), 0);
+        }
+    }
+}
+
+#[test]
+fn session_selected_strings_keep_distinct_nulls_and_owned_slices() {
+    for scattered in [false, true] {
+        let wide = "中\0".repeat(264);
+        let mut keys = vec![99i64];
+        let mut values = vec![Some("ignored".to_string())];
+        for value in [
+            Some("中\0"),
+            Some(""),
+            Some("中\0"),
+            None,
+            Some(wide.as_str()),
+        ] {
+            keys.push(1);
+            values.push(value.map(str::to_owned));
+            if scattered {
+                keys.push(2);
+                values.push(None);
+            }
+        }
+        keys.push(3);
+        values.push(None);
+        let rows = keys.len();
+        let input = RecordBatch::try_from_iter(vec![
+            ("ts", Arc::new(Int64Array::from(vec![0; rows])) as ArrayRef),
+            ("key0", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            ("value0", Arc::new(StringArray::from(values)) as ArrayRef),
+        ])
+        .unwrap();
+        let batch = input.slice(1, rows - 1);
+        let mut aggregator = SessionAggregator::new(1000, vec![3], vec![7]);
+        aggregator.update(&batch).unwrap();
+        drop(batch);
+        drop(input);
+        let snapshots: Vec<Vec<u8>> = aggregator
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect();
+        let mut restored =
+            SessionAggregator::restore_partitions(1000, vec![3], vec![7], &snapshots);
+        for op in [&mut aggregator, &mut restored] {
+            let output = op.flush(1000).unwrap();
+            let keys = output
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let counts = output
+                .column(3)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(output.num_rows(), if scattered { 3 } else { 2 });
+            for row in 0..output.num_rows() {
+                assert_eq!(counts.value(row), if keys.value(row) == 1 { 3 } else { 0 });
+            }
+            assert_eq!(op.flush(1000).unwrap().num_rows(), 0);
+        }
+    }
+}

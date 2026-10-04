@@ -1872,7 +1872,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
                 staged_delta += buffer.bytes() - std::mem::size_of::<DecimalViewBuffer>() - before;
             }
-            {
+            let group_alive = {
                 let state = if exists {
                     self.store.get_mut(key).expect("key present")
                 } else {
@@ -2004,9 +2004,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     // refreshes the group's TTL. Reads never do.
                     state.last_write_ms = ttl.now();
                 }
-            }
+                state.records > 0
+            };
 
-            if self.has_retractable_extremes {
+            // Deleted groups emit their cached preimage, so no surviving extreme needs a reseek.
+            if self.has_retractable_extremes && group_alive {
                 self.store.resolve_multiset_extremes(key)?;
             }
 

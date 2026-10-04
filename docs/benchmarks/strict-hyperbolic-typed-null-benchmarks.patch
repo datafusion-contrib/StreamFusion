@@ -1,0 +1,63 @@
+--- a/native/engine/benches/hyperbolic_expressions.rs
++++ b/native/engine/benches/hyperbolic_expressions.rs
+@@ -210,5 +210,59 @@
+     group.finish();
+ }
+
+-criterion_group!(benches, run, typed);
++fn typed_null_scalars(c: &mut Criterion) {
++    use arrow::datatypes::{DataType, Field, Schema};
++    use arrow::ipc::writer::StreamWriter;
++    use base64::Engine;
++
++    let mut group = c.benchmark_group("hyperbolic_typed_null_scalars");
++    for (name, data_type) in [
++        ("i8", DataType::Int8),
++        ("i16", DataType::Int16),
++        ("i32", DataType::Int32),
++        ("i64", DataType::Int64),
++        ("f32", DataType::Float32),
++        ("f64", DataType::Float64),
++    ] {
++        let schema = Schema::new(vec![Field::new("value", data_type, true)]);
++        let mut encoded = Vec::new();
++        StreamWriter::try_new(&mut encoded, &schema)
++            .unwrap()
++            .finish()
++            .unwrap();
++        let encoded = base64::engine::general_purpose::STANDARD.encode(encoded);
++        for (op, function) in [(166, "cosh"), (167, "sinh"), (168, "tanh")] {
++            for rows in [0, 16, 1024, 16384] {
++                let batch = RecordBatch::try_from_iter([(
++                    "value",
++                    Arc::new(Float64Array::from(vec![0.0; rows])) as ArrayRef,
++                )])
++                .unwrap();
++                let mut plan = CalcProgram::new(
++                    vec![6, 31],
++                    vec![op, 0],
++                    vec![1, 0],
++                    vec![],
++                    vec![],
++                    vec![Some(encoded.clone())],
++                );
++                let output = plan.run(batch.clone());
++                assert_eq!(output.num_rows(), rows);
++                assert_eq!(output.num_columns(), 1);
++                assert_eq!(output.column(0).data_type(), &DataType::Float64);
++                assert_eq!(output.column(0).null_count(), rows);
++                let label = format!("typed_null/{name}/{function}/{rows}");
++                let (output, allocations) = measure(|| plan.run(batch.clone()));
++                report(&label, batch.columns(), output.columns(), allocations);
++                group.throughput(Throughput::Elements(rows as u64));
++                group.bench_function(BenchmarkId::from_parameter(label), |b| {
++                    b.iter(|| std::hint::black_box(plan.run(std::hint::black_box(batch.clone()))));
++                });
++            }
++        }
++    }
++    group.finish();
++}
++
++criterion_group!(benches, run, typed, typed_null_scalars);
+ criterion_main!(benches);

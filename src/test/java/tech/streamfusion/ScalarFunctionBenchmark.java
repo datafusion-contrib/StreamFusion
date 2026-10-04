@@ -36,17 +36,28 @@ class ScalarFunctionBenchmark {
   private static final int RUNS = Integer.getInteger("scalar.runs", 5);
   private static final boolean UNICODE = Boolean.getBoolean("scalar.unicode");
   private static final int NULL_EVERY = Integer.getInteger("scalar.nullEvery", 0);
+  private static final int SCALE_NULL_EVERY = Integer.getInteger("scalar.scaleNullEvery", 0);
   private static final int JSON_FIELDS = Integer.getInteger("scalar.json.fields", 0);
+  private static final boolean EXPECT_NATIVE =
+      Boolean.parseBoolean(System.getProperty("scalar.native.expected", "true"));
   private static final String ENGINE =
       System.getProperty("scalar.engine", "both").toLowerCase(Locale.ROOT);
 
-  private record Query(String name, String input, String expression, String outputType) {
+  private record Query(
+      String name, String input, String expression, String outputType, String groupBy) {
+    Query(String name, String input, String expression, String outputType) {
+      this(name, input, expression, outputType, "");
+    }
+
     Query(String name, String input, String expression) {
       this(name, input, expression, input.equals("numbers") ? "BIGINT" : "STRING");
     }
 
     String sql() {
-      return "INSERT INTO sink SELECT " + expression + ", TRUE FROM inputs";
+      return "INSERT INTO sink SELECT "
+          + expression
+          + ", TRUE FROM inputs"
+          + (groupBy.isEmpty() ? "" : " GROUP BY " + groupBy);
     }
 
     String ddl() {
@@ -58,6 +69,17 @@ class ScalarFunctionBenchmark {
 
   private static final List<Query> SCALAR_FUNCTIONS =
       List.of(
+          new Query("DOUBLE_TRUNCATE_BOUNDED", "tt_double_bounded", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_BOUNDARY", "tt_double_boundary", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_AMBIGUOUS", "tt_double_ambiguous", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_OUTSIDE", "tt_double_outside", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_LARGE", "tt_double_large", "TRUNCATE(n,s)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_CASE", "tt_double_bounded",
+              "CASE WHEN n > 0 THEN TRUNCATE(n,s) ELSE -1E0 END", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_COALESCE", "tt_double_bounded",
+              "COALESCE(TRUNCATE(n,s),1E0)", "DOUBLE"),
+          new Query("DOUBLE_TRUNCATE_NESTED", "tt_double_bounded",
+              "TRUNCATE(TRUNCATE(n,3),s)", "DOUBLE"),
           new Query("EXACT_ABS_BIGINT", "bigint", "ABS(n)", "BIGINT"),
           new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),
           new Query("DECIMAL_FLOOR_STRING", "tt_decimal", "CAST(FLOOR(n) AS STRING)", "STRING"),
@@ -77,7 +99,33 @@ class ScalarFunctionBenchmark {
           new Query("BTRIM_DYNAMIC", "text", "BTRIM(s, LEFT(s, 1))", "STRING"),
           new Query("IS_ALPHA", "text", "IS_ALPHA(s)", "BOOLEAN"),
           new Query("STARTSWITH_BINARY", "tt_bytes", "STARTSWITH(b,b)", "BOOLEAN"),
-          new Query("REGEXP_EXTRACT_ALL", "text", "REGEXP_EXTRACT_ALL(s, '(a)', 1)", "ARRAY<STRING>"),
+          new Query(
+              "TRY_FIXED_BINARY_GROUPED_COUNT",
+              "text",
+              "COUNT(*)",
+              "BIGINT",
+              "TRY_CAST(s AS BINARY(16))"),
+          new Query(
+              "ELT_FIXED_BINARY_GROUPED_COUNT",
+              "tt_fixed_bytes",
+              "COUNT(*)",
+              "BIGINT",
+              TextTimeBenchmarkInputs.fixedBinarySelection()),
+          new Query(
+              "TRY_STRING_TO_FIXED_BINARY", "text", "TRY_CAST(s AS BINARY(16))", "BINARY(16)"),
+          new Query("FIXED_BINARY_TO_BYTES", "tt_fixed_bytes", "CAST(b AS BYTES)", "BYTES"),
+          new Query(
+              "ELT_FIXED_BINARY_FIRST",
+              "tt_fixed_bytes",
+              "ELT(1,b," + TextTimeBenchmarkInputs.fixedBinaryLiteral() + ")",
+              TextTimeBenchmarkInputs.baselineType("tt_fixed_bytes")),
+          new Query(
+              "ELT_FIXED_BINARY",
+              "tt_fixed_bytes",
+              TextTimeBenchmarkInputs.fixedBinarySelection(),
+              TextTimeBenchmarkInputs.baselineType("tt_fixed_bytes")),
+          new Query(
+              "REGEXP_EXTRACT_ALL", "text", "REGEXP_EXTRACT_ALL(s, '(a)', 1)", "ARRAY<STRING>"),
           new Query("HASH_CODE_STRING", "text", "HASH_CODE(s)", "INT"),
           new Query("HASH_CODE_BIGINT", "bigint", "HASH_CODE(n)", "INT"),
           new Query("HASH_CODE_DECIMAL", "tt_decimal", "HASH_CODE(n)", "INT"),
@@ -518,7 +566,7 @@ class ScalarFunctionBenchmark {
 
   @Test
   void individualFunctions() throws Exception {
-    if (ROWS < 1 || BYTES < 0 || WARMUP < 0 || RUNS < 1 || NULL_EVERY < 0) {
+    if (ROWS < 1 || BYTES < 0 || WARMUP < 0 || RUNS < 1 || NULL_EVERY < 0 || SCALE_NULL_EVERY < 0) {
       throw new IllegalArgumentException("Invalid scalar benchmark sizes/trial counts");
     }
     if (!List.of("both", "flink", "native").contains(ENGINE)) {
@@ -553,7 +601,7 @@ class ScalarFunctionBenchmark {
     List<String> csv =
         new ArrayList<>(
             List.of(
-                "function,input,output_type,payload_bytes,json_fields,unicode,null_every,rows,engine,trial,seconds"));
+                "function,input,output_type,payload_bytes,json_fields,unicode,null_every,scale_null_every,rows,engine,trial,seconds,binary_width"));
     Path output = Path.of(System.getProperty("scalar.output", "target/scalar-functions.csv"));
     if (output.getParent() != null && !Files.isDirectory(output.getParent())) {
       Files.createDirectories(output.getParent());
@@ -573,7 +621,7 @@ class ScalarFunctionBenchmark {
             csv.add(
                 String.format(
                     Locale.ROOT,
-                    "%s,%s,\"%s\",%d,%d,%s,%d,%d,%s,%d,%.6f",
+                    "%s,%s,\"%s\",%d,%d,%s,%d,%d,%d,%s,%d,%.6f,%d",
                     query.name(),
                     query.input(),
                     query.outputType(),
@@ -581,10 +629,12 @@ class ScalarFunctionBenchmark {
                     query.input().equals("tt_json") ? JSON_FIELDS : 0,
                     UNICODE,
                     NULL_EVERY,
+                    SCALE_NULL_EVERY,
                     ROWS,
                     engine == 1 ? "native" : "flink",
                     trial - WARMUP,
-                    seconds));
+                    seconds,
+                    query.input().equals("tt_fixed_bytes") ? TextTimeBenchmarkInputs.fixedBinaryWidth() : 0));
           }
         }
       }
@@ -696,8 +746,23 @@ class ScalarFunctionBenchmark {
 
   private static void assertPlan(Query query) {
     TableEnvironment tables = environment(query.input());
+    if (!query.groupBy().isEmpty()) {
+      tables.getConfig().set("table.exec.mini-batch.enabled", "true");
+      tables.getConfig().set("table.exec.mini-batch.allow-latency", "5 s");
+      tables.getConfig().set("table.exec.mini-batch.size", "1024");
+    }
     tables.executeSql(query.ddl());
     String plan = NativePlanner.explain(tables, query.sql());
+    if (!expectsNative(query)) {
+      if (plan.contains("NativeCalc")) {
+        throw new IllegalStateException(query.name() + " expected previous-version fallback: " + plan);
+      }
+      return;
+    }
+    if (!query.groupBy().isEmpty() && !plan.contains("NativeColumnarGroupAggregate")) {
+      throw new IllegalStateException(
+          "Grouped binary query must execute native aggregation: " + plan);
+    }
     if (!plan.contains("NativeCalc")
         || !plan.contains("RowDataToArrow")
         || !plan.contains("ArrowToRowData")) {
@@ -706,15 +771,24 @@ class ScalarFunctionBenchmark {
     }
   }
 
+  private static boolean expectsNative(Query query) {
+    return query.name().startsWith("BASELINE_") || EXPECT_NATIVE;
+  }
+
   private static double run(Query query, boolean useNative) throws Exception {
     TableEnvironment tables = environment(query.input());
+    if (!query.groupBy().isEmpty()) {
+      tables.getConfig().set("table.exec.mini-batch.enabled", "true");
+      tables.getConfig().set("table.exec.mini-batch.allow-latency", "5 s");
+      tables.getConfig().set("table.exec.mini-batch.size", "1024");
+    }
     tables.executeSql(query.ddl());
     PhysicalPlanScan scan = useNative ? NativePlanner.install(tables) : null;
     long start = System.nanoTime();
     tables.executeSql(query.sql()).await();
     double seconds = (System.nanoTime() - start) / 1e9;
-    if (useNative && scan.substitutions() == 0) {
-      throw new IllegalStateException(query.name() + " fell back: " + scan.fallbackReasons());
+    if (useNative && (scan.substitutions() > 0) != expectsNative(query)) {
+      throw new IllegalStateException(query.name() + " unexpected route: " + scan.explainSummary());
     }
     return seconds;
   }

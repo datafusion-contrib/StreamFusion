@@ -442,3 +442,50 @@ mod timestamp_tests {
         }
     }
 }
+
+/// In-memory fixture adapter; retains the production projection and INT96 reader selection.
+pub(crate) fn decode_for_benchmark(bytes: &[u8], batch_rows: usize) -> Vec<RecordBatch> {
+    let file = bytes::Bytes::copy_from_slice(bytes);
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file.clone()).unwrap();
+    let roots: Vec<_> = (0..builder.schema().fields().len()).collect();
+    let (builder, mut fractions) = full_range_readers(file, builder, &roots, batch_rows);
+    builder
+        .with_batch_size(batch_rows)
+        .build()
+        .unwrap()
+        .map(|batch| {
+            let batch = batch.unwrap();
+            let Some(reader) = fractions.as_mut() else {
+                return batch;
+            };
+            let fractional = reader.next().unwrap().unwrap();
+            assert_eq!(batch.num_rows(), fractional.num_rows());
+            let columns: Vec<_> = batch
+                .columns()
+                .iter()
+                .zip(fractional.columns())
+                .map(|(millis, nanos)| merge_int96(millis, nanos))
+                .collect();
+            let fields: Vec<_> = batch
+                .schema()
+                .fields()
+                .iter()
+                .zip(&columns)
+                .map(|(field, column)| {
+                    field
+                        .as_ref()
+                        .clone()
+                        .with_data_type(column.data_type().clone())
+                })
+                .collect();
+            RecordBatch::try_new(
+                Arc::new(Schema::new_with_metadata(
+                    fields,
+                    batch.schema().metadata().clone(),
+                )),
+                columns,
+            )
+            .unwrap()
+        })
+        .collect()
+}

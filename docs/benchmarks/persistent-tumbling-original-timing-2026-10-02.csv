@@ -1,0 +1,6 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+engine/rocksdb/tumbling_sum/tumbling/checkpoint_after_fire/16384/domain=16384/bytes=264/nulls=true,14806767.07,13934070.30675,15923727.478749998,0.95
+engine/rocksdb/tumbling_sum/tumbling/fire/16384/domain=16384/bytes=264/nulls=true,10752598.47,10324277.09475,11395858.496,0.95
+engine/rocksdb/tumbling_sum/tumbling/restore_aligned/16384/domain=16384/bytes=264/nulls=true,13266234.036000004,12341753.66425,14281060.701449996,0.95
+engine/rocksdb/tumbling_sum/tumbling/restore_rebuilt/16384/domain=16384/bytes=264/nulls=true,21299654.16,21076230.177625,21527576.109625,0.95
+engine/rocksdb/tumbling_sum/tumbling/update/16384/domain=16384/bytes=264/nulls=true,52523726.61,52167975.983500004,52898082.067,0.95

@@ -221,7 +221,7 @@ fn compatible(physical: &OrcType, target: &DataType) -> bool {
     }
 }
 
-fn normalize(array: &ArrayRef, physical: &OrcType, target: &DataType) -> ArrayRef {
+pub(crate) fn normalize(array: &ArrayRef, physical: &OrcType, target: &DataType) -> ArrayRef {
     if matches!(
         physical,
         OrcType::Timestamp { .. } | OrcType::TimestampWithLocalTimezone { .. }

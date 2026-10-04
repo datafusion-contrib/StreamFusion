@@ -1,0 +1,9 @@
+case,mean_ns,lower_ns,upper_ns,confidence_level
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=16384/bytes=264/nulls=false,52843740.38,52351868.9965,53364046.00275,0.95
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=16384/bytes=264/nulls=true,46336924.33,45943102.812,46741976.32875,0.95
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=16384/bytes=8/nulls=false,29616271.05,29380398.9225,29862618.295250002,0.95
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=16384/bytes=8/nulls=true,27497909.405,27306293.35925,27703953.101625,0.95
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=8/bytes=264/nulls=false,3357601.9999999986,3318633.448916668,3408692.159999999,0.95
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=8/bytes=264/nulls=true,3255307.0666666655,3230213.7895833333,3282012.0590833323,0.95
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=8/bytes=8/nulls=false,1584620.003333333,1576789.5048333325,1592792.8650833336,0.95
+engine/rocksdb/group_aggregate/group/update_flush/16384/domain=8/bytes=8/nulls=true,2361757.42,2172965.685,2559983.97675,0.95

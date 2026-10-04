@@ -114,6 +114,7 @@ nav:
   - Portable SQL audit: sql-parity-audit.md
   - Benchmarks:
       - benchmarks.md
+      - Native Criterion suites: benchmarks/native-criterion.md
       - Scalar functions: benchmarks/scalar-functions.md
       - Decimal expressions: benchmarks/decimal-expressions.md
       - Flink 1.18 compatibility: benchmarks/flink118-nexmark.md
@@ -135,6 +136,7 @@ nav:
       - Shared FFI allocator: optimizations/shared-ffi-allocator.md
       - DataFusion hash joins: optimizations/datafusion-hash-joins.md
       - Row-major transpose: optimizations/row-major-transpose.md
+      - Bulk INT array entry: optimizations/bulk-int-array-entry.md
       - Arrow unsafe memory checks: optimizations/arrow-unsafe-memory-checks.md
       - Zero-copy exit transpose: optimizations/zero-copy-exit-transpose.md
       - String copy reduction: optimizations/string-copy-reduction.md

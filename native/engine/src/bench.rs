@@ -5,6 +5,11 @@ pub fn flink_scalar_function(op: i64, arity: usize) -> datafusion::logical_expr:
     crate::flink_functions::function(op, arity).expect("registered scalar benchmark")
 }
 
+/// Binary ELT adaptation and allocation, through the same production UDF used by Calc.
+pub fn binary_elt_function(arity: usize, width: i32) -> datafusion::logical_expr::ScalarUDF {
+    crate::flink_functions::binary_elt::function(arity, width)
+}
+
 /// A filter predicate compiled once (on the first `run`) and reused, as the operator uses it.
 pub struct Filter(FilterExpression);
 
@@ -70,6 +75,146 @@ impl Tumbling {
 
     pub fn flush(&mut self, watermark: i64) -> RecordBatch {
         self.0.flush(watermark).expect("memory-backed flush")
+    }
+}
+
+/// Persistent tumbling SUM through the production window-state lifecycle.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentTumbling(TumblingAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentTumbling {
+    fn state_types() -> Vec<DataType> {
+        crate::aggregates::build_aggregates(&[0], &[0])
+            .iter()
+            .flat_map(crate::aggregates::WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect()
+    }
+
+    fn operator(store: crate::state::RocksWindowAggStore) -> Self {
+        Self(
+            TumblingAggregator::new(1000, 1000, false, vec![0], vec![0])
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store, vec![DataType::Utf8]),
+        )
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        let store = crate::state::RocksWindowAggStore::create(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+        )
+        .expect("persistent tumbling create");
+        Self::operator(store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksWindowAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .expect("persistent tumbling restore");
+        Self::operator(store)
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) {
+        self.0.update(batch).expect("persistent tumbling update");
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).expect("persistent tumbling flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(12345, directory)
+            .expect("persistent tumbling checkpoint")
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
+    }
+}
+
+/// Persistent session SUM through the production window-state lifecycle.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentSession(SessionAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentSession {
+    fn state_types() -> Vec<DataType> {
+        crate::aggregates::build_aggregates(&[0], &[0])
+            .iter()
+            .flat_map(crate::aggregates::WindowAggregate::state_fields)
+            .map(|field| field.data_type().clone())
+            .collect()
+    }
+
+    fn operator(store: crate::state::RocksSessionAggStore) -> Self {
+        Self(
+            SessionAggregator::new(1000, vec![0], vec![0])
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store, vec![DataType::Utf8]),
+        )
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        let store = crate::state::RocksSessionAggStore::create(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+        )
+        .expect("persistent session create");
+        Self::operator(store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksSessionAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &Self::state_types(),
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .expect("persistent session restore");
+        Self::operator(store)
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) {
+        self.0.update(batch).expect("persistent session update");
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).expect("persistent session flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(12345, directory)
+            .expect("persistent session checkpoint")
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
     }
 }
 
@@ -237,6 +382,96 @@ impl UniqueUpdatingJoin {
     }
 }
 
+/// Production paired RocksDB state for immediate and mini-batch INNER updating joins.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentUpdatingJoin(UpdatingJoiner<crate::updating_join::RocksJoinStore>);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentUpdatingJoin {
+    fn operator(
+        schema: SchemaRef,
+        mini_batch: bool,
+        stores: (
+            crate::state::RocksStore<crate::updating_join::JoinStateCodec>,
+            crate::state::RocksStore<crate::updating_join::JoinStateCodec>,
+        ),
+    ) -> Self {
+        Self(
+            UpdatingJoiner::new(
+                vec![0],
+                vec![0],
+                JoinKind::Inner,
+                schema.clone(),
+                schema,
+                None,
+            )
+            .with_mini_batch(mini_batch)
+            .with_unique_join_keys(mini_batch, mini_batch)
+            .with_backend(
+                crate::updating_join::RocksJoinStore::new(stores.0, !mini_batch),
+                crate::updating_join::RocksJoinStore::new(stores.1, !mini_batch),
+            ),
+        )
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str, mini_batch: bool) -> Self {
+        let stores = crate::state::RocksStore::create_pair(
+            PersistentSort::config(directory, options),
+            0,
+            (
+                crate::updating_join::JoinStateCodec,
+                crate::updating_join::JoinStateCodec,
+            ),
+        )
+        .unwrap();
+        Self::operator(schema, mini_batch, stores)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        mini_batch: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let stores = crate::state::RocksStore::open_merged_pair(
+            PersistentSort::config(directory, options),
+            0,
+            (
+                crate::updating_join::JoinStateCodec,
+                crate::updating_join::JoinStateCodec,
+            ),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+            0,
+        )
+        .unwrap();
+        Self::operator(schema, mini_batch, stores)
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) -> RecordBatch {
+        let (left_store, right_store) = self.0.stores_mut();
+        left_store.set_clock(0);
+        right_store.set_clock(0);
+        self.0.push(batch, left, 0).unwrap()
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush_mini_batch().unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        let (left, right) = self.0.stores_mut();
+        crate::updating_join::RocksJoinStore::checkpoint_pair(left, right, directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
 /// Append-only Top-N with explicit logical mini-batch flushes.
 pub struct AppendTopN(TopNRanker);
 
@@ -364,6 +599,128 @@ impl GroupBy {
 
     pub fn flush(&mut self) -> RecordBatch {
         self.0.flush_mini_batch().expect("budget exceeded")
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentGroupBy(GroupAggregator<crate::group_agg::RocksGroupStore>);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentGroupBy {
+    fn codec(kinds: &[i64], columns: &[i64]) -> crate::group_agg::GroupStateCodec {
+        crate::group_agg::GroupStateCodec::new(
+            kinds.to_vec(),
+            vec![DataType::Int64; kinds.len()],
+            columns.to_vec(),
+            vec![-1; kinds.len()],
+        )
+    }
+
+    fn operator(kinds: &[i64], columns: &[i64], store: crate::group_agg::RocksGroupStore) -> Self {
+        Self(
+            GroupAggregator::new(
+                kinds.to_vec(),
+                vec![0; kinds.len()],
+                columns.to_vec(),
+                vec![0],
+                true,
+            )
+            .with_key_timestamp_precisions(vec![-1])
+            .with_mini_batch()
+            .with_backend(store),
+        )
+    }
+
+    fn create_configured(directory: &str, options: &str, kinds: &[i64], columns: &[i64]) -> Self {
+        let store = crate::group_agg::RocksGroupStore::create(
+            PersistentSort::config(directory, options),
+            Self::codec(kinds, columns),
+        )
+        .expect("persistent GROUP BY create");
+        Self::operator(kinds, columns, store)
+    }
+
+    pub fn new(directory: &str, options: &str) -> Self {
+        Self::create_configured(directory, options, &[3, 0], &[-1, 1])
+    }
+
+    pub fn new_extrema(directory: &str, options: &str) -> Self {
+        Self::create_configured(directory, options, &[3, 1, 2], &[-1, 1, 1])
+    }
+
+    fn restore_configured(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+        kinds: &[i64],
+        columns: &[i64],
+    ) -> Self {
+        let store = crate::group_agg::RocksGroupStore::open_merged(
+            PersistentSort::config(directory, options),
+            Self::codec(kinds, columns),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+            0,
+        )
+        .expect("persistent GROUP BY restore");
+        Self::operator(kinds, columns, store)
+    }
+
+    pub fn restore(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        Self::restore_configured(
+            directory,
+            options,
+            source,
+            generation,
+            aligned,
+            &[3, 0],
+            &[-1, 1],
+        )
+    }
+
+    pub fn restore_extrema(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        Self::restore_configured(
+            directory,
+            options,
+            source,
+            generation,
+            aligned,
+            &[3, 1, 2],
+            &[-1, 1, 1],
+        )
+    }
+
+    pub fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.update(batch, 0).expect("persistent GROUP BY update")
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0
+            .flush_mini_batch()
+            .expect("persistent GROUP BY flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .expect("persistent GROUP BY checkpoint")
+            .snapshot_id
     }
 }
 
@@ -517,5 +874,788 @@ impl WindowJoin {
 
     pub fn flush(&mut self, watermark: i64) -> RecordBatch {
         self.0.flush(watermark).expect("budget exceeded")
+    }
+}
+
+/// Fixed-schema production window join backed by the shared two-sided RocksDB buffer.
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentWindowJoin(WindowJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentWindowJoin {
+    fn operator(schema: SchemaRef) -> WindowJoiner {
+        WindowJoin::new(vec![0], vec![0], 2, 3, 2, 3, schema.clone(), schema).0
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksWindowBuffer::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+        )
+        .unwrap();
+        Self(Self::operator(schema).with_store(store))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksWindowBuffer::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(Self::operator(schema).with_store(store))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch.clone()).unwrap();
+        } else {
+            self.0.push_right(batch.clone()).unwrap();
+        }
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str, deadline: i64) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(deadline, directory)
+            .unwrap()
+            .snapshot_id
+    }
+
+    pub fn timer_deadline(&mut self) -> i64 {
+        self.0.store_mut().timer_deadline()
+    }
+}
+
+/// Production IPC serialization, including the stream header and owned output buffer.
+pub fn encode_ipc(batch: &RecordBatch) -> Vec<u8> {
+    crate::ipc::write_ipc(batch)
+}
+
+pub fn decode_ipc(bytes: &[u8]) -> Vec<RecordBatch> {
+    crate::ipc::read_ipc(bytes)
+}
+
+pub fn expand_grouping_sets(batch: &RecordBatch) -> RecordBatch {
+    crate::flatten::expand(batch, 2, 3, 2, false, &[0, 1, -1, -1, 1, -1], &[0, 1])
+}
+
+pub fn unnest(batch: &RecordBatch, left: bool, ordinality: bool) -> RecordBatch {
+    crate::flatten::unnest_array(batch, 1, ordinality, left, false)
+}
+
+pub struct TemporalSort(crate::sorter::TemporalSorter);
+
+impl TemporalSort {
+    pub fn new(time_column: usize) -> Self {
+        Self(crate::sorter::TemporalSorter::new(time_column))
+    }
+    pub fn push(&mut self, batch: RecordBatch) {
+        self.0.push(batch).unwrap();
+    }
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+}
+
+pub struct ArrivalFirstN(crate::first_n::FirstN);
+
+impl ArrivalFirstN {
+    pub fn new(partitions: Vec<usize>, limit: i32) -> Self {
+        Self(
+            crate::first_n::FirstN::new(
+                partitions.clone(),
+                vec![0; partitions.len()],
+                limit,
+                true,
+                0,
+                MemoryStateStore::default(),
+                -1,
+            )
+            .unwrap(),
+        )
+    }
+    pub fn push(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch, 0).unwrap()
+    }
+}
+
+pub struct TemporalJoin(crate::temporal_join::TemporalJoiner);
+
+impl TemporalJoin {
+    pub fn new(schema: SchemaRef) -> Self {
+        Self(crate::temporal_join::TemporalJoiner::new(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            JoinKind::LeftOuter,
+            schema.clone(),
+            schema,
+            None,
+        ))
+    }
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch, 0)
+        } else {
+            self.0.push_right(batch, 0)
+        }
+        .unwrap();
+    }
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark, 0).unwrap()
+    }
+    pub fn snapshot(&self) -> Vec<u8> {
+        self.0.snapshot()
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub struct TemporalJoinState(crate::temporal_join::TemporalJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl TemporalJoinState {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksTemporalJoinStore::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[0],
+        )
+        .unwrap();
+        Self(
+            TemporalJoin::new(schema)
+                .0
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksTemporalJoinStore::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[0],
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(
+            TemporalJoin::new(schema)
+                .0
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch, left: bool) {
+        if left {
+            self.0.push_left(batch, 0)
+        } else {
+            self.0.push_right(batch, 0)
+        }
+        .unwrap();
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark, 0).unwrap()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
+pub struct Projection(crate::calc::CalcExpression);
+
+impl Projection {
+    pub fn columns(columns: &[usize]) -> Self {
+        Self(crate::calc::CalcExpression {
+            kinds: vec![0; columns.len()],
+            payload: columns.iter().map(|&column| column as i64).collect(),
+            child_counts: vec![0; columns.len()],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: (0..columns.len()).collect(),
+            condition_root: -1,
+            output_names: columns.iter().map(|column| format!("v{column}")).collect(),
+            compiled: None,
+        })
+    }
+    pub fn run(&mut self, batch: RecordBatch) -> RecordBatch {
+        self.0.evaluate(batch)
+    }
+}
+
+/// Used by the benchmark catalog to catch a newly registered scalar without a fixture.
+pub fn registered_scalar_codes() -> Vec<i64> {
+    (0..256)
+        .filter(|&op| crate::flink_functions::function(op, 3).is_some())
+        .collect()
+}
+
+pub struct KeyCodec(arrow::row::RowConverter, Vec<DataType>);
+impl KeyCodec {
+    pub fn new(input: &[ArrayRef]) -> Self {
+        let types: Vec<_> = input
+            .iter()
+            .map(|array| array.data_type().clone())
+            .collect();
+        Self(crate::keys::key_row_converter_from_types(&types), types)
+    }
+    pub fn encode(&self, input: &[ArrayRef], rows: usize) -> arrow::row::Rows {
+        crate::keys::encode_group_keys(&self.0, input, rows)
+    }
+    pub fn decode(&self, rows: &arrow::row::Rows) -> Vec<ArrayRef> {
+        let keys: Vec<_> = rows.iter().map(|row| row.data()).collect();
+        crate::keys::decode_byte_keys(Some(&self.0), &keys, &self.1)
+    }
+}
+pub fn flink_key_hashes(batch: &RecordBatch, columns: &[usize], precisions: &[i32]) -> Vec<i32> {
+    let mut encoder = crate::flink_key::BinaryRowBatchEncoder::new(batch, columns, precisions);
+    (0..batch.num_rows()).map(|row| encoder.hash(row)).collect()
+}
+impl AppendTopN {
+    pub fn snapshot(&self, groups: usize) -> Vec<Vec<u8>> {
+        self.0.snapshot_partitions(groups).into_values().collect()
+    }
+    pub fn restore(snapshots: &[Vec<u8>]) -> Self {
+        Self(TopNRanker::restore_partitions(
+            vec![0],
+            vec![0],
+            vec![SortColumn {
+                index: 1,
+                ascending: true,
+                nulls_first: false,
+            }],
+            4,
+            false,
+            false,
+            snapshots,
+            0,
+        ))
+    }
+}
+impl GroupBy {
+    pub fn snapshot(&mut self) -> Vec<Vec<u8>> {
+        self.0.snapshot_partitions(1, &[-1]).into_values().collect()
+    }
+    pub fn restore(snapshot: &[Vec<u8>]) -> Self {
+        Self(GroupAggregator::restore_partitions(
+            vec![0],
+            vec![0],
+            vec![1],
+            vec![0],
+            true,
+            snapshot,
+            0,
+        ))
+    }
+}
+pub struct WindowRank(crate::topn::WindowRanker);
+impl WindowRank {
+    pub fn new() -> Self {
+        Self(crate::topn::WindowRanker::new(
+            0,
+            1,
+            vec![2],
+            vec![SortColumn {
+                index: 3,
+                ascending: true,
+                nulls_first: false,
+            }],
+            4,
+            true,
+        ))
+    }
+    pub fn run(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch).unwrap();
+        self.0.flush(i64::MAX).unwrap()
+    }
+}
+impl Default for WindowRank {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Parameterized kernels selected outside the numbered scalar registry.
+pub fn parameterized_scalar(name: &str, ty: DataType) -> datafusion::logical_expr::ScalarUDF {
+    use crate::flink_functions as f;
+    use datafusion::logical_expr::ScalarUDF;
+    match name {
+        "decimal_cast" => ScalarUDF::new_from_impl(f::decimal::DecimalCast::new(18, 2)),
+        "decimal_round" => ScalarUDF::new_from_impl(f::decimal::DecimalRound::new(18, 2)),
+        "decimal_truncate" => ScalarUDF::new_from_impl(f::decimal::DecimalRound::truncate(18, 2)),
+        "decimal_add" => ScalarUDF::new_from_impl(f::decimal::DecimalBinary::new(
+            f::decimal::DecimalOp::Add,
+            18,
+            2,
+        )),
+        "decimal_subtract" => ScalarUDF::new_from_impl(f::decimal::DecimalBinary::new(
+            f::decimal::DecimalOp::Subtract,
+            18,
+            2,
+        )),
+        "decimal_multiply" => ScalarUDF::new_from_impl(f::decimal::DecimalBinary::new(
+            f::decimal::DecimalOp::Multiply,
+            18,
+            2,
+        )),
+        "decimal_to_double" => f::decimal_float::function(false),
+        "decimal_to_float" => f::decimal_float::function(true),
+        "integer_divide" => f::integer_divide::function(&[ty.clone(), ty]).unwrap(),
+        "integer_parse" => f::integer_string::parse_function(ty, false),
+        "integer_try_parse" => f::integer_string::parse_function(ty, true),
+        "integer_format" => f::integer_string::format_function(264, true),
+        "from_unixtime" => f::from_unixtime::function(0, "yyyy-MM-dd HH:mm:ss").unwrap(),
+        "array_item" => f::array_item::function(ty),
+        "map_lookup_literal" => f::map_lookup::function(ty, ScalarValue::Int64(Some(1))),
+        "map_lookup_dynamic" => f::map_lookup::dynamic_function(ty, false),
+        "random" => f::random::function(false, false, false),
+        "random_seeded" => f::random::function(false, true, true),
+        "random_integer" => f::random::function(true, false, false),
+        "random_integer_seeded" => f::random::function(true, true, true),
+        "current_timestamp" => f::clock::function(0, "UTC".into()),
+        "current_date" => f::clock::function(2, "UTC".into()),
+        "current_time" => f::clock::function(3, "UTC".into()),
+        "unix_timestamp" => f::clock::function(4, "UTC".into()),
+        "watermark" => f::clock::function(5, "UTC".into()),
+        "float_comparison" => f::numeric::comparison(14, &[ty.clone(), ty]).unwrap(),
+        other => panic!("Unknown benchmark kernel {other}"),
+    }
+}
+
+pub struct UpsertMerge(crate::keyed_upsert::KeyedUpsertBuffer);
+impl UpsertMerge {
+    pub fn new(kind_column: usize, first: bool) -> Self {
+        Self(crate::keyed_upsert::KeyedUpsertBuffer::new(
+            vec![0],
+            kind_column,
+            if first {
+                crate::keyed_upsert::Keep::First
+            } else {
+                crate::keyed_upsert::Keep::Last
+            },
+            false,
+        ))
+    }
+    pub fn run(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push(batch.clone(), 0);
+        self.0.flush(false).unwrap().batch
+    }
+}
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentSort(crate::sorter::TemporalSorter);
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentFirstDedup(KeepFirstDeduplicator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentFirstDedup {
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
+    }
+
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksKeepFirstDedupStore::open_merged(
+            PersistentSort::config(directory, options),
+            schema,
+            &[0],
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(KeepFirstDeduplicator::new(vec![0], 2).with_store(store))
+    }
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        Self::with_ttl(directory, schema, options, 0)
+    }
+
+    pub fn with_ttl(directory: &str, schema: SchemaRef, options: &str, ttl_ms: i64) -> Self {
+        let mut config = PersistentSort::config(directory, options);
+        config.ttl_ms = ttl_ms;
+        let store = crate::state::RocksKeepFirstDedupStore::create(config, schema, &[0]).unwrap();
+        Self(
+            KeepFirstDeduplicator::new(vec![0], 2)
+                .with_store(store)
+                .with_state_ttl(ttl_ms),
+        )
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.push_at(batch, 0);
+    }
+
+    pub fn push_at(&mut self, batch: &RecordBatch, now_ms: i64) {
+        self.0.push(batch, now_ms).unwrap();
+    }
+
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.flush_at(watermark, 0)
+    }
+
+    pub fn flush_at(&mut self, watermark: i64, now_ms: i64) -> RecordBatch {
+        self.0.flush(watermark, now_ms).unwrap()
+    }
+}
+
+/// Fixed-schema interval state probes share the production joiner with the memory oracle.
+#[cfg(feature = "rocksdb-state")]
+pub struct IntervalState(IntervalJoiner);
+
+#[cfg(feature = "rocksdb-state")]
+impl IntervalState {
+    pub fn memory(schema: SchemaRef, outer: bool) -> Self {
+        Self(
+            IntervalJoiner::new(
+                vec![0],
+                vec![0],
+                2,
+                2,
+                -100,
+                100,
+                None,
+                if outer {
+                    JoinKind::LeftOuter
+                } else {
+                    JoinKind::Inner
+                },
+                schema.clone(),
+                schema,
+            )
+            .with_key_timestamp_precisions(vec![-1]),
+        )
+    }
+
+    pub fn new(directory: &str, schema: SchemaRef, options: &str, outer: bool) -> Self {
+        let store = crate::state::RocksIntervalBuffer::create(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+        )
+        .unwrap();
+        Self(Self::memory(schema, outer).0.with_store(store))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        outer: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksIntervalBuffer::open_merged(
+            PersistentSort::config(directory, options),
+            schema.clone(),
+            schema.clone(),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(Self::memory(schema, outer).0.with_store(store))
+    }
+
+    pub fn push_left(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push_left(batch.clone(), None).unwrap()
+    }
+
+    pub fn push_right(&mut self, batch: &RecordBatch) -> RecordBatch {
+        self.0.push_right(batch.clone(), None).unwrap()
+    }
+
+    pub fn advance(&mut self, watermark: i64) -> RecordBatch {
+        self.0.advance(watermark).unwrap()
+    }
+
+    pub fn timer_deadline(&mut self) -> i64 {
+        self.0.store_mut().timer_deadline()
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(500, directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentSort {
+    fn config(directory: &str, options: &str) -> crate::state::rocks_store::RocksStoreConfig {
+        crate::state::rocks_store::RocksStoreConfig {
+            table_dir: directory.into(),
+            max_parallelism: 1,
+            options_json: options.into(),
+            ttl_ms: 0,
+            shared_resources: 0,
+        }
+    }
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store =
+            crate::state::RocksTemporalSortBuffer::create(Self::config(directory, options), schema)
+                .unwrap();
+        Self(crate::sorter::TemporalSorter::new(1).with_store(store))
+    }
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksTemporalSortBuffer::open_merged(
+            Self::config(directory, options),
+            schema,
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+        )
+        .unwrap();
+        Self(crate::sorter::TemporalSorter::new(1).with_store(store))
+    }
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch.clone()).unwrap();
+    }
+    pub fn flush(&mut self) -> RecordBatch {
+        self.0.flush(i64::MAX).unwrap()
+    }
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .store_mut()
+            .checkpoint(directory)
+            .unwrap()
+            .snapshot_id
+    }
+}
+
+/// Production window rank with matched memory and disk configurations.
+#[cfg(feature = "rocksdb-state")]
+pub struct WindowRankState(crate::topn::WindowRanker);
+
+#[cfg(feature = "rocksdb-state")]
+impl WindowRankState {
+    pub fn memory(limit: i64, keep_last: bool) -> Self {
+        let mut ranker = crate::topn::WindowRanker::new(
+            0,
+            1,
+            vec![2],
+            vec![SortColumn {
+                index: 3,
+                ascending: true,
+                nulls_first: false,
+            }],
+            limit,
+            true,
+        );
+        ranker.set_keep_last_on_tie(keep_last);
+        Self(ranker.with_key_timestamp_precisions(vec![-1]))
+    }
+
+    pub fn new(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        limit: i64,
+        keep_last: bool,
+    ) -> Self {
+        let types = schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect::<Vec<_>>();
+        let store = crate::state::RocksWindowRankStore::create(
+            PersistentSort::config(directory, options),
+            &types,
+            0..=0,
+        )
+        .unwrap();
+        Self(Self::memory(limit, keep_last).0.with_store(store, schema))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        limit: i64,
+        keep_last: bool,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let types = schema
+            .fields()
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect::<Vec<_>>();
+        let store = crate::state::RocksWindowRankStore::open_merged(
+            PersistentSort::config(directory, options),
+            &types,
+            0..=0,
+            &[(source.into(), generation)],
+            aligned,
+        )
+        .unwrap();
+        Self(Self::memory(limit, keep_last).0.with_store(store, schema))
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch).unwrap();
+    }
+    pub fn flush(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark).unwrap()
+    }
+    pub fn late_drops(&self) -> u64 {
+        self.0.late_drops
+    }
+    pub fn timer_deadline(&self) -> i64 {
+        self.0.store_timer_deadline()
+    }
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0.checkpoint_store(200, directory).unwrap().snapshot_id
+    }
+}
+
+/// Serialized Calc plans retain production compilation, scalar adaptation, and materialization.
+pub struct CalcProgram(crate::calc::CalcExpression);
+impl CalcProgram {
+    pub fn new(
+        kinds: Vec<i64>,
+        payload: Vec<i64>,
+        children: Vec<i64>,
+        longs: Vec<i64>,
+        doubles: Vec<f64>,
+        strings: Vec<Option<String>>,
+    ) -> Self {
+        Self(crate::calc::CalcExpression {
+            kinds,
+            payload,
+            child_counts: children,
+            longs,
+            doubles,
+            strings,
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["result".into()],
+            compiled: None,
+        })
+    }
+    pub fn run(&mut self, batch: RecordBatch) -> RecordBatch {
+        self.0.evaluate(batch)
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub struct PersistentOver(OverWindowAggregator);
+
+#[cfg(feature = "rocksdb-state")]
+impl PersistentOver {
+    pub fn new(directory: &str, schema: SchemaRef, options: &str) -> Self {
+        let store = crate::state::RocksOverAggStore::create(
+            PersistentSort::config(directory, options),
+            &rocks_over_state_types(&[0], &[0], 0, false).unwrap(),
+            &[],
+            &[],
+            schema,
+            0..=0,
+        )
+        .expect("persistent OVER fixture");
+        Self(Self::operator().with_store(store, vec![DataType::Int64]))
+    }
+
+    pub fn restore(
+        directory: &str,
+        schema: SchemaRef,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        let store = crate::state::RocksOverAggStore::open_merged(
+            PersistentSort::config(directory, options),
+            &rocks_over_state_types(&[0], &[0], 0, false).unwrap(),
+            &[],
+            &[],
+            schema,
+            0..=0,
+            &[(source.to_owned(), generation)],
+            aligned,
+        )
+        .expect("persistent OVER restore");
+        Self(Self::operator().with_store(store, vec![DataType::Int64]))
+    }
+
+    fn operator() -> OverWindowAggregator {
+        OverWindowAggregator::new(vec![0], vec![0], 2, vec![1], vec![0], 0, 0, false)
+            .with_key_timestamp_precisions(vec![-1])
+    }
+
+    pub fn push(&mut self, batch: &RecordBatch) {
+        self.0.push(batch.clone(), 0).expect("persistent OVER push");
+    }
+
+    pub fn flush(&mut self) -> RecordBatch {
+        self.advance(i64::MAX)
+    }
+
+    pub fn advance(&mut self, watermark: i64) -> RecordBatch {
+        self.0.flush(watermark, 0).expect("persistent OVER flush")
+    }
+
+    pub fn checkpoint(&mut self, directory: &str) -> i64 {
+        self.0
+            .checkpoint_store(directory)
+            .expect("persistent OVER checkpoint")
+            .snapshot_id
     }
 }

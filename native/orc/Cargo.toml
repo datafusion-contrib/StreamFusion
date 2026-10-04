@@ -29,3 +29,11 @@ default = []
 mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
 reader-comparison = []
 writer-comparison = []
+
+[dev-dependencies]
+criterion.workspace = true
+streamfusion-benchmark-support.workspace = true
+
+[[bench]]
+name = "normalization"
+harness = false

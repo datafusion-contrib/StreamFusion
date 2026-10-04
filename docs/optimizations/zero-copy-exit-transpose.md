@@ -3,7 +3,7 @@
 **Applies to:** the Arrow→RowData exit transpose
 
 The exit transpose reads a reusable `ColumnarRowData` view while the Arrow batch remains open.
-For the fixed-width schemas described below, a generated projection materializes a reusable
+For the primitive and binary schemas described below, a generated projection materializes a reusable
 `BinaryRowData`; other schemas retain the view. With Flink object reuse disabled, the runtime's
 `CopyingChainingOutput` deep-copies the chosen representation synchronously before delivering it
 to the next operator. Network outputs serialize it synchronously. The projection reuses its
@@ -27,11 +27,12 @@ Current end-to-end measurements and the isolated entry/exit steps are recorded i
 [row-major transpose ledger](row-major-transpose.md#end-to-end-ownership-copy-measurements).
 
 
-## Generated projection for fixed-width outputs
+## Generated projection for primitive and binary outputs
 
 A boolean-cast CPU profile attributed about 15% of native samples to the exit transpose and
 7% of leaf samples to a host row field getter. Rows composed entirely of BOOLEAN, integer,
-floating-point, DATE, TIME, interval, or compact DECIMAL (precision at most 18) fields now use
+floating-point, DATE, TIME, interval, compact DECIMAL (precision at most 18), BINARY or
+VARBINARY fields use
 Flink's generated binary-row projection. The downstream serializer can copy a contiguous row
 instead of invoking generic field getters and boxing primitive values. Other output schemas
 retain their existing view path. The projection is generated while constructing the operator;
@@ -80,3 +81,35 @@ Reproduce with `ScalarFunctionBenchmark#individualFunctions` under `-Pbench`,
 Validation passes 119 focused SQL, transpose and recovery checks on each of Flink 1.18.1 and
 2.2.1, including the ownership and value-preservation cases above, Boolean errors and temporal
 precision/time-zone behavior.
+
+### Binary output measurements
+
+The generated projection also avoids repeated generic field dispatch when the exit contains
+binary fields. It preserves Flink's binary row layout and ownership; it still copies Arrow
+bytes into that row. Tests cover fixed binary, empty and 16 KiB variable binary values, NULLs,
+all row kinds, buffer growth, and retained rows after two batches close, with object reuse
+both enabled and disabled. The focused suite passes 40 checks on Flink 2.2.1 and 35 checks
+with five version-specific skips on Flink 1.18.1.
+
+Two million rows, with the same release build, heap, batch size, alternating trials and
+production boundaries described above, give:
+
+| Expression / implementation | Native median (range), s | Flink median (range), s |
+| --- | ---: | ---: |
+| STRING to BINARY(16), fresh previous exit | 0.960 (0.954–0.970) | 0.869 (0.847–0.874) |
+| STRING to BINARY(16), generated exit | 0.939 (0.924–1.019) | 0.864 (0.858–0.894) |
+| STRING to BINARY(16), generated exit repeat | 0.925 (0.918–0.932) | 0.858 (0.829–0.876) |
+| ELT BINARY(16), fresh previous exit | 0.437 (0.432–0.447) | 0.313 (0.309–0.330) |
+| ELT BINARY(16), generated exit | 0.414 (0.413–0.419) | 0.311 (0.301–0.326) |
+| ELT BINARY(16), generated exit repeat | 0.420 (0.412–0.424) | 0.308 (0.307–0.320) |
+
+ELT takes 5.4% and 4.0% less native time than the fresh previous implementation, with
+non-overlapping native ranges. Its Flink control shifts by 0.5% and 1.4%, respectively.
+The cast medians improve by 2.2% and 3.7%, but the first candidate range overlaps the baseline
+and the Flink controls shift too. These are partial improvements: both workloads still lose
+to stock Flink, and PR #264 remains performance-blocked. The unchanged STRING identity
+control also remains slower than Flink. No general VARBINARY speedup is established here.
+
+[Raw trials, including all identity controls](../benchmarks/scalar-binary-exit-2026-09-28.csv)
+retain those limits. Reproduce with the scalar benchmark settings above and
+`-Dscalar.functions=TRY_STRING_TO_FIXED_BINARY,ELT_FIXED_BINARY -Dscalar.rows=2000000`.

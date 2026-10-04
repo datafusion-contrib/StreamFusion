@@ -58,7 +58,10 @@ workspace = true
 optional = true
 
 [dev-dependencies]
-criterion = "0.5"
+jni = { workspace = true, features = ["invocation"] }
+tempfile = "3"
+criterion.workspace = true
+streamfusion-benchmark-support.workspace = true
 bytes = "1"
 
 [[bench]]
@@ -71,4 +74,46 @@ harness = false
 
 [[bench]]
 name = "calc_selection"
+harness = false
+
+[[bench]]
+name = "data_movement"
+harness = false
+
+[[bench]]
+name = "scalar_registry"
+harness = false
+
+[[bench]]
+name = "keys_and_checkpoints"
+harness = false
+
+[[bench]]
+name = "operator_allocations"
+harness = false
+
+[[bench]]
+name = "persistent_state"
+harness = false
+required-features = ["rocksdb-state"]
+
+[[bench]]
+name = "persistent_group"
+harness = false
+required-features = ["rocksdb-state"]
+
+[[bench]]
+name = "calc_expressions"
+harness = false
+
+[[bench]]
+name = "binary_expressions"
+harness = false
+
+[[bench]]
+name = "collection_expressions"
+harness = false
+
+[[bench]]
+name = "jvm_truncate"
 harness = false

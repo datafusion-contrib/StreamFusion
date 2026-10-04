@@ -173,6 +173,47 @@ class PaimonChangelogSinkWriteTest {
   }
 
   @ParameterizedTest
+  @ValueSource(ints = {5, 6})
+  void fullCompactionRestartsAfterFinalInputAndContinuesOnIdleCheckpoints(int restart)
+      throws Exception {
+    Map<String, String> options =
+        Map.of(
+            "bucket", "2",
+            "changelog-producer", "full-compaction",
+            "full-compaction.delta-commits", "3",
+            "num-sorted-run.compaction-trigger", "100",
+            "num-levels", "4");
+    List<List<String>> changes = new ArrayList<>();
+    List<List<String>> contents = new ArrayList<>();
+    for (boolean nativeWriter : new boolean[] {false, true}) {
+      FileStoreTable table =
+          PaimonTestTables.createPrimaryKeyTable(
+              Files.createTempDirectory("pk-idle-compaction"), options);
+      MemoryState state = new MemoryState();
+      List<Object[]> input = PaimonTestTables.changelog(960, 90);
+      try (Writer writer = new Writer(table, nativeWriter, state)) {
+        for (int checkpoint = 1; checkpoint <= restart; checkpoint++) {
+          if (checkpoint != 3 && checkpoint <= 5) {
+            int part = checkpoint < 3 ? checkpoint - 1 : checkpoint - 2;
+            writer.write(input.subList(part * 240, (part + 1) * 240));
+          }
+          writer.commit(false, checkpoint);
+        }
+      }
+      try (Writer writer = new Writer(table, nativeWriter, state)) {
+        for (int checkpoint = restart + 1; checkpoint <= 12; checkpoint++) {
+          writer.commit(false, checkpoint);
+        }
+      }
+      changes.add(changelogRows(table));
+      contents.add(PaimonTestTables.readRows(table, table.rowType()));
+    }
+    assertFalse(changes.get(0).isEmpty());
+    assertEquals(contents.get(0), contents.get(1));
+    assertEquals(changes.get(0), changes.get(1));
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"none", "input", "lookup"})
   void sparseUpdatesProduceDeletionVectorsAndRestoreThem(String producer) throws Exception {
     Map<String, String> options =

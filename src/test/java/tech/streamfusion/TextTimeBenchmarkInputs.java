@@ -14,11 +14,32 @@ import org.apache.flink.types.Row;
 final class TextTimeBenchmarkInputs {
   private TextTimeBenchmarkInputs() {}
 
+  static int fixedBinaryWidth() {
+    int width = Integer.getInteger("scalar.binary.width", 16);
+    if (width < 1) throw new IllegalArgumentException("scalar.binary.width must be positive");
+    return width;
+  }
+
+  static String fixedBinaryLiteral() {
+    return fixedBinaryLiteral(fixedBinaryWidth());
+  }
+
+  static String fixedBinaryLiteral(int width) {
+    byte[] value = new byte[width];
+    for (int i = 0; i < value.length; i++) value[i] = (byte) (i * 17);
+    return "X'" + java.util.HexFormat.of().withUpperCase().formatHex(value) + "'";
+  }
+
+  static String fixedBinarySelection() {
+    return "ELT(n,b," + fixedBinaryLiteral() + ")";
+  }
+
   static String baselineExpression(String input) {
     return switch (input) {
-      case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
+      case "tt_bytes", "tt_fixed_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
       case "tt_boolean" -> "b";
-      case "tt_decimal", "tt_decimal_scale", "tt_unix_time" -> "n";
+      case "tt_decimal", "tt_decimal_scale", "tt_unix_time",
+          "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large" -> "n";
       case "tt_decimal_array" -> "a";
       case "tt_json_array" -> "a";
       case "tt_timestamp", "tt_timestamp_ltz" -> "ts";
@@ -30,8 +51,10 @@ final class TextTimeBenchmarkInputs {
     return switch (input) {
       case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "BYTES";
       case "tt_boolean" -> "BOOLEAN";
+      case "tt_fixed_bytes" -> "BINARY(" + fixedBinaryWidth() + ")";
       case "tt_decimal", "tt_decimal_scale" -> "DECIMAL(38,9)";
       case "tt_unix_time" -> "BIGINT";
+      case "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large" -> "DOUBLE";
       case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
       case "tt_json_array" -> "ARRAY<STRING>";
       case "tt_timestamp" -> "TIMESTAMP(9)";
@@ -95,6 +118,25 @@ final class TextTimeBenchmarkInputs {
           .map(i -> Row.of((Object) (isNull(i, nullEvery) ? null : values)))
           .returns(Types.ROW_NAMED(new String[] {"a"}, Types.OBJECT_ARRAY(Types.BIG_DEC))),
           Schema.newBuilder().column("a", DataTypes.ARRAY(DataTypes.DECIMAL(38, 9))).build());
+    } else if (input.equals("tt_double_bounded") || input.equals("tt_double_boundary")
+        || input.equals("tt_double_ambiguous") || input.equals("tt_double_outside")
+        || input.equals("tt_double_large")) {
+      int nullScaleEvery = Integer.getInteger("scalar.scaleNullEvery", 0);
+      tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
+          .map(i -> {
+            double magnitude = switch (input) {
+              case "tt_double_boundary" -> 1000.5 + i % 1024;
+              case "tt_double_ambiguous" -> 1000.1 + i % 1024;
+              case "tt_double_outside" -> 0.46;
+              case "tt_double_large" -> 1e12 + 0.12345 + i % 1024;
+              default -> 1000.12345 + i % 1024;
+            };
+            Double value = isNull(i, nullEvery) ? null : (i % 2 == 0 ? magnitude : -magnitude);
+            Integer scale = nullScaleEvery > 0 && i % nullScaleEvery == 0 ? null
+                : (input.equals("tt_double_boundary") || input.equals("tt_double_ambiguous")) ? 1 : (int) (i % 7) - 3;
+            return Row.of(value, scale);
+          })
+          .returns(Types.ROW_NAMED(new String[] {"n", "s"}, Types.DOUBLE, Types.INT)));
     } else if (input.equals("tt_decimal_scale")) {
       java.math.BigDecimal[] values = {
         new java.math.BigDecimal("12345678901234567890.123456700"),
@@ -164,6 +206,19 @@ final class TextTimeBenchmarkInputs {
               .map(i -> Row.of(isNull(i, nullEvery) ? null : values[(int) (i % values.length)]))
               .returns(Types.ROW_NAMED(new String[] {"ts"}, Types.LOCAL_DATE_TIME)),
           Schema.newBuilder().column("ts", DataTypes.TIMESTAMP(9)).build());
+    } else if (input.equals("tt_fixed_bytes")) {
+      int width = fixedBinaryWidth();
+      byte[][] values = {new byte[width], new byte[width]};
+      for (int i = 0; i < width; i++) {
+        values[0][i] = (byte) (i * 17);
+        values[1][i] = (byte) (255 - i * 17);
+      }
+      tables.createTemporaryView(
+          "inputs",
+          env.fromSequence(0, rows - 1)
+              .map(i -> Row.of(isNull(i, nullEvery) ? null : values[(int) (i % 2)], (int) (i % 4)))
+              .returns(Types.ROW_NAMED(new String[] {"b", "n"}, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.INT)),
+          Schema.newBuilder().column("b", DataTypes.BINARY(width)).column("n", DataTypes.INT()).build());
     } else if (input.equals("tt_bytes") || input.startsWith("tt_utf16")) {
       java.nio.charset.Charset charset =
           switch (input) {

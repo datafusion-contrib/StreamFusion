@@ -577,6 +577,7 @@ elif [[ "${SUITE_MODE}" == "paimon" ]]; then
     -Dsurefire.timeout=1800
     -Dlog4j.configurationFile="${REPO_ROOT}/dev/flink-suite/paimon-log4j2.properties"
     -Dstreamfusion.flink-suite.diagnostics="${DIAGNOSTIC_ROOT}"
+    -Dstreamfusion.flink-suite.retain-failed-warehouse="${FLINK_SUITE_RETAIN_FAILED_WAREHOUSE:-false}"
     -Dmaven.test.dependency.excludes=org.apache.calcite:calcite-core
     -DextraJavaTestArgs="${CONNECTOR_MODULE_CONFIG}"
   )
