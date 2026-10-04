@@ -1,3 +1,5 @@
+#[path = "group_extrema.rs"]
+mod extrema;
 use super::OPTIONS;
 use arrow::array::{Array, ArrayRef, Int64Array, Int8Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
@@ -243,6 +245,7 @@ pub(super) fn group(c: &mut Criterion) {
     }
     group.finish();
     retractions(c);
+    extrema::extrema(c);
 }
 
 fn retractions(c: &mut Criterion) {

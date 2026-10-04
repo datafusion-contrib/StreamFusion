@@ -607,31 +607,66 @@ pub struct PersistentGroupBy(GroupAggregator<crate::group_agg::RocksGroupStore>)
 
 #[cfg(feature = "rocksdb-state")]
 impl PersistentGroupBy {
-    fn codec() -> crate::group_agg::GroupStateCodec {
+    fn codec(kinds: &[i64], columns: &[i64]) -> crate::group_agg::GroupStateCodec {
         crate::group_agg::GroupStateCodec::new(
-            vec![3, 0],
-            vec![DataType::Int64; 2],
-            vec![-1, 1],
-            vec![-1; 2],
+            kinds.to_vec(),
+            vec![DataType::Int64; kinds.len()],
+            columns.to_vec(),
+            vec![-1; kinds.len()],
         )
     }
 
-    fn operator(store: crate::group_agg::RocksGroupStore) -> Self {
+    fn operator(kinds: &[i64], columns: &[i64], store: crate::group_agg::RocksGroupStore) -> Self {
         Self(
-            GroupAggregator::new(vec![3, 0], vec![0, 0], vec![-1, 1], vec![0], true)
-                .with_key_timestamp_precisions(vec![-1])
-                .with_mini_batch()
-                .with_backend(store),
+            GroupAggregator::new(
+                kinds.to_vec(),
+                vec![0; kinds.len()],
+                columns.to_vec(),
+                vec![0],
+                true,
+            )
+            .with_key_timestamp_precisions(vec![-1])
+            .with_mini_batch()
+            .with_backend(store),
         )
+    }
+
+    fn create_configured(directory: &str, options: &str, kinds: &[i64], columns: &[i64]) -> Self {
+        let store = crate::group_agg::RocksGroupStore::create(
+            PersistentSort::config(directory, options),
+            Self::codec(kinds, columns),
+        )
+        .expect("persistent GROUP BY create");
+        Self::operator(kinds, columns, store)
     }
 
     pub fn new(directory: &str, options: &str) -> Self {
-        let store = crate::group_agg::RocksGroupStore::create(
+        Self::create_configured(directory, options, &[3, 0], &[-1, 1])
+    }
+
+    pub fn new_extrema(directory: &str, options: &str) -> Self {
+        Self::create_configured(directory, options, &[3, 1, 2], &[-1, 1, 1])
+    }
+
+    fn restore_configured(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+        kinds: &[i64],
+        columns: &[i64],
+    ) -> Self {
+        let store = crate::group_agg::RocksGroupStore::open_merged(
             PersistentSort::config(directory, options),
-            Self::codec(),
+            Self::codec(kinds, columns),
+            &[(source.into(), generation)],
+            0..=0,
+            aligned,
+            0,
         )
-        .expect("persistent GROUP BY create");
-        Self::operator(store)
+        .expect("persistent GROUP BY restore");
+        Self::operator(kinds, columns, store)
     }
 
     pub fn restore(
@@ -641,16 +676,33 @@ impl PersistentGroupBy {
         generation: i64,
         aligned: bool,
     ) -> Self {
-        let store = crate::group_agg::RocksGroupStore::open_merged(
-            PersistentSort::config(directory, options),
-            Self::codec(),
-            &[(source.into(), generation)],
-            0..=0,
+        Self::restore_configured(
+            directory,
+            options,
+            source,
+            generation,
             aligned,
-            0,
+            &[3, 0],
+            &[-1, 1],
         )
-        .expect("persistent GROUP BY restore");
-        Self::operator(store)
+    }
+
+    pub fn restore_extrema(
+        directory: &str,
+        options: &str,
+        source: &str,
+        generation: i64,
+        aligned: bool,
+    ) -> Self {
+        Self::restore_configured(
+            directory,
+            options,
+            source,
+            generation,
+            aligned,
+            &[3, 1, 2],
+            &[-1, 1, 1],
+        )
     }
 
     pub fn update(&mut self, batch: &RecordBatch) -> RecordBatch {

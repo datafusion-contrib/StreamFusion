@@ -123,7 +123,7 @@ Some historical suites use
 | Persistent state | `persistent_state` | Production RocksDB temporal sort, keep-first deduplication, interval join, window rank, temporal join and rowtime running-SUM OVER; ingestion/update, probe/eviction/firing, checkpoint and aligned/rebuild recovery; nullable sliced wide rows, ordering and continued-arrival assertions; fixed options in `engine/benches/fixtures/rocks-options.json` |
 | Persistent window aggregation | `persistent_state` | Tumbling and session Int64 SUM; partial firing, checkpoint and aligned/rebuilt single-source recovery; session bridge merging, independent event-list oracle, saved watermark and continued processing |
 | Persistent window join | `persistent_state` | INNER join with unique UTF-8 keys; right arrival, partial firing, checkpoint and aligned/rebuilt single-source recovery; independent multiset/schema oracle, pre-replay arrivals, post-replay late rejection and continued processing |
-| Persistent group aggregation | `persistent_state`, `persistent_group` | Mini-batch COUNT(*) and nullable Int64 SUM with UTF-8 keys; ingestion/flush, checkpoint and aligned/rebuilt single-source restore; independent continued-changelog oracle and per-key row-kind order checks; half/all-row retractions with deletion and reinsertion oracles |
+| Persistent group aggregation | `persistent_state`, `persistent_group` | Mini-batch COUNT(*), nullable Int64 SUM and Int64 MIN/MAX with UTF-8 keys; ingestion/flush, checkpoint and aligned/rebuilt single-source restore; independent continued-changelog oracle and per-key row-kind order checks; half/all-row retractions with deletion and reinsertion oracles |
 | Matched memory window ranking | `persistent_state` | Ingestion, populated-state updates and firing over the same sliced, nullable, wide-payload shapes as the disk-backed ranker; independent row-index output oracle |
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; sliced/null input, short/large lists, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
@@ -142,8 +142,8 @@ Some historical suites use
 Persistent tumbling/session SUM and unique-key INNER window-join lifecycle
 fixtures are now validated. Window/session aggregation with other shapes or
 aggregate kinds, updating joins and other window-join kinds, duplicate keys,
-residual predicates and TTL still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*)
-and SUM only; other aggregate kinds, DISTINCT views and TTL still
+residual predicates and TTL still need dedicated persistent witnesses. GROUP BY fixtures cover COUNT(*),
+SUM and Int64 MIN/MAX; other aggregate kinds, extrema value types, DISTINCT views and TTL still
 need dedicated persistent benchmarks. The operation inventory is not a claim of
 exhaustive type, option or state-backend coverage.
 
@@ -1592,3 +1592,48 @@ not a before/after comparison or whole-job acceleration claim.
 The runner-level release smoke with `--features mimalloc` also passes all 48
 retraction cases. Its retained metadata records the requested feature and exact
 Cargo command; feature selection does not change the allocation-counter scope.
+
+
+### Persistent extrema profiles
+
+The shared persistent GROUP BY fixtures add 144 COUNT(*)/Int64 MIN/MAX profiles:
+insertion, half/all retraction, checkpoint after partial retraction, and
+aligned/rebuilt single-source recovery. Shapes vary 16/1,024/16,384 initial rows,
+repeated/unique nullable UTF-8 keys with 8/264-byte suffixes and nullable values.
+An independent per-key value-list oracle computes extrema without reusing the
+production multiset implementation. It checks complete schemas and changelogs,
+NULL-only groups, per-key transition order, deleted-state reinsertion, duplicate
+values and continued arrivals after recovery. Other extrema value types,
+DISTINCT, TTL and multi-source recovery are still unmeasured here.
+
+The thin benchmark adapter selects the existing production COUNT/MIN/MAX
+operator and codec. Existing COUNT/SUM construction and recovery retain their
+configuration. The optimized release/mimalloc build and all 144 new smoke cases
+pass, together with 144 existing COUNT/SUM allocation/output probes. The focused
+and comprehensive targets share these fixtures. [All 144 allocation probes](persistent-group-extrema-allocations-2026-10-04.csv)
+retain Rust-thread requests and Arrow buffer metrics, excluding RocksDB C++ and
+background threads; these are not copied-byte measurements.
+
+Six focused release cases retain three-second warmup, a five-second measurement
+target and 100 samples each. Source/executable hashes and mimalloc allocator
+aliases pass before/after guards. Expensive fixtures extend the target time to
+retain all 100 samples. Database creation, prior state population, source
+checkpoint creation and validation remain outside timing. Measured paths include
+production update/flush, checkpoint I/O or recovery reads and database opening;
+restored operator destruction and directory cleanup remain outside timing.
+All cases use 16,384 initial rows, 264-byte key suffixes and nullable keys/values.
+
+| Case | Mean |
+| --- | --- |
+| Repeated keys, half-row retraction | 7.530 ms |
+| Repeated keys, all-row retraction | 15.602 ms |
+| Unique keys, half-row retraction | 153.764 ms |
+| Unique keys, all-row retraction | 559.380 ms |
+| Unique keys, aligned recovery | 16.192 ms |
+| Unique keys, rebuilt recovery | 54.940 ms |
+
+The unique-key all-row case is variable: per-sample median 339.839 ms, range
+322.469–3,213.546 ms and mean 95% interval 458.357–674.998 ms. Every sample and
+outlier is retained in [600 samples](persistent-group-extrema-samples-2026-10-04.csv)
+and [mean intervals](persistent-group-extrema-timing-2026-10-04.csv). These measure
+existing behavior, not a before/after optimization or SQL acceleration claim.
