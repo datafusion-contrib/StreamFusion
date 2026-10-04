@@ -46,6 +46,14 @@ case names and representative data. Existing comparison suites include experimen
 only cases explicitly calling the production implementation describe shipped behavior.
 
 For repeated persistent GROUP BY comparisons, use `--bench persistent_group`.
+For an engine run with mimalloc, add `--package streamfusion --features mimalloc`;
+features are passed to each selected package and retained in metadata and Cargo
+commands. Select packages that provide the requested features. For example:
+
+```sh
+python3 bin/bench-native.py --package streamfusion --bench persistent_group --features mimalloc --smoke --filter group_retract
+```
+
 This focused target registers the same production adapters, fixtures and oracles
 as `persistent_state`, including COUNT/SUM retractions, without constructing
 unrelated join, window or session fixtures. The comprehensive target retains
@@ -1543,7 +1551,7 @@ and no remote filesystem or projection workload.
 ### Persistent aggregate retractions
 
 The shared GROUP BY fixtures add 48 persistent COUNT(*)/SUM retraction profiles
-across 16/1,024/16,384 rows, repeated/unique keys, 8/264-byte Unicode keys and
+across 16/1,024/16,384 rows, repeated/unique keys, Unicode keys with 8/264-byte suffixes and
 nullable keys/values. Each starts from an already flushed aggregate outside
 measurement, then retracts half or all original rows through production
 update/flush. A separate map oracle rebuilds surviving groups and checks schema,
@@ -1562,3 +1570,7 @@ RocksDB C++ and background threads and do not measure copied bytes. The nullable
 and 74,995,124 bytes for all-row retraction. These characterize existing behavior,
 not a before/after optimization. Release timings and the concurrently running
 comprehensive persistent-state smoke result remain pending.
+
+The runner-level release smoke with `--features mimalloc` also passes all 48
+retraction cases. Its retained metadata records the requested feature and exact
+Cargo command; feature selection does not change the allocation-counter scope.

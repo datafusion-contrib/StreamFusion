@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--smoke", action="store_true", help="Run fixtures once using Criterion --test")
     parser.add_argument("--package", action="append", default=[], help="Select a workspace package (repeatable)")
     parser.add_argument("--bench", action="append", default=[], help="Select a suite (repeatable)")
+    parser.add_argument("--features", action="append", default=[], help="Cargo features for each selected package (repeatable)")
     parser.add_argument("--filter", help="Criterion case filter")
     parser.add_argument("--output", type=Path, help="Artifact directory; defaults under native/target")
     baseline = parser.add_mutually_exclusive_group()
@@ -56,7 +57,7 @@ def main():
         "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True)),
         "rustc": subprocess.check_output(["rustc", "-Vv"], text=True), "platform": platform.platform(),
         "cpu_count": os.cpu_count(), "mode": "smoke" if args.smoke else "timing", "suites": selected,
-        "filter": args.filter, "save_baseline": args.save_baseline, "baseline": args.baseline,
+        "filter": args.filter, "features": args.features, "save_baseline": args.save_baseline, "baseline": args.baseline,
         "commands": [], "environment": {key: os.environ[key] for key in ("RUSTFLAGS", "CARGO_BUILD_JOBS", "JAVA_HOME") if key in os.environ},
     }
     environment = os.environ.copy()
@@ -82,7 +83,10 @@ def main():
         writer = csv.writer(allocation_file, lineterminator="\n")
         writer.writerow(["package", "suite", "case", "allocation_calls", "requested_bytes", "shared_output_buffer_bytes", "new_output_buffer_bytes"])
         for package, bench in selected:
-            command = ["cargo", "bench", "--manifest-path", str(MANIFEST), "--locked", "-p", package, "--bench", bench, "--"]
+            command = ["cargo", "bench", "--manifest-path", str(MANIFEST), "--locked", "-p", package, "--bench", bench]
+            for features in args.features:
+                command.extend(["--features", features])
+            command.append("--")
             if args.filter:
                 command.append(args.filter)
             if args.smoke:
