@@ -1858,3 +1858,20 @@ At width 16, native CAST is 1.10% slower (2.507410 s to 2.535036 s), with stock
 at 2.085497 s. The unsafe variant's timings do not establish performance for the
 revised code. The prototype remains unaccepted: the narrow case offers no gain
 and the wide case does not satisfy the stock-Flink performance gate.
+
+### BIGINT array exit projection experiment
+
+Adding ARRAY<BIGINT> to the generated owned binary-row exit projection passes
+31 ownership and SQL checks on each released Flink version, but fails the
+performance gate. With the same native INT-to-BIGINT array cast and entry writer,
+the exit prototype's median is 1.645335 s, versus 1.292001 s for the previous native
+exit and 1.212250 s for matched stock Flink (27.35% and 35.72% slower respectively).
+[All 40 trials](array-bigint-exit-projection-trials-2026-10-04.csv) cover two million
+rows, width 64, domain 65536, parent NULL every eighth row and child NULL every
+seventh element, two warmups and five repetitions per engine in each of four
+candidate/original/original/candidate blocks. Both transposes and the rowwise
+blackhole remain measured, using Java 17, Flink 2.2.1, two CPUs, a 2 GiB heap,
+release/mimalloc native code and disabled local zero-copy exchange. The same
+immutable native library is used throughout, with no overlapping heavy work.
+The exit extension is removed and recorded as a rejected investigation; array
+widening remains experimental pending the complete stock/prior performance gate.
