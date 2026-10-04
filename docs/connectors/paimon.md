@@ -1294,3 +1294,24 @@ SF_PAIMON_FILE_FORMAT=parquet SF_PAIMON1_SQL_SOURCE_BENCHMARK=true \
 Use `SF_PAIMON_FILE_FORMAT=orc` and `SF_PAIMON1_BENCH_ROWS=200000` for the other
 configurations. `SF_PAIMON1_SOURCE_PROJECT_VALUE=true` selects the additional
 projection diagnostic. The default reader diagnostic keeps all columns.
+
+### Focused streaming full-compaction diagnostic
+
+A focused reproduction on 2026-10-03 ran the exact released Paimon 1.0.0 `PrimaryKeyFileStoreTableITCase.testFullCompactionChangelogProducerStreamingRandom` test with Flink 1.18 and Java 17, stock first and StreamFusion second. Both ran one test with zero failures, errors, or skips. Native bundle and level-0 file writes were observed in the accelerated run. [Retained results](../benchmarks/paimon-full-compaction-streaming-focused-2026-10-03.csv) record test durations; these correctness-test durations are not a performance benchmark.
+
+The previously observed 180-second upstream CI timeout did not reproduce in this isolated pair. It remains unresolved: the test uses randomized parameters and checkpoint/restart behavior, and the CI failure occurred within a larger suite. One passing pair neither proves the timeout fixed nor replaces the full upstream parity requirement. Both runs' Surefire reports and diagnostics were retained separately for investigation.
+
+The follow-up full `PrimaryKeyFileStoreTableITCase` reproduction also passed all 17 tests under stock and native execution (zero failures, errors, or skips). All [34 per-test results](../benchmarks/paimon-primary-key-class-reproduction-2026-10-03.csv) are retained, including full-compaction streaming at 18.631 seconds stock and 18.799 seconds native. Native bundle and level-0 writes were observed, and all 10 retained release-library hashes remained unchanged. These are randomized correctness tests, not controlled performance measurements. The timeout remains unresolved: it reproduced in the broader upstream CI suite but not in this isolated test or class.
+
+The subsequent complete default released upstream suite passed all 242 tests with
+zero failures, errors, or skips under native execution. It used Java 17, Flink
+1.18, Paimon 1.0.0, one test fork, two active processors and a 2 GiB test heap;
+`SF_PAIMON1_TESTS` was unset. The command was
+`bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true`, reusing the verified
+release libraries. All ten library hashes remained unchanged. Native bundle,
+level-0 file and merged snapshot witnesses were present. The complete
+[242 per-test outcomes](../benchmarks/paimon-full-upstream-suite-reproduction-2026-10-03.csv)
+include both former CI timeout cases passing; the archived Surefire reports and
+upstream diagnostics retain the broader suite context. This single randomized
+suite draw does not identify the CI timeout's cause or establish a fix. Its test
+durations are correctness diagnostics, not performance comparisons.
