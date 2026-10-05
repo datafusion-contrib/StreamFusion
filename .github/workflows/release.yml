@@ -5,21 +5,31 @@ on:
     tags:
       - "v*"
       - "dry-run-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Signed release tag to create from main (v<version> or dry-run-v<version>)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
   prepare:
     name: Validate release tag
     runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.value }}
       dry_run: ${{ steps.version.outputs.dry_run }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
 
@@ -32,14 +42,22 @@ jobs:
       - id: version
         name: Match the tag to Maven and Cargo
         shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF_NAME" == dry-run-v* ]]; then
-            version="${GITHUB_REF_NAME#dry-run-v}"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$GITHUB_REF" = refs/heads/main
+          fi
+          if [[ "$RELEASE_TAG" == dry-run-v* ]]; then
+            version="${RELEASE_TAG#dry-run-v}"
             dry_run=true
-          else
-            version="${GITHUB_REF_NAME#v}"
+          elif [[ "$RELEASE_TAG" == v* ]]; then
+            version="${RELEASE_TAG#v}"
             dry_run=false
+          else
+            echo "Release tags must start with v or dry-run-v" >&2
+            exit 1
           fi
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
           maven_version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
@@ -50,6 +68,43 @@ jobs:
           test "$version" = "$loader_version"
           echo "value=$version" >> "$GITHUB_OUTPUT"
           echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create the signed tag for a manual release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.value }}
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$MAVEN_GPG_PRIVATE_KEY" | gpg --batch --import
+          key="$(gpg --batch --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test -n "$key"
+          passphrase="$RUNNER_TEMP/release-tag-passphrase"
+          signer="$RUNNER_TEMP/release-tag-gpg"
+          trap 'rm -f "$passphrase" "$signer"' EXIT
+          umask 077
+          printf '%s' "$MAVEN_GPG_PASSPHRASE" > "$passphrase"
+          cat > "$signer" <<'SIGNER'
+          #!/usr/bin/env bash
+          exec gpg --batch --pinentry-mode loopback --passphrase-file "$RUNNER_TEMP/release-tag-passphrase" "$@"
+          SIGNER
+          chmod +x "$signer"
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")" ]]; then
+            git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+            git verify-tag "$RELEASE_TAG"
+          else
+            git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              -c user.signingkey="$key" -c gpg.program="$signer" \
+              tag -s "$RELEASE_TAG" -m "StreamFusion $VERSION" "$GITHUB_SHA"
+            git verify-tag "$RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
 
   linux-native:
     name: Build native payload (Linux x86_64)
@@ -206,6 +261,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           prerelease=()
           draft=()
@@ -221,11 +277,11 @@ jobs:
             target/release/streamfusion-"$VERSION"-bin.tar.gz
             target/release/streamfusion-"$VERSION"-bin.tar.gz.sha256
           )
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" \
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$title" \
               --generate-notes \

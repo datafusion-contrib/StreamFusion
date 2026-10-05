@@ -79,6 +79,22 @@ git push upstream v0.1.0-rc4
 The release workflow rejects either tag form unless its value exactly matches both Maven projects
 and Cargo.
 
+When the signing key is available only in the repository's release secrets, the Release workflow
+also accepts a manual dispatch from `main`:
+
+```sh
+gh workflow run release.yml --repo datafusion-contrib/StreamFusion --ref main -f tag=v0.1.0-rc4
+```
+
+Complete the normal release gates before dispatching. The workflow validates the requested tag
+against Maven and Cargo, signs it with `MAVEN_GPG_PRIVATE_KEY`, verifies the signature, and pushes
+it before building and publishing in the same run. GitHub's workflow token does not trigger another
+push workflow, so this manual run supplies the complete release pipeline. A retry accepts an
+existing signed tag only when it points to the same commit; it never moves a release tag. Supply
+`dry-run-v<version>` for Central validation and a draft GitHub release instead. Manual dispatches
+from other branches fail before tag creation.
+
+
 All native packages inherit the single version in `native/Cargo.toml`'s `[workspace.package]`.
 The release builder selects packages, producing `libstreamfusion` for the engine and a separately
 named library for every native extension. Linux builds the workspace together; macOS selects the
