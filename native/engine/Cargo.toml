@@ -47,6 +47,7 @@ streamfusion-native-build = { path = "../native-build" }
 default = ["rocksdb-state"]
 mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
 rocksdb-state = ["dep:rocksdb", "dep:bytes"]
+rocksdb-io-uring = ["rocksdb-state", "rocksdb/io-uring"]
 
 [dependencies.rocksdb]
 workspace = true

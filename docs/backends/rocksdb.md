@@ -189,3 +189,43 @@ than the former 8 MiB allowance paid repeated lazy-scan costs.
 That fixed ceiling has been removed; probe reuse is governed by reservations
 from the shared native memory pool. Immediate inner joins
 still persist only changed records, independent of whether probe reuse fits.
+
+## Linux io_uring reads
+
+Linux builds can opt into RocksDB's io_uring SST `MultiRead` implementation
+with the Cargo feature `streamfusion/rocksdb-io-uring`. Install the system
+liburing development package and pkg-config first (for example,
+`apt-get install liburing-dev pkg-config` on Ubuntu), then build from `native/`:
+
+```sh
+cargo build --release --workspace --features mimalloc,streamfusion/rocksdb-io-uring
+```
+
+For Maven builds, pass
+`-Dnative.cargo.args="build --release --features mimalloc,streamfusion/rocksdb-io-uring"`
+in addition to the usual `-Pbench` or `-Prelease` profile.
+Feature-enabled Linux libraries also require the liburing runtime library on
+each deployment host (for example `liburing2` on Ubuntu); missing runtime
+libraries prevent loading the native library before any read fallback applies.
+Feature-enabled Linux libraries attempt io_uring automatically. Leave
+`SF_ROCKSDB_IO_URING` unset or set it to `true` to enable it; set it to `false`
+in each TaskManager's environment before starting its JVM to disable it.
+Other values also disable the integration. The
+setting is cached on the first use in each process; change it by restarting
+the process, not by rebuilding. Builds without the feature keep their existing
+behavior and do not need liburing. On non-Linux targets the feature does not
+activate the Linux hook or require liburing.
+
+This selects upstream RocksDB's concurrent SST batch reads. State access
+remains synchronous to the operator, and WriteBatch, compaction, checkpoints,
+and disk-cache flushes keep their existing write paths. Successful use also
+requires a kernel and sandbox that allow `io_uring_setup`; if RocksDB cannot
+initialize a ring, it falls back to ordinary reads. Building with the feature
+alone is not evidence that the runtime used io_uring.
+
+The integration uses linker wrapping of the released binding's always-enabled
+hook, retaining the registry dependency without patching or forking it. The
+feature stays opt-in: a 2M-event, native-RocksDB generated-row/blackhole
+comparison showed a modest +3.93% best-of-three geometric-mean throughput gain,
+with a +0.80% median query gain and several regressions. See
+[method, limits and all trials](../optimizations/rocksdb-io-uring.md).

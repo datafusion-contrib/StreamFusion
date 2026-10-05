@@ -1468,6 +1468,9 @@ mod batch_read_tests {
         let _ = std::fs::remove_dir_all(&path);
         let mut options = Options::default();
         options.create_if_missing(true);
+        let mut table = rocksdb::BlockBasedOptions::default();
+        table.disable_cache();
+        options.set_block_based_table_factory(&table);
         // Start with the old open path, as an existing checkpoint would.
         let legacy = DB::open(&options, &path).unwrap();
         legacy.put(b"a", b"first").unwrap();
@@ -1489,8 +1492,8 @@ mod batch_read_tests {
                     db.flush().unwrap();
                 }
                 assert!(multi_get_pinned(&db, &[]).is_empty());
-                let expected = db.multi_get(&keys);
                 let pinned = multi_get_pinned(&db, &keys);
+                let expected = db.multi_get(&keys);
                 assert_eq!(pinned.len(), keys.len());
                 for (actual, expected) in pinned.iter().zip(&expected) {
                     assert_eq!(
