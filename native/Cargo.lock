@@ -3658,7 +3658,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "ahash",
  "arrow 58.3.0",
@@ -3697,7 +3697,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-avro"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "arrow-avro",
@@ -3713,14 +3713,14 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-benchmark-support"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
 ]
 
 [[package]]
 name = "streamfusion-bridge"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "ahash",
  "arrow 58.3.0",
@@ -3735,7 +3735,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-csv"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "criterion",
@@ -3750,7 +3750,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-format-support"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "criterion",
@@ -3761,7 +3761,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-integration-tests"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "prost-reflect",
@@ -3773,7 +3773,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-json"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "chrono",
@@ -3794,7 +3794,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-kafka"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "arrow-avro",
@@ -3815,14 +3815,14 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-native-build"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "streamfusion-orc"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "arrow 59.3.0",
@@ -3839,7 +3839,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-paimon"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "criterion",
@@ -3852,7 +3852,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-parquet"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "bytes",
@@ -3867,7 +3867,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-protobuf"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "chrono",
@@ -3885,7 +3885,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-raw"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.3.0",
  "jni",

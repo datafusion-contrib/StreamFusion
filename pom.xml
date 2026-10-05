@@ -53,7 +53,7 @@
     </scm>
 
     <properties>
-        <revision>0.1.0-rc3</revision>
+        <revision>0.1.0-rc4</revision>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
