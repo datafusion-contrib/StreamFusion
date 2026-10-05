@@ -41,7 +41,7 @@ and loader POMs, `native/Cargo.toml`, `native/Cargo.lock`, deployment examples, 
 classpath POM. Confirm there are no stale values and run the normal release gates:
 
 ```sh
-rg '0\.1\.0-rc2'
+rg '0\.1\.0-rc3'
 mvn test
 bin/build-release.sh --host-only
 bin/check-artifacts.sh --host-only
@@ -59,8 +59,8 @@ quick loop.
 Before publishing the first candidate, push a signed dry-run tag to the canonical repository:
 
 ```sh
-git tag -s dry-run-v0.1.0-rc3 -m 'Dry run StreamFusion 0.1.0-rc3'
-git push upstream dry-run-v0.1.0-rc3
+git tag -s dry-run-v0.1.0-rc4 -m 'Dry run StreamFusion 0.1.0-rc4'
+git push upstream dry-run-v0.1.0-rc4
 ```
 
 The `dry-run-v<version>` path runs the same Linux and macOS runner builds, artifact checks, signing,
@@ -72,12 +72,28 @@ the coordinate in a real release. Delete the draft release and dry-run tag after
 Once the dry run passes, push the signed version tag only after the version commit is on `main`:
 
 ```sh
-git tag -s v0.1.0-rc3 -m 'StreamFusion 0.1.0-rc3'
-git push upstream v0.1.0-rc3
+git tag -s v0.1.0-rc4 -m 'StreamFusion 0.1.0-rc4'
+git push upstream v0.1.0-rc4
 ```
 
 The release workflow rejects either tag form unless its value exactly matches both Maven projects
 and Cargo.
+
+When the signing key is available only in the repository's release secrets, the Release workflow
+also accepts a manual dispatch from `main`:
+
+```sh
+gh workflow run release.yml --repo datafusion-contrib/StreamFusion --ref main -f tag=v0.1.0-rc4
+```
+
+Complete the normal release gates before dispatching. The workflow validates the requested tag
+against Maven and Cargo, signs it with `MAVEN_GPG_PRIVATE_KEY`, verifies the signature, and pushes
+it before building and publishing in the same run. GitHub's workflow token does not trigger another
+push workflow, so this manual run supplies the complete release pipeline. A retry accepts an
+existing signed tag only when it points to the same commit; it never moves a release tag. Supply
+`dry-run-v<version>` for Central validation and a draft GitHub release instead. Manual dispatches
+from other branches fail before tag creation.
+
 
 All native packages inherit the single version in `native/Cargo.toml`'s `[workspace.package]`.
 The release builder selects packages, producing `libstreamfusion` for the engine and a separately
@@ -96,7 +112,7 @@ build inherits its host's libc requirements; do not build a deployment for an ol
 on Ubuntu 24.04. Both Java payload lines use the host SLF4J 1.7 API and provider, avoiding a
 conflicting SLF4J 2 API in Flink’s global classpath. The workflow merges those binaries into the release
 JARs, validates the artifact boundaries, signs and publishes the reactor through the Central Portal,
-and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc3`, becomes
+and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc4`, becomes
 a GitHub prerelease.
 
 If a release fails before Central reports it as published, fix the cause, delete the unpublished tag,

@@ -23,57 +23,57 @@
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-csv${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-raw${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-avro${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-avro-confluent-registry${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-protobuf${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-parquet${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-orc${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-paimon${streamfusion.artifact.suffix}</artifactId>
-            <version>0.1.0-rc3</version>
+            <version>0.1.0-rc4</version>
         </dependency>
         <!-- StreamFusion discovers connector planner extensions at startup. Connector APIs are
              provided-scope in the production modules, so make Kafka's API explicit in this

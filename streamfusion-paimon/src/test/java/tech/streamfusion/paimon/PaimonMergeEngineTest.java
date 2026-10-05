@@ -378,7 +378,7 @@ class PaimonMergeEngineTest {
     private final IOManagerAsync io = new IOManagerAsync();
     private final BufferAllocator allocator = new RootAllocator();
     private final StreamTableWrite router;
-    private final StoreSinkWrite writer;
+    final StoreSinkWrite writer;
     private final StreamTableCommit commit;
     private final int batchRows;
     private final org.apache.flink.table.types.logical.RowType type;
@@ -403,7 +403,7 @@ class PaimonMergeEngineTest {
                   new MemoryPoolFactory(
                       new HeapMemorySegmentPool(options.writeBufferSize(), options.pageSize())),
                   null);
-      writer = nativeWriter ? new NativeKeyValueSinkWrite(table, delegate) : delegate;
+      writer = nativeWriter ? new NativeKeyValueSinkWrite(table, delegate, state) : delegate;
       router = table.newStreamWriteBuilder().newWrite();
       commit = table.newStreamWriteBuilder().withCommitUser("writer").newCommit();
     }
