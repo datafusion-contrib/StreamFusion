@@ -1,6 +1,7 @@
 package tech.streamfusion.paimon;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -15,7 +16,9 @@ import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.flink.sink.Committable;
 import org.apache.paimon.flink.sink.GlobalFullCompactionSinkWrite;
+import org.apache.paimon.flink.sink.NoopStoreSinkWriteState;
 import org.apache.paimon.flink.sink.StoreSinkWrite;
+import org.apache.paimon.flink.sink.StoreSinkWriteState;
 import org.apache.paimon.index.IndexFileMeta;
 import org.apache.paimon.io.CompactIncrement;
 import org.apache.paimon.io.DataFileMeta;
@@ -54,6 +57,8 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  */
 public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoCloseable {
 
+  private static final String SEQUENCE_STATE = "streamfusion_next_sequence";
+
   private static final long NEW_FILES_SNAPSHOT = Long.MAX_VALUE;
 
   private static final class BucketBuffer {
@@ -76,6 +81,8 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
 
   private FileStoreTable table;
   private final StoreSinkWrite delegate;
+  private final StoreSinkWriteState state;
+  private final Map<BinaryRow, Map<Integer, Long>> restoredSequences = new LinkedHashMap<>();
   private final boolean inputChangelog;
   private final boolean postpone;
   private final String postponePrefix;
@@ -90,10 +97,29 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   private WriteRestore writeRestore;
 
   public NativeKeyValueSinkWrite(FileStoreTable table, StoreSinkWrite delegate) {
-    this(table, delegate, null);
+    this(table, delegate, null, new NoopStoreSinkWriteState(0));
+  }
+
+  public NativeKeyValueSinkWrite(
+      FileStoreTable table, StoreSinkWrite delegate, StoreSinkWriteState state) {
+    this(table, delegate, null, state);
   }
 
   NativeKeyValueSinkWrite(FileStoreTable table, StoreSinkWrite delegate, String postponePrefix) {
+    this(table, delegate, postponePrefix, new NoopStoreSinkWriteState(0));
+  }
+
+  private NativeKeyValueSinkWrite(
+      FileStoreTable table, StoreSinkWrite delegate, String postponePrefix, StoreSinkWriteState state) {
+    this.state = state;
+    var restored = state.get(table.name(), SEQUENCE_STATE);
+    if (restored != null) {
+      for (var value : restored) {
+        restoredSequences
+            .computeIfAbsent(value.partition(), p -> new LinkedHashMap<>())
+            .merge(value.bucket(), ByteBuffer.wrap(value.value()).getLong(), Math::max);
+      }
+    }
     this.delegate = delegate;
     CoreOptions options = table.coreOptions();
     this.table = table;
@@ -180,7 +206,12 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   }
 
   private BucketBuffer open(BinaryRow partition, int bucket) {
-    long firstSequence = startingMaxSequence(partition, bucket) + 1;
+    long firstSequence =
+        Math.max(
+            startingMaxSequence(partition, bucket) + 1,
+            writeRestore == null
+                ? 0L
+                : restoredSequences.getOrDefault(partition, Map.of()).getOrDefault(bucket, 0L));
     PaimonDynamicBucketIndex index =
         table.bucketMode() == BucketMode.HASH_DYNAMIC
             ? new PaimonDynamicBucketIndex(table, partition, bucket, layout)
@@ -408,6 +439,24 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
 
   @Override
   public void snapshotState() throws Exception {
+    for (var partition : buffers.entrySet()) {
+      var sequences =
+          restoredSequences.computeIfAbsent(partition.getKey(), p -> new LinkedHashMap<>());
+      for (var buffer : partition.getValue().values()) {
+        sequences.put(buffer.bucket, buffer.nextSequence);
+      }
+    }
+    List<StoreSinkWriteState.StateValue> values = new ArrayList<>();
+    for (var partition : restoredSequences.entrySet()) {
+      for (var sequence : partition.getValue().entrySet()) {
+        values.add(
+            new StoreSinkWriteState.StateValue(
+                partition.getKey(),
+                sequence.getKey(),
+                ByteBuffer.allocate(Long.BYTES).putLong(sequence.getValue()).array()));
+      }
+    }
+    state.put(table.name(), SEQUENCE_STATE, values);
     delegate.snapshotState();
   }
 

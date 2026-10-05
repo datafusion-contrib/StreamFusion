@@ -45,6 +45,7 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
     return (table, commitUser, state, ioManager, memoryPoolFactory, metricGroup) ->
         new NativeKeyValueSinkWrite(
             table,
-            provider.provide(table, commitUser, state, ioManager, memoryPoolFactory, metricGroup));
+            provider.provide(table, commitUser, state, ioManager, memoryPoolFactory, metricGroup),
+            state);
   }
 }

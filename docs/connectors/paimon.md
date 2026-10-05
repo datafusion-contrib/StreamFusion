@@ -518,6 +518,11 @@ key-value layout with the native Parquet encoder, rolled at `target-file-size`. 
 the metadata Paimon's own writer records: key bounds, key and value statistics from the format,
 sequence range, delete count, level 0. Sequence numbers continue from the bucket's committed files
 exactly as a restored Paimon writer's do, so a native run numbers its rows like a stock run.
+The native writer also checkpoints each bucket's next sequence number in Paimon's partitioned
+writer state. Coordinated recovery uses the larger of this saved position and the restored files' maximum,
+so a coordinated manifest cache from an earlier snapshot cannot make replayed updates older
+than files already written by the recovered task. Idle checkpoints retain the saved positions;
+Paimon's state filter redistributes them with the buckets when sink parallelism changes.
 
 Compaction stays Paimon's, in the same job: the new files are handed to Paimon's merge-tree writer
 for the bucket before it prepares each checkpoint's commit, through the entry Paimon's dedicated

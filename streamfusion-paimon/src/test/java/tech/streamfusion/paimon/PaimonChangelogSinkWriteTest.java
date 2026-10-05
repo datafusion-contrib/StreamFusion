@@ -399,7 +399,7 @@ class PaimonChangelogSinkWriteTest {
                       new MemoryPoolFactory(
                           new HeapMemorySegmentPool(options.writeBufferSize(), options.pageSize())),
                       null);
-      write = nativeWriter ? new NativeKeyValueSinkWrite(table, delegate) : delegate;
+      write = nativeWriter ? new NativeKeyValueSinkWrite(table, delegate, state) : delegate;
       router = table.newStreamWriteBuilder().newWrite();
       commit = table.newStreamWriteBuilder().withCommitUser("writer").newCommit();
     }

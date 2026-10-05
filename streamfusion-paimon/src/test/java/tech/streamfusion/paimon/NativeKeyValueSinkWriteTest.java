@@ -17,12 +17,15 @@ import org.apache.flink.runtime.io.disk.iomanager.IOManagerAsync;
 import org.apache.flink.table.data.RowData;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.data.BinaryRow;
+import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.flink.sink.Committable;
 import org.apache.paimon.flink.sink.NoopStoreSinkWriteState;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.memory.HeapMemorySegmentPool;
 import org.apache.paimon.memory.MemoryPoolFactory;
+import org.apache.paimon.operation.RestoreFiles;
+import org.apache.paimon.operation.WriteRestore;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.sink.CommitMessage;
 import org.apache.paimon.table.sink.CommitMessageImpl;
@@ -30,6 +33,8 @@ import org.apache.paimon.table.sink.StreamTableCommit;
 import org.apache.paimon.table.sink.StreamTableWrite;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.table.source.Split;
+import org.apache.paimon.types.DataField;
+import org.apache.paimon.types.DataTypes;
 import org.apache.paimon.types.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -126,6 +131,52 @@ class NativeKeyValueSinkWriteTest {
             table.snapshotManager().latestSnapshot().properties());
       }
     }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void restoredSequenceDoesNotRegressBehindCoordinatedFiles(boolean idleCheckpoint) throws Exception {
+    var type =
+        new RowType(
+            List.of(
+                new DataField(0, "id", DataTypes.INT().notNull()),
+                new DataField(1, "v", DataTypes.BIGINT())));
+    var table = PaimonMergeEngineTest.table(Map.of("bucket", "1", "write-only", "true"), type);
+    var state = new PaimonChangelogSinkWriteTest.MemoryState();
+    List<DataFileMeta> cachedFiles;
+    try (var writer = new PaimonMergeEngineTest.Writer(table, true, state, 7)) {
+      writer.write(List.of(GenericRow.of(1, 0L)));
+      cachedFiles = newFiles(writer.commit(1)).stream().map(Map.Entry::getValue).toList();
+      var updates = new ArrayList<InternalRow>();
+      for (long value = 1; value <= 40; value++) {
+        updates.add(GenericRow.of(1, value));
+      }
+      writer.write(updates);
+      writer.commit(2);
+    }
+    if (idleCheckpoint) {
+      try (var idle = new PaimonMergeEngineTest.Writer(table, true, state, 7)) {
+        idle.writer.snapshotState();
+      }
+    }
+    try (var restored = new PaimonMergeEngineTest.Writer(table, true, state, 7)) {
+      restored.writer.setWriteRestore(
+          new WriteRestore() {
+            @Override
+            public long latestCommittedIdentifier(String user) {
+              return 2;
+            }
+
+            @Override
+            public RestoreFiles restoreFiles(
+                BinaryRow partition, int bucket, boolean index, boolean deletes, boolean source) {
+              return new RestoreFiles(null, 1, cachedFiles, null, null, null);
+            }
+          });
+      restored.write(List.of(GenericRow.of(1, 100L)));
+      restored.commit(3);
+    }
+    assertEquals(List.of("1|100"), PaimonTestTables.readRows(table, type));
   }
 
   @Test
