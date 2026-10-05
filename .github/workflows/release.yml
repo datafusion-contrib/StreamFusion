@@ -215,7 +215,7 @@ jobs:
 
       - name: Verify the universal deployment bundle
         run: |
-          mvn -B -ntp clean package -Pdist,universal,delta,paimon -DskipTests
+          mvn -B -ntp clean package -Pdist,universal,release,delta,paimon -Dgpg.skip=true -DskipTests
           bin/check-artifacts.sh
 
       - id: central-status

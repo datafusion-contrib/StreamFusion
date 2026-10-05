@@ -54,6 +54,10 @@ connector sources (Delta, Paimon) beside each module's own: a reference javadoc 
 the ordinary test build rather than the release, and `-Dmaven.javadoc.skip=true` skips it for a
 quick loop.
 
+The workflow's universal bundle verification also enables the `release` profile with
+`-Dgpg.skip=true`. This generates the flattened publication POMs and source/javadoc attachments
+before artifact validation; signing occurs in the subsequent deploy step.
+
 ## Publish
 
 Before publishing the first candidate, push a signed dry-run tag to the canonical repository:
