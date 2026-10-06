@@ -149,6 +149,9 @@ class PaimonSourceSqlTest {
                   BinaryString.fromString("p"),
                   org.apache.paimon.data.Timestamp.fromEpochMillis(i * 2000L)));
         }
+        writeSqlRow(writer, mode, GenericRow.of(sqlKey(0, keyType),
+            BinaryString.fromString("excluded-snapshot"), BinaryString.fromString("other"),
+            org.apache.paimon.data.Timestamp.fromEpochMillis(0L)));
         commit.commit(1, writer.prepareCommit(true, 1));
         if (primaryKey) {
           for (int i = 0; i < 3; i++) {
@@ -164,7 +167,12 @@ class PaimonSourceSqlTest {
           commit.commit(2, writer.prepareCommit(true, 2));
         }
         var plan = nativeSource ? NativePlanner.install(sql) : null;
-        var result = sql.executeSql("SELECT ts, pt, id, v FROM t WHERE v IS NOT NULL");
+        String query = "SELECT ts, id, v FROM t WHERE v IS NOT NULL AND pt = 'p'";
+        if (nativeSource) {
+          String explanation = sql.explainSql(query);
+          assertTrue(explanation.contains("partitionPredicate"), explanation);
+        }
+        var result = sql.executeSql(query);
         var executor = Executors.newSingleThreadExecutor();
         try (var rows = result.collect()) {
           CountDownLatch initial = new CountDownLatch(1);
@@ -193,6 +201,9 @@ class PaimonSourceSqlTest {
                       BinaryString.fromString("p"),
                       org.apache.paimon.data.Timestamp.fromEpochMillis(i * 2000L)));
             }
+            writeSqlRow(writer, mode, GenericRow.of(sqlKey(3, keyType),
+                BinaryString.fromString("excluded-live"), BinaryString.fromString("other"),
+                org.apache.paimon.data.Timestamp.fromEpochMillis(6000L)));
             int checkpoint = primaryKey ? 3 : 2;
             commit.commit(checkpoint, writer.prepareCommit(true, checkpoint));
             twins.add(collected.get(45, TimeUnit.SECONDS));

@@ -13,6 +13,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.predicate.Predicate;
 
 /** Streaming Paimon scan with native file reads and admitted native snapshot merging. */
 public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
@@ -20,6 +21,7 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
   private final RelDataType output;
   private final FileStoreTable table;
   private final ScanWatermarkSpec watermark;
+  private final Predicate partitionPredicate;
   private final String scanIdentity;
   private final long shareToken;
   private final long reuseBarrier = NativeRelDigests.nextId();
@@ -30,8 +32,9 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
       RelDataType output,
       FileStoreTable table,
       ScanWatermarkSpec watermark,
+      Predicate partitionPredicate,
       String scanIdentity) {
-    this(cluster, traits, output, table, watermark, scanIdentity, 0);
+    this(cluster, traits, output, table, watermark, partitionPredicate, scanIdentity, 0);
   }
 
   private StreamPhysicalNativePaimonSource(
@@ -40,12 +43,14 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
       RelDataType output,
       FileStoreTable table,
       ScanWatermarkSpec watermark,
+      Predicate partitionPredicate,
       String scanIdentity,
       long shareToken) {
     super(cluster, traits);
     this.output = output;
     this.table = table;
     this.watermark = watermark;
+    this.partitionPredicate = partitionPredicate;
     this.scanIdentity = scanIdentity;
     this.shareToken = shareToken;
   }
@@ -58,7 +63,7 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
   @Override
   public RelNode withShareToken(long token) {
     return new StreamPhysicalNativePaimonSource(
-        getCluster(), getTraitSet(), output, table, watermark, scanIdentity, token);
+        getCluster(), getTraitSet(), output, table, watermark, partitionPredicate, scanIdentity, token);
   }
 
   @Override
@@ -74,7 +79,7 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
   @Override
   public RelNode copy(RelTraitSet traits, List<RelNode> inputs) {
     return new StreamPhysicalNativePaimonSource(
-        getCluster(), traits, output, table, watermark, scanIdentity, shareToken);
+        getCluster(), traits, output, table, watermark, partitionPredicate, scanIdentity, shareToken);
   }
 
   @Override
@@ -82,6 +87,7 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
     RelWriter explained =
         super.explainTerms(writer)
             .item("table", table.name())
+            .itemIf("partitionPredicate", partitionPredicate, partitionPredicate != null)
             .item("snapshotMerge", "native deduplicate / Java fallback")
             .item("fileDecode", "native " + table.coreOptions().fileFormatString());
     return shareToken == 0
@@ -97,6 +103,7 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
         FlinkTypeFactory$.MODULE$.toLogicalRowType(output),
         getRelDetailedDescription(),
         table,
-        watermark);
+        watermark,
+        partitionPredicate);
   }
 }

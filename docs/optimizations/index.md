@@ -16,6 +16,7 @@ caching, shared build artifacts, grouped connector suites and combined coverage 
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
 - [Retire dead Delta checkpoint buffers](delta-live-buffer-retirement.md): release fully superseded Arrow batches and metadata.
+- [Preserve Paimon partition pruning](paimon-partition-pruning.md): carry retained partition equalities into released split planning.
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
 
 ## How these numbers are measured

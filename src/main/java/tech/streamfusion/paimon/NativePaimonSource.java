@@ -13,6 +13,7 @@ import org.apache.paimon.flink.source.PendingSplitsCheckpoint;
 import org.apache.paimon.flink.utils.TableScanUtils;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.source.ReadBuilder;
+import org.apache.paimon.predicate.Predicate;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.WatermarkExpression;
 
@@ -38,12 +39,19 @@ public final class NativePaimonSource
       int batchRows,
       int rowtimeIndex,
       WatermarkExpression watermarkExpression) {
+    this(table, projection, batchRows, rowtimeIndex, watermarkExpression, null);
+  }
+
+  public NativePaimonSource(
+      FileStoreTable table, int[] projection, int batchRows, int rowtimeIndex,
+      WatermarkExpression watermarkExpression, Predicate partitionPredicate) {
     if (batchRows <= 0) {
       throw new IllegalArgumentException("Paimon source batch size must be positive");
     }
     TableScanUtils.streamingReadingValidate(table);
     this.table = table;
     this.read = table.newReadBuilder().withProjection(projection).dropStats();
+    if (partitionPredicate != null) read.withFilter(partitionPredicate);
     this.delegate = new ContinuousFileStoreSource(read, table.options(), null);
     this.batchRows = batchRows;
     this.rowtimeIndex = rowtimeIndex;

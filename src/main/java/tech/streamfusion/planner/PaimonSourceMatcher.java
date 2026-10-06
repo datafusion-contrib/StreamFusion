@@ -1,6 +1,11 @@
 package tech.streamfusion.planner;
 
 import java.util.Set;
+import java.util.ArrayList;
+import org.apache.flink.table.planner.plan.abilities.source.FilterPushDownSpec;
+import org.apache.flink.table.types.logical.RowType;
+import org.apache.paimon.predicate.Predicate;
+import org.apache.paimon.predicate.PredicateBuilder;
 import java.util.TreeMap;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
@@ -114,6 +119,10 @@ final class PaimonSourceMatcher {
       return "dedicated split generation is not supported";
     }
     for (var ability : resolved.abilitySpecs()) {
+      if (ability instanceof FilterPushDownSpec
+          && !((FilterPushDownSpec) ability).isAllPredicatesRetained()) {
+        return "consumed source filters require the stock source";
+      }
       String name = ability.getClass().getSimpleName();
       if (!Set.of("ProjectPushDownSpec", "FilterPushDownSpec", "WatermarkPushDownSpec")
           .contains(name)) {
@@ -161,10 +170,28 @@ final class PaimonSourceMatcher {
         scan.getRowType(),
         (FileStoreTable) source.getTable(),
         ScanWatermarkSpec.of(scan),
+        partitionPredicate(scan, (FileStoreTable) source.getTable()),
         FlinkRelOptUtil.getDigest(scan)
             + "|"
             + scan.getRowType().getFullTypeString()
             + "|"
             + new TreeMap<>(source.getTable().options()));
   }
+
+  private static Predicate partitionPredicate(StreamPhysicalTableSourceScan scan, FileStoreTable table) {
+    RowType input = (RowType) LogicalTypeConversion.toLogicalType(table.rowType());
+    var predicates = new ArrayList<Predicate>();
+    for (var ability : scan.getTable().unwrap(TableSourceTable.class).abilitySpecs()) {
+      if (ability instanceof FilterPushDownSpec) {
+        for (var expression : ((FilterPushDownSpec) ability).getPredicates()) {
+          Predicate predicate = PaimonPartitionPredicate.of(expression, input, table.rowType(), table.partitionKeys());
+          if (predicate != null) predicates.add(predicate);
+        }
+      }
+      // Ability expressions refer to the schema at that point in the ordered pushdown chain.
+      if (ability.getProducedType().isPresent()) input = ability.getProducedType().get();
+    }
+    return predicates.isEmpty() ? null : PredicateBuilder.and(predicates);
+  }
+
 }
