@@ -6,7 +6,10 @@ use datafusion::logical_expr::{
 use datafusion::physical_expr::ScalarFunctionExpr;
 use streamfusion_bridge::timestamp::TimestampColumn;
 
+mod index;
 mod probe;
+use index::BufferedIndex;
+const INDEX_BUFFER_THRESHOLD: usize = 1024;
 use probe::IntervalProbePlan;
 
 #[cfg(test)]
@@ -40,6 +43,10 @@ pub(crate) struct IntervalJoiner {
     // at eviction).
     left_buffered: Vec<RecordBatch>,
     right_buffered: Vec<RecordBatch>,
+    left_index: BufferedIndex,
+    right_index: BufferedIndex,
+    left_buffered_rows: usize,
+    right_buffered_rows: usize,
     // Outer only: the row-ids that have matched at least once, and the per-side id counters.
     left_matched: HashSet<i64>,
     right_matched: HashSet<i64>,
@@ -101,6 +108,10 @@ impl IntervalJoiner {
             right_data_schema,
             left_buffered: Vec::new(),
             right_buffered: Vec::new(),
+            left_index: BufferedIndex::default(),
+            right_index: BufferedIndex::default(),
+            left_buffered_rows: 0,
+            right_buffered_rows: 0,
             left_matched: HashSet::default(),
             right_matched: HashSet::default(),
             left_next_id: 0,
@@ -159,6 +170,8 @@ impl IntervalJoiner {
                 }
             }
         }
+        self.rebuild_index(true);
+        self.rebuild_index(false);
         self
     }
 
@@ -233,6 +246,8 @@ impl IntervalJoiner {
             self.memory.set(
                 buffered_batches_bytes(&self.left_buffered)
                     + buffered_batches_bytes(&self.right_buffered)
+                    + self.left_index.bytes()
+                    + self.right_index.bytes()
                     + (self.left_matched.len() + self.right_matched.len()) * MATCHED_ID_BYTES
                     + self
                         .left_cleanup
@@ -246,6 +261,62 @@ impl IntervalJoiner {
             self.memory.account()?;
         }
         Ok(())
+    }
+
+    fn rebuild_index(&mut self, left: bool) {
+        let (batches, keys, time, index, rows) = if left {
+            (
+                &self.left_buffered,
+                &self.left_keys,
+                self.left_time,
+                &mut self.left_index,
+                &mut self.left_buffered_rows,
+            )
+        } else {
+            (
+                &self.right_buffered,
+                &self.right_keys,
+                self.right_time,
+                &mut self.right_index,
+                &mut self.right_buffered_rows,
+            )
+        };
+        *rows = batches.iter().map(RecordBatch::num_rows).sum();
+        *index = BufferedIndex::default();
+        if *rows > INDEX_BUFFER_THRESHOLD {
+            for batch in batches {
+                index.append(batch, keys, &self.key_timestamp_precisions, time);
+            }
+        }
+    }
+
+    fn retain_arrival(&mut self, batch: RecordBatch, left: bool) {
+        let (batches, keys, time, index, rows) = if left {
+            (
+                &mut self.left_buffered,
+                &self.left_keys,
+                self.left_time,
+                &mut self.left_index,
+                &mut self.left_buffered_rows,
+            )
+        } else {
+            (
+                &mut self.right_buffered,
+                &self.right_keys,
+                self.right_time,
+                &mut self.right_index,
+                &mut self.right_buffered_rows,
+            )
+        };
+        let indexed = index.active();
+        if indexed {
+            index.append(&batch, keys, &self.key_timestamp_precisions, time);
+        }
+        *rows += batch.num_rows();
+        batches.push(batch);
+        if !indexed && *rows > INDEX_BUFFER_THRESHOLD {
+            self.rebuild_index(left);
+        }
     }
 
     fn key_pairs(&self) -> Vec<(usize, usize)> {
@@ -389,6 +460,17 @@ impl IntervalJoiner {
         } else {
             &self.left_buffered
         };
+        let index = if left {
+            &self.right_index
+        } else {
+            &self.left_index
+        };
+        let selected = if index.active() {
+            Some(index.select(opposite, plan)?)
+        } else {
+            None
+        };
+        let opposite = selected.as_deref().unwrap_or(opposite);
         let result = if opposite.is_empty() {
             empty_batch()
         } else {
@@ -423,6 +505,21 @@ impl IntervalJoiner {
         base: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let left = !incoming_left;
+        let index = if left {
+            &self.left_index
+        } else {
+            &self.right_index
+        };
+        let indexed = index.active();
+        if indexed
+            && (plan.keys().next().is_none()
+                || index
+                    .minimum()
+                    .is_none_or(|minimum| minimum > plan.expiration()))
+        {
+            return Ok(empty_batch());
+        }
+        let probed_rows = indexed.then(|| index.probe_rows(plan));
         let buffers = if left {
             std::mem::take(&mut self.left_buffered)
         } else {
@@ -446,16 +543,33 @@ impl IntervalJoiner {
         let inner = self.join_type == JoinKind::Inner;
         let mut kept = Vec::with_capacity(buffers.len());
         let mut pads = Vec::new();
-        for batch in buffers {
+        let mut changed = false;
+        for (batch_index, batch) in buffers.into_iter().enumerate() {
+            if indexed
+                && (index.batch_minimum(batch_index) > plan.expiration()
+                    || !probed_rows
+                        .as_ref()
+                        .expect("indexed probes")
+                        .contains_key(&batch_index))
+            {
+                kept.push(batch);
+                continue;
+            }
             let times = rt_to_millis(batch.column(time));
-            let mut encoder =
-                BinaryRowBatchEncoder::new(&batch, keys, &self.key_timestamp_precisions);
+            let first_probes = probed_rows.as_ref().and_then(|rows| rows.get(&batch_index));
+            let mut encoder = (!indexed)
+                .then(|| BinaryRowBatchEncoder::new(&batch, keys, &self.key_timestamp_precisions));
             let mut live = Vec::with_capacity(batch.num_rows());
             let mut unmatched = Vec::with_capacity(batch.num_rows());
             let mut arrivals = Vec::new();
             for row in 0..batch.num_rows() {
-                let first = plan.first_probe(encoder.encode(row));
+                let first = if let Some(encoder) = encoder.as_mut() {
+                    plan.first_probe(encoder.encode(row))
+                } else {
+                    first_probes.and_then(|rows| rows.get(&row)).copied()
+                };
                 let expired = first.is_some() && times.value(row) <= plan.expiration();
+                changed |= expired;
                 let matched = if expired && !inner {
                     let id = batch
                         .column(batch.num_columns() - 1)
@@ -497,6 +611,9 @@ impl IntervalJoiner {
             self.left_buffered = kept;
         } else {
             self.right_buffered = kept;
+        }
+        if changed {
+            self.rebuild_index(left);
         }
         if pads.is_empty() {
             Ok(empty_batch())
@@ -714,22 +831,14 @@ impl IntervalJoiner {
         let live = self.arrival_mask(&arrival, left);
         if live.true_count() == arrival.num_rows() {
             self.register_cleanup(&arrival, left)?;
-            if left {
-                self.left_buffered.push(arrival);
-            } else {
-                self.right_buffered.push(arrival);
-            }
+            self.retain_arrival(arrival, left);
             self.account()?;
             return Self::append_output(result, empty_batch());
         }
         let kept = filter_record_batch(&arrival, &live)?;
         if kept.num_rows() > 0 {
             self.register_cleanup(&kept, left)?;
-            if left {
-                self.left_buffered.push(kept);
-            } else {
-                self.right_buffered.push(kept);
-            }
+            self.retain_arrival(kept, left);
         }
         let outer = if left {
             self.join_type.left_is_outer()
@@ -1434,6 +1543,8 @@ impl IntervalJoiner {
         let mut minimum: HashMap<ByteKey, i64> = HashMap::default();
         let mut output = Vec::new();
         let mut retained = Vec::new();
+        let original_batches = buffered.len();
+        let mut changed = false;
         for batch in buffered {
             let times = rt_to_millis(batch.column(if left {
                 self.left_time
@@ -1460,6 +1571,7 @@ impl IntervalJoiner {
                     Some(pending)
                 })
                 .collect();
+            changed |= keep.true_count() != batch.num_rows();
             let kept = filter_record_batch(&batch, &keep)?;
             if kept.num_rows() > 0 {
                 retained.push(kept);
@@ -1505,6 +1617,7 @@ impl IntervalJoiner {
             .map(|(key, _)| key.clone())
             .collect();
         if !cleared.is_empty() {
+            changed = true;
             let mut survivors = Vec::new();
             for batch in retained {
                 let columns = if left {
@@ -1539,10 +1652,14 @@ impl IntervalJoiner {
             }
             retained = survivors;
         }
+        changed |= retained.len() != original_batches;
         if left {
             self.left_buffered = retained;
         } else {
             self.right_buffered = retained;
+        }
+        if changed {
+            self.rebuild_index(left);
         }
         for (key, _) in due {
             let deadline = minimum
@@ -1881,6 +1998,8 @@ impl IntervalJoiner {
             joiner.left_next_id = max_rowid(&joiner.left_buffered) + 1;
             joiner.right_next_id = max_rowid(&joiner.right_buffered) + 1;
         }
+        joiner.rebuild_index(true);
+        joiner.rebuild_index(false);
         joiner
     }
 

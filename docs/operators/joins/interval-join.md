@@ -77,3 +77,16 @@ Flink. This keeps downstream event-time windows open while the join can still em
 them. Zero delay forwards the watermark unchanged; processing-time joins also forward it
 unchanged. Subtraction uses Flink's Java long arithmetic, including the delayed end-of-input
 watermark, while the original terminal watermark still drains the join's state.
+
+## Selective probes
+
+Above 1,024 buffered rows on a side, the memory backend indexes that side by canonical equi-key
+and gathers only rows for enabled incoming probe keys before joining. Smaller states use the
+original full-batch join. Cleanup and restoration rebuild derived locators; checkpoint
+frames retain their existing format. Index metadata counts toward the off-heap budget. Buffer and
+timer accounting and cleanup rebuilds still inspect retained state; the RocksDB path is unchanged. See
+[join measurements](../../optimizations/datafusion-hash-joins.md) for the measured boundary.
+Fixed selective probes against 16,384 retained keys improved 2.84–9.20× in the native kernel.
+The complete row-fed SQL workload demonstrated no full-job gain or stable regression: native
+and stock medians moved similarly between runs. Both conversion boundaries, startup and task
+budget accounting remain in that comparison; the kernel result does not predict SQL throughput.

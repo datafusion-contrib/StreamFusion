@@ -799,3 +799,231 @@ fn cleanup_silently_clears_a_nonpositive_surviving_timestamp() {
         assert_eq!(operator.advance(101).unwrap().num_rows(), 1);
     }
 }
+
+#[test]
+fn selective_probes_keep_unselected_rows_and_outer_match_ids() {
+    let input = |keys: Vec<i64>, values: Vec<i64>| {
+        let rows = keys.len();
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            (
+                "rt",
+                Arc::new(Int64Array::from(vec![1000; rows])) as ArrayRef,
+            ),
+            ("v", Arc::new(Int64Array::from(values)) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    let state = input(vec![4, 1, 4, 3], vec![40, 10, 41, 30]);
+    let incoming = input(vec![4, 4], vec![400, 401]);
+    for kind in [JoinKind::Inner, JoinKind::FullOuter] {
+        for left_first in [true, false] {
+            let mut operator = joiner(&state, &incoming, 0, 0, kind);
+            let output = if left_first {
+                operator.push_left(state.clone(), None).unwrap();
+                operator.push_right(incoming.clone(), None).unwrap()
+            } else {
+                operator.push_right(state.clone(), None).unwrap();
+                operator.push_left(incoming.clone(), None).unwrap()
+            };
+            assert_eq!(output.num_rows(), 4);
+            let column = output
+                .column(if left_first { 2 } else { 5 })
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(column.values().as_ref(), &[40, 41, 40, 41]);
+            let later = input(vec![1], vec![100]);
+            let matched = if left_first {
+                operator.push_right(later, None).unwrap()
+            } else {
+                operator.push_left(later, None).unwrap()
+            };
+            assert_eq!(matched.num_rows(), 1);
+            assert_eq!(
+                matched
+                    .column(if left_first { 2 } else { 5 })
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(0),
+                10
+            );
+            let pads = operator.advance(i64::MAX).unwrap();
+            assert_eq!(
+                pads.num_rows(),
+                usize::from(matches!(kind, JoinKind::FullOuter))
+            );
+            if pads.num_rows() > 0 {
+                assert_eq!(
+                    pads.column(if left_first { 2 } else { 5 })
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .value(0),
+                    30
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn indexed_memory_probes_survive_eager_cleanup_restore_and_timer_drain() {
+    let input = |keys: Vec<i64>, times: Vec<i64>| {
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            ("rt", Arc::new(Int64Array::from(times)) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    for kind in [JoinKind::Inner, JoinKind::FullOuter] {
+        let initial = input((1..=2048).collect(), vec![1000; 2048]);
+        let mut operator = joiner(&initial, &initial, 0, 0, kind);
+        operator.push_left(initial.clone(), None).unwrap();
+        // Keep the first timer, while adding an out-of-order row in a second batch.
+        operator.push_left(input(vec![1], vec![100]), None).unwrap();
+        assert!(operator.left_index.active());
+        assert_eq!(operator.advance(150).unwrap().num_rows(), 0);
+        let first = operator
+            .push_right(input(vec![1], vec![100]), None)
+            .unwrap();
+        assert_eq!(first.num_rows(), 1);
+        // That probe removes the expired cached row after its first match, invalidating locators.
+        assert_eq!(
+            operator
+                .left_buffered
+                .iter()
+                .map(RecordBatch::num_rows)
+                .sum::<usize>(),
+            2048
+        );
+        assert!(operator.left_index.active());
+        assert!(operator.left_matched.is_empty());
+        assert!(operator.right_matched.is_empty());
+        let snapshot = operator.snapshot();
+        let mut restored = IntervalJoiner::restore(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            0,
+            0,
+            None,
+            kind,
+            initial.schema(),
+            initial.schema(),
+            &snapshot,
+        )
+        .with_key_timestamp_precisions(vec![-1]);
+        assert!(restored.left_index.active());
+        let matches = restored
+            .push_right(input(vec![2, 1], vec![1000, 1000]), None)
+            .unwrap();
+        assert_eq!(matches.num_rows(), 2);
+        let keys = matches
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(keys.values().as_ref(), &[2, 1]);
+        let pads = restored.advance(i64::MAX).unwrap();
+        assert_eq!(
+            pads.num_rows(),
+            if kind == JoinKind::FullOuter { 2046 } else { 0 }
+        );
+        if kind == JoinKind::FullOuter {
+            let keys = pads
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert!(keys.values().iter().all(|key| *key >= 3));
+            assert_eq!(pads.column(2).null_count(), pads.num_rows());
+        }
+        assert_eq!(restored.left_index.bytes(), 0);
+        assert_eq!(restored.right_index.bytes(), 0);
+        // Empty indexes after drain must not retain locators into the released batches.
+        assert_eq!(
+            restored
+                .push_right(input(vec![1], vec![1000]), None)
+                .unwrap()
+                .num_rows(),
+            usize::from(kind == JoinKind::FullOuter)
+        );
+    }
+}
+
+#[test]
+fn memory_probe_index_promotes_above_threshold_and_demotes_after_cleanup() {
+    let input = |keys: Vec<i64>, times: Vec<i64>| {
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            ("rt", Arc::new(Int64Array::from(times)) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    for kind in [JoinKind::Inner, JoinKind::FullOuter] {
+        let initial = input((0..1024).collect(), vec![1000; 1024]);
+        let mut operator = joiner(&initial, &initial, 0, 0, kind);
+        operator.push_left(initial.clone(), None).unwrap();
+        assert_eq!(operator.left_buffered_rows, 1024);
+        assert!(!operator.left_index.active());
+        assert_eq!(operator.left_index.bytes(), 0);
+        operator.push_left(input(vec![0], vec![100]), None).unwrap();
+        assert_eq!(operator.left_buffered_rows, 1025);
+        assert!(operator.left_index.active());
+        // A checkpoint restores the same derived index before its first probe.
+        let snapshot = operator.snapshot();
+        let mut restored = IntervalJoiner::restore(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            0,
+            0,
+            None,
+            kind,
+            initial.schema(),
+            initial.schema(),
+            &snapshot,
+        )
+        .with_key_timestamp_precisions(vec![-1]);
+        assert!(restored.left_index.active());
+        assert_eq!(restored.advance(150).unwrap().num_rows(), 0);
+        // The first enabled probe matches the expired row, then removes it and demotes.
+        assert_eq!(
+            restored
+                .push_right(input(vec![0], vec![100]), None)
+                .unwrap()
+                .num_rows(),
+            1
+        );
+        assert_eq!(restored.left_buffered_rows, 1024);
+        assert!(!restored.left_index.active());
+        assert_eq!(restored.left_index.bytes(), 0);
+        let matches = restored
+            .push_right(input(vec![1023, 0], vec![1000, 1000]), None)
+            .unwrap();
+        assert_eq!(matches.num_rows(), 2);
+        assert_eq!(
+            matches
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values()
+                .as_ref(),
+            &[1023, 0]
+        );
+        let pads = restored.advance(i64::MAX).unwrap();
+        assert_eq!(
+            pads.num_rows(),
+            if kind == JoinKind::FullOuter { 1022 } else { 0 }
+        );
+        assert!(restored.left_matched.is_empty());
+        assert!(restored.right_matched.is_empty());
+        assert_eq!(restored.left_buffered_rows, 0);
+        assert_eq!(restored.right_buffered_rows, 0);
+    }
+}

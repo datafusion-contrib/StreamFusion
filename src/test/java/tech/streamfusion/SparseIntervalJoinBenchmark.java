@@ -34,7 +34,7 @@ class SparseIntervalJoinBenchmark {
     if (ROWS <= 0 || KEYS <= 0 || PROBES <= 0 || MATCH_KEYS <= 0 || MATCH_KEYS > KEYS
         || WIDTH < 0 || WARMUP < 0 || RUNS <= 0)
       throw new IllegalArgumentException("Invalid sparse interval join configuration");
-    NativeParity.assertParity(() -> environment(1024, 256, 64, 8, WIDTH), SELECT);
+    NativeParity.assertParity(() -> environment(4096, 2048, 128, 8, WIDTH), SELECT);
     String plan = NativePlanner.explain(environment(), SQL);
     if (!plan.contains("NativeIntervalJoin")
         || !plan.contains("RowDataToArrow")
