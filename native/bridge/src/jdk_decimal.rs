@@ -88,11 +88,42 @@ pub fn rescale_half_up(
     target_scale: i8,
 ) -> Option<i128> {
     use num_bigint::BigInt;
-    let diff = target_scale as i64 - scale;
+    if unscaled.sign() == num_bigint::Sign::NoSign {
+        return Some(0);
+    }
+    // Bound any power of ten by the input's digits or the target precision, rather than an
+    // arbitrary exponent from the message. Entirely discarded values round without a divisor.
+    let digits = unscaled.magnitude().to_string();
+    let width = digits.len() as i128;
+    let diff = i128::from(target_scale) - i128::from(scale);
     let rescaled = if diff >= 0 {
-        unscaled * BigInt::from(10u8).pow(diff as u32)
+        if width + diff > i128::from(precision) {
+            return None;
+        }
+        unscaled * BigInt::from(10u8).pow(u32::try_from(diff).ok()?)
     } else {
-        let divisor = BigInt::from(10u8).pow((-diff) as u32);
+        let dropped = -diff;
+        if dropped > width {
+            return Some(0);
+        }
+        if dropped == width {
+            if digits.as_bytes()[0] >= b'5' && precision == 0 {
+                return None;
+            }
+            return Some(if digits.as_bytes()[0] >= b'5' {
+                if unscaled.sign() == num_bigint::Sign::Minus {
+                    -1
+                } else {
+                    1
+                }
+            } else {
+                0
+            });
+        }
+        if width - dropped > i128::from(precision) {
+            return None;
+        }
+        let divisor = BigInt::from(10u8).pow(u32::try_from(dropped).ok()?);
         // BigInt `/`/`%` truncate toward zero, so q/r carry the value's sign.
         let q = &unscaled / &divisor;
         let r = &unscaled % &divisor;
@@ -120,6 +151,21 @@ pub fn rescale_half_up(
 mod tests {
     use super::*;
     use num_bigint::BigInt;
+
+    #[test]
+    fn extreme_scales_short_circuit_zero_overflow_and_underflow() {
+        for scale in [i64::MIN, -2_147_483_647, 2_147_483_647, i64::MAX] {
+            assert_eq!(rescale_half_up(BigInt::from(0), scale, 5, 2), Some(0));
+        }
+        assert_eq!(rescale_half_up(BigInt::from(1), -100_000_000, 5, 2), None);
+        assert_eq!(rescale_half_up(BigInt::from(1), 100_000_000, 5, 2), Some(0));
+        assert_eq!(rescale_half_up(BigInt::from(1), i64::MIN, 5, 2), None);
+        assert_eq!(rescale_half_up(BigInt::from(1), i64::MAX, 5, 2), Some(0));
+        assert_eq!(rescale_half_up(BigInt::from(499), 3, 5, 0), Some(0));
+        assert_eq!(rescale_half_up(BigInt::from(500), 3, 5, 0), Some(1));
+        assert_eq!(rescale_half_up(BigInt::from(-500), 3, 5, 0), Some(-1));
+        assert_eq!(rescale_half_up(BigInt::from(999), 2, 1, 0), None);
+    }
 
     #[test]
     fn fixed_width_rescale_matches_big_integer_rounding_and_overflow() {

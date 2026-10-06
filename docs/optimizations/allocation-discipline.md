@@ -75,3 +75,11 @@ row, the same minimal per-row read Arrow's own hash aggregate does; it never box
 This was deliberately **not** applied to window Top-N: bounded ranking with arrival-order
 tie-breaking maps poorly onto columnar kernels, so its buffer stays row-oriented, as it does in
 Arroyo and RisingWave.
+
+Decimal rescaling returns zero immediately for zero coefficients, rejects output precision
+overflow before multiplication, and rounds fully discarded coefficients without materializing
+a power of ten. Remaining powers are bounded by the input coefficient's digits or output
+precision. This prevents short exponent strings from requesting exponent-sized temporary
+integers; release CSV `decimal_exponents` fixtures exercise the production decode boundary
+and report allocation requests. These fixtures validate bounded allocation behavior and do
+not claim an end-to-end speedup.
