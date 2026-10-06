@@ -1,4 +1,10 @@
+#[cfg(test)]
+mod indexed_tests;
+mod pending;
 use crate::*;
+use pending::PendingRows;
+
+const INDEX_PENDING_THRESHOLD: usize = 1024;
 
 /// Append-only keep-first deduplication on a rowtime order — Flink's
 /// `RowTimeDeduplicateKeepFirstRowFunction`. Per partition key it keeps the row with the minimum
@@ -7,19 +13,19 @@ use crate::*;
 /// late. Insert-only: once a key's candidate fires, no smaller-rowtime row can still arrive (it would
 /// be late), so the emitted row is final and never retracted.
 ///
-/// Columnar: the per-key candidates live as a single Arrow batch — one row per pending key — and row
-/// data moves only through `filter`/`take`/`concat` kernels, never materialized into scalars. Each
-/// batch is reduced to its per-key minimum-rowtime row and merged with the standing candidates; only
-/// the key (for grouping) and the rowtime (i64) are read per row, as any keyed reduction must.
+/// Columnar: small candidate sets use one contiguous batch. Above 1024 winners an index points to
+/// winning rows in retained Arrow chunks, so arrivals probe only their own keys. Watermark and
+/// snapshot boundaries gather live winners in arrival order; sparse chunks compact independently.
 pub(crate) struct KeepFirstDeduplicator {
     partition_columns: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
     rt_column: usize,
     current_watermark: i64,
-    /// One row per pending key — that key's minimum-rowtime candidate — awaiting its release.
+    /// A restored or watermark-filtered candidate batch, indexed lazily by the next arrival.
     /// Deliberately exempt from state TTL, mirroring Flink's un-TTL'd timer state: the candidate
     /// is cleaned up by the watermark firing it, and expiring it early would lose data.
     pending: Option<RecordBatch>,
+    pending_rows: PendingRows,
     /// Keys whose first row has already been emitted, as arrow-row bytes probed by borrowed slice
     /// (the steady-state row — a key already emitted — allocates nothing); later rows are ignored.
     /// The value is the firing's wall-clock millis (0 with TTL off) — the marker's only TTL'd
@@ -56,6 +62,7 @@ impl KeepFirstDeduplicator {
             rt_column,
             current_watermark: i64::MIN,
             pending: None,
+            pending_rows: PendingRows::default(),
             emitted: HashMap::default(),
             ttl_ms: 0,
             last_sweep_ms: 0,
@@ -77,6 +84,7 @@ impl KeepFirstDeduplicator {
             .pending
             .as_ref()
             .map_or(0, |b| b.get_array_memory_size())
+            + self.pending_rows.bytes()
             + self
                 .emitted
                 .keys()
@@ -184,25 +192,126 @@ impl KeepFirstDeduplicator {
             self.sweep_expired(ttl);
             self.last_sweep_ms = now_ms;
         }
-        // Merge with the standing candidates and reduce to one minimum-rowtime row per pending key.
         let track = self.memory.tracking();
-        let mut delta = 0isize;
-        let combined = match self.pending.take() {
-            Some(prev) => {
-                if track {
-                    delta -= prev.get_array_memory_size() as isize;
+        let before = if track { self.pending_bytes() } else { 0 };
+        if self.pending_rows.is_empty()
+            && self
+                .pending
+                .as_ref()
+                .is_none_or(|batch| batch.num_rows() <= INDEX_PENDING_THRESHOLD)
+        {
+            let combined = match self.pending.take() {
+                Some(previous) => {
+                    concat_batches(&schema, [&previous, &live]).expect("dedup concat")
                 }
-                concat_batches(&schema, [&prev, &live]).expect("dedup concat")
+                None => live,
+            };
+            let reduced = self.min_per_key(&combined, ttl);
+            self.pending = (reduced.num_rows() > 0).then_some(reduced);
+            if self
+                .pending
+                .as_ref()
+                .is_some_and(|batch| batch.num_rows() > INDEX_PENDING_THRESHOLD)
+            {
+                self.index_restored_pending();
             }
-            None => live,
-        };
-        let reduced = self.min_per_key(&combined, ttl);
-        if track && reduced.num_rows() > 0 {
-            delta += reduced.get_array_memory_size() as isize;
+        } else {
+            self.index_restored_pending();
+            self.add_pending(&live, ttl);
         }
-        self.pending = (reduced.num_rows() > 0).then_some(reduced);
-        self.memory.record(delta);
-        self.memory.account()
+        if track {
+            self.memory
+                .record(self.pending_bytes() as isize - before as isize);
+        }
+        if let Err(failure) = self.memory.account() {
+            let before = self.pending_rows.bytes();
+            if !self.pending_rows.compact_sparse() {
+                return Err(failure);
+            }
+            self.memory
+                .record(self.pending_rows.bytes() as isize - before as isize);
+            self.memory.account()?;
+        }
+        Ok(())
+    }
+
+    fn pending_bytes(&self) -> usize {
+        self.pending
+            .as_ref()
+            .map_or(0, RecordBatch::get_array_memory_size)
+            + self.pending_rows.bytes()
+    }
+
+    fn pending_batch(&self) -> Option<RecordBatch> {
+        self.pending
+            .clone()
+            .or_else(|| self.pending_rows.materialize())
+    }
+
+    fn index_restored_pending(&mut self) {
+        if let Some(batch) = self.pending.take() {
+            self.add_pending(&batch, StateTtl::new(0, 0));
+        }
+    }
+
+    fn add_pending(&mut self, batch: &RecordBatch, ttl: StateTtl) {
+        let arrays = self
+            .partition_columns
+            .iter()
+            .map(|&column| batch.column(column))
+            .collect::<Vec<_>>();
+        self.key_types = key_types(&arrays);
+        let encoded = encode_keys(&mut self.key_converter, &arrays, batch.num_rows());
+        let times = rt_to_millis(batch.column(self.rt_column));
+        let mut best: HashMap<&[u8], usize> = HashMap::default();
+        for row in 0..batch.num_rows() {
+            let key = encoded.row(row).data();
+            match self.emitted.get(key) {
+                Some(fired) if ttl.expired(*fired) => {
+                    self.emitted.remove(key);
+                    if self.memory.tracking() {
+                        self.memory.record(-(byte_key_bytes(key) as isize));
+                    }
+                }
+                Some(_) => continue,
+                None => {}
+            }
+            let time = times.value(row);
+            if !self.pending_rows.improves(key, time) {
+                continue;
+            }
+            if best
+                .get(key)
+                .is_none_or(|&previous| time < times.value(previous))
+            {
+                best.insert(key, row);
+            }
+        }
+        let mut indices = best.into_values().collect::<Vec<_>>();
+        indices.sort_unstable();
+        if indices.is_empty() {
+            return;
+        }
+        let keys = indices
+            .iter()
+            .map(|&row| ByteKey::from(encoded.row(row).data()))
+            .collect();
+        let winner_times = indices.iter().map(|&row| times.value(row)).collect();
+        let selected = if indices.len() == batch.num_rows() {
+            batch.clone()
+        } else {
+            let indices = UInt32Array::from_iter_values(indices.into_iter().map(|row| row as u32));
+            RecordBatch::try_new(
+                batch.schema(),
+                batch
+                    .columns()
+                    .iter()
+                    .map(|column| take(column, &indices, None).expect("dedup incoming winners"))
+                    .collect(),
+            )
+            .expect("dedup incoming batch")
+        };
+        self.pending_rows.add(selected, keys, winner_times);
     }
 
     /// Reduces a batch to one row per non-emitted key: the row with the minimum rowtime, ties going to
@@ -350,14 +459,14 @@ impl KeepFirstDeduplicator {
         if self.store.is_some() {
             return self.flush_store(watermark, now_ms);
         }
-        let Some(pending) = self.pending.take() else {
+        let before = self.pending_bytes();
+        let Some(pending) = self.pending_batch() else {
             return Ok(self.empty());
         };
+        self.pending = None;
+        self.pending_rows = PendingRows::default();
         let track = self.memory.tracking();
-        let mut delta = 0isize;
-        if track {
-            delta -= pending.get_array_memory_size() as isize;
-        }
+        let mut delta = -(before as isize);
         let rt = rt_to_millis(pending.column(self.rt_column));
         let ready_mask: BooleanArray = rt.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
         let ready = filter_record_batch(&pending, &ready_mask).expect("dedup ready filter");
@@ -410,7 +519,7 @@ impl KeepFirstDeduplicator {
 
     #[cfg(test)]
     pub(crate) fn snapshot(&self) -> Vec<u8> {
-        self.snapshot_parts(self.pending.clone(), self.emitted_batch())
+        self.snapshot_parts(self.pending_batch(), self.emitted_batch())
     }
 
     fn snapshot_parts(
@@ -478,7 +587,7 @@ impl KeepFirstDeduplicator {
         }) {
             return;
         }
-        let pending = self.pending.clone();
+        let pending = self.pending_batch();
         let emitted = self.emitted_batch();
         let mut pending_by_group: BTreeMap<i32, Vec<u32>> = BTreeMap::new();
         let mut emitted_by_group: BTreeMap<i32, Vec<u32>> = BTreeMap::new();

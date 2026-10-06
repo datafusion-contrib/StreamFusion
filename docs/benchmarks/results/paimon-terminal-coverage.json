@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "kind": "correctness_diagnostic_not_performance_benchmark",
+  "ci": {
+    "pull_request": 300,
+    "head": "1a88074f8addec1502110c31426bee96d2768911",
+    "run": 37461904258,
+    "job": 112273357302,
+    "artifact": 11416621697,
+    "artifact_url": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/37461904258/artifacts/11416621697",
+    "test": "org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase.testFullCompactionChangelogProducerStreamingRandom",
+    "observed_assertion": {
+      "expected": "10000|10000.str",
+      "actual": "528|5200.str"
+    }
+  },
+  "environment": {
+    "jdk": "OpenJDK 17",
+    "flink": "2.2.1",
+    "paimon": "2.0.0",
+    "diagnostic_active_processors": 2,
+    "diagnostic_heap": "2 GiB",
+    "reader": "released stock Paimon TableRead; no StreamFusion jars or native libraries in diagnostic classpath"
+  },
+  "table": {
+    "columns": [
+      {
+        "name": "pt",
+        "type": "STRING NOT NULL"
+      },
+      {
+        "name": "k",
+        "type": "INT NOT NULL"
+      },
+      {
+        "name": "v1",
+        "type": "BIGINT"
+      },
+      {
+        "name": "v2",
+        "type": "STRING"
+      }
+    ],
+    "partition_keys": [
+      "pt"
+    ],
+    "primary_keys": [
+      "pt",
+      "k"
+    ],
+    "options": {
+      "bucket": "4",
+      "changelog-producer": "full-compaction",
+      "write-buffer-size": "8mb",
+      "continuous.discovery-interval": "1ms",
+      "local-merge-buffer-size": "5m",
+      "full-compaction.delta-commits": "3"
+    },
+    "producer_count": 2,
+    "expected_final_keys": 512,
+    "expected_final_value": "v1=10000+partition*64+(key%64); v2=v1+.str"
+  },
+  "snapshots": {
+    "30": {
+      "commit_kind": "COMPACT",
+      "changelog_record_count": 64,
+      "terminal_noop_pairs": 12
+    },
+    "32": {
+      "commit_kind": "COMPACT",
+      "changelog_record_count": 512
+    },
+    "33": {
+      "commit_kind": "APPEND",
+      "latest_snapshot": true
+    }
+  },
+  "original_contract": {
+    "source": "released Paimon 2.0.0 PrimaryKeyFileStoreTableITCase.java",
+    "termination_lines": "1510-1532",
+    "result_checker_lines": "1700-1750",
+    "query": "SELECT * FROM T",
+    "completion": "Increment endCnt for every RowKind whose v1>=10000; stop after producerCount*4*64 events.",
+    "assertions": "Exact released ResultChecker copied verbatim into temporary diagnostic; every changelog kind/value transition and assertResult(2) preserved."
+  },
+  "stock_bounded_final": {
+    "rows": 512,
+    "incorrect_final_values": 0,
+    "original_assert_result": "passed"
+  },
+  "stock_finite_changelog": {
+    "scan_mode": "from-snapshot",
+    "scan_snapshot_id": 1,
+    "stop_after_latest_snapshot": 33,
+    "rows": 3618,
+    "terminal_events": 536,
+    "distinct_terminal_keys": 512,
+    "final_state_rows": 512,
+    "all_row_transition_assertions": "passed",
+    "original_assert_result_after_full_history": "passed"
+  },
+  "original_event_cutoff": {
+    "terminal_events": 512,
+    "distinct_terminal_keys": 488,
+    "state_rows": 512,
+    "incorrect_final_values": 24,
+    "original_assert_result": "failed",
+    "expected": "10000|10000.str",
+    "actual": "528|5200.str"
+  },
+  "live_distinct_terminal_guard_model": {
+    "first_complete_snapshot": 32,
+    "rows_at_completion": 3618,
+    "terminal_events_at_completion": 536,
+    "live_terminal_keys": 512,
+    "original_assert_result": "passed",
+    "definition": "INSERT/UPDATE_AFTER with v1>=10000 add key; every retract/delete or nonterminal positive image removes key; count currently live keys, not occurrences."
+  },
+  "sample_noop_terminal_sequence": {
+    "key": "0|65",
+    "value": "10001|10001.str",
+    "occurrences": 3,
+    "second_and_third_kind": [
+      "UPDATE_BEFORE",
+      "UPDATE_AFTER"
+    ],
+    "extra_terminal_events": 2
+  },
+  "limitations": [
+    "Finite replay starts at snapshot1 and drains captured stored history; it is not a reconstruction of live job scheduling.",
+    "Captured warehouse is diagnostic evidence copied during teardown, not an atomic checkpoint backup.",
+    "Exact CI assertion reproduces with stock reader at the original cutoff, proving native reader duplication is unnecessary for this failure.",
+    "This artifact establishes this captured failure; it does not resolve every separate legacy timeout or guarantee all compaction/recovery scenarios.",
+    "Actual agent helper calls were replayed against every stock row; full live javaagent integration is validated separately."
+  ],
+  "sanitized_trace": "paimon-terminal-coverage-stock-replay.log",
+  "actual_agent_helper_validation": {
+    "helper": "tech.streamfusion.suite.PaimonChangelogCompletion",
+    "calls": [
+      "begin",
+      "track(each collected Row before original checker)",
+      "count",
+      "clear"
+    ],
+    "reader": "released stock Paimon2.0 TableRead; agent helper classes only, no javaagent or native DSOs",
+    "rows_checked_against_guard_model": 3618,
+    "first_complete_snapshot": 32,
+    "terminal_events_at_completion": 536,
+    "live_terminal_keys": 512,
+    "original_assert_result": "passed",
+    "bytecode_tests": "Agent tests independently transform the released1.0 and2.0 class files, including syntheticaccess$100 and directprivate-call shapes."
+  }
+}

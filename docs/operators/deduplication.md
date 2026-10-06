@@ -18,8 +18,8 @@ value-ordered dedup, which Flink plans — and StreamFusion runs — as [Top-N](
   itself is materialized by the native `PROCTIME()` expression, so both proctime shapes run as
   ordinary time-ordered dedup over that generated column.
 
-All four emit eagerly in arrival order — proctime dedup needs no wall-clock timer, unlike the
-windowed operators that fire on a processing-time clock.
+Rowtime keep-first emits at the watermark; the other variants emit eagerly. Proctime dedup needs
+no wall-clock timer, unlike the windowed operators that fire on a processing-time clock.
 
 ## Mini-batch
 
@@ -56,3 +56,23 @@ A rank-1 filter that is not time-ordered — i.e. ordered by a value column rath
 Processing-time ascending ranks beyond rank 1 are also handled by
 [Top-N's first-N counter](top-n.md#processing-time-first-n). They preserve arrival order and
 do not change this operator's rank-1 fast path.
+
+## Pending keep-first state
+
+Memory rowtime keep-first reduces small candidate sets in one contiguous Arrow batch. Above
+1,024 winners it promotes immediately to an index of minimum-time rows in retained Arrow chunks.
+An arrival batch probes its own keys without copying or reducing all standing candidates. Equal
+timestamps retain the incumbent; a strictly earlier replacement takes that arrival's output position.
+Watermark and checkpoint boundaries gather live winners in this order. Fully replaced chunks release
+immediately, and half-empty chunks compact independently. A few replaced wide values can retain
+buffers below that row threshold; if the off-heap budget rejects growth, sparse chunks compact
+before the reservation is retried. Live state that still exceeds the budget fails normally. The
+budget includes retained Arrow buffers and index metadata. Snapshots retain the existing row-batch format; restoration indexes
+that batch lazily. Persistent keep-first continues to use RocksDB point lookups.
+
+See [pending-state measurements](../optimizations/pending-dedup-index.md#measurement) for the
+production arrival boundary and complete stock-versus-native SQL comparison.
+The measured 16,384-key delayed-watermark workload improved 22.33–321.75× in arrival kernels
+and 1.82× in complete native SQL jobs; the candidate's same-run stock comparison was 1.63×.
+These are bounded workload measurements with startup and both transposes retained in the SQL
+comparison, not a promise for small state, checkpoints, or the RocksDB path.

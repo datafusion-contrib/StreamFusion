@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "status": "final_quiet",
+  "baseline_revision": "96f98a32",
+  "candidate": "perf/indexed-state-handoff-working-tree",
+  "fixture_source_sha256": {
+    "src/test/java/tech/streamfusion/PendingDedupBenchmark.java": "3f3ef5f446825e4839f169c81eed140d72fb1eea3935959a9d8b21762b6d47d4"
+  },
+  "environment": {
+    "native_build": "release Maven bench profile",
+    "jdk": "OpenJDK17",
+    "flink": "2.2.1",
+    "allocator": "mimalloc (Maven bench profile)"
+  },
+  "methodology": {
+    "boundary": "table.executeSql(INSERT).await(): planning, runtime startup, row-fed sources, row\u2192Arrow and Arrow\u2192row transposes, JNI, native state and real TaskManager budget accounting, terminal watermark drain, rowwise blackhole sink",
+    "outside_timer": "Environment/input construction, untimed output parity witness and native explain-plan verification",
+    "warmup_trials_per_engine": 2,
+    "retained_trials_per_engine": 5,
+    "engine_order": "Alternating stock/native order by trial",
+    "parallelism": 1,
+    "watermarks": "No intermediate watermarks; bounded terminal watermark only",
+    "configuration": {
+      "rows": 262144,
+      "key_domain": 16384,
+      "payload_suffix_bytes": 8
+    },
+    "correctness_witness": {
+      "rows": 4096,
+      "key_domain": 2048,
+      "comparison": "kinded stock/native output parity"
+    },
+    "native_plan_requires": [
+      "NativeDeduplicate",
+      "RowDataToArrow",
+      "ArrowToRowData"
+    ],
+    "runtime_execution_check": "Installed planner substitutions must be nonzero for every native trial",
+    "statistics": "Median, min/max and inclusive linearly interpolated quartiles/IQR; all five observations retained, no outliers dropped",
+    "limitations": [
+      "Complete bounded job includes startup; no sustained throughput inference",
+      "Source interleaving in interval job is scheduler-dependent; Criterion fixes preloaded retained-state timing",
+      "No checkpoints triggered in timed jobs"
+    ]
+  },
+  "observations": {
+    "before": {
+      "status": "final_quiet",
+      "log_label": "state-authoritative-before.log",
+      "build_result": "SUCCESS",
+      "stock_seconds": [
+        0.346828698,
+        0.241494373,
+        0.200685995,
+        0.203907689,
+        0.270593069
+      ],
+      "stock_median_seconds": 0.241494373,
+      "stock_min_max_seconds": [
+        0.200685995,
+        0.346828698
+      ],
+      "stock_quartiles_seconds": [
+        0.203907689,
+        0.270593069
+      ],
+      "stock_iqr_seconds": 0.06668538000000002,
+      "native_seconds": [
+        0.389874222,
+        0.335074401,
+        0.317284466,
+        0.311145123,
+        0.306230824
+      ],
+      "native_median_seconds": 0.317284466,
+      "native_min_max_seconds": [
+        0.306230824,
+        0.389874222
+      ],
+      "native_quartiles_seconds": [
+        0.311145123,
+        0.335074401
+      ],
+      "native_iqr_seconds": 0.023929278,
+      "stock_over_native_median": 0.7611288886736738
+    },
+    "after": {
+      "status": "final_quiet",
+      "log_label": "state-authoritative-after.log",
+      "build_result": "SUCCESS",
+      "stock_seconds": [
+        0.383405798,
+        0.239453415,
+        0.284318141,
+        0.304508914,
+        0.216723549
+      ],
+      "stock_median_seconds": 0.284318141,
+      "stock_min_max_seconds": [
+        0.216723549,
+        0.383405798
+      ],
+      "stock_quartiles_seconds": [
+        0.239453415,
+        0.304508914
+      ],
+      "stock_iqr_seconds": 0.06505549900000002,
+      "native_seconds": [
+        0.227419314,
+        0.174058386,
+        0.15811694,
+        0.167082299,
+        0.189293084
+      ],
+      "native_median_seconds": 0.174058386,
+      "native_min_max_seconds": [
+        0.15811694,
+        0.227419314
+      ],
+      "native_quartiles_seconds": [
+        0.167082299,
+        0.189293084
+      ],
+      "native_iqr_seconds": 0.02221078500000001,
+      "stock_over_native_median": 1.6334641928714657
+    }
+  },
+  "additional_provisional_pairs": [
+    {
+      "label": "state-jobs-quiet-before/after",
+      "status": "provisional_contended",
+      "reason": "An unrelated worktree Nexmark process began08:01:39 and overlapped these08:04/08:05 measurements. Raw observations retained; final performance conclusions require a quiet-host rerun.",
+      "observations": {
+        "before": {
+          "status": "provisional_contended",
+          "stock_seconds": [
+            0.27279597,
+            0.2267222,
+            0.222455303,
+            0.222331636,
+            0.255239858
+          ],
+          "native_seconds": [
+            0.338615189,
+            0.346427373,
+            0.330969947,
+            0.323500469,
+            0.315445533
+          ],
+          "stock_median_seconds": 0.2267222,
+          "native_median_seconds": 0.330969947,
+          "stock_min_max_seconds": [
+            0.222331636,
+            0.27279597
+          ],
+          "native_min_max_seconds": [
+            0.315445533,
+            0.346427373
+          ],
+          "build_result": "SUCCESS"
+        },
+        "after": {
+          "status": "provisional_contended",
+          "stock_seconds": [
+            0.260366975,
+            0.258985941,
+            0.211714916,
+            0.269293048,
+            0.211897212
+          ],
+          "native_seconds": [
+            0.338525028,
+            0.156003284,
+            0.144629218,
+            0.149232252,
+            0.151203711
+          ],
+          "stock_median_seconds": 0.258985941,
+          "native_median_seconds": 0.151203711,
+          "stock_min_max_seconds": [
+            0.211714916,
+            0.269293048
+          ],
+          "native_min_max_seconds": [
+            0.144629218,
+            0.338525028
+          ],
+          "build_result": "SUCCESS"
+        }
+      }
+    },
+    {
+      "label": "quiet-final-before/after",
+      "status": "provisional_contended",
+      "reason": "Unrelated Fluss benchmark began08:08:56; candidate JVM began08:09:02. Baseline state measurements preceded that activity, but candidate overlapped.",
+      "observations": {
+        "before": {
+          "status": "provisional_quiet_baseline",
+          "stock_seconds": [
+            0.254125917,
+            0.217238808,
+            0.203043178,
+            0.21828774,
+            0.206548551
+          ],
+          "native_seconds": [
+            0.400431546,
+            0.318905311,
+            0.328107131,
+            0.321286654,
+            0.310268585
+          ],
+          "stock_median_seconds": 0.217238808,
+          "native_median_seconds": 0.321286654
+        },
+        "after": {
+          "status": "provisional_contended",
+          "stock_seconds": [
+            0.554490165,
+            0.370520349,
+            0.254924253,
+            0.347932749,
+            0.361962571
+          ],
+          "native_seconds": [
+            0.318361564,
+            0.267906367,
+            0.301599781,
+            0.225943011,
+            0.18901978
+          ],
+          "stock_median_seconds": 0.361962571,
+          "native_median_seconds": 0.267906367
+        }
+      }
+    }
+  ],
+  "host_validation": "Manual process snapshots before pair and continuous final-host-monitor; no competing external Java benchmark/build observed throughout this authoritative pair.",
+  "summary": {
+    "native_before_over_after_median": 1.8228622779485038,
+    "stock_control_after_over_before_median": 1.1773282228816155,
+    "interpretation": "Demonstrated complete-job native improvement and candidate faster than its same-run stock control; five startup-including trials with retained variability."
+  }
+}

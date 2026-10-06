@@ -4221,7 +4221,16 @@ fn join_working_memory_draws_on_the_operator_budget() {
     let values: Vec<i64> = (0..n as i64).collect();
     let rts: Vec<i64> = vec![0; n];
     let big = join_batch(keys, values, rts);
-    let budget = (big.get_array_memory_size() + (64 << 10)) as i64;
+    // Measure retained production state (including derived probe metadata), then leave exactly
+    // 64 KiB for working memory. The preliminary ingestion has no opposite build side.
+    let mut measured = inner_interval_joiner(-1000, 1000)
+        .with_memory_budget(i64::MAX)
+        .unwrap();
+    measured.push_left(big.clone(), None).unwrap();
+    let retained_bytes = measured.memory.state_bytes;
+    assert!(retained_bytes > big.get_array_memory_size());
+    let budget = (retained_bytes + (64 << 10)) as i64;
+    drop(measured);
 
     let mut joiner = inner_interval_joiner(-1000, 1000)
         .with_memory_budget(budget)

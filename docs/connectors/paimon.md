@@ -1453,3 +1453,34 @@ The retained partition-equality handoff is admitted for Paimon 2.0. The legacy P
 keeps its existing unfiltered read-builder path and Flink residual filtering; its shared physical
 source constructor passes no pruning predicate. Shared SQL parity tests verify both versions'
 exact snapshot/live results and require the version-specific presence or absence of the hint.
+
+### Stock replay identifies premature terminal-event completion
+
+The required Flink 2.2/Paimon 2.0 suite on PR #300 captured a full-compaction failure with
+expected `10000|10000.str` but observed `528|5200.str`.
+[Artifact 11416621697](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37461904258/artifacts/11416621697)
+retains the failed warehouse, reports, and runtime diagnostics. The table has `pt STRING`,
+`k INT`, `v1 BIGINT`, `v2 STRING`, partition `pt`, primary key `(pt,k)`, four buckets,
+`full-compaction.delta-commits=3`, and a 5 MiB local merge buffer. Two producers imply 512 final keys.
+
+A released-stock bounded read of that same captured table passes the original exact result
+checker for all 512 final rows. Finite stock changelog replay reproduces the **identical CI
+assertion** at the upstream stop condition: 512 terminal events contain only 488 distinct
+terminal keys, leaving 24 incorrect current values. Snapshot 30 includes 12 terminal no-op
+update-before/update-after pairs; these add 24 counted events without completing another key.
+The released test counts every RowKind whose `v1 >= 10000`, including these retractions.
+
+Continuing the stock replay consumes 3,618 rows and 536 terminal events, reaches all 512 final
+keys, and passes every original RowKind/value transition and final-state assertion. Snapshot 32
+contains the final compaction; snapshot 33 is the latest append. Both a temporary guard and the actual suite-agent completion helper, replayed against every
+stock row, track currently live distinct terminal keys. They complete at snapshot 32 after 536
+terminal events and pass the same original checker. This identifies premature event-count termination for this
+captured failure; it does not justify suppressing no-op records in the native reader or changing
+the released source. Queries, per-row checks, final assertions, and timeout remain authoritative.
+
+The [portable proof artifact](../benchmarks/results/paimon-terminal-coverage.json) records schema,
+configuration, snapshot IDs, all counters, replay boundary and limitations; its
+[sanitized stock trace](../benchmarks/results/paimon-terminal-coverage-stock-replay.log) includes
+the cutoff assertion and representative duplicate terminal images. The finite replay starts at
+snapshot 1 and does not reconstruct live scheduling. Warehouse capture is diagnostic evidence,
+not an atomic backup. This proof does not establish the cause of every separate legacy timeout.
