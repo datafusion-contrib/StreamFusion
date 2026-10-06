@@ -14,24 +14,64 @@ pub fn parse_java_boolean(s: &str) -> bool {
     s.eq_ignore_ascii_case("true")
 }
 
-/// `Integer.parseInt`-family grammar: an optional sign followed by radix-10 digits, overflow
-/// checked. Rust's integer `FromStr` matches it exactly. The caller trims first.
-pub fn parse_java_integer<T: std::str::FromStr>(s: &str) -> Option<T> {
-    s.parse::<T>().ok()
+/// `String.trim()` removes only UTF-16 code units at or below U+0020.
+pub fn trim_java(s: &str) -> &str {
+    s.trim_matches(|c: char| c <= '\u{20}')
 }
 
-/// `Double.parseDouble` / `Float.parseFloat`: Java trims whitespace itself, accepts the exact
-/// spellings `NaN`/`Infinity` (optionally signed), an optional trailing `f`/`F`/`d`/`D` suffix, and
-/// decimal/exponent literals. Hex float literals (`0x1.8p1`) are not reproduced (documented).
+/// Java's integer parsers accept BMP decimal digits through `Character.digit(char, 10)`.
+/// Keep the ASCII path allocation-free and normalize only non-ASCII inputs before the target
+/// type checks overflow; parsing through a floating-point intermediate would lose large integers.
+pub fn parse_java_integer<T: std::str::FromStr>(s: &str) -> Option<T> {
+    if s.is_ascii() {
+        return s.parse::<T>().ok();
+    }
+    normalize_java_digits(s)?.parse::<T>().ok()
+}
+
+fn normalize_java_digits(s: &str) -> Option<std::borrow::Cow<'_, str>> {
+    if s.is_ascii() {
+        return Some(std::borrow::Cow::Borrowed(s));
+    }
+    const DIGIT_STARTS: &[u32] = &[
+        0x0030, 0x0660, 0x06F0, 0x07C0, 0x0966, 0x09E6, 0x0A66, 0x0AE6, 0x0B66, 0x0BE6, 0x0C66,
+        0x0CE6, 0x0D66, 0x0DE6, 0x0E50, 0x0ED0, 0x0F20, 0x1040, 0x1090, 0x17E0, 0x1810, 0x1946,
+        0x19D0, 0x1A80, 0x1A90, 0x1B50, 0x1BB0, 0x1C40, 0x1C50, 0xA620, 0xA8D0, 0xA900, 0xA9D0,
+        0xA9F0, 0xAA50, 0xABF0, 0xFF10,
+    ];
+    let mut normalized = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_ascii() {
+            normalized.push(c);
+            continue;
+        }
+        let code = c as u32;
+        let range = DIGIT_STARTS.partition_point(|&start| start <= code);
+        let digit = code.checked_sub(*DIGIT_STARTS.get(range.checked_sub(1)?)?)?;
+        if digit > 9 {
+            return None;
+        }
+        normalized.push(char::from(b'0' + digit as u8));
+    }
+    Some(std::borrow::Cow::Owned(normalized))
+}
+
+/// Java floats trim ASCII controls, accept signed `NaN`/`Infinity`, and permit a trailing
+/// f/F/d/D only on decimal literals. Hex float literals remain outside the documented envelope.
 /// Parsed directly at the target width so a float result rounds once, like `parseFloat`.
 pub fn parse_java_float<T: JavaFloat>(s: &str) -> Option<T> {
-    let t = s.trim();
-    parse_java_float_body::<T>(t).or_else(|| {
-        let (head, suffix) = t.split_at(t.len().checked_sub(1)?);
-        matches!(suffix, "f" | "F" | "d" | "D")
-            .then(|| parse_java_float_body::<T>(head))
-            .flatten()
-    })
+    let t = trim_java(s);
+    match t {
+        "NaN" | "+NaN" | "-NaN" => return Some(T::NAN),
+        "Infinity" | "+Infinity" => return Some(T::INFINITY),
+        "-Infinity" => return Some(T::NEG_INFINITY),
+        _ => {}
+    }
+    let decimal = match t.as_bytes().last() {
+        Some(b'f' | b'F' | b'd' | b'D') => &t[..t.len() - 1],
+        _ => t,
+    };
+    parse_java_float_body::<T>(decimal)
 }
 
 pub trait JavaFloat: std::str::FromStr + Copy {
@@ -51,12 +91,6 @@ impl JavaFloat for f64 {
 }
 
 fn parse_java_float_body<T: JavaFloat>(t: &str) -> Option<T> {
-    match t {
-        "NaN" | "+NaN" | "-NaN" => return Some(T::NAN),
-        "Infinity" | "+Infinity" => return Some(T::INFINITY),
-        "-Infinity" => return Some(T::NEG_INFINITY),
-        _ => {}
-    }
     // Restrict to Java's decimal grammar before handing to Rust's parser: Rust would otherwise
     // accept spellings Java rejects ("inf", "nan", "infinity").
     if t.is_empty()
@@ -153,12 +187,13 @@ pub fn parse_flink_timestamp_value(
     if b.len() < 11 {
         return None;
     }
-    let days = parse_iso_local_date(&s[..10])? as i64;
+    let days = parse_iso_local_date(s.get(..10)?)? as i64;
     match (mode, b[10]) {
         (TimestampMode::Sql, b' ') | (TimestampMode::Iso8601, b'T') => {}
         _ => return None,
     }
-    let time = s[11..].strip_suffix('Z').unwrap_or(&s[11..]);
+    let time = s.get(11..)?;
+    let time = time.strip_suffix('Z').unwrap_or(time);
     let nanos_of_day = parse_flink_time(time, mode == TimestampMode::Iso8601)?;
     crate::timestamp::TimestampValue::from_nanos(
         i128::from(days) * 86_400_000_000_000 + i128::from(nanos_of_day),
@@ -301,6 +336,8 @@ pub fn parse_jackson_base64(s: &str) -> Result<Vec<u8>, Base64Error> {
 /// arbitrary-precision value and its scale (fraction digits minus exponent — negative scales are
 /// how `1e5` comes out, exactly as `BigDecimal`).
 pub fn parse_java_big_decimal(s: &str) -> Option<(num_bigint::BigInt, i64)> {
+    let normalized = normalize_java_digits(s)?;
+    let s = normalized.as_ref();
     let b = s.as_bytes();
     let mut i = 0;
     let negative = match b.first()? {
@@ -338,21 +375,31 @@ pub fn parse_java_big_decimal(s: &str) -> Option<(num_bigint::BigInt, i64)> {
         s[i + 1..]
             .parse()
             .ok()
-            .filter(|e: &i64| e.unsigned_abs() < i32::MAX as u64)?
+            .filter(|e: &i64| e.unsigned_abs() <= i32::MAX as u64)?
     } else {
         0
     };
     let unscaled = num_bigint::BigInt::parse_bytes(&digits, 10)?;
     let unscaled = if negative { -unscaled } else { unscaled };
-    Some((unscaled, fraction_digits.unwrap_or(0) - exponent))
+    let scale = i32::try_from(fraction_digits.unwrap_or(0) - exponent).ok()?;
+    Some((unscaled, i64::from(scale)))
 }
 
 /// The full Flink decimal string decode: `new BigDecimal(s)` then
 /// `DecimalData.fromBigDecimal(bd, precision, scale)` — HALF_UP rescale, **null** (not an error)
-/// when the result exceeds the declared precision. `Err(())` is an unparsable string (the host
-/// fails the field); `Ok(None)` is the precision-overflow null.
+/// when the result exceeds the declared precision. `Err(())` covers malformed text and Java
+/// scale/power range failures (the host fails the field); `Ok(None)` is precision-overflow null.
 pub fn parse_flink_decimal(s: &str, precision: u8, scale: i8) -> Result<Option<i128>, ()> {
     let (unscaled, source_scale) = parse_java_big_decimal(s).ok_or(())?;
+    if unscaled.sign() != num_bigint::Sign::NoSign {
+        let difference = (i64::from(scale) - source_scale).unsigned_abs();
+        // BigDecimal checks the scale difference, then BigInteger.TEN.pow checks its maximum
+        // magnitude length from TEN.bitLength() (4), before attempting any large allocation.
+        let max_magnitude_length = i32::MAX as u64 / 32 + 1;
+        if difference > i32::MAX as u64 || difference * 4 / 32 > max_magnitude_length {
+            return Err(());
+        }
+    }
     Ok(crate::jdk_decimal::rescale_half_up(
         unscaled,
         source_scale,
@@ -383,6 +430,64 @@ mod tests {
         assert_eq!(parse_java_integer::<i64>("1.5"), None);
         assert_eq!(parse_java_integer::<i64>(""), None);
         assert_eq!(parse_java_integer::<i8>("128"), None);
+    }
+
+    #[test]
+    fn java_unicode_integer_digits_keep_target_width_and_overflow() {
+        assert_eq!(parse_java_integer::<i8>("+١٢٧"), Some(127));
+        assert_eq!(parse_java_integer::<i8>("١٢٨"), None);
+        assert_eq!(parse_java_integer::<i16>("-３２７６８"), Some(i16::MIN));
+        assert_eq!(parse_java_integer::<i32>("२१४७४८३६४७"), Some(i32::MAX));
+        assert_eq!(
+            parse_java_integer::<i64>("٩٢٢٣٣٧٢٠٣٦٨٥٤٧٧٥٨٠٧"),
+            Some(i64::MAX)
+        );
+        assert_eq!(
+            parse_java_integer::<i64>("-٩٢٢٣٣٧٢٠٣٦٨٥٤٧٧٥٨٠٨"),
+            Some(i64::MIN)
+        );
+        assert_eq!(parse_java_integer::<i64>("٩٢٢٣٣٧٢٠٣٦٨٥٤٧٧٥٨٠٨"), None);
+        assert_eq!(
+            parse_java_integer::<i128>("١٧٠١٤١١٨٣٤٦٠٤٦٩٢٣١٧٣١٦٨٧٣٠٣٧١٥٨٨٤١٠٥٧٢٧"),
+            Some(i128::MAX)
+        );
+        for invalid in ["é", "²", "𝟙", "١_٢", "١+٢", "＋１２", "\u{a0}١٢"] {
+            assert_eq!(parse_java_integer::<i64>(invalid), None, "{invalid}");
+        }
+    }
+
+    #[test]
+    fn java_float_invalid_unicode_and_suffixes_return_none() {
+        for invalid in [
+            "é",
+            "1é",
+            "NaNf",
+            "-InfinityD",
+            "nanF",
+            "\u{a0}1.5\u{a0}",
+            "\u{2003}1.5",
+            "1.5\u{85}",
+        ] {
+            assert_eq!(parse_java_float::<f32>(invalid), None, "{invalid}");
+            assert_eq!(parse_java_float::<f64>(invalid), None, "{invalid}");
+        }
+        assert_eq!(parse_java_float::<f64>("\0\u{1f}1.5d\u{20}"), Some(1.5));
+        assert_eq!(trim_java("\0\u{1f}true\u{20}"), "true");
+        assert_eq!(trim_java("\u{a0}true\u{a0}"), "\u{a0}true\u{a0}");
+    }
+
+    #[test]
+    fn malformed_unicode_timestamps_fail_without_panicking() {
+        for invalid in [
+            "aaaaaaaaaéxx",
+            "éééééé",
+            "2020-01-01é12:00:00",
+            "2020-01-01 12:00:é",
+            "2020-01-01 12:é",
+        ] {
+            assert!(parse_flink_timestamp_value(invalid, TimestampMode::Sql).is_none());
+            assert!(parse_flink_timestamp_value(invalid, TimestampMode::Iso8601).is_none());
+        }
     }
 
     #[test]
@@ -563,9 +668,33 @@ mod tests {
     }
 
     #[test]
+    fn big_decimal_exponent_boundaries_and_extreme_rescale() {
+        assert_eq!(parse_flink_decimal("0e2147483647", 5, 2), Ok(Some(0)));
+        assert_eq!(parse_flink_decimal("0e-2147483647", 5, 2), Ok(Some(0)));
+        assert_eq!(parse_flink_decimal("0e100000000", 5, 2), Ok(Some(0)));
+        assert_eq!(parse_flink_decimal("1e100000000", 5, 2), Ok(None));
+        assert_eq!(parse_flink_decimal("1e-100000000", 5, 2), Ok(Some(0)));
+        assert_eq!(parse_flink_decimal("1e2147483647", 5, 2), Err(()));
+        assert_eq!(parse_flink_decimal("1e-2147483647", 5, 2), Err(()));
+        assert_eq!(parse_java_big_decimal("0.0e-2147483647"), None);
+        assert_eq!(parse_java_big_decimal("0e2147483648"), None);
+        assert_eq!(parse_java_big_decimal("0e-2147483648"), None);
+    }
+
+    #[test]
     fn big_decimal_grammar_and_rescale() {
         use num_bigint::BigInt;
         assert_eq!(parse_java_big_decimal("1.5"), Some((BigInt::from(15), 1)));
+        assert_eq!(
+            parse_java_big_decimal("١.٥e-٢"),
+            Some((BigInt::from(15), 3))
+        );
+        assert_eq!(
+            parse_java_big_decimal("-１.５"),
+            Some((BigInt::from(-15), 1))
+        );
+        assert_eq!(parse_java_big_decimal("𝟙.5"), None);
+        assert_eq!(parse_java_big_decimal("\u{a0}1.5"), None);
         assert_eq!(parse_java_big_decimal("-1.5"), Some((BigInt::from(-15), 1)));
         assert_eq!(parse_java_big_decimal(".5"), Some((BigInt::from(5), 1)));
         assert_eq!(parse_java_big_decimal("1."), Some((BigInt::from(1), 0)));

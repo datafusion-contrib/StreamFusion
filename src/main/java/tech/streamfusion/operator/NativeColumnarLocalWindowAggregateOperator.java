@@ -158,7 +158,10 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       Native.flushPartialTumblingAggregator(
-          handle, watermark, array.memoryAddress(), schema.memoryAddress());
+          handle,
+          WindowTimeDomain.closeThreshold(watermark, 0),
+          array.memoryAddress(),
+          schema.memoryAddress());
       emitPartial(Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
     }
   }

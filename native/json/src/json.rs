@@ -114,7 +114,7 @@ where
     }
 
     fn append_key(&mut self, key: &str) {
-        match flink_text::parse_java_integer(key.trim()) {
+        match flink_text::parse_java_integer(flink_text::trim_java(key)) {
             Some(parsed) => self.builder.append_value(parsed),
             None if self.env.lenient => self.builder.append_null(),
             None => panic!("failed to parse \"{key}\" as {}", self.data_type),
@@ -446,7 +446,7 @@ impl JsonAppend for BooleanJsonAppender {
 
     fn append_key(&mut self, key: &str) {
         self.builder
-            .append_value(flink_text::parse_java_boolean(key.trim()));
+            .append_value(flink_text::parse_java_boolean(flink_text::trim_java(key)));
     }
 
     fn append_nulls(&mut self, count: usize) {
@@ -1951,7 +1951,7 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, env: JsonEnv) -> A
                     let text = text?;
                     // Flink trims a string-positioned decimal; a number token can't carry spaces,
                     // so trimming both is exact.
-                    match flink_text::parse_flink_decimal(text.trim(), *p, *s) {
+                    match flink_text::parse_flink_decimal(flink_text::trim_java(text), *p, *s) {
                         Ok(value) => value,
                         Err(()) if env.lenient => None,
                         Err(()) => panic!("failed to parse \"{text}\" as DECIMAL({p}, {s})"),

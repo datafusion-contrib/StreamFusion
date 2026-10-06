@@ -20,6 +20,12 @@ accelerate* — a real gap that could be closed. It is **not** a fallback when F
 the query in streaming (e.g. `RANK`/`DENSE_RANK` Top-N, non-time `ORDER BY`) — matching Flink by
 also not running it is parity, not a gap.
 
+## Nested values at the Arrow boundary
+
+Reusable row-to-Arrow writers finish and reset nested ARRAY, MAP and ROW children together with
+their parent. Reusing a writer for another batch restarts map key/value positions at zero, including
+maps nested inside arrays or rows; null and empty containers retain their distinct representations.
+
 ## Timestamp values and event time
 
 Timestamp readers expose Flink's signed epoch milliseconds plus a non-negative

@@ -99,6 +99,41 @@ class NativeColumnarWindowAggregateOperatorTest {
           new String[] {"key", "total", "window_start", "window_end"});
 
   @Test
+  void proctimeRowsAtAFiredTimersClockAreNotLate() throws Exception {
+    try (BufferAllocator allocator = new RootAllocator();
+        var harness = rawHarness(operator(OUTPUT, true))) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.setProcessingTime(500);
+      harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0))));
+      harness.setProcessingTime(999);
+      assertEquals(List.of(row(1, 0, 1000)), collect(harness));
+      harness.processElement(new StreamRecord<>(batch(allocator, event(2, 0))));
+      harness.prepareSnapshotPreBarrier(1);
+      harness.setProcessingTime(1000);
+      assertEquals(List.of(row(2, 0, 1000)), collect(harness));
+    }
+  }
+
+  @Test
+  void closesAtTheLastMillisecondAndRejectsSubsequentLateRows() throws Exception {
+    NativeColumnarWindowAggregateOperator operator = operator(OUTPUT, false);
+    try (BufferAllocator allocator = new RootAllocator();
+        var harness = rawHarness(operator)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0))));
+      harness.processWatermark(new Watermark(998));
+      assertEquals(List.of(), collect(harness));
+      harness.processWatermark(new Watermark(999));
+      assertEquals(List.of(row(1, 0, 1000)), collect(harness));
+      harness.processElement(new StreamRecord<>(batch(allocator, event(2, 500))));
+      harness.processWatermark(new Watermark(1000));
+      assertEquals(List.of(), collect(harness));
+    }
+  }
+
+  @Test
   void nullableFiltersPreserveWindowLivenessAcrossArrowVectorGrowth() throws Exception {
     RowType output =
         RowType.of(
@@ -438,7 +473,9 @@ class NativeColumnarWindowAggregateOperatorTest {
       harness.setProcessingTime(500);
       harness.processElement(new StreamRecord<>(batch(allocator, event(1, 7000), event(2, 0), event(3, 9000))));
       assertEquals(List.of(), collect(harness)); // window [0,1000) still open at proctime 500
-      harness.setProcessingTime(1000); // fires the window-end timer
+      harness.setProcessingTime(998);
+      assertEquals(List.of(), collect(harness));
+      harness.setProcessingTime(999); // fires at end minus one millisecond
       assertEquals(List.of(row(6, 0, 1000)), collect(harness));
 
       harness.setProcessingTime(1500);

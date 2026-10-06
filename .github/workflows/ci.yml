@@ -107,6 +107,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
           python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
+          python3 -m unittest discover -s bin -p 'test_package_release.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
         if: matrix.line == '1.18'

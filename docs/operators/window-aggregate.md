@@ -12,6 +12,12 @@ on disk as well as in memory. RocksDB persists their window bounds even though t
 accumulator columns; duplicate groups, watermark firing, and checkpoint recovery preserve the
 same output as the memory backend.
 
+Aligned windows fire when the watermark or processing clock reaches `window_end - 1ms`,
+including the local/global split and persistent state. Event-time rows for a fired final window are late
+and cannot change its result. Processing-time arrivals remain admissible, including arrivals
+at the same clock reading after a timer callback, matching Flink's processing-time behavior. Native storage indexes exclusive window ends, so the Java boundary
+translates the firing frontier by one millisecond before flushing.
+
 ## Mixed aggregates and AVG partials
 
 SUM, MIN, MAX, COUNT and AVG can share a window and read the same or different numeric columns.

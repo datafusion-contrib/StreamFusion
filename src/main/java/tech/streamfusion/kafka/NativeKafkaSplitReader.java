@@ -73,7 +73,17 @@ final class NativeKafkaSplitReader
 
   @Override
   public RecordsWithSplitIds<NativeSourceRecord> fetch() throws IOException {
-    RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>> raw = delegate.fetch();
+    return decodeFetched(delegate.fetch(), this::decode);
+  }
+
+  @FunctionalInterface
+  interface BatchDecoder {
+    NativeSourceRecord decode(List<ConsumerRecord<byte[], byte[]>> records) throws Exception;
+  }
+
+  static RecordsWithSplitIds<NativeSourceRecord> decodeFetched(
+      RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>> raw, BatchDecoder decoder)
+      throws IOException {
     RecordsBySplits.Builder<NativeSourceRecord> decoded = new RecordsBySplits.Builder<>();
     try {
       String splitId;
@@ -83,18 +93,34 @@ final class NativeKafkaSplitReader
         while ((record = raw.nextRecordFromSplit()) != null) {
           batch.add(record);
           if (batch.size() == BATCH_SIZE) {
-            decoded.add(splitId, decode(batch));
+            decoded.add(splitId, decoder.decode(batch));
             batch.clear();
           }
         }
         if (!batch.isEmpty()) {
-          decoded.add(splitId, decode(batch));
+          decoded.add(splitId, decoder.decode(batch));
         }
       }
       decoded.addFinishedSplits(raw.finishedSplits());
       return decoded.build();
-    } catch (Exception e) {
-      throw new IOException("native Kafka batch decode failed", e);
+    } catch (Exception | Error failure) {
+      RecordsWithSplitIds<NativeSourceRecord> abandoned = decoded.build();
+      while (abandoned.nextSplit() != null) {
+        NativeSourceRecord record;
+        while ((record = abandoned.nextRecordFromSplit()) != null) {
+          if (record.batch() != null) {
+            try {
+              record.batch().root().close();
+            } catch (Throwable cleanupFailure) {
+              failure.addSuppressed(cleanupFailure);
+            }
+          }
+        }
+      }
+      if (failure instanceof Error) {
+        throw (Error) failure;
+      }
+      throw new IOException("native Kafka batch decode failed", failure);
     } finally {
       raw.recycle();
     }

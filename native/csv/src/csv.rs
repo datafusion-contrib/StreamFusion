@@ -307,18 +307,18 @@ fn utf8_char_len(lead: u8) -> usize {
 /// (the host throws, or nulls the field under ignore-parse-errors).
 fn convert(data_type: &DataType, text: &str) -> Option<Converted> {
     Some(match data_type {
-        DataType::Boolean => Converted::Bool(parse_java_boolean(text.trim())),
-        DataType::Int8 => Converted::I8(parse_java_integer(text.trim())?),
-        DataType::Int16 => Converted::I16(parse_java_integer(text.trim())?),
-        DataType::Int32 => Converted::I32(parse_java_integer(text.trim())?),
-        DataType::Int64 => Converted::I64(parse_java_integer(text.trim())?),
+        DataType::Boolean => Converted::Bool(parse_java_boolean(trim_java(text))),
+        DataType::Int8 => Converted::I8(parse_java_integer(trim_java(text))?),
+        DataType::Int16 => Converted::I16(parse_java_integer(trim_java(text))?),
+        DataType::Int32 => Converted::I32(parse_java_integer(trim_java(text))?),
+        DataType::Int64 => Converted::I64(parse_java_integer(trim_java(text))?),
         DataType::Float32 => Converted::F32(parse_java_float(text)?),
         DataType::Float64 => Converted::F64(parse_java_float(text)?),
         DataType::Utf8 => Converted::Str(text.to_string()),
         DataType::Date32 => Converted::Date(parse_java_sql_date(text)?),
         data_type if streamfusion_bridge::timestamp::is_timestamp(data_type) => {
             let value = streamfusion_bridge::flink_text::parse_flink_timestamp_value(
-                text.trim(),
+                trim_java(text),
                 TimestampMode::Sql,
             )?;
             if !streamfusion_bridge::timestamp::is_component_timestamp(data_type)

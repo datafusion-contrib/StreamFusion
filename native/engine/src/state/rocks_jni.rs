@@ -1965,10 +1965,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBIntervalJo
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
         let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
-        match joiner
-            .store_mut()
-            .checkpoint(timer_deadline, &snapshot_directory)
-        {
+        match joiner.ensure_store_timers().and_then(|_| {
+            joiner
+                .store_mut()
+                .checkpoint(timer_deadline, &snapshot_directory)
+        }) {
             Ok(m) => manifest_array(&mut env, &m),
             Err(e) => {
                 let _ = env.throw_new(
@@ -1990,8 +1991,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBIntervalJoin
     handle: jlong,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
-        let joiner = unsafe { &*(handle as *const IntervalJoiner) };
-        match joiner.canonical_partitions() {
+        let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
+        match joiner
+            .ensure_store_timers()
+            .and_then(|_| joiner.canonical_partitions())
+        {
             Ok(partitions) => {
                 keyed_state_partition_array(&mut env, partitions, "rocksdb-interval-join")
             }

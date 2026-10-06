@@ -23,6 +23,18 @@ base64 read (whitespace between four-char groups, padding required, declared len
 enforced), down to its corrupted-input drop granularity. The CDC dialects treat an array-rooted
 envelope as a corrupt message, as Flink does.
 
+On the SIMD scalar decode path, numeric and boolean trimming follows Java `String.trim()`
+(characters at or below U+0020), and integer strings accept Java's BMP decimal digits with
+exact width and overflow checks. Decimal strings also accept those digits. Float suffixes
+apply only to decimal literals: `NaNf` and `InfinityD` are invalid. Malformed Unicode numeric
+or timestamp input returns the ordinary conversion failure, including per-field nulls under
+`ignore-parse-errors`. Decimal-bearing schemas retain the raw-literal path's separately
+documented coercion limits in [the ingest divergence note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/21-ingest-text-envelope.md).
+
+Decimal zero accepts the full Java exponent range without constructing exponent-sized powers
+of ten. Nonzero rescaling detects precision overflow and complete fractional discard before
+allocating a divisor, while retaining Java's scale and supported-integer-range errors.
+
 Supported column types (recursively over ROW/ARRAY/MAP/MULTISET): BOOLEAN, TINYINT, SMALLINT,
 INT, BIGINT, FLOAT, DOUBLE, CHAR/VARCHAR, DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ, DECIMAL,
 VARBINARY.

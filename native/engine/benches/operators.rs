@@ -1138,6 +1138,107 @@ fn bench_interval_join(c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
+    #[cfg(feature = "rocksdb-state")]
+    for rows in [16, 1024, 16384] {
+        for width in [8, 264] {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("k", DataType::Int64, false),
+                Field::new("v", DataType::Utf8, true),
+                Field::new("rt", DataType::Int64, false),
+            ]));
+            let payload = "x".repeat(width);
+            let input = RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(Int64Array::from_iter_values(
+                        (0..rows).map(|row| (row / 2) as i64),
+                    )),
+                    Arc::new(StringArray::from_iter(
+                        (0..rows).map(|row| (row % 7 != 0).then(|| format!("{row}/{payload}"))),
+                    )),
+                    Arc::new(Int64Array::from_value(100, rows)),
+                ],
+            )
+            .unwrap();
+            let resident = |time| {
+                RecordBatch::try_new(
+                    schema.clone(),
+                    vec![
+                        Arc::new(Int64Array::from_iter_values(0..(rows / 2) as i64)),
+                        Arc::new(StringArray::from_iter_values(
+                            (0..rows / 2).map(|row| format!("{row}/{payload}")),
+                        )),
+                        Arc::new(Int64Array::from_value(time, rows / 2)),
+                    ],
+                )
+                .unwrap()
+            };
+            let future = resident(400);
+            let expired = resident(100);
+            let setup = || {
+                let mut operator = streamfusion::bench::IntervalState::memory(schema.clone(), true);
+                assert_eq!(operator.push_right(&future).num_rows(), 0);
+                assert_eq!(operator.push_right(&expired).num_rows(), 0);
+                assert_eq!(operator.advance(250).num_rows(), 0);
+                operator
+            };
+            let mut oracle = setup();
+            let output = oracle.push_left(&input);
+            assert_eq!(output.num_rows(), rows);
+            assert_eq!(output.column(1), input.column(1));
+            assert_eq!(output.column(3).null_count(), rows / 2);
+            for row in 0..rows {
+                assert_eq!(output.column(3).is_null(row), row % 2 == 1);
+            }
+            assert_eq!(oracle.advance(i64::MAX).num_rows(), 0);
+            group.throughput(Throughput::Elements(rows as u64));
+            group.bench_function(
+                BenchmarkId::new(
+                    "expired_opposite_and_outer_pads",
+                    format!("{rows}/bytes={width}"),
+                ),
+                |b| {
+                    b.iter_batched_ref(
+                        &setup,
+                        |operator| black_box(operator.push_left(black_box(&input))),
+                        BatchSize::PerIteration,
+                    )
+                },
+            );
+        }
+    }
+    #[cfg(feature = "rocksdb-state")]
+    for rows in [16, 1024, 16384] {
+        let schema = batch.schema();
+        let input = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(0..rows as i64)),
+                Arc::new(Int64Array::from_iter_values(0..rows as i64)),
+                Arc::new(Int64Array::from_iter_values(1..=rows as i64)),
+            ],
+        )
+        .unwrap();
+        let setup = || {
+            let mut operator = streamfusion::bench::IntervalState::memory(schema.clone(), true);
+            assert_eq!(operator.push_left(&input).num_rows(), 0);
+            operator
+        };
+        let mut oracle = setup();
+        let output = oracle.advance(i64::MAX);
+        assert_eq!(output.num_rows(), rows);
+        assert_eq!(output.column(0), input.column(0));
+        assert_eq!(output.column(3).null_count(), rows);
+        assert_eq!(oracle.advance(i64::MAX).num_rows(), 0);
+        group.throughput(Throughput::Elements(rows as u64));
+        group.bench_function(BenchmarkId::new("unique_cleanup_deadlines", rows), |b| {
+            b.iter_batched_ref(
+                &setup,
+                |operator| black_box(operator.advance(i64::MAX)),
+                BatchSize::PerIteration,
+            )
+        });
+    }
     group.finish();
 }
 

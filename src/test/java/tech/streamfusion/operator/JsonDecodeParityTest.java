@@ -44,11 +44,26 @@ import org.junit.jupiter.api.Timeout;
  * exact {@code BigDecimal} + HALF_UP-or-NULL decimal semantics.
  *
  * <p>The deliberate residual leniencies of divergences/21 (a trailing 'Z' tolerated on any
- * timestamp column, a float token under a STRING column failing loudly, Unicode-whitespace
- * trimming) are excluded from the corpus by design.
+ * timestamp column, a float token under a STRING column failing loudly) are excluded from the corpus by design.
  */
 @Tag("streamfusion-json")
 class JsonDecodeParityTest {
+
+  @Test
+  void unicodeNumericAndTimestampErrorsFollowJavaConverters() {
+    RowType type = RowType.of(new LogicalType[] {new IntType(), new BigIntType(),
+        new DoubleType(), new TimestampType(3), new BooleanType()},
+        new String[] {"i", "l", "f", "ts", "b"});
+    for (String json : List.of(
+        "{\"i\":\"١٢\",\"l\":\"-٩٢٢٣٣٧٢٠٣٦٨٥٤٧٧٥٨٠٨\",\"f\":\"é\",\"ts\":\"aaaaaaaaaéxx\"}",
+        "{\"i\":\"３２７６８\",\"l\":\"٩٢٢٣٣٧٢٠٣٦٨٥٤٧٧٥٨٠٧\",\"f\":\"NaNf\",\"ts\":\"2020-01-01é12:00:00\"}",
+        "{\"i\":\"\u00a012\",\"f\":\"\u00a01.5\u00a0\",\"b\":\"\u00a0true\"}",
+        "{\"i\":\"١٢\",\"l\":\"٩٢٢٣٣٧٢٠٣٦٨٥٤٧٧٥٨٠٨\",\"f\":\"-InfinityD\"}")) {
+      for (boolean skipErrors : List.of(false, true)) {
+        assertParity(type, json, TimestampFormat.SQL, "", skipErrors);
+      }
+    }
+  }
 
   @Test
   void fullRangeTimestampsWithDecimalAndNestedValues() {
@@ -59,6 +74,32 @@ class JsonDecodeParityTest {
       String json = "{\"ts\":\"" + value + "\",\"d\":1.23,\"a\":[\"" + value + "\",null]}";
       assertParity(type, json, TimestampFormat.SQL, "", false);
       assertParity(type, json.replace(' ', 'T'), TimestampFormat.ISO_8601, "timestamp-format=ISO-8601\n", false);
+    }
+  }
+
+  @Test
+  void controlWhitespaceAndUnicodeDecimalDigitsFollowJavaConverters() {
+    RowType type = RowType.of(new LogicalType[] {new IntType(), new DoubleType(),
+        new BooleanType(), new TimestampType(3)}, new String[] {"i", "f", "b", "ts"});
+    String controls = "{\"i\":\"\\u000042\\u0000\",\"f\":\"\\u001f1.5\\u001f\","
+        + "\"b\":\"\\u0000true\\u0000\",\"ts\":\"\\u00002020-01-02 03:04:05\"}";
+    RowType decimal = RowType.of(new LogicalType[] {new DecimalType(5, 2)}, new String[] {"d"});
+    for (boolean skipErrors : List.of(false, true)) {
+      assertParity(type, controls, TimestampFormat.SQL, "", skipErrors);
+      for (String value : List.of("١.٢٣e٢", "-１.２３", "\u00a01.23\u00a0", "\\u00001.23\\u0000")) {
+        assertParity(decimal, "{\"d\":\"" + value + "\"}", TimestampFormat.SQL, "", skipErrors);
+      }
+    }
+  }
+
+  @Test
+  void extremeDecimalExponentsFollowJavaScaleAndRangeChecks() {
+    RowType type = RowType.of(new LogicalType[] {new DecimalType(5, 2)}, new String[] {"d"});
+    for (String value : List.of("0e2147483647", "0e-2147483647", "0e100000000",
+        "1e10000", "1e-10000", "1e2147483647", "1e-2147483647", "0.0e-2147483647")) {
+      for (boolean skipErrors : List.of(false, true)) {
+        assertParity(type, "{\"d\":\"" + value + "\"}", TimestampFormat.SQL, "", skipErrors);
+      }
     }
   }
 

@@ -6,19 +6,22 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.IntervalJoinSpec;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.JoinSpec;
 import org.apache.flink.table.planner.plan.nodes.physical.common.CommonPhysicalJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalIntervalJoin;
+import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.runtime.operators.join.FlinkJoinType;
 
 /**
- * Recognizes the event-time interval joins the native operator implements:
+ * Recognizes the event-time and processing-time interval joins the native operator implements:
  * {@code a JOIN b ON a.k = b.k AND a.rt BETWEEN b.rt + lower AND b.rt + upper}. Requires an
- * INNER/LEFT/RIGHT/FULL join, an event-time interval, one or more equi-join keys all of supported types
+ * INNER/LEFT/RIGHT/FULL join, time-bounded intervals, one or more equi-join keys all of supported types
  * (bigint/int/string/boolean/date/timestamp/decimal), and null-filtering keys; a residual non-equi
  * predicate beyond the interval bounds is admitted when it is natively expressible (else it falls back).
- * Anything else (proctime, semi/anti, an inexpressible predicate, an unsupported key type) falls back.
+ * Positive minimum cleanup intervals, semi/anti joins, inexpressible predicates, and unsupported key
+ * types fall back.
  */
 final class IntervalJoinMatcher {
 
@@ -30,6 +33,13 @@ final class IntervalJoinMatcher {
 
   /** The specific reason this interval join is not accelerable, or null if it is. */
   static String unsupportedReason(StreamPhysicalIntervalJoin join) {
+    if (ShortcutUtils.unwrapTableConfig(join)
+            .get(ExecutionConfigOptions.TABLE_EXEC_INTERVAL_JOIN_MIN_CLEAN_UP_INTERVAL)
+            .toMillis()
+        > 0) {
+      return "interval join: positive table.exec.interval-join.min-cleanup-interval requires Flink's"
+          + " delayed state cleanup";
+    }
     JoinSpec joinSpec = ((CommonPhysicalJoin) join).joinSpec();
     if (joinTypeCode(joinSpec.getJoinType()) < 0) {
       return "interval join: only INNER/LEFT/RIGHT/FULL joins (semi/anti are regular joins)";

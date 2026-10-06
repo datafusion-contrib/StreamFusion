@@ -130,3 +130,7 @@ conversion, and serialization are generally the larger costs; raw or very small 
 important exception where copying and per-record object overhead can dominate. This trade keeps
 Kafka semantics literally identical to Flink and can be benchmarked again if the codec work later
 makes the byte-array boundary the measured bottleneck.
+
+If a native decode fails after other partition batches from the same poll have decoded,
+the source closes those un-emitted Arrow batches immediately before propagating the error.
+This releases staged off-heap memory without waiting for the abandoned-batch Cleaner.
