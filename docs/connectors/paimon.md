@@ -377,6 +377,50 @@ and watermark admission.
 
 ### Source file-reader diagnostic
 
+The opt-in `PaimonPartitionPruningBenchmark` isolates partition predicate handoff before SQL
+planner wiring. It reads the same committed append table with 32 non-null string partitions,
+131,072 rows, and 64/256-byte payloads through the current native full scan, a partition-pruned
+released `ReadBuilder` feeding the production native split reader, and the released pruned Java
+reader. All paths retain a residual `pt = 'p00'` check and verify identical selected-row counts
+and id checksums. The timer includes scan planning, file reads, decode, and the residual/checksum;
+table creation and commit are outside it. Reports distinguish planned file counts/bytes,
+physically decoded rows, and native file-read witnesses; planned bytes are not measured I/O bytes.
+
+Run with `SF_PAIMON_PARTITION_PRUNING_BENCHMARK=true`, `-Pbench`, and
+`-Dtest=PaimonPartitionPruningBenchmark` in the Paimon module. Optional
+`SF_PAIMON_PARTITION_ROWS` and `SF_PAIMON_PARTITION_REPEATS` select size and repetitions; each
+mode warms up once and retains every measured observation. This fixture measures the available
+split-pruning boundary, not current SQL source pushdown or an end-to-end job speedup. The companion
+`PaimonPartitionSqlBenchmark` supplies that SQL job boundary: set
+`SF_PAIMON_PARTITION_SQL_BENCHMARK=true` and select its test with `-Pbench,paimon`. It compares
+released stock and current native source jobs on one immutable table for `pt = 'p00'`,
+`pt = 'p31'`, and an unfiltered query, and asserts the source transformation plus every collected
+row and checksum. The two selective cases exercise opposite partition-name ends, without
+assuming Paimon schedules partitions lexically. The fixture logs the released scan's planned
+partition order and each query's partition tag and native pruning-plan witness. Set
+`SF_PAIMON_PARTITION_REQUIRE_PRUNING=true` for candidate runs to require that witness; leave it
+unset when running the same fixture against the previous source implementation. Its timer includes execution startup, collection, and cancellation, with Arrow-to-row
+conversion retained. Planning/setup and result validation are outside timing. Defaults are
+32,768 rows and three measured runs after one warmup; use the same row/repetition variables for
+before/after runs. These short jobs can be startup dominated and must not be described as
+sustained decode throughput. Each streaming query collects its expected initial rows and then
+cancels the live iterator. A selective query can finish before unrelated partitions are decoded;
+its timer measures the latency to that result prefix, not a complete unfiltered snapshot scan.
+Only the unfiltered case collects every snapshot row. A fast early partition can therefore hide
+an otherwise expensive full-scan source, which is why both selective partition names are kept.
+The released FIFO split assigner polls its supplied order, while pre-assignment can group splits;
+partition-name ordering is not a source API guarantee. Do not reorder splits or add artificial
+delays to make the pruning comparison favorable.
+
+Final paired 262,144-row, five-observation SQL runs prove selective native planner hints and exact
+results, but provide no meaningful end-to-end gain: p00 native medians 247.428→243.529 ms,
+p31 243.779→239.002 ms, and unfiltered 897.027→901.372 ms. Released plan order puts p00/p31
+at positions 18/29, not schedule endpoints; stock startup and unfiltered outliers vary materially.
+The full-drain fixture independently verifies 32→1 files and 131,072→4,096 decoded rows for
+partition pruning. The [optimization ledger](../optimizations/paimon-partition-pruning.md)
+retains all ranges/IQRs and links to raw micro and SQL observations; these reductions must not be
+presented as a SQL throughput improvement.
+
 The opt-in `PaimonSourceBenchmark` compares three paths on 262,144 rows and four projected columns,
 including a nested array: released Java reading to rows, Java reading followed by conversion to
 Arrow, and native Parquet/ORC reading to Arrow. Files are generated before timing. Each read
@@ -1388,3 +1432,24 @@ It does not alter upstream queries or assertions, repair the value mismatch,
 or provide an atomic snapshot while background jobs are active. This change
 makes future failed table files available for diagnosis; the prior artifact
 has no such files.
+
+
+### Partition pruning for native streaming scans
+
+The planner passes retained `VARCHAR` partition-column equality predicates to Paimon's released
+`ReadBuilder.withFilter` API. Conjunctions may contribute supported partition equalities while
+other terms remain residuals. Disjunctions, null comparisons, casts, non-partition fields, and
+other types do not contribute pruning hints. The original Flink filter remains in the plan;
+source filters consumed by the stock connector require stock-source fallback.
+
+Predicate fields are mapped through the ordered source-ability schemas back to the original
+full-table column ordinals, independently of the native output projection. Paimon's existing
+snapshot and continuous split planning applies the partition hint; native file decoding and
+checkpoint split offsets keep their existing boundaries. The hint is retained in physical-plan
+copies and shared-source execution nodes. Unfiltered scans use the existing read builder.
+
+
+The retained partition-equality handoff is admitted for Paimon 2.0. The legacy Paimon 1.0 adapter
+keeps its existing unfiltered read-builder path and Flink residual filtering; its shared physical
+source constructor passes no pruning predicate. Shared SQL parity tests verify both versions'
+exact snapshot/live results and require the version-specific presence or absence of the hint.

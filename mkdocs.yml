@@ -115,6 +115,7 @@ nav:
   - Benchmarks:
       - benchmarks.md
       - Native Criterion suites: benchmarks/native-criterion.md
+      - Performance audit reproduction: benchmarks/performance-audit.md
       - Scalar functions: benchmarks/scalar-functions.md
       - Decimal expressions: benchmarks/decimal-expressions.md
       - Flink 1.18 compatibility: benchmarks/flink118-nexmark.md
@@ -162,6 +163,8 @@ nav:
       - Identity expression passthroughs: optimizations/identity-expression-passthroughs.md
       - Parquet sink file coalescing: optimizations/parquet-sink-file-coalescing.md
       - Delta batch sink handoff: optimizations/delta-batch-sink-handoff.md
+      - Retire dead Delta checkpoint buffers: optimizations/delta-live-buffer-retirement.md
+      - Preserve Paimon partition pruning: optimizations/paimon-partition-pruning.md
       - Batch-native Kafka JSON serialization: optimizations/batch-native-kafka-json-serialization.md
       - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md

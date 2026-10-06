@@ -46,6 +46,13 @@ positions that survive the merge and hands the original Arrow buffers plus those
 the data-file payload is never transposed row-by-row. Dense selections pass through unchanged, while
 sparse selections gather each Arrow column once immediately before the standard parquet-rs
 `ArrowWriter` encodes it. Ignored update-before and key-only delete records never reach a data file.
+When an upsert or delete removes the last live row from a buffered selection, the writer releases
+its Arrow reference immediately and removes the selection metadata. Empty partition buffers are
+also removed. Row positions use growable primitive integer arrays and live positions use a bitset,
+avoiding one boxed integer per buffered row; draining visits only live positions. Existing
+partition buffers use a map lookup without allocating a creation callback per row. Partially live batches stay retained until their remaining rows are superseded or
+the checkpoint writes them; append-only batches retain the same checkpoint lifetime. A replacement
+within the same input batch keeps that batch alive before retiring the previous row.
 
 The view operator and Delta writer run at the same sink parallelism. For unpartitioned tables,
 view creation starts a new operator chain: Flink's Sink V2 writer cannot chain behind a legacy
@@ -136,3 +143,38 @@ cases, not native Delta acceleration or a complete connector compatibility matri
 uses its Standalone transaction API and lacks the Kernel path-table engine replacement used by
 StreamFusion's 4.4 integration. No Flink 1.18 Delta acceleration artifact is admitted; that remaining
 work is tracked in [the connector compatibility issue](https://github.com/datafusion-contrib/StreamFusion/issues/187).
+
+The opt-in `DeltaBufferingBenchmark` measures only the production sink writer's `write` calls
+while a checkpoint is held. Arrow conversion, table creation, `prepareCommit`, commit publication,
+and a released-Kernel scan that verifies every final key/value run outside the timer. Cases compare
+append input with repeated upserts over 16 keys, 1,024-row Arrow batches, 4,096/32,768 input rows,
+and 16/256-byte payloads. Each case warms up once and reports three observations; retain all
+observations rather than selecting the fastest. Run the Delta module's test with
+`SF_DELTA_BUFFER_BENCHMARK=true`, `-Pbench`, and `-Dtest=DeltaBufferingBenchmark`; optional
+`SF_DELTA_BUFFER_ROWS` and `SF_DELTA_BUFFER_REPEATS` narrow the fixture matrix.
+
+The report separates thread heap allocation bytes from Arrow allocation requests and retained
+Arrow bytes after all input was consumed. Arrow requests are counted by the input allocator's
+listener, not inferred from heap bytes; neither request count nor retained bytes measures copied
+bytes. Setup allocates the complete input outside timing, so retained bytes identify input buffers
+still owned by the writer before `prepareCommit`, without including unconsumed input. This
+boundary isolates checkpoint buffering and does not establish an end-to-end stock/native speedup;
+`NexmarkDeltaSinkBenchmark.mergeOnReadUpsertComparison` retains the full Kafka/JSON/Delta pipeline
+for that comparison.
+
+The final paired release buffering run used seven observations per shape after one warmup.
+All eight write medians improved (1.09–3.81×), with substantial JIT/order and range variation.
+The 32,768-row, 256-byte upsert median changed 6.933→6.376 ms, median JVM allocation
+27,113,312→25,445,936 bytes, and retained input Arrow 10,551,296→329,728 bytes (32×).
+Append input retention stays unchanged. Write-phase Arrow allocation requests were zero before
+and after; this does not imply zero copied bytes. The
+[optimization ledger](../optimizations/delta-live-buffer-retirement.md) retains every shape's
+median, range, IQR, allocation/retention totals and a link to all raw observations. The first
+retirement-only candidate regressed timing and was revised with primitive positions and bitsets
+before this final measurement; no full-job throughput claim follows from this arrival timer.
+
+
+The buffering benchmark and ownership regression fixture retry directory cleanup for at most one
+second when released Hadoop checksum background work races directory walking or removal.
+Only missing-file and nonempty-directory errors are retried; other I/O errors fail immediately.
+Cleanup remains outside measured execution, and the same helper is used for before/after runs.
