@@ -196,6 +196,44 @@ is `SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench` for the end-to
 `-Pbench` profile is required — the debug native library is ~10–20× slower and misleading) and
 `cd native && cargo bench` for the operator micro-benchmarks.
 
+## Fluss-to-Fluss Nexmark
+
+The opt-in Fluss connector runs the same 23 runnable queries with released Fluss 1.0.0
+at both ends. Reads retain Arrow buffers across the Java client boundary; append-only
+outputs use Arrow production. Primary-key outputs use Flink's stock Fluss writer.
+
+These Linux release results use 2M events, parallelism 4, memory state, mini-batching off,
+one warmup and three measured trials per append-only query. Fluss columns use median
+end-to-end seconds, including client teardown. The Kafka column is the existing Apple
+M1 Max memory/off speedup above; it is a historical reference, not a cross-machine
+throughput ratio. Its † expression variants and exactly-once delivery differ from
+Fluss's exact expressions and default at-least-once delivery.
+
+| Append-only output | Stock Fluss, s | StreamFusion Fluss, s | Fluss SF/Flink | Published Kafka SF/Flink |
+| --- | ---: | ---: | ---: | ---: |
+| q0 | 4.984 | 4.557 | 1.09× | 1.69× |
+| q1† | 4.909 | 4.584 | 1.07× | 1.40× |
+| q2 | 4.628 | 4.457 | 1.04× | 1.26× |
+| q3 | 7.527 | 4.662 | 1.61× | 1.03× |
+| q5 | 5.329 | 5.324 | 1.00× | 1.41× |
+| q7 | 12.943 | 6.001 | 2.16× | 1.30× |
+| q8 | 5.030 | 4.813 | 1.05× | 1.27× |
+| q10† | 5.401 | 4.924 | 1.10× | 1.45× |
+| q11 | 5.058 | 4.679 | 1.08× | 1.47× |
+| q12 | 4.763 | 4.437 | 1.07× | 1.09× |
+| q13 | 4.904 | 4.596 | 1.07× | 1.20× |
+| q14† | 5.145 | 5.240 | 0.98× | 1.47× |
+| q20 | 8.263 | 5.949 | 1.39× | 1.22× |
+| q21† | 5.083 | 4.938 | 1.03× | 1.23× |
+| q22 | 5.282 | 4.576 | 1.15× | 1.33× |
+| q23 | 11.235 | 5.599 | 2.01× | 1.69× |
+
+The append-only Fluss geomean is 1.20×. q14 is slightly slower, and some trials
+have substantial variance; the connector remains opt-in. All deterministic outputs
+match stock Fluss; q12 observes processing time. Primary-key output queries are
+validated separately and have no Kafka comparison. [Coverage, every trial, transport
+profiles and run commands](docs/connectors/fluss.md) describe the supported boundary.
+
 ## Related work
 
 Three native Flink accelerators exist, all **closed source**:

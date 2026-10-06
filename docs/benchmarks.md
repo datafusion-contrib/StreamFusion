@@ -364,3 +364,11 @@ Use the [native Criterion suites](benchmarks/native-criterion.md) to isolate Rus
 allocation requests, and Arrow buffer sharing before optimizing an end-to-end regression.
 `python3 bin/bench-native.py --list` discovers every suite; `--smoke` checks fixtures in a release
 build. These measurements complement the Flink comparisons on this page.
+
+The [Fluss-to-Fluss suite](connectors/fluss.md#completed-nexmark-validation) uses the
+same queries and event corpus with released Fluss 1.0.0 as both input and output.
+All 23 runnable queries pass; append-only output trials have a 1.20× geomean of
+median speedups over stock Fluss. Primary-key outputs use the stock writer and are
+validated separately. Kafka references come from the published README; no Kafka
+rerun or primary-key Kafka comparison is included. Full trials, variability and
+transport-only profiles live on the connector page.

@@ -2,8 +2,9 @@
 
 **Status:** Experimental, opt-in. The optional `streamfusion-fluss` module uses the
 released Apache Fluss Java connector 1.0.0. Enable its verified planner substitutions
-with `-Dstreamfusion.fluss.enabled=true`. The supported contracts have integration coverage, but this experimental module keeps
-the stock connector as the default.
+with `-Dstreamfusion.fluss.enabled=true`. All 23 runnable Nexmark queries pass, with
+matching deterministic output. Mixed end-to-end performance and the narrower supported
+connector boundary keep the stock connector as the default.
 
 The integration uses the existing Java connection for metadata, security, routing and
 broker RPCs. It reads schema-less Arrow IPC messages from `FetchLog`, preserving the
@@ -74,9 +75,10 @@ The Kafka README suite uses transactional exactly-once output, so cross-connecto
 comparisons must state this difference rather than imply equal delivery guarantees.
 
 The admission whitelist and integration tests cover the contracts described above;
-other combinations retain the stock connector. Isolated transport measurements below
-establish improvements within their measured boundaries. These results do not establish
-uniform end-to-end speedups for every query or deployment.
+other combinations retain the stock connector. The Fluss-to-Fluss Nexmark harness
+reuses the Kafka suite's queries and corpus. Its completed results and isolated
+transport measurements are below; they establish improvements within the measured
+boundaries, rather than uniform speedups for every query or deployment.
 
 ## Build and validation
 
@@ -106,6 +108,37 @@ downstream collection, historical nullable columns, paused-broker append flush,
 splitting large Arrow roots at the configured request limit, repeated grouped-request
 deduplication, wire checksums and shared-buffer lifetime. They are
 correctness checks, not performance measurements.
+
+The opt-in matrix harness runs with the release profile. It accepts the same query selector
+as the Kafka matrix and reports all individual repetitions rather than a single best run. Each native plan
+must contain native interior operators, with a row boundary permitted only for the
+intentionally stock primary-key sink. Its not-null constraint and stream-record
+timestamp insertion operators are permitted only downstream of that transpose:
+
+```sh
+SF_FLUSS_BENCH=true SF_MATRIX_QUERIES=q0 SF_ROWS=1000000 mvn -Pbench -pl streamfusion-fluss -am test \
+  -Dtest=NexmarkFlussBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dnexmark.warmups=1 -Dnexmark.runs=3
+```
+
+Input seeding, output validation and table cleanup occur outside the measured job duration.
+Both runs use the same preloaded four-bucket input, queries, watermarks, parallelism and
+checkpoint interval. Primary-key output remains the stock sink in the native run. The
+harness compares exact output multisets using bounded-memory external sorting outside
+the timed execution, including duplicate counts; q12's processing-time windows cannot use wall-clock output equality as a parity assertion.
+The static lookup result in q13 is deterministic and remains subject to output parity.
+
+Kafka references use the existing headline results in `readme.md`; this integration
+does not rerun Kafka benchmarks. Comparisons cover only append-only output queries.
+The published Kafka table reports StreamFusion/Flink speedups on an Apple M1 Max;
+this machine's Fluss measurements have their own configuration and cannot establish
+an absolute cross-machine Fluss/Kafka throughput ratio. The README's expression variants
+and exactly-once Kafka delivery also differ from the exact Fluss fixture's settings.
+
+The input event table is append-only. Output tables are primary-key tables only for
+q4, q9, q15, q16, q17, q18 and q19, following the Kafka suite's existing upsert keys.
+The remaining queries write append-only tables and must engage the Arrow append sink.
+The harness checks the actual broker table modes as well as the executed source/sink plans.
 
 ## Isolated transport profiling
 
@@ -184,9 +217,12 @@ for the compressed modes. These small fixed-width batches are transport diagnost
 not representative Nexmark headline results. The
 measurements above precede bounded acknowledgement pipelining.
 
-With pipelining enabled, the isolated ZSTD append fixture measured
-66.704 / 57.219 / 62.394 ms, versus 119.923 / 116.550 / 107.761 ms for sequential
-acknowledgements. Encoding and RPC durations overlap in the pipelined path.
+The first complete 8,192-event sweep passed every runnable query (q0–q23 except q6),
+including deterministic output parity. With pipelining enabled, the isolated ZSTD append
+fixture measured 66.704 / 57.219 / 62.394 ms, versus 119.923 / 116.550 / 107.761 ms for
+sequential acknowledgements. Encoding and RPC durations overlap in the pipelined path.
+The completed two-million-event suite is recorded below; these early smoke results
+are not used as throughput headlines.
 End-to-end duration includes Java client teardown. Released Fluss 1.0 uses Netty's
 default graceful event-loop shutdown for each connection; source and sink teardown can
 therefore dominate short jobs. The isolated transport fixture excludes that teardown
@@ -286,3 +322,65 @@ The recursive JNI handoff check observes 1,163,908 shared buffer bytes and 135,1
 changed-address bytes for NONE, and 1,294,980 shared / 4,096 changed for LZ4 and ZSTD.
 All returned values, including timestamp components and nulls, are validated. These
 are address observations, not inferred copied-byte counts.
+
+## Completed Nexmark validation
+
+All 23 runnable queries pass at 2,000,000 events with native source and query-interior
+checks. Append-only outputs also require the Arrow append sink. Primary-key outputs
+retain their stock sink and validate its transpose/constraint boundary. Exact output
+multisets, including duplicate counts, match for every deterministic query. q12's
+processing-time output is exempt; q13's static lookup result remains checked. q6 is
+excluded by the shared Kafka fixture because Flink SQL cannot run it.
+
+The final runs use released Fluss 1.0.0, four buckets, parallelism four, UTC, a one-second
+checkpoint interval, default memory state and mini-batching off. The test JVM uses a
+2 GiB heap; each broker uses a 1 GiB heap and a 512 MiB direct-memory limit. Each query
+starts in a fresh test JVM and broker cluster. Append-only queries have one stock/native
+warmup pair and three measured pairs. Primary-key queries have one final correctness
+pair, following their earlier repeated validation; these are not performance estimates
+or Kafka comparisons. Setup, input seeding, output sorting/parity and cleanup are outside
+timing. Each duration includes executeSql planning/startup, execution and client teardown.
+
+### Append-only output trials
+
+| Query | Stock Fluss seconds | StreamFusion Fluss seconds | Median SF/Flink |
+| --- | --- | --- | ---: |
+| q0 | 4.896173 / 4.983536 / 9.820781 | 4.728846 / 4.557351 / 4.506870 | 1.09× |
+| q1 | 4.979650 / 4.908936 / 4.850540 | 4.584251 / 9.651440 / 4.518153 | 1.07× |
+| q2 | 4.790409 / 4.628008 / 4.587244 | 4.456956 / 4.628614 / 4.356201 | 1.04× |
+| q3 | 7.608857 / 4.618437 / 7.526865 | 4.661656 / 4.662505 / 4.582065 | 1.61× |
+| q5 | 5.653263 / 5.329129 / 5.092166 | 5.377029 / 5.324281 / 5.123020 | 1.00× |
+| q7 | 12.943312 / 14.161689 / 5.806671 | 21.144914 / 5.959881 / 6.000944 | 2.16× |
+| q8 | 5.029525 / 7.691730 / 4.689957 | 5.095309 / 4.712600 / 4.812821 | 1.05× |
+| q10 | 5.400998 / 5.156140 / 5.451437 | 10.185726 / 4.914559 / 4.924163 | 1.10× |
+| q11 | 5.244802 / 5.057556 / 5.004168 | 4.836226 / 4.679192 / 4.644174 | 1.08× |
+| q12 | 5.168656 / 4.763380 / 4.729435 | 4.498994 / 4.436776 / 4.397046 | 1.07× |
+| q13 | 4.978735 / 4.903931 / 4.862256 | 4.704918 / 4.595521 / 4.582493 | 1.07× |
+| q14 | 5.195299 / 5.138232 / 5.144532 | 5.239781 / 10.053488 / 5.137880 | 0.98× |
+| q20 | 8.263257 / 8.294414 / 5.316719 | 5.948705 / 8.441064 / 5.663681 | 1.39× |
+| q21 | 5.083205 / 4.946829 / 5.146156 | 5.028118 / 4.938488 / 4.926485 | 1.03× |
+| q22 | 5.149269 / 10.012365 / 5.282074 | 4.591372 / 4.573737 / 4.575941 | 1.15× |
+| q23 | 11.314178 / 8.466644 / 11.235197 | 5.621627 / 5.599494 / 5.559362 | 2.01× |
+
+The append-only geomean of median speedups is 1.20×. q14 regresses by about 2%;
+several queries have outliers, including q7's native 21.145-second trial. No trials
+are discarded. These results demonstrate a working columnar pipeline, with modest
+startup-dominated gains on many queries; they do not establish that Fluss is uniformly
+faster than the README's Kafka measurements. The Kafka values in the landing page are
+existing published references on another machine, with the documented expression and
+delivery differences. The integration remains off by default. [Follow-up #301](https://github.com/datafusion-contrib/StreamFusion/issues/301) tracks client lifecycle overhead and the q14 regression.
+
+### Primary-key output correctness runs
+
+These final single pairs pass exact output parity and native query-interior assertions.
+They use the stock primary-key writer and are recorded without a Kafka comparison:
+
+| Query | Stock Fluss seconds | StreamFusion query / stock writer seconds |
+| --- | ---: | ---: |
+| q4 | 10.415635 | 7.399418 |
+| q9 | 10.449697 | 11.439946 |
+| q15 | 9.082497 | 7.831368 |
+| q16 | 10.899953 | 9.680526 |
+| q17 | 10.850807 | 9.934540 |
+| q18 | 9.373285 | 8.692731 |
+| q19 | 35.793688 | 16.450879 |

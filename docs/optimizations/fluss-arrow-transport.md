@@ -79,5 +79,5 @@ stock/Arrow median speedups are 1.17× / 1.56× / 1.44× for append and 1.83× /
 1.42× for read. The connector page retains every read, append and decode trial.
 
 These measurements establish a transport improvement for those fixtures. They do not
-establish a full Nexmark speedup or a Kafka comparison. End-to-end validation must retain query,
+establish a full Nexmark speedup or a Kafka comparison. The full suite retains query,
 JNI, timestamp conversion, checkpoint and stock primary-key sink costs.

@@ -93,7 +93,7 @@ class NexmarkMatrixBenchmark {
   // per the steelman rule. Empty for the default matrix.
   private static Map<String, String> tableConfigExtras = Map.of();
 
-  private static final Map<String, String> UPSERT_KEYS =
+  static final Map<String, String> UPSERT_KEYS =
       Map.of(
           "q4", "id",
           "q9", "id",
@@ -134,7 +134,7 @@ class NexmarkMatrixBenchmark {
     }
   }
 
-  private static final class Query {
+  static final class Query {
     final String label;
     final boolean approximateDecimal;
     final String[] setup; // extra SQL run before the insert (q12 proctime view, q13 dim+proctime); else null
@@ -2048,7 +2048,7 @@ class NexmarkMatrixBenchmark {
     }
   }
 
-  private static Query[] selectQueries() {
+  static Query[] selectQueries() {
     String subset = System.getenv("SF_MATRIX_QUERIES");
     if (subset == null) {
       return ALL_QUERIES;
@@ -2063,7 +2063,7 @@ class NexmarkMatrixBenchmark {
     return picked.toArray(new Query[0]);
   }
 
-  private static void runSetup(TableEnvironment tEnv, Query q) {
+  static void runSetup(TableEnvironment tEnv, Query q) {
     if (q.setup != null) {
       for (String statement : q.setup) {
         tEnv.executeSql(statement);
@@ -2271,6 +2271,11 @@ class NexmarkMatrixBenchmark {
                 ? ", 'protobuf.message-class-name' = 'tech.streamfusion.proto.NexmarkEvent'"
                 : "")
             + ")");
+    registerEventViews(tEnv);
+    return tEnv;
+  }
+
+  static void registerEventViews(StreamTableEnvironment tEnv) {
     // The same person/auction/bid logical streams the published Nexmark queries read, off the
     // watermarked event-time rowtime. expires becomes a timestamp too so q4/q9's BETWEEN typechecks.
     tEnv.executeSql(
@@ -2289,7 +2294,6 @@ class NexmarkMatrixBenchmark {
             + " AS price, bid.channel AS channel, bid.url AS url, rowtime AS `dateTime`, bid.extra AS"
             + " extra FROM src WHERE event_type = 2");
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
-    return tEnv;
   }
 
   // ----- shared -----
