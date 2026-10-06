@@ -115,6 +115,7 @@ nav:
   - Benchmarks:
       - benchmarks.md
       - Native Criterion suites: benchmarks/native-criterion.md
+      - Performance audit reproduction: benchmarks/performance-audit.md
       - Scalar functions: benchmarks/scalar-functions.md
       - Decimal expressions: benchmarks/decimal-expressions.md
       - Flink 1.18 compatibility: benchmarks/flink118-nexmark.md
