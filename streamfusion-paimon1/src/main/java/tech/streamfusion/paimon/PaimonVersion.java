@@ -17,6 +17,10 @@ import org.apache.paimon.types.DataType;
 final class PaimonVersion {
   private PaimonVersion() {}
 
+  static boolean supportsPartitionPruningHandoff() {
+    return false;
+  }
+
   static boolean legacyOrcTimestamp(Options options) {
     return false;
   }

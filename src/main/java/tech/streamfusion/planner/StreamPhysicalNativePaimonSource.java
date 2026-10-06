@@ -32,6 +32,16 @@ public final class StreamPhysicalNativePaimonSource extends AbstractRelNode
       RelDataType output,
       FileStoreTable table,
       ScanWatermarkSpec watermark,
+      String scanIdentity) {
+    this(cluster, traits, output, table, watermark, null, scanIdentity);
+  }
+
+  StreamPhysicalNativePaimonSource(
+      RelOptCluster cluster,
+      RelTraitSet traits,
+      RelDataType output,
+      FileStoreTable table,
+      ScanWatermarkSpec watermark,
       Predicate partitionPredicate,
       String scanIdentity) {
     this(cluster, traits, output, table, watermark, partitionPredicate, scanIdentity, 0);

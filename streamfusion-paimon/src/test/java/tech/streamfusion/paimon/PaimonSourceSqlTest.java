@@ -170,7 +170,8 @@ class PaimonSourceSqlTest {
         String query = "SELECT ts, id, v FROM t WHERE v IS NOT NULL AND pt = 'p'";
         if (nativeSource) {
           String explanation = sql.explainSql(query);
-          assertTrue(explanation.contains("partitionPredicate"), explanation);
+          assertEquals(PaimonVersion.supportsPartitionPruningHandoff(),
+              explanation.contains("partitionPredicate"), explanation);
         }
         var result = sql.executeSql(query);
         var executor = Executors.newSingleThreadExecutor();

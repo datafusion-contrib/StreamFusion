@@ -1447,3 +1447,9 @@ full-table column ordinals, independently of the native output projection. Paimo
 snapshot and continuous split planning applies the partition hint; native file decoding and
 checkpoint split offsets keep their existing boundaries. The hint is retained in physical-plan
 copies and shared-source execution nodes. Unfiltered scans use the existing read builder.
+
+
+The retained partition-equality handoff is admitted for Paimon 2.0. The legacy Paimon 1.0 adapter
+keeps its existing unfiltered read-builder path and Flink residual filtering; its shared physical
+source constructor passes no pruning predicate. Shared SQL parity tests verify both versions'
+exact snapshot/live results and require the version-specific presence or absence of the hint.
