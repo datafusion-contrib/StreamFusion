@@ -15,6 +15,7 @@ CI build reuse and runner scheduling are documented separately in the
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
+- [Retire dead Delta checkpoint buffers](delta-live-buffer-retirement.md): release fully superseded Arrow batches and metadata.
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
 
 ## How these numbers are measured

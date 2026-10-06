@@ -1,0 +1,2968 @@
+{
+  "schema_version": 1,
+  "baseline_revision": "96f98a32",
+  "candidate": "Delta live buffer retirement and primitive selections in audit-performance worktree",
+  "environment": {
+    "jdk": "OpenJDK 17",
+    "flink": "2.2.1",
+    "native_build": "release"
+  },
+  "methodology": {
+    "boundary": "Production NativeDeltaSinkWriter.write over prebuilt Arrow inputs while checkpoint held; setup, commit, released-Kernel final-state validation, and cleanup outside timer.",
+    "warmups_per_shape": 1,
+    "observations_per_shape": 7,
+    "batch_rows": 1024,
+    "upsert_key_domain": 16,
+    "statistics": "Median, min/max, inclusive linearly interpolated quartiles, and IQR; speedup is baseline median write_ns / candidate median write_ns.",
+    "command": "SF_DELTA_BUFFER_BENCHMARK=true SF_DELTA_BUFFER_REPEATS=7 mvn -Pbench,delta -pl streamfusion-delta -am -Dnative.build.skip=true -Dtest=DeltaBufferingBenchmark -Dsurefire.failIfNoSpecifiedTests=false test",
+    "limitations": [
+      "Before and after are separate JVM runs, not interleaved; one warmup and fixed shape order leave substantial JIT/order variability.",
+      "Heap allocated bytes cover writer key/bookkeeping allocations, not selection metadata alone.",
+      "Retained Arrow bytes measure input ownership, not all task memory or copied bytes.",
+      "Write-phase Arrow allocation requests are zero; this does not establish zero copies.",
+      "No end-to-end stock/native throughput conclusion from this isolated boundary."
+    ]
+  },
+  "runs": {
+    "before": {
+      "source_log": "delta-final-before.log",
+      "observations": [
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 6362199,
+          "rows_per_second": 643803,
+          "heap_allocated_bytes": 2537704,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 8484878,
+          "rows_per_second": 482741,
+          "heap_allocated_bytes": 2406896,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 1233776,
+          "rows_per_second": 3319890,
+          "heap_allocated_bytes": 2176880,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 905171,
+          "rows_per_second": 4525112,
+          "heap_allocated_bytes": 2176880,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 909869,
+          "rows_per_second": 4501747,
+          "heap_allocated_bytes": 2176880,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 923431,
+          "rows_per_second": 4435632,
+          "heap_allocated_bytes": 2176880,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 2694249,
+          "rows_per_second": 1520275,
+          "heap_allocated_bytes": 2176880,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 16319825,
+          "rows_per_second": 250983,
+          "heap_allocated_bytes": 3652840,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 401408,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 1471867,
+          "rows_per_second": 2782860,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 401408,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 2228272,
+          "rows_per_second": 1838196,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 401408,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 1494630,
+          "rows_per_second": 2740478,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 401408,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 2030647,
+          "rows_per_second": 2017091,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 401408,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 1804784,
+          "rows_per_second": 2269524,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 401408,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 3349339,
+          "rows_per_second": 1222928,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 401408,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 2912646,
+          "rows_per_second": 1406281,
+          "heap_allocated_bytes": 2406256,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 1823310,
+          "rows_per_second": 2246464,
+          "heap_allocated_bytes": 2406256,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 1916405,
+          "rows_per_second": 2137335,
+          "heap_allocated_bytes": 2406256,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 1772237,
+          "rows_per_second": 2311203,
+          "heap_allocated_bytes": 2406256,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 1823696,
+          "rows_per_second": 2245988,
+          "heap_allocated_bytes": 2406256,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 3013481,
+          "rows_per_second": 1359225,
+          "heap_allocated_bytes": 2406256,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 1916940,
+          "rows_per_second": 2136739,
+          "heap_allocated_bytes": 2406256,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 3338021,
+          "rows_per_second": 1227074,
+          "heap_allocated_bytes": 3521104,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 1318912,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 2339686,
+          "rows_per_second": 1750662,
+          "heap_allocated_bytes": 3521104,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 1318912,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 5121680,
+          "rows_per_second": 799738,
+          "heap_allocated_bytes": 3521104,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 1318912,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 1109551,
+          "rows_per_second": 3691583,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 1318912,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 1722679,
+          "rows_per_second": 2377692,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 1318912,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 1445775,
+          "rows_per_second": 2833083,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 1318912,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 1295810,
+          "rows_per_second": 3160957,
+          "heap_allocated_bytes": 3390032,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 1318912,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 4998534,
+          "rows_per_second": 6555522,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 6749218,
+          "rows_per_second": 4855081,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 7207786,
+          "rows_per_second": 4546195,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 6628471,
+          "rows_per_second": 4943523,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 4580243,
+          "rows_per_second": 7154206,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 4427718,
+          "rows_per_second": 7400652,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 4408578,
+          "rows_per_second": 7432782,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 10709045,
+          "rows_per_second": 3059843,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 3211264,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 7280032,
+          "rows_per_second": 4501079,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 3211264,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 8590273,
+          "rows_per_second": 3814547,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 3211264,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 10655345,
+          "rows_per_second": 3075264,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 3211264,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 9192159,
+          "rows_per_second": 3564777,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 3211264,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 19230554,
+          "rows_per_second": 1703955,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 3211264,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 6671042,
+          "rows_per_second": 4911976,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 3211264,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 6551457,
+          "rows_per_second": 5001636,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 4118593,
+          "rows_per_second": 7956115,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 4646120,
+          "rows_per_second": 7052767,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 3994074,
+          "rows_per_second": 8204154,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 3840187,
+          "rows_per_second": 8532918,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 11451967,
+          "rows_per_second": 2861343,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 3851106,
+          "rows_per_second": 8508725,
+          "heap_allocated_bytes": 18199680,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 22943196,
+          "rows_per_second": 1428223,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 10551296,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 11139910,
+          "rows_per_second": 2941496,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 10551296,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 6355918,
+          "rows_per_second": 5155510,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 10551296,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 6643653,
+          "rows_per_second": 4932226,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 10551296,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 5817943,
+          "rows_per_second": 5632231,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 10551296,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 9376719,
+          "rows_per_second": 3494613,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 10551296,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 6932571,
+          "rows_per_second": 4726674,
+          "heap_allocated_bytes": 27113312,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 10551296,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        }
+      ]
+    },
+    "after": {
+      "source_log": "delta-final-after.log",
+      "observations": [
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 2745713,
+          "rows_per_second": 1491780,
+          "heap_allocated_bytes": 2328896,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 2615451,
+          "rows_per_second": 1566078,
+          "heap_allocated_bytes": 2329272,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 2215221,
+          "rows_per_second": 1849025,
+          "heap_allocated_bytes": 2198464,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 867517,
+          "rows_per_second": 4721521,
+          "heap_allocated_bytes": 1968432,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 856021,
+          "rows_per_second": 4784929,
+          "heap_allocated_bytes": 1968432,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 784193,
+          "rows_per_second": 5223204,
+          "heap_allocated_bytes": 1968432,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 800986,
+          "rows_per_second": 5113697,
+          "heap_allocated_bytes": 1968432,
+          "input_arrow_bytes": 393216,
+          "retained_arrow_bytes": 393216,
+          "input_arrow_allocation_requests": 16,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 2645767,
+          "rows_per_second": 1548133,
+          "heap_allocated_bytes": 3444032,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 2470019,
+          "rows_per_second": 1658287,
+          "heap_allocated_bytes": 3313880,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 1243995,
+          "rows_per_second": 3292618,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 1213941,
+          "rows_per_second": 3374134,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 1203433,
+          "rows_per_second": 3403596,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 1338693,
+          "rows_per_second": 3059701,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 957141,
+          "rows_per_second": 4279411,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 401408,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 20,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 551738,
+          "rows_per_second": 7423813,
+          "heap_allocated_bytes": 2066736,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 478544,
+          "rows_per_second": 8559297,
+          "heap_allocated_bytes": 2066736,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 473622,
+          "rows_per_second": 8648247,
+          "heap_allocated_bytes": 2066736,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 503652,
+          "rows_per_second": 8132599,
+          "heap_allocated_bytes": 2066736,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 525293,
+          "rows_per_second": 7797553,
+          "heap_allocated_bytes": 2066736,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 476168,
+          "rows_per_second": 8602006,
+          "heap_allocated_bytes": 2066736,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 538877,
+          "rows_per_second": 7600992,
+          "heap_allocated_bytes": 2066736,
+          "input_arrow_bytes": 1310720,
+          "retained_arrow_bytes": 1310720,
+          "input_arrow_allocation_requests": 28,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 845219,
+          "rows_per_second": 4846081,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 868039,
+          "rows_per_second": 4718682,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 823902,
+          "rows_per_second": 4971465,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 1152374,
+          "rows_per_second": 3554402,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 833215,
+          "rows_per_second": 4915898,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 814145,
+          "rows_per_second": 5031045,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 4096,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 772710,
+          "rows_per_second": 5300824,
+          "heap_allocated_bytes": 3181680,
+          "input_arrow_bytes": 1318912,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 32,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 7051553,
+          "rows_per_second": 4646920,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 3522601,
+          "rows_per_second": 9302217,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 7304718,
+          "rows_per_second": 4485868,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 3607379,
+          "rows_per_second": 9083603,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 3833733,
+          "rows_per_second": 8547283,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 8407658,
+          "rows_per_second": 3897399,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 3514824,
+          "rows_per_second": 9322800,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 3145728,
+          "retained_arrow_bytes": 3145728,
+          "input_arrow_allocation_requests": 128,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 6909196,
+          "rows_per_second": 4742665,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 6155308,
+          "rows_per_second": 5323535,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 6741801,
+          "rows_per_second": 4860422,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 9796780,
+          "rows_per_second": 3344772,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 6940024,
+          "rows_per_second": 4721598,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 6167209,
+          "rows_per_second": 5313262,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 16,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 5995916,
+          "rows_per_second": 5465053,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 3211264,
+          "retained_arrow_bytes": 100352,
+          "input_arrow_allocation_requests": 160,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 0,
+          "write_ns": 3636690,
+          "rows_per_second": 9010391,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 1,
+          "write_ns": 13947411,
+          "rows_per_second": 2349397,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 2,
+          "write_ns": 3644772,
+          "rows_per_second": 8990411,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 3,
+          "write_ns": 4707984,
+          "rows_per_second": 6960092,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 4,
+          "write_ns": 3519711,
+          "rows_per_second": 9309855,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 5,
+          "write_ns": 4148454,
+          "rows_per_second": 7898846,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "append",
+          "iteration": 6,
+          "write_ns": 3654854,
+          "rows_per_second": 8965611,
+          "heap_allocated_bytes": 16531728,
+          "input_arrow_bytes": 10485760,
+          "retained_arrow_bytes": 10485760,
+          "input_arrow_allocation_requests": 224,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 0,
+          "write_ns": 6062086,
+          "rows_per_second": 5405400,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 1,
+          "write_ns": 6376051,
+          "rows_per_second": 5139231,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 2,
+          "write_ns": 6267095,
+          "rows_per_second": 5228579,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 3,
+          "write_ns": 6159131,
+          "rows_per_second": 5320231,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 4,
+          "write_ns": 26505931,
+          "rows_per_second": 1236252,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 5,
+          "write_ns": 22911558,
+          "rows_per_second": 1430195,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        },
+        {
+          "rows": 32768,
+          "batch_rows": 1024,
+          "payload_bytes": 256,
+          "mode": "upsert",
+          "iteration": 6,
+          "write_ns": 6670574,
+          "rows_per_second": 4912321,
+          "heap_allocated_bytes": 25445936,
+          "input_arrow_bytes": 10551296,
+          "retained_arrow_bytes": 329728,
+          "input_arrow_allocation_requests": 256,
+          "write_arrow_allocation_requests": 0
+        }
+      ]
+    }
+  },
+  "summary": [
+    {
+      "rows": 4096,
+      "payload_bytes": 16,
+      "mode": "append",
+      "before": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 1233776,
+          "min": 905171,
+          "max": 8484878,
+          "q1": 916650.0,
+          "q3": 4528224.0,
+          "iqr": 3611574.0
+        },
+        "rows_per_second": {
+          "median": 3319890,
+          "min": 482741,
+          "max": 4525112,
+          "q1": 1082039.0,
+          "q3": 4468689.5,
+          "iqr": 3386650.5
+        },
+        "heap_allocated_bytes": {
+          "median": 2176880,
+          "min": 2176880,
+          "max": 2537704,
+          "q1": 2176880.0,
+          "q3": 2291888.0,
+          "iqr": 115008.0
+        },
+        "input_arrow_bytes": {
+          "median": 393216,
+          "min": 393216,
+          "max": 393216,
+          "q1": 393216.0,
+          "q3": 393216.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 393216,
+          "min": 393216,
+          "max": 393216,
+          "q1": 393216.0,
+          "q3": 393216.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 867517,
+          "min": 784193,
+          "max": 2745713,
+          "q1": 828503.5,
+          "q3": 2415336.0,
+          "iqr": 1586832.5
+        },
+        "rows_per_second": {
+          "median": 4721521,
+          "min": 1491780,
+          "max": 5223204,
+          "q1": 1707551.5,
+          "q3": 4949313.0,
+          "iqr": 3241761.5
+        },
+        "heap_allocated_bytes": {
+          "median": 1968432,
+          "min": 1968432,
+          "max": 2329272,
+          "q1": 1968432.0,
+          "q3": 2263680.0,
+          "iqr": 295248.0
+        },
+        "input_arrow_bytes": {
+          "median": 393216,
+          "min": 393216,
+          "max": 393216,
+          "q1": 393216.0,
+          "q3": 393216.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 393216,
+          "min": 393216,
+          "max": 393216,
+          "q1": 393216.0,
+          "q3": 393216.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 1.422192302859771
+    },
+    {
+      "rows": 4096,
+      "payload_bytes": 16,
+      "mode": "upsert",
+      "before": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 2030647,
+          "min": 1471867,
+          "max": 16319825,
+          "q1": 1649707.0,
+          "q3": 2788805.5,
+          "iqr": 1139098.5
+        },
+        "rows_per_second": {
+          "median": 2017091,
+          "min": 250983,
+          "max": 2782860,
+          "q1": 1530562.0,
+          "q3": 2505001.0,
+          "iqr": 974439.0
+        },
+        "heap_allocated_bytes": {
+          "median": 3390032,
+          "min": 3390032,
+          "max": 3652840,
+          "q1": 3390032.0,
+          "q3": 3390032.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 401408,
+          "min": 401408,
+          "max": 401408,
+          "q1": 401408.0,
+          "q3": 401408.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 401408,
+          "min": 401408,
+          "max": 401408,
+          "q1": 401408.0,
+          "q3": 401408.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 20,
+          "min": 20,
+          "max": 20,
+          "q1": 20.0,
+          "q3": 20.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 1243995,
+          "min": 957141,
+          "max": 2645767,
+          "q1": 1208687.0,
+          "q3": 1904356.0,
+          "iqr": 695669.0
+        },
+        "rows_per_second": {
+          "median": 3292618,
+          "min": 1548133,
+          "max": 4279411,
+          "q1": 2358994.0,
+          "q3": 3388865.0,
+          "iqr": 1029871.0
+        },
+        "heap_allocated_bytes": {
+          "median": 3181680,
+          "min": 3181680,
+          "max": 3444032,
+          "q1": 3181680.0,
+          "q3": 3247780.0,
+          "iqr": 66100.0
+        },
+        "input_arrow_bytes": {
+          "median": 401408,
+          "min": 401408,
+          "max": 401408,
+          "q1": 401408.0,
+          "q3": 401408.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 100352,
+          "min": 100352,
+          "max": 100352,
+          "q1": 100352.0,
+          "q3": 100352.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 20,
+          "min": 20,
+          "max": 20,
+          "q1": 20.0,
+          "q3": 20.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 1.63235945482096
+    },
+    {
+      "rows": 4096,
+      "payload_bytes": 256,
+      "mode": "append",
+      "before": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 1916405,
+          "min": 1772237,
+          "max": 3013481,
+          "q1": 1823503.0,
+          "q3": 2414793.0,
+          "iqr": 591290.0
+        },
+        "rows_per_second": {
+          "median": 2137335,
+          "min": 1359225,
+          "max": 2311203,
+          "q1": 1771510.0,
+          "q3": 2246226.0,
+          "iqr": 474716.0
+        },
+        "heap_allocated_bytes": {
+          "median": 2406256,
+          "min": 2406256,
+          "max": 2406256,
+          "q1": 2406256.0,
+          "q3": 2406256.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 1310720,
+          "min": 1310720,
+          "max": 1310720,
+          "q1": 1310720.0,
+          "q3": 1310720.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 1310720,
+          "min": 1310720,
+          "max": 1310720,
+          "q1": 1310720.0,
+          "q3": 1310720.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 28,
+          "min": 28,
+          "max": 28,
+          "q1": 28.0,
+          "q3": 28.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 503652,
+          "min": 473622,
+          "max": 551738,
+          "q1": 477356.0,
+          "q3": 532085.0,
+          "iqr": 54729.0
+        },
+        "rows_per_second": {
+          "median": 8132599,
+          "min": 7423813,
+          "max": 8648247,
+          "q1": 7699272.5,
+          "q3": 8580651.5,
+          "iqr": 881379.0
+        },
+        "heap_allocated_bytes": {
+          "median": 2066736,
+          "min": 2066736,
+          "max": 2066736,
+          "q1": 2066736.0,
+          "q3": 2066736.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 1310720,
+          "min": 1310720,
+          "max": 1310720,
+          "q1": 1310720.0,
+          "q3": 1310720.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 1310720,
+          "min": 1310720,
+          "max": 1310720,
+          "q1": 1310720.0,
+          "q3": 1310720.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 28,
+          "min": 28,
+          "max": 28,
+          "q1": 28.0,
+          "q3": 28.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 3.8050181474510176
+    },
+    {
+      "rows": 4096,
+      "payload_bytes": 256,
+      "mode": "upsert",
+      "before": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 1722679,
+          "min": 1109551,
+          "max": 5121680,
+          "q1": 1370792.5,
+          "q3": 2838853.5,
+          "iqr": 1468061.0
+        },
+        "rows_per_second": {
+          "median": 2377692,
+          "min": 799738,
+          "max": 3691583,
+          "q1": 1488868.0,
+          "q3": 2997020.0,
+          "iqr": 1508152.0
+        },
+        "heap_allocated_bytes": {
+          "median": 3390032,
+          "min": 3390032,
+          "max": 3521104,
+          "q1": 3390032.0,
+          "q3": 3521104.0,
+          "iqr": 131072.0
+        },
+        "input_arrow_bytes": {
+          "median": 1318912,
+          "min": 1318912,
+          "max": 1318912,
+          "q1": 1318912.0,
+          "q3": 1318912.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 1318912,
+          "min": 1318912,
+          "max": 1318912,
+          "q1": 1318912.0,
+          "q3": 1318912.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 32,
+          "min": 32,
+          "max": 32,
+          "q1": 32.0,
+          "q3": 32.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 4096,
+          "min": 4096,
+          "max": 4096,
+          "q1": 4096.0,
+          "q3": 4096.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 833215,
+          "min": 772710,
+          "max": 1152374,
+          "q1": 819023.5,
+          "q3": 856629.0,
+          "iqr": 37605.5
+        },
+        "rows_per_second": {
+          "median": 4915898,
+          "min": 3554402,
+          "max": 5300824,
+          "q1": 4782381.5,
+          "q3": 5001255.0,
+          "iqr": 218873.5
+        },
+        "heap_allocated_bytes": {
+          "median": 3181680,
+          "min": 3181680,
+          "max": 3181680,
+          "q1": 3181680.0,
+          "q3": 3181680.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 1318912,
+          "min": 1318912,
+          "max": 1318912,
+          "q1": 1318912.0,
+          "q3": 1318912.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 329728,
+          "min": 329728,
+          "max": 329728,
+          "q1": 329728.0,
+          "q3": 329728.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 32,
+          "min": 32,
+          "max": 32,
+          "q1": 32.0,
+          "q3": 32.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 2.067508386190839
+    },
+    {
+      "rows": 32768,
+      "payload_bytes": 16,
+      "mode": "append",
+      "before": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 4998534,
+          "min": 4408578,
+          "max": 7207786,
+          "q1": 4503980.5,
+          "q3": 6688844.5,
+          "iqr": 2184864.0
+        },
+        "rows_per_second": {
+          "median": 6555522,
+          "min": 4546195,
+          "max": 7432782,
+          "q1": 4899302.0,
+          "q3": 7277429.0,
+          "iqr": 2378127.0
+        },
+        "heap_allocated_bytes": {
+          "median": 18199680,
+          "min": 18199680,
+          "max": 18199680,
+          "q1": 18199680.0,
+          "q3": 18199680.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 3145728,
+          "min": 3145728,
+          "max": 3145728,
+          "q1": 3145728.0,
+          "q3": 3145728.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 3145728,
+          "min": 3145728,
+          "max": 3145728,
+          "q1": 3145728.0,
+          "q3": 3145728.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 128,
+          "min": 128,
+          "max": 128,
+          "q1": 128.0,
+          "q3": 128.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 3833733,
+          "min": 3514824,
+          "max": 8407658,
+          "q1": 3564990.0,
+          "q3": 7178135.5,
+          "iqr": 3613145.5
+        },
+        "rows_per_second": {
+          "median": 8547283,
+          "min": 3897399,
+          "max": 9322800,
+          "q1": 4566394.0,
+          "q3": 9192910.0,
+          "iqr": 4626516.0
+        },
+        "heap_allocated_bytes": {
+          "median": 16531728,
+          "min": 16531728,
+          "max": 16531728,
+          "q1": 16531728.0,
+          "q3": 16531728.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 3145728,
+          "min": 3145728,
+          "max": 3145728,
+          "q1": 3145728.0,
+          "q3": 3145728.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 3145728,
+          "min": 3145728,
+          "max": 3145728,
+          "q1": 3145728.0,
+          "q3": 3145728.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 128,
+          "min": 128,
+          "max": 128,
+          "q1": 128.0,
+          "q3": 128.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 1.3038294529118224
+    },
+    {
+      "rows": 32768,
+      "payload_bytes": 16,
+      "mode": "upsert",
+      "before": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 9192159,
+          "min": 6671042,
+          "max": 19230554,
+          "q1": 7935152.5,
+          "q3": 10682195.0,
+          "iqr": 2747042.5
+        },
+        "rows_per_second": {
+          "median": 3564777,
+          "min": 1703955,
+          "max": 4911976,
+          "q1": 3067553.5,
+          "q3": 4157813.0,
+          "iqr": 1090259.5
+        },
+        "heap_allocated_bytes": {
+          "median": 27113312,
+          "min": 27113312,
+          "max": 27113312,
+          "q1": 27113312.0,
+          "q3": 27113312.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 3211264,
+          "min": 3211264,
+          "max": 3211264,
+          "q1": 3211264.0,
+          "q3": 3211264.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 3211264,
+          "min": 3211264,
+          "max": 3211264,
+          "q1": 3211264.0,
+          "q3": 3211264.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 160,
+          "min": 160,
+          "max": 160,
+          "q1": 160.0,
+          "q3": 160.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 16,
+          "min": 16,
+          "max": 16,
+          "q1": 16.0,
+          "q3": 16.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 6741801,
+          "min": 5995916,
+          "max": 9796780,
+          "q1": 6161258.5,
+          "q3": 6924610.0,
+          "iqr": 763351.5
+        },
+        "rows_per_second": {
+          "median": 4860422,
+          "min": 3344772,
+          "max": 5465053,
+          "q1": 4732131.5,
+          "q3": 5318398.5,
+          "iqr": 586267.0
+        },
+        "heap_allocated_bytes": {
+          "median": 25445936,
+          "min": 25445936,
+          "max": 25445936,
+          "q1": 25445936.0,
+          "q3": 25445936.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 3211264,
+          "min": 3211264,
+          "max": 3211264,
+          "q1": 3211264.0,
+          "q3": 3211264.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 100352,
+          "min": 100352,
+          "max": 100352,
+          "q1": 100352.0,
+          "q3": 100352.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 160,
+          "min": 160,
+          "max": 160,
+          "q1": 160.0,
+          "q3": 160.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 1.3634574796853245
+    },
+    {
+      "rows": 32768,
+      "payload_bytes": 256,
+      "mode": "append",
+      "before": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 4118593,
+          "min": 3840187,
+          "max": 11451967,
+          "q1": 3922590.0,
+          "q3": 5598788.5,
+          "iqr": 1676198.5
+        },
+        "rows_per_second": {
+          "median": 7956115,
+          "min": 2861343,
+          "max": 8532918,
+          "q1": 6027201.5,
+          "q3": 8356439.5,
+          "iqr": 2329238.0
+        },
+        "heap_allocated_bytes": {
+          "median": 18199680,
+          "min": 18199680,
+          "max": 18199680,
+          "q1": 18199680.0,
+          "q3": 18199680.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 10485760,
+          "min": 10485760,
+          "max": 10485760,
+          "q1": 10485760.0,
+          "q3": 10485760.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 10485760,
+          "min": 10485760,
+          "max": 10485760,
+          "q1": 10485760.0,
+          "q3": 10485760.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 224,
+          "min": 224,
+          "max": 224,
+          "q1": 224.0,
+          "q3": 224.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 3654854,
+          "min": 3519711,
+          "max": 13947411,
+          "q1": 3640731.0,
+          "q3": 4428219.0,
+          "iqr": 787488.0
+        },
+        "rows_per_second": {
+          "median": 8965611,
+          "min": 2349397,
+          "max": 9309855,
+          "q1": 7429469.0,
+          "q3": 9000401.0,
+          "iqr": 1570932.0
+        },
+        "heap_allocated_bytes": {
+          "median": 16531728,
+          "min": 16531728,
+          "max": 16531728,
+          "q1": 16531728.0,
+          "q3": 16531728.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 10485760,
+          "min": 10485760,
+          "max": 10485760,
+          "q1": 10485760.0,
+          "q3": 10485760.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 10485760,
+          "min": 10485760,
+          "max": 10485760,
+          "q1": 10485760.0,
+          "q3": 10485760.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 224,
+          "min": 224,
+          "max": 224,
+          "q1": 224.0,
+          "q3": 224.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 1.1268830437549626
+    },
+    {
+      "rows": 32768,
+      "payload_bytes": 256,
+      "mode": "upsert",
+      "before": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 6932571,
+          "min": 5817943,
+          "max": 22943196,
+          "q1": 6499785.5,
+          "q3": 10258314.5,
+          "iqr": 3758529.0
+        },
+        "rows_per_second": {
+          "median": 4726674,
+          "min": 1428223,
+          "max": 5632231,
+          "q1": 3218054.5,
+          "q3": 5043868.0,
+          "iqr": 1825813.5
+        },
+        "heap_allocated_bytes": {
+          "median": 27113312,
+          "min": 27113312,
+          "max": 27113312,
+          "q1": 27113312.0,
+          "q3": 27113312.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 10551296,
+          "min": 10551296,
+          "max": 10551296,
+          "q1": 10551296.0,
+          "q3": 10551296.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 10551296,
+          "min": 10551296,
+          "max": 10551296,
+          "q1": 10551296.0,
+          "q3": 10551296.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "after": {
+        "rows": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "q1": 32768.0,
+          "q3": 32768.0,
+          "iqr": 0.0
+        },
+        "batch_rows": {
+          "median": 1024,
+          "min": 1024,
+          "max": 1024,
+          "q1": 1024.0,
+          "q3": 1024.0,
+          "iqr": 0.0
+        },
+        "payload_bytes": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_ns": {
+          "median": 6376051,
+          "min": 6062086,
+          "max": 26505931,
+          "q1": 6213113.0,
+          "q3": 14791066.0,
+          "iqr": 8577953.0
+        },
+        "rows_per_second": {
+          "median": 5139231,
+          "min": 1236252,
+          "max": 5405400,
+          "q1": 3171258.0,
+          "q3": 5274405.0,
+          "iqr": 2103147.0
+        },
+        "heap_allocated_bytes": {
+          "median": 25445936,
+          "min": 25445936,
+          "max": 25445936,
+          "q1": 25445936.0,
+          "q3": 25445936.0,
+          "iqr": 0.0
+        },
+        "input_arrow_bytes": {
+          "median": 10551296,
+          "min": 10551296,
+          "max": 10551296,
+          "q1": 10551296.0,
+          "q3": 10551296.0,
+          "iqr": 0.0
+        },
+        "retained_arrow_bytes": {
+          "median": 329728,
+          "min": 329728,
+          "max": 329728,
+          "q1": 329728.0,
+          "q3": 329728.0,
+          "iqr": 0.0
+        },
+        "input_arrow_allocation_requests": {
+          "median": 256,
+          "min": 256,
+          "max": 256,
+          "q1": 256.0,
+          "q3": 256.0,
+          "iqr": 0.0
+        },
+        "write_arrow_allocation_requests": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "iqr": 0.0
+        }
+      },
+      "write_median_speedup": 1.0872828652092024
+    }
+  ]
+}
