@@ -2041,3 +2041,28 @@ allocation witnesses, not timing or complete-job speedup evidence. Apply the
 extension after the baseline, typed, fusion and specialization prototype
 patches described in the [specialization diagnostic](hyperbolic-specialization.md).
 Production admission is unchanged.
+
+The CSV `format/csv/text_envelope` fixtures exercise production integer, float, and timestamp
+conversion together at 16, 1,024, and 16,384 messages. ASCII and BMP Unicode integer variants
+include null bodies and malformed fields under per-field error skipping. Fixture construction
+stays outside timing; allocation reporting covers production decode and Arrow output construction.
+
+Persistent interval-join fixtures include arrival after watermark expiry, with INNER and LEFT
+outer joins, nullable payloads, varied widths, and cardinalities. Fixture creation and frontier
+advancement remain outside timing; the measured call probes state, drops expired arrivals,
+and emits any immediate outer padding through the production operator.
+
+The memory `interval_join/expired_opposite_and_outer_pads` fixture measures one production
+arrival after loading future and expired opposite rows under the same keys. Sizes 16, 1024, and
+16384 with nullable narrow/wide payloads exercise the first per-key cleanup timer, the batched
+probe mask, and ordered mixing of matches and immediate outer padding. Fixture loading and
+watermark advancement are outside timing; validation asserts the alternating match/padding
+sequence and retained Arrow payload values.
+
+CSV `format/csv/decimal_exponents` measures production DECIMAL(5,2) decoding at 16, 1,024,
+and 16,384 messages, mixing ordinary HALF_UP rounding, Unicode decimal digits, extreme zero
+exponents, precision overflow, fractional discard, and Java range errors in lenient mode.
+Every decoded value and null is checked against a fixed expected result outside timing;
+`text_envelope` also validates all integer, float, and timestamp fields, rather than row counts alone.
+
+The memory interval `unique_cleanup_deadlines` fixture assigns every row a distinct key and event timestamp at 16, 1,024, and 16,384 rows. State construction stays outside timing; advancing to the terminal watermark measures chronological timer cleanup and outer padding, with output values and complete drain checked before measurement.

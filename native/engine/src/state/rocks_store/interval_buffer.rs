@@ -16,6 +16,10 @@ use std::sync::Arc;
 /// a side.
 const KEY_LEN: usize = 13;
 
+/// Timer metadata uses tables 2/3 and `[key_group i32 BE][table u8][equi-key bytes]`.
+/// Its keys may have the same length as row keys, so restore discriminates by table first.
+const CLEANUP_TIMER_TABLES: [u8; 2] = [2, 3];
+
 /// The fixed prefix ahead of every value's arrow-row bytes: the row's eviction rowtime and its
 /// outer-join matched flag, so a watermark firing and a match flip never decode payloads.
 const VALUE_PREFIX_LEN: usize = 9;
@@ -41,10 +45,10 @@ pub(crate) struct BufferedIntervalRow {
 /// one shared DB (left table 0, right table 1, one checkpoint manifest). A row appends on arrival
 /// — the buffer IS RocksDB, with no resident working set — under a fresh sequence, routed by its
 /// equi-join key's group, and valued as `[rowtime i64 LE][matched u8][arrow-row bytes]`. A push
-/// probes only the key groups its batch hashes to, a match flips the flag with one re-put, and a
-/// watermark firing splits expired from live rows on the value prefix alone. On restore new
-/// sequences start above the persisted high-water marks, so restored and new row ids never
-/// collide.
+/// probes only the key groups its batch hashes to and a match flips the flag with one re-put.
+/// Per-key cleanup deadlines live independently in timer metadata tables, including timers whose
+/// rows were eagerly removed. On restore new sequences start above the persisted high-water marks,
+/// so restored and new row ids never collide.
 pub(crate) struct RocksIntervalBuffer {
     db: Arc<DB>,
     _cache: Option<Cache>,
@@ -125,14 +129,23 @@ impl RocksIntervalBuffer {
                     buffer.timer_deadline = merged_timer_deadline(buffer.timer_deadline, &value);
                     continue;
                 }
-                if key.len() != KEY_LEN {
+                if key.len() < 5 {
                     continue;
                 }
                 let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                 if !key_groups.contains(&kg) {
                     continue;
                 }
-                let table = key[4] as usize;
+                let table = key[4];
+                if CLEANUP_TIMER_TABLES.contains(&table) {
+                    Self::cleanup_deadline(&value)?;
+                    writes.put(key, value)?;
+                    continue;
+                }
+                if key.len() != KEY_LEN || table > PAIR_SECOND_TABLE {
+                    continue;
+                }
+                let table = table as usize;
                 let seq = buffer.next_seq[table];
                 buffer.next_seq[table] += 1;
                 let mut new_key = key.to_vec();
@@ -269,6 +282,95 @@ impl RocksIntervalBuffer {
         writes.finish()?;
         expired.sort_unstable_by_key(|row| row.seq);
         Ok(expired)
+    }
+
+    /// Selective deletion after an opposite-key probe or a due per-key cleanup timer.
+    pub(crate) fn remove_rows(
+        &mut self,
+        left: bool,
+        rows: &[&BufferedIntervalRow],
+    ) -> Result<(), DataFusionError> {
+        let table = Self::table(left);
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for row in rows {
+            writes.delete(Self::db_key(row.key_group, table, row.seq))?;
+        }
+        writes.finish()
+    }
+
+    pub(crate) fn get_cleanup_timer(
+        &self,
+        left: bool,
+        key_group: i32,
+        key: &[u8],
+    ) -> Result<Option<i64>, DataFusionError> {
+        self.db
+            .get(Self::cleanup_timer_key(left, key_group, key))
+            .map_err(re)?
+            .map(|value| Self::cleanup_deadline(&value))
+            .transpose()
+    }
+
+    pub(crate) fn set_cleanup_timer(
+        &mut self,
+        left: bool,
+        key_group: i32,
+        key: &[u8],
+        deadline: Option<i64>,
+    ) -> Result<(), DataFusionError> {
+        self.apply_cleanup_timers(left, &[(key_group, key.to_vec(), deadline)])
+    }
+
+    pub(crate) fn apply_cleanup_timers(
+        &mut self,
+        left: bool,
+        updates: &[(i32, Vec<u8>, Option<i64>)],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for (key_group, key, deadline) in updates {
+            let db_key = Self::cleanup_timer_key(left, *key_group, key);
+            match deadline {
+                Some(deadline) => writes.put(db_key, deadline.to_le_bytes())?,
+                None => writes.delete(db_key)?,
+            }
+        }
+        writes.finish()
+    }
+
+    /// Includes pending timers whose rows were already removed by eager probe cleanup.
+    pub(crate) fn cleanup_timers(
+        &self,
+        left: bool,
+    ) -> Result<BTreeMap<i32, BTreeMap<Vec<u8>, i64>>, DataFusionError> {
+        let table = CLEANUP_TIMER_TABLES[Self::table(left) as usize];
+        let mut timers: BTreeMap<i32, BTreeMap<Vec<u8>, i64>> = BTreeMap::new();
+        for entry in self.db.iterator(IteratorMode::Start) {
+            let (key, value) = entry.map_err(re)?;
+            if key.len() < 5 || key[4] != table {
+                continue;
+            }
+            let key_group = i32::from_be_bytes(key[..4].try_into().expect("key group"));
+            timers
+                .entry(key_group)
+                .or_default()
+                .insert(key[5..].to_vec(), Self::cleanup_deadline(&value)?);
+        }
+        Ok(timers)
+    }
+
+    fn cleanup_timer_key(left: bool, key_group: i32, key: &[u8]) -> Vec<u8> {
+        let mut db_key = Vec::with_capacity(5 + key.len());
+        db_key.extend_from_slice(&key_group.to_be_bytes());
+        db_key.push(CLEANUP_TIMER_TABLES[Self::table(left) as usize]);
+        db_key.extend_from_slice(key);
+        db_key
+    }
+
+    fn cleanup_deadline(value: &[u8]) -> Result<i64, DataFusionError> {
+        let bytes = value.try_into().map_err(|_| {
+            DataFusionError::Execution("invalid interval cleanup timer metadata".into())
+        })?;
+        Ok(i64::from_le_bytes(bytes))
     }
 
     /// Flips the matched flag of rows that gained their first match this push — one re-put per
@@ -485,6 +587,185 @@ mod tests {
             .unwrap()
             .values()
             .to_vec()
+    }
+
+    #[test]
+    fn cleanup_timers_survive_empty_rows_checkpoint_and_key_group_clipping() {
+        let snapshot = snapshot_dir("cleanup-timers");
+        let mut store = buffer("cleanup-timers");
+        let row_length_key = vec![42; KEY_LEN - 5];
+        let longer_key = vec![51; KEY_LEN + 2];
+        store
+            .apply_cleanup_timers(
+                true,
+                &[
+                    (0, row_length_key.clone(), Some(101)),
+                    (7, row_length_key.clone(), Some(201)),
+                    (7, longer_key.clone(), Some(301)),
+                ],
+            )
+            .unwrap();
+        store
+            .set_cleanup_timer(false, 7, &row_length_key, Some(401))
+            .unwrap();
+        let manifest = store.checkpoint(i64::MIN, &snapshot).unwrap();
+        drop(store);
+
+        let aligned = RocksIntervalBuffer::open_merged(
+            test_config("cleanup-timers-aligned"),
+            schema(),
+            schema(),
+            &[(snapshot.clone(), manifest.snapshot_id)],
+            0..=127,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            aligned.get_cleanup_timer(true, 0, &row_length_key).unwrap(),
+            Some(101)
+        );
+        assert!(aligned.rows_by_group(true).unwrap().is_empty());
+        drop(aligned);
+
+        let second_snapshot = snapshot_dir("cleanup-timers-second");
+        let mut second = buffer("cleanup-timers-second");
+        second
+            .set_cleanup_timer(false, 7, b"other", Some(501))
+            .unwrap();
+        let second_manifest = second.checkpoint(i64::MIN, &second_snapshot).unwrap();
+        drop(second);
+        let mut clipped = RocksIntervalBuffer::open_merged(
+            test_config("cleanup-timers-clipped"),
+            schema(),
+            schema(),
+            &[
+                (snapshot, manifest.snapshot_id),
+                (second_snapshot, second_manifest.snapshot_id),
+            ],
+            7..=7,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            clipped.get_cleanup_timer(true, 0, &row_length_key).unwrap(),
+            None
+        );
+        assert_eq!(
+            clipped.get_cleanup_timer(true, 7, &row_length_key).unwrap(),
+            Some(201)
+        );
+        assert_eq!(
+            clipped
+                .get_cleanup_timer(false, 7, &row_length_key)
+                .unwrap(),
+            Some(401)
+        );
+        assert_eq!(clipped.cleanup_timers(true).unwrap()[&7][&longer_key], 301);
+        assert_eq!(
+            clipped.get_cleanup_timer(false, 7, b"other").unwrap(),
+            Some(501)
+        );
+        assert_eq!(clipped.next_row_id(true), 0);
+        assert!(clipped.rows_by_group(true).unwrap().is_empty());
+        clipped
+            .set_cleanup_timer(true, 7, &row_length_key, None)
+            .unwrap();
+        assert_eq!(
+            clipped.get_cleanup_timer(true, 7, &row_length_key).unwrap(),
+            None
+        );
+        assert_eq!(clipped.cleanup_timers(true).unwrap()[&7].len(), 1);
+    }
+
+    #[test]
+    fn first_arrival_cleanup_deadline_survives_checkpoint_with_out_of_order_rows() {
+        let make_joiner = |store| {
+            IntervalJoiner::new(
+                vec![0],
+                vec![0],
+                2,
+                2,
+                0,
+                0,
+                None,
+                JoinKind::Inner,
+                timed_schema(),
+                timed_schema(),
+            )
+            .with_key_timestamp_precisions(vec![-1])
+            .with_store(store)
+        };
+        let store = RocksIntervalBuffer::create(
+            test_config("first-arrival-timer"),
+            timed_schema(),
+            timed_schema(),
+        )
+        .unwrap();
+        let mut before = make_joiner(store);
+        before
+            .push_left(timed_batch(&[1], &[10], &[100]), None)
+            .unwrap();
+        before
+            .push_left(timed_batch(&[1], &[20], &[90]), None)
+            .unwrap();
+        assert_eq!(before.advance(95).unwrap().num_rows(), 0);
+        let snapshot = snapshot_dir("first-arrival-timer");
+        let manifest = before.store_mut().checkpoint(i64::MIN, &snapshot).unwrap();
+        drop(before);
+        let store = RocksIntervalBuffer::open_merged(
+            test_config("first-arrival-timer-reopen"),
+            timed_schema(),
+            timed_schema(),
+            &[(snapshot, manifest.snapshot_id)],
+            0..=127,
+            true,
+        )
+        .unwrap();
+        let mut restored = make_joiner(store);
+        restored.advance(95).unwrap();
+        let output = restored
+            .push_right(timed_batch(&[1], &[30], &[90]), None)
+            .unwrap();
+        assert_eq!(output.num_rows(), 1);
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(1), 0).unwrap(),
+            ScalarValue::Int64(Some(20))
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(4), 0).unwrap(),
+            ScalarValue::Int64(Some(30))
+        );
+    }
+
+    #[test]
+    fn selective_cleanup_keeps_other_rows_and_pending_timer() {
+        let mut store = buffer("selective-cleanup");
+        store
+            .push(
+                true,
+                &batch(&[1, 1], &[10, 20]),
+                &[0],
+                &[-1],
+                &Int64Array::from(vec![100, 90]),
+                &[false, true],
+            )
+            .unwrap();
+        let rows = store.rows_by_group(true).unwrap();
+        let key_group = *rows.keys().next().unwrap();
+        store
+            .set_cleanup_timer(true, key_group, b"key", Some(101))
+            .unwrap();
+        let rows = &rows[&key_group];
+        store.remove_rows(true, &[&rows[1]]).unwrap();
+        let kept = store.rows_by_group(true).unwrap();
+        assert_eq!(
+            values(&store, &kept[&key_group].iter().collect::<Vec<_>>()),
+            vec![10]
+        );
+        assert_eq!(
+            store.get_cleanup_timer(true, key_group, b"key").unwrap(),
+            Some(101)
+        );
     }
 
     #[test]

@@ -25,7 +25,8 @@ import org.apache.flink.table.types.logical.RowType;
  *
  * <p>Flink delivers each input's watermark to {@link #processWatermark1}/{@link #processWatermark2};
  * the base operator combines them into the minimum and calls {@link #processWatermark}, which we
- * override to advance the joiner's eviction frontier before forwarding the watermark downstream.
+ * override to advance the joiner's eviction frontier before forwarding the watermark downstream
+ * with Flink's interval-bound output delay.
  *
  * <p>A **proctime** interval join times each row by the operator's processing-time clock (Flink's
  * {@code ProcTimeIntervalJoin} uses the clock, not a row value): the row's time column is stamped with
@@ -286,7 +287,12 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
       // cleanup there so even with no further input the tail (and outer null-pads) drains. now only
       // advances, so the latest boundary scheduled covers every row buffered as of now.
       long horizon = Math.max(Math.max(upperMillis, -lowerMillis), 0);
-      long boundary = now + Math.max(horizon, 1); // strictly future, so the timer actually fires
+      long boundary;
+      try {
+        boundary = Math.addExact(now, Math.addExact(horizon, 1));
+      } catch (ArithmeticException overflow) {
+        boundary = Long.MAX_VALUE;
+      }
       if (boundary > registeredTimer) {
         getProcessingTimeService().registerTimer(boundary, this);
         registeredTimer = boundary;
@@ -311,11 +317,18 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   @Override
   public void processWatermark(Watermark mark) throws Exception {
     // Proctime joins evict on the processing-time clock, not the watermark; just forward it.
-    if (!proctime) {
-      advance(mark.getTimestamp());
-      publishStateBytes();
+    if (proctime) {
+      super.processWatermark(mark);
+      return;
     }
-    super.processWatermark(mark);
+    advance(mark.getTimestamp());
+    publishStateBytes();
+    var timeServices = getTimeServiceManager();
+    if (timeServices.isPresent()) {
+      timeServices.get().advanceWatermark(mark);
+    }
+    long delay = Math.max(-lowerMillis, upperMillis);
+    output.emitWatermark(delay == 0 ? mark : new Watermark(mark.getTimestamp() - delay));
   }
 
   /** Advances the eviction frontier, emitting any null-padded rows for evicted unmatched outer rows. */

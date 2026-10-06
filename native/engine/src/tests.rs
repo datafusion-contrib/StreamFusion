@@ -7731,7 +7731,7 @@ fn interval_join_evicts_dead_rows_on_watermark() {
     let mut joiner = inner_interval_joiner(-1000, 1000);
     joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
     // Watermark 6000: left.rt - lower = 5000 - (-1000) = 6000, not > 6000, so the row is evicted.
-    joiner.advance(6000).unwrap();
+    joiner.advance(6001).unwrap();
     // A right row that would otherwise match (delta -500) finds nothing buffered.
     assert_eq!(
         joiner
@@ -7983,7 +7983,7 @@ fn interval_left_join_null_pads_unmatched_on_eviction() {
     assert_eq!(joiner.advance(5000).unwrap().num_rows(), 0);
     // Watermark at/above 5000 - (-1000) = 6000: the left row is evicted unmatched → [left+null]
     // (append-only, so no $row_kind$ column — just the padded row).
-    let out = joiner.advance(6000).unwrap();
+    let out = joiner.advance(6001).unwrap();
     assert_eq!(out.num_rows(), 1);
     assert_eq!(values(&out, 1), vec![10]); // left v
     assert!(out.column(3).is_null(0)); // right k nulled

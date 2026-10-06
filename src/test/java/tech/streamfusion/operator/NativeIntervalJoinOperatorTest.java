@@ -39,6 +39,137 @@ class NativeIntervalJoinOperatorTest {
           new String[] {"k", "v", "rt"});
 
   @Test
+  void expiredArrivalAndCleanupBoundariesMatchStockFlink() throws Exception {
+    for (int kind = 0; kind < 4; kind++) {
+      for (boolean rocks : new boolean[] {false, true}) {
+        var nativeOperator = new NativeIntervalJoinOperator(
+            new int[] {0}, new int[] {0}, 2, 2, 0, 0, kind, INPUT, INPUT,
+            EncodedPredicate.NONE, false, new int[] {-1}, MAX_PARALLELISM);
+        try (BufferAllocator allocator = new RootAllocator();
+            var nativeHarness = keyedHarness(nativeOperator);
+            var stock = stockHarness(kind)) {
+          if (rocks) nativeHarness.setStateBackend(
+              new tech.streamfusion.state.RocksDBNativeStateBackendFactory().createFromConfig(
+                  new org.apache.flink.configuration.Configuration(), getClass().getClassLoader()));
+          nativeHarness.setup(new ArrowBatchSerializer());
+          nativeHarness.open();
+          stock.open();
+          nativeHarness.processElement1(new StreamRecord<>(batch(allocator, row(1, 10, 100))));
+          stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, 10L, 100L)));
+          nativeHarness.processBothWatermarks(new Watermark(100));
+          stock.processBothWatermarks(new Watermark(100));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+          nativeHarness.processElement2(new StreamRecord<>(batch(allocator, row(1, 20, 100))));
+          stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 20L, 100L)));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+          nativeHarness.processBothWatermarks(new Watermark(1000));
+          stock.processBothWatermarks(new Watermark(1000));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+          nativeHarness.processElement1(new StreamRecord<>(batch(allocator, row(1, 30, 100))));
+          stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, 30L, 100L)));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+          nativeHarness.processElement2(new StreamRecord<>(batch(allocator, row(1, 40, 100))));
+          stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 40L, 100L)));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+          nativeHarness.processElement1(new StreamRecord<>(batch(allocator, row(1, 50, 1100), row(1, 60, 1090))));
+          stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, 50L, 1100L)));
+          stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, 60L, 1090L)));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+          nativeHarness.processBothWatermarks(new Watermark(1095));
+          stock.processBothWatermarks(new Watermark(1095));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+          nativeHarness.processElement2(new StreamRecord<>(batch(allocator, row(1, 70, 1090), row(1, 80, 1090))));
+          stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 70L, 1090L)));
+          stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 80L, 1090L)));
+          assertEquals(stockRows(stock), collectNullable(nativeHarness));
+        }
+      }
+    }
+  }
+
+  @Test
+  void nonpositiveSurvivingTimestampCleanupMatchesStockFlink() throws Exception {
+    for (boolean rocks : new boolean[] {false, true}) {
+      var operator = new NativeIntervalJoinOperator(
+          new int[] {0}, new int[] {0}, 2, 2, -100, 100, 3, INPUT, INPUT,
+          EncodedPredicate.NONE, false, new int[] {-1}, MAX_PARALLELISM);
+      try (BufferAllocator allocator = new RootAllocator();
+          var harness = keyedHarness(operator);
+          var stock = stockHarness(3, -100, 100)) {
+        if (rocks) harness.setStateBackend(
+            new tech.streamfusion.state.RocksDBNativeStateBackendFactory().createFromConfig(
+                new org.apache.flink.configuration.Configuration(), getClass().getClassLoader()));
+        harness.setup(new ArrowBatchSerializer());
+        harness.open();
+        stock.open();
+        harness.processElement1(new StreamRecord<>(batch(allocator, row(1, 10, -50), row(1, 20, 0))));
+        stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, 10L, -50L)));
+        stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, 20L, 0L)));
+        assertEquals(stockRows(stock), collectNullable(harness));
+        harness.processBothWatermarks(new Watermark(51));
+        stock.processBothWatermarks(new Watermark(51));
+        assertEquals(stockRows(stock), collectNullable(harness));
+        harness.processElement2(new StreamRecord<>(batch(allocator, row(1, 30, 0))));
+        stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 30L, 0L)));
+        assertEquals(stockRows(stock), collectNullable(harness));
+        harness.processBothWatermarks(new Watermark(101));
+        stock.processBothWatermarks(new Watermark(101));
+        assertEquals(stockRows(stock), collectNullable(harness));
+      }
+    }
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData>
+      stockHarness(int kind) throws Exception {
+    return stockHarness(kind, 0, 0);
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData>
+      stockHarness(int kind, long lower, long upper) throws Exception {
+    var types = org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(
+        RowType.of(new BigIntType(), new BigIntType(), new BigIntType()));
+    var output = org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(
+        RowType.of(new BigIntType(), new BigIntType(), new BigIntType(),
+            new BigIntType(), new BigIntType(), new BigIntType()));
+    String code = "public class AuditIntervalCondition extends org.apache.flink.api.common.functions.AbstractRichFunction "
+        + "implements org.apache.flink.table.runtime.generated.JoinCondition { "
+        + "public AuditIntervalCondition(Object[] refs) {} "
+        + "public boolean apply(org.apache.flink.table.data.RowData a, org.apache.flink.table.data.RowData b) { return true; }}";
+    var function = new org.apache.flink.table.runtime.operators.join.interval.IntervalJoinFunction(
+        new org.apache.flink.table.runtime.generated.GeneratedJoinCondition("AuditIntervalCondition", code, new Object[0]),
+        output, new boolean[] {true});
+    var kinds = new org.apache.flink.table.runtime.operators.join.FlinkJoinType[] {
+      org.apache.flink.table.runtime.operators.join.FlinkJoinType.INNER,
+      org.apache.flink.table.runtime.operators.join.FlinkJoinType.LEFT,
+      org.apache.flink.table.runtime.operators.join.FlinkJoinType.RIGHT,
+      org.apache.flink.table.runtime.operators.join.FlinkJoinType.FULL};
+    var interval = new org.apache.flink.table.runtime.operators.join.interval.RowTimeIntervalJoin(
+        kinds[kind], lower, upper, 0, 0, types, types, function, 2, 2);
+    var operator = new org.apache.flink.streaming.api.operators.co.KeyedCoProcessOperator<>(interval);
+    var keys = org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(RowType.of(new BigIntType()));
+    var serializer = new org.apache.flink.table.runtime.typeutils.RowDataSerializer(RowType.of(new BigIntType()));
+    return new KeyedTwoInputStreamOperatorTestHarness<>(operator,
+        row -> serializer.toBinaryRow(GenericRowData.of(row.getLong(0))).copy(),
+        row -> serializer.toBinaryRow(GenericRowData.of(row.getLong(0))).copy(), keys);
+  }
+
+  private static List<List<Long>> stockRows(
+      KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness) {
+    List<List<Long>> output = new ArrayList<>();
+    while (!harness.getOutput().isEmpty()) {
+      Object event = harness.getOutput().poll();
+      if (event instanceof StreamRecord<?> record) {
+        RowData row = (RowData) record.getValue();
+        List<Long> fields = new ArrayList<>();
+        for (int column = 0; column < row.getArity(); column++)
+          fields.add(row.isNullAt(column) ? null : row.getLong(column));
+        output.add(fields);
+      }
+    }
+    return output;
+  }
+
+  @Test
   void emitsPairsWithinTheInterval() throws Exception {
     // a.rt BETWEEN b.rt - 1000 AND b.rt + 1000, equi-key on column 0, rt is column 2.
     NativeIntervalJoinOperator operator =
@@ -139,8 +270,10 @@ class NativeIntervalJoinOperatorTest {
       restored.setup(new ArrowBatchSerializer());
       restored.initializeState(snapshot);
       restored.open();
-      // No new input: the restored 1500ms cleanup timer must evict and null-pad this left outer row.
+      // No new input: retain the row at horizon equality, then fire its restored cleanup timer.
       restored.setProcessingTime(1500);
+      assertEquals(List.of(), collectNullable(restored));
+      restored.setProcessingTime(1501);
       assertEquals(
           List.of(java.util.Arrays.asList(1L, 10L, 500L, null, null, null)), collectNullable(restored));
     }
