@@ -103,54 +103,68 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
           return;
         }
         VectorSchemaRoot out = VectorSchemaRoot.create(ArrowConversion.toArrowSchema(outputType), allocator);
-        out.allocateNew();
-        for (int j = 0; j < keyCount; j++) {
-          copyKeyColumn(flush.getVector("key" + j), out.getVector(j), n);
-        }
-        for (int a = 0; a < aggregates; a++) {
-          copyColumn(flush.getVector("result" + a), out.getVector(keyCount + a), n);
-        }
-        // Window properties follow the keys and aggregates. TVF aggregates carry start/end. Legacy
-        // group windows carry none, or start/end plus rowtime/proctime attributes in Flink's order.
         int properties = outputType.getFieldCount() - keyCount - aggregates;
-        int base = keyCount + aggregates;
-        if (properties == 1) {
-          throw new IllegalStateException("window output cannot contain exactly one property");
+        boolean transferBuffers = properties == 0;
+        boolean emitted = false;
+        try {
+          if (!transferBuffers) out.allocateNew();
+          for (int j = 0; j < keyCount; j++) {
+            copyKeyColumn(flush.getVector("key" + j), out.getVector(j), n, transferBuffers);
+          }
+          for (int a = 0; a < aggregates; a++) {
+            if (transferBuffers) {
+              transferColumn(flush.getVector("result" + a), out.getVector(keyCount + a));
+            } else {
+              copyColumn(flush.getVector("result" + a), out.getVector(keyCount + a), n);
+            }
+          }
+          // Window properties follow the keys and aggregates. TVF aggregates carry start/end. Legacy
+          // group windows carry none, or start/end plus rowtime/proctime attributes in Flink's order.
+          int base = keyCount + aggregates;
+          if (properties == 1) {
+            throw new IllegalStateException("window output cannot contain exactly one property");
+          }
+          BigIntVector starts = (BigIntVector) flush.getVector("window_start");
+          BigIntVector ends = (BigIntVector) flush.getVector("window_end");
+          if (properties >= 2) {
+            fillLocalTimestamps(starts, out.getVector(base), isLtz(base), n);
+            fillLocalTimestamps(ends, out.getVector(base + 1), isLtz(base + 1), n);
+          }
+          if (properties >= 3 && isEventTimeWindow()) {
+            fillLocalTimestamps(ends, out.getVector(base + 2), isLtz(base + 2), n, -1L);
+          } else if (properties >= 3) {
+            fillTimestampNulls(out.getVector(base + 2), n);
+          }
+          if (properties >= 4) {
+            fillTimestampNulls(out.getVector(base + 3), n);
+          }
+          out.setRowCount(n);
+          ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
+          emitted = true;
+        } finally {
+          if (!emitted) out.close();
         }
-        BigIntVector starts = (BigIntVector) flush.getVector("window_start");
-        BigIntVector ends = (BigIntVector) flush.getVector("window_end");
-        if (properties >= 2) {
-          fillLocalTimestamps(starts, out.getVector(base), isLtz(base), n);
-          fillLocalTimestamps(ends, out.getVector(base + 1), isLtz(base + 1), n);
-        }
-        if (properties >= 3 && isEventTimeWindow()) {
-          fillLocalTimestamps(ends, out.getVector(base + 2), isLtz(base + 2), n, -1L);
-        } else if (properties >= 3) {
-          fillTimestampNulls(out.getVector(base + 2), n);
-        }
-        if (properties >= 4) {
-          fillTimestampNulls(out.getVector(base + 3), n);
-        }
-        out.setRowCount(n);
-        ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
       }
     }
   }
 
-  /** Copies a column verbatim (source and target share the Arrow type). */
   private static void copyColumn(FieldVector source, FieldVector target, int n) {
-    for (int i = 0; i < n; i++) {
-      target.copyFromSafe(i, i, source);
-    }
+    for (int i = 0; i < n; i++) target.copyFromSafe(i, i, source);
+  }
+
+  /** Moves unchanged buffers into the vector created from the declared output field. */
+  private static void transferColumn(FieldVector source, FieldVector target) {
+    source.makeTransferPair(target).transfer();
   }
 
   /**
    * Copies a key column, undoing the native carriage: an int key widened to int64 narrows back to
    * int32, and timestamp keys retain their component buffers; every other key
-   * type matches and copies verbatim.
+   * type matches and transfers its buffers only for outputs without window properties.
    */
-  private static void copyKeyColumn(FieldVector source, FieldVector target, int n) {
+  private static void copyKeyColumn(FieldVector source, FieldVector target, int n, boolean transferBuffers) {
     if (target instanceof IntVector) {
+      if (transferBuffers) target.allocateNew();
       IntVector dst = (IntVector) target;
       BigIntVector src = (BigIntVector) source;
       for (int i = 0; i < n; i++) {
@@ -161,6 +175,7 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
         }
       }
     } else if (isTimestampVector(target) && source instanceof BigIntVector) {
+      if (transferBuffers) target.allocateNew();
       BigIntVector src = (BigIntVector) source;
       for (int i = 0; i < n; i++) {
         if (src.isNull(i)) {
@@ -169,6 +184,8 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
           setTimestampNanos(target, i, src.get(i));
         }
       }
+    } else if (transferBuffers) {
+      transferColumn(source, target);
     } else {
       copyColumn(source, target, n);
     }
