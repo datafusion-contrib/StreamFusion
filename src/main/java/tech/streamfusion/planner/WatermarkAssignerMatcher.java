@@ -1,7 +1,9 @@
 package tech.streamfusion.planner;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWatermarkAssigner;
+import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.operator.WatermarkExpression;
 
 /**
@@ -14,7 +16,11 @@ final class WatermarkAssignerMatcher {
   private WatermarkAssignerMatcher() {}
 
   static boolean matches(StreamPhysicalWatermarkAssigner wm) {
-    return expression(wm) != null;
+    return ShortcutUtils.unwrapTableConfig(wm)
+                .get(ExecutionConfigOptions.TABLE_EXEC_SOURCE_IDLE_TIMEOUT)
+                .toMillis()
+            <= 0
+        && expression(wm) != null;
   }
 
   static int rowtimeColumn(StreamPhysicalWatermarkAssigner wm) {

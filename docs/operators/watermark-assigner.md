@@ -32,6 +32,13 @@ forwarded whole. A NULL rowtime fails the
 job like Flink's assigner. Non-constant or negative delays, other watermark expressions, and
 expressions referring to a different column fall back.
 
+The independent assigner also falls back when `table.exec.source.idle-timeout` is positive.
+Flink then retains its idle/active channel notifications, including its backpressure-aware
+idle clock, so idle partitions cannot block downstream watermarks. The whole query follows
+the all-or-nothing island rule in this case. Watermarks pushed into native sources retain
+their own supported idle-timeout behavior; this restriction applies only to the independent
+assigner.
+
 The assigner can follow a columnar producer or a rowwise source leaf. The transition pass inserts
 the source-edge transpose when needed; the whole query still has to satisfy the
 [all-or-nothing island rule](index.md#the-all-or-nothing-island).
