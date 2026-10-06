@@ -35,6 +35,17 @@ next remaining timestamp. These timers survive native checkpoints, canonical sav
 backend transitions independently of the row buffers. Incoming batches preserve per-arrival
 ordering when combining matched pairs and immediate outer padding.
 
+For zero or negative surviving epoch-millisecond timestamps, released Flink cleanup can depend
+on the state backend's `MapState` iteration order: its negative timestamp sentinel can either
+retain the remaining cache or clear it silently. Native memory and RocksDB execution both use
+the released RocksDB cleanup behavior, which clears the remaining cache when its minimum
+surviving timestamp is nonpositive. This keeps native behavior consistent across checkpoints
+and backend transitions; it can differ from released heap state on pre-epoch timestamps. For
+example, with bounds `[-100ms, +100ms]`, left timestamps `[-99, -1, 10]`, then watermark `2`,
+released RocksDB and native execution clear the cache, while released heap state retains the
+last two rows and can join them with a later right timestamp `-1`. Cleanup parity for this edge
+case is defined against released RocksDB rather than heap state.
+
 ## Admission
 
 Same equi-key/type/residual conditions as the [regular join](regular-join.md): a supported-type

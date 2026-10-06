@@ -119,6 +119,71 @@ class NativeIntervalJoinOperatorTest {
     }
   }
 
+  @Test
+  void mixedNonpositiveSurvivorsMatchReleasedRocksCleanupInBothNativeBackends() throws Exception {
+    // Stock's negative sentinel depends on MapState iteration order. Native cleanup follows
+    // serialized Long ordering in released RocksDB, independently of its own storage backend.
+    for (long[] times : new long[][] {{-99, -1, 10}, {-99, 0, 10}, {-99, 10, 0}}) {
+      for (boolean rocks : new boolean[] {false, true}) {
+        var operator = new NativeIntervalJoinOperator(
+            new int[] {0}, new int[] {0}, 2, 2, -100, 100, 0, INPUT, INPUT,
+            EncodedPredicate.NONE, false, new int[] {-1}, MAX_PARALLELISM);
+        try (BufferAllocator allocator = new RootAllocator();
+            var harness = keyedHarness(operator);
+            var stock = stockHarness(0, -100, 100)) {
+          if (rocks) harness.setStateBackend(
+              new tech.streamfusion.state.RocksDBNativeStateBackendFactory().createFromConfig(
+                  new org.apache.flink.configuration.Configuration(), getClass().getClassLoader()));
+          stock.setStateBackend(releasedRocksBackend());
+          harness.setup(new ArrowBatchSerializer());
+          harness.open();
+          stock.open();
+          for (long time : times) {
+            harness.processElement1(new StreamRecord<>(batch(allocator, row(1, time, time))));
+            stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, time, time)));
+          }
+          harness.processBothWatermarks(new Watermark(2));
+          stock.processBothWatermarks(new Watermark(2));
+          assertEquals(List.of(), stockRows(stock));
+          assertEquals(List.of(), collectNullable(harness));
+          long rightTime = times[1] == -1 ? -1 : 0;
+          harness.processElement2(new StreamRecord<>(batch(allocator, row(1, 99, rightTime))));
+          stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 99L, rightTime)));
+          var expected = stockRows(stock);
+          assertEquals(List.of(), expected, "released Rocks clears nonpositive surviving timestamps");
+          assertEquals(expected, collectNullable(harness), "native rocks=" + rocks);
+        }
+      }
+    }
+  }
+
+  @Test
+  void releasedHeapAndRocksCleanupDifferForNegativeSurvivingTimestamp() throws Exception {
+    for (boolean rocks : new boolean[] {false, true}) {
+      try (var stock = stockHarness(0, -100, 100)) {
+        if (rocks) stock.setStateBackend(releasedRocksBackend());
+        stock.open();
+        for (long time : new long[] {-99, -1, 10})
+          stock.processElement1(new StreamRecord<>(GenericRowData.of(1L, time, time)));
+        stock.processBothWatermarks(new Watermark(2));
+        assertEquals(List.of(), stockRows(stock));
+        stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 99L, -1L)));
+        assertEquals(rocks ? 0 : 2, stockRows(stock).size());
+      }
+    }
+  }
+
+  private static org.apache.flink.runtime.state.StateBackend releasedRocksBackend() throws Exception {
+    // The released backend moved packages between supported Flink versions.
+    Class<?> backend;
+    try {
+      backend = Class.forName("org.apache.flink.state.rocksdb.EmbeddedRocksDBStateBackend");
+    } catch (ClassNotFoundException legacy) {
+      backend = Class.forName("org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend");
+    }
+    return (org.apache.flink.runtime.state.StateBackend) backend.getConstructor().newInstance();
+  }
+
   private static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData>
       stockHarness(int kind) throws Exception {
     return stockHarness(kind, 0, 0);
