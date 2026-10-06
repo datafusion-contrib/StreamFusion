@@ -162,6 +162,44 @@ class PaimonChangelogCompletionTest {
     }
   }
 
+  @Test
+  void composedAdapterAndAdviceVerifyExecuteAndClearOnExceptions() throws Exception {
+    Class<?> original = org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase.class;
+    Class<?> transformed =
+        new net.bytebuddy.ByteBuddy()
+            .redefine(original)
+            .visit(
+                net.bytebuddy.asm.Advice.to(PaimonChangelogCompletion.Scope.class)
+                    .on(net.bytebuddy.matcher.ElementMatchers.named("checkChangelogTestResult")))
+            .visit(PaimonChangelogCompletion.adapter())
+            .make()
+            .load(
+                original.getClassLoader(),
+                net.bytebuddy.dynamic.loading.ClassLoadingStrategy.Default.CHILD_FIRST)
+            .getLoaded();
+    var method = transformed.getDeclaredMethod("checkChangelogTestResult", int.class);
+    method.setAccessible(true);
+    var rows = new java.util.ArrayList<Row>();
+    for (int key = 0; key < 244; key++) rows.add(Row.ofKind(RowKind.INSERT, "0", key, 10000L, "x"));
+    for (int key = 0; key < 6; key++) {
+      rows.add(Row.ofKind(RowKind.UPDATE_BEFORE, "0", key, 10000L, "x"));
+      rows.add(Row.ofKind(RowKind.UPDATE_AFTER, "0", key, 10000L, "x"));
+    }
+    for (int key = 244; key < 256; key++)
+      rows.add(Row.ofKind(RowKind.INSERT, "0", key, 10000L, "x"));
+    Object fixture = transformed.getConstructor().newInstance();
+    transformed.getField("rows").set(fixture, rows);
+    method.invoke(fixture, 1);
+    assertEquals(268, transformed.getField("consumed").getInt(fixture));
+    assertThrows(IllegalStateException.class, PaimonChangelogCompletion::count);
+    transformed.getField("fail").setBoolean(fixture, true);
+    var failure =
+        assertThrows(
+            java.lang.reflect.InvocationTargetException.class, () -> method.invoke(fixture, 1));
+    assertEquals("fixture failure", failure.getCause().getMessage());
+    assertThrows(IllegalStateException.class, PaimonChangelogCompletion::count);
+  }
+
   private static void track(RowKind kind, int key, long value) {
     PaimonChangelogCompletion.track(Row.ofKind(kind, "0", key, value, value + ".str"));
   }

@@ -1077,3 +1077,7 @@ SQL, iterator, row checker, final assertions and timeout remain unchanged. The a
 not filter legitimate no-op changelog pairs or modify released source files. Its bytecode
 visitor rejects unknown shapes instead of silently applying a different transformation,
 and a thread-local scope clears coverage on normal and exceptional exits.
+
+The counter visitor reads the original local-variable slots before lifecycle advice remaps them.
+A composed transformation regression loads and executes the rewritten method, checks repeated
+terminal pairs, and verifies cleanup after normal and exceptional exits.
