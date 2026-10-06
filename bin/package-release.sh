@@ -37,6 +37,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$bundle_dir" "$output_dir"
+output_dir=$(CDPATH='' cd -- "$output_dir" && pwd)
 cp "$repo_root/LICENSE" "$repo_root/readme.md" "$bundle_dir/"
 cp "$repo_root/streamfusion-loader/target/streamfusion-loader${artifact_suffix}-$version.jar" "$bundle_dir/"
 cp "$repo_root/streamfusion-core/target/streamfusion-core${artifact_suffix}-$version-runtime.jar" "$bundle_dir/"
