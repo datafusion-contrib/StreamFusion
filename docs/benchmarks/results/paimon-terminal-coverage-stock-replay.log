@@ -1,0 +1,22 @@
+STOCK_BOUNDED_FINAL rows=512 original_assertion=passed
+STOCK_STREAM latest=33
+PLAN next=1 splits=0
+PLAN next=8 splits=16
+PLAN next=9 splits=16
+PLAN next=16 splits=16
+PLAN next=20 splits=16
+PLAN next=24 splits=16
+FINAL snapshot=23 row=2986 final_rows=228 distinct=228 key=0|65 kind=UPDATE_AFTER value=10001|10001.str occurrence=1
+PLAN next=31 splits=1
+FINAL snapshot=30 row=3083 final_rows=257 distinct=256 key=0|65 kind=UPDATE_BEFORE value=10001|10001.str occurrence=2
+FINAL snapshot=30 row=3084 final_rows=258 distinct=256 key=0|65 kind=UPDATE_AFTER value=10001|10001.str occurrence=3
+PLAN next=33 splits=16
+UPSTREAM_CUTOFF distinct=488 state_rows=512 incorrect=24
+ORIGINAL_ASSERTION cutoff_failure=org.opentest4j.AssertionFailedError: 
+expected: "10000|10000.str"
+ but was: "528|5200.str"
+LIVE_TERMINAL_COVERAGE snapshot=32 rows=3618 final_rows=536 live_final_keys=512 original_assertion=passed
+PLAN next=34 splits=0
+ORIGINAL_ASSERTION passed_after_all_stored_changelog
+STOCK_STREAM_END rows=3618 final_rows=536 distinct=512 state_rows=512
+ADAPTER_TERMINAL_COVERAGE snapshot=32 rows=3618 final_rows=536 live_final_keys=512 original_assertion=passed

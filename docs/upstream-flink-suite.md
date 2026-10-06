@@ -1060,3 +1060,20 @@ boundaries are excluded from connector targets. Expected translation errors, bat
 fixtures keep their existing exclusions.
 Direct Java serializer and DataStream/legacy DataSet format tests receive `format-api` and
 `non-sql-program` exclusions: these upstream fixtures bypass SQL admission entirely.
+
+### Paimon random full-compaction completion
+
+Released Paimon 1.0 and 2.0 `PrimaryKeyFileStoreTableITCase.checkChangelogTestResult`
+counts every changelog event whose value is at least 10,000 before stopping. Legitimate
+unchanged terminal UPDATE_BEFORE/UPDATE_AFTER pairs can exhaust that counter while
+other keys still contain earlier values. Replaying the captured PR300 warehouse with stock
+Paimon reproduced the original early assertion; continuing to complete current terminal-key
+coverage passed every original row assertion and final result assertion.
+
+The suite agent narrowly adapts that private method's counter to current distinct positive
+terminal-key coverage: INSERT/UPDATE_AFTER adds the `(partition,key)` when its value is
+at least 10,000; UPDATE_BEFORE/DELETE retires it. The original producer-count comparison,
+SQL, iterator, row checker, final assertions and timeout remain unchanged. The adapter does
+not filter legitimate no-op changelog pairs or modify released source files. Its bytecode
+visitor rejects unknown shapes instead of silently applying a different transformation,
+and a thread-local scope clears coverage on normal and exceptional exits.
