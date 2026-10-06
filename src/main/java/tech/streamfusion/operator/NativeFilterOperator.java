@@ -115,17 +115,25 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
   /**
    * Selects the projected columns of {@code filtered} into the output batch. For an identity
    * projection the batch passes through; otherwise the projected columns are transferred into a new
-   * batch (moving buffer ownership, no copy) and the filtered batch is closed, freeing the columns
-   * left out.
+   * batch and the filtered batch is closed, freeing the columns left out. Repeated references
+   * retain a view until the last use transfers the original buffers.
    */
   private VectorSchemaRoot project(VectorSchemaRoot filtered) {
     if (isIdentity(filtered.getFieldVectors().size())) {
       return filtered;
     }
     List<FieldVector> columns = new ArrayList<>(projection.length + 1);
+    int[] remainingUses = new int[filtered.getFieldVectors().size()];
+    for (int index : projection) {
+      remainingUses[index]++;
+    }
     for (int index : projection) {
       TransferPair pair = filtered.getVector(index).getTransferPair(allocator);
-      pair.transfer();
+      if (--remainingUses[index] == 0) {
+        pair.transfer();
+      } else {
+        pair.splitAndTransfer(0, filtered.getRowCount());
+      }
       columns.add((FieldVector) pair.getTo());
     }
     // Carry the changelog tag: if the (filtered) batch has a $row_kind$ column, append it so the
