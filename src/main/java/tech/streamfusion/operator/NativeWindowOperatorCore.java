@@ -230,6 +230,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /** Fetches the windows the watermark has closed from the native aggregator. */
   protected void flushHandle(long watermark, long arrayAddress, long schemaAddress) {
+    watermark = WindowTimeDomain.closeThreshold(watermark, 0);
     if (directRocksDBState()) {
       Native.flushRocksDBWindowAggregator(handle, watermark, arrayAddress, schemaAddress);
     } else {
