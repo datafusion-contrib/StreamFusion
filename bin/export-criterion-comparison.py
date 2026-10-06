@@ -2,6 +2,7 @@
 """Export reproducible Criterion before/after estimates and original samples."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -27,6 +28,9 @@ def main():
     parser.add_argument("--before", default="audit-before")
     parser.add_argument("--after", default="new")
     parser.add_argument("--baseline-revision", help="Revision used to collect the before baseline")
+    parser.add_argument("--fixture-revision", help="Revision containing the benchmark fixtures")
+    parser.add_argument("--candidate", help="Candidate revision or working-tree label")
+    parser.add_argument("--source", nargs="*", type=Path, default=[], help="Repository-relative sources to fingerprint")
     parser.add_argument("--groups", nargs="+", default=["dedup_pending", "interval_selective_probe"])
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -52,6 +56,9 @@ def main():
         "before_baseline": args.before,
         "after_baseline": args.after,
         "baseline_revision": args.baseline_revision,
+        "fixture_revision": args.fixture_revision,
+        "candidate": args.candidate,
+        "source_sha256": {source.as_posix(): hashlib.sha256(source.read_bytes()).hexdigest() for source in args.source},
         "speedup_definition": "before mean / after mean; descriptive ratio, not a confidence interval",
         "results": results,
     }

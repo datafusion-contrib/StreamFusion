@@ -165,6 +165,7 @@ nav:
       - Delta batch sink handoff: optimizations/delta-batch-sink-handoff.md
       - Retire dead Delta checkpoint buffers: optimizations/delta-live-buffer-retirement.md
       - Preserve Paimon partition pruning: optimizations/paimon-partition-pruning.md
+      - Indexed pending rowtime deduplication: optimizations/pending-dedup-index.md
       - Batch-native Kafka JSON serialization: optimizations/batch-native-kafka-json-serialization.md
       - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md

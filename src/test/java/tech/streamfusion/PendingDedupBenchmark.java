@@ -30,7 +30,7 @@ class PendingDedupBenchmark {
   void pendingKeepFirst() throws Exception {
     if (ROWS <= 0 || KEYS <= 0 || WIDTH < 0 || WARMUP < 0 || RUNS <= 0)
       throw new IllegalArgumentException("Invalid pending dedup benchmark configuration");
-    NativeParity.assertKindedParity(() -> environment(4096, 256, WIDTH),
+    NativeParity.assertKindedParity(() -> environment(4096, 2048, WIDTH),
         SQL.substring("INSERT INTO sink ".length()));
     String plan = NativePlanner.explain(environment(), SQL);
     if (!plan.contains("NativeDeduplicate")
