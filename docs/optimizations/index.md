@@ -16,6 +16,7 @@ caching, shared build artifacts, grouped connector suites and combined coverage 
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
+- [Fluss Arrow transport](fluss-arrow-transport.md): retained receive buffers, exactly sized serialization and bounded acknowledgement pipelining.
 
 ## How these numbers are measured
 

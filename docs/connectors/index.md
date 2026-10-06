@@ -10,6 +10,9 @@ and postpone buckets, with Paimon's own compaction)
 also have native paths, but they have not seen the same production hardening as Kafka — treat them
 as experimental.
 
+[Apache Fluss](fluss.md) is an opt-in experimental Java Arrow transport for append-only
+and primary-key log reads and append-only production. Primary-key writes stay on Flink.
+
 ## Formats
 
 A format decodes or encodes the bytes on the wire; it's independent of which connector carries

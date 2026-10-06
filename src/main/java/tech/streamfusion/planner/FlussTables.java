@@ -1,0 +1,302 @@
+package tech.streamfusion.planner;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import org.apache.calcite.rel.RelNode;
+import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.*;
+import org.apache.flink.table.planner.plan.schema.TableSourceTable;
+import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
+import org.apache.flink.table.types.logical.RowType;
+import org.apache.fluss.client.initializer.OffsetsInitializer;
+import org.apache.fluss.config.Configuration;
+import org.apache.fluss.config.TableConfig;
+import org.apache.fluss.flink.FlinkConnectorOptions.ScanStartupMode;
+import org.apache.fluss.flink.sink.FlinkTableSink;
+import org.apache.fluss.flink.source.FlinkSource;
+import org.apache.fluss.flink.source.FlinkTableSource;
+import org.apache.fluss.flink.source.deserializer.RowDataDeserializationSchema;
+import org.apache.fluss.flink.source.reader.LeaseContext;
+import org.apache.fluss.flink.utils.FlinkConnectorOptionsUtils;
+import org.apache.fluss.flink.utils.FlinkConversions;
+import org.apache.fluss.metadata.LogFormat;
+import org.apache.fluss.metadata.TablePath;
+import tech.streamfusion.operator.RowDataArrowConverter;
+
+/** Whitelist around the released Fluss 1.0 Java connector's internal batch-level contracts. */
+final class FlussTables {
+  private FlussTables() {}
+
+  static boolean isSource(StreamPhysicalTableSourceScan scan) {
+    TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
+    return table != null && table.tableSource().getClass() == FlinkTableSource.class;
+  }
+
+  static boolean isSink(StreamPhysicalSink sink) {
+    return sink.tableSink() instanceof FlinkTableSink;
+  }
+
+  static RelNode source(StreamPhysicalTableSourceScan scan, PlanContext context) {
+    TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
+    FlinkTableSource source = (FlinkTableSource) table.tableSource();
+    try {
+      String fallback = sourceFallback(source);
+      if (fallback != null) {
+        context.decline("fluss source: " + fallback);
+        return null;
+      }
+      RowType type = FlinkTypeFactory$.MODULE$.toLogicalRowType(scan.getRowType());
+      if (type.getFieldCount() == 0 || !supportedArrowLayout(type)) {
+        context.decline("fluss source: empty projection or unsupported physical types");
+        return null;
+      }
+      ScanWatermarkSpec watermark = ScanWatermarkSpec.of(scan);
+      if (watermark == ScanWatermarkSpec.UNSUPPORTED) {
+        context.decline("fluss source: unsupported source watermark");
+        return null;
+      }
+      var startup = (FlinkConnectorOptionsUtils.StartupOptions) field(source, "startupOptions");
+      var bounded = (FlinkConnectorOptionsUtils.BoundedOptions) field(source, "boundedOptions");
+      OffsetsInitializer start =
+          switch (startup.startupMode) {
+            case EARLIEST, FULL -> OffsetsInitializer.earliest();
+            case LATEST -> OffsetsInitializer.latest();
+            case TIMESTAMP -> OffsetsInitializer.timestamp(startup.startupTimestampMs);
+            default ->
+                throw new IllegalArgumentException("snapshot startup is outside Arrow admission");
+          };
+      Configuration config = (Configuration) field(source, "flussConfig");
+      TablePath path = (TablePath) field(source, "tablePath");
+      RowType physical = (RowType) field(source, "tableOutputType");
+      FlinkSource<RowData> delegate =
+          new FlinkSource<>(
+              config,
+              path,
+              ((int[]) field(source, "primaryKeyIndexes")).length > 0,
+              false,
+              FlinkConversions.toFlussRowType(physical),
+              null,
+              null,
+              start,
+              FlinkConnectorOptionsUtils.toStoppingOffsetsInitializer(bounded),
+              FlinkConnectorOptionsUtils.toBoundedness(true, bounded),
+              (long) field(source, "scanPartitionDiscoveryIntervalMs"),
+              (int) field(source, "splitPerAssignmentBatchSize"),
+              new RowDataDeserializationSchema(),
+              null,
+              true,
+              null,
+              null,
+              (LeaseContext) field(source, "leaseContext"));
+      String sourceKey = sourceSharingKey(scan);
+      boolean shared =
+          context.repeatedSource(FlussPlannerExtension.class.getName() + "|" + sourceKey);
+      if (shared && !supportedArrowLayout(physical)) {
+        context.decline("fluss source: shared physical schema has unsupported Arrow layouts");
+        return null;
+      }
+      org.apache.calcite.rel.type.RelDataType readType =
+          shared
+              ? ((org.apache.flink.table.planner.calcite.FlinkTypeFactory)
+                      scan.getCluster().getTypeFactory())
+                  .buildRelNodeRowType(physical)
+              : scan.getRowType();
+      ScanWatermarkSpec readWatermark =
+          watermark == null
+              ? null
+              : watermark.withRowtimeIndex(
+                  readType.getFieldNames().indexOf(watermark.rowtimeFieldName));
+      RelNode result =
+          new StreamPhysicalNativeFlussSource(
+              scan.getCluster(),
+              scan.getTraitSet(),
+              readType,
+              delegate,
+              config,
+              path,
+              readWatermark,
+              sourceKey,
+              shared,
+              0);
+      if (!readType.equals(scan.getRowType())) {
+        List<org.apache.calcite.rex.RexNode> projections = new java.util.ArrayList<>();
+        for (var output : scan.getRowType().getFieldList()) {
+          var input = readType.getField(output.getName(), true, false);
+          if (input == null) {
+            context.decline("fluss source: projection is not a physical column");
+            return null;
+          }
+          projections.add(
+              new org.apache.calcite.rex.RexInputRef(input.getIndex(), input.getType()));
+        }
+        result =
+            new StreamPhysicalNativeCalc(
+                scan.getCluster(),
+                scan.getTraitSet(),
+                result,
+                scan.getRowType(),
+                RexExpression.encodeProjections(projections, scan.getRowType().getFieldNames()));
+      }
+      return result;
+    } catch (ReflectiveOperationException | LinkageError incompatible) {
+      context.decline("fluss source: installed Java connector is outside the verified 1.0 API");
+      return null;
+    }
+  }
+
+  static String sourceSharingKey(StreamPhysicalTableSourceScan scan) {
+    try {
+      FlinkTableSource source =
+          (FlinkTableSource) scan.getTable().unwrap(TableSourceTable.class).tableSource();
+      RowType physical = (RowType) field(source, "tableOutputType");
+      ScanWatermarkSpec watermark = ScanWatermarkSpec.of(scan);
+      if (watermark == ScanWatermarkSpec.UNSUPPORTED) return null;
+      if (watermark != null)
+        watermark =
+            watermark.withRowtimeIndex(
+                physical.getFieldNames().indexOf(watermark.rowtimeFieldName));
+      return field(source, "tablePath")
+          + "|"
+          + new java.util.TreeMap<>(FilesystemTables.options(scan))
+          + "|"
+          + physical.asSerializableString()
+          + "|"
+          + (watermark == null
+              ? "none"
+              : watermark.rowtimeIndex
+                  + ":"
+                  + watermark.rowtimeFieldName
+                  + ":"
+                  + watermark.expression.digest()
+                  + ":"
+                  + watermark.idleTimeoutMillis);
+    } catch (ReflectiveOperationException incompatible) {
+      return null;
+    }
+  }
+
+  static String sourceFallback(FlinkTableSource source) throws ReflectiveOperationException {
+    if (!"1.0.0".equals(source.getClass().getPackage().getImplementationVersion()))
+      return "only the released 1.0.0 Java connector is verified";
+    if (clientOptionsFallback((Configuration) field(source, "flussConfig")) != null)
+      return "custom Java client settings are outside the verified defaults";
+    if (!(boolean) field(source, "streaming")) return "batch/snapshot reads use Flink";
+    if (((int[]) field(source, "partitionKeyIndexes")).length != 0)
+      return "partition discovery/removal is not accelerated";
+    if ((long) field(source, "limit") >= 0
+        || (boolean) field(source, "selectRowCount")
+        || field(source, "singleRowFilter") != null
+        || field(source, "partitionFilters") != null
+        || field(source, "logRecordBatchFilter") != null)
+      return "filter, limit or aggregate pushdown uses Flink";
+    TableConfig config = (TableConfig) field(source, "tableConfig");
+    if (config.getLogFormat() != LogFormat.ARROW) return "only ARROW logs are admitted";
+    if ((boolean) field(source, "isDataLakeEnabled") || field(source, "lakeSource") != null)
+      return "data-lake hybrid reads use Flink";
+    if (field(source, "mergeEngineType") != null)
+      return "merge-engine changelog semantics use Flink";
+    var startup = (FlinkConnectorOptionsUtils.StartupOptions) field(source, "startupOptions");
+    if (startup.startupMode == ScanStartupMode.FULL
+        && ((int[]) field(source, "primaryKeyIndexes")).length > 0)
+      return "initial snapshots use Flink";
+    return null;
+  }
+
+  static RelNode sink(StreamPhysicalSink sink, PlanContext context) {
+    FlinkTableSink tableSink = (FlinkTableSink) sink.tableSink();
+    try {
+      String fallback = sinkFallback(tableSink);
+      if (fallback == null) fallback = SinkConstraintGate.fallbackReason(sink);
+      if (fallback == null
+          && (sink.upsertMaterialize()
+              || !tech.streamfusion.compat.FlinkCompat.sinkAbilities(sink).isEmpty()))
+        fallback = "sink materialization or pushed abilities use Flink";
+      if (fallback == null && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInput()))
+        fallback = "append production requires insert-only input";
+      RowType type = (RowType) field(tableSink, "tableRowType");
+      if (fallback == null && !supportedArrowLayout(type)) fallback = "unsupported physical types";
+      if (fallback == null
+          && !"ARROW"
+              .equalsIgnoreCase(
+                  sink.contextResolvedTable()
+                      .getResolvedTable()
+                      .getOptions()
+                      .get("table.log.format"))) {
+        fallback = "append production requires an explicitly resolved ARROW table";
+      }
+      if (fallback != null) {
+        context.decline("fluss sink: " + fallback);
+        return null;
+      }
+      return new StreamPhysicalNativeFlussSink(
+          sink.getCluster(),
+          sink.getTraitSet(),
+          sink.getInput(),
+          sink.getRowType(),
+          type,
+          (Configuration) field(tableSink, "flussConfig"),
+          (TablePath) field(tableSink, "tablePath"));
+    } catch (ReflectiveOperationException | LinkageError incompatible) {
+      context.decline("fluss sink: installed Java connector is outside the verified 1.0 API");
+      return null;
+    }
+  }
+
+  static String sinkFallback(FlinkTableSink sink) throws ReflectiveOperationException {
+    if (!"1.0.0".equals(sink.getClass().getPackage().getImplementationVersion()))
+      return "only the released 1.0.0 Java connector is verified";
+    if (clientOptionsFallback((Configuration) field(sink, "flussConfig")) != null)
+      return "custom Java client settings are outside the verified defaults";
+    if (((int[]) field(sink, "primaryKeyIndexes")).length != 0)
+      return "primary-key production is explicitly not accelerated";
+    if (!((List<?>) field(sink, "partitionKeys")).isEmpty()
+        || !((List<?>) field(sink, "bucketKeys")).isEmpty())
+      return "partitioned or bucket-key routing uses Flink";
+    if (!(boolean) field(sink, "streaming")) return "batch sinks use Flink";
+    if (field(sink, "producerId") != null)
+      return "explicit undo-recovery producer identity uses Flink";
+    var distribution = field(sink, "distributionMode");
+    if (distribution != org.apache.fluss.flink.sink.shuffle.DistributionMode.AUTO
+        && distribution != org.apache.fluss.flink.sink.shuffle.DistributionMode.NONE)
+      return "explicit bucket or dynamic partition shuffle uses Flink";
+    if (field(sink, "mergeEngineType") != null
+        || field(sink, "lakeFormat") != null
+        || (boolean) field(sink, "sinkIgnoreDelete")
+        || (boolean) field(sink, "appliedUpdates")
+        || field(sink, "deleteRow") != null)
+      return "merge engines, lake writes and row modifications use Flink";
+    return null;
+  }
+
+  private static boolean supportedArrowLayout(RowType type) {
+    if (!RowDataArrowConverter.supports(type)
+        || type.getFieldNames().contains(RowDataArrowConverter.ROW_KIND_COLUMN)) return false;
+    try {
+      var wire =
+          tech.streamfusion.fluss.FlussArrowSchema.wireSchema(
+              FlinkConversions.toFlussRowType(type));
+      var nativeSchema = tech.streamfusion.arrow.ArrowConversion.toArrowSchema(type);
+      for (int i = 0; i < wire.getFields().size(); i++) {
+        if (!tech.streamfusion.fluss.FlussArrowSchema.compatible(
+            wire.getFields().get(i), nativeSchema.getFields().get(i))) return false;
+      }
+      return true;
+    } catch (java.io.IOException | IllegalArgumentException unsupported) {
+      return false;
+    }
+  }
+
+  private static String clientOptionsFallback(Configuration config) {
+    for (String key : config.keySet()) {
+      if (!key.equals(org.apache.fluss.config.ConfigOptions.BOOTSTRAP_SERVERS.key())) return key;
+    }
+    return null;
+  }
+
+  private static Object field(Object object, String name) throws ReflectiveOperationException {
+    Field field = object.getClass().getDeclaredField(name);
+    field.setAccessible(true);
+    return field.get(object);
+  }
+}

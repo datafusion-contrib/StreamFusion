@@ -74,6 +74,8 @@
                 <version>3.13.0</version>
                 <configuration>
                     <excludes>
+                        <exclude>tech/streamfusion/fluss/**</exclude>
+                        <exclude>tech/streamfusion/planner/*Fluss*.java</exclude>
                         <!-- Delta is an opt-in module with its own connector dependencies. -->
                         <exclude>tech/streamfusion/delta/**</exclude>
                         <exclude>tech/streamfusion/planner/DeltaPlannerExtension.java</exclude>
