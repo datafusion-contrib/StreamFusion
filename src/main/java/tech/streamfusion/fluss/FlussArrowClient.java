@@ -6,7 +6,6 @@ import static org.apache.fluss.record.LogRecordBatchFormat.*;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -23,7 +22,6 @@ import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.pojo.Schema;
-import org.apache.fluss.client.ConnectionFactory;
 import org.apache.fluss.client.FlussConnection;
 import org.apache.fluss.client.metadata.MetadataUpdater;
 import org.apache.fluss.client.metrics.ScannerMetricGroup;
@@ -54,6 +52,7 @@ public final class FlussArrowClient implements AutoCloseable {
     }
   }
 
+  private final FlussConnections.Lease connectionLease;
   private final FlussConnection connection;
   private final MetadataUpdater metadata;
   private final TablePath path;
@@ -150,7 +149,8 @@ public final class FlussArrowClient implements AutoCloseable {
     this.path = path;
     this.outputSchema = outputSchema;
     this.allocator = allocator;
-    connection = (FlussConnection) ConnectionFactory.createConnection(config);
+    connectionLease = FlussConnections.acquire(config);
+    connection = connectionLease.connection();
     metadata = connection.getMetadataUpdater();
     try {
       table = await(connection.getAdmin().getTableInfo(path));
@@ -174,7 +174,7 @@ public final class FlussArrowClient implements AutoCloseable {
         throw new IOException("Empty Fluss projection is not accelerated");
     } catch (Throwable failure) {
       try {
-        connection.close(Duration.ZERO);
+        connectionLease.close();
       } catch (Exception close) {
         failure.addSuppressed(close);
       }
@@ -631,10 +631,17 @@ public final class FlussArrowClient implements AutoCloseable {
     }
   }
 
-  private static <T> T await(CompletableFuture<T> future) throws IOException {
+  static <T> T await(CompletableFuture<T> future) throws IOException {
     try {
       return future.get();
     } catch (InterruptedException failure) {
+      // The shared transport can outlive this reader; release a reply arriving after cancellation.
+      future.thenAccept(
+          reply -> {
+            if (reply instanceof ApiMessage message
+                && message.isLazilyParsed()
+                && message.getParsedByteBuf() != null) message.getParsedByteBuf().release();
+          });
       Thread.currentThread().interrupt();
       throw new IOException(failure);
     } catch (ExecutionException failure) {
@@ -651,7 +658,7 @@ public final class FlussArrowClient implements AutoCloseable {
       if (remoteDownloader != null) remoteDownloader.close();
     } finally {
       try {
-        connection.close(Duration.ZERO);
+        connectionLease.close();
       } finally {
         IOException failure =
             new IOException("Fluss Arrow client closed before append acknowledgement");

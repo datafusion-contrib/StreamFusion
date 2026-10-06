@@ -10,6 +10,52 @@ import org.junit.jupiter.api.Test;
 
 class FlussReceiveBufferTest {
   @Test
+  void interruptedRpcReleasesItsLateResponseWhileTransportRemainsOpen() throws Exception {
+    var responseBuffer = org.apache.fluss.shaded.netty4.io.netty.buffer.Unpooled.directBuffer(8);
+    var response =
+        (org.apache.fluss.rpc.messages.ApiMessage)
+            java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[] {org.apache.fluss.rpc.messages.ApiMessage.class},
+                (proxy, method, args) ->
+                    switch (method.getName()) {
+                      case "isLazilyParsed" -> true;
+                      case "getParsedByteBuf" -> responseBuffer;
+                      default -> throw new UnsupportedOperationException(method.getName());
+                    });
+    var pending =
+        new java.util.concurrent.CompletableFuture<org.apache.fluss.rpc.messages.ApiMessage>();
+    var interrupted = new java.util.concurrent.atomic.AtomicBoolean();
+    var started = new java.util.concurrent.CountDownLatch(1);
+    Thread reader =
+        new Thread(
+            () -> {
+              started.countDown();
+              try {
+                FlussArrowClient.await(pending);
+              } catch (java.io.IOException expected) {
+                interrupted.set(
+                    expected.getCause() instanceof InterruptedException
+                        && Thread.currentThread().isInterrupted());
+              }
+            });
+    try {
+      reader.start();
+      assertTrue(started.await(10, java.util.concurrent.TimeUnit.SECONDS));
+      reader.interrupt();
+      reader.join(10000);
+      assertFalse(reader.isAlive());
+      assertTrue(interrupted.get());
+      assertEquals(1, responseBuffer.refCnt());
+      pending.complete(response);
+      assertEquals(0, responseBuffer.refCnt());
+    } finally {
+      reader.interrupt();
+      if (responseBuffer.refCnt() > 0) responseBuffer.release();
+    }
+  }
+
+  @Test
   void decodedVectorsRetainReceivedAllocationWithoutCopyingBody() throws Exception {
     try (RootAllocator allocator = new RootAllocator();
         VectorSchemaRoot input =

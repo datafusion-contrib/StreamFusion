@@ -7,7 +7,13 @@ matching deterministic output. Mixed end-to-end performance and the narrower sup
 connector boundary keep the stock connector as the default.
 
 The integration uses the existing Java connection for metadata, security, routing and
-broker RPCs. It reads schema-less Arrow IPC messages from `FetchLog`, preserving the
+broker RPCs. Concurrent Arrow readers and writers with identical complete client
+configuration share a reference-counted connection within the module's classloader.
+Each reader keeps its own split/checkpoint state and each writer keeps its own ID,
+sequences and acknowledgement queue. Closing one owner leaves the other owners usable;
+the last owner removes and closes the connection synchronously, with no idle cache or
+background teardown. Configuration is copied before the Java client can mutate it.
+ It reads schema-less Arrow IPC messages from `FetchLog`, preserving the
 primary-key log's per-row change-type sidecar, and hands owned Arrow buffers to the
 existing StreamFusion Java-to-Rust bridge. Compatible vector layouts share buffers;
 timestamp input is converted to StreamFusion's component representation. Millisecond
@@ -384,3 +390,52 @@ They use the stock primary-key writer and are recorded without a Kafka compariso
 | q17 | 10.850807 | 9.934540 |
 | q18 | 9.373285 | 8.692731 |
 | q19 | 35.793688 | 16.450879 |
+
+## Matched hot-path profiling and connection reuse
+
+JFR profiles of stock and native q0/q14 at 2M events separate source-task/fetcher
+threads from fixture setup and output validation. Stock execution samples prominently
+include boxed integers, string materialization and row copies. Native q14 prominently
+includes generated Java expression evaluation and its Arrow row views; native plan
+coverage does not imply that every expression is evaluated in Rust.
+
+Each native source/sink task recorded two approximately 2.005-second waits inside
+`NettyClient.close`, while stock source fetching closes on its separate fetcher thread.
+The native chain was serially shutting down independent source and sink transports.
+Reference-counted connection reuse removes redundant clients and shutdowns without
+subtracting cleanup or moving it outside the job's measured lifetime.
+
+The control disables only `streamfusion.fluss.connection-sharing.enabled`. Released
+Fluss 1.0.0, 2M events, four buckets/parallelism four, memory state, mini-batching off,
+one warmup and three measured pairs remain identical. All deterministic output and
+native-plan assertions pass. Every trial is retained, including q20's large outliers.
+Seconds:
+
+| Query / transport lifetime | Stock Flink | StreamFusion |
+| --- | --- | --- |
+| q0 / independent connections | 5.016760 / 4.978390 / 9.903302 | 6.444252 / 4.530517 / 4.540318 |
+| q0 / shared connection | 5.207928 / 4.922891 / 4.954520 | 2.487257 / 2.445463 / 2.409509 |
+| q14 / independent connections | 5.085205 / 5.138027 / 5.027056 | 4.940219 / 4.976899 / 4.954791 |
+| q14 / shared connection | 5.012289 / 5.096018 / 5.051965 | 2.909993 / 2.919888 / 2.898332 |
+| q20 / independent connections | 5.465149 / 29.356056 / 14.207900 | 12.521662 / 30.652372 / 5.827588 |
+| q20 / shared connection | 5.546512 / 8.048414 / 8.065166 | 3.705364 / 3.440408 / 3.398679 |
+
+Native medians improve over independent connections by 1.86× / 1.70× / 3.64× for
+q0 / q14 / q20. Against matched stock Flink, shared-connection speedups are 2.03× /
+1.74× / 2.34×. q20's comparison has substantial variability; its improvement must not
+be attributed entirely to lifecycle. These focused trials supersede the earlier
+lifecycle behavior, but are not a new full-suite geomean.
+
+To capture matched profiles, add a JVM recording to the same release harness:
+
+```sh
+SF_FLUSS_BENCH=true SF_MATRIX_QUERIES=q0,q14 SF_ROWS=2000000 mvn -Pbench -pl streamfusion-fluss -am test \
+  -Dtest=NexmarkFlussBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dnexmark.warmups=1 -Dnexmark.runs=1 \
+  '-Dsf.extraJvmArgs=-XX:StartFlightRecording=filename=fluss-hotpaths.jfr,settings=profile,dumponexit=true'
+```
+
+Inspect execution samples, allocation samples and thread parks. Attribute samples by
+source/fetcher thread and stack; seeding, stock output scanning and sorting are outside
+timing and must not be mistaken for native query costs. JFR trials diagnose costs;
+headline timings use repeated runs without recording overhead.

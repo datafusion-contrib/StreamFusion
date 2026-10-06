@@ -81,3 +81,19 @@ stock/Arrow median speedups are 1.17× / 1.56× / 1.44× for append and 1.83× /
 These measurements establish a transport improvement for those fixtures. They do not
 establish a full Nexmark speedup or a Kafka comparison. The full suite retains query,
 JNI, timestamp conversion, checkpoint and stock primary-key sink costs.
+
+## Connection lifecycle
+
+Concurrent readers and writers with identical complete configuration reuse one Java
+connection through reference-counted leases. Independent IDs, sequences, split state
+and queues stay with each owner. No idle connection survives its last lease, and final
+shutdown remains synchronous. Cancellation releases a lazy RPC reply that arrives
+after its awaiting reader is interrupted, even when other owners keep transport open.
+
+Matched JFR source-task profiles show two serial approximately two-second Netty close
+waits in the previous native source/sink chain. Reuse reduces native median q0 from
+4.540 to 2.445 seconds and q14 from 4.955 to 2.910 seconds, with complete teardown
+retained. Matched stock medians are 4.955 and 5.052 seconds. q20 improves from 12.522
+to 3.440 seconds but has substantial control-run outliers. The connector page retains
+every trial and configuration; the gains are lifetime improvements rather than a
+claim that every query's steady-state throughput doubled.

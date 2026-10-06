@@ -167,6 +167,34 @@ class FlussArrowClientTest {
   }
 
   @Test
+  void sharedTransportClosesOnlyAfterItsLastOwner() throws Exception {
+    var config = cluster.config();
+    var initial = java.util.Map.copyOf(config.toMap());
+    var first = FlussConnections.acquire(config);
+    var second = FlussConnections.acquire(new org.apache.fluss.config.Configuration(config));
+    try {
+      assertSame(first.connection(), second.connection());
+      assertEquals(
+          initial, config.toMap(), "The Java client must not mutate the cache key's caller");
+      first.close();
+      first.close();
+      assertNotNull(second.connection().getAdmin().listDatabases().get());
+      var different = new org.apache.fluss.config.Configuration(config);
+      different.set(ConfigOptions.CLIENT_SCANNER_LOG_FETCH_WAIT_MAX_TIME, Duration.ofMillis(1));
+      try (var separate = FlussConnections.acquire(different)) {
+        assertNotSame(second.connection(), separate.connection());
+      }
+    } finally {
+      first.close();
+      second.close();
+    }
+    try (var replacement = FlussConnections.acquire(config)) {
+      assertNotSame(second.connection(), replacement.connection(), "No idle connections survive");
+      assertNotNull(replacement.connection().getAdmin().listDatabases().get());
+    }
+  }
+
+  @Test
   void checkpointRestoresOnlyCollectedRowsAndReleasesPrefetchedBatches() throws Exception {
     TablePath path = table("recovery", false, "ZSTD", "FULL");
     Schema full =
