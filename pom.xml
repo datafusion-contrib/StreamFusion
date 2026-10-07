@@ -662,6 +662,11 @@
                         <configuration>
                             <additionalDependencies combine.self="override">
                                 <additionalDependency>
+                                    <groupId>org.apache.fluss</groupId>
+                                    <artifactId>fluss-flink-1.18</artifactId>
+                                    <version>1.0.0</version>
+                                </additionalDependency>
+                                <additionalDependency>
                                     <groupId>org.apache.parquet</groupId>
                                     <artifactId>parquet-hadoop</artifactId>
                                     <version>1.16.0</version>

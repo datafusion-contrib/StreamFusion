@@ -186,7 +186,7 @@ class NexmarkMatrixBenchmark {
     }
   }
 
-  private static final Query[] ALL_QUERIES = {
+  static final Query[] ALL_QUERIES = {
     new Query(
         "q0",
         false,

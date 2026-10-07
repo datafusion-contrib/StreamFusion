@@ -4,11 +4,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -36,6 +43,9 @@ class NexmarkFlussBenchmark {
       Long.parseLong(System.getenv().getOrDefault("SF_ROWS", "1000000"));
   private static final int WARMUPS = Integer.getInteger("nexmark.warmups", 1);
   private static final int RUNS = Integer.getInteger("nexmark.runs", 3);
+  private static final String BACKEND =
+      System.getenv().getOrDefault("SF_FLUSS_STATE_BACKEND", "memory");
+  private Path rocksDirectory;
   private static final ObjectMapper JSON = new ObjectMapper();
 
   @Test
@@ -45,7 +55,9 @@ class NexmarkFlussBenchmark {
         "Use -Pbench for measurements");
     String previous = System.getProperty("streamfusion.fluss.enabled");
     System.setProperty("streamfusion.fluss.enabled", "true");
+    rocksDirectory = Files.createTempDirectory("fluss-rocksdb");
     try (FlussTestCluster cluster = new FlussTestCluster()) {
+      assertTrue(BACKEND.equals("memory") || BACKEND.equals("rocksdb"));
       cluster.start();
       var config = cluster.config();
       config.set(
@@ -54,6 +66,7 @@ class NexmarkFlussBenchmark {
       try (Connection connection = ConnectionFactory.createConnection(config)) {
         connection.getAdmin().createDatabase("nexmark", DatabaseDescriptor.EMPTY, true).get();
         seed(cluster, connection);
+        if (BACKEND.equals("rocksdb")) assertRocksDBEngages(cluster, connection);
         for (var query : NexmarkMatrixBenchmark.selectQueries()) {
           for (int warmup = 0; warmup < WARMUPS; warmup++) {
             try (Result baseline = run(cluster, connection, query, false);
@@ -74,24 +87,28 @@ class NexmarkFlussBenchmark {
             }
           }
           System.out.printf(
-              "[fluss] %s rows=%d parallelism=%d stock=%s native=%s primaryKeySink=%s%n",
+              "[fluss] %s rows=%d parallelism=%d stock=%s native=%s primaryKeySink=%s backend=%s%n",
               query.label,
               ROWS,
               PARALLELISM,
               stock,
               nativeTimes,
-              NexmarkMatrixBenchmark.UPSERT_KEYS.containsKey(query.label));
+              NexmarkMatrixBenchmark.UPSERT_KEYS.containsKey(query.label),
+              BACKEND);
         }
       }
     } finally {
+      try (var files = Files.walk(rocksDirectory)) {
+        for (var file : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(file);
+      }
       if (previous == null) System.clearProperty("streamfusion.fluss.enabled");
       else System.setProperty("streamfusion.fluss.enabled", previous);
     }
   }
 
-  private static void seed(FlussTestCluster cluster, Connection connection) throws Exception {
+  private void seed(FlussTestCluster cluster, Connection connection) throws Exception {
     RowType type = FlinkConversions.toFlussRowType(NexmarkKafkaBenchmark.nexmarkRowType());
-    StreamTableEnvironment tables = environment(cluster);
+    StreamTableEnvironment tables = environment(cluster, false);
     tables.executeSql(
         "CREATE TABLE fluss.nexmark.events ("
             + NexmarkKafkaBenchmark.SCHEMA
@@ -131,12 +148,25 @@ class NexmarkFlussBenchmark {
     return row;
   }
 
-  private static StreamTableEnvironment environment(FlussTestCluster cluster) {
+  private StreamTableEnvironment environment(FlussTestCluster cluster, boolean nativeRun) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(PARALLELISM);
     env.enableCheckpointing(1000);
     env.getConfig().enableObjectReuse();
     StreamTableEnvironment tables = StreamTableEnvironment.create(env);
+    tables.getConfig().getConfiguration().setString("table.exec.mini-batch.enabled", "false");
+    if (BACKEND.equals("rocksdb")) {
+      tables
+          .getConfig()
+          .getConfiguration()
+          .setString(
+              "state.backend.type",
+              nativeRun ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "rocksdb");
+      tables
+          .getConfig()
+          .getConfiguration()
+          .setString("state.backend.rocksdb.localdir", rocksDirectory.toString());
+    }
     tables.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tables.executeSql(
         "CREATE CATALOG fluss WITH ('type'='fluss', 'bootstrap.servers'='"
@@ -145,21 +175,62 @@ class NexmarkFlussBenchmark {
     return tables;
   }
 
+  private void assertRocksDBEngages(FlussTestCluster cluster, Connection connection)
+      throws Exception {
+    var query =
+        Arrays.stream(NexmarkMatrixBenchmark.ALL_QUERIES)
+            .filter(q -> q.label.equals("q4"))
+            .findFirst()
+            .orElseThrow();
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      var seen = new AtomicBoolean();
+      Thread watcher =
+          new Thread(
+              () -> {
+                while (!Thread.currentThread().isInterrupted() && !seen.get()) {
+                  try {
+                    if (nativeRun) seen.set(Native.liveNativeHandles().contains("Rocks"));
+                    else
+                      try (var files = Files.walk(rocksDirectory)) {
+                        seen.set(files.anyMatch(f -> f.getFileName().toString().equals("CURRENT")));
+                      }
+                    Thread.sleep(50);
+                  } catch (InterruptedException stop) {
+                    return;
+                  } catch (IOException failure) {
+                    throw new UncheckedIOException(failure);
+                  }
+                }
+              },
+              "fluss-rocksdb-preflight");
+      watcher.setDaemon(true);
+      watcher.start();
+      try (Result result = run(cluster, connection, query, nativeRun)) {
+        assertTrue(seen.get(), (nativeRun ? "Native" : "Stock") + " RocksDB did not engage");
+        System.out.println(
+            "[fluss] RocksDB engagement verified: " + (nativeRun ? "native" : "stock"));
+      } finally {
+        watcher.interrupt();
+        watcher.join();
+      }
+    }
+  }
+
   private record Result(double seconds, SortedOutput rows) implements AutoCloseable {
     @Override
-    public void close() throws java.io.IOException {
+    public void close() throws IOException {
       rows.close();
     }
   }
 
-  private static Result run(
+  private Result run(
       FlussTestCluster cluster,
       Connection connection,
       NexmarkMatrixBenchmark.Query query,
       boolean nativeRun)
       throws Exception {
     String name = "output_" + UUID.randomUUID().toString().replace("-", "");
-    StreamTableEnvironment tables = environment(cluster);
+    StreamTableEnvironment tables = environment(cluster, nativeRun);
     tables.executeSql("CREATE TEMPORARY VIEW src AS SELECT * FROM fluss.nexmark.events");
     NexmarkMatrixBenchmark.registerEventViews(tables);
     NexmarkMatrixBenchmark.runSetup(tables, query);
@@ -176,9 +247,9 @@ class NexmarkFlussBenchmark {
         query.insertSql.replace("INSERT INTO sink", "INSERT INTO fluss.nexmark." + name);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tables) : null;
     String plan = tables.explainSql(insert, ExplainDetail.JSON_EXECUTION_PLAN);
-    java.nio.file.Path plans = java.nio.file.Path.of("target", "fluss-plans");
-    java.nio.file.Files.createDirectories(plans);
-    java.nio.file.Files.writeString(
+    Path plans = Path.of("target", "fluss-plans");
+    Files.createDirectories(plans);
+    Files.writeString(
         plans.resolve(query.label + (nativeRun ? "-native" : "-stock") + ".txt"), plan);
     if (nativeRun) {
       assertTrue(plan.contains("native-fluss-source"), scan.explainSummary());

@@ -5,17 +5,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.zip.CRC32C;
+import org.apache.arrow.c.ArrowArray;
+import org.apache.arrow.c.ArrowSchema;
+import org.apache.arrow.c.CDataDictionaryProvider;
+import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.TinyIntVector;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.fluss.record.MemoryLogRecords;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.Native;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 class FlussArrowLogBatchTest {
@@ -72,6 +79,75 @@ class FlussArrowLogBatchTest {
       assertThrows(
           IOException.class,
           () -> FlussArrowLogBatch.decode(ByteBuffer.wrap(append), SCHEMA, allocator));
+    }
+  }
+
+  @Test
+  void borrowedStringOffsetsAreAlignedBeforeNativeImport() throws Exception {
+    Schema schema = new Schema(List.of(Field.nullable("text", new ArrowType.Utf8())));
+    try (RootAllocator allocator = new RootAllocator();
+        VectorSchemaRoot input = VectorSchemaRoot.create(schema, allocator)) {
+      input.allocateNew();
+      var text = (VarCharVector) input.getVector(0);
+      text.setSafe(0, "first".getBytes(StandardCharsets.UTF_8));
+      text.setNull(1);
+      text.setSafe(2, "last".getBytes(StandardCharsets.UTF_8));
+      input.setRowCount(3);
+      byte[] encoded = FlussArrowLogBatch.encode(input, 0, -1, -1);
+      for (int displacement = 0; displacement < 4; displacement++) {
+        try (var allocation = allocator.buffer(encoded.length + displacement);
+            var borrowed = allocation.slice(displacement, encoded.length)) {
+          borrowed.getReferenceManager().retain();
+          borrowed.setBytes(0, encoded);
+          try (var decoded =
+              FlussArrowLogBatch.decode(
+                  borrowed.nioBuffer(0, encoded.length), schema, allocator, true, borrowed)) {
+            var loaded = (VarCharVector) decoded.root().getVector(0);
+            assertEquals(0, loaded.getOffsetBuffer().memoryAddress() & 3);
+            assertEquals("first", loaded.getObject(0).toString());
+            assertNull(loaded.getObject(1));
+            assertNativeStringRoundTrip(decoded.root(), allocator);
+            assertEquals("last", loaded.getObject(2).toString());
+            assertTrue(loaded.getDataBuffer().memoryAddress() >= borrowed.memoryAddress());
+            assertTrue(
+                loaded.getDataBuffer().memoryAddress() < borrowed.memoryAddress() + encoded.length);
+          }
+        }
+      }
+    }
+  }
+
+  private static void assertNativeStringRoundTrip(VectorSchemaRoot root, RootAllocator allocator) {
+    long calc =
+        Native.createCalcExpression(
+            new int[1],
+            new int[] {0},
+            new int[1],
+            new long[0],
+            new double[0],
+            new String[0],
+            new int[] {0},
+            -1,
+            new String[] {"text"});
+    try (var dictionaries = new CDataDictionaryProvider();
+        var inputArray = ArrowArray.allocateNew(allocator);
+        var inputSchema = ArrowSchema.allocateNew(allocator);
+        var outputArray = ArrowArray.allocateNew(allocator);
+        var outputSchema = ArrowSchema.allocateNew(allocator)) {
+      Data.exportVectorSchemaRoot(allocator, root, dictionaries, inputArray, inputSchema);
+      Native.calcExpression(
+          calc,
+          inputArray.memoryAddress(),
+          inputSchema.memoryAddress(),
+          outputArray.memoryAddress(),
+          outputSchema.memoryAddress());
+      try (var result =
+          Data.importVectorSchemaRoot(allocator, outputArray, outputSchema, dictionaries)) {
+        for (int row = 0; row < root.getRowCount(); row++)
+          assertEquals(root.getVector(0).getObject(row), result.getVector(0).getObject(row));
+      }
+    } finally {
+      Native.closeCalcExpression(calc);
     }
   }
 

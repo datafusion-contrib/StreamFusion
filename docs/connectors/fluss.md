@@ -670,3 +670,42 @@ remains stock. Exact output parity passes for every pair:
 | q17 | 9.055959 | 6.310909 |
 | q18 | 10.539551 | 8.246340 |
 | q19 | 39.652596 | 15.865008 |
+
+### CI packaging and offset alignment
+
+The optional Fluss artifact resolves its published coordinates with the same `ossrh`
+POM flattening as the other connectors. Flink 1.18's overridden Javadoc dependency
+list includes the released Fluss connector so the shared source path remains resolvable;
+this does not add Fluss to the runtime or core consumer dependencies.
+
+Borrowed uncompressed string/binary offset buffers may start at an unaligned RPC address.
+The decoder copies only an offset buffer whose address is not aligned to four bytes,
+before exporting it to native code. Arrow-rs 58 reads the final variable-width offset
+inside FFI import, before the bridge's existing `align_buffers` repair can run.
+Validity and variable-width data buffers remain borrowed. This check is required in
+release builds as well as debug builds; release execution succeeding did not prove
+that an unaligned dereference was safe. A regression exercises all four address residues,
+null values, and retained data-buffer sharing.
+
+### Selecting disk state for the Fluss matrix
+
+`SF_FLUSS_STATE_BACKEND=rocksdb` selects Flink's released RocksDB backend for stock
+jobs and `RocksDBNativeStateBackendFactory` for native jobs, matching the existing
+persistent-state comparison. The default remains `memory`; mini-batching is explicitly
+disabled for both engines. Before measured disk trials, an untimed q4 preflight verifies
+stock RocksDB working files and a live native RocksDB handle. Stateless queries still
+use the selected job configuration without manufacturing state. A temporary local
+state directory is cleaned after the cluster closes.
+
+```sh
+SF_FLUSS_BENCH=true SF_FLUSS_STATE_BACKEND=rocksdb SF_ROWS=2000000 \
+mvn -Pbench -pl streamfusion-fluss -am test -Dtest=NexmarkFlussBenchmark \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dsf.extraJvmArgs=-Xmx2g \
+  -Dnexmark.warmups=1 -Dnexmark.runs=3
+```
+
+Use `SF_MATRIX_QUERIES` to select the same append-only or primary-key output groups
+listed above. Queries, schemas, event corpus, watermarks, source/sink semantics and
+parity checks are unchanged by the backend selector. Disk state is an engine setting;
+it does not change the Fluss broker's storage configuration. CI also exercises q4
+and q5 with disk state in the optimized Flink 2.2 job.

@@ -267,6 +267,20 @@ jobs:
           -Dsf.extraJvmArgs=-Xmx2g -Dtest=FlussSqlTest,NexmarkFlussBenchmark
           -Dnexmark.warmups=0 -Dnexmark.runs=1
 
+      - name: Verify Fluss RocksDB backends and output parity
+        if: matrix.line == '2.2'
+        env:
+          SF_FLUSS_BENCH: 'true'
+          SF_FLUSS_STATE_BACKEND: 'rocksdb'
+          SF_ROWS: '8192'
+          SF_MATRIX_QUERIES: 'q4,q5'
+        run: >
+          mvn -B -ntp -Pbench -pl streamfusion-fluss -am test
+          -Dnative.build.skip=true -Dnative.profile=release-staging/release
+          -Dmaven.javadoc.skip=true -Dsurefire.failIfNoSpecifiedTests=false
+          -Dsf.extraJvmArgs=-Xmx2g -Dtest=NexmarkFlussBenchmark
+          -Dnexmark.warmups=0 -Dnexmark.runs=1
+
       - name: Upload Fluss SQL execution plans and test results
         if: always() && matrix.line == '2.2'
         uses: actions/upload-artifact@v4

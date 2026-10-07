@@ -12,12 +12,15 @@ import java.util.List;
 import java.util.zip.CRC32C;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.BaseVariableWidthVector;
+import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorLoader;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.VectorUnloader;
 import org.apache.arrow.vector.ipc.ReadChannel;
 import org.apache.arrow.vector.ipc.WriteChannel;
+import org.apache.arrow.vector.ipc.message.ArrowFieldNode;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.arrow.vector.ipc.message.MessageSerializer;
 import org.apache.arrow.vector.types.pojo.Schema;
@@ -109,12 +112,13 @@ public final class FlussArrowLogBatch {
       require(arrow != null && arrow.getLength() == count, "Arrow/log row count mismatch");
       require(!payload.hasRemaining(), "trailing Arrow payload");
       new VectorLoader(root, FlussArrowCompression.INSTANCE).load(arrow);
+      alignVariableOffsets(root.getFieldVectors(), allocator);
       if (kinds != null) {
         kindVector = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, allocator);
         kindVector.allocateNew(count);
         for (int i = 0; i < count; i++) kindVector.set(i, rowKind(kinds.get(i)));
         kindVector.setValueCount(count);
-        List<org.apache.arrow.vector.FieldVector> vectors = new ArrayList<>(root.getFieldVectors());
+        List<FieldVector> vectors = new ArrayList<>(root.getFieldVectors());
         vectors.add(kindVector);
         root = new VectorSchemaRoot(vectors);
         kindVector = null;
@@ -126,6 +130,24 @@ public final class FlussArrowLogBatch {
       if (kindVector != null) kindVector.close();
       if (failure instanceof IOException io) throw io;
       throw failure;
+    }
+  }
+
+  // Arrow-rs reads the final string/binary offset during FFI import, before align_buffers runs.
+  private static void alignVariableOffsets(List<FieldVector> vectors, BufferAllocator allocator) {
+    for (var vector : vectors) {
+      if (vector instanceof BaseVariableWidthVector variable
+          && (variable.getOffsetBuffer().memoryAddress() & 3) != 0) {
+        var buffers = new ArrayList<>(vector.getFieldBuffers());
+        ArrowBuf offsets = variable.getOffsetBuffer();
+        try (ArrowBuf aligned = allocator.buffer(offsets.capacity())) {
+          aligned.setBytes(0, offsets, 0, offsets.capacity());
+          buffers.set(1, aligned);
+          vector.loadFieldBuffers(
+              new ArrowFieldNode(vector.getValueCount(), vector.getNullCount()), buffers);
+        }
+      }
+      alignVariableOffsets(vector.getChildrenFromFields(), allocator);
     }
   }
 
