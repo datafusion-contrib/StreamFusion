@@ -248,3 +248,19 @@ alongside the matching core payload and Apache Fluss's released
 native library. Enable planning with `-Dstreamfusion.fluss.enabled=true` only while
 validating the experimental coverage described in [Fluss](connectors/fluss.md).
 Primary-key writes remain on Flink's normal Fluss connector.
+
+## Shared source ownership
+
+Shared Java sources also require explicit module ownership during compilation. Reproducible
+JAR timestamps can precede a fresh checkout's source timestamps; javac then prefers the newer
+source of a referenced core class and can implicitly emit that class into a connector's output.
+The compiler configuration inherited by every module uses `-implicit:none`: javac may resolve
+shared source symbols, but emits classes only for the module's explicit source includes. This
+keeps the core runtime and optional connector/format JARs separate without hiding duplicate
+classes from artifact validation. Clean rebuilds remove classes emitted by an older configuration.
+
+`python3 bin/test_module_source_ownership.py` recreates an old-timestamp dependency JAR and
+newer shared source. Its negative control demonstrates implicit duplication; the configured
+compiler flag preserves only the connector's explicit class. A runtime probe executes the
+connector and verifies its dependency resolves from the core JAR. Image CI runs the regression
+before packaging, and the unchanged artifact checker verifies ownership in the real bundle.
