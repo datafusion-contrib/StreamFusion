@@ -1070,3 +1070,24 @@ classpath. This keeps shared projection wrappers on the actual Flink 1.18 contra
 when the source-suite clean build causes javac to resolve their source implicitly.
 It does not patch Paimon, add VARIANT support to Flink 1.18, or change test selectors.
 The backend comparison and Fluss source/sink implementation are unaffected.
+
+### Paimon random full-compaction completion
+
+Released Paimon 1.0 and 2.0 `PrimaryKeyFileStoreTableITCase.checkChangelogTestResult`
+counts every changelog event whose value is at least 10,000 before stopping. Legitimate
+unchanged terminal UPDATE_BEFORE/UPDATE_AFTER pairs can exhaust that counter while
+other keys still contain earlier values. Replaying the captured PR300 warehouse with stock
+Paimon reproduced the original early assertion; continuing to complete current terminal-key
+coverage passed every original row assertion and final result assertion.
+
+The suite agent narrowly adapts that private method's counter to current distinct positive
+terminal-key coverage: INSERT/UPDATE_AFTER adds the `(partition,key)` when its value is
+at least 10,000; UPDATE_BEFORE/DELETE retires it. The original producer-count comparison,
+SQL, iterator, row checker, final assertions and timeout remain unchanged. The adapter does
+not filter legitimate no-op changelog pairs or modify released source files. Its bytecode
+visitor rejects unknown shapes instead of silently applying a different transformation,
+and a thread-local scope clears coverage on normal and exceptional exits.
+
+The counter visitor reads the original local-variable slots before lifecycle advice remaps them.
+A composed transformation regression loads and executes the rewritten method, checks repeated
+terminal pairs, and verifies cleanup after normal and exceptional exits.

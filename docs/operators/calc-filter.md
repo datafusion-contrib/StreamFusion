@@ -17,6 +17,10 @@ batches and batches carrying a row-kind column; Calc caches each schema separate
 those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
 retractions received from a source that advertised insert-only output.
 
+Filter projections can repeat input columns, including nullable and nested values. Each repeated
+reference owns a retained Arrow view until the final reference transfers the source buffers,
+so releasing the input cannot erase another projected copy or its changelog row kind.
+
 The rest of this page is the exact admission list: what's unconditionally native, what's native by
 default via a JVM upcall (and why that's not a fallback), what's opt-in, and what's a straight
 fallback.

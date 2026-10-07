@@ -24,6 +24,51 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkWindowLateSliceSqlHarnessTest {
   @ParameterizedTest
+  @CsvSource({"ONE_PHASE,false", "TWO_PHASE,false", "ONE_PHASE,true", "TWO_PHASE,true"})
+  void endMinusOneWatermarkFinalizesAlignedAndAttachedWindows(String phase, boolean attached)
+      throws Exception {
+    String inner = "SELECT k, window_start, window_end, SUM(v) AS v, COUNT(*) AS n "
+        + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
+        + "GROUP BY k, window_start, window_end";
+    String sql = attached
+        ? "SELECT k, window_start, window_end, SUM(v), SUM(n) FROM (" + inner
+            + ") GROUP BY k, window_start, window_end"
+        : inner;
+    List<List<Object>> expected = List.of(
+        List.of("+I", 1, LocalDateTime.ofEpochSecond(0, 0, ZoneOffset.UTC),
+            LocalDateTime.ofEpochSecond(1, 0, ZoneOffset.UTC), 10L, 1L),
+        List.of("+I", 1, LocalDateTime.ofEpochSecond(1, 0, ZoneOffset.UTC),
+            LocalDateTime.ofEpochSecond(2, 0, ZoneOffset.UTC), 20L, 1L));
+    NativeParity.assertKindedParity(() -> boundaryEnvironment(phase), sql, expected);
+  }
+
+  private static TableEnvironment boundaryEnvironment(String phase) {
+    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.setParallelism(1);
+    var table = StreamTableEnvironment.create(env);
+    table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
+    table.getConfig().set("table.optimizer.agg-phase-strategy", phase);
+    var source = fromData(env,
+        Types.ROW_NAMED(new String[] {"k", "millis", "v", "wm"},
+            Types.INT, Types.LONG, Types.LONG, Types.LONG),
+        Row.of(1, 500L, 10L, 999L), Row.of(1, 500L, 99L, 1000L),
+        Row.of(1, 1500L, 20L, 1999L))
+        .assignTimestampsAndWatermarks(WatermarkStrategy.<Row>forGenerator(context ->
+            new WatermarkGenerator<Row>() {
+              @Override public void onEvent(Row row, long timestamp, WatermarkOutput output) {
+                output.emitWatermark(new Watermark((Long) row.getField(3)));
+              }
+              @Override public void onPeriodicEmit(WatermarkOutput output) {}
+            }).withTimestampAssigner((row, previous) -> (Long) row.getField(1)));
+    table.createTemporaryView("src", source, Schema.newBuilder()
+        .column("k", DataTypes.INT()).column("millis", DataTypes.BIGINT())
+        .column("v", DataTypes.BIGINT()).column("wm", DataTypes.BIGINT())
+        .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
+        .watermark("rt", "SOURCE_WATERMARK()").build());
+    return table;
+  }
+
+  @ParameterizedTest
   @CsvSource({
     "ONE_PHASE,TUMBLE,false", "TWO_PHASE,TUMBLE,false",
     "ONE_PHASE,HOP,false", "TWO_PHASE,HOP,false",

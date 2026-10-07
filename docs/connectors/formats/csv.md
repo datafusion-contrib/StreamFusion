@@ -11,6 +11,17 @@ Records are split with csv-core and fields converted with Flink-exact text parse
 `field-delimiter` (including `\t`/`\uXXXX` escaped forms), `quote-character`,
 `disable-quote-character`, `allow-comments`, and `null-literal` natively.
 
+Numeric and boolean trimming follows Java `String.trim()` (characters at or below U+0020);
+non-breaking spaces remain invalid numeric input. Integer and decimal strings accept Java's
+BMP decimal digits with exact width and overflow checks; CSV decimals preserve Flink's
+untrimmed input semantics. Float suffixes apply only to decimal literals, so `NaNf` and
+`InfinityD` fail conversion. Malformed Unicode numeric or timestamp fields fail normally;
+`ignore-parse-errors` nulls the affected field and preserves the rest of the row.
+
+Decimal zero accepts the full Java exponent range without constructing exponent-sized powers
+of ten. Nonzero rescaling detects precision overflow and complete fractional discard before
+allocating a divisor, while retaining Java's scale and supported-integer-range errors.
+
 Decode supports BOOLEAN, integer and floating-point types, CHAR/VARCHAR, DATE, TIMESTAMP,
 TIMESTAMP_LTZ, and DECIMAL. It does not admit TIME, binary, or container types.
 

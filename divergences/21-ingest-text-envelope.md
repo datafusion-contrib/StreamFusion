@@ -28,6 +28,13 @@ path for its raw number literals, but the decimal columns decode as raw *text*
 own decimal parse truncates extra fraction digits and errors on precision overflow, which silently
 diverged from Flink on valid data.
 
+Decimal text accepts Java BMP decimal digits in coefficients and exponents, bounds the exponent
+and resulting source scale like `BigDecimal(String)`, and preserves deterministic Java scale/power
+range errors. Zero rescaling returns immediately. Nonzero rescaling bounds powers of ten by input
+digit count and target precision, so extreme exponents cannot allocate exponent-sized integers
+when the rounded value or precision overflow is already known. CSV decimal text remains untrimmed;
+JSON decimal strings use Java `trim()` (characters through U+0020).
+
 The same reasoning holds on the way OUT: the Kafka sink's CSV encode (`native/kafka/src/csv_encode.rs`)
 is hand-rolled against Jackson's `CsvEncoder` semantics rather than arrow-csv's writer, whose
 envelope cannot be configured into Jackson's — Jackson's "loose" quote decision (25+ UTF-16 units
@@ -66,9 +73,6 @@ value — a job that runs on both engines produces identical results.
   strictness gain.
 - **Java-only numeric exotica are rejected**: hex float literals (`0x1.8p1`) and expanded ISO years
   beyond four digits (`+10000-01-01`) fail natively where Java parses them.
-- **Whitespace trimming is Unicode.** Java's `String.trim` strips only chars ≤ U+0020; Rust's
-  `trim` also strips exotic Unicode whitespace, so a number padded with e.g. a non-breaking space
-  parses natively where Flink fails.
 - **An unterminated quote parses as field content** (csv-core prefers *a* parse over *no* parse)
   where Jackson throws on EOF inside a quote.
 - **A message holding several CSV records emits only the first** — same as Flink (Jackson's

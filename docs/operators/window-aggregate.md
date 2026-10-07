@@ -12,6 +12,12 @@ on disk as well as in memory. RocksDB persists their window bounds even though t
 accumulator columns; duplicate groups, watermark firing, and checkpoint recovery preserve the
 same output as the memory backend.
 
+Aligned windows fire when the watermark or processing clock reaches `window_end - 1ms`,
+including the local/global split and persistent state. Event-time rows for a fired final window are late
+and cannot change its result. Processing-time arrivals remain admissible, including arrivals
+at the same clock reading after a timer callback, matching Flink's processing-time behavior. Native storage indexes exclusive window ends, so the Java boundary
+translates the firing frontier by one millisecond before flushing.
+
 ## Mixed aggregates and AVG partials
 
 SUM, MIN, MAX, COUNT and AVG can share a window and read the same or different numeric columns.
@@ -567,3 +573,53 @@ until a clock timer emits a completed window, and checks materialization in both
 stock and native execution. Bounded input completion is not a substitute for that
 timer; fixed-clock operator tests separately verify that finish and terminal
 watermarks leave processing-time windows open.
+
+Final legacy group-window output without window properties moves unchanged key and aggregate
+Arrow buffers into vectors carrying the declared output schema. Outputs carrying properties keep
+the original preallocated copy path. Integer narrowing and window timestamp rendering retain their conversion loops;
+closing the imported native flush does not invalidate emitted batches. See the
+[allocation technique](../optimizations/allocation-discipline.md#final-window-output-buffers).
+
+## Output handoff benchmarks
+
+The opt-in `WindowOutputHandoffBenchmark` times native final flush, Arrow C Data import, and
+Java output shaping with distinct output groups. Its nullable aggregate results, long string
+keys, narrowed integer keys, and fractional timestamp keys cover compatible buffer handoffs
+and required type conversions. Input/state setup and result validation stay outside timing.
+
+`WindowOutputHandoffJobBenchmark` measures complete stock Flink and native jobs, including the
+native input/output transposes and collecting sink. Defaults are 262,144 input rows and 65,536
+output groups, with BIGINT and 64-byte STRING keys, nullable sums, counts, and window bounds.
+It alternates stock/native execution order, validates every output group, and prints the native
+row-sink plan witness plus all samples. `EXPLAIN SELECT` omits its collecting sink, so the
+witness explains an equivalent insert into a row sink; the measured query still collects and
+validates every result. Run with `SF_BENCHMARK=true mvn test -Pbench
+-Dtest=WindowOutputHandoffJobBenchmark -Dhandoff.job.warmup=2 -Dhandoff.job.runs=5`.
+Use the same fixture, release native libraries, JDK, and machine for the saved previous-native
+baseline and candidate; compare each against its stock run rather than comparing separate
+workloads. Recorded raw samples and limitations are linked in the allocation technique. The final recorded
+shaping and legacy complete-job pair ran with background workloads explicitly accepted by the
+user; its raw samples, control variation, and complete-job regressions are documented. Earlier
+provisional measurements remain archived; buffer-sharing validation is independent of timing.
+
+`WindowOutputShapingBenchmark` isolates the handoff further: a benchmark-only subclass exports
+prebuilt native-shaped Arrow results, then invokes the unchanged production `emitFinal` method.
+Timing includes C Data export/import, output shaping, and Arrow emission, with no native aggregate
+computation. Each fixture runs with both zero window properties (valid legacy group-window output)
+and two properties (the usual start/end), reporting `properties=0` or `properties=2`. The zero-property
+case measures buffer handoff without timestamp rendering; the two-property case measures the
+original copy and conversion path, providing a control where transfer is disabled. Source buffers are prepared before timing and closed before output validation;
+result-buffer address equality reports sharing directly. Nullable long results, nullable long
+string keys, timestamp component keys, and integer narrowing use the same three output sizes.
+Run with `SF_BENCHMARK=true mvn test -Pbench -Dtest=WindowOutputShapingBenchmark
+-Dshaping.warmup=20 -Dshaping.runs=31` for baseline and candidate.
+
+For focused control runs, shaping accepts comma-separated `-Dshaping.shapes=INT,TIMESTAMP`,
+`-Dshaping.rows=16384`, and `-Dshaping.properties=2`; omitted selectors keep all 30 fixtures.
+Selectors matching nothing fail instead of producing an empty successful benchmark. These controls
+can use longer warmup and identical JVM compilation flags for baseline/candidate runs without
+changing the production path or measured boundary.
+
+For zero-property legacy group-window complete jobs, append `-Dhandoff.job.properties=0`.
+The benchmark verifies the group-window native node and both transposes, collecting and checking
+key/count/sum results without window fields.

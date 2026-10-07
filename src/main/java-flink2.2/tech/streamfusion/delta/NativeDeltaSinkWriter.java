@@ -17,9 +17,12 @@ import io.delta.kernel.utils.CloseableIterator;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -78,17 +81,14 @@ final class NativeDeltaSinkWriter implements CommittingSinkWriter<RowData, Delta
         Map<String, Literal> partitionValues =
             Conversions.FlinkToDelta.partitionValues(
                 table.getSchema(), table.getPartitionColumns(), row);
-        PartitionBuffer partition =
-            partitions.computeIfAbsent(
-                writerKey(partitionValues), ignored -> new PartitionBuffer(partitionValues));
         List<Literal> primaryKey = upsertMode ? primaryKey(row) : List.of();
         String key = primaryKey.isEmpty() ? null : encodeKey(primaryKey);
         switch (row.getRowKind()) {
           case INSERT:
-            bufferRow(partition, batch, rowId, key);
+            bufferRow(partitionFor(partitionValues), batch, rowId, key);
             break;
           case UPDATE_AFTER:
-            if (!bufferRow(partition, batch, rowId, key)) {
+            if (!bufferRow(partitionFor(partitionValues), batch, rowId, key)) {
               recordPersistedKey(primaryKey);
             }
             break;
@@ -108,6 +108,16 @@ final class NativeDeltaSinkWriter implements CommittingSinkWriter<RowData, Delta
     } finally {
       batch.close();
     }
+  }
+
+  private PartitionBuffer partitionFor(Map<String, Literal> values) {
+    Map<String, String> key = writerKey(values);
+    PartitionBuffer partition = partitions.get(key);
+    if (partition == null) {
+      partition = new PartitionBuffer(key, values);
+      partitions.put(key, partition);
+    }
+    return partition;
   }
 
   private boolean bufferRow(
@@ -242,13 +252,15 @@ final class NativeDeltaSinkWriter implements CommittingSinkWriter<RowData, Delta
     return value.getValue() == null ? "N" : "V" + value;
   }
 
-  private static final class PartitionBuffer {
+  private final class PartitionBuffer {
+    private final Map<String, String> key;
     private final Map<String, Literal> partitionValues;
-    private final List<BufferedSelection> selections = new ArrayList<>();
+    private final Set<BufferedSelection> selections = new LinkedHashSet<>();
     private ArrowKernelRows currentBatch;
     private BufferedSelection currentSelection;
 
-    private PartitionBuffer(Map<String, Literal> partitionValues) {
+    private PartitionBuffer(Map<String, String> key, Map<String, Literal> partitionValues) {
+      this.key = key;
       this.partitionValues = Map.copyOf(partitionValues);
     }
 
@@ -256,10 +268,20 @@ final class NativeDeltaSinkWriter implements CommittingSinkWriter<RowData, Delta
       if (currentBatch != batch) {
         batch.retain();
         currentBatch = batch;
-        currentSelection = new BufferedSelection(batch);
+        currentSelection = new BufferedSelection(this, batch);
         selections.add(currentSelection);
       }
       return currentSelection;
+    }
+
+    private void retire(BufferedSelection selection) {
+      selections.remove(selection);
+      if (currentSelection == selection) {
+        currentBatch = null;
+        currentSelection = null;
+      }
+      if (selections.isEmpty()) partitions.remove(key, this);
+      selection.close();
     }
 
     private List<FilteredColumnarBatch> drain() {
@@ -283,41 +305,46 @@ final class NativeDeltaSinkWriter implements CommittingSinkWriter<RowData, Delta
   }
 
   private static final class BufferedSelection {
+    private final PartitionBuffer partition;
     private final ArrowKernelRows batch;
-    private final List<Integer> rowIds = new ArrayList<>();
-    private final List<Boolean> live = new ArrayList<>();
+    private int liveCount;
+    private int[] rowIds = new int[16];
+    private int size;
+    private final BitSet live = new BitSet();
     private boolean closed;
 
-    private BufferedSelection(ArrowKernelRows batch) {
+    private BufferedSelection(PartitionBuffer partition, ArrowKernelRows batch) {
+      this.partition = partition;
       this.batch = batch;
     }
 
     private BufferedRow add(int rowId) {
-      int position = rowIds.size();
-      rowIds.add(rowId);
-      live.add(true);
+      int position = size++;
+      if (position == rowIds.length) {
+        rowIds = Arrays.copyOf(rowIds, Math.min(batch.rowCount(), rowIds.length * 2));
+      }
+      rowIds[position] = rowId;
+      live.set(position);
+      liveCount++;
       return new BufferedRow(this, position);
     }
 
     private void remove(int position) {
-      live.set(position, false);
+      live.clear(position);
+      if (--liveCount == 0) partition.retire(this);
     }
 
     private FilteredColumnarBatch drain() {
-      int count = 0;
-      for (boolean keep : live) {
-        count += keep ? 1 : 0;
-      }
+      int count = liveCount;
       if (count == 0) {
         close();
         return null;
       }
       int[] selected = new int[count];
       int output = 0;
-      for (int i = 0; i < live.size(); i++) {
-        if (live.get(i)) {
-          selected[output++] = rowIds.get(i);
-        }
+      for (int position = live.nextSetBit(0); position >= 0;
+          position = live.nextSetBit(position + 1)) {
+        selected[output++] = rowIds[position];
       }
       FilteredColumnarBatch result = batch.selectRows(selected);
       close();

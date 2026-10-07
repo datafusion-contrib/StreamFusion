@@ -14,6 +14,7 @@ import org.apache.paimon.CoreOptions;
 import org.apache.paimon.flink.FlinkConnectorOptions;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.predicate.Predicate;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeSourceWatermarks;
@@ -24,13 +25,15 @@ final class NativePaimonSourceExecNode extends ExecNodeBase<ArrowBatch>
   private final FileStoreTable table;
   private final RowType output;
   private final ScanWatermarkSpec watermark;
+  private final Predicate partitionPredicate;
 
   NativePaimonSourceExecNode(
       ReadableConfig config,
       RowType output,
       String description,
       FileStoreTable table,
-      ScanWatermarkSpec watermark) {
+      ScanWatermarkSpec watermark,
+      Predicate partitionPredicate) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-paimon-source_1"),
@@ -41,6 +44,7 @@ final class NativePaimonSourceExecNode extends ExecNodeBase<ArrowBatch>
     this.table = table;
     this.output = output;
     this.watermark = watermark;
+    this.partitionPredicate = partitionPredicate;
   }
 
   @Override
@@ -57,7 +61,8 @@ final class NativePaimonSourceExecNode extends ExecNodeBase<ArrowBatch>
             projection,
             4096,
             watermark == null ? -1 : watermark.rowtimeIndex,
-            watermark == null ? null : watermark.expression);
+            watermark == null ? null : watermark.expression,
+            partitionPredicate);
     WatermarkStrategy<ArrowBatch> strategy =
         watermark == null
             ? WatermarkStrategy.noWatermarks()

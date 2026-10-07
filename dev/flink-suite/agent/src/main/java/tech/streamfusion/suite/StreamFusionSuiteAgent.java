@@ -132,6 +132,12 @@ public final class StreamFusionSuiteAgent {
                   && PaimonCheckpointFixture.supports(type.getName())) {
                 builder = builder.visit(PaimonCheckpointFixture.adapter());
               }
+              if (type.getName().equals("org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase")) {
+                // Inspect original locals before Advice remaps them for its exceptional-exit scope.
+                builder = builder
+                    .visit(Advice.to(PaimonChangelogCompletion.Scope.class).on(named("checkChangelogTestResult")))
+                    .visit(PaimonChangelogCompletion.adapter());
+              }
               return builder.visit(
                   Advice.to(WatchPaimonTest.class)
                       .on(

@@ -99,6 +99,26 @@ pub(super) fn interval(c: &mut Criterion) {
                             )
                         });
 
+                        let expired_setup = || {
+                            let (mut operator, directory) = setup();
+                            assert_eq!(operator.advance(500).num_rows(), 0);
+                            (operator, directory)
+                        };
+                        let label = format!("expired_arrival/{shape}");
+                        let (mut operator, _directory) = expired_setup();
+                        let (expired, allocations) = measure(|| operator.push_left(&left));
+                        assert_eq!(expired.num_rows(), if outer { rows } else { 0 });
+                        assert_eq!(operator.push_right(&right).num_rows(), 0);
+                        assert_eq!(operator.advance(1000).num_rows(), 0);
+                        report(&label, &sources, expired.columns(), allocations);
+                        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                            b.iter_batched_ref(
+                                &expired_setup,
+                                |(operator, _)| std::hint::black_box(operator.push_left(&left)),
+                                BatchSize::PerIteration,
+                            )
+                        });
+
                         let left_populated = || {
                             let (mut operator, directory) = setup();
                             assert_eq!(operator.push_left(&left).num_rows(), 0);

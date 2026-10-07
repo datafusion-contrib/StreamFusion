@@ -94,7 +94,7 @@ fn mixed_layout_bounds_keep_payloads_and_match_flags_after_restore() {
                     right.schema(),
                     &restored.snapshot(),
                 );
-                assert_eq!(restored.advance(1000).unwrap().num_rows(), 0);
+                assert_eq!(restored.advance(1001).unwrap().num_rows(), 0);
                 assert!(restored.left_buffered.is_empty());
                 assert!(restored.right_buffered.is_empty());
             }
@@ -104,13 +104,14 @@ fn mixed_layout_bounds_keep_payloads_and_match_flags_after_restore() {
 
 #[test]
 fn wide_timestamps_and_offsets_do_not_require_nanosecond_durations() {
-    for millis in [i64::MIN + 2000, 31_494_784_780_800_000, i64::MAX - 2000] {
+    for millis in [-100_000, 31_494_784_780_800_000, i64::MAX - 2000] {
         let left = batch(Arc::new(TimestampMillisecondArray::from(vec![millis])));
         let right = batch(Arc::new(TimestampMillisecondArray::from(vec![
             millis - 1000,
         ])));
         for left_first in [true, false] {
-            let mut join = joiner(&left, &right, -1000, 1000, JoinKind::Inner);
+            let horizon = if millis < 0 { 102_000 } else { 1000 };
+            let mut join = joiner(&left, &right, -horizon, horizon, JoinKind::Inner);
             let output = if left_first {
                 join.push_left(left.clone(), None).unwrap();
                 join.push_right(right.clone(), None).unwrap()
@@ -191,4 +192,838 @@ fn bounds_preserve_java_overflow_direction_and_sql_nulls() {
         .return_type(&[DataType::Utf8, DataType::Int64])
         .is_err());
     assert!(predicate.return_type(&[]).is_err());
+}
+
+fn millis(value: i64) -> RecordBatch {
+    batch(Arc::new(Int64Array::from(vec![value])))
+}
+
+#[test]
+fn expired_arrivals_do_not_enter_state_and_outer_rows_pad_immediately() {
+    for persistent in [false, true] {
+        for kind in [
+            JoinKind::Inner,
+            JoinKind::LeftOuter,
+            JoinKind::RightOuter,
+            JoinKind::FullOuter,
+        ] {
+            for left_first in [true, false] {
+                let input = millis(100);
+                let mut operator = joiner(&input, &input, 0, 0, kind);
+                let directory = tempfile::tempdir().unwrap();
+                #[cfg(feature = "rocksdb-state")]
+                if persistent {
+                    operator = persistent_joiner(operator, directory.path(), input.schema());
+                }
+                #[cfg(not(feature = "rocksdb-state"))]
+                if persistent {
+                    continue;
+                }
+                operator.advance(1000).unwrap();
+                let first = if left_first {
+                    operator.push_left(input.clone(), None)
+                } else {
+                    operator.push_right(input.clone(), None)
+                }
+                .unwrap();
+                let second = if left_first {
+                    operator.push_right(input.clone(), None)
+                } else {
+                    operator.push_left(input.clone(), None)
+                }
+                .unwrap();
+                let first_outer = if left_first {
+                    kind.left_is_outer()
+                } else {
+                    kind.right_is_outer()
+                };
+                let second_outer = if left_first {
+                    kind.right_is_outer()
+                } else {
+                    kind.left_is_outer()
+                };
+                assert_eq!(first.num_rows(), usize::from(first_outer));
+                assert_eq!(second.num_rows(), usize::from(second_outer));
+                if first_outer {
+                    assert!(first.column(if left_first { 2 } else { 0 }).is_null(0));
+                }
+                if second_outer {
+                    assert!(second.column(if left_first { 0 } else { 2 }).is_null(0));
+                }
+                assert_eq!(operator.advance(2000).unwrap().num_rows(), 0);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+fn persistent_joiner(
+    operator: IntervalJoiner,
+    directory: &std::path::Path,
+    schema: SchemaRef,
+) -> IntervalJoiner {
+    let config = RocksStoreConfig {
+        table_dir: directory.join("db").to_string_lossy().into_owned(),
+        max_parallelism: 128,
+        options_json: include_str!("../../benches/fixtures/rocks-options.json").into(),
+        ttl_ms: 0,
+        shared_resources: 0,
+    };
+    operator.with_key_timestamp_precisions(vec![-1]).with_store(
+        crate::state::RocksIntervalBuffer::create(config, schema.clone(), schema).unwrap(),
+    )
+}
+
+#[test]
+fn closed_arrivals_probe_live_state_before_retention_and_do_not_pad_matches() {
+    for persistent in [false, true] {
+        for left_first in [true, false] {
+            let resident = millis(90);
+            let arrival = millis(70);
+            let mut operator = joiner(&resident, &arrival, -20, 30, JoinKind::FullOuter);
+            let directory = tempfile::tempdir().unwrap();
+            #[cfg(feature = "rocksdb-state")]
+            if persistent {
+                operator = persistent_joiner(operator, directory.path(), resident.schema());
+            }
+            #[cfg(not(feature = "rocksdb-state"))]
+            if persistent {
+                continue;
+            }
+            operator.advance(100).unwrap();
+            let initial = if left_first {
+                operator.push_left(resident, None)
+            } else {
+                operator.push_right(resident, None)
+            }
+            .unwrap();
+            assert_eq!(initial.num_rows(), 0);
+            let matched = if left_first {
+                operator.push_right(arrival, None)
+            } else {
+                operator.push_left(arrival, None)
+            }
+            .unwrap();
+            assert_eq!(matched.num_rows(), 1);
+            assert_eq!(matched.column(0).null_count(), 0);
+            assert_eq!(matched.column(2).null_count(), 0);
+            assert_eq!(operator.advance(1000).unwrap().num_rows(), 0);
+        }
+    }
+}
+
+#[test]
+fn initial_rowtime_frontier_and_restore_frontier_match_flink() {
+    let input = millis(0);
+    let mut operator = joiner(&input, &input, 0, 0, JoinKind::FullOuter);
+    assert_eq!(
+        operator.push_left(input.clone(), None).unwrap().num_rows(),
+        1
+    );
+    assert_eq!(
+        operator.push_right(input.clone(), None).unwrap().num_rows(),
+        1
+    );
+    operator.advance(1000).unwrap();
+    let snapshot = operator.snapshot();
+    let input = millis(100);
+    let mut restored = IntervalJoiner::restore(
+        vec![0],
+        vec![0],
+        1,
+        1,
+        0,
+        0,
+        None,
+        JoinKind::FullOuter,
+        input.schema(),
+        input.schema(),
+        &snapshot,
+    );
+    assert_eq!(
+        restored.push_left(input.clone(), None).unwrap().num_rows(),
+        0
+    );
+    assert_eq!(restored.push_right(input, None).unwrap().num_rows(), 1);
+}
+
+#[test]
+fn processing_time_arrivals_use_current_clock_and_strict_boundaries() {
+    let input = millis(1);
+    let mut operator = joiner(&input, &input, 0, 0, JoinKind::FullOuter);
+    assert_eq!(
+        operator
+            .push_left(input.clone(), Some(100))
+            .unwrap()
+            .num_rows(),
+        1
+    );
+    assert_eq!(
+        operator
+            .push_right(input.clone(), Some(100))
+            .unwrap()
+            .num_rows(),
+        1
+    );
+    let mut operator = joiner(&input, &input, -20, 30, JoinKind::FullOuter);
+    assert_eq!(
+        operator
+            .push_left(input.clone(), Some(100))
+            .unwrap()
+            .num_rows(),
+        0
+    );
+    assert_eq!(operator.push_right(input, Some(100)).unwrap().num_rows(), 1);
+    assert_eq!(operator.advance(200).unwrap().num_rows(), 0);
+}
+
+#[test]
+fn retained_horizon_equality_can_match_a_nonretained_arrival() {
+    for persistent in [false, true] {
+        let input = millis(100);
+        let mut operator = joiner(&input, &input, 0, 0, JoinKind::FullOuter);
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            operator = persistent_joiner(operator, directory.path(), input.schema());
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        assert_eq!(
+            operator.push_left(input.clone(), None).unwrap().num_rows(),
+            0
+        );
+        assert_eq!(operator.advance(100).unwrap().num_rows(), 0);
+        let matches = operator.push_right(input, None).unwrap();
+        assert_eq!(matches.num_rows(), 1);
+        assert_eq!(matches.column(0).null_count(), 0);
+        assert_eq!(operator.advance(101).unwrap().num_rows(), 0);
+    }
+}
+
+#[test]
+fn immediate_pads_and_matches_preserve_incoming_order() {
+    for persistent in [false, true] {
+        for incoming_left in [false, true] {
+            let input = millis(90);
+            let mut operator = joiner(&input, &input, -20, 30, JoinKind::FullOuter);
+            let directory = tempfile::tempdir().unwrap();
+            #[cfg(feature = "rocksdb-state")]
+            if persistent {
+                operator = persistent_joiner(operator, directory.path(), input.schema());
+            }
+            #[cfg(not(feature = "rocksdb-state"))]
+            if persistent {
+                continue;
+            }
+            operator.advance(100).unwrap();
+            if incoming_left {
+                operator.push_right(input, None).unwrap();
+            } else {
+                operator.push_left(input, None).unwrap();
+            }
+            let arrivals = batch(Arc::new(Int64Array::from(vec![1, 70, 2])));
+            let output = if incoming_left {
+                operator.push_left(arrivals, None)
+            } else {
+                operator.push_right(arrivals, None)
+            }
+            .unwrap();
+            let times = output
+                .column(if incoming_left { 1 } else { 3 })
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(times.values(), &[1, 70, 2]);
+            let opposite = output.column(if incoming_left { 2 } else { 0 });
+            assert!(opposite.is_null(0));
+            assert!(!opposite.is_null(1));
+            assert!(opposite.is_null(2));
+            assert_eq!(output.num_columns(), 4);
+        }
+    }
+}
+
+#[test]
+fn expired_arrival_does_not_consume_state_budget() {
+    let input = millis(0);
+    let mut operator = joiner(&input, &input, 0, 0, JoinKind::FullOuter)
+        .with_memory_budget(0)
+        .unwrap();
+    assert_eq!(operator.push_left(input, None).unwrap().num_rows(), 1);
+    assert!(operator.left_buffered.is_empty());
+}
+
+#[test]
+fn first_cleanup_timer_survives_out_of_order_rows_and_backend_transitions() {
+    for persistent in [false, true] {
+        let input = millis(100);
+        let mut original = joiner(&input, &input, 0, 0, JoinKind::FullOuter);
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            original = persistent_joiner(original, directory.path(), input.schema());
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        original.push_left(input.clone(), None).unwrap();
+        original.push_left(millis(90), None).unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        let snapshots = if persistent {
+            original.canonical_partitions().unwrap()
+        } else {
+            original.snapshot_partitions(128, &[-1])
+        };
+        #[cfg(not(feature = "rocksdb-state"))]
+        let snapshots = original.snapshot_partitions(128, &[-1]);
+        let snapshots = snapshots.into_values().collect::<Vec<_>>();
+        for restore_persistent in [false, true] {
+            let restored_directory = tempfile::tempdir().unwrap();
+            let mut restored = IntervalJoiner::restore_partitions(
+                vec![0],
+                vec![0],
+                1,
+                1,
+                0,
+                0,
+                None,
+                JoinKind::FullOuter,
+                input.schema(),
+                input.schema(),
+                &snapshots,
+            );
+            #[cfg(feature = "rocksdb-state")]
+            if restore_persistent {
+                restored = persistent_joiner(
+                    joiner(&input, &input, 0, 0, JoinKind::FullOuter),
+                    restored_directory.path(),
+                    input.schema(),
+                );
+                restored.import_partitions(&snapshots, i64::MIN).unwrap();
+            }
+            #[cfg(not(feature = "rocksdb-state"))]
+            if restore_persistent {
+                continue;
+            }
+            assert_eq!(restored.advance(95).unwrap().num_rows(), 0);
+            let output = restored.push_right(millis(90), None).unwrap();
+            assert_eq!(output.num_rows(), 1);
+            assert_eq!(output.column(0).null_count(), 0);
+            let pads = restored.advance(101).unwrap();
+            assert_eq!(
+                pads.num_rows(),
+                1,
+                "source_persistent={persistent}, restore_persistent={restore_persistent}"
+            );
+            assert!(pads.column(2).is_null(0));
+            assert_eq!(
+                pads.column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(0),
+                100
+            );
+        }
+    }
+}
+
+#[test]
+fn batched_arrivals_observe_eager_cleanup_after_the_first_probe() {
+    for persistent in [false, true] {
+        let input = millis(100);
+        let mut operator = joiner(&input, &input, 0, 0, JoinKind::FullOuter);
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            operator = persistent_joiner(operator, directory.path(), input.schema());
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        operator.push_left(input, None).unwrap();
+        operator.push_left(millis(90), None).unwrap();
+        operator.advance(95).unwrap();
+        let incoming = batch(Arc::new(Int64Array::from(vec![90, 90])));
+        let output = operator.push_right(incoming, None).unwrap();
+        assert_eq!(output.num_rows(), 2);
+        assert!(!output.column(0).is_null(0));
+        assert!(output.column(0).is_null(1));
+        assert_eq!(output.column(2).null_count(), 0);
+    }
+}
+
+#[test]
+fn global_probe_gate_is_replayed_between_keys_in_a_batch() {
+    for persistent in [false, true] {
+        let input = RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef),
+            ("rt", Arc::new(Int64Array::from(vec![-10, -10])) as ArrayRef),
+        ])
+        .unwrap();
+        let mut operator = joiner(&input, &input, -20, 30, JoinKind::FullOuter);
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            operator = persistent_joiner(operator, directory.path(), input.schema());
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        assert_eq!(operator.push_right(input, None).unwrap().num_rows(), 0);
+        let incoming = RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(vec![1, 3, 2])) as ArrayRef),
+            (
+                "rt",
+                Arc::new(Int64Array::from(vec![-20, 20, -20])) as ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let output = operator.push_left(incoming, None).unwrap();
+        assert_eq!(output.num_rows(), 2);
+        assert_eq!(
+            output
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values(),
+            &[1, 2]
+        );
+        assert!(output.column(2).is_null(0));
+        assert!(!output.column(2).is_null(1));
+    }
+}
+
+#[test]
+fn timer_only_key_groups_survive_canonical_restore() {
+    for persistent in [false, true] {
+        let input = millis(100);
+        let mut operator = joiner(&input, &input, 0, 0, JoinKind::FullOuter);
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            operator = persistent_joiner(operator, directory.path(), input.schema());
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        // Eager cleanup can leave a scheduled timer after its row cache became empty.
+        let mut encoder = BinaryRowBatchEncoder::new(&input, &[0], &[-1]);
+        let key = ByteKey::from(encoder.encode(0));
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            let group = operator.store_mut().key_group(hash_bytes_by_words(&key.0));
+            operator
+                .store_mut()
+                .set_cleanup_timer(true, group, &key.0, Some(201))
+                .unwrap();
+        } else {
+            operator.left_cleanup.insert(key.clone(), 201);
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        operator.left_cleanup.insert(key.clone(), 201);
+        #[cfg(feature = "rocksdb-state")]
+        let snapshots = if persistent {
+            operator.canonical_partitions().unwrap()
+        } else {
+            operator.snapshot_partitions(128, &[-1])
+        };
+        #[cfg(not(feature = "rocksdb-state"))]
+        let snapshots = operator.snapshot_partitions(128, &[-1]);
+        assert!(!snapshots.is_empty());
+        let snapshots = snapshots.into_values().collect::<Vec<_>>();
+        let mut restored = IntervalJoiner::restore_partitions(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            0,
+            0,
+            None,
+            JoinKind::FullOuter,
+            input.schema(),
+            input.schema(),
+            &snapshots,
+        );
+        assert_eq!(restored.left_cleanup.get(key.0.as_ref()), Some(&201));
+        assert_eq!(restored.advance(200).unwrap().num_rows(), 0);
+        assert_eq!(restored.left_cleanup.get(key.0.as_ref()), Some(&201));
+        assert_eq!(restored.advance(201).unwrap().num_rows(), 0);
+        assert!(restored.left_cleanup.is_empty());
+    }
+}
+
+#[test]
+fn opposite_side_cleanup_timers_emit_in_deadline_order() {
+    for persistent in [false, true] {
+        let input = millis(100);
+        let mut operator = joiner(&input, &input, 0, 0, JoinKind::FullOuter);
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            operator = persistent_joiner(operator, directory.path(), input.schema());
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        operator.push_left(input, None).unwrap();
+        operator.push_right(millis(90), None).unwrap();
+        let pads = operator.advance(200).unwrap();
+        assert_eq!(pads.num_rows(), 2);
+        assert!(pads.column(0).is_null(0));
+        assert_eq!(
+            pads.column(3)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .value(0),
+            90
+        );
+        assert!(pads.column(2).is_null(1));
+        assert_eq!(
+            pads.column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .value(1),
+            100
+        );
+    }
+}
+
+#[test]
+fn legacy_timestamp_precision_keys_regenerate_cleanup_timers() {
+    let input = RecordBatch::try_from_iter(vec![
+        (
+            "k",
+            Arc::new(TimestampNanosecondArray::from(vec![1_000_123_456])) as ArrayRef,
+        ),
+        ("rt", Arc::new(Int64Array::from(vec![100])) as ArrayRef),
+    ])
+    .unwrap();
+    let mut original =
+        joiner(&input, &input, 0, 0, JoinKind::FullOuter).with_key_timestamp_precisions(vec![9]);
+    original.push_left(input.clone(), None).unwrap();
+    let legacy = |bytes: Vec<u8>| {
+        let sections = read_framed_sections(&bytes);
+        IntervalJoiner::snapshot_parts([
+            sections[0].clone(),
+            sections[1].clone(),
+            sections[2].clone(),
+            sections[3].clone(),
+        ])
+    };
+    let raw = legacy(original.snapshot());
+    let partitions = original
+        .snapshot_partitions(128, &[9])
+        .into_values()
+        .map(legacy)
+        .collect::<Vec<_>>();
+    for partitioned in [false, true] {
+        let restored = if partitioned {
+            IntervalJoiner::restore_partitions(
+                vec![0],
+                vec![0],
+                1,
+                1,
+                0,
+                0,
+                None,
+                JoinKind::FullOuter,
+                input.schema(),
+                input.schema(),
+                &partitions,
+            )
+        } else {
+            IntervalJoiner::restore(
+                vec![0],
+                vec![0],
+                1,
+                1,
+                0,
+                0,
+                None,
+                JoinKind::FullOuter,
+                input.schema(),
+                input.schema(),
+                &raw,
+            )
+        };
+        let mut restored = restored.with_key_timestamp_precisions(vec![9]);
+        assert_eq!(restored.left_cleanup.len(), 1);
+        assert_eq!(restored.advance(100).unwrap().num_rows(), 0);
+        let pads = restored.advance(101).unwrap();
+        assert_eq!(pads.num_rows(), 1, "partitioned={partitioned}");
+        assert_eq!(pads.column(0), input.column(0));
+        assert!(restored.left_cleanup.is_empty());
+    }
+}
+
+#[test]
+fn cleanup_silently_clears_a_nonpositive_surviving_timestamp() {
+    for persistent in [false, true] {
+        let input = millis(-50);
+        let mut operator = joiner(&input, &input, -100, 100, JoinKind::FullOuter);
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            operator = persistent_joiner(operator, directory.path(), input.schema());
+        }
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        operator.push_left(input, None).unwrap();
+        operator.push_left(millis(0), None).unwrap();
+        let pads = operator.advance(51).unwrap();
+        assert_eq!(pads.num_rows(), 1);
+        assert_eq!(
+            pads.column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .value(0),
+            -50
+        );
+        // Stock removeExpiredRows clears its entire cache when the surviving earliest time is zero.
+        assert_eq!(operator.push_right(millis(0), None).unwrap().num_rows(), 0);
+        assert_eq!(operator.advance(101).unwrap().num_rows(), 1);
+    }
+}
+
+#[test]
+fn selective_probes_keep_unselected_rows_and_outer_match_ids() {
+    let input = |keys: Vec<i64>, values: Vec<i64>| {
+        let rows = keys.len();
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            (
+                "rt",
+                Arc::new(Int64Array::from(vec![1000; rows])) as ArrayRef,
+            ),
+            ("v", Arc::new(Int64Array::from(values)) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    let state = input(vec![4, 1, 4, 3], vec![40, 10, 41, 30]);
+    let incoming = input(vec![4, 4], vec![400, 401]);
+    for kind in [JoinKind::Inner, JoinKind::FullOuter] {
+        for left_first in [true, false] {
+            let mut operator = joiner(&state, &incoming, 0, 0, kind);
+            let output = if left_first {
+                operator.push_left(state.clone(), None).unwrap();
+                operator.push_right(incoming.clone(), None).unwrap()
+            } else {
+                operator.push_right(state.clone(), None).unwrap();
+                operator.push_left(incoming.clone(), None).unwrap()
+            };
+            assert_eq!(output.num_rows(), 4);
+            let column = output
+                .column(if left_first { 2 } else { 5 })
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(column.values().as_ref(), &[40, 41, 40, 41]);
+            let later = input(vec![1], vec![100]);
+            let matched = if left_first {
+                operator.push_right(later, None).unwrap()
+            } else {
+                operator.push_left(later, None).unwrap()
+            };
+            assert_eq!(matched.num_rows(), 1);
+            assert_eq!(
+                matched
+                    .column(if left_first { 2 } else { 5 })
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(0),
+                10
+            );
+            let pads = operator.advance(i64::MAX).unwrap();
+            assert_eq!(
+                pads.num_rows(),
+                usize::from(matches!(kind, JoinKind::FullOuter))
+            );
+            if pads.num_rows() > 0 {
+                assert_eq!(
+                    pads.column(if left_first { 2 } else { 5 })
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .value(0),
+                    30
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn indexed_memory_probes_survive_eager_cleanup_restore_and_timer_drain() {
+    let input = |keys: Vec<i64>, times: Vec<i64>| {
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            ("rt", Arc::new(Int64Array::from(times)) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    for kind in [JoinKind::Inner, JoinKind::FullOuter] {
+        let initial = input((1..=2048).collect(), vec![1000; 2048]);
+        let mut operator = joiner(&initial, &initial, 0, 0, kind);
+        operator.push_left(initial.clone(), None).unwrap();
+        // Keep the first timer, while adding an out-of-order row in a second batch.
+        operator.push_left(input(vec![1], vec![100]), None).unwrap();
+        assert!(operator.left_index.active());
+        assert_eq!(operator.advance(150).unwrap().num_rows(), 0);
+        let first = operator
+            .push_right(input(vec![1], vec![100]), None)
+            .unwrap();
+        assert_eq!(first.num_rows(), 1);
+        // That probe removes the expired cached row after its first match, invalidating locators.
+        assert_eq!(
+            operator
+                .left_buffered
+                .iter()
+                .map(RecordBatch::num_rows)
+                .sum::<usize>(),
+            2048
+        );
+        assert!(operator.left_index.active());
+        assert!(operator.left_matched.is_empty());
+        assert!(operator.right_matched.is_empty());
+        let snapshot = operator.snapshot();
+        let mut restored = IntervalJoiner::restore(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            0,
+            0,
+            None,
+            kind,
+            initial.schema(),
+            initial.schema(),
+            &snapshot,
+        )
+        .with_key_timestamp_precisions(vec![-1]);
+        assert!(restored.left_index.active());
+        let matches = restored
+            .push_right(input(vec![2, 1], vec![1000, 1000]), None)
+            .unwrap();
+        assert_eq!(matches.num_rows(), 2);
+        let keys = matches
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!(keys.values().as_ref(), &[2, 1]);
+        let pads = restored.advance(i64::MAX).unwrap();
+        assert_eq!(
+            pads.num_rows(),
+            if kind == JoinKind::FullOuter { 2046 } else { 0 }
+        );
+        if kind == JoinKind::FullOuter {
+            let keys = pads
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert!(keys.values().iter().all(|key| *key >= 3));
+            assert_eq!(pads.column(2).null_count(), pads.num_rows());
+        }
+        assert_eq!(restored.left_index.bytes(), 0);
+        assert_eq!(restored.right_index.bytes(), 0);
+        // Empty indexes after drain must not retain locators into the released batches.
+        assert_eq!(
+            restored
+                .push_right(input(vec![1], vec![1000]), None)
+                .unwrap()
+                .num_rows(),
+            usize::from(kind == JoinKind::FullOuter)
+        );
+    }
+}
+
+#[test]
+fn memory_probe_index_promotes_above_threshold_and_demotes_after_cleanup() {
+    let input = |keys: Vec<i64>, times: Vec<i64>| {
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            ("rt", Arc::new(Int64Array::from(times)) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    for kind in [JoinKind::Inner, JoinKind::FullOuter] {
+        let initial = input((0..1024).collect(), vec![1000; 1024]);
+        let mut operator = joiner(&initial, &initial, 0, 0, kind);
+        operator.push_left(initial.clone(), None).unwrap();
+        assert_eq!(operator.left_buffered_rows, 1024);
+        assert!(!operator.left_index.active());
+        assert_eq!(operator.left_index.bytes(), 0);
+        operator.push_left(input(vec![0], vec![100]), None).unwrap();
+        assert_eq!(operator.left_buffered_rows, 1025);
+        assert!(operator.left_index.active());
+        // A checkpoint restores the same derived index before its first probe.
+        let snapshot = operator.snapshot();
+        let mut restored = IntervalJoiner::restore(
+            vec![0],
+            vec![0],
+            1,
+            1,
+            0,
+            0,
+            None,
+            kind,
+            initial.schema(),
+            initial.schema(),
+            &snapshot,
+        )
+        .with_key_timestamp_precisions(vec![-1]);
+        assert!(restored.left_index.active());
+        assert_eq!(restored.advance(150).unwrap().num_rows(), 0);
+        // The first enabled probe matches the expired row, then removes it and demotes.
+        assert_eq!(
+            restored
+                .push_right(input(vec![0], vec![100]), None)
+                .unwrap()
+                .num_rows(),
+            1
+        );
+        assert_eq!(restored.left_buffered_rows, 1024);
+        assert!(!restored.left_index.active());
+        assert_eq!(restored.left_index.bytes(), 0);
+        let matches = restored
+            .push_right(input(vec![1023, 0], vec![1000, 1000]), None)
+            .unwrap();
+        assert_eq!(matches.num_rows(), 2);
+        assert_eq!(
+            matches
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values()
+                .as_ref(),
+            &[1023, 0]
+        );
+        let pads = restored.advance(i64::MAX).unwrap();
+        assert_eq!(
+            pads.num_rows(),
+            if kind == JoinKind::FullOuter { 1022 } else { 0 }
+        );
+        assert!(restored.left_matched.is_empty());
+        assert!(restored.right_matched.is_empty());
+        assert_eq!(restored.left_buffered_rows, 0);
+        assert_eq!(restored.right_buffered_rows, 0);
+    }
 }

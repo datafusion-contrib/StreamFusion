@@ -2041,3 +2041,79 @@ allocation witnesses, not timing or complete-job speedup evidence. Apply the
 extension after the baseline, typed, fusion and specialization prototype
 patches described in the [specialization diagnostic](hyperbolic-specialization.md).
 Production admission is unchanged.
+
+The CSV `format/csv/text_envelope` fixtures exercise production integer, float, and timestamp
+conversion together at 16, 1,024, and 16,384 messages. ASCII and BMP Unicode integer variants
+include null bodies and malformed fields under per-field error skipping. Fixture construction
+stays outside timing; allocation reporting covers production decode and Arrow output construction.
+
+Persistent interval-join fixtures include arrival after watermark expiry, with INNER and LEFT
+outer joins, nullable payloads, varied widths, and cardinalities. Fixture creation and frontier
+advancement remain outside timing; the measured call probes state, drops expired arrivals,
+and emits any immediate outer padding through the production operator.
+
+The memory `interval_join/expired_opposite_and_outer_pads` fixture measures one production
+arrival after loading future and expired opposite rows under the same keys. Sizes 16, 1024, and
+16384 with nullable narrow/wide payloads exercise the first per-key cleanup timer, the batched
+probe mask, and ordered mixing of matches and immediate outer padding. Fixture loading and
+watermark advancement are outside timing; validation asserts the alternating match/padding
+sequence and retained Arrow payload values.
+
+CSV `format/csv/decimal_exponents` measures production DECIMAL(5,2) decoding at 16, 1,024,
+and 16,384 messages, mixing ordinary HALF_UP rounding, Unicode decimal digits, extreme zero
+exponents, precision overflow, fractional discard, and Java range errors in lenient mode.
+Every decoded value and null is checked against a fixed expected result outside timing;
+`text_envelope` also validates all integer, float, and timestamp fields, rather than row counts alone.
+
+The memory interval `unique_cleanup_deadlines` fixture assigns every row a distinct key and event timestamp at 16, 1,024, and 16,384 rows. State construction stays outside timing; advancing to the terminal watermark measures chronological timer cleanup and outer padding, with output values and complete drain checked before measurement.
+
+The `dedup_pending` suite measures a keep-first rowtime arrival batch while the watermark leaves
+existing candidates pending. It preloads 64 or 16,384 keys outside timing, then measures 16 or 256
+arrivals with nullable payloads of 8 or 264 bytes. Fresh-key and mixed strictly-earlier, equal-time,
+and later-time arrivals share the same production push path. Untimed terminal-watermark checks
+verify one strict minimum per key, incumbent tie retention, nullable payloads, and complete drain.
+The measured boundary excludes state construction, watermark emission, JNI, and row/Arrow transposes.
+
+### Java final-window output handoff
+
+`WindowOutputHandoffBenchmark` complements Criterion by timing the production final-window
+flush, Arrow C Data import, and Java output shaping. Input creation and native state updates
+finish before timing; result validation and release happen afterward. It covers 1, 1,024, and
+16,384 distinct output groups with BIGINT keys, nullable aggregate results, 64-byte STRING
+keys, narrowed INT keys, and TIMESTAMP(9) keys with sub-millisecond fractions. Every repetition
+checks the output schema, all values and nulls, timestamp fractions, and window bounds after
+the imported native flush root has closed.
+
+Run with `SF_BENCHMARK=true mvn test -Pbench -Dtest=WindowOutputHandoffBenchmark
+-Dhandoff.warmup=3 -Dhandoff.runs=9`, using the same release native libraries, JDK, and machine
+for the saved baseline and candidate. The fixture prints every timed sample and its median;
+its boundary includes native final aggregation, rather than claiming to isolate Java copies.
+Use `MixedWindowAvgBenchmark` separately for stock Flink and complete-job comparison with
+both transposes. Neither fixture substitutes for correctness tests.
+
+`PendingDedupBenchmark` supplies the corresponding opt-in stock Flink comparison, using a bounded
+row source, terminal-only watermark, nullable string payloads, and a rowwise blackhole sink. It
+checks the native dedup plan and both boundary transposes, alternates engines across warmup and
+measured trials, and reports all trial times. Run the release `bench` Maven profile with
+`SF_BENCHMARK=true`, `-Dtest=PendingDedupBenchmark`, and optional `dedup.rows`, `dedup.keys`,
+`dedup.width`, `dedup.warmup`, and `dedup.runs` properties. This end-to-end timing includes SQL/job
+startup, conversions, JNI, keyed state, and final watermark emission.
+
+### Selective interval probes
+
+The `interval_probe` suite times production in-memory interval-join arrivals against 1,024 or 16,384 retained keys, with 16 or 256 matching incoming rows and nullable UTF-8 payloads of 8 or 264 bytes. Input construction and retained-state setup are excluded; joining, output creation, and eager cleanup remain timed. Fixtures verify output cardinality before measurement. This isolates probing rather than watermark or checkpoint costs and does not replace a stock Flink job comparison.
+
+`SparseIntervalJoinBenchmark` is the opt-in complete SQL comparison for selective interval probes.
+Both sources emit rows with nullable string payloads; one spans a large key domain while the other
+uses a sparse subset. Terminal-only watermarks retain state throughout ingestion. The benchmark
+checks result parity outside timing, verifies the native interval join and both boundary transposes,
+and alternates stock/native trials with warmup before reporting every measurement. Use the release
+`bench` Maven profile with `SF_BENCHMARK=true`, `-Dtest=SparseIntervalJoinBenchmark`, and optional
+`interval.rows`, `interval.keys`, `interval.probes`, `interval.match-keys`, `interval.width`,
+`interval.warmup`, and `interval.runs` properties. SQL startup, input conversion, JNI, state, output
+conversion, and the rowwise blackhole sink remain inside the measured boundary.
+
+
+The [performance audit reproduction guide](performance-audit.md) records matched fixture commits,
+release/allocator controls, serial shared-host execution, and Java/full-job comparisons for the
+pending-dedup, interval-probe, window, Delta, and Paimon audit candidates.

@@ -4221,7 +4221,16 @@ fn join_working_memory_draws_on_the_operator_budget() {
     let values: Vec<i64> = (0..n as i64).collect();
     let rts: Vec<i64> = vec![0; n];
     let big = join_batch(keys, values, rts);
-    let budget = (big.get_array_memory_size() + (64 << 10)) as i64;
+    // Measure retained production state (including derived probe metadata), then leave exactly
+    // 64 KiB for working memory. The preliminary ingestion has no opposite build side.
+    let mut measured = inner_interval_joiner(-1000, 1000)
+        .with_memory_budget(i64::MAX)
+        .unwrap();
+    measured.push_left(big.clone(), None).unwrap();
+    let retained_bytes = measured.memory.state_bytes;
+    assert!(retained_bytes > big.get_array_memory_size());
+    let budget = (retained_bytes + (64 << 10)) as i64;
+    drop(measured);
 
     let mut joiner = inner_interval_joiner(-1000, 1000)
         .with_memory_budget(budget)
@@ -7731,7 +7740,7 @@ fn interval_join_evicts_dead_rows_on_watermark() {
     let mut joiner = inner_interval_joiner(-1000, 1000);
     joiner.push_left(join_batch(vec![1], vec![10], vec![5000]), None);
     // Watermark 6000: left.rt - lower = 5000 - (-1000) = 6000, not > 6000, so the row is evicted.
-    joiner.advance(6000).unwrap();
+    joiner.advance(6001).unwrap();
     // A right row that would otherwise match (delta -500) finds nothing buffered.
     assert_eq!(
         joiner
@@ -7983,7 +7992,7 @@ fn interval_left_join_null_pads_unmatched_on_eviction() {
     assert_eq!(joiner.advance(5000).unwrap().num_rows(), 0);
     // Watermark at/above 5000 - (-1000) = 6000: the left row is evicted unmatched → [left+null]
     // (append-only, so no $row_kind$ column — just the padded row).
-    let out = joiner.advance(6000).unwrap();
+    let out = joiner.advance(6001).unwrap();
     assert_eq!(out.num_rows(), 1);
     assert_eq!(values(&out, 1), vec![10]); // left v
     assert!(out.column(3).is_null(0)); // right k nulled

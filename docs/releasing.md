@@ -58,6 +58,10 @@ The workflow's universal bundle verification also enables the `release` profile 
 `-Dgpg.skip=true`. This generates the flattened publication POMs and source/javadoc attachments
 before artifact validation; signing occurs in the subsequent deploy step.
 
+`bin/package-release.sh [output-directory]` writes the deployment archive and its SHA-256 checksum
+to the supplied directory, creating it when necessary. Relative paths are resolved from the caller's
+working directory; the default is `target/release` in the repository.
+
 ## Publish
 
 Before publishing the first candidate, push a signed dry-run tag to the canonical repository:

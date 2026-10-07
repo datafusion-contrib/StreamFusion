@@ -117,3 +117,11 @@ harness = false
 [[bench]]
 name = "jvm_truncate"
 harness = false
+
+[[bench]]
+name = "dedup_pending"
+harness = false
+
+[[bench]]
+name = "interval_probe"
+harness = false

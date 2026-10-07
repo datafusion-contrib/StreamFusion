@@ -150,7 +150,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
     if (proctime && maxOpenEnd != Long.MIN_VALUE) {
       long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (maxOpenEnd <= now) {
+      if (maxOpenEnd - 1 <= now) {
         emitClosedWindows(now);
       } else {
         scheduleNextTimer(now);
@@ -170,6 +170,16 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return createRocksDBWindowAggregatorHandle(rocksdb, cumulative, keyTypes, restoredPartitions);
+  }
+
+  @Override
+  protected void updateHandle(long arrayAddress, long schemaAddress) {
+    if (proctime) {
+      // Processing-time windows admit rows even after their last-millisecond timer fired.
+      Native.updateLocalTumblingAggregator(handle, arrayAddress, schemaAddress);
+    } else {
+      super.updateHandle(arrayAddress, schemaAddress);
+    }
   }
 
   @Override
@@ -232,14 +242,15 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   }
 
   /**
-   * Register a timer at the next window-end boundary strictly after {@code now}, unless every open
-   * window is already drained or that boundary is already scheduled. Window ends fall on slide
+   * Register a timer at the next window's last millisecond strictly after {@code now}, unless every
+   * open window is already drained or that boundary is already scheduled. Window ends fall on slide
    * boundaries (the matcher requires the slide to divide the size), so the next end is the next slide
-   * multiple. Processing time only advances, so the latest boundary scheduled never needs revisiting.
+   * multiple minus one millisecond. Processing time only advances, so the latest scheduled boundary
+   * never needs revisiting.
    */
   private void scheduleNextTimer(long now) {
-    long boundary = Math.floorDiv(now, slideMillis) * slideMillis + slideMillis;
-    if (boundary <= maxOpenEnd && boundary > registeredTimer) {
+    long boundary = Math.floorDiv(now + 1, slideMillis) * slideMillis + slideMillis - 1;
+    if (boundary < maxOpenEnd && boundary > registeredTimer) {
       getProcessingTimeService().registerTimer(boundary, this);
       registeredTimer = boundary;
     }
