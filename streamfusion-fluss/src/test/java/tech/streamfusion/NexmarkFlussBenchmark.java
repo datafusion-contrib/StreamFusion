@@ -278,9 +278,39 @@ class NexmarkFlussBenchmark {
             "q3 must share one columnar source between both join branches");
       }
     }
+    String profiler = System.getProperty("profile.asprof");
+    String pid = Long.toString(ProcessHandle.current().pid());
+    if (profiler != null) {
+      Path recordings = Path.of(System.getProperty("profile.outputDir", "target/profiles/fluss"));
+      Files.createDirectories(recordings);
+      Path recording =
+          recordings.resolve(
+              (nativeRun ? "streamfusion" : "flink")
+                  + "-"
+                  + query.label
+                  + "-"
+                  + UUID.randomUUID()
+                  + ".jfr");
+      NexmarkMatrixBenchmark.runProfiler(
+          profiler,
+          "start",
+          "-e",
+          System.getProperty("profile.event", "cpu"),
+          "-i",
+          "1ms",
+          "-f",
+          recording.toString(),
+          pid);
+      System.out.println("[fluss-profile] " + recording);
+    }
     long start = System.nanoTime();
-    tables.executeSql(insert).await();
-    double seconds = (System.nanoTime() - start) / 1e9;
+    double seconds;
+    try {
+      tables.executeSql(insert).await();
+      seconds = (System.nanoTime() - start) / 1e9;
+    } finally {
+      if (profiler != null) NexmarkMatrixBenchmark.runProfiler(profiler, "stop", pid);
+    }
     TablePath output = TablePath.of("nexmark", name);
     try {
       var info = connection.getAdmin().getTableInfo(output).get();

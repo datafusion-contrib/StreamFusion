@@ -187,7 +187,7 @@ case "${SUITE_MODE}" in
     ;;
   kafka)
     TEST_GOAL="surefire:test@integration-tests"
-    TEST_MODULES="flink-connector-kafka"
+    TEST_MODULES=":flink-connector-kafka"
     REPORT_ROOT="${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/target/surefire-reports"
     if [[ -z "${FLINK_SUITE_TEST:-}" ]]; then
       TEST_SELECTOR_ARGS=("-Dtest=${KAFKA_SQL_TESTS}")
@@ -426,8 +426,8 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
   if [[ "${SUITE_MODE}" == "kafka" ]]; then
     echo "Compiling the untouched upstream Kafka connector SQL integration tests..."
     kafka_mvn -B -ntp -s "${MAVEN_SETTINGS}" \
-      -f "${KAFKA_CONNECTOR_ROOT}/pom.xml" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
-      -Dflink.version="${FLINK_VERSION}" -pl flink-connector-kafka \
+      -f "${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/pom.xml" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
+      -Dflink.version="${FLINK_VERSION}" \
       -DskipTests test-compile || exit $?
   fi
 
@@ -542,7 +542,7 @@ if [[ "${SUITE_MODE}" == "state" ]]; then
 fi
 if [[ "${SUITE_MODE}" == "kafka" ]]; then
   MAVEN_TEST_ARGS+=(
-    -f "${KAFKA_CONNECTOR_ROOT}/pom.xml"
+    -f "${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/pom.xml"
     -Dflink.version="${FLINK_VERSION}"
     -Dflink.surefire.baseArgLine="${FLINK_MODULE_CONFIG}"
   )

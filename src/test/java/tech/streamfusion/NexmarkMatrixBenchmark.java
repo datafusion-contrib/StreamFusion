@@ -1683,7 +1683,7 @@ class NexmarkMatrixBenchmark {
     Thread nativeRocksWatcher =
         engagementWatcher(nativeRocksSeen, () -> Native.liveNativeHandles().contains("Rocks"));
     try {
-      kafkaSinkBest(brokers, q4, true, nativeRocksDB, 0, 1);
+      kafkaSinkBest(brokers, q4, true, nativeRocksDB, 0, 1, false);
     } finally {
       nativeRocksWatcher.interrupt();
       nativeRocksWatcher.join();
@@ -1731,16 +1731,28 @@ class NexmarkMatrixBenchmark {
   }
 
   private static double kafkaSinkBest(
+      String brokers, Query q, boolean nativeRun, Map<String, String> config, int warmup, int runs)
+      throws Exception {
+    return kafkaSinkBest(brokers, q, nativeRun, config, warmup, runs, true);
+  }
+
+  private static double kafkaSinkBest(
       String brokers,
       Query q,
       boolean nativeRun,
       Map<String, String> config,
       int warmup,
-      int runs)
+      int runs,
+      boolean requireNativeSink)
       throws Exception {
     Map<String, String> properties = new LinkedHashMap<>();
     properties.put("streamfusion.native.enabled", Boolean.toString(nativeRun));
-    if (nativeRun && q.nativeVariantProps != null) {
+    boolean variants =
+        nativeRun
+            && q.nativeVariantProps != null
+            && Boolean.parseBoolean(
+                System.getenv().getOrDefault("SF_KAFKA_NATIVE_VARIANTS", "true"));
+    if (variants) {
       properties.putAll(q.nativeVariantProps);
     }
     Map<String, String> previous = new LinkedHashMap<>();
@@ -1749,7 +1761,10 @@ class NexmarkMatrixBenchmark {
     try {
       double best = Double.MAX_VALUE;
       for (int run = 0; run < warmup + runs; run++) {
-        double seconds = runKafkaSinkOnce(brokers, q, nativeRun, config);
+        double seconds = runKafkaSinkOnce(brokers, q, nativeRun, config, requireNativeSink);
+        System.out.printf(
+            "[kafka-trial] %s engine=%s run=%d warmup=%s seconds=%.9f variants=%s%n",
+            q.label, nativeRun ? "native" : "stock", run, run < warmup, seconds, variants);
         if (run >= warmup) {
           best = Math.min(best, seconds);
         }
@@ -1768,7 +1783,12 @@ class NexmarkMatrixBenchmark {
   }
 
   private static double runKafkaSinkOnce(
-      String brokers, Query q, boolean nativeRun, Map<String, String> config) throws Exception {
+      String brokers,
+      Query q,
+      boolean nativeRun,
+      Map<String, String> config,
+      boolean requireNativeSink)
+      throws Exception {
     long t0 = System.nanoTime();
     StreamTableEnvironment tEnv = kafkaEnvironment(brokers, "json");
     tEnv.getConfig().getConfiguration().setString("execution.checkpointing.interval", "1 s");
@@ -1781,8 +1801,7 @@ class NexmarkMatrixBenchmark {
     // a single partition, which funnels every subtask's exactly-once writer into one partition
     // log — a sink-side ceiling that is not part of the workload (the corpus topic is already one
     // partition per source subtask).
-    try (Admin admin =
-        Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
+    try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
       admin
           .createTopics(List.of(new NewTopic("nexmark-output-" + suffix, PARALLELISM, (short) 1)))
           .all()
@@ -1791,8 +1810,7 @@ class NexmarkMatrixBenchmark {
     tEnv.executeSql(kafkaSinkDdl(q, brokers, "nexmark-output-" + suffix));
     long topicReady = System.nanoTime();
     String plan =
-        tEnv.explainSql(
-            q.insertSql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
+        tEnv.explainSql(q.insertSql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
     long explained = System.nanoTime();
     long start = System.nanoTime();
     tEnv.executeSql(q.insertSql).await();
@@ -1803,12 +1821,11 @@ class NexmarkMatrixBenchmark {
         && (!plan.contains("NativeKafkaDecode")
             || !plan.contains("native-kafka-source")
             || plan.contains("RowDataToArrow")
-            || !plan.contains("NativeKafkaSink")
-            || !plan.contains("flink-kafka-sink")
+            || (requireNativeSink && !plan.contains("NativeKafkaSink"))
+            || (requireNativeSink && !plan.contains("flink-kafka-sink"))
             || ("q3".equals(q.label)
                 && (!plan.contains("NativeShare(consumers=[2])")
-                    || countOccurrences(
-                            plan, "\"contents\" : \"Source: native-kafka-source\"")
+                    || countOccurrences(plan, "\"contents\" : \"Source: native-kafka-source\"")
                         != 1))
             || scan.substitutions() < 2)) {
       throw new IllegalStateException(
@@ -1818,8 +1835,7 @@ class NexmarkMatrixBenchmark {
               + " engage. "
               + scan.explainSummary());
     }
-    try (Admin admin =
-        Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
+    try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokers))) {
       String topic = "nexmark-output-" + suffix;
       if (admin.listTopics().names().get().contains(topic)) {
         admin.deleteTopics(List.of(topic)).all().get();
@@ -2021,12 +2037,29 @@ class NexmarkMatrixBenchmark {
       for (Query q : selectQueries()) {
         for (boolean nativeRun : new boolean[] {false, true}) {
           String engine = nativeRun ? "streamfusion" : "flink";
-          kafkaSinkBest(brokers, q, nativeRun, config, 0, 1);
+          Map<String, String> engineConfig = new LinkedHashMap<>(config);
+          if ("rocksdb".equals(System.getProperty("profile.backend"))) {
+            engineConfig.put(
+                "state.backend.type",
+                nativeRun ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "rocksdb");
+            engineConfig.put("state.backend.rocksdb.memory.fixed-per-slot", "128 mb");
+          }
+          engineConfig.put("table.exec.mini-batch.enabled", "false");
+          kafkaSinkBest(brokers, q, nativeRun, engineConfig, 0, 1);
           Path recording = outputDir.resolve(engine + "-" + q.label + ".jfr");
-          runProfiler(asprof, "start", "-e", "cpu", "-i", "1ms", "-f", recording.toString(), pid);
+          runProfiler(
+              asprof,
+              "start",
+              "-e",
+              System.getProperty("profile.event", "cpu"),
+              "-i",
+              "1ms",
+              "-f",
+              recording.toString(),
+              pid);
           double seconds;
           try {
-            seconds = kafkaSinkBest(brokers, q, nativeRun, config, 0, 1);
+            seconds = kafkaSinkBest(brokers, q, nativeRun, engineConfig, 0, 1);
           } finally {
             runProfiler(asprof, "stop", pid);
           }
@@ -2037,7 +2070,7 @@ class NexmarkMatrixBenchmark {
     }
   }
 
-  private static void runProfiler(String executable, String... args) throws Exception {
+  static void runProfiler(String executable, String... args) throws Exception {
     List<String> command = new ArrayList<>();
     command.add(executable);
     command.addAll(List.of(args));

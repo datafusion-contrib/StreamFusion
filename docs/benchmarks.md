@@ -367,17 +367,28 @@ build. These measurements complement the Flink comparisons on this page.
 
 The [Fluss-to-Fluss suite](connectors/fluss.md#final-nexmark-validation) uses the
 same queries and event corpus with released Fluss 1.0.0 as both input and output.
-All 23 runnable queries pass at 2M events. The final 16 append-only queries have a
+All 23 runnable queries pass at 2M events. The earlier memory-state sweep of 16 append-only queries has a
 **2.02× geomean of median speedups on memory state** over stock Fluss, with one warmup and three
 measured pairs each, including teardown. q2/q20/q23 have substantial variance and
 short-job lifecycle costs dominate many queries. Primary-key outputs retain the
-stock writer and have separate single-pair correctness validation. Kafka references
-come from the published README; no Kafka rerun or primary-key Kafka comparison is
-included. Full trials, earlier controls and transport-only profiles live on the
-connector page.
+stock writer and have separate single-pair correctness validation. That sweep references the published Kafka README results. The subsequent
+[matched local comparison](connectors/fluss.md#matched-transport-measurements)
+reruns both transports with RocksDB and exact expressions. Primary-key outputs are
+excluded from transport comparisons. Full trials and profiles live on the connector page.
 
-The matched [RocksDB Fluss matrix](connectors/fluss.md#rocksdb-nexmark-validation)
+The earlier [RocksDB Fluss matrix](connectors/fluss.md#rocksdb-nexmark-validation)
 has a **2.34× append-only geomean** over the same 16 queries, with one warmup
 and three measured pairs, mini-batching off and fixed 128 MiB state pools per slot.
 Both real backends are checked before timing, all 23 queries pass their output/native
 plan checks, and all disk trials are retained on the connector page.
+
+The subsequent [matched local Kafka/Fluss sweep](connectors/fluss.md#final-matched-rocksdb-results-2026-10-07)
+uses 2M events, parallelism four, RocksDB, mini-batching off and exact expressions.
+Median-speedup geomeans over the 16 append-only queries are **8.56× for Fluss**
+and **1.57× for Kafka**; native Fluss is **2.12× faster geometrically** in absolute
+runtime. All 192 measured samples are retained. Removing the SDK's two-second
+shutdown quiet period improves bounded-job lifecycle, rather than establishing a
+uniform sustained-throughput improvement. q23 remains slower than native Kafka
+on its median, and stateful outliers remain in the results. Delivery is exactly-once
+for Kafka and at-least-once for Fluss. The connector page contains the absolute
+per-query table, baseline sweep, controlled shutdown experiment and profiles.

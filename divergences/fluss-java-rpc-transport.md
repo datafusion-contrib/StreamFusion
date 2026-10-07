@@ -38,3 +38,13 @@ The LZ4 adapter invokes the released block input/output streams rather than copy
 Fluss compressor code. It removes whole-vector heap staging through bounded scratch
 and Arrow output; protocol framing and the stock reader remain interoperable. This
 local adapter and the transport hook add no unpublished dependency or broker change.
+
+Immediate shutdown reuses that bootstrap access to obtain its public
+event-loop group. The last connection lease requests zero Netty quiet time before
+closing the released Java connection, then waits for network termination. This
+avoids the SDK's fixed quiet period without a fork or private shutdown-field changes.
+It applies to StreamFusion-owned RPC connections; stock primary-key writers and
+snapshot connections retain their SDK lifecycle. This follows Kafka's explicit
+network-thread shutdown after pending writes are handled, while preserving Arrow's
+independent buffer lifetime across connection close. The connector's regression
+tests retain fetched vectors through event-loop termination and release them afterward.

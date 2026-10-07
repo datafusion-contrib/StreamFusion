@@ -105,6 +105,30 @@ to 3.440 seconds but has substantial control-run outliers. The connector page re
 every trial and configuration; the gains are lifetime improvements rather than a
 claim that every query's steady-state throughput doubled.
 
+The released SDK applies Netty's default two-second quiet period even when its
+connection closes with `Duration.ZERO`. Immediate shutdown
+uses the event loop exposed by the same already-validated bootstrap hook. Only the
+last lease requests zero quiet time; the Java connection still closes and network
+termination is awaited. Checkpoint and end-of-input acknowledgement flushes precede
+normal sink close. Borrowed Arrow allocations retain their own references and remain
+valid after network termination; a broker regression test checks that lifetime and
+checks that the last close actually terminates the event loop. No idle cache or
+asynchronous teardown is introduced.
+
+Matched wall profiles capture approximately 2,004 ms in native q0's final lease close.
+With immediate shutdown enabled, repeated release-mode RocksDB measurements (2M events,
+parallelism four, mini-batching off) reduce native q0 median from 2.477 to 0.410
+seconds (6.05×), and q14 from 2.934 to 0.923 seconds (3.18×). Stock medians remain
+4.792/4.954 and 5.071/5.055 seconds, respectively. q20 changes from 10.206 to
+4.077 seconds but has large outliers in both controls, so that entire reduction
+cannot be attributed to shutdown. The [complete control samples](../benchmarks/fluss-close-controls.csv)
+include every trial. These are lifecycle improvements in bounded jobs, not a claim
+that sustained Arrow processing becomes six times faster. Immediate shutdown is now
+the default within the opt-in connector after the 37 transport contract cases, all
+10 ported SQL cases, and the complete 23-query
+RocksDB correctness smoke passed. Set `-Dstreamfusion.fluss.fast-close.enabled=false`
+to reproduce the SDK quiet-period control.
+
 ## Bounded compression adapter
 
 LZ4 preserves the released Fluss block framing and compressor, adapting it to an
@@ -131,7 +155,7 @@ input (133,120 buffer bytes change addresses), whereas decompressed narrow numer
 buffers share 131,072 bytes. No complete broker-to-Rust zero-copy claim follows from
 Java body borrowing alone.
 
-The complete final 2M-event Nexmark validation has a 2.02× geomean of append-only
+The earlier memory-state 2M-event Nexmark validation has a 2.02× geomean of append-only
 median speedups over matched stock Flink (16 queries, one warmup plus three pairs;
 all teardown retained). q2/q20/q23 have substantial stock variance, and lifecycle
 still dominates short jobs. All 23 runnable queries pass deterministic parity and
@@ -140,10 +164,36 @@ the combined techniques, not attribution of the entire gain to receive or compre
 [Every final trial and configuration](../connectors/fluss.md#final-nexmark-validation)
 is retained alongside the independent controls.
 
-The matched [RocksDB matrix](../connectors/fluss.md#rocksdb-nexmark-validation)
+The earlier [RocksDB matrix](../connectors/fluss.md#rocksdb-nexmark-validation)
 has a **2.34× append-only median-speedup geomean**, retaining full job costs
 and all 55 measured pairs. It includes the Java-side repair of under-aligned
 variable-width offsets before FFI import: Arrow-rs reads the last offset before
 its native alignment pass. Data and validity remain borrowed; only offset buffers
 that fail four-byte alignment are copied by this guard. Disk-state results do not
 isolate the transport gains from the operators or the backend.
+
+## Matched full-sweep validation
+
+After zero-quiet synchronous shutdown, the matched RocksDB 16-query append-only
+sweep has median-speedup geomeans of 8.56× for Fluss and 1.57× for Kafka. The
+geomean of Kafka-native / Fluss-native medians is 2.12×. All job startup, flush,
+checkpoint and teardown costs remain timed. These results combine engine and
+transport work; stock stateful variance also affects the speedup denominator.
+They do not attribute the full geomean change to shutdown. The [complete table and
+192 samples](../connectors/fluss.md#final-matched-rocksdb-results-2026-10-07)
+retain q23's slower Fluss median and all unfavorable outliers.
+
+Separate warmed wall recordings verify that native q0's final lease-close scope
+falls from 2,004 sampled milliseconds to 1, and q20's from 2,005 to 2. The stock
+connector retains the quiet-period wait. These recordings confirm removal of the
+fixed lifecycle penalty while the last-owner regression verifies completed network
+termination and independent borrowed-vector lifetime.
+
+A subsequent warmed q23 CPU profile is dominated by RocksDB (18,135 of 23,527
+native samples; 50,912 of 75,995 stock samples). Its native fetch/decode/encode
+scopes have 459/404/504 samples and compression has 820; scopes overlap. The
+3.829-second profiled native execution passes parity but stays outside headline
+metrics. It does not establish the location of every earlier outlier. No further
+fixed networking delay or dominant copy scope appears in this recording. Remaining
+SDK serialization, codecs and Arrow interoperability require broader changes;
+join state work and skew are separate from the easy transport lifecycle fix.
