@@ -1061,6 +1061,16 @@ fixtures keep their existing exclusions.
 Direct Java serializer and DataStream/legacy DataSet format tests receive `format-api` and
 `non-sql-program` exclusions: these upstream fixtures bypass SQL admission entirely.
 
+### Paimon host API precedence
+
+The released Paimon 2.0.0 Flink 1.18 connector embeds a `RowData` interface that
+includes the newer `getVariant` method. The optional StreamFusion Paimon module
+places the host `flink-table-common` dependency before that connector on its compile
+classpath. This keeps shared projection wrappers on the actual Flink 1.18 contract
+when the source-suite clean build causes javac to resolve their source implicitly.
+It does not patch Paimon, add VARIANT support to Flink 1.18, or change test selectors.
+The backend comparison and Fluss source/sink implementation are unaffected.
+
 ### Paimon random full-compaction completion
 
 Released Paimon 1.0 and 2.0 `PrimaryKeyFileStoreTableITCase.checkChangelogTestResult`

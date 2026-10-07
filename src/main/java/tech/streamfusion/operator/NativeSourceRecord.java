@@ -37,6 +37,11 @@ public final class NativeSourceRecord {
     }
   }
 
+  /** Releases a failed source emission only while no downstream consumer has accepted its root. */
+  public void discardUnclaimed() {
+    if (batch != null) batch.closeUnclaimed();
+  }
+
   public ArrowBatch batch() {
     return batch;
   }
