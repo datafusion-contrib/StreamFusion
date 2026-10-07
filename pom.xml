@@ -17,6 +17,7 @@
         <module>streamfusion-runtime</module>
         <module>streamfusion-core</module>
         <module>streamfusion-kafka</module>
+        <module>streamfusion-fluss</module>
         <module>streamfusion-json</module>
         <module>streamfusion-csv</module>
         <module>streamfusion-raw</module>
@@ -456,9 +457,11 @@
                     <doclint>none</doclint>
                     <quiet>true</quiet>
                     <!-- Modules document only the sources they compile, but javadoc still
-                         parses the opt-in Delta and Paimon sources it finds next to them on the
+                         parses the opt-in Fluss, Delta and Paimon sources it finds next to them on the
                          shared sourcepath, so their connector dependencies must be resolvable. -->
                     <sourceFileExcludes>
+                        <sourceFileExclude>tech/streamfusion/fluss/**</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/*Fluss*.java</sourceFileExclude>
                         <sourceFileExclude>tech/streamfusion/delta/**</sourceFileExclude>
                         <sourceFileExclude>tech/streamfusion/planner/DeltaPlannerExtension.java</sourceFileExclude>
                         <sourceFileExclude>tech/streamfusion/planner/DeltaSinkMatcher.java</sourceFileExclude>
@@ -470,6 +473,11 @@
                         <sourceFileExclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</sourceFileExclude>
                     </sourceFileExcludes>
                     <additionalDependencies>
+                        <additionalDependency>
+                            <groupId>org.apache.fluss</groupId>
+                            <artifactId>fluss-flink-${flink.line}</artifactId>
+                            <version>1.0.0</version>
+                        </additionalDependency>
                         <additionalDependency>
                             <groupId>io.delta</groupId>
                             <artifactId>delta-flink_2.2</artifactId>
@@ -666,6 +674,11 @@
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <configuration>
                             <additionalDependencies combine.self="override">
+                                <additionalDependency>
+                                    <groupId>org.apache.fluss</groupId>
+                                    <artifactId>fluss-flink-1.18</artifactId>
+                                    <version>1.0.0</version>
+                                </additionalDependency>
                                 <additionalDependency>
                                     <groupId>org.apache.parquet</groupId>
                                     <artifactId>parquet-hadoop</artifactId>

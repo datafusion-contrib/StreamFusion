@@ -36,7 +36,7 @@ fi
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(cd "$script_dir/.." && pwd)
 version=$(cd "$repo_root" && mvn "$@" -q -DforceStdout help:evaluate -Dexpression=project.version)
-modules="core kafka json csv raw avro avro-confluent-registry protobuf parquet orc paimon"
+modules="core kafka fluss json csv raw avro avro-confluent-registry protobuf parquet orc paimon"
 if [ "$flink_line" = 2.2 ]; then modules="$modules delta"; fi
 entries=$(mktemp)
 native_entries=$(mktemp)
@@ -126,7 +126,7 @@ core_main_jar="$repo_root/streamfusion-core/target/streamfusion-core${artifact_s
 assert_flink_identity "$core_main_jar" "streamfusion-core${artifact_suffix}"
 assert_native_payload "$core_main_jar" streamfusion-core libstreamfusion ""
 assert_native_payload "$core_jar" streamfusion-core libstreamfusion ""
-if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|parquet|orc|delta|paimon|format/(json|csv|raw|avro|avroconfluent|protobuf))/'; then
+if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|fluss|parquet|orc|delta|paimon|format/(json|csv|raw|avro|avroconfluent|protobuf))/'; then
   echo "streamfusion-core contains optional connector or format classes" >&2
   exit 1
 fi
@@ -137,6 +137,9 @@ for suffix in kafka json csv raw avro protobuf parquet orc paimon; do
     "streamfusion-$suffix" "libstreamfusion_$suffix" "$suffix"
 done
 
+assert_no_native_payload \
+  "$repo_root/streamfusion-fluss/target/streamfusion-fluss${artifact_suffix}-$version.jar" \
+  streamfusion-fluss
 assert_no_native_payload \
   "$repo_root/streamfusion-runtime/target/streamfusion-runtime${artifact_suffix}-$version.jar" \
   streamfusion-runtime

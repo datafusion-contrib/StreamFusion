@@ -32,6 +32,8 @@
                 <configuration>
                     <excludes>
                         <exclude>tech/streamfusion/kafka/**</exclude>
+                        <exclude>tech/streamfusion/fluss/**</exclude>
+                        <exclude>tech/streamfusion/planner/*Fluss*.java</exclude>
                         <exclude>tech/streamfusion/parquet/**</exclude>
                         <exclude>tech/streamfusion/orc/**</exclude>
                         <exclude>tech/streamfusion/delta/**</exclude>

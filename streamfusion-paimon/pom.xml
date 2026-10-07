@@ -51,8 +51,8 @@
             <groupId>tech.streamfusion</groupId><artifactId>streamfusion-orc${streamfusion.artifact.suffix}</artifactId>
             <version>${project.version}</version><scope>provided</scope>
         </dependency>
-        <!-- Paimon's released connector bundles compatibility copies of RowData/ArrayData.
-             Put the host API first on javac's classpath, even in a clean release reactor. -->
+        <!-- The released Paimon connector embeds a newer RowData API. Compile against the host
+             Flink API first, including when javac resolves shared projection sources implicitly. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-common</artifactId>

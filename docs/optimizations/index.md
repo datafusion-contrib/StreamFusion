@@ -19,6 +19,7 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Preserve Paimon partition pruning](paimon-partition-pruning.md): carry retained partition equalities into released split planning.
 - [Indexed pending rowtime deduplication](pending-dedup-index.md): incoming-key probes over bounded Arrow chunks.
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
+- [Fluss Arrow transport](fluss-arrow-transport.md): retained receive buffers, exactly sized serialization and bounded acknowledgement pipelining.
 
 ## How these numbers are measured
 

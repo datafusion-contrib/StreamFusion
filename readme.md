@@ -196,6 +196,49 @@ is `SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench` for the end-to
 `-Pbench` profile is required — the debug native library is ~10–20× slower and misleading) and
 `cd native && cargo bench` for the operator micro-benchmarks.
 
+## Fluss-to-Fluss Nexmark
+
+The opt-in connector runs all 23 runnable queries with released Fluss 1.0.0 at both
+ends. Append-only outputs use Arrow production; primary-key outputs retain Flink's
+stock writer. Profiling removed redundant connection shutdowns, heap receive staging,
+frame growth copies and whole-vector LZ4 staging.
+
+Final Linux release results use 2M events, parallelism 4, memory state, mini-batching
+off, one warmup and three measured pairs per append-only query. Durations include
+client teardown. The selection shares a freshly started JVM, cluster and corpus.
+The Kafka column is the existing Apple M1 Max memory/off speedup above, not a
+cross-machine throughput ratio. Its † expression variants and exactly-once delivery
+differ from exact Fluss SQL and default at-least-once delivery.
+
+| Append-only output | Stock Fluss, s | StreamFusion Fluss, s | Fluss SF/Flink | Published Kafka SF/Flink |
+| --- | ---: | ---: | ---: | ---: |
+| q0 | 4.795 | 2.469 | 1.94× | 1.69× |
+| q1† | 4.771 | 2.426 | 1.97× | 1.40× |
+| q2 | 9.456 | 2.303 | 4.11× | 1.26× |
+| q3 | 4.522 | 2.523 | 1.79× | 1.03× |
+| q5 | 4.943 | 3.082 | 1.60× | 1.41× |
+| q7 | 5.624 | 3.975 | 1.41× | 1.30× |
+| q8 | 4.551 | 2.522 | 1.80× | 1.27× |
+| q10† | 5.068 | 2.821 | 1.80× | 1.45× |
+| q11 | 4.937 | 2.340 | 2.11× | 1.47× |
+| q12 | 4.612 | 2.306 | 2.00× | 1.09× |
+| q13 | 4.824 | 2.400 | 2.01× | 1.20× |
+| q14† | 5.007 | 2.884 | 1.74× | 1.47× |
+| q20 | 7.848 | 3.498 | 2.24× | 1.22× |
+| q21† | 4.807 | 2.764 | 1.74× | 1.23× |
+| q22 | 4.970 | 2.383 | 2.09× | 1.33× |
+| q23 | 10.863 | 3.525 | 3.08× | 1.69× |
+
+Append-only median speedups have a **2.02× geomean on memory state**. A matched
+[RocksDB run](docs/connectors/fluss.md#rocksdb-nexmark-validation) has a **2.34×
+geomean** over the same 16 queries, with mini-batching off and fixed 128 MiB state
+pools per slot. The memory trials for q2, q20 and q23 have
+substantial variance; startup/shutdown still dominate many jobs. All deterministic
+outputs match stock Flink; q12 observes processing time. The seven primary-key
+outputs pass separate correctness checks with stock production and no Kafka
+comparison. [Every trial, SQL/CI validation, profiles and coverage](docs/connectors/fluss.md#final-nexmark-validation)
+are documented. The connector remains experimental and opt-in.
+
 ## Related work
 
 Three native Flink accelerators exist, all **closed source**:
