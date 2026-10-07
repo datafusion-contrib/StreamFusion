@@ -139,6 +139,7 @@ jobs:
             **/surefire-reports/*.dump
             **/surefire-reports/*.dumpstream
             **/hs_err_pid*.log
+            streamfusion-fluss/target/fluss-sql-plans/*.txt
           if-no-files-found: warn
           retention-days: 7
 
@@ -253,6 +254,29 @@ jobs:
           bin/build-release.sh --host-only --flink-line "$FLINK_LINE"
           bin/check-artifacts.sh --host-only --flink-line "$FLINK_LINE"
           bin/build-flink-image.sh --flink-line "$FLINK_LINE" --tag streamfusion-flink:image-it --load --skip-release-build
+
+      - name: Run Fluss SQL and complete Nexmark parity smoke
+        if: matrix.line == '2.2'
+        env:
+          SF_FLUSS_BENCH: 'true'
+          SF_ROWS: '8192'
+        run: >
+          mvn -B -ntp -Pbench -pl streamfusion-fluss -am test
+          -Dnative.build.skip=true -Dnative.profile=release-staging/release
+          -Dmaven.javadoc.skip=true -Dsurefire.failIfNoSpecifiedTests=false
+          -Dsf.extraJvmArgs=-Xmx2g -Dtest=FlussSqlTest,NexmarkFlussBenchmark
+          -Dnexmark.warmups=0 -Dnexmark.runs=1
+
+      - name: Upload Fluss SQL execution plans and test results
+        if: always() && matrix.line == '2.2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluss-sql-parity
+          path: |
+            streamfusion-fluss/target/surefire-reports/*
+            streamfusion-fluss/target/fluss-sql-plans/*.txt
+            streamfusion-fluss/target/fluss-plans/*.txt
+          if-no-files-found: warn
 
       - name: Run Flink Session-cluster image smoke test
         run: >

@@ -165,6 +165,39 @@ q4, q9, q15, q16, q17, q18 and q19, following the Kafka suite's existing upsert 
 The remaining queries write append-only tables and must engage the Arrow append sink.
 The harness checks the actual broker table modes as well as the executed source/sink plans.
 
+## SQL regression tests and CI
+
+`FlussSqlTest` adapts the SQL scenarios from the released Apache Fluss
+[v1.0.0 source integration tests](https://github.com/apache/fluss/blob/v1.0.0/fluss-flink/fluss-flink-common/src/test/java/org/apache/fluss/flink/source/FlinkTableSourceITCase.java)
+and [sink integration tests](https://github.com/apache/fluss/blob/v1.0.0/fluss-flink/fluss-flink-common/src/test/java/org/apache/fluss/flink/sink/FlinkTableSinkITCase.java)
+to the released Docker broker fixture. It does not import the upstream in-process
+mini-cluster or claim to port every upstream partition, security, tiering or failover
+case. The supported/fallback scenarios are:
+
+- Append projection/reordering for ARROW and INDEXED (INDEXED stays stock).
+- Primary-key projected log changes with FULL/WAL images, updates and deletes.
+- Append production with NONE/LZ4_FRAME/ZSTD and the upstream example rows; bounded
+  Fluss input exercises the native Arrow source and sink instead of a literal source.
+- The upstream literal `INSERT ... VALUES` append/primary-key cases; unsupported
+  literal sources and primary-key writes retain stock production.
+- Added nullable columns with historical rows: full-column stock/native SQL parity,
+  native projected null filling, and an explicit expected stock 1.0 projection failure
+  (`INVALID_COLUMN_PROJECTION`) when a new column is absent from an older batch.
+
+All 10 adapted cases pass locally on Flink 2.2 and 1.18. Tests compare output with
+stock Flink, assert expected values/changelog kinds, and save
+actual physical plans while checking acceleration or fallback. The ordinary CI Java
+reactor runs these tests on Flink 2.2 and 1.18. The optimized Flink 2.2 image job also
+explicitly enables the full 23-query Nexmark parity smoke at 8,192 events, with no
+performance assertions. It reuses that job's staged release library, runs zero warmups
+and one pair per query, and uploads SQL/Nexmark plans and test reports. The environment
+opt-in still protects normal local builds from unexpectedly running the full matrix.
+
+```sh
+mvn -Pbench -pl streamfusion-fluss -am test \
+  -Dtest=FlussSqlTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
 ## Isolated transport profiling
 
 ```sh
