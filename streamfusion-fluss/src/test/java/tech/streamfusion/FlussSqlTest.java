@@ -169,6 +169,47 @@ class FlussSqlTest {
   }
 
   @Test
+  void statisticsEnabledAppendUsesStockWriterWithNativeInput() throws Exception {
+    String source = table("a INT, b BIGINT", "ARROW", "NONE", "");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    writer.append(GenericRow.of(1, 10L));
+    writer.append(GenericRow.of(2, 20L));
+    writer.flush();
+    String output = table("a INT, b BIGINT", "ARROW", "NONE", ", 'table.statistics.columns'='*'");
+    insert(
+        "INSERT INTO " + qualified(output) + " SELECT a, b FROM " + qualified(source),
+        output,
+        true,
+        true,
+        false);
+    assertEquals(List.of("+I[1, 10]", "+I[2, 20]"), query(output, "*", false, false));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {"client.scanner.log.fetch.max-bytes", "netty.client.allocator.heap-buffer-first"})
+  void explicitConsumerAndProducerSettingsKeepTheirRespectiveEndpointsStock(String sourceSetting)
+      throws Exception {
+    String sourceValue = sourceSetting.startsWith("netty.") ? "true" : "4mb";
+    String source =
+        table(
+            "a INT, b BIGINT", "ARROW", "NONE", ", '" + sourceSetting + "'='" + sourceValue + "'");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    writer.append(GenericRow.of(1, 10L));
+    writer.flush();
+    assertEquals(List.of("+I[1, 10]"), query(source, "*", true, false));
+    String output =
+        table("a INT, b BIGINT", "ARROW", "NONE", ", 'client.writer.batch-timeout'='5ms'");
+    insert(
+        "INSERT INTO " + qualified(output) + " SELECT a, b FROM " + qualified(source),
+        output,
+        true,
+        false,
+        false);
+    assertEquals(List.of("+I[1, 10]"), query(output, "*", false, false));
+  }
+
+  @Test
   void addedNullableColumnPreservesHistoricalRowsUnderProjection() throws Exception {
     String source = table("a INT, b STRING", "ARROW", "LZ4_FRAME", "");
     var writer = connection.getTable(path(source)).newAppend().createWriter();

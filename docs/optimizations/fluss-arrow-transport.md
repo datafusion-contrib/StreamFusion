@@ -44,6 +44,9 @@ Encoding runs on the task thread and acknowledgements run asynchronously. A boun
 queue overlaps encoding with RPC work and permits independent buckets to progress
 concurrently. Each bucket keeps a sequential future chain, including retries, so its
 writer sequence cannot be reordered. Checkpoint flush waits for every acknowledgement.
+Sealed batches use the released SDK's sticky no-key assigner and cluster metadata.
+Explicit client configuration beyond bootstrap servers retains the stock endpoint,
+as does a statistics-enabled sink; see the [settings audit](../connectors/fluss-client-settings.md).
 Already queued batches can share one request without concatenating their wire arrays:
 the released client's composite byte view traverses the separate arrays during its
 normal outbound copy. Groups are limited to 1 MiB and five batches, matching the broker's retained

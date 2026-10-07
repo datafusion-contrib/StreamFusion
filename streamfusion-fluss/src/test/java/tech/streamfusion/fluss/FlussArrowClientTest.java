@@ -88,6 +88,72 @@ class FlussArrowClientTest {
   }
 
   @ParameterizedTest
+  @ValueSource(ints = {1, 4})
+  void stickyBatchesRemainTogetherAcrossBuckets(int buckets) throws Exception {
+    TablePath path = TablePath.of("arrow_test", "sticky_" + buckets);
+    connection
+        .getAdmin()
+        .createTable(
+            path,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column("id", DataTypes.BIGINT())
+                        .column("value", DataTypes.BIGINT())
+                        .build())
+                .distributedBy(buckets)
+                .property("table.log.arrow.compression.type", "NONE")
+                .build(),
+            false)
+        .get();
+    int batches = 32;
+    int[] assigned = new int[batches];
+    java.util.Arrays.fill(assigned, -1);
+    try (RootAllocator allocator = new RootAllocator();
+        var writer =
+            new FlussArrowClient(
+                cluster.config(),
+                path,
+                FlussArrowSchema.wireSchema(
+                    connection.getAdmin().getTableInfo(path).get().getRowType()),
+                allocator,
+                false);
+        var root =
+            VectorSchemaRoot.create(
+                FlussArrowSchema.wireSchema(writer.tableInfo().getRowType()), allocator);
+        var scanner = connection.getTable(path).newScan().createLogScanner()) {
+      root.allocateNew();
+      for (int batch = 0; batch < batches; batch++) {
+        for (int row = 0; row < 2; row++) {
+          ((BigIntVector) root.getVector(0)).setSafe(row, batch);
+          ((BigIntVector) root.getVector(1)).setSafe(row, row);
+        }
+        root.setRowCount(2);
+        writer.appendAsync(root);
+      }
+      writer.flush();
+      for (int bucket = 0; bucket < buckets; bucket++) scanner.subscribe(bucket, 0);
+      int count = 0;
+      long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+      while (count < batches * 2 && System.nanoTime() < deadline) {
+        var records = scanner.poll(Duration.ofSeconds(1));
+        for (var bucket : records.buckets()) {
+          for (var record : records.records(bucket)) {
+            int batch = Math.toIntExact(record.getRow().getLong(0));
+            if (assigned[batch] != -1) assertEquals(assigned[batch], bucket.getBucket());
+            assigned[batch] = bucket.getBucket();
+            count++;
+          }
+        }
+      }
+      assertEquals(batches * 2, count);
+      if (buckets > 1)
+        for (int batch = 1; batch < batches; batch++)
+          assertNotEquals(assigned[batch - 1], assigned[batch]);
+    }
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"NONE", "LZ4_FRAME", "ZSTD"})
   void arrowAppendIsReadableByStockClientAndProjectedArrowClient(String compression)
       throws Exception {

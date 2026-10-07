@@ -62,6 +62,7 @@ nav:
       - connectors/index.md
       - Kafka: connectors/kafka.md
       - Apache Fluss: connectors/fluss.md
+      - Fluss client settings audit: connectors/fluss-client-settings.md
       - Parquet: connectors/parquet.md
       - ORC: connectors/orc.md
       - Delta Lake: connectors/delta.md

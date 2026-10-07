@@ -75,12 +75,19 @@ aggregate pushdowns, custom client settings, empty projections and unsupported w
 source. Tiered logs use Fluss's existing Java downloader and then select columns locally;
 selective remote range reads are not implemented.
 
+The [client settings audit](fluss-client-settings.md) inventories all 46 released
+client/network options and the connector/table contracts. Only bootstrap servers
+are admitted as explicit client configuration; every other entry, including an
+explicit default, credentials, filesystem settings and unknown keys, retains the
+stock endpoint. Fallback diagnostics report the setting name without its value.
+
 The Arrow sink is limited to insert-only input and explicitly resolved `ARROW` append-only tables without partition
 or bucket keys. Input fields map positionally to destination columns. Production uses
 `ProduceLog` with the table's Arrow compression setting: matching that setting is needed
 because broker projection reconstructs IPC compression metadata from table configuration.
 The writer encodes on the task thread and pipelines a bounded queue across independent
-buckets. Requests to each bucket remain sequential, including retries, to preserve batch
+buckets, using the released Java client's sticky no-key bucket assigner at sealed
+Arrow-batch boundaries. Requests to each bucket remain sequential, including retries, to preserve batch
 sequence order. Queued batches for one bucket can share a request through a composite
 byte view, with at most five batches and the smaller of 1 MiB and the configured request-size limit.
 Larger batches use individual requests; grouping wide batches into multi-megabyte
@@ -94,10 +101,15 @@ queue reservations are charged to the shared TaskManager memory budget. Primary-
 batch sinks, explicit undo-recovery identities, bucket/dynamic partition shuffle,
 merge engines, lake writes, row modifications and sink materialization use the stock
 Flink sink.
+Tables with enabled `table.statistics.columns` also retain the stock append writer:
+the Arrow V0 encoder does not produce the SDK's batch min/max/null statistics.
+This is checked from the resolved catalog options during planning, with a runtime
+guard against statistics enabled between planning and writer startup.
 
 Append delivery matches the released connector's default at-least-once recovery contract.
 Writer IDs and per-bucket sequences deduplicate retries within one writer lifetime, and
-checkpoint flush waits for acknowledgements. Replaying data after a job restart can append
+duplicate-sequence replies acknowledge already committed batches like the SDK.
+Checkpoint flush waits for acknowledgements. Replaying data after a job restart can append
 duplicates; this path does not implement a transactional or checkpoint-aware undo protocol.
 The Kafka README suite uses transactional exactly-once output, so cross-connector timing
 comparisons must state this difference rather than imply equal delivery guarantees.

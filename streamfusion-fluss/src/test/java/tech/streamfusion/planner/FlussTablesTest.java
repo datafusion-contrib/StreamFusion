@@ -2,6 +2,7 @@ package tech.streamfusion.planner;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,8 @@ import org.apache.fluss.metadata.DeleteBehavior;
 import org.apache.fluss.metadata.LogFormat;
 import org.apache.fluss.metadata.TablePath;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class FlussTablesTest {
   private static final RowType TYPE = RowType.of(new BigIntType());
@@ -57,6 +60,68 @@ class FlussTablesTest {
     assertNotNull(FlussTables.sinkFallback(sink(false, List.of(), custom)));
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("clientSettings")
+  void everyReleasedClientSettingFallsBackWithoutLeakingItsValue(String key) throws Exception {
+    Configuration settings = config();
+    settings.setString(key, "unverified-sensitive-value");
+    for (String reason :
+        List.of(
+            FlussTables.sourceFallback(source(false, ScanStartupMode.EARLIEST, settings)),
+            FlussTables.sourceFallback(source(true, ScanStartupMode.EARLIEST, settings)),
+            FlussTables.sinkFallback(sink(false, List.of(), settings)))) {
+      assertTrue(reason.contains(key), reason);
+      assertTrue(!reason.contains("unverified-sensitive-value"), reason);
+    }
+  }
+
+  static java.util.stream.Stream<String> clientSettings() throws Exception {
+    java.util.Set<String> keys = new java.util.TreeSet<>();
+    for (var field : ConfigOptions.class.getFields()) {
+      if (field.getType() == org.apache.fluss.config.ConfigOption.class) {
+        String key = ((org.apache.fluss.config.ConfigOption<?>) field.get(null)).key();
+        if (key.startsWith("client.") || key.startsWith("netty.client.")) keys.add(key);
+      }
+    }
+    keys.add("client.future.option");
+    keys.add("client.fs.s3.endpoint");
+    keys.add("client.scanner.remote-log.fetch.max-retries");
+    keys.add("netty.client.future.option");
+    keys.add("unknown.transport.option");
+    return keys.stream();
+  }
+
+  @Test
+  void configuredDefaultsStillFallBackAndBootstrapListsRemainAdmitted() throws Exception {
+    Configuration explicitDefault = config();
+    explicitDefault.set(ConfigOptions.CLIENT_WRITER_ACKS, "all");
+    assertNotNull(FlussTables.sinkFallback(sink(false, List.of(), explicitDefault)));
+    Configuration bootstrap = config();
+    bootstrap.setString("bootstrap.servers", "first:9123,second:9123");
+    assertNull(FlussTables.sourceFallback(source(false, ScanStartupMode.EARLIEST, bootstrap)));
+    assertNull(FlussTables.sinkFallback(sink(false, List.of(), bootstrap)));
+  }
+
+  @Test
+  void tableSettingsDroppedByTheFactoryCannotBypassAdmission() throws Exception {
+    for (String key : List.of("netty.client.allocator.heap-buffer-first", "client.future.option")) {
+      Map<String, String> options = Map.of(key, "unverified-sensitive-value");
+      assertTrue(
+          FlussTables.sourceFallback(source(false, ScanStartupMode.EARLIEST, config(), options))
+              .contains(key));
+      assertTrue(FlussTables.sinkOptionsFallback(options).contains(key));
+    }
+  }
+
+  @Test
+  void statisticsEnabledTablesRequireTheStockAppendWriter() {
+    assertNull(FlussTables.sinkOptionsFallback(Map.of("table.log.format", "ARROW")));
+    for (String columns : List.of("*", "f0"))
+      assertTrue(
+          FlussTables.sinkOptionsFallback(Map.of("table.statistics.columns", columns))
+              .contains("table.statistics.columns"));
+  }
+
   private static Configuration config() {
     Configuration config = new Configuration();
     config.setString("bootstrap.servers", "localhost:9123");
@@ -65,6 +130,11 @@ class FlussTablesTest {
 
   private static FlinkTableSource source(
       boolean primaryKey, ScanStartupMode mode, Configuration config) {
+    return source(primaryKey, mode, config, Map.of());
+  }
+
+  private static FlinkTableSource source(
+      boolean primaryKey, ScanStartupMode mode, Configuration config, Map<String, String> options) {
     var startup = new FlinkConnectorOptionsUtils.StartupOptions();
     startup.startupMode = mode;
     Configuration tableConfig = new Configuration();
@@ -89,7 +159,7 @@ class FlussTablesTest {
         10,
         false,
         null,
-        Map.of(),
+        options,
         null);
   }
 

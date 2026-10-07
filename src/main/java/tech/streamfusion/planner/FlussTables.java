@@ -181,8 +181,10 @@ final class FlussTables {
       return "only the released 1.0.0 Java connector is verified";
     if (!tech.streamfusion.fluss.FlussArrowClient.supportedTransport())
       return "released Java transport hook is unavailable";
-    if (clientOptionsFallback((Configuration) field(source, "flussConfig")) != null)
-      return "custom Java client settings are outside the verified defaults";
+    String clientFallback = clientOptionsFallback((Configuration) field(source, "flussConfig"));
+    if (clientFallback == null)
+      clientFallback = tableTransportFallback((java.util.Map<?, ?>) field(source, "tableOptions"));
+    if (clientFallback != null) return clientFallback;
     if (!(boolean) field(source, "streaming")) return "batch/snapshot reads use Flink";
     if (((int[]) field(source, "partitionKeyIndexes")).length != 0)
       return "partition discovery/removal is not accelerated";
@@ -209,6 +211,8 @@ final class FlussTables {
     FlinkTableSink tableSink = (FlinkTableSink) sink.tableSink();
     try {
       String fallback = sinkFallback(tableSink);
+      if (fallback == null)
+        fallback = sinkOptionsFallback(sink.contextResolvedTable().getResolvedTable().getOptions());
       if (fallback == null) fallback = SinkConstraintGate.fallbackReason(sink);
       if (fallback == null
           && (sink.upsertMaterialize()
@@ -250,8 +254,8 @@ final class FlussTables {
       return "only the released 1.0.0 Java connector is verified";
     if (!tech.streamfusion.fluss.FlussArrowClient.supportedTransport())
       return "released Java transport hook is unavailable";
-    if (clientOptionsFallback((Configuration) field(sink, "flussConfig")) != null)
-      return "custom Java client settings are outside the verified defaults";
+    String clientFallback = clientOptionsFallback((Configuration) field(sink, "flussConfig"));
+    if (clientFallback != null) return clientFallback;
     if (((int[]) field(sink, "primaryKeyIndexes")).length != 0)
       return "primary-key production is explicitly not accelerated";
     if (!((List<?>) field(sink, "partitionKeys")).isEmpty()
@@ -291,9 +295,29 @@ final class FlussTables {
     }
   }
 
+  static String sinkOptionsFallback(java.util.Map<String, String> options) {
+    String transportFallback = tableTransportFallback(options);
+    if (transportFallback != null) return transportFallback;
+    TableConfig tableConfig = new TableConfig(Configuration.fromMap(options));
+    if (tableConfig.isStatisticsEnabled())
+      return "table.statistics.columns requires the stock writer's batch statistics";
+    return null;
+  }
+
+  private static String tableTransportFallback(java.util.Map<?, ?> options) {
+    return options.keySet().stream()
+        .map(Object::toString)
+        .filter(key -> key.startsWith("client.") || key.startsWith("netty."))
+        .sorted()
+        .findFirst()
+        .map(key -> "client setting " + key + " is outside the verified defaults")
+        .orElse(null);
+  }
+
   private static String clientOptionsFallback(Configuration config) {
-    for (String key : config.keySet()) {
-      if (!key.equals(org.apache.fluss.config.ConfigOptions.BOOTSTRAP_SERVERS.key())) return key;
+    for (String key : new java.util.TreeSet<>(config.keySet())) {
+      if (!key.equals(org.apache.fluss.config.ConfigOptions.BOOTSTRAP_SERVERS.key()))
+        return "client setting " + key + " is outside the verified defaults";
     }
     return null;
   }
