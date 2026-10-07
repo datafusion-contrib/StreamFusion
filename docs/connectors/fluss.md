@@ -691,7 +691,12 @@ null values, and retained data-buffer sharing.
 
 `SF_FLUSS_STATE_BACKEND=rocksdb` selects Flink's released RocksDB backend for stock
 jobs and `RocksDBNativeStateBackendFactory` for native jobs, matching the existing
-persistent-state comparison. The default remains `memory`; mini-batching is explicitly
+persistent-state comparison. Both engines receive a fixed 128 MiB RocksDB memory
+pool per slot. Native RocksDB and any JVM fallback delegate retain their separate
+resource pools, as in the production backend; this is not a combined process-memory
+cap. This avoids the local mini-cluster default allocating roughly 3.3 MiB of
+write-buffer memory for the q4 preflight, which produced repeated tiny flushes and
+write stalls. That initial untimed attempt was stopped before any measured pair. The default remains `memory`; mini-batching is explicitly
 disabled for both engines. Before measured disk trials, an untimed q4 preflight verifies
 stock RocksDB working files and a live native RocksDB handle. Stateless queries still
 use the selected job configuration without manufacturing state. A temporary local

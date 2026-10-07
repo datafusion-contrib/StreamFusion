@@ -166,6 +166,10 @@ class NexmarkFlussBenchmark {
           .getConfig()
           .getConfiguration()
           .setString("state.backend.rocksdb.localdir", rocksDirectory.toString());
+      tables
+          .getConfig()
+          .getConfiguration()
+          .setString("state.backend.rocksdb.memory.fixed-per-slot", "128 mb");
     }
     tables.getConfig().setLocalTimeZone(ZoneId.of("UTC"));
     tables.executeSql(
