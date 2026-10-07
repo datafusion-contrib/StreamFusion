@@ -96,7 +96,13 @@ keeps concurrently created MiniClusters from exhausting a developer machine or C
 The experimental 1.18 runner selects Flink `release-1.18.1`, Kafka connector `v3.2.0-rc1`, and
 Paimon's `flink1` profile. The 1.18 Paimon suite runs its complete version-specific module plus the explicitly listed shared compatibility regressions described below. Shared fixtures compile against their declared 1.20.1 API; both test sets execute with released 1.18.1 dependencies and the matching StreamFusion payload. Kafka 3.2 uses the installed Maven because its release has no Maven wrapper. Kafka's final candidate tag (`d12f73c8`) matches the
 [official 3.2.0 source archive](https://archive.apache.org/dist/flink/flink-connector-kafka-3.2.0/);
-that release has no `v3.2.0` tag. Run `FLINK_VERSION=1.18.1 bin/flink-suite.sh config`
+that release has no `v3.2.0` tag. The Kafka suite compiles and runs directly from the
+Java connector module POM, selecting its artifact ID for test execution. This keeps
+the unchanged Java SQL tests and inherited parent configuration while avoiding
+reactor validation of unrelated Python packaging. Kafka 3.2.0's Python POM declares
+its dependency plugin twice; current CI Maven rejects that unrelated module even
+when the root reactor selects only the Java connector. No upstream POM or test is
+rewritten. Run `FLINK_VERSION=1.18.1 bin/flink-suite.sh config`
 to inspect the selection, then replace `config` with the desired suite. Each line has separate
 checkouts, Maven repository, StreamFusion source/build outputs, injection-agent JAR, classpath,
 native-execution reports and diagnostics under `.flink-suite/<line>/`. `FLINK_SUITE_ROOT`
