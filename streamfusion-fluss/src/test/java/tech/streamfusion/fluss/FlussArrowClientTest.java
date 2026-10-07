@@ -167,6 +167,43 @@ class FlussArrowClientTest {
   }
 
   @Test
+  void receiveBufferCountersVerifyTheRealBrokerBorrowingPath() throws Exception {
+    TablePath path = table("receive_buffers", false, "NONE", "FULL");
+    var writer = connection.getTable(path).newAppend().createWriter();
+    List<String> expected = new ArrayList<>();
+    for (long id = 0; id < 128; id++) {
+      writer.append(GenericRow.of(id, id * 10));
+      expected.add("0:" + id * 10);
+    }
+    writer.flush();
+    Schema projected = new Schema(List.of(Field.nullable("value", new ArrowType.Int(64, true))));
+    String oldProfile = System.getProperty("streamfusion.fluss.profile");
+    String oldDirect = System.getProperty("streamfusion.fluss.direct-receive.enabled");
+    System.setProperty("streamfusion.fluss.profile", "true");
+    try {
+      for (boolean direct : new boolean[] {false, true}) {
+        System.setProperty("streamfusion.fluss.direct-receive.enabled", Boolean.toString(direct));
+        try (var allocator = new RootAllocator();
+            var reader = new FlussArrowClient(cluster.config(), path, projected, allocator)) {
+          assertEquals(
+              expected, read(reader, new TableBucket(reader.tableInfo().getTableId(), 0), 0, 128));
+          var profile = reader.transportProfile();
+          assertTrue(profile.receivedRecordBytes() > 0);
+          assertEquals(direct ? profile.receivedRecordBytes() : 0, profile.borrowedRecordBytes());
+        }
+      }
+    } finally {
+      restoreProperty("streamfusion.fluss.profile", oldProfile);
+      restoreProperty("streamfusion.fluss.direct-receive.enabled", oldDirect);
+    }
+  }
+
+  private static void restoreProperty(String key, String previous) {
+    if (previous == null) System.clearProperty(key);
+    else System.setProperty(key, previous);
+  }
+
+  @Test
   void sharedTransportClosesOnlyAfterItsLastOwner() throws Exception {
     var config = cluster.config();
     var initial = java.util.Map.copyOf(config.toMap());

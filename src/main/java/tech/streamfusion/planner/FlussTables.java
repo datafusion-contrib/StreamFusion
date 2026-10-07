@@ -179,6 +179,8 @@ final class FlussTables {
   static String sourceFallback(FlinkTableSource source) throws ReflectiveOperationException {
     if (!"1.0.0".equals(source.getClass().getPackage().getImplementationVersion()))
       return "only the released 1.0.0 Java connector is verified";
+    if (!tech.streamfusion.fluss.FlussArrowClient.supportedTransport())
+      return "released Java transport hook is unavailable";
     if (clientOptionsFallback((Configuration) field(source, "flussConfig")) != null)
       return "custom Java client settings are outside the verified defaults";
     if (!(boolean) field(source, "streaming")) return "batch/snapshot reads use Flink";
@@ -246,6 +248,8 @@ final class FlussTables {
   static String sinkFallback(FlinkTableSink sink) throws ReflectiveOperationException {
     if (!"1.0.0".equals(sink.getClass().getPackage().getImplementationVersion()))
       return "only the released 1.0.0 Java connector is verified";
+    if (!tech.streamfusion.fluss.FlussArrowClient.supportedTransport())
+      return "released Java transport hook is unavailable";
     if (clientOptionsFallback((Configuration) field(sink, "flussConfig")) != null)
       return "custom Java client settings are outside the verified defaults";
     if (((int[]) field(sink, "primaryKeyIndexes")).length != 0)

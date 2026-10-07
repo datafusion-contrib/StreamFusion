@@ -248,14 +248,17 @@ class FlussTransportBenchmark {
                   var readProfile = reader.transportProfile();
                   System.out.printf(
                       "FLUSS_STAGES codec=%s run=%d encodeMs=%.3f produceRpcMs=%.3f fetchRpcMs=%.3f"
-                          + " decodeMs=%.3f produceRequests=%d%n",
+                          + " decodeMs=%.3f produceRequests=%d receivedRecordBytes=%d"
+                          + " borrowedRecordBytes=%d%n",
                       compression,
                       run,
                       (writeProfile.encodeNanos() - writerBefore.encodeNanos()) / 1e6,
                       (writeProfile.produceRpcNanos() - writerBefore.produceRpcNanos()) / 1e6,
                       (readProfile.fetchRpcNanos() - readerBefore.fetchRpcNanos()) / 1e6,
                       (readProfile.decodeNanos() - readerBefore.decodeNanos()) / 1e6,
-                      writeProfile.produceRequests() - writerBefore.produceRequests());
+                      writeProfile.produceRequests() - writerBefore.produceRequests(),
+                      readProfile.receivedRecordBytes() - readerBefore.receivedRecordBytes(),
+                      readProfile.borrowedRecordBytes() - readerBefore.borrowedRecordBytes());
                 }
               }
               connection.getAdmin().dropTable(path, false).get();

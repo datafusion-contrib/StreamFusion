@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.fluss.client.ConnectionFactory;
 import org.apache.fluss.client.FlussConnection;
+import org.apache.fluss.config.ConfigOptions;
 import org.apache.fluss.config.Configuration;
 
 /** Concurrent readers and writers share transport; the last owner closes it synchronously. */
@@ -16,15 +17,24 @@ final class FlussConnections {
   private FlussConnections() {}
 
   static Lease acquire(Configuration config) throws IOException {
-    Map<String, String> key = Map.copyOf(config.toMap());
+    Configuration transport = new Configuration(config);
+    if (Boolean.parseBoolean(
+        System.getProperty("streamfusion.fluss.direct-receive.enabled", "true"))) {
+      transport.set(ConfigOptions.NETTY_CLIENT_ALLOCATOR_HEAP_BUFFER_FIRST, false);
+    }
+    Map<String, String> settings = new HashMap<>(transport.toMap());
+    settings.put(
+        "streamfusion.frame-aware-receive",
+        System.getProperty("streamfusion.fluss.frame-aware-receive.enabled", "true"));
+    Map<String, String> key = Map.copyOf(settings);
     if (!Boolean.parseBoolean(
         System.getProperty("streamfusion.fluss.connection-sharing.enabled", "true"))) {
-      return new Lease(null, new Entry(config));
+      return new Lease(null, new Entry(transport));
     }
     synchronized (CONNECTIONS) {
       Entry entry = CONNECTIONS.get(key);
       if (entry == null) {
-        entry = new Entry(config);
+        entry = new Entry(transport);
         CONNECTIONS.put(key, entry);
       } else {
         entry.owners++;
@@ -39,6 +49,20 @@ final class FlussConnections {
 
     Entry(Configuration config) throws IOException {
       connection = (FlussConnection) ConnectionFactory.createConnection(new Configuration(config));
+      if (!config.getBoolean(ConfigOptions.NETTY_CLIENT_ALLOCATOR_HEAP_BUFFER_FIRST)
+          && Boolean.parseBoolean(
+              System.getProperty("streamfusion.fluss.frame-aware-receive.enabled", "true"))) {
+        try {
+          FlussDirectReceive.install(connection);
+        } catch (ReflectiveOperationException | RuntimeException failure) {
+          try {
+            connection.close(Duration.ZERO);
+          } catch (Exception close) {
+            failure.addSuppressed(close);
+          }
+          throw new IOException("Released Fluss 1.0 direct receive hook is unavailable", failure);
+        }
+      }
     }
   }
 

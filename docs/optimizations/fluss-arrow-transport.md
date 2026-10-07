@@ -7,6 +7,12 @@ incorporate fluss-rust.
 
 ## Receive ownership
 
+The accelerated connection replaces the released heap-preferring receive mode with
+direct buffers. A frame-length-aware accumulator reserves complete frames instead
+of repeatedly growing the generic direct cumulation. The pinned SDK initializer and
+handlers remain intact; missing reflective transport access causes planner fallback.
+The hook and version coupling are documented in the Fluss transport divergence.
+
 An addressable direct RPC buffer is retained as an Arrow foreign allocation. The
 allocator charges the complete allocation, while the IPC record batch takes slices of
 its body. Closing the RPC response releases its original reference; closing the final
@@ -18,12 +24,13 @@ decompression buffers, timestamp representation conversion can allocate, and Rus
 alignment checks can require copying. Heap responses and remote-file reads use the
 copying decoder. These boundaries prevent a claim that the full path is zero copy.
 
-An actual broker batch with 2,048 mixed-type rows was exported through the production
+Before direct receive was enabled, an actual broker batch with 2,048 mixed-type rows was exported through the production
 identity Calc and imported back into Java, with every value checked. Uncompressed
 input retained 282,756 buffer bytes at the same addresses; 33,280 buffer bytes changed
 addresses. LZ4 and ZSTD retained 315,524 bytes and changed 512 bytes after their required
 decompression. These are buffer-address observations from a correctness smoke run,
-not copied-byte counts or throughput results. They demonstrate why sharing must be
+not copied-byte counts or throughput results. That heap receive path had already copied
+the Java Arrow body before this address check. They demonstrate why sharing must be
 verified through Rust rather than inferred from Java's received-buffer slices alone.
 
 ## Append serialization and acknowledgements
@@ -97,3 +104,38 @@ retained. Matched stock medians are 4.955 and 5.052 seconds. q20 improves from 1
 to 3.440 seconds but has substantial control-run outliers. The connector page retains
 every trial and configuration; the gains are lifetime improvements rather than a
 claim that every query's steady-state throughput doubled.
+
+## Bounded compression adapter
+
+LZ4 preserves the released Fluss block framing and compressor, adapting it to an
+Arrow-backed output and a reusable 8 KiB scratch buffer. Compression no longer stages
+the complete input in a heap array or grows/copies a complete heap output stream.
+The temporary compressed-output allocation reserves the uncompressed input extent
+plus frame overhead under the Arrow allocator; only written bytes enter serialization.
+Decompression writes into its exact declared Arrow allocation and validates the final
+length, with cleanup on malformed frames. Released block workspace allocations remain;
+this is not zero-copy compression. NONE and ZSTD use their released implementations.
+
+Direct receive held fixed, LZ4 append medians fall from 38.835 to 32.530 ms for narrow
+input and from 264.357 to 178.357 ms for wide input (1.19×/1.48×). Wide decode falls
+from 60.215 to 50.566 ms; narrow whole-read median regresses 6%, retained in the controls.
+The complete frame-aware receive path improves wide read medians over generic direct
+receive by 1.17×/1.16×/1.19× for NONE/LZ4/ZSTD, while narrow NONE whole read regresses
+8%. Matched stock/current wide read speedups are 2.02×/1.69×/1.45× and append speedups
+are 1.11×/2.18×/1.54×. [Every control trial and stage duration](../benchmarks/fluss-transport-controls.csv)
+is retained; the connector page gives fixture configuration and the remaining copy boundaries.
+
+Direct broker bodies now genuinely reach Java Arrow without heap staging. The JNI
+identity check still copies under-aligned numeric buffers for uncompressed narrow
+input (133,120 buffer bytes change addresses), whereas decompressed narrow numeric
+buffers share 131,072 bytes. No complete broker-to-Rust zero-copy claim follows from
+Java body borrowing alone.
+
+The complete final 2M-event Nexmark validation has a 2.02× geomean of append-only
+median speedups over matched stock Flink (16 queries, one warmup plus three pairs;
+all teardown retained). q2/q20/q23 have substantial stock variance, and lifecycle
+still dominates short jobs. All 23 runnable queries pass deterministic parity and
+native-plan checks, with stock primary-key writers. This is end-to-end evidence for
+the combined techniques, not attribution of the entire gain to receive or compression.
+[Every final trial and configuration](../connectors/fluss.md#final-nexmark-validation)
+is retained alongside the independent controls.

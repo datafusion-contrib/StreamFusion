@@ -22,7 +22,6 @@ import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.arrow.vector.ipc.message.MessageSerializer;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.flink.types.RowKind;
-import org.apache.fluss.compression.UnshadedArrowCompressionFactory;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Fluss log framing around schema-less Arrow IPC record-batch messages. */
@@ -109,7 +108,7 @@ public final class FlussArrowLogBatch {
             readArrow(channel, payload, payloadOffset, borrowedBatch, allocator)) {
       require(arrow != null && arrow.getLength() == count, "Arrow/log row count mismatch");
       require(!payload.hasRemaining(), "trailing Arrow payload");
-      new VectorLoader(root, UnshadedArrowCompressionFactory.INSTANCE).load(arrow);
+      new VectorLoader(root, FlussArrowCompression.INSTANCE).load(arrow);
       if (kinds != null) {
         kindVector = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, allocator);
         kindVector.allocateNew(count);

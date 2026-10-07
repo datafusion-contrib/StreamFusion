@@ -365,10 +365,13 @@ allocation requests, and Arrow buffer sharing before optimizing an end-to-end re
 `python3 bin/bench-native.py --list` discovers every suite; `--smoke` checks fixtures in a release
 build. These measurements complement the Flink comparisons on this page.
 
-The [Fluss-to-Fluss suite](connectors/fluss.md#completed-nexmark-validation) uses the
+The [Fluss-to-Fluss suite](connectors/fluss.md#final-nexmark-validation) uses the
 same queries and event corpus with released Fluss 1.0.0 as both input and output.
-All 23 runnable queries pass; append-only output trials have a 1.20× geomean of
-median speedups over stock Fluss. Primary-key outputs use the stock writer and are
-validated separately. Kafka references come from the published README; no Kafka
-rerun or primary-key Kafka comparison is included. Full trials, variability and
-transport-only profiles live on the connector page.
+All 23 runnable queries pass at 2M events. The final 16 append-only queries have a
+**2.02× geomean of median speedups** over stock Fluss, with one warmup and three
+measured pairs each, including teardown. q2/q20/q23 have substantial variance and
+short-job lifecycle costs dominate many queries. Primary-key outputs retain the
+stock writer and have separate single-pair correctness validation. Kafka references
+come from the published README; no Kafka rerun or primary-key Kafka comparison is
+included. Full trials, earlier controls and transport-only profiles live on the
+connector page.

@@ -3,8 +3,10 @@
 **Status:** Experimental, opt-in. The optional `streamfusion-fluss` module uses the
 released Apache Fluss Java connector 1.0.0. Enable its verified planner substitutions
 with `-Dstreamfusion.fluss.enabled=true`. All 23 runnable Nexmark queries pass, with
-matching deterministic output. Mixed end-to-end performance and the narrower supported
-connector boundary keep the stock connector as the default.
+matching deterministic output. The narrower verified connector boundary and
+short-job-dominated benchmark evidence keep the stock connector as the default.
+[Final 2M-event results](#final-nexmark-validation) include all append-only trials and
+separate primary-key correctness pairs.
 
 The integration uses the existing Java connection for metadata, security, routing and
 broker RPCs. Concurrent Arrow readers and writers with identical complete client
@@ -13,7 +15,8 @@ Each reader keeps its own split/checkpoint state and each writer keeps its own I
 sequences and acknowledgement queue. Closing one owner leaves the other owners usable;
 the last owner removes and closes the connection synchronously, with no idle cache or
 background teardown. Configuration is copied before the Java client can mutate it.
- It reads schema-less Arrow IPC messages from `FetchLog`, preserving the
+
+It reads schema-less Arrow IPC messages from `FetchLog`, preserving the
 primary-key log's per-row change-type sidecar, and hands owned Arrow buffers to the
 existing StreamFusion Java-to-Rust bridge. Compatible vector layouts share buffers;
 timestamp input is converted to StreamFusion's component representation. Millisecond
@@ -25,6 +28,15 @@ RPC implementation APIs, pinned to connector 1.0.0; this is not a stable public 
 polling contract. [Issue #25](https://github.com/datafusion-contrib/StreamFusion/issues/25)
 tracks the future public-API migration.
 
+The accelerated connection selects direct receive allocations instead of the released
+SDK's default heap-preferring accumulator. Its length-aware accumulator reserves a
+complete direct frame once the four-byte length is available, avoiding repeated growth
+copies for fragmented large replies. It preserves the released channel initializer,
+handshake, security and idle handlers. Installing it accesses the pinned SDK's private
+connection/bootstrap fields; unavailable fields or reflective access cause planner
+fallback before acceleration. This is an explicit version-specific transport hook,
+not a new public Fluss API.
+
 Direct RPC receive allocations are retained through Arrow's foreign-allocation API and
 charged to its allocator until the last vector reference closes. IPC metadata is parsed
 separately, and the body buffers reference the received allocation. Uncompressed bodies
@@ -34,6 +46,13 @@ under-aligned buffers during import, and high-precision timestamp conversion als
 the complete path is not claimed to be zero copy. Append serialization uses one exactly
 sized wire byte array, avoiding growing streams and their final array copy; the released Java request encoder still copies it into the outbound RPC buffer.
 Fluss's memory-segment zero-copy send path is used for server responses, not client requests.
+LZ4 uses the released Fluss block streams with a bounded 8 KiB adapter scratch buffer
+and Arrow-backed output, eliminating whole-vector heap staging and growing output
+streams. Compression temporarily reserves an Arrow output sized for the uncompressed
+input plus frame overhead, then serializes only its written extent. This reservation
+is allocator-accounted even for highly compressible input. The released compressor
+still allocates its block workspace; decompression
+still creates new Arrow buffers. NONE and ZSTD retain their released codecs.
 
 ## Current implementation boundary
 
@@ -179,7 +198,11 @@ conversion. The current handoff check counts nested component buffers recursivel
 The optional profile switch reports serialization/compression, acknowledged produce RPC,
 fetch RPC and decode/ownership durations separately. It is disabled in normal execution.
 The produce-request count includes retries and distinguishes request coalescing from
-faster serialization of the same number of requests.
+faster serialization of the same number of requests. `receivedRecordBytes` counts
+received record spans, including log headers, compressed payloads and possible partial
+batch tails; `borrowedRecordBytes` counts those spans backed by retained direct
+allocations. They diagnose the heap/direct receive boundary, not copied-byte volume
+or Java-to-Rust sharing.
 For a controlled comparison with the previous pipeline, set
 `-Dstreamfusion.fluss.coalesce.enabled=false`; this diagnostic switch disables joining
 queued batches into a request without changing encoding, slicing or acknowledgement.
@@ -195,12 +218,13 @@ development machine (three trials, release profile, with JFR profiling enabled):
 | LZ4_FRAME | 119.865 / 141.752 / 122.959 | 46.448 / 45.212 / 43.626 | 94.244 / 87.903 / 93.503 |
 | ZSTD | 135.384 / 130.868 / 131.151 | 27.613 / 24.983 / 23.687 | 78.842 / 81.883 / 68.122 |
 
-These are baseline measurements before receive-buffer retention and exactly sized append
+These are historical measurements before direct receive was configured, as well as
+before receive-buffer retention and exactly sized append
 serialization. JFR heap allocation samples identified growing byte streams and their final
 array copies as producer costs; sampled allocation weights are not copied-byte counts.
 
-After receive-buffer retention and exactly sized serialization,
-the same fixture measured the following milliseconds. Profiling counters were enabled;
+After receive-buffer retention and exactly sized serialization, still using heap
+receive before the current direct receiver, the same fixture measured the following milliseconds. Profiling counters were enabled;
 all trial checksums matched the stock reader.
 
 | Compression | Acknowledged Arrow append | Arrow fetch/decode | Stock Java row fetch |
@@ -338,7 +362,8 @@ multisets, including duplicate counts, match for every deterministic query. q12'
 processing-time output is exempt; q13's static lookup result remains checked. q6 is
 excluded by the shared Kafka fixture because Flink SQL cannot run it.
 
-The final runs use released Fluss 1.0.0, four buckets, parallelism four, UTC, a one-second
+The full-matrix runs below precede connection sharing and direct receive/codec
+optimizations. Focused current results follow them. These historical runs use released Fluss 1.0.0, four buckets, parallelism four, UTC, a one-second
 checkpoint interval, default memory state and mini-batching off. The test JVM uses a
 2 GiB heap; each broker uses a 1 GiB heap and a 512 MiB direct-memory limit. Each query
 starts in a fresh test JVM and broker cluster. Append-only queries have one stock/native
@@ -368,13 +393,13 @@ timing. Each duration includes executeSql planning/startup, execution and client
 | q22 | 5.149269 / 10.012365 / 5.282074 | 4.591372 / 4.573737 / 4.575941 | 1.15× |
 | q23 | 11.314178 / 8.466644 / 11.235197 | 5.621627 / 5.599494 / 5.559362 | 2.01× |
 
-The append-only geomean of median speedups is 1.20×. q14 regresses by about 2%;
+The historical append-only geomean of median speedups is 1.20×. Its q14 regresses by about 2%;
 several queries have outliers, including q7's native 21.145-second trial. No trials
 are discarded. These results demonstrate a working columnar pipeline, with modest
 startup-dominated gains on many queries; they do not establish that Fluss is uniformly
 faster than the README's Kafka measurements. The Kafka values in the landing page are
 existing published references on another machine, with the documented expression and
-delivery differences. The integration remains off by default. [Follow-up #301](https://github.com/datafusion-contrib/StreamFusion/issues/301) tracks client lifecycle overhead and the q14 regression.
+delivery differences. The integration remains off by default. The focused reruns below resolve the measured q14 regression. [Follow-up #301](https://github.com/datafusion-contrib/StreamFusion/issues/301) tracks the remaining lifecycle floor and broader sustained validation.
 
 ### Primary-key output correctness runs
 
@@ -439,3 +464,176 @@ Inspect execution samples, allocation samples and thread parks. Attribute sample
 source/fetcher thread and stack; seeding, stock output scanning and sorting are outside
 timing and must not be mistaken for native query costs. JFR trials diagnose costs;
 headline timings use repeated runs without recording overhead.
+
+## Direct receive and bounded LZ4 controls
+
+These transport controls use the same released broker, one bucket, 1,048,576 rows in
+8,192-row batches, a 2 GiB test JVM, one warmup and three measured trials. Append uses
+the production acknowledgement pipeline. Wide inputs include the string, decimal and
+production timestamp component layout described above. Read timing retains its checksum;
+JNI address checks run outside timing. No Flink lifecycle or query costs are included.
+[All 90 trials and stage durations](../benchmarks/fluss-transport-controls.csv) retain
+stock comparisons and unfavorable measurements. `run=0` is the first measured trial;
+the warmup is separate. Diagnostic switches, applied inside the opt-in connector, are:
+
+- `streamfusion.fluss.direct-receive.enabled=false`: released heap-preferring receive.
+- `streamfusion.fluss.frame-aware-receive.enabled=false`: generic direct accumulation.
+- `streamfusion.fluss.lz4-streaming.enabled=false`: released whole-vector LZ4 adapter.
+
+All three default to true. The receive/codec controls were captured before the
+frame-aware receiver was installed; their `directTrue` mode is generic direct receive.
+The frame-aware controls hold direct receive and streaming LZ4 enabled, changing only
+the accumulator. Median milliseconds from the final frame-aware control:
+
+| Input / codec | Generic direct read | Frame-aware direct read | Stock row read | Arrow append | Stock row append |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| narrow / NONE | 47.909 | 51.501 | 187.436 | 44.111 | 111.880 |
+| narrow / LZ4_FRAME | 40.813 | 35.034 | 88.774 | 32.184 | 108.836 |
+| narrow / ZSTD | 26.790 | 25.728 | 64.686 | 56.676 | 100.110 |
+| wide / NONE | 203.473 | 173.883 | 350.841 | 212.937 | 236.606 |
+| wide / LZ4_FRAME | 218.841 | 189.095 | 319.633 | 183.737 | 401.091 |
+| wide / ZSTD | 273.821 | 229.987 | 334.174 | 220.574 | 338.870 |
+
+Wide read medians improve by 1.17× / 1.16× / 1.19× over generic direct accumulation.
+Narrow NONE whole-read median regresses 8%, although its median fetch stage falls
+from 39.405 to 34.628 ms; this regression is retained. Narrow LZ4/ZSTD improve by
+1.16×/1.04×. Against the matched stock Java reader, current wide read speedups are
+2.02×/1.69×/1.45×. Wide append speedups are 1.11×/2.18×/1.54×. These are isolated
+transport results, not Nexmark or cross-machine Kafka throughput claims.
+
+With direct receive held fixed in the earlier codec controls, streaming LZ4 reduces
+median narrow append from 38.835 to 32.530 ms and wide append from 264.357 to
+178.357 ms (1.19×/1.48×); wide decode falls from 60.215 to 50.566 ms. Narrow whole
+LZ4 read regresses from 43.338 to 46.030 ms in those controls. Turning on generic
+direct receive alone also regresses some wide reads; the length-aware receiver above
+addresses the fragmentation cost rather than assuming direct memory is inherently faster.
+
+The broker integration test proves `borrowedRecordBytes == receivedRecordBytes > 0`
+for direct receive, versus zero borrowed bytes for heap receive, with identical rows
+and projection. This does not prove end-to-end zero-copy import. In the current real
+broker JNI identity check, narrow NONE changes 133,120 buffer bytes and shares none:
+its numeric buffers are under-aligned at their RPC offsets. Narrow LZ4/ZSTD share
+131,072 bytes and change 2,048 after required decompression. Wide NONE shares 934,528
+bytes and changes 364,548; wide LZ4/ZSTD share 1,294,980 and change 4,096. These are
+recursive address observations, not copied-byte counters. Earlier heap-receive sharing
+observations were downstream of an already-copied Java Arrow body.
+
+### Remaining hot-path costs and rejected work
+
+Released Fluss and Kafka clients group requests by broker and pipeline bounded work.
+The four-bucket/four-reader Nexmark topology assigns one bucket per reader, so a
+multi-bucket fetch grouping rewrite would not improve this workload. A bounded
+one-request source prefetch prototype produced only about 1% q0 and 0.3% q14 median
+improvement at 2M events, within run variability. It was removed, including its extra
+queue/checkpoint state; [the rejection and every trial](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/fluss-source-prefetch.md)
+are retained.
+
+Remaining substantial costs are Java expression/decimal/string evaluation in q14,
+required native alignment work, compression/decompression, the released request
+encoder's copy into its direct outbound buffer, and the final connection's roughly
+two-second Netty quiet shutdown. Cleanup stays inside end-to-end timing. Removing
+these costs requires broader expression work, a compatible alignment/wire solution,
+or an upstream transport/lifecycle API; no speculative fork or idle-client cache is
+introduced by this optimization pass.
+
+## Focused profile-validation reruns
+
+After connection reuse, direct frame-aware receive and bounded LZ4, a fresh release
+run selects q0/q14/q20 at 2M events, with one warmup and three measured stock/native
+pairs per query. The selection shares one test JVM, broker cluster and seeded corpus;
+per-query warmups remain enabled. Resources, four buckets/parallelism four, memory
+state, mini-batching off and exact SQL are unchanged. No JFR recording is enabled;
+planning/startup, execution and client teardown remain timed. Every exact output and
+native source/interior/append-sink assertion passes. Seconds:
+
+| Query | Stock Flink trials | StreamFusion trials | Median SF/Flink |
+| --- | --- | --- | ---: |
+| q0 | 4.982779 / 4.798983 / 4.764074 | 2.516900 / 2.482839 / 2.436736 | 1.93× |
+| q14 | 5.026582 / 5.039969 / 5.022448 | 2.916753 / 2.911917 / 2.914523 | 1.72× |
+| q20 | 5.377090 / 8.183366 / 5.317126 | 3.555080 / 3.480970 / 3.606993 | 1.51× |
+
+These profile-driven trials preceded the complete final matrix below; they do not
+define a full-suite geomean. q20 retains a stock 8.183-second outlier. The complete
+23-query matrix passed again at 8,192 events after these optimizations, including
+stock primary-key sinks; this correctness sweep is not a throughput measurement.
+The connector/schema/ownership/admission/output contract sweep passed 41 tests.
+
+A fresh matched q0/q14 JFR recording at 2M events includes one warmup and one measured
+pair. It records one approximately 2.01-second native task close wait per job, down
+from two waits in each of four native task chains before sharing. Stock task chains
+still each record one close wait, with source-fetcher cleanup on its own thread. This
+verifies the lifetime change without subtracting cleanup. The earlier recording had
+no warmup, so raw sample totals cannot serve as normalized before/after CPU speedups.
+
+In the current recording's captured source-task stacks, stock top samples include
+string materialization (45), row copying (38), boxed longs (35) and accumulator append
+(31). Native stacks prominently include generated Java expression evaluation (31),
+JNI invocation (24), timestamp extraction (24), row copying (19) and boxing (14).
+These are sampling observations, not exact per-stage times; JFR does not resolve Rust
+execution below the JNI frame. They support the remaining expression/representation
+work above, rather than attributing every native sample to network overhead.
+
+## Final Nexmark validation
+
+The complete final matrix uses released Fluss 1.0.0, Flink 2.2, 2,000,000 events,
+four buckets, parallelism four, UTC, one-second checkpoints, memory state and
+mini-batching off. The test JVM has a 2 GiB heap, each broker has a 1 GiB heap and
+512 MiB direct-memory limit, and the native library is the release/mimalloc build.
+All 16 append-only queries share one freshly started test JVM, cluster and seeded
+corpus, with a stock/native warmup pair and three measured pairs for each query.
+The seven primary-key output queries run in a separate fresh JVM and cluster with
+one correctness pair each. These differ from the historical per-query-JVM runs;
+they are not an identical before/after control. The focused lifecycle/codec controls
+above isolate the optimizations independently.
+
+Planning/startup, execution and client teardown stay inside job timing. Cluster
+setup, input seeding, output scanning/sorting/parity and cluster cleanup remain outside.
+No recording overhead is included. All deterministic output multisets, including
+duplicates, match stock Flink; q12 retains its processing-time exemption. Every
+native source/interior assertion passes. All append-only outputs execute the Arrow
+sink, and primary-key production remains stock. q6 remains excluded by the shared
+fixture because Flink SQL cannot execute it. [All 55 final measured pairs](../benchmarks/fluss-nexmark-final.csv)
+are retained; no trial is discarded. Complete job seconds:
+
+| Append-only query | Stock Flink trials | StreamFusion trials | Median SF/Flink |
+| --- | --- | --- | ---: |
+| q0 | 4.862733 / 4.794690 / 4.736671 | 2.518370 / 2.469245 / 2.440789 | 1.94× |
+| q1 | 4.818989 / 4.771118 / 4.742557 | 2.426037 / 2.413878 / 2.456827 | 1.97× |
+| q2 | 9.456386 / 4.540128 / 9.595717 | 2.311209 / 2.289842 / 2.302503 | 4.11× |
+| q3 | 4.522304 / 4.523334 / 4.492609 | 2.523294 / 2.533506 / 2.514319 | 1.79× |
+| q5 | 5.118286 / 4.942575 / 4.940154 | 3.080059 / 3.087738 / 3.081525 | 1.60× |
+| q7 | 5.803485 / 5.623989 / 5.574316 | 4.017014 / 3.974940 / 3.893690 | 1.41× |
+| q8 | 4.542199 / 4.550724 / 4.561198 | 2.521938 / 2.521738 / 2.544414 | 1.80× |
+| q10 | 5.083663 / 5.067742 / 4.967778 | 2.826109 / 2.820590 / 2.785411 | 1.80× |
+| q11 | 5.015348 / 4.932876 / 4.937438 | 2.340103 / 2.344385 / 2.334384 | 2.11× |
+| q12 | 4.612266 / 4.599478 / 4.647023 | 2.312819 / 2.302554 / 2.305954 | 2.00× |
+| q13 | 4.782113 / 4.824035 / 4.925995 | 2.419755 / 2.400287 / 2.381811 | 2.01× |
+| q14 | 5.006960 / 5.017084 / 4.995941 | 2.905087 / 2.883766 / 2.861918 | 1.74× |
+| q20 | 31.841183 / 5.312361 / 7.847848 | 8.953495 / 3.498312 / 3.467522 | 2.24× |
+| q21 | 4.904971 / 4.806890 / 4.761857 | 2.838190 / 2.758646 / 2.764158 | 1.74× |
+| q22 | 4.970074 / 4.951053 / 5.006223 | 2.383224 / 2.410302 / 2.369573 | 2.09× |
+| q23 | 28.147132 / 10.862695 / 8.496231 | 3.843080 / 3.525013 / 3.481148 | 3.08× |
+
+The geomean of append-only median speedups is **2.02×**, with all 16 medians
+faster than matched stock Flink. q14 is 1.74×, resolving the previous regression.
+q2, q20 and q23 have large stock outliers; q20 also has an 8.953-second native trial.
+Their elevated ratios must not be interpreted as clean steady-state processing gains.
+The jobs remain short and lifecycle-heavy: the measured removal of a redundant
+approximately two-second shutdown is the largest end-to-end improvement. The isolated
+transport controls demonstrate the additional receive/compression improvements.
+No Kafka benchmarks were rerun; published README references are comparisons of
+relative speedup on another machine, with different expression/delivery settings.
+
+Primary-key output timings below are single correctness observations, not performance
+estimates or Kafka comparisons. The source and query interior are native; the writer
+remains stock. Exact output parity passes for every pair:
+
+| Primary-key output query | Stock Flink seconds | StreamFusion interior / stock writer seconds |
+| --- | ---: | ---: |
+| q4 | 10.224197 | 7.140303 |
+| q9 | 8.435984 | 7.567584 |
+| q15 | 10.294327 | 7.452906 |
+| q16 | 6.724553 | 6.778204 |
+| q17 | 9.055959 | 6.310909 |
+| q18 | 10.539551 | 8.246340 |
+| q19 | 39.652596 | 15.865008 |

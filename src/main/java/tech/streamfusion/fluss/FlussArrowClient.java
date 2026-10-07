@@ -45,6 +45,14 @@ import tech.streamfusion.operator.TaskOffHeapMemory;
 
 /** Java connection, metadata routing and RPC transport for columnar Fluss log traffic. */
 public final class FlussArrowClient implements AutoCloseable {
+  public static boolean supportedTransport() {
+    return !Boolean.parseBoolean(
+            System.getProperty("streamfusion.fluss.direct-receive.enabled", "true"))
+        || !Boolean.parseBoolean(
+            System.getProperty("streamfusion.fluss.frame-aware-receive.enabled", "true"))
+        || FlussDirectReceive.supported();
+  }
+
   public record Fetched(VectorSchemaRoot root, long nextOffset) implements AutoCloseable {
     @Override
     public void close() {
@@ -72,6 +80,8 @@ public final class FlussArrowClient implements AutoCloseable {
   private long fetchRpcNanos;
   private long decodeNanos;
   private long encodeNanos;
+  private long receivedRecordBytes;
+  private long borrowedRecordBytes;
   private final LongAdder produceRpcNanos = new LongAdder();
   private final LongAdder produceRequests = new LongAdder();
   private final Deque<PendingAppend> pendingAppends = new ArrayDeque<>();
@@ -125,11 +135,19 @@ public final class FlussArrowClient implements AutoCloseable {
       long decodeNanos,
       long encodeNanos,
       long produceRpcNanos,
-      long produceRequests) {}
+      long produceRequests,
+      long receivedRecordBytes,
+      long borrowedRecordBytes) {}
 
   public TransportProfile transportProfile() {
     return new TransportProfile(
-        fetchRpcNanos, decodeNanos, encodeNanos, produceRpcNanos.sum(), produceRequests.sum());
+        fetchRpcNanos,
+        decodeNanos,
+        encodeNanos,
+        produceRpcNanos.sum(),
+        produceRequests.sum(),
+        receivedRecordBytes,
+        borrowedRecordBytes);
   }
 
   public FlussArrowClient(
@@ -248,6 +266,10 @@ public final class FlussArrowClient implements AutoCloseable {
                       slice.memoryAddress() + slice.readerIndex() - received.memoryAddress(),
                       slice.readableBytes())
                   : null;
+          if (profile) {
+            receivedRecordBytes += records.remaining();
+            if (borrowedRecords != null) borrowedRecordBytes += records.remaining();
+          }
           decodeRecords(
               records, split.getStartingOffset(), stop, projected, true, borrowedRecords, result);
         }
@@ -445,8 +467,7 @@ public final class FlussArrowClient implements AutoCloseable {
             case ZSTD -> org.apache.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
           };
       var codec =
-          org.apache.fluss.compression.UnshadedArrowCompressionFactory.INSTANCE.createCodec(
-              codecType, compression.getCompressionLevel());
+          FlussArrowCompression.INSTANCE.createCodec(codecType, compression.getCompressionLevel());
       bytes = FlussArrowLogBatch.encode(wire, table.getSchemaId(), writerId, sequence, codec);
     }
     if (profile) encodeNanos += System.nanoTime() - encodeStart;
