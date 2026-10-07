@@ -28,13 +28,17 @@ final class FlussDirectReceive {
     }
   }
 
-  static void install(FlussConnection connection) throws ReflectiveOperationException {
+  static Bootstrap bootstrap(FlussConnection connection) throws ReflectiveOperationException {
     Field rpcField = FlussConnection.class.getDeclaredField("rpcClient");
     rpcField.setAccessible(true);
     Object rpc = rpcField.get(connection);
     Field bootstrapField = NettyClient.class.getDeclaredField("bootstrap");
     bootstrapField.setAccessible(true);
-    Bootstrap bootstrap = (Bootstrap) bootstrapField.get(rpc);
+    return (Bootstrap) bootstrapField.get(rpc);
+  }
+
+  static void install(FlussConnection connection) throws ReflectiveOperationException {
+    Bootstrap bootstrap = bootstrap(connection);
     ChannelHandler original = bootstrap.config().handler();
     bootstrap.handler(
         new ChannelInitializer<SocketChannel>() {

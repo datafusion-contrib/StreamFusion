@@ -4,11 +4,13 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.fluss.client.ConnectionFactory;
 import org.apache.fluss.client.FlussConnection;
 import org.apache.fluss.config.ConfigOptions;
 import org.apache.fluss.config.Configuration;
+import org.apache.fluss.shaded.netty4.io.netty.util.concurrent.Future;
 
 /** Concurrent readers and writers share transport; the last owner closes it synchronously. */
 final class FlussConnections {
@@ -89,7 +91,23 @@ final class FlussConnections {
           CONNECTIONS.remove(key, entry);
         }
       }
-      entry.connection.close(Duration.ZERO);
+      Future<?> termination = null;
+      try {
+        if (Boolean.parseBoolean(
+            System.getProperty("streamfusion.fluss.fast-close.enabled", "true"))) {
+          termination =
+              FlussDirectReceive.bootstrap(entry.connection)
+                  .config()
+                  .group()
+                  .shutdownGracefully(0, 10, TimeUnit.SECONDS);
+        }
+      } finally {
+        try {
+          entry.connection.close(Duration.ZERO);
+        } finally {
+          if (termination != null) termination.sync();
+        }
+      }
     }
   }
 }

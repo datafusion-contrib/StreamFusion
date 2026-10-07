@@ -203,41 +203,40 @@ ends. Append-only outputs use Arrow production; primary-key outputs retain Flink
 stock writer. Profiling removed redundant connection shutdowns, heap receive staging,
 frame growth copies and whole-vector LZ4 staging.
 
-Final Linux release results use 2M events, parallelism 4, memory state, mini-batching
-off, one warmup and three measured pairs per append-only query. Durations include
-client teardown. The selection shares a freshly started JVM, cluster and corpus.
-The Kafka column is the existing Apple M1 Max memory/off speedup above, not a
-cross-machine throughput ratio. Its † expression variants and exactly-once delivery
-differ from exact Fluss SQL and default at-least-once delivery.
+Matched Linux release results use 2M events, parallelism 4, RocksDB with fixed
+128 MiB state pools per slot, mini-batching off, exact expressions, one warmup and
+three measured runs. These timings include startup, flushes and synchronous teardown.
+Kafka uses JSON and exactly-once sinks; Fluss uses Arrow and at-least-once appends.
 
-| Append-only output | Stock Fluss, s | StreamFusion Fluss, s | Fluss SF/Flink | Published Kafka SF/Flink |
-| --- | ---: | ---: | ---: | ---: |
-| q0 | 4.795 | 2.469 | 1.94× | 1.69× |
-| q1† | 4.771 | 2.426 | 1.97× | 1.40× |
-| q2 | 9.456 | 2.303 | 4.11× | 1.26× |
-| q3 | 4.522 | 2.523 | 1.79× | 1.03× |
-| q5 | 4.943 | 3.082 | 1.60× | 1.41× |
-| q7 | 5.624 | 3.975 | 1.41× | 1.30× |
-| q8 | 4.551 | 2.522 | 1.80× | 1.27× |
-| q10† | 5.068 | 2.821 | 1.80× | 1.45× |
-| q11 | 4.937 | 2.340 | 2.11× | 1.47× |
-| q12 | 4.612 | 2.306 | 2.00× | 1.09× |
-| q13 | 4.824 | 2.400 | 2.01× | 1.20× |
-| q14† | 5.007 | 2.884 | 1.74× | 1.47× |
-| q20 | 7.848 | 3.498 | 2.24× | 1.22× |
-| q21† | 4.807 | 2.764 | 1.74× | 1.23× |
-| q22 | 4.970 | 2.383 | 2.09× | 1.33× |
-| q23 | 10.863 | 3.525 | 3.08× | 1.69× |
+| Query | Stock Kafka, s | Native Kafka, s | Stock Fluss, s | Native Fluss, s | Kafka native / Fluss native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| q0 | 2.361 | 1.381 | 4.884 | 0.397 | 3.47× |
+| q1 | 2.295 | 1.364 | 4.845 | 0.402 | 3.40× |
+| q2 | 1.342 | 1.194 | 4.519 | 0.301 | 3.97× |
+| q3 | 1.210 | 1.164 | 4.521 | 0.592 | 1.97× |
+| q5 | 3.392 | 4.593 | 54.040 | 4.384 | 1.05× |
+| q7 | 6.093 | 3.433 | 11.994 | 3.015 | 1.14× |
+| q8 | 1.347 | 1.271 | 11.832 | 0.725 | 1.75× |
+| q10 | 2.489 | 1.891 | 5.095 | 0.770 | 2.45× |
+| q11 | 5.210 | 1.172 | 11.923 | 0.407 | 2.88× |
+| q12 | 1.486 | 1.230 | 4.691 | 0.422 | 2.91× |
+| q13 | 2.159 | 1.480 | 4.872 | 0.395 | 3.74× |
+| q14 | 2.487 | 1.931 | 5.185 | 0.903 | 2.14× |
+| q20 | 15.271 | 4.194 | 10.042 | 3.785 | 1.11× |
+| q21 | 1.638 | 1.540 | 5.163 | 0.899 | 1.71× |
+| q22 | 2.228 | 1.372 | 5.075 | 0.375 | 3.66× |
+| q23 | 25.795 | 7.333 | 18.927 | 9.699 | 0.76× |
 
-Append-only median speedups have a **2.02× geomean on memory state**. A matched
-[RocksDB run](docs/connectors/fluss.md#rocksdb-nexmark-validation) has a **2.34×
-geomean** over the same 16 queries, with mini-batching off and fixed 128 MiB state
-pools per slot. The memory trials for q2, q20 and q23 have
-substantial variance; startup/shutdown still dominate many jobs. All deterministic
-outputs match stock Flink; q12 observes processing time. The seven primary-key
-outputs pass separate correctness checks with stock production and no Kafka
-comparison. [Every trial, SQL/CI validation, profiles and coverage](docs/connectors/fluss.md#final-nexmark-validation)
-are documented. The connector remains experimental and opt-in.
+The geomean of median speedups over each transport's stock Flink is **8.56× for
+Fluss** and **1.57× for Kafka**. Comparing native medians directly, Fluss is
+**2.12× faster geometrically**. Removing Netty's two-second shutdown quiet period
+is a major bounded-job gain, not a claim about sustained throughput. Stateful
+queries retain substantial variance; q23's native Fluss median is slower than Kafka.
+All measured trials remain in the results. Primary-key outputs use stock production
+and pass separate correctness checks. Deterministic Fluss outputs match stock Flink;
+q12 observes processing time. [Configuration, all trials, SQL/CI validation and
+profiles](docs/connectors/fluss.md#matched-transport-measurements) are documented.
+The connector remains experimental and opt-in.
 
 ## Related work
 

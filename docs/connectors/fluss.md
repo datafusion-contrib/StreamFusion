@@ -14,7 +14,10 @@ configuration share a reference-counted connection within the module's classload
 Each reader keeps its own split/checkpoint state and each writer keeps its own ID,
 sequences and acknowledgement queue. Closing one owner leaves the other owners usable;
 the last owner removes and closes the connection synchronously, with no idle cache or
-background teardown. Configuration is copied before the Java client can mutate it.
+background teardown. Its Netty event loop uses zero quiet time on last-owner close,
+and termination is awaited. `-Dstreamfusion.fluss.fast-close.enabled=false` restores
+the SDK quiet period for diagnostic comparisons. Configuration is copied before
+the Java client can mutate it.
 
 It reads schema-less Arrow IPC messages from `FetchLog`, preserving the
 primary-key log's per-row change-type sidecar, and hands owned Arrow buffers to the
@@ -813,3 +816,207 @@ disappears during directory traversal. RocksDB can rename OPTIONS files while th
 job starts; that race is not evidence that the backend failed to engage. Other I/O
 errors still fail the observer, and the stock CURRENT/native live-handle assertions
 remain required. This observer correction does not change any measured job boundary.
+
+### Matched transport measurements
+
+For a Kafka/Fluss comparison, use the same event count, parallelism, repeated
+trials, RocksDB budget, and mini-batch setting. Set `SF_KAFKA_NATIVE_VARIANTS=false`
+for the Kafka state-backend benchmark to use the exact expression semantics used
+by the Fluss matrix. The Kafka default remains the existing opt-in variant
+measurement. Its `[kafka-trial]` lines retain precise execution times for every
+warmup and measured run; compute medians from measured runs rather than its
+legacy best-of summary. Compare absolute execution times as well as speedups
+against each transport's stock Flink baseline. Kafka uses exactly-once sinks;
+Fluss uses its SDK's at-least-once append path, so these delivery guarantees differ.
+
+The Kafka RocksDB preflight permits q4's stock constraint-enforcing primary-key
+sink while checking native state engagement. Timed append-only measurements still
+require both the native Kafka source and native Kafka serialization sink.
+
+For separate CPU profiles (excluded from reported timings), pass
+`-Dprofile.asprof=/path/to/asprof -Dprofile.outputDir=target/profiles/fluss`
+to the Fluss matrix. Each execution is recorded separately by engine and query;
+fixture generation, output validation, and planning are outside the recording.
+The Kafka `exactlyOnceKafkaSinkProfileAll` helper accepts `-Dprofile.backend=rocksdb`
+with the same fixed 128 MiB budget and mini-batching disabled.
+
+Use `-Dprofile.event=wall` with a separate output directory to include blocked
+source, sink, and transport threads when diagnosing waits and synchronous teardown.
+
+The matched local configuration is 2,000,000 shared Nexmark events, four source
+partitions/buckets and four sink partitions/buckets, parallelism four, UTC, a
+four-second event-time watermark delay, one-second checkpoints, mini-batching off,
+and a 128 MiB RocksDB budget per slot. Both test JVMs use `-Xmx2g`; benchmarks use
+the release native library with mimalloc. The shared deterministic event generator,
+queries, schemas, and watermark expressions are unchanged. Kafka retains its JSON
+wire encoding and Fluss retains Arrow, which is the transport difference being
+measured. The budget applies independently to native and delegated JVM RocksDB
+state; it is not a cap on total process memory.
+
+Both transports run sequentially on the same Linux host. Kafka uses the harness's
+single `confluentinc/cp-kafka:7.6.1` container. Fluss uses released
+`apache/fluss:1.0.0` coordinator and tablet containers with replication factor one,
+plus `zookeeper:3.9.2`; each Fluss server has a 1 GiB Java heap and 512 MiB direct
+memory limit. Broker topology and total broker memory are not identical, and these
+are local test clusters rather than a distributed deployment comparison. The
+matched limits described above apply to the Flink/StreamFusion execution JVM and
+state pools, not a common cap on all broker processes.
+
+Use one warmup and three measured executions per engine and query. Keep all samples,
+including stalls, and calculate each query's speedup as stock median divided by
+native median. The append-only geomean covers exactly q0, q1, q2, q3, q5, q7, q8,
+q10, q11, q12, q13, q14, q20, q21, q22, and q23. Also report Kafka-native median
+divided by Fluss-native median to compare absolute connector runtimes. The Kafka
+harness groups an engine's repetitions together; Fluss alternates stock/native
+pairs and validates output between pairs. Both time SQL execution through job
+completion, including startup, checkpoints, flushes, and synchronous transport
+cleanup. Broker startup, corpus seeding, planning, and output validation are outside
+the reported execution time. Profile runs are separate from timing runs.
+
+The default immediate shutdown requests
+zero quiet time from the already owned Netty event loop when its last connection
+lease closes. The released Java connection still closes synchronously, and event
+loop termination is awaited. Set `-Dstreamfusion.fluss.fast-close.enabled=false`
+to restore the SDK quiet period for baseline controls. Immediate shutdown does not
+replace checkpoint/end-of-input acknowledgement flushes or change primary-key production.
+
+Run the timing sweeps sequentially on an otherwise idle machine:
+
+```sh
+export SF_ROWS=2000000 SF_PARALLELISM=4 SF_KAFKA_PARTITIONS=4
+export SF_MATRIX_QUERIES=q0,q1,q2,q3,q5,q7,q8,q10,q11,q12,q13,q14,q20,q21,q22,q23
+export SF_WARMUP=1 SF_RUNS=3 SF_KAFKA_NATIVE_VARIANTS=false
+export SF_BENCHMARK=true SF_MATRIX_STATE_BACKENDS=true
+export SF_STATE_BACKENDS_MINI_BATCH=false
+export SF_STATE_BACKENDS_OPTIONS='state.backend.rocksdb.memory.fixed-per-slot=128 mb;table.exec.mini-batch.enabled=false'
+mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dtest=NexmarkMatrixBenchmark#stateBackendComparison \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dsf.extraJvmArgs=-Xmx2g
+
+export SF_FLUSS_BENCH=true SF_FLUSS_STATE_BACKEND=rocksdb
+mvn -Pbench -pl streamfusion-fluss -am test \
+  -Dtest=NexmarkFlussBenchmark -Dnexmark.warmups=1 -Dnexmark.runs=3 \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dsf.extraJvmArgs=-Xmx2g
+```
+
+#### Local matched baseline (2026-10-07)
+
+The complete initial sweep uses the configuration above and exact expression
+semantics. The 16-query median-speedup geomeans are **1.28×** for Kafka and
+**2.45×** for Fluss against their respective stock Flink baselines. The geomean
+of Kafka-native median divided by Fluss-native median is **0.668×**: Fluss native
+execution takes **1.50×** as long in this bounded, startup-inclusive baseline.
+These are different stock baselines, so their within-transport speedups alone
+do not establish which native transport finishes sooner.
+
+The [192 measured samples](../benchmarks/fluss-kafka-rocksdb-baseline.csv) retain
+all three trials for both engines and all 16 queries. Native plan assertions pass
+for both transports. Fluss checks output multisets outside timing; q12 observes
+processing time and is exempt from exact multiset equality. Kafka's timed matrix
+checks native source/sink engagement rather than scanning its output for parity.
+Kafka q5 and q7 regress to stock in this sweep; Fluss q7, q8, q20 and q23 also
+show large outliers. All remain in the median and geomean calculations. The
+shutdown optimization was disabled throughout this baseline.
+
+#### Source and sink profile findings
+
+Separate async-profiler 4.5 CPU and wall recordings cover stock/native q0, q14,
+q20 and the q5/q7 state regressions. Fluss's CPU recordings include cold first
+query executions; Kafka's helper warms each query first. The wall recordings warm
+both engines before recording. Kafka recordings surround the helper invocation
+(including planning and topic setup/cleanup); Fluss recordings surround timed SQL
+execution only. Total sample counts are therefore not a matched CPU-cost ratio. The [sampled inclusive scopes](../benchmarks/fluss-kafka-profile-scopes.csv)
+retain scope counts; a stack may match multiple scopes, and wall counts summed
+over threads are not elapsed job time or percentages of the critical path.
+
+Native Fluss q0 records 2,822 CPU samples versus Kafka's 7,751 with the same 1 ms
+interval. Fluss spends samples in Zstd compression/decompression and Arrow
+import/export; Kafka also pays JSON decoding and serialization. These scopes identify different
+perimeter work, but the differing recording boundaries and warmup prevent attributing
+the total sample-count difference solely to the wire representation.
+The warmed Fluss q0 wall recording contains approximately 2,004 samples in its
+last connection lease close, corresponding to the fixed two-second Netty quiet
+period. Kafka has no matching Netty quiet-period wait.
+
+q20's native CPU recordings are dominated by RocksDB state work for both
+transports. One stock Fluss recording also shows a heavily skewed join subtask
+and extensive RocksDB/Snappy decompression, rather than a transport decoder
+bottleneck. This helps explain the stateful query's large variance; its entire
+slowdown cannot be assigned to source or sink copying. Request encoding still
+copies through the released SDK, and compressed Arrow vectors still allocate on
+decompression. The profiling evidence does not justify a claim of complete
+end-to-end zero-copy transport or a uniform sustained-throughput gain from
+removing shutdown time.
+
+#### Final matched RocksDB results (2026-10-07)
+
+With immediate shutdown enabled, the complete repeated sweep produces median-speedup
+geomeans of **8.56× for Fluss** and **1.57× for Kafka** against their respective
+stock Flink baselines. The geomean of Kafka-native median / Fluss-native median is
+**2.12×**, so native Fluss finishes sooner geometrically across the 16 queries.
+The [192 final measured samples](../benchmarks/fluss-kafka-rocksdb-final.csv) include
+all three trials per engine and query. Both timing matrices finish successfully with
+native perimeter assertions; all deterministic Fluss output multiset checks pass.
+
+| Query | Stock Kafka, s | Native Kafka, s | Stock Fluss, s | Native Fluss, s | Kafka native / Fluss native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| q0 | 2.361 | 1.381 | 4.884 | 0.397 | 3.47× |
+| q1 | 2.295 | 1.364 | 4.845 | 0.402 | 3.40× |
+| q2 | 1.342 | 1.194 | 4.519 | 0.301 | 3.97× |
+| q3 | 1.210 | 1.164 | 4.521 | 0.592 | 1.97× |
+| q5 | 3.392 | 4.593 | 54.040 | 4.384 | 1.05× |
+| q7 | 6.093 | 3.433 | 11.994 | 3.015 | 1.14× |
+| q8 | 1.347 | 1.271 | 11.832 | 0.725 | 1.75× |
+| q10 | 2.489 | 1.891 | 5.095 | 0.770 | 2.45× |
+| q11 | 5.210 | 1.172 | 11.923 | 0.407 | 2.88× |
+| q12 | 1.486 | 1.230 | 4.691 | 0.422 | 2.91× |
+| q13 | 2.159 | 1.480 | 4.872 | 0.395 | 3.74× |
+| q14 | 2.487 | 1.931 | 5.185 | 0.903 | 2.14× |
+| q20 | 15.271 | 4.194 | 10.042 | 3.785 | 1.11× |
+| q21 | 1.638 | 1.540 | 5.163 | 0.899 | 1.71× |
+| q22 | 2.228 | 1.372 | 5.075 | 0.375 | 3.66× |
+| q23 | 25.795 | 7.333 | 18.927 | 9.699 | 0.76× |
+
+Native Fluss q0 moves from 2.400 s in the initial complete sweep to 0.397 s in
+this sweep. The isolated q0/q14 shutdown controls support attribution of the
+approximately two-second short-job improvement to lifecycle overhead. Different
+stock stateful timings contribute to the final stock/native geomean: q5's stock
+Fluss trials are 54.040, 55.954 and 29.845 s. Kafka's repeated geomean also changes
+from 1.28× to 1.57× without a production Kafka optimization. Neither sweep is
+discarded, and the final 8.56× does not measure the shutdown change in isolation.
+
+q23's native Fluss trials are 3.923, 9.699 and 27.773 s, versus a Kafka native
+median of 7.333 s. It remains in every comparison despite losing on the median.
+q8 and q20 also retain stock outliers. Stateful skew, RocksDB work and scheduling
+can dominate these runs; removing transport teardown does not eliminate them.
+Kafka's timed matrix asserts native execution but does not rescan sink outputs;
+Fluss's deterministic parity checks run outside timing. Delivery guarantees and
+repetition ordering differ as described above.
+
+The separate warmed post-change wall profiles confirm the fixed wait is removed:
+native q0's final lease-close scope drops from 2,004 sampled milliseconds to 1,
+and q20's from 2,005 to 2. Stock q0 still accumulates 16,001 SDK-close wall samples
+across its closing owners; that sum is not 16 seconds of elapsed job time. These
+post-change recordings are included in the inclusive-scope CSV. Full network
+termination is still awaited, as the last-owner regression test verifies.
+
+The shutdown change also passes a clean Flink 1.18 build against its released
+Fluss artifact: all 37 transport contract tests and all 10 ported SQL tests pass
+without skips. The existing CI jobs discover these tests and run the Fluss SQL
+and full Nexmark smoke; primary-key production remains stock.
+
+A subsequent clean Flink 2.2 run with no fast-close override also passes all 47
+transport and ported SQL cases, confirming the new default. The last-owner test
+covers shared-lease lifetime, completed network termination, retained Arrow vector
+reads after shutdown, and allocator release.
+
+A separate warmed q23 CPU recording confirms that state dominates the observed
+execution: 18,135 of 23,527 native CPU samples include RocksDB, versus 50,912 of
+75,995 stock samples. Native fetch, Arrow decode, Arrow encode and compression
+scopes contain 459, 404, 504 and 820 samples respectively; inclusive scopes overlap.
+The profiled native run takes 3.829 s and passes output parity, but is excluded
+from the three-trial timing matrix and does not explain where every earlier
+outlier spent time. This recording does not expose another fixed transport wait
+or dominant copy scope. Remaining compression, SDK request serialization and Arrow
+interop are real costs; reducing them requires more than removing an idle delay.
+State layout/skew work belongs to the join path rather than a broker-network fix.

@@ -232,6 +232,62 @@ class FlussArrowClientTest {
   }
 
   @Test
+  void immediateShutdownWaitsForThreadsAndPreservesBorrowedVectors() throws Exception {
+    String previous = System.getProperty("streamfusion.fluss.fast-close.enabled");
+    System.setProperty("streamfusion.fluss.fast-close.enabled", "true");
+    try {
+      TablePath path = table("immediate_shutdown", false, "NONE", "FULL");
+      Schema full =
+          new Schema(
+              List.of(
+                  Field.nullable("id", new ArrowType.Int(64, true)),
+                  Field.nullable("value", new ArrowType.Int(64, true))));
+      var config = cluster.config();
+      try (RootAllocator allocator = new RootAllocator()) {
+        TableBucket bucket;
+        try (VectorSchemaRoot root = VectorSchemaRoot.create(full, allocator);
+            FlussArrowClient writer = new FlussArrowClient(config, path, full, allocator, false)) {
+          root.allocateNew();
+          ((BigIntVector) root.getVector(0)).setSafe(0, 1);
+          ((BigIntVector) root.getVector(1)).setSafe(0, 42);
+          root.setRowCount(1);
+          writer.append(root);
+          writer.flush();
+          bucket = new TableBucket(writer.tableInfo().getTableId(), 0);
+        }
+        try (var lease = FlussConnections.acquire(config);
+            FlussArrowClient reader = new FlussArrowClient(config, path, PROJECTION, allocator)) {
+          var group = FlussDirectReceive.bootstrap(lease.connection()).config().group();
+          var fetched = reader.fetch(new LogSplit(bucket, null, 0, 1));
+          try {
+            lease.close();
+            assertFalse(group.isShuttingDown(), "Another reader still owns the connection");
+            reader.close();
+            assertTrue(group.isTerminated(), "Last-owner close must finish network teardown");
+            var root =
+                fetched.stream()
+                    .filter(batch -> batch.root() != null)
+                    .findFirst()
+                    .orElseThrow()
+                    .root();
+            assertEquals(1, root.getRowCount());
+            assertEquals(
+                42,
+                ((BigIntVector) root.getVector(0)).get(0),
+                "Borrowed Arrow allocations outlive the network event loop");
+          } finally {
+            fetched.forEach(FlussArrowClient.Fetched::close);
+          }
+        }
+        assertEquals(0, allocator.getAllocatedMemory());
+      }
+    } finally {
+      if (previous == null) System.clearProperty("streamfusion.fluss.fast-close.enabled");
+      else System.setProperty("streamfusion.fluss.fast-close.enabled", previous);
+    }
+  }
+
+  @Test
   void checkpointRestoresOnlyCollectedRowsAndReleasesPrefetchedBatches() throws Exception {
     TablePath path = table("recovery", false, "ZSTD", "FULL");
     Schema full =
