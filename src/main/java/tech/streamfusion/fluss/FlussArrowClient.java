@@ -26,10 +26,12 @@ import org.apache.fluss.client.FlussConnection;
 import org.apache.fluss.client.metadata.MetadataUpdater;
 import org.apache.fluss.client.metrics.ScannerMetricGroup;
 import org.apache.fluss.client.table.scanner.log.RemoteLogDownloader;
+import org.apache.fluss.client.write.StickyBucketAssigner;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.exception.RetriableException;
 import org.apache.fluss.flink.source.split.LogSplit;
 import org.apache.fluss.fs.FsPath;
+import org.apache.fluss.metadata.PhysicalTablePath;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableInfo;
 import org.apache.fluss.metadata.TablePath;
@@ -73,7 +75,7 @@ public final class FlussArrowClient implements AutoCloseable {
   private final Map<Integer, Integer> sequences = new HashMap<>();
   private RemoteLogDownloader remoteDownloader;
   private long writerId = NO_WRITER_ID;
-  private int nextBucket;
+  private final StickyBucketAssigner bucketAssigner;
   private final boolean profile = Boolean.getBoolean("streamfusion.fluss.profile");
   private final boolean coalesce =
       Boolean.parseBoolean(System.getProperty("streamfusion.fluss.coalesce.enabled", "true"));
@@ -167,11 +169,13 @@ public final class FlussArrowClient implements AutoCloseable {
     this.path = path;
     this.outputSchema = outputSchema;
     this.allocator = allocator;
+    bucketAssigner = new StickyBucketAssigner(PhysicalTablePath.of(path));
     connectionLease = FlussConnections.acquire(config);
     connection = connectionLease.connection();
     metadata = connection.getMetadataUpdater();
     try {
       table = await(connection.getAdmin().getTableInfo(path));
+      if (!projectRead) metadata.updateTableOrPartitionMetadata(path, null);
       schemas.put(table.getSchemaId(), FlussArrowSchema.wireSchema(table.getRowType()));
       // Released 1.0 schemas start at 1 and evolve only by appending nullable columns.
       // Broker projection is positional, so old batches cannot supply newly added positions.
@@ -209,6 +213,7 @@ public final class FlussArrowClient implements AutoCloseable {
     FetchLogRequest request =
         new FetchLogRequest()
             .setFollowerServerId(-1)
+            .setReadPreference(config.get(CLIENT_SCANNER_LOG_READ_PREFERENCE).value())
             .setMaxBytes(Math.toIntExact(config.get(CLIENT_SCANNER_LOG_FETCH_MAX_BYTES).getBytes()))
             .setMinBytes(Math.toIntExact(config.get(CLIENT_SCANNER_LOG_FETCH_MIN_BYTES).getBytes()))
             .setMaxWaitMs(
@@ -421,6 +426,8 @@ public final class FlussArrowClient implements AutoCloseable {
     checkAppendFailure();
     reapAppends();
     if (table.hasPrimaryKey()) throw new IOException("Primary-key production is not accelerated");
+    if (table.isStatisticsEnabled())
+      throw new IOException("Fluss batch statistics require the stock append writer");
     if (!table.getBucketKeys().isEmpty() || !table.getPartitionKeys().isEmpty())
       throw new IOException("Append routing requires a non-partitioned table without bucket keys");
     if (input.getRowCount() == 0) return CompletableFuture.completedFuture(null);
@@ -451,7 +458,7 @@ public final class FlussArrowClient implements AutoCloseable {
       writerId =
           await(metadata.newRandomTabletServerClient().initWriter(new InitWriterRequest()))
               .getWriterId();
-    int bucket = nextBucket;
+    int bucket = bucketAssigner.assignBucket(metadata.getCluster(), table.getNumBuckets());
     int sequence = sequences.getOrDefault(bucket, 0);
     long encodeStart = profile ? System.nanoTime() : 0;
     byte[] bytes;
@@ -543,7 +550,7 @@ public final class FlussArrowClient implements AutoCloseable {
       throw failure;
     }
     sequences.put(bucket, sequence + 1);
-    nextBucket = (nextBucket + 1) % table.getNumBuckets();
+    bucketAssigner.onNewBatch(metadata.getCluster(), table.getNumBuckets(), bucket);
     pendingAppends.addLast(new PendingAppend(future, bytes.length, reservation));
     queuedBytes += bytes.length;
     return future;
@@ -588,12 +595,7 @@ public final class FlussArrowClient implements AutoCloseable {
                 if (profile) produceRequests.increment();
                 return gateway.produceLog(request);
               },
-              reply -> {
-                if (reply.getBucketsRespsCount() != 1
-                    || reply.getBucketsRespAt(0).getBucketId() != bucket)
-                  throw new IOException("Unexpected Fluss produce response");
-                checkError(reply.getBucketsRespAt(0));
-              },
+              reply -> validateAppendResponse(reply, bucket),
               config.get(CLIENT_WRITER_RETRIES));
       if (profile) produceRpcNanos.add(System.nanoTime() - produceStart);
       if (response.isLazilyParsed() && response.getParsedByteBuf() != null)
@@ -601,6 +603,16 @@ public final class FlussArrowClient implements AutoCloseable {
     } finally {
       records.release();
     }
+  }
+
+  static void validateAppendResponse(ProduceLogResponse reply, int bucket) throws IOException {
+    if (reply.getBucketsRespsCount() != 1 || reply.getBucketsRespAt(0).getBucketId() != bucket)
+      throw new IOException("Unexpected Fluss produce response");
+    var response = reply.getBucketsRespAt(0);
+    // The SDK completes a duplicate sequence as an already acknowledged batch.
+    if (response.hasErrorCode()
+        && Errors.forCode(response.getErrorCode()) == Errors.DUPLICATE_SEQUENCE_EXCEPTION) return;
+    checkError(response);
   }
 
   @FunctionalInterface
