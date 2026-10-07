@@ -714,3 +714,20 @@ listed above. Queries, schemas, event corpus, watermarks, source/sink semantics 
 parity checks are unchanged by the backend selector. Disk state is an engine setting;
 it does not change the Fluss broker's storage configuration. CI also exercises q4
 and q5 with disk state in the optimized Flink 2.2 job.
+
+### Retaining buffers across offset repair and failed emission
+
+Offset realignment retains all incoming field buffers while reloading a vector.
+The Arrow loader releases old fields before retaining replacements; a compressed
+data column can have a sole owner even when its small offset column stayed
+uncompressed and needs alignment. Without temporary retained references, reload can
+free and then reuse that data allocation. The regression covers a compressed data
+column with raw offsets, every offset-address residue, nulls and an actual JNI
+round trip. This adds reference operations, not another data-buffer copy.
+
+Failed source emission discards only a batch whose root no downstream consumer has
+taken. Once a consumer takes it, that consumer owns closure even if collection
+throws. The discard is idempotent and marks the cleaner backstop as handled; the
+source does not close the same root again after conversion has already failed or
+a consumer has already closed it. Broker tests cover failure before and after
+consumption without advancing the consumed checkpoint offset.

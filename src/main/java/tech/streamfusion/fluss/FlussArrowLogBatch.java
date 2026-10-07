@@ -143,8 +143,14 @@ public final class FlussArrowLogBatch {
         try (ArrowBuf aligned = allocator.buffer(offsets.capacity())) {
           aligned.setBytes(0, offsets, 0, offsets.capacity());
           buffers.set(1, aligned);
-          vector.loadFieldBuffers(
-              new ArrowFieldNode(vector.getValueCount(), vector.getNullCount()), buffers);
+          // Loading releases the old fields before retaining replacements, which may alias them.
+          for (ArrowBuf buffer : buffers) buffer.getReferenceManager().retain();
+          try {
+            vector.loadFieldBuffers(
+                new ArrowFieldNode(vector.getValueCount(), vector.getNullCount()), buffers);
+          } finally {
+            for (ArrowBuf buffer : buffers) buffer.close();
+          }
         }
       }
       alignVariableOffsets(vector.getChildrenFromFields(), allocator);

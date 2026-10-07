@@ -93,24 +93,36 @@ class FlussArrowLogBatchTest {
       text.setNull(1);
       text.setSafe(2, "last".getBytes(StandardCharsets.UTF_8));
       input.setRowCount(3);
-      byte[] encoded = FlussArrowLogBatch.encode(input, 0, -1, -1);
-      for (int displacement = 0; displacement < 4; displacement++) {
-        try (var allocation = allocator.buffer(encoded.length + displacement);
-            var borrowed = allocation.slice(displacement, encoded.length)) {
-          borrowed.getReferenceManager().retain();
-          borrowed.setBytes(0, encoded);
-          try (var decoded =
-              FlussArrowLogBatch.decode(
-                  borrowed.nioBuffer(0, encoded.length), schema, allocator, true, borrowed)) {
-            var loaded = (VarCharVector) decoded.root().getVector(0);
-            assertEquals(0, loaded.getOffsetBuffer().memoryAddress() & 3);
-            assertEquals("first", loaded.getObject(0).toString());
-            assertNull(loaded.getObject(1));
-            assertNativeStringRoundTrip(decoded.root(), allocator);
-            assertEquals("last", loaded.getObject(2).toString());
-            assertTrue(loaded.getDataBuffer().memoryAddress() >= borrowed.memoryAddress());
-            assertTrue(
-                loaded.getDataBuffer().memoryAddress() < borrowed.memoryAddress() + encoded.length);
+      for (var codec :
+          new org.apache.arrow.vector.compression.CompressionCodec[] {
+            org.apache.arrow.vector.compression.NoCompressionCodec.INSTANCE,
+            FlussArrowCompression.INSTANCE.createCodec(
+                org.apache.arrow.vector.compression.CompressionUtil.CodecType.LZ4_FRAME)
+          }) {
+        text.setSafe(0, ("first".repeat(1024)).getBytes(StandardCharsets.UTF_8));
+        text.setSafe(2, ("last".repeat(1024)).getBytes(StandardCharsets.UTF_8));
+        byte[] encoded = FlussArrowLogBatch.encode(input, 0, -1, -1, codec);
+        for (int displacement = 0; displacement < 4; displacement++) {
+          try (var allocation = allocator.buffer(encoded.length + displacement);
+              var borrowed = allocation.slice(displacement, encoded.length)) {
+            borrowed.getReferenceManager().retain();
+            borrowed.setBytes(0, encoded);
+            try (var decoded =
+                FlussArrowLogBatch.decode(
+                    borrowed.nioBuffer(0, encoded.length), schema, allocator, true, borrowed)) {
+              var loaded = (VarCharVector) decoded.root().getVector(0);
+              assertEquals(0, loaded.getOffsetBuffer().memoryAddress() & 3);
+              assertEquals("first".repeat(1024), loaded.getObject(0).toString());
+              assertNull(loaded.getObject(1));
+              assertNativeStringRoundTrip(decoded.root(), allocator);
+              assertEquals("last".repeat(1024), loaded.getObject(2).toString());
+              if (codec == org.apache.arrow.vector.compression.NoCompressionCodec.INSTANCE) {
+                assertTrue(loaded.getDataBuffer().memoryAddress() >= borrowed.memoryAddress());
+                assertTrue(
+                    loaded.getDataBuffer().memoryAddress()
+                        < borrowed.memoryAddress() + encoded.length);
+              }
+            }
           }
         }
       }

@@ -75,12 +75,12 @@ final class FlussArrowSourceReader implements SourceReader<ArrowBatch, SourceSpl
     if (!records.isEmpty()) {
       var record = records.removeFirst();
       LogSplit split = splits.get(fetchingSplit);
+      var nativeRecord =
+          record.root() == null
+              ? new NativeSourceRecord(null, record.nextOffset(), Long.MIN_VALUE)
+              : NativeSourceRecord.fromRoot(
+                  record.root(), record.nextOffset(), rowtimeIndex, watermark);
       try {
-        var nativeRecord =
-            record.root() == null
-                ? new NativeSourceRecord(null, record.nextOffset(), Long.MIN_VALUE)
-                : NativeSourceRecord.fromRoot(
-                    record.root(), record.nextOffset(), rowtimeIndex, watermark);
         nativeRecord.emit(
             output.createOutputForSplit(fetchingSplit),
             next ->
@@ -92,7 +92,7 @@ final class FlussArrowSourceReader implements SourceReader<ArrowBatch, SourceSpl
                         next,
                         split.getStoppingOffset().orElse(LogSplit.NO_STOPPING_OFFSET))));
       } catch (Throwable failure) {
-        record.close();
+        nativeRecord.discardUnclaimed();
         throw failure;
       }
       if (!records.isEmpty()) return InputStatus.MORE_AVAILABLE;

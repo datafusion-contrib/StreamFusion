@@ -297,6 +297,14 @@ class FlussArrowClientTest {
           IllegalStateException.class, () -> reader.pollNext(readerOutput(collected, true)));
       assertEquals(0, reader.snapshotState(4).get(0).asLogSplit().getStartingOffset());
     }
+    try (FlussArrowSourceReader reader =
+        new FlussArrowSourceReader(readerContext(), cluster.config(), path, type, -1, null)) {
+      reader.addSplits(List.of(new LogSplit(bucket, null, 0, 5)));
+      reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
+      assertThrows(
+          IllegalStateException.class, () -> reader.pollNext(readerOutput(collected, false, true)));
+      assertEquals(0, reader.snapshotState(5).get(0).asLogSplit().getStartingOffset());
+    }
   }
 
   @Test
@@ -606,6 +614,13 @@ class FlussArrowClientTest {
   private static org.apache.flink.api.connector.source.ReaderOutput<
           tech.streamfusion.operator.ArrowBatch>
       readerOutput(List<Long> collected, boolean fail) {
+    return readerOutput(collected, fail, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static org.apache.flink.api.connector.source.ReaderOutput<
+          tech.streamfusion.operator.ArrowBatch>
+      readerOutput(List<Long> collected, boolean fail, boolean failAfterConsume) {
     return (org.apache.flink.api.connector.source.ReaderOutput<
             tech.streamfusion.operator.ArrowBatch>)
         java.lang.reflect.Proxy.newProxyInstance(
@@ -623,6 +638,8 @@ class FlussArrowClientTest {
                     for (int i = 0; i < root.getRowCount(); i++)
                       collected.add((Long) root.getVector("value").getObject(i));
                   }
+                  if (failAfterConsume)
+                    throw new IllegalStateException("Injected failure after consuming root");
                   return null;
                 default:
                   throw new UnsupportedOperationException(method.getName());
