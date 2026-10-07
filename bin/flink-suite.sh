@@ -243,7 +243,7 @@ flink_mvn() {
 
 kafka_mvn() {
   (cd "${KAFKA_CONNECTOR_ROOT}" && {
-    if [[ -x ./mvnw ]]; then ./mvnw "$@"; else mvn "$@"; fi
+    if [[ -x ./mvnw ]]; then ./mvnw "$@"; else flink_mvn "$@"; fi
   })
 }
 

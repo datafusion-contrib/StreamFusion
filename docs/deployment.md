@@ -240,6 +240,23 @@ This prevents Arrow's transitive SLF4J 2 API from shadowing Flink's binding and 
 selecting a no-operation logger. Artifact validation rejects bundled logging API classes,
 and the image SQL smoke test requires a real logging provider before running native SQL.
 
+## Connector build classpath ownership
+
+The released Paimon 2.0 connector bundles compatibility copies of Flink `RowData` and
+`ArrayData`, including the newer variant methods even in its Flink 1.18 artifact. These
+classes must not select the API used to compile StreamFusion's shared source. The Paimon
+module declares the target host's `flink-table-common` directly before the connector bundle;
+normal dependency version mediation alone cannot detect duplicate classes inside that bundle.
+Maven's dependency ordering can expose this difference, so reusing a successful local cache
+is not evidence that a fresh image reactor will select the same classes.
+
+`python3 bin/test_paimon_host_classpath.py` resolves the production dependency declarations
+against canonical released artifacts on both supported Flink lines. It checks the loaded
+`RowData`/`ArrayData` origins and variant APIs and compiles the actual shared `PrunedRowData`
+with each compatibility adapter. Its negative control puts the fat connector first and
+reproduces the Flink 1.18 `getVariant(int)` compilation failure. Image CI runs this lightweight
+Java-only regression and records the Maven version before the native image build.
+
 ## Experimental Fluss connector
 
 The source build includes an optional `streamfusion-fluss` Java extension. Install it
