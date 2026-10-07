@@ -245,10 +245,11 @@ jobs:
           workspaces: native -> target/release-staging
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Verify Paimon uses the host Flink API on both image lines
+      - name: Verify Java host APIs and deployment module ownership
         run: |
           mvn --version
           python3 bin/test_paimon_host_classpath.py
+          python3 bin/test_module_source_ownership.py
 
       # Host-only is still a production Linux/x86_64 release (including mimalloc); cross-platform
       # manifest assembly is covered by the release builder, but does not belong on this smoke path.

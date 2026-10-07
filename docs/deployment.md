@@ -256,3 +256,17 @@ against canonical released artifacts on both supported Flink lines. It checks th
 with each compatibility adapter. Its negative control puts the fat connector first and
 reproduces the Flink 1.18 `getVariant(int)` compilation failure. Image CI runs this lightweight
 Java-only regression and records the Maven version before the native image build.
+
+Shared Java sources also require explicit module ownership during compilation. Reproducible
+JAR timestamps can precede a fresh checkout's source timestamps; javac then prefers the newer
+source of a referenced core class and can implicitly emit that class into a connector's output.
+The compiler configuration inherited by every module uses `-implicit:none`: javac may resolve
+shared source symbols, but emits classes only for the module's explicit source includes. This
+keeps the core runtime and optional connector/format JARs separate without hiding duplicate
+classes from artifact validation. Clean rebuilds remove classes emitted by an older configuration.
+
+`python3 bin/test_module_source_ownership.py` recreates an old-timestamp dependency JAR and
+newer shared source. Its negative control demonstrates implicit duplication; the configured
+compiler flag preserves only the connector's explicit class. A runtime probe executes the
+connector and verifies its dependency resolves from the core JAR. Image CI runs the regression
+before packaging, and the unchanged artifact checker verifies ownership in the real bundle.
