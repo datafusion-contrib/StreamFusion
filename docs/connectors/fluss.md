@@ -731,3 +731,79 @@ throws. The discard is idempotent and marks the cleaner backstop as handled; the
 source does not close the same root again after conversion has already failed or
 a consumer has already closed it. Broker tests cover failure before and after
 consumption without advancing the consumed checkpoint offset.
+
+## RocksDB Nexmark validation
+
+The final measured code is commit `5cfb8199` (release/mimalloc).
+The disk matrix uses the same released Fluss 1.0.0/Flink 2.2, release/mimalloc,
+2,000,000-event corpus, four buckets, parallelism four, UTC, one-second checkpoints,
+2 GiB test JVM heap and broker limits as the memory matrix. Mini-batching stays off.
+Stock jobs use Flink RocksDB; native jobs use StreamFusion's native RocksDB backend.
+Both have a fixed 128 MiB RocksDB pool per slot, with native and JVM delegate pools
+remaining separate when the native backend needs both. The untimed q4 preflight
+observes real stock working files and a live native store handle. The earlier local
+mini-cluster default-budget preflight was stopped after tiny flush/write stalls,
+before any measured pair; the explicit budget is part of these results.
+
+All 16 append-only queries share a fresh JVM, cluster and seeded corpus, with one
+stock/native warmup pair and three measured pairs each. The seven primary-key output
+queries use a separate fresh JVM/cluster and one correctness pair each. Job timing
+includes planning/startup, execution and synchronous client teardown; setup, seeding,
+preflight, output scans/sorting/parity and cluster cleanup are outside timing. There
+is no profiler in measured runs. This session ran no concurrent local validation;
+a separate session launched a Maven/Javadoc build on the same host around q20.
+The run therefore cannot be described as an isolated-host measurement.
+Every deterministic output multiset and native
+source/interior/sink boundary check passes. q12 keeps its processing-time exemption;
+q6 remains excluded by the unchanged shared fixture. Primary-key writes stay stock.
+
+[All 55 measured disk pairs](../benchmarks/fluss-nexmark-rocksdb.csv) are retained.
+The [first 48 append-only pairs](../benchmarks/fluss-nexmark-rocksdb-first.csv),
+whose geometric mean was 2.30×, are also retained. They preceded the final ownership
+repair and integration of current main and overlapped local validation work. The
+final matrix below uses the merged code with corrected buffer lifetimes and no
+concurrent local validation from this session (the separate-session build noted
+above still overlapped part of the run). It is a fresh measurement, not an outlier filter.
+The append-only geometric mean is computed over the 16 ratios of stock median to
+StreamFusion median, with no query or outlier removed.
+
+| Append-only query | Stock RocksDB trials, s | StreamFusion RocksDB trials, s | Median speedup |
+| --- | --- | --- | ---: |
+| q0 | 4.919251 / 4.817975 / 4.862707 | 2.509191 / 2.379785 / 2.400867 | 2.03× |
+| q1 | 4.940872 / 4.923377 / 4.814450 | 2.400765 / 2.410894 / 2.426384 | 2.04× |
+| q2 | 4.578269 / 4.667894 / 4.703881 | 2.276834 / 2.286172 / 2.296290 | 2.04× |
+| q3 | 4.568776 / 4.572067 / 4.552211 | 2.548523 / 2.549859 / 2.558247 | 1.79× |
+| q5 | 24.816966 / 27.095601 / 24.392623 | 6.176894 / 6.082664 / 6.260626 | 4.02× |
+| q7 | 12.811515 / 26.354596 / 9.847945 | 5.126424 / 15.946859 / 5.252235 | 2.44× |
+| q8 | 17.070013 / 28.843333 / 11.052540 | 3.587196 / 10.478058 / 2.767388 | 4.76× |
+| q10 | 10.230286 / 5.520005 / 5.288573 | 3.208818 / 3.199233 / 3.026487 | 1.73× |
+| q11 | 12.235849 / 9.445565 / 12.159917 | 2.440060 / 2.427105 / 2.384007 | 5.01× |
+| q12 | 7.674205 / 4.682806 / 4.711676 | 2.392962 / 2.398837 / 2.413223 | 1.96× |
+| q13 | 4.860003 / 4.831920 / 4.856924 | 2.446450 / 2.409260 / 2.399621 | 2.02× |
+| q14 | 5.048139 / 5.024717 / 5.047472 | 2.903404 / 2.897183 / 2.906660 | 1.74× |
+| q20 | 10.559941 / 10.103125 / 10.597151 | 6.033249 / 6.389589 / 7.104098 | 1.65× |
+| q21 | 9.897371 / 5.000404 / 4.887539 | 2.846612 / 2.857967 / 2.872555 | 1.75× |
+| q22 | 5.541504 / 5.388507 / 5.526269 | 2.432800 / 2.439111 / 2.511234 | 2.27× |
+| q23 | 16.931457 / 17.619244 / 18.429306 | 19.717781 / 5.723733 / 5.865591 | 3.00× |
+
+The append-only geometric mean of median speedups is **2.34×**. These are
+end-to-end bounded-job results, including the lifecycle floor, rather than sustained
+CDC throughput. The earlier memory matrix is a separate reference and predates the
+CI-required Java offset-alignment repair; it is not an isolated causal measurement
+of the backend switch. Queries without keyed state still participate in the geometric
+mean with the disk backend configured; they do not manufacture RocksDB work.
+
+Queries with at least a 1.5× maximum/minimum trial spread in either engine are q7, q8, q10, q12, q21, q23. All those trials are included; three measured pairs do not establish a stable long-run distribution.
+
+| Primary-key output | Stock RocksDB, s | StreamFusion interior with stock writer, s |
+| --- | ---: | ---: |
+| q4 | 13.123166 | 9.691318 |
+| q9 | 51.503496 | 11.296820 |
+| q15 | 12.252335 | 10.342385 |
+| q16 | 11.708422 | 9.232895 |
+| q17 | 6.715397 | 6.440399 |
+| q18 | 12.355967 | 8.163145 |
+| q19 | 27.484399 | 23.413155 |
+
+Primary-key timings are single-pair correctness evidence, excluded from the append-only
+geometric mean and from Kafka comparisons. No Kafka benchmark was rerun.

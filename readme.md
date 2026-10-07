@@ -229,7 +229,10 @@ differ from exact Fluss SQL and default at-least-once delivery.
 | q22 | 4.970 | 2.383 | 2.09× | 1.33× |
 | q23 | 10.863 | 3.525 | 3.08× | 1.69× |
 
-Append-only median speedups have a **2.02× geomean**. q2, q20 and q23 have
+Append-only median speedups have a **2.02× geomean on memory state**. A matched
+[RocksDB run](docs/connectors/fluss.md#rocksdb-nexmark-validation) has a **2.34×
+geomean** over the same 16 queries, with mini-batching off and fixed 128 MiB state
+pools per slot. The memory trials for q2, q20 and q23 have
 substantial variance; startup/shutdown still dominate many jobs. All deterministic
 outputs match stock Flink; q12 observes processing time. The seven primary-key
 outputs pass separate correctness checks with stock production and no Kafka

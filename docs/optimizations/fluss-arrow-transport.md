@@ -139,3 +139,11 @@ native-plan checks, with stock primary-key writers. This is end-to-end evidence 
 the combined techniques, not attribution of the entire gain to receive or compression.
 [Every final trial and configuration](../connectors/fluss.md#final-nexmark-validation)
 is retained alongside the independent controls.
+
+The matched [RocksDB matrix](../connectors/fluss.md#rocksdb-nexmark-validation)
+has a **2.34× append-only median-speedup geomean**, retaining full job costs
+and all 55 measured pairs. It includes the Java-side repair of under-aligned
+variable-width offsets before FFI import: Arrow-rs reads the last offset before
+its native alignment pass. Data and validity remain borrowed; only offset buffers
+that fail four-byte alignment are copied by this guard. Disk-state results do not
+isolate the transport gains from the operators or the backend.
