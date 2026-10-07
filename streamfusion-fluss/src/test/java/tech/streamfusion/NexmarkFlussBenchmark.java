@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.ZoneId;
@@ -201,6 +202,9 @@ class NexmarkFlussBenchmark {
                     Thread.sleep(50);
                   } catch (InterruptedException stop) {
                     return;
+                  } catch (UncheckedIOException failure) {
+                    // RocksDB renames and removes temporary files while the observer traverses.
+                    if (!(failure.getCause() instanceof NoSuchFileException)) throw failure;
                   } catch (IOException failure) {
                     throw new UncheckedIOException(failure);
                   }

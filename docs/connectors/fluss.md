@@ -807,3 +807,9 @@ Queries with at least a 1.5× maximum/minimum trial spread in either engine are 
 
 Primary-key timings are single-pair correctness evidence, excluded from the append-only
 geometric mean and from Kafka comparisons. No Kafka benchmark was rerun.
+
+The untimed RocksDB engagement observer retries when an unrelated temporary file
+disappears during directory traversal. RocksDB can rename OPTIONS files while the
+job starts; that race is not evidence that the backend failed to engage. Other I/O
+errors still fail the observer, and the stock CURRENT/native live-handle assertions
+remain required. This observer correction does not change any measured job boundary.
