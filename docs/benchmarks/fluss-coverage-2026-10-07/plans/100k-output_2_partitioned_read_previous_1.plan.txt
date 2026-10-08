@@ -1,0 +1,47 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.coverage_bench.output_2_partitioned_read_previous_1], fields=[id, metric, part])
++- LogicalProject(id=[$0], metric=[$1], part=[$2])
+   +- LogicalTableScan(table=[[fluss, coverage_bench, partitioned_source_2]])
+
+== Optimized Physical Plan ==
+NativeFlussSink(reuseBarrier=[45])
++- RowDataToArrow(reuseBarrier=[44])
+   +- TableSourceScan(table=[[fluss, coverage_bench, partitioned_source_2]], fields=[id, metric, part])
+
+== Optimized Execution Plan ==
+NativeFlussSink
++- RowDataToArrow(fields=[3])
+   +- TableSourceScan(table=[[fluss, coverage_bench, partitioned_source_2]], fields=[id, metric, part])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 155,
+    "type" : "Source: partitioned_source_2[111]",
+    "pact" : "Data Source",
+    "contents" : "[111]:TableSourceScan(table=[[fluss, coverage_bench, partitioned_source_2]], fields=[id, metric, part])",
+    "parallelism" : 4
+  }, {
+    "id" : 157,
+    "type" : "RowDataToArrowExecNode[112]",
+    "pact" : "Operator",
+    "contents" : "[112]:RowDataToArrow(fields=[3])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 155,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 160,
+    "type" : "native-fluss-append-sink: Writer",
+    "pact" : "Operator",
+    "contents" : "native-fluss-append-sink: Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 157,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

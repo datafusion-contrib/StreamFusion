@@ -187,10 +187,10 @@ class FlussSqlTest {
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"client.scanner.log.fetch.max-bytes", "netty.client.allocator.heap-buffer-first"})
+      strings = {"client.scanner.log.fetch.max-bytes", "client.scanner.log.max-poll-records"})
   void explicitConsumerAndProducerSettingsKeepTheirRespectiveEndpointsStock(String sourceSetting)
       throws Exception {
-    String sourceValue = sourceSetting.startsWith("netty.") ? "true" : "4mb";
+    String sourceValue = sourceSetting.endsWith("max-poll-records") ? "10" : "4mb";
     String source =
         table(
             "a INT, b BIGINT", "ARROW", "NONE", ", '" + sourceSetting + "'='" + sourceValue + "'");
@@ -207,6 +207,204 @@ class FlussSqlTest {
         false,
         false);
     assertEquals(List.of("+I[1, 10]"), query(output, "*", false, false));
+  }
+
+  @Test
+  void partitionedAppendAndMixedBucketCountsStayColumnar() throws Exception {
+    String source = table("a INT, b BIGINT, part STRING", "ARROW", "NONE", "");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    for (int i = 0; i < 128; i++)
+      writer.append(
+          GenericRow.of(i, (long) i, BinaryString.fromString(i % 2 == 0 ? "old" : "new")));
+    writer.flush();
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      String output = "partitioned_" + UUID.randomUUID().toString().replace("-", "");
+      ddl(
+          "CREATE TABLE "
+              + qualified(output)
+              + " (a INT, b BIGINT, part STRING) PARTITIONED BY (part) WITH ('bucket.num'='2',"
+              + " 'table.log.format'='ARROW', 'table.log.arrow.compression.type'='NONE',"
+              + " 'scan.startup.mode'='earliest', 'scan.bounded.mode'='latest-offset')");
+      ddl("ALTER TABLE " + qualified(output) + " ADD PARTITION (part='old')");
+      ddl("ALTER TABLE " + qualified(output) + " SET ('bucket.num'='4')");
+      insert(
+          "INSERT INTO " + qualified(output) + " SELECT * FROM " + qualified(source),
+          output,
+          nativeRun,
+          nativeRun,
+          nativeRun);
+      var partitions = connection.getAdmin().listPartitionInfos(path(output)).get();
+      assertEquals(2, partitions.size());
+      for (var partition : partitions)
+        assertEquals(
+            partition.getPartitionName().equals("old") ? 2 : 4, partition.getBucketCount());
+      var stock = query(output, "a, b, part", false, false).stream().sorted().toList();
+      var accelerated = query(output, "a, b, part", true, true).stream().sorted().toList();
+      assertEquals(128, stock.size());
+      assertEquals(stock, accelerated);
+      var tables = environment(true);
+      try {
+        String sql = "SELECT a, b FROM " + qualified(output) + " WHERE part='new' AND b>=64";
+        plan(tables, sql, output + "_partition_filter", true, false);
+        List<String> rows = new ArrayList<>();
+        try (var iterator = tables.executeSql(sql).collect()) {
+          iterator.forEachRemaining(row -> rows.add(row.toString()));
+        }
+        assertEquals(32, rows.size());
+      } finally {
+        tables.getCatalog("fluss").orElseThrow().close();
+      }
+    }
+  }
+
+  @Test
+  void partitionedPrimaryKeyLogPreservesProjectedChangelog() throws Exception {
+    String source = "pk_partitioned_" + UUID.randomUUID().toString().replace("-", "");
+    ddl(
+        "CREATE TABLE "
+            + qualified(source)
+            + " (a INT NOT NULL, part STRING NOT NULL, b BIGINT, PRIMARY KEY (a, part) NOT"
+            + " ENFORCED) PARTITIONED BY (part) WITH ('bucket.num'='2', 'table.log.format'='ARROW',"
+            + " 'table.changelog.image'='FULL', 'scan.startup.mode'='earliest',"
+            + " 'scan.bounded.mode'='latest-offset')");
+    var writer = connection.getTable(path(source)).newUpsert().createWriter();
+    writer.upsert(GenericRow.of(1, BinaryString.fromString("p0"), 10L)).get();
+    writer.upsert(GenericRow.of(1, BinaryString.fromString("p1"), 20L)).get();
+    writer.upsert(GenericRow.of(1, BinaryString.fromString("p0"), 11L)).get();
+    writer.delete(GenericRow.of(1, BinaryString.fromString("p1"), null)).get();
+    writer.flush();
+    var stock = query(source, "a, b", false, false).stream().sorted().toList();
+    var accelerated = query(source, "a, b", true, true).stream().sorted().toList();
+    assertTrue(stock.stream().anyMatch(row -> row.startsWith("-D")));
+    assertEquals(stock, accelerated);
+  }
+
+  @Test
+  void runningSourceDiscoversNewPartitionsAndBucketCounts() throws Exception {
+    String source = "discovery_" + UUID.randomUUID().toString().replace("-", "");
+    ddl(
+        "CREATE TABLE "
+            + qualified(source)
+            + " (a INT, part STRING) PARTITIONED BY (part) WITH ('bucket.num'='1',"
+            + " 'table.log.format'='ARROW', 'scan.startup.mode'='earliest',"
+            + " 'scan.partition.discovery.interval'='100ms')");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    writer.append(GenericRow.of(1, BinaryString.fromString("p0")));
+    writer.flush();
+    var tables = environment(true);
+    var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+    try {
+      String sql = "SELECT a, part FROM " + qualified(source);
+      plan(tables, sql, source + "_discovery", true, false);
+      var result = tables.executeSql(sql);
+      try (var iterator = result.collect()) {
+        assertEquals(
+            "+I[1, p0]",
+            executor
+                .submit(() -> iterator.next().toString())
+                .get(30, java.util.concurrent.TimeUnit.SECONDS));
+        ddl("ALTER TABLE " + qualified(source) + " SET ('bucket.num'='4')");
+        writer.append(GenericRow.of(2, BinaryString.fromString("p1")));
+        writer.flush();
+        assertEquals(
+            "+I[2, p1]",
+            executor
+                .submit(() -> iterator.next().toString())
+                .get(30, java.util.concurrent.TimeUnit.SECONDS));
+        var partitions = connection.getAdmin().listPartitionInfos(path(source)).get();
+        for (var partition : partitions)
+          assertEquals(
+              partition.getPartitionName().equals("p0") ? 1 : 4, partition.getBucketCount());
+        ddl("ALTER TABLE " + qualified(source) + " DROP PARTITION (part='p0')");
+      } finally {
+        result.getJobClient().orElseThrow().cancel().get();
+      }
+    } finally {
+      executor.shutdownNow();
+      tables.getCatalog("fluss").orElseThrow().close();
+    }
+  }
+
+  @Test
+  void connectionSettingsReachNativeEndpoints() throws Exception {
+    String options =
+        ", 'client.id'='arrow-configured', 'client.connect-timeout'='20s',"
+            + " 'client.request-timeout'='30s', 'netty.client.num-network-threads'='2',"
+            + " 'netty.client.allocator.heap-buffer-first'='true',"
+            + " 'client.security.protocol'='PLAINTEXT'";
+    String source = table("a INT, b BIGINT", "ARROW", "NONE", options);
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    writer.append(GenericRow.of(1, 10L));
+    writer.flush();
+    String output = table("a INT, b BIGINT", "ARROW", "NONE", options);
+    insert(
+        "INSERT INTO " + qualified(output) + " SELECT * FROM " + qualified(source),
+        output,
+        true,
+        true,
+        true);
+    assertEquals(List.of("+I[1, 10]"), query(output, "*", true, true));
+  }
+
+  @Test
+  void streamingBatchFilterKeepsResidualAndProjectedColumnsCorrect() throws Exception {
+    String source = table("a INT, b BIGINT", "ARROW", "NONE", ", 'table.statistics.columns'='*'");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    for (int batch = 0; batch < 4; batch++) {
+      for (int i = 0; i < 128; i++) writer.append(GenericRow.of(batch * 128 + i, (long) batch));
+      writer.flush();
+    }
+    List<String> stock = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      var tables = environment(nativeRun);
+      try {
+        String sql = "SELECT a FROM " + qualified(source) + " WHERE b=2 AND a>=300";
+        plan(tables, sql, source + "_batch_filter_" + nativeRun, nativeRun, false);
+        if (nativeRun) assertTrue(tables.explainSql(sql).contains("batchFilter"));
+        List<String> result = new ArrayList<>();
+        try (var iterator = tables.executeSql(sql).collect()) {
+          iterator.forEachRemaining(row -> result.add(row.toString()));
+        }
+        result.sort(String::compareTo);
+        if (stock == null) stock = result;
+        else assertEquals(stock, result);
+        assertEquals(84, result.size());
+      } finally {
+        tables.getCatalog("fluss").orElseThrow().close();
+      }
+    }
+  }
+
+  @Test
+  void differentBatchPredicatesDoNotShareTheirPrunedSource() throws Exception {
+    String source = table("a INT, b BIGINT", "ARROW", "NONE", ", 'table.statistics.columns'='*'");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    for (int batch = 0; batch < 3; batch++) {
+      for (int i = 0; i < 100; i++) writer.append(GenericRow.of(batch * 100 + i, (long) batch));
+      writer.flush();
+    }
+    var tables = environment(true);
+    try {
+      String sql =
+          "SELECT a FROM "
+              + qualified(source)
+              + " WHERE b=1 UNION ALL SELECT a FROM "
+              + qualified(source)
+              + " WHERE b=2";
+      plan(tables, sql, source + "_different_filters", true, false);
+      List<String> result = new ArrayList<>();
+      try (var iterator = tables.executeSql(sql).collect()) {
+        iterator.forEachRemaining(row -> result.add(row.toString()));
+      }
+      assertEquals(
+          java.util.stream.IntStream.range(100, 300)
+              .mapToObj(i -> "+I[" + i + "]")
+              .sorted()
+              .toList(),
+          result.stream().sorted().toList());
+    } finally {
+      tables.getCatalog("fluss").orElseThrow().close();
+    }
   }
 
   @Test

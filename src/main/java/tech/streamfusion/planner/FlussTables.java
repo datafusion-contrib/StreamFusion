@@ -66,7 +66,10 @@ final class FlussTables {
             default ->
                 throw new IllegalArgumentException("snapshot startup is outside Arrow admission");
           };
-      Configuration config = (Configuration) field(source, "flussConfig");
+      Configuration config =
+          clientConfiguration(
+              (Configuration) field(source, "flussConfig"),
+              (java.util.Map<?, ?>) field(source, "tableOptions"));
       TablePath path = (TablePath) field(source, "tablePath");
       RowType physical = (RowType) field(source, "tableOutputType");
       FlinkSource<RowData> delegate =
@@ -74,10 +77,10 @@ final class FlussTables {
               config,
               path,
               ((int[]) field(source, "primaryKeyIndexes")).length > 0,
-              false,
+              ((int[]) field(source, "partitionKeyIndexes")).length > 0,
               FlinkConversions.toFlussRowType(physical),
               null,
-              null,
+              (org.apache.fluss.predicate.Predicate) field(source, "logRecordBatchFilter"),
               start,
               FlinkConnectorOptionsUtils.toStoppingOffsetsInitializer(bounded),
               FlinkConnectorOptionsUtils.toBoundedness(true, bounded),
@@ -86,7 +89,7 @@ final class FlussTables {
               new RowDataDeserializationSchema(),
               null,
               true,
-              null,
+              (org.apache.fluss.predicate.Predicate) field(source, "partitionFilters"),
               null,
               (LeaseContext) field(source, "leaseContext"));
       String sourceKey = sourceSharingKey(scan);
@@ -115,6 +118,7 @@ final class FlussTables {
               delegate,
               config,
               path,
+              (org.apache.fluss.predicate.Predicate) field(source, "logRecordBatchFilter"),
               readWatermark,
               sourceKey,
               shared,
@@ -160,6 +164,11 @@ final class FlussTables {
           + "|"
           + new java.util.TreeMap<>(FilesystemTables.options(scan))
           + "|"
+          + predicateKey((org.apache.fluss.predicate.Predicate) field(source, "partitionFilters"))
+          + "|"
+          + predicateKey(
+              (org.apache.fluss.predicate.Predicate) field(source, "logRecordBatchFilter"))
+          + "|"
           + physical.asSerializableString()
           + "|"
           + (watermark == null
@@ -171,9 +180,16 @@ final class FlussTables {
                   + watermark.expression.digest()
                   + ":"
                   + watermark.idleTimeoutMillis);
-    } catch (ReflectiveOperationException incompatible) {
+    } catch (ReflectiveOperationException | java.io.IOException | RuntimeException incompatible) {
       return null;
     }
+  }
+
+  static String predicateKey(org.apache.fluss.predicate.Predicate predicate)
+      throws java.io.IOException {
+    if (predicate == null) return "none";
+    return java.util.HexFormat.of()
+        .formatHex(org.apache.flink.util.InstantiationUtil.serializeObject(predicate));
   }
 
   static String sourceFallback(FlinkTableSource source) throws ReflectiveOperationException {
@@ -186,14 +202,10 @@ final class FlussTables {
       clientFallback = tableTransportFallback((java.util.Map<?, ?>) field(source, "tableOptions"));
     if (clientFallback != null) return clientFallback;
     if (!(boolean) field(source, "streaming")) return "batch/snapshot reads use Flink";
-    if (((int[]) field(source, "partitionKeyIndexes")).length != 0)
-      return "partition discovery/removal is not accelerated";
     if ((long) field(source, "limit") >= 0
         || (boolean) field(source, "selectRowCount")
-        || field(source, "singleRowFilter") != null
-        || field(source, "partitionFilters") != null
-        || field(source, "logRecordBatchFilter") != null)
-      return "filter, limit or aggregate pushdown uses Flink";
+        || field(source, "singleRowFilter") != null)
+      return "point lookup, limit or aggregate pushdown uses Flink";
     TableConfig config = (TableConfig) field(source, "tableConfig");
     if (config.getLogFormat() != LogFormat.ARROW) return "only ARROW logs are admitted";
     if ((boolean) field(source, "isDataLakeEnabled") || field(source, "lakeSource") != null)
@@ -241,8 +253,11 @@ final class FlussTables {
           sink.getInput(),
           sink.getRowType(),
           type,
-          (Configuration) field(tableSink, "flussConfig"),
-          (TablePath) field(tableSink, "tablePath"));
+          clientConfiguration(
+              (Configuration) field(tableSink, "flussConfig"),
+              sink.contextResolvedTable().getResolvedTable().getOptions()),
+          (TablePath) field(tableSink, "tablePath"),
+          (List<String>) field(tableSink, "partitionKeys"));
     } catch (ReflectiveOperationException | LinkageError incompatible) {
       context.decline("fluss sink: installed Java connector is outside the verified 1.0 API");
       return null;
@@ -258,9 +273,7 @@ final class FlussTables {
     if (clientFallback != null) return clientFallback;
     if (((int[]) field(sink, "primaryKeyIndexes")).length != 0)
       return "primary-key production is explicitly not accelerated";
-    if (!((List<?>) field(sink, "partitionKeys")).isEmpty()
-        || !((List<?>) field(sink, "bucketKeys")).isEmpty())
-      return "partitioned or bucket-key routing uses Flink";
+    if (!((List<?>) field(sink, "bucketKeys")).isEmpty()) return "bucket-key routing uses Flink";
     if (!(boolean) field(sink, "streaming")) return "batch sinks use Flink";
     if (field(sink, "producerId") != null)
       return "explicit undo-recovery producer identity uses Flink";
@@ -307,7 +320,10 @@ final class FlussTables {
   private static String tableTransportFallback(java.util.Map<?, ?> options) {
     return options.keySet().stream()
         .map(Object::toString)
-        .filter(key -> key.startsWith("client.") || key.startsWith("netty."))
+        .filter(
+            key ->
+                (key.startsWith("client.") || key.startsWith("netty."))
+                    && !tech.streamfusion.fluss.FlussClientOptions.supported(key))
         .sorted()
         .findFirst()
         .map(key -> "client setting " + key + " is outside the verified defaults")
@@ -316,10 +332,21 @@ final class FlussTables {
 
   private static String clientOptionsFallback(Configuration config) {
     for (String key : new java.util.TreeSet<>(config.keySet())) {
-      if (!key.equals(org.apache.fluss.config.ConfigOptions.BOOTSTRAP_SERVERS.key()))
+      if (!tech.streamfusion.fluss.FlussClientOptions.supported(key))
         return "client setting " + key + " is outside the verified defaults";
     }
     return null;
+  }
+
+  private static Configuration clientConfiguration(
+      Configuration base, java.util.Map<?, ?> options) {
+    Configuration result = new Configuration(base);
+    options.forEach(
+        (key, value) -> {
+          if (tech.streamfusion.fluss.FlussClientOptions.supported(key.toString()))
+            result.setString(key.toString(), value.toString());
+        });
+    return result;
   }
 
   private static Object field(Object object, String name) throws ReflectiveOperationException {

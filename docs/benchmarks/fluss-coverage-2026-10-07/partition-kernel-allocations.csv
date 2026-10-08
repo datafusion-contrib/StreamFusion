@@ -1,0 +1,43 @@
+package,suite,case,allocation_calls,requested_bytes,shared_output_buffer_bytes,new_output_buffer_bytes
+streamfusion-bridge,handoffs,bridge/c_data/16/bytes=8/cached=false,58,3723,308,2
+streamfusion-bridge,handoffs,bridge/c_data/16/bytes=8/cached=true,40,2784,308,2
+streamfusion-bridge,handoffs,bridge/c_data/16/bytes=264/cached=false,58,3723,3892,2
+streamfusion-bridge,handoffs,bridge/c_data/16/bytes=264/cached=true,40,2784,3892,2
+streamfusion-bridge,handoffs,bridge/c_data/16/bytes=4096/cached=false,58,3723,57540,2
+streamfusion-bridge,handoffs,bridge/c_data/16/bytes=4096/cached=true,40,2784,57540,2
+streamfusion-bridge,handoffs,bridge/c_data/1024/bytes=8/cached=false,58,3819,19316,128
+streamfusion-bridge,handoffs,bridge/c_data/1024/bytes=8/cached=true,40,2880,19316,128
+streamfusion-bridge,handoffs,bridge/c_data/1024/bytes=264/cached=false,58,3819,244084,128
+streamfusion-bridge,handoffs,bridge/c_data/1024/bytes=264/cached=true,40,2880,244084,128
+streamfusion-bridge,handoffs,bridge/c_data/1024/bytes=4096/cached=false,58,3819,3608580,128
+streamfusion-bridge,handoffs,bridge/c_data/1024/bytes=4096/cached=true,40,2880,3608580,128
+streamfusion-bridge,handoffs,bridge/c_data/16384/bytes=8/cached=false,58,5739,308964,2048
+streamfusion-bridge,handoffs,bridge/c_data/16384/bytes=8/cached=true,40,4800,308964,2048
+streamfusion-bridge,handoffs,bridge/c_data/16384/bytes=264/cached=false,58,5739,3904228,2048
+streamfusion-bridge,handoffs,bridge/c_data/16384/bytes=264/cached=true,40,4800,3904228,2048
+streamfusion-bridge,handoffs,bridge/c_data/16384/bytes=4096/cached=false,58,5739,57720836,2048
+streamfusion-bridge,handoffs,bridge/c_data/16384/bytes=4096/cached=true,40,4800,57720836,2048
+streamfusion-bridge,handoffs,"timestamp/16/Timestamp(Second, None)",9,560,0,130
+streamfusion-bridge,handoffs,"timestamp/16/Timestamp(Millisecond, None)",9,560,0,130
+streamfusion-bridge,handoffs,"timestamp/16/Timestamp(Microsecond, None)",9,560,0,130
+streamfusion-bridge,handoffs,"timestamp/16/Timestamp(Nanosecond, None)",9,560,0,130
+streamfusion-bridge,handoffs,ordering/16/nan_nulls,5,416,0,130
+streamfusion-bridge,handoffs,partition/16/keys=1,17,1724,322,0
+streamfusion-bridge,handoffs,partition/16/keys=64,148,15620,0,322
+streamfusion-bridge,handoffs,partition/16/keys=16,148,15620,0,322
+streamfusion-bridge,handoffs,"timestamp/1024/Timestamp(Second, None)",16,16816,0,8320
+streamfusion-bridge,handoffs,"timestamp/1024/Timestamp(Millisecond, None)",16,16816,0,8320
+streamfusion-bridge,handoffs,"timestamp/1024/Timestamp(Microsecond, None)",16,16816,0,8320
+streamfusion-bridge,handoffs,"timestamp/1024/Timestamp(Nanosecond, None)",16,16816,0,8320
+streamfusion-bridge,handoffs,ordering/1024/nan_nulls,5,8544,0,8320
+streamfusion-bridge,handoffs,partition/1024/keys=1,20,26836,20608,0
+streamfusion-bridge,handoffs,partition/1024/keys=64,616,102932,0,20608
+streamfusion-bridge,handoffs,partition/1024/keys=1024,7216,891732,0,20608
+streamfusion-bridge,handoffs,"timestamp/16384/Timestamp(Second, None)",24,266416,0,133120
+streamfusion-bridge,handoffs,"timestamp/16384/Timestamp(Millisecond, None)",24,266416,0,133120
+streamfusion-bridge,handoffs,"timestamp/16384/Timestamp(Microsecond, None)",24,266416,0,133120
+streamfusion-bridge,handoffs,"timestamp/16384/Timestamp(Nanosecond, None)",24,266416,0,133120
+streamfusion-bridge,handoffs,ordering/16384/nan_nulls,5,133344,0,133120
+streamfusion-bridge,handoffs,partition/16384/keys=1,24,410836,329728,0
+streamfusion-bridge,handoffs,partition/16384/keys=64,872,857492,0,329728
+streamfusion-bridge,handoffs,partition/16384/keys=16384,114744,14241556,0,329728

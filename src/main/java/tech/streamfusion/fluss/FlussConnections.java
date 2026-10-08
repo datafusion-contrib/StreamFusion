@@ -20,8 +20,9 @@ final class FlussConnections {
 
   static Lease acquire(Configuration config) throws IOException {
     Configuration transport = new Configuration(config);
-    if (Boolean.parseBoolean(
-        System.getProperty("streamfusion.fluss.direct-receive.enabled", "true"))) {
+    if (!transport.contains(ConfigOptions.NETTY_CLIENT_ALLOCATOR_HEAP_BUFFER_FIRST)
+        && Boolean.parseBoolean(
+            System.getProperty("streamfusion.fluss.direct-receive.enabled", "true"))) {
       transport.set(ConfigOptions.NETTY_CLIENT_ALLOCATOR_HEAP_BUFFER_FIRST, false);
     }
     Map<String, String> settings = new HashMap<>(transport.toMap());

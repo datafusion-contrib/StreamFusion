@@ -8,6 +8,7 @@ import org.apache.fluss.flink.source.FlinkSource;
 import org.apache.fluss.flink.source.split.SourceSplitBase;
 import org.apache.fluss.flink.source.state.SourceEnumeratorState;
 import org.apache.fluss.metadata.TablePath;
+import org.apache.fluss.predicate.Predicate;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.WatermarkExpression;
 
@@ -16,6 +17,7 @@ public final class FlussArrowSource
     implements Source<ArrowBatch, SourceSplitBase, SourceEnumeratorState> {
   private static final long serialVersionUID = 1L;
   private final FlinkSource<?> delegate;
+  private final Predicate filter;
   private final Configuration config;
   private final TablePath path;
   private final RowType outputType;
@@ -26,12 +28,14 @@ public final class FlussArrowSource
       FlinkSource<?> delegate,
       Configuration config,
       TablePath path,
+      Predicate filter,
       RowType outputType,
       int rowtimeIndex,
       WatermarkExpression watermark) {
     this.delegate = delegate;
     this.config = config;
     this.path = path;
+    this.filter = filter;
     this.outputType = outputType;
     this.rowtimeIndex = rowtimeIndex;
     this.watermark = watermark;
@@ -45,7 +49,8 @@ public final class FlussArrowSource
   @Override
   public SourceReader<ArrowBatch, SourceSplitBase> createReader(SourceReaderContext context)
       throws Exception {
-    return new FlussArrowSourceReader(context, config, path, outputType, rowtimeIndex, watermark);
+    return new FlussArrowSourceReader(
+        context, config, path, outputType, rowtimeIndex, watermark, filter);
   }
 
   @Override

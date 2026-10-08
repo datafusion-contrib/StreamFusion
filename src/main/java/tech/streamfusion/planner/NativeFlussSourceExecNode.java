@@ -12,6 +12,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.flink.source.FlinkSource;
 import org.apache.fluss.metadata.TablePath;
+import org.apache.fluss.predicate.Predicate;
 import tech.streamfusion.fluss.FlussArrowSource;
 import tech.streamfusion.operator.*;
 
@@ -27,6 +28,7 @@ public final class NativeFlussSourceExecNode extends ExecNodeBase<ArrowBatch>
       FlinkSource<?> delegate,
       Configuration config,
       TablePath path,
+      Predicate filter,
       ScanWatermarkSpec watermark) {
     super(
         ExecNodeContext.newNodeId(),
@@ -41,6 +43,7 @@ public final class NativeFlussSourceExecNode extends ExecNodeBase<ArrowBatch>
             delegate,
             config,
             path,
+            filter,
             FlinkTypeFactory$.MODULE$.toLogicalRowType(type),
             watermark == null ? -1 : watermark.rowtimeIndex,
             watermark == null ? null : watermark.expression);

@@ -1,0 +1,61 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.coverage_bench.output_16_filtered_read_previous_1], fields=[id, metric, part])
++- LogicalProject(id=[$0], metric=[$1], part=[$2])
+   +- LogicalFilter(condition=[=($1, 7)])
+      +- LogicalTableScan(table=[[fluss, coverage_bench, source_16]])
+
+== Optimized Physical Plan ==
+NativeFlussSink(reuseBarrier=[149])
++- NativeCalc(reuseBarrier=[148])
+   +- RowDataToArrow(reuseBarrier=[147])
+      +- TableSourceScan(table=[[fluss, coverage_bench, source_16, filter=[=(metric, 7:BIGINT)]]], fields=[id, metric, part])
+
+== Optimized Execution Plan ==
+NativeFlussSink
++- NativeCalc
+   +- RowDataToArrow(fields=[3])
+      +- TableSourceScan(table=[[fluss, coverage_bench, source_16, filter=[=(metric, 7:BIGINT)]]], fields=[id, metric, part])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 425,
+    "type" : "Source: source_16[309]",
+    "pact" : "Data Source",
+    "contents" : "[309]:TableSourceScan(table=[[fluss, coverage_bench, source_16, filter=[=(metric, 7:BIGINT)]]], fields=[id, metric, part])",
+    "parallelism" : 4
+  }, {
+    "id" : 427,
+    "type" : "RowDataToArrowExecNode[310]",
+    "pact" : "Operator",
+    "contents" : "[310]:RowDataToArrow(fields=[3])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 425,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 428,
+    "type" : "NativeCalcExecNode[311]",
+    "pact" : "Operator",
+    "contents" : "[311]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 427,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 431,
+    "type" : "native-fluss-append-sink: Writer",
+    "pact" : "Operator",
+    "contents" : "native-fluss-append-sink: Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 428,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

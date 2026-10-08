@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-07",
+  "flink": "2.2.1",
+  "fluss": "1.0.0",
+  "zookeeper": "3.9.2",
+  "java": "17",
+  "native_profile": "release",
+  "cpu": "Intel i7-12650H",
+  "logical_cpus": 16,
+  "parallelism": 4,
+  "test_heap_gib": 2,
+  "checkpoint_ms": 1000,
+  "warmups_per_mode": 1,
+  "measured_runs_per_mode": 3,
+  "mode_order": "rotated by repetition",
+  "columns": [
+    "BIGINT",
+    "BIGINT",
+    "STRING"
+  ],
+  "partitions": [
+    2,
+    16
+  ],
+  "rows": [
+    100000,
+    500000
+  ],
+  "partition_buckets": {
+    "existing_p0": 2,
+    "new": 4
+  },
+  "stock_parity": "exact output multiset after every job"
+}

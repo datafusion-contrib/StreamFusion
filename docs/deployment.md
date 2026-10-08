@@ -262,8 +262,9 @@ Java-only regression and records the Maven version before the native image build
 The source build includes an optional `streamfusion-fluss` Java extension. Install it
 alongside the matching core payload and Apache Fluss's released
 `org.apache.fluss:fluss-flink-2.2:1.0.0` JAR. It reuses the core Arrow bridge and adds no
-native library. Enable planning with `-Dstreamfusion.fluss.enabled=true` only while
-validating the experimental coverage described in [Fluss](connectors/fluss.md).
+native library. Verified planning substitutions are enabled by default when the module is installed.
+Set `-Dstreamfusion.fluss.enabled=false` to retain the stock endpoints; see
+the experimental coverage described in [Fluss](connectors/fluss.md).
 Primary-key writes remain on Flink's normal Fluss connector.
 
 ## Shared source ownership

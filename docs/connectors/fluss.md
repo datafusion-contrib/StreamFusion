@@ -1,10 +1,11 @@
 # Apache Fluss
 
-**Status:** Experimental, opt-in. The optional `streamfusion-fluss` module uses the
-released Apache Fluss Java connector 1.0.0. Enable its verified planner substitutions
-with `-Dstreamfusion.fluss.enabled=true`. All 23 runnable Nexmark queries pass, with
-matching deterministic output. The narrower verified connector boundary and
-short-job-dominated benchmark evidence keep the stock connector as the default.
+**Status:** Experimental, enabled by default when installed. The optional `streamfusion-fluss`
+module uses the released Apache Fluss Java connector 1.0.0. Disable its verified planner
+substitutions with `-Dstreamfusion.fluss.enabled=false`. All 23 runnable Nexmark queries pass,
+with matching deterministic output. The admission whitelist keeps unsupported combinations
+on the stock connector. Benchmark evidence remains dominated by short jobs and does not
+establish uniform sustained speedups.
 [Final 2M-event results](#final-nexmark-validation) include all append-only trials and
 separate primary-key correctness pairs.
 
@@ -59,30 +60,53 @@ still creates new Arrow buffers. NONE and ZSTD retain their released codecs.
 
 ## Current implementation boundary
 
-The source admits streaming, non-partitioned `ARROW` log tables, including primary-key
-logs, with earliest, latest or timestamp startup (append-only `full` startup is also an earliest log scan) and the upstream enumerator's bounded
-stopping offsets. Nonempty top-level projections on schema-version-1 tables are sent to the broker.
-Fluss 1.0 schema evolution adds nullable trailing columns. On evolved tables, the source
-reads complete batches and selects columns locally, filling historical missing columns
-with nulls; this avoids positional projection of a new column from an older batch. A projected
-struct retains its complete nested fields. CDC kinds remain aligned with the selected
-rows. Repeated identical scans can share a columnar source, preserving their shared input schema.
-Checkpoint positions advance after downstream collection succeeds; restoring a
-position inside a log batch slices away the already-consumed rows.
+The source admits streaming `ARROW` log tables, including partitioned and primary-key
+logs, with earliest, latest or timestamp startup (append-only `full` is an earliest log
+scan) and the upstream enumerator's bounded stopping offsets. Fluss's enumerator owns
+partition discovery, partition pruning, and each partition's actual bucket range. Existing
+partitions retain their bucket count after `ALTER TABLE ... SET ('bucket.num'=...)`;
+new partitions use the new default, including partitions created during a running job.
+The reader acknowledges partition removal after releasing queued data and finishing an
+outstanding fetch, and removes those splits from checkpoint state. Until acknowledgement,
+retiring splits remain in checkpoints so recovery can repeat the removal protocol.
+Earliest-offset sentinels are resolved through the SDK, including empty buckets; bounded
+empty splits finish without repeated fetches. Fetch and produce requests include the
+actual partition routing bucket count, rather than the current table default.
 
-Primary-key initial snapshot startup, partition discovery, data-lake hybrid reads, merge engines, pushed filters, limits,
-aggregate pushdowns, custom client settings, empty projections and unsupported watermarks use the stock Flink
-source. Tiered logs use Fluss's existing Java downloader and then select columns locally;
-selective remote range reads are not implemented.
+Nonempty top-level projections on schema-version-1 tables are sent to the broker.
+On evolved tables, complete batches are selected locally, filling historical missing
+nullable trailing columns. Projected structs retain their complete nested fields.
+CDC kinds stay aligned. Repeated scans share a source only when their partition and
+record-batch predicates match, using their serialized structure rather than display text.
+Checkpoint offsets advance after downstream collection;
+recovery inside a batch slices away previously consumed rows.
 
-The [client settings audit](fluss-client-settings.md) inventories all 46 released
-client/network options and the connector/table contracts. Only bootstrap servers
-are admitted as explicit client configuration; every other entry, including an
-explicit default, credentials, filesystem settings and unknown keys, retains the
-stock endpoint. Fallback diagnostics report the setting name without its value.
+Streaming append-log batch predicates accepted by Fluss are serialized with the released
+predicate encoder and sent with the full table schema ID, independently of projection.
+Broker statistics skip whole batches; Flink's residual predicate remains in the native
+query. Filtered-end offsets are queued after returned batches, including offset-only
+entries when nothing matches, so checkpoint progress never overtakes uncollected data.
+Tiered logs use Fluss's downloader and local column selection; selective remote range
+reads are not implemented.
 
-The Arrow sink is limited to insert-only input and explicitly resolved `ARROW` append-only tables without partition
-or bucket keys. Input fields map positionally to destination columns. Production uses
+Primary-key initial snapshots, batch-mode scans, data-lake hybrid reads, merge engines,
+point-lookup/limit/count pushdowns, empty projections and unsupported watermarks retain
+the stock source.
+
+The [client settings audit](fluss-client-settings.md) distinguishes settings delegated to
+the released Java connection from policies implemented by the Arrow reader/writer.
+Connection identity, connect/request timeout, network threads, heap/direct reception,
+and released plaintext/SASL configuration are forwarded. Dynamic partition creation's
+explicit enable/disable option is also supported. Unsupported scanner/writer policies,
+filesystem settings and unknown keys retain the stock endpoint, even when explicitly
+set to their defaults. Diagnostics name settings without their values.
+
+The Arrow sink is limited to insert-only input and explicitly resolved `ARROW` append-only tables without bucket keys. Partitioned
+inputs are split using the existing Rust Arrow partition kernel; payloads remain columnar,
+and only each group's first-row partition keys are exposed to Fluss's own partition-name
+getter. The released dynamic partition creator owns creation and auto-partition validation.
+Each partition uses its metadata bucket count and its own sticky assigner; writer sequences,
+request coalescing and acknowledgement chains are keyed by the complete table/partition/bucket. Input fields map positionally to destination columns. Production uses
 `ProduceLog` with the table's Arrow compression setting: matching that setting is needed
 because broker projection reconstructs IPC compression metadata from table configuration.
 The writer encodes on the task thread and pipelines a bounded queue across independent
@@ -98,7 +122,7 @@ split into columnar slices toward the writer's batch size; a single oversized re
 still fails like the stock writer. Checkpoint and end-of-input flushes wait for every acknowledgement.
 The queue obeys the Java client's writer-buffer limit and a 64-batch ceiling; production
 queue reservations are charged to the shared TaskManager memory budget. Primary-key production,
-batch sinks, explicit undo-recovery identities, bucket/dynamic partition shuffle,
+batch sinks, explicit undo-recovery identities, explicit bucket/dynamic-partition shuffle,
 merge engines, lake writes, row modifications and sink materialization use the stock
 Flink sink.
 Tables with enabled `table.statistics.columns` also retain the stock append writer:
@@ -180,6 +204,81 @@ q4, q9, q15, q16, q17, q18 and q19, following the Kafka suite's existing upsert 
 The remaining queries write append-only tables and must engage the Arrow append sink.
 The harness checks the actual broker table modes as well as the executed source/sink plans.
 
+## Partitioning and streaming-filter validation (2026-10-07)
+
+The expanded Fluss suite passes on released Flink 2.2.1 and 1.18.1: 119 tests per
+line, including the full suite and targeted final regressions on 2.2, and a clean
+119-test run on 1.18. Coverage includes mixed partition bucket counts, discovery,
+removal with an outstanding fetch, checkpoint restore inside a partitioned batch,
+filtered offset-only progress, distinct pushed predicates, SASL/PLAIN, explicit heap
+reception, disabled dynamic creation, and propagation of fetch errors on the task
+thread. The existing release Criterion partition-split fixtures also pass; their
+[allocation/Arrow-sharing inventory](../benchmarks/fluss-coverage-2026-10-07/partition-kernel-allocations.csv)
+is a fixture check rather than a new kernel timing result.
+
+`FlussCoverageBenchmark` measures bounded Fluss-to-Fluss `INSERT ... SELECT` jobs
+using the release native library, parallelism four, UTC, a one-second checkpoint
+interval, and a 2 GiB test JVM on a 16-logical-CPU Intel i7-12650H host. Each case
+has one warmup per mode and three measured runs, rotating stock/previous/native
+execution order. Inputs and output tables are prepared outside timing; the timer
+covers `executeSql(...).await()`, including planning, task startup, Arrow conversion,
+JNI, routing, RPC, acknowledgement flushes and task teardown before job completion.
+Catalog closure and exact sorted output-multiset checks run outside timing. Every
+warmup and measured job passes parity, and native plans assert the intended endpoints
+and partition splitter or batch filter.
+
+The three-column corpus is `(id BIGINT, metric BIGINT, part STRING)`, with
+`metric=floor(id/4096)%16` and `part='p'+(id%partitions)`, flushed by the released
+writer every 4,096 rows. Unpartitioned inputs have four buckets and statistics on all
+columns; filtered reads select `metric=7` while retaining the residual filter.
+Partitioned read inputs and write destinations start with a two-bucket `p0` partition,
+then change the table default to four for newly created partitions. Partitioned reads
+and filtered reads write unpartitioned two-bucket tables. All log encoding is ARROW/NONE.
+Previous reproduces earlier planner coverage by disabling only the affected endpoint,
+retaining current transport and interior operators: stock sink for partitioned writes,
+stock source for partitioned/filtered reads. The 500,000-row write/filter and
+partitioned-read sweeps used separate fixtures; the 100,000-row sweep preseeded both
+input forms and ran all three workloads in one fixture.
+
+Values below are median seconds with the complete three-run min–max range. Raw
+[100,000-row trials](../benchmarks/fluss-coverage-2026-10-07/100k.csv),
+[500,000-row trials](../benchmarks/fluss-coverage-2026-10-07/500k.csv), and
+[representative executed plans](../benchmarks/fluss-coverage-2026-10-07/plans/500k-output_16_partitioned_write_native_1.plan.txt)
+are retained. No slower trial is discarded.
+
+| Rows | Workload | Partitions | Stock seconds | Previous seconds | Native seconds | vs. stock | vs. previous |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 100,000 | filtered-read | 2 | 9.475 [4.659–9.497] | 5.256 [5.255–5.319] | 0.653 [0.651–0.668] | 14.52× | 8.05× |
+| 100,000 | filtered-read | 16 | 9.312 [4.758–9.458] | 2.644 [2.640–5.179] | 0.641 [0.631–0.644] | 14.52× | 4.12× |
+| 100,000 | partitioned-read | 2 | 4.255 [4.200–4.562] | 2.191 [2.176–2.192] | 0.185 [0.172–0.197] | 23.01× | 11.85× |
+| 100,000 | partitioned-read | 16 | 4.288 [4.242–4.447] | 2.168 [2.167–2.169] | 0.333 [0.319–0.339] | 12.88× | 6.51× |
+| 100,000 | partitioned-write | 2 | 4.536 [4.409–4.601] | 2.433 [2.413–2.448] | 0.386 [0.339–0.433] | 11.74× | 6.30× |
+| 100,000 | partitioned-write | 16 | 4.849 [4.565–9.238] | 2.603 [2.546–2.611] | 1.660 [0.870–1.739] | 2.92× | 1.57× |
+| 500,000 | filtered-read | 2 | 4.411 [4.316–9.317] | 2.207 [2.186–2.223] | 0.176 [0.162–0.184] | 25.02× | 12.52× |
+| 500,000 | filtered-read | 16 | 4.676 [4.660–9.656] | 5.500 [5.315–5.553] | 0.651 [0.648–1.181] | 7.19× | 8.45× |
+| 500,000 | partitioned-read | 2 | 4.395 [4.318–9.198] | 2.237 [2.229–2.270] | 0.231 [0.218–0.251] | 19.04× | 9.69× |
+| 500,000 | partitioned-read | 16 | 4.350 [4.284–4.462] | 2.227 [2.219–5.249] | 0.392 [0.364–0.496] | 11.11× | 5.69× |
+| 500,000 | partitioned-write | 2 | 4.415 [4.378–4.598] | 2.448 [2.295–2.539] | 0.378 [0.367–0.387] | 11.69× | 6.48× |
+| 500,000 | partitioned-write | 16 | 4.761 [4.597–9.532] | 2.733 [2.624–2.778] | 0.927 [0.839–1.130] | 5.13× | 2.95× |
+
+All measured native medians beat stock and the prior fallback paths. These are
+short-job totals, influenced strongly by connection shutdown, partition creation,
+metadata readiness and the default 500 ms broker fetch wait. The larger input is
+sometimes faster than the smaller input; independently prepared bucket contents and
+lifecycle costs prevent treating these sweeps as a sustained-throughput scaling curve.
+They establish acceleration within the measured boundary, rather than a uniform
+speedup for arbitrary workloads, partition counts or security configurations.
+
+```sh
+SF_FLUSS_COVERAGE_BENCH=true mvn -Pbench -pl streamfusion-fluss -am test \
+  -Dtest=FlussCoverageBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.extraJvmArgs=-Xmx2g -Dfluss.coverage.rows=500000 -Dfluss.coverage.runs=3
+```
+
+Use `fluss.coverage.rows=100000` for the smaller corpus and
+`fluss.coverage.workloads=partitioned-read` for an isolated partitioned-read sweep.
+The benchmark is disabled in ordinary local and CI test runs.
+
 ## SQL regression tests and CI
 
 `FlussSqlTest` adapts the SQL scenarios from the released Apache Fluss
@@ -199,7 +298,10 @@ case. The supported/fallback scenarios are:
   native projected null filling, and an explicit expected stock 1.0 projection failure
   (`INVALID_COLUMN_PROJECTION`) when a new column is absent from an older batch.
 
-All 10 adapted cases pass locally on Flink 2.2 and 1.18. Tests compare output with
+The original 10 adapted cases passed locally on Flink 2.2 and 1.18. Expanded coverage adds
+partitioned append reads/writes with mixed bucket counts, live discovery, partition pruning,
+projected partitioned primary-key changelogs, delegated connection settings, statistics batch
+filtering with residual/projection checks, and distinct filtered scans. Tests compare output with
 stock Flink, assert expected values/changelog kinds, and save
 actual physical plans while checking acceleration or fallback. The ordinary CI Java
 reactor runs these tests on Flink 2.2 and 1.18. The optimized Flink 2.2 image job also
@@ -447,7 +549,7 @@ are discarded. These results demonstrate a working columnar pipeline, with modes
 startup-dominated gains on many queries; they do not establish that Fluss is uniformly
 faster than the README's Kafka measurements. The Kafka values in the landing page are
 existing published references on another machine, with the documented expression and
-delivery differences. The integration remains off by default. The focused reruns below resolve the measured q14 regression. [Follow-up #301](https://github.com/datafusion-contrib/StreamFusion/issues/301) tracks the remaining lifecycle floor and broader sustained validation.
+delivery differences. The integration is enabled by default when its optional module is installed. The focused reruns below resolve the measured q14 regression. [Follow-up #301](https://github.com/datafusion-contrib/StreamFusion/issues/301) tracks the remaining lifecycle floor and broader sustained validation.
 
 ### Primary-key output correctness runs
 
@@ -522,7 +624,7 @@ production timestamp component layout described above. Read timing retains its c
 JNI address checks run outside timing. No Flink lifecycle or query costs are included.
 [All 90 trials and stage durations](../benchmarks/fluss-transport-controls.csv) retain
 stock comparisons and unfavorable measurements. `run=0` is the first measured trial;
-the warmup is separate. Diagnostic switches, applied inside the opt-in connector, are:
+the warmup is separate. Diagnostic switches, applied inside the optional connector, are:
 
 - `streamfusion.fluss.direct-receive.enabled=false`: released heap-preferring receive.
 - `streamfusion.fluss.frame-aware-receive.enabled=false`: generic direct accumulation.
