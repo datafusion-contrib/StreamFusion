@@ -53,7 +53,7 @@ Optional modules use their directory names as artifact IDs, for example
 `tech.streamfusion:streamfusion-json:0.1.0-rc4`. Install the matching stock Flink connector and
 format JARs alongside them as described below.
 
-The GitHub release archive includes all optional StreamFusion modules, including Delta and Paimon.
+The GitHub release archive includes all optional StreamFusion modules, including Fluss, Delta and Paimon.
 Install only the modules your jobs use and their stock connector dependencies; the archive does
 not bundle the stock connectors.
 
@@ -168,6 +168,7 @@ native build requirements. See [ORC](connectors/orc.md) for deployment and confi
 | `native/bridge` | JNI guards, Arrow C Data import/export, handle accounting, Flink numeric/text semantics, and format ABI types. No JNI exports of its own. |
 | `native/format-support` | Shared decoder lifecycle, parse-error isolation, key/value composition, CDC gathering, and format facade macros. No engine or third-party format implementation. |
 | `native/kafka` | Kafka-specific JNI entry points, source implementation and existing sink encoders. |
+| `native/fluss` | Fluss compacted bucket-key encoding, bucket grouping and Arrow batch statistics, bundled only in `streamfusion-fluss`. Connection management and statistics wire serialization remain in the Java SDK. |
 | `native/parquet` | Parquet format encoding and decoding, including reads through host FileIO. |
 | `native/orc` | orc-rust decoding, with host-owned I/O and Arrow C Data. Java ORC writing lives in the format/connector JARs. |
 | `native/paimon` | Optional Paimon snapshot merge, bundled in `streamfusion-paimon`; consumes the selected file codec's Arrow C Data output. |
@@ -259,10 +260,10 @@ Java-only regression and records the Maven version before the native image build
 
 ## Experimental Fluss connector
 
-The source build includes an optional `streamfusion-fluss` Java extension. Install it
+Source builds and the release archive include the optional `streamfusion-fluss` extension. Install it
 alongside the matching core payload and Apache Fluss's released
-`org.apache.fluss:fluss-flink-2.2:1.0.0` JAR. It reuses the core Arrow bridge and adds no
-native library. Verified planning substitutions are enabled by default when the module is installed.
+`org.apache.fluss:fluss-flink-2.2:1.0.0` JAR. It reuses the core Arrow bridge and bundles `libstreamfusion_fluss` for columnar
+bucket-key hashing and log-batch statistics. Verified planning substitutions are enabled by default when the module is installed.
 Set `-Dstreamfusion.fluss.enabled=false` to retain the stock endpoints; see
 the experimental coverage described in [Fluss](connectors/fluss.md).
 Primary-key writes remain on Flink's normal Fluss connector.

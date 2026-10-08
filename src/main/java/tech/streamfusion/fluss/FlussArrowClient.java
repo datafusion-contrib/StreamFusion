@@ -82,6 +82,9 @@ public final class FlussArrowClient implements AutoCloseable {
   private long writerId = NO_WRITER_ID;
   private final Map<PhysicalTablePath, StickyBucketAssigner> bucketAssigners = new HashMap<>();
   private DynamicPartitionCreator partitionCreator;
+  private FlussArrowStatistics statistics;
+  private final int[] bucketColumns;
+  private final int[] bucketPrecisions;
   private final boolean profile = Boolean.getBoolean("streamfusion.fluss.profile");
   private final boolean coalesce =
       Boolean.parseBoolean(System.getProperty("streamfusion.fluss.coalesce.enabled", "true"));
@@ -191,6 +194,22 @@ public final class FlussArrowClient implements AutoCloseable {
     metadata = connection.getMetadataUpdater();
     try {
       table = await(connection.getAdmin().getTableInfo(path));
+      bucketColumns =
+          table.getBucketKeys().stream()
+              .mapToInt(table.getRowType().getFieldNames()::indexOf)
+              .toArray();
+      bucketPrecisions =
+          java.util.Arrays.stream(bucketColumns)
+              .map(
+                  i -> {
+                    var type = table.getRowType().getTypeAt(i);
+                    if (type instanceof org.apache.fluss.types.TimestampType t)
+                      return t.getPrecision();
+                    if (type instanceof org.apache.fluss.types.LocalZonedTimestampType t)
+                      return t.getPrecision();
+                    return 0;
+                  })
+              .toArray();
       filter =
           recordBatchFilter == null
               ? null
@@ -496,10 +515,7 @@ public final class FlussArrowClient implements AutoCloseable {
     checkAppendFailure();
     reapAppends();
     if (table.hasPrimaryKey()) throw new IOException("Primary-key production is not accelerated");
-    if (table.isStatisticsEnabled())
-      throw new IOException("Fluss batch statistics require the stock append writer");
-    if (!table.getBucketKeys().isEmpty())
-      throw new IOException("Append routing does not accelerate bucket keys");
+
     if (table.isPartitioned() != (partitionName != null))
       throw new IOException("Append batch must identify its table partition");
     if (input.getRowCount() == 0) return CompletableFuture.completedFuture(null);
@@ -514,6 +530,52 @@ public final class FlussArrowClient implements AutoCloseable {
             .getBucketCountOrElseThrow(TableOrPartition.of(table.getTableId(), partitionId));
     StickyBucketAssigner assigner =
         bucketAssigners.computeIfAbsent(physical, StickyBucketAssigner::new);
+    if (table.getBucketKeys().isEmpty())
+      return appendSized(input, partitionId, bucketCount, assigner, null);
+    long split;
+    try (var array = org.apache.arrow.c.ArrowArray.allocateNew(allocator);
+        var schema = org.apache.arrow.c.ArrowSchema.allocateNew(allocator)) {
+      org.apache.arrow.c.Data.exportVectorSchemaRoot(
+          allocator, input, tech.streamfusion.operator.NativeAllocator.DICTIONARIES, array, schema);
+      split =
+          NativeFluss.splitByBucket(
+              array.memoryAddress(),
+              schema.memoryAddress(),
+              bucketColumns,
+              bucketPrecisions,
+              bucketCount);
+    }
+    try {
+      List<CompletableFuture<Void>> parts = new ArrayList<>();
+      while (true) {
+        try (var array = org.apache.arrow.c.ArrowArray.allocateNew(allocator);
+            var schema = org.apache.arrow.c.ArrowSchema.allocateNew(allocator)) {
+          int bucket =
+              NativeFluss.nextBucketSlice(split, array.memoryAddress(), schema.memoryAddress());
+          if (bucket < 0) break;
+          try (var root =
+              org.apache.arrow.c.Data.importVectorSchemaRoot(
+                  allocator,
+                  array,
+                  schema,
+                  tech.streamfusion.operator.NativeAllocator.DICTIONARIES)) {
+            parts.add(appendSized(root, partitionId, bucketCount, assigner, bucket));
+          }
+        }
+      }
+      return CompletableFuture.allOf(parts.toArray(CompletableFuture[]::new));
+    } finally {
+      NativeFluss.closeBucketSplit(split);
+    }
+  }
+
+  private CompletableFuture<Void> appendSized(
+      VectorSchemaRoot input,
+      Long partitionId,
+      int bucketCount,
+      StickyBucketAssigner assigner,
+      Integer fixedBucket)
+      throws IOException {
     long target =
         Math.min(
             config.get(CLIENT_WRITER_BATCH_SIZE).getBytes(),
@@ -528,22 +590,27 @@ public final class FlussArrowClient implements AutoCloseable {
       List<CompletableFuture<Void>> parts = new ArrayList<>();
       for (int offset = 0; offset < input.getRowCount(); offset += rowsPerBatch) {
         try (var part = input.slice(offset, Math.min(rowsPerBatch, input.getRowCount() - offset))) {
-          parts.add(appendPart(part, partitionId, bucketCount, assigner));
+          parts.add(appendPart(part, partitionId, bucketCount, assigner, fixedBucket));
         }
       }
       return CompletableFuture.allOf(parts.toArray(CompletableFuture[]::new));
     }
-    return appendPart(input, partitionId, bucketCount, assigner);
+    return appendPart(input, partitionId, bucketCount, assigner, fixedBucket);
   }
 
   private Long resolvePartition(PhysicalTablePath physical) throws IOException {
     if (physical.getPartitionName() == null) return null;
-    partitionCreator.checkAndCreatePartitionAsync(physical, table);
     while (true) {
       checkAppendFailure();
+      var known = metadata.getPartitionId(physical);
+      if (known.isPresent()) return known.get();
       try {
-        metadata.checkAndUpdatePartitionMetadata(physical);
-        return metadata.getPartitionIdOrElseThrow(physical);
+        // The SDK checks its cache before locking; share cold lookups across writers.
+        synchronized (metadata) {
+          partitionCreator.checkAndCreatePartitionAsync(physical, table);
+          metadata.checkAndUpdatePartitionMetadata(physical);
+          return metadata.getPartitionIdOrElseThrow(physical);
+        }
       } catch (org.apache.fluss.exception.PartitionNotExistException creating) {
         if (!config.get(CLIENT_WRITER_DYNAMIC_CREATE_PARTITION_ENABLED)) throw creating;
         try {
@@ -557,7 +624,11 @@ public final class FlussArrowClient implements AutoCloseable {
   }
 
   private CompletableFuture<Void> appendPart(
-      VectorSchemaRoot input, Long partitionId, int bucketCount, StickyBucketAssigner assigner)
+      VectorSchemaRoot input,
+      Long partitionId,
+      int bucketCount,
+      StickyBucketAssigner assigner,
+      Integer fixedBucket)
       throws IOException {
     if (writerId == NO_WRITER_ID)
       writerId =
@@ -567,7 +638,9 @@ public final class FlussArrowClient implements AutoCloseable {
         new TableBucket(
             table.getTableId(),
             partitionId,
-            assigner.assignBucket(metadata.getCluster(), bucketCount));
+            fixedBucket == null
+                ? assigner.assignBucket(metadata.getCluster(), bucketCount)
+                : fixedBucket);
     int sequence = sequences.getOrDefault(bucket, 0);
     long encodeStart = profile ? System.nanoTime() : 0;
     byte[] bytes;
@@ -584,7 +657,14 @@ public final class FlussArrowClient implements AutoCloseable {
           };
       var codec =
           FlussArrowCompression.INSTANCE.createCodec(codecType, compression.getCompressionLevel());
-      bytes = FlussArrowLogBatch.encode(wire, table.getSchemaId(), writerId, sequence, codec);
+      byte[] stats = null;
+      if (table.isStatisticsEnabled()) {
+        if (statistics == null)
+          statistics = new FlussArrowStatistics(table.getRowType(), table.getStatsIndexMapping());
+        stats = statistics.collect(input);
+      }
+      bytes =
+          FlussArrowLogBatch.encode(wire, table.getSchemaId(), writerId, sequence, codec, stats);
     }
     if (profile) encodeNanos += System.nanoTime() - encodeStart;
     long limit = config.get(CLIENT_WRITER_BUFFER_MEMORY_SIZE).getBytes();
@@ -595,8 +675,8 @@ public final class FlussArrowClient implements AutoCloseable {
         try (var first = input.slice(0, half);
             var second = input.slice(half, input.getRowCount() - half)) {
           return CompletableFuture.allOf(
-              appendPart(first, partitionId, bucketCount, assigner),
-              appendPart(second, partitionId, bucketCount, assigner));
+              appendPart(first, partitionId, bucketCount, assigner, fixedBucket),
+              appendPart(second, partitionId, bucketCount, assigner, fixedBucket));
         }
       }
       throw new IOException(
@@ -661,7 +741,8 @@ public final class FlussArrowClient implements AutoCloseable {
       throw failure;
     }
     sequences.put(bucket, sequence + 1);
-    assigner.onNewBatch(metadata.getCluster(), bucketCount, bucket.getBucket());
+    if (fixedBucket == null)
+      assigner.onNewBatch(metadata.getCluster(), bucketCount, bucket.getBucket());
     pendingAppends.addLast(new PendingAppend(future, bytes.length, reservation));
     queuedBytes += bytes.length;
     return future;

@@ -21,7 +21,7 @@ class PackageReleaseTest(unittest.TestCase):
                         (root / name).write_text(name)
                     suffix = "-flink1.18" if line == "1.18" else ""
                     version = "0.1.0-test"
-                    modules = ["loader", "core", "kafka", "json", "csv", "raw", "avro",
+                    modules = ["loader", "core", "kafka", "fluss", "json", "csv", "raw", "avro",
                                "avro-confluent-registry", "protobuf", "parquet", "orc", "paimon"]
                     if line == "2.2":
                         modules.append("delta")

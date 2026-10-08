@@ -53,3 +53,13 @@ snapshot connections retain their SDK lifecycle. This follows Kafka's explicit
 network-thread shutdown after pending writes are handled, while preserving Arrow's
 independent buffer lifetime across connection close. The connector's regression
 tests retain fetched vectors through event-loop termination and release them afterward.
+
+Bucket-key writes add a small connector-owned Rust library, not a Rust client connection. Its
+compacted scalar key encoding and signed-tail/two-stage Murmur hashing follow
+[Apache Fluss Rust](https://github.com/apache/fluss/blob/64b3b46114882b9d40b492fa5d45e6c12604573f/fluss-rust/crates/fluss/src/util/murmur_hash.rs)
+and are checked against released Java 1.0 assignments. Existing Flink/DataFusion hashes encode
+different bytes and cannot replace this protocol contract. Payload grouping reuses the existing
+Arrow partition kernel. Statistics likewise scan Arrow columns natively, returning only extrema
+indexes and null counts; the released SDK serializes the two bound rows. This avoids a duplicate
+statistics wire codec while keeping per-row materialization out of production. JNI ownership
+follows the Comet-style C Data import/export and shared connector handle registry.

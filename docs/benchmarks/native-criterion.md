@@ -112,6 +112,7 @@ Some historical suites use
 | Production boundary | Suite | Current witnesses |
 | --- | --- | --- |
 | Arrow C Data ownership | `handoffs` | Full-schema and cached-schema export/import; nullable sliced string and integer batches |
+| Fluss append routing/statistics | `fluss_write` | Production compacted-key hashing and Arrow bucket grouping; nullable scalar/string bounds and null counts |
 | Shared bridge transforms | `handoffs` | Timestamp unit conversion, float canonical ordering, partition splits |
 | Calc evaluation and compilation | `calc_expressions` | Arithmetic, booleans, CASE, casts, hashes, regex, date formatting/extraction, string and floating builtins; warm execution and first-batch compilation |
 | Fixed binary expressions | `binary_expressions` | Production Calc casts and ELT, direct UDF scalar/array adaptation and all-scalar contracts; sliced inputs, NULLs, invalid indices, fixed/variable literals/results, widths 1/16/256, one/three scalar value arguments |

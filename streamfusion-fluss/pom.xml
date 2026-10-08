@@ -10,8 +10,9 @@
   <name>StreamFusion Fluss</name>
   <properties>
     <fluss.version>1.0.0</fluss.version>
-    <native.build.skip>true</native.build.skip>
-    <native.test.resource.skip>true</native.test.resource.skip>
+    <native.cargo.packages>-p streamfusion-fluss</native.cargo.packages>
+    <native.library>streamfusion_fluss</native.library>
+    <native.resource.path>tech/streamfusion/native/fluss</native.resource.path>
   </properties>
   <dependencies>
     <dependency>
@@ -47,8 +48,20 @@
       <resource>
         <directory>src/main/resources</directory>
       </resource>
+      <resource>
+        <directory>${native.resource.directory}</directory>
+        <targetPath>${native.resource.path}</targetPath>
+        <includes>
+          <include>lib${native.library}.so</include>
+          <include>lib${native.library}.dylib</include>
+        </includes>
+      </resource>
     </resources>
     <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+      </plugin>
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>flatten-maven-plugin</artifactId>
@@ -80,4 +93,29 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>universal</id>
+      <build>
+        <resources>
+          <resource>
+            <directory>${project.basedir}/../native/target/universal/fluss</directory>
+            <targetPath>tech/streamfusion/native/fluss</targetPath>
+            <includes>
+              <include>**/libstreamfusion_fluss.so</include>
+              <include>**/libstreamfusion_fluss.dylib</include>
+            </includes>
+          </resource>
+          <resource>
+            <directory>${native.resource.directory}</directory>
+            <targetPath>${native.resource.path}</targetPath>
+            <includes>
+              <include>lib${native.library}.so</include>
+              <include>lib${native.library}.dylib</include>
+            </includes>
+          </resource>
+        </resources>
+      </build>
+    </profile>
+  </profiles>
 </project>

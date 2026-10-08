@@ -1,0 +1,84 @@
+{
+  "base_commit": "312ee34015a3419ead4e3eb31a0334e3920eda69",
+  "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "logical_cpus": 16,
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+  "flink": "2.2.1",
+  "fluss": "1.0.0",
+  "native_profile": "release",
+  "native_features": [
+    "mimalloc"
+  ],
+  "parallelism": 4,
+  "checkpoint_interval_ms": 1000,
+  "test_heap_gib": 2,
+  "broker_heap_gib": 1,
+  "broker_direct_memory_mib": 512,
+  "rows": [
+    100000,
+    500000
+  ],
+  "partitions": {
+    "bucketed-write": [
+      2,
+      16
+    ],
+    "statistics-write": [
+      2,
+      16
+    ],
+    "bucketed-statistics-write": [
+      2,
+      16
+    ],
+    "bucketed-string-write": "unpartitioned; string-key distinct values are 2 and 16"
+  },
+  "keys": {
+    "bucketed-write": [
+      "id",
+      "metric"
+    ],
+    "bucketed-statistics-write": [
+      "id",
+      "metric"
+    ],
+    "bucketed-string-write": [
+      "id",
+      "part"
+    ]
+  },
+  "statistics_columns": "*",
+  "compression": "NONE",
+  "warmup_runs_per_case_per_mode": 1,
+  "measured_runs_per_case_per_mode": 3,
+  "ordering": "rotate stock,previous,native by measured run",
+  "timed_boundary": "executeSql(...).await(): planning, startup, Arrow conversion, JNI, RPC, flush, and task teardown",
+  "parity": "exact sorted output multiset outside timed boundary for every warmup and measured run",
+  "previous": "disable only flussSink; native source and other current operators remain",
+  "stock_keyed_partition_workaround": "pre-create every partition for every mode after changing the default bucket count; dynamic creation covered separately",
+  "criterion": "production kernel smoke and allocation diagnostics; no Criterion timing claim",
+  "metadata_normalization": "local checkout and JAVA_HOME paths removed from kernel metadata",
+  "initial_attempt": "Completed three 100k/two-partition cases, then stopped at invalid string-key table DDL; all 27 measured samples and plans retained. Final attempt uses unpartitioned string-key tables because partition columns cannot also be bucket keys.",
+  "profiler": {
+    "version": "4.5",
+    "event": "wall",
+    "interval_ms": 1,
+    "rows": 100000,
+    "partitions": 16,
+    "workload": "bucketed-write",
+    "runs_per_mode_before_and_after": 3,
+    "warmups_per_mode_before_and_after": 1,
+    "timings": "separate from final unprofiled matrices",
+    "samples": "inclusive counts across threads, overlapping scopes; not elapsed job time"
+  },
+  "final_unprofiled_samples": 144,
+  "retained_earlier_unprofiled_samples": 99,
+  "notes": "The final type identity guard changes only component/nested structs; matrix workloads contain integer and string columns. A subsequent control checks the rebuilt final helper.",
+  "final_helper_control": {
+    "rows": 100000,
+    "partitions": 16,
+    "workload": "bucketed-write",
+    "unprofiled_trials": 9,
+    "notes": "rebuilt helper includes component timestamp metadata identity guard; excluded from main matrix"
+  }
+}

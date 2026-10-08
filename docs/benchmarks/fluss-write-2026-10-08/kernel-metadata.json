@@ -1,0 +1,35 @@
+{
+  "timestamp_utc": "20261008T143753.050952Z",
+  "commit": "312ee34015a3419ead4e3eb31a0334e3920eda69",
+  "dirty": true,
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: x86_64-unknown-linux-gnu\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "cpu_count": 16,
+  "mode": "smoke",
+  "suites": [
+    [
+      "streamfusion-fluss",
+      "fluss_write"
+    ]
+  ],
+  "filter": null,
+  "features": [],
+  "save_baseline": null,
+  "baseline": null,
+  "commands": [
+    [
+      "cargo",
+      "bench",
+      "--manifest-path",
+      "native/Cargo.toml",
+      "--locked",
+      "-p",
+      "streamfusion-fluss",
+      "--bench",
+      "fluss_write",
+      "--",
+      "--test"
+    ]
+  ],
+  "environment": {}
+}

@@ -25,7 +25,7 @@ import tech.streamfusion.planner.NativePlanner;
 
 /** Full jobs including Arrow routing, JNI, RPC, checkpoint flush and synchronous teardown. */
 @EnabledIfEnvironmentVariable(named = "SF_FLUSS_COVERAGE_BENCH", matches = "true")
-@Timeout(1200)
+@Timeout(2400)
 class FlussCoverageBenchmark {
   @Test
   void compareStockPreviousAndNativeCoverage() throws Exception {
@@ -48,7 +48,11 @@ class FlussCoverageBenchmark {
             .getAdmin()
             .createDatabase("coverage_bench", DatabaseDescriptor.EMPTY, true)
             .get();
-        for (int partitions : new int[] {2, 16}) {
+        for (int partitions :
+            java.util.Arrays.stream(
+                    System.getProperty("fluss.coverage.partitions", "2,16").split(","))
+                .mapToInt(Integer::parseInt)
+                .toArray()) {
           String source = "source_" + partitions;
           try (var setup = new Tables(cluster, false)) {
             setup
@@ -142,7 +146,10 @@ class FlussCoverageBenchmark {
                         + "_"
                         + (run + 1);
                 try (var tables = new Tables(cluster, !mode.equals("stock"))) {
-                  boolean partitioned = workload.equals("partitioned-write");
+                  boolean partitioned = workload.endsWith("write") && !workload.contains("string");
+                  boolean keyed = workload.startsWith("bucketed");
+                  boolean statistics = workload.contains("statistics");
+                  String bucketKeys = workload.contains("string") ? "id,part" : "id,metric";
                   tables
                       .tables
                       .executeSql(
@@ -153,7 +160,10 @@ class FlussCoverageBenchmark {
                               + "WITH ('bucket.num'='2', 'table.log.format'='ARROW',"
                               + " 'table.log.arrow.compression.type'='NONE',"
                               + " 'scan.startup.mode'='earliest',"
-                              + " 'scan.bounded.mode'='latest-offset')")
+                              + " 'scan.bounded.mode'='latest-offset'"
+                              + (keyed ? ", 'bucket.key'='" + bucketKeys + "'" : "")
+                              + (statistics ? ", 'table.statistics.columns'='*'" : "")
+                              + ")")
                       .await();
                   if (partitioned) {
                     tables
@@ -166,9 +176,25 @@ class FlussCoverageBenchmark {
                         .executeSql("ALTER TABLE " + qualified(output) + " SET ('bucket.num'='4')")
                         .await();
                   }
+                  if (partitioned && keyed) {
+                    // Fluss 1.0's stock keyed writer fails buffered records on temporary-count
+                    // drift.
+                    // Pre-create identical partitions for every mode; creation has separate
+                    // coverage.
+                    for (int p = 1; p < partitions; p++)
+                      tables
+                          .tables
+                          .executeSql(
+                              "ALTER TABLE "
+                                  + qualified(output)
+                                  + " ADD PARTITION (part='p"
+                                  + p
+                                  + "')")
+                          .await();
+                  }
                   String switchName =
                       "streamfusion.operator."
-                          + (partitioned ? "flussSink" : "flussSource")
+                          + (workload.endsWith("write") ? "flussSink" : "flussSource")
                           + ".enabled";
                   String previous = System.getProperty(switchName);
                   try {
@@ -189,9 +215,30 @@ class FlussCoverageBenchmark {
                       if (workload.equals("filtered-read"))
                         assertTrue(plan.contains("batchFilter"), plan);
                     }
+                    String profiler = run < 0 ? null : System.getProperty("profile.asprof");
+                    String pid = Long.toString(ProcessHandle.current().pid());
+                    if (profiler != null) {
+                      Path recording = directory.resolve(output + ".jfr");
+                      NexmarkMatrixBenchmark.runProfiler(
+                          profiler,
+                          "start",
+                          "-e",
+                          System.getProperty("profile.event", "cpu"),
+                          "-i",
+                          "1ms",
+                          "-f",
+                          recording.toString(),
+                          pid);
+                    }
+                    double seconds;
                     long started = System.nanoTime();
-                    tables.tables.executeSql(sql).await();
-                    double seconds = (System.nanoTime() - started) / 1e9;
+                    try {
+                      tables.tables.executeSql(sql).await();
+                      seconds = (System.nanoTime() - started) / 1e9;
+                    } finally {
+                      if (profiler != null)
+                        NexmarkMatrixBenchmark.runProfiler(profiler, "stop", pid);
+                    }
                     if (run >= 0) {
                       results.add(
                           workload

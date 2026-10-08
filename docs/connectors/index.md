@@ -11,7 +11,8 @@ also have native paths, but they have not seen the same production hardening as 
 as experimental.
 
 [Apache Fluss](fluss.md) is an experimental Java Arrow transport for append-only and primary-key
-log reads and append-only production, enabled by default when installed. Primary-key writes stay on Flink.
+log reads and append-only production, enabled by default when installed. Its connector-owned Rust
+helper handles scalar bucket-key routing and batch statistics. Primary-key writes stay on Flink.
 
 ## Formats
 

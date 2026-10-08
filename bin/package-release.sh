@@ -16,7 +16,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 artifact_suffix=""
-modules="kafka json csv raw avro avro-confluent-registry protobuf parquet orc paimon"
+modules="kafka fluss json csv raw avro avro-confluent-registry protobuf parquet orc paimon"
 case "$flink_line" in
   2.2) set --; modules="$modules delta" ;;
   1.18) artifact_suffix=-flink1.18; set -- -Pflink-1.18 ;;

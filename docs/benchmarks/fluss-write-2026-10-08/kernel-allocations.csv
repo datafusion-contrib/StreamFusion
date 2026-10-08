@@ -1,0 +1,17 @@
+package,suite,case,allocation_calls,requested_bytes,shared_output_buffer_bytes,new_output_buffer_bytes
+streamfusion-fluss,fluss_write,fluss_bucket_split/256/8/1,35,8602,6180,0
+streamfusion-fluss,fluss_write,fluss_statistics/256/8/1,3,416,0,0
+streamfusion-fluss,fluss_write,fluss_bucket_split/256/8/128,179,30322,0,6532
+streamfusion-fluss,fluss_write,fluss_statistics/256/8/128,3,416,0,0
+streamfusion-fluss,fluss_write,fluss_bucket_split/256/256/1,33,8776,69668,0
+streamfusion-fluss,fluss_write,fluss_statistics/256/256/1,3,416,0,0
+streamfusion-fluss,fluss_write,fluss_bucket_split/256/256/128,181,94852,0,70020
+streamfusion-fluss,fluss_write,fluss_statistics/256/256/128,3,416,0,0
+streamfusion-fluss,fluss_write,fluss_bucket_split/4096/8/1,36,104514,98820,0
+streamfusion-fluss,fluss_write,fluss_statistics/4096/8/1,3,416,0,0
+streamfusion-fluss,fluss_write,fluss_bucket_split/4096/8/128,243,262702,0,103552
+streamfusion-fluss,fluss_write,fluss_statistics/4096/8/128,3,416,0,0
+streamfusion-fluss,fluss_write,fluss_bucket_split/4096/256/1,37,104776,1114628,0
+streamfusion-fluss,fluss_write,fluss_statistics/4096/256/1,3,416,0,0
+streamfusion-fluss,fluss_write,fluss_bucket_split/4096/256/128,245,1283392,0,1119360
+streamfusion-fluss,fluss_write,fluss_statistics/4096/256/128,3,416,0,0

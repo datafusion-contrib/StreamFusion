@@ -3749,6 +3749,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "streamfusion-fluss"
+version = "0.1.0-rc4"
+dependencies = [
+ "arrow 58.3.0",
+ "arrow-ord 58.3.0",
+ "criterion",
+ "jni",
+ "libmimalloc-sys",
+ "num-bigint 0.4.6",
+ "streamfusion-benchmark-support",
+ "streamfusion-bridge",
+ "streamfusion-native-build",
+]
+
+[[package]]
 name = "streamfusion-format-support"
 version = "0.1.0-rc4"
 dependencies = [

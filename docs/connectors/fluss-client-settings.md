@@ -118,13 +118,13 @@ newer connector implementation version is declined altogether.
 | `lookup.async`, `lookup.insert-if-not-exists`, Flink `lookup.*` cache/async settings | Lookup nodes are never substituted by the Arrow scan rule. |
 | `sink.ignore-delete` | Enabled mode falls back; the Arrow sink admits only insert-only input. |
 | `sink.producer-id` | Explicit identity falls back; undo recovery is not implemented. |
-| `sink.distribution-mode`, deprecated `sink.bucket-shuffle` | The factory resolves these into DistributionMode. Only AUTO/NONE on append tables without bucket keys are admitted; BUCKET/PARTITION_DYNAMIC stay stock. |
+| `sink.distribution-mode`, deprecated `sink.bucket-shuffle` | The factory resolves these into DistributionMode. AUTO/NONE on append tables with scalar bucket keys or sticky routing are admitted; BUCKET/PARTITION_DYNAMIC stay stock. |
 | `bucket.num` | Uses each partition's broker metadata count, including mixed counts after rescaling the default. |
-| `bucket.key`, primary keys, partition keys | Bucket-key sinks stay stock. Partitioned append sinks use native grouping and actual per-partition bucket counts; primary-key log sources preserve change types. |
+| `bucket.key`, primary keys, partition keys | Scalar bucket keys use native compacted-key hashing and stable Arrow grouping. Complex bucket keys and primary-key sinks stay stock. Partitioned append sinks use actual per-partition bucket counts; primary-key log sources preserve change types. |
 | `auto-increment.fields`, `table.auto-increment.cache-size` | Auto-increment is an upstream primary-key write contract, which remains stock. |
 | `table.log.format` | Source requires resolved ARROW; sink requires an explicitly resolved ARROW table. INDEXED/COMPACTED_LOG stay stock. |
 | `table.log.arrow.compression.type`, `table.log.arrow.compression.zstd.level` | NONE/LZ4_FRAME/ZSTD encoding uses the current broker table compression settings; existing interop tests cover all three. |
-| `table.statistics.columns` | **Statistics-enabled sinks fall back.** The Arrow V0 encoder does not produce SDK min/max/null statistics. Sources can decode statistics-bearing V1/V2 batches; batch-filter pushdown is sent to the broker with the full schema ID. |
+| `table.statistics.columns` | **Native streaming writes emit V1 statistics.** Arrow column scans find min/max indexes and null counts; the released SDK serializes only the extrema. Each bucket/size split recomputes its own statistics. Sources can decode statistics-bearing V1/V2 batches; batch-filter pushdown is sent to the broker with the full schema ID. |
 | `table.replication.factor` | Broker owns replication; native appends require all in-sync replica acknowledgements. |
 | `table.log.ttl`, `table.log.tiered.local-segments`, `table.log.local-ttl` | Broker owns retention/tiering; reads retain offsets/high-watermarks and use the released remote downloader when directed to tiered logs. No selective remote column range reads are implemented. |
 | `table.kv.format`, `table.kv.format-version`, `table.kv.value-layout-version`, `table.kv.standby-replica.enabled`, `table.kv.ttl`, `table.kv.ttl.time-column` | KV storage and expiry remain broker-owned; primary-key writes and KV snapshots stay stock. Live log reads consume the resulting broker changelog. |
@@ -138,20 +138,21 @@ newer connector implementation version is declined altogether.
 | Flink sink materialization, row modifications, target-column/constraint abilities | Shared constraint gate and sink ability gate retain the stock sink when host enforcement is needed. |
 | Checkpoint/recovery | Source uses SDK split/enumerator serializers; positions advance after successful collection, including offset-only progress across skipped batches. Sink flush waits for acknowledgements; restart delivery is at-least-once, as for the stock append connector, not transactional exactly-once. |
 
-Server-side table settings must be resolved through the normal Fluss catalog. If
-statistics are enabled between planning and writer startup, the low-level Arrow
-writer rejects the stale admission rather than silently omitting statistics. The runtime guard is protection
-against table metadata drift; configured statistics are declined **before execution**.
+Server-side table settings must be resolved through the normal Fluss catalog. The writer reads
+its statistics mapping and bucket keys from table metadata at startup, including statistics
+enabled after planning. Later schema/statistics/key configuration changes require a job restart. New partitions
+continue to resolve their own actual bucket counts, including runtime bucket-count changes.
 
 ## Verification and limits
 
 `FlussTablesTest` enumerates admitted and excluded released client/network settings for append sources,
 primary-key log sources and append sinks, plus explicit defaults, unknown keys,
 filesystem options, bootstrap lists and table statistics. `FlussSqlTest` executes
-configured consumer/producer fallback and statistics-enabled sink fallback against
+configured consumer/producer fallback and statistics-enabled native writes against
 the released broker and checks both plans and output. `FlussArrowClientTest` verifies
 one- and four-bucket sticky batches, partition removal/recovery, filtered offset progress,
-SASL/PLAIN authentication, heap/direct reception and released-client interoperability.
+SASL/PLAIN authentication, heap/direct reception, SDK-compatible bucket placement and broker
+pruning of native-produced statistics under NONE/LZ4/ZSTD compression.
 Partitioned SQL tests cover mixed bucket counts, live partition discovery and projected
 primary-key changelogs. The Arrow splitter tests composite names, stable row order,
 timestamps and null-key rejection. These tests

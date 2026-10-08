@@ -1,0 +1,35 @@
+[package]
+name = "streamfusion-fluss"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+streamfusion-bridge = { path = "../bridge" }
+arrow.workspace = true
+arrow-ord.workspace = true
+jni.workspace = true
+num-bigint.workspace = true
+
+[dependencies.libmimalloc-sys]
+workspace = true
+optional = true
+
+[build-dependencies]
+streamfusion-native-build = { path = "../native-build" }
+
+[features]
+default = []
+mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
+
+[dev-dependencies]
+criterion.workspace = true
+streamfusion-benchmark-support.workspace = true
+
+[[bench]]
+name = "fluss_write"
+harness = false

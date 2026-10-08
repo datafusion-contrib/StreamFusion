@@ -22,6 +22,7 @@ def main():
     nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
     owners = {
         "streamfusion": "Java_tech_streamfusion_Native_",
+        "streamfusion-fluss": "Java_tech_streamfusion_fluss_NativeFluss_",
         "streamfusion-kafka": "Java_tech_streamfusion_kafka_NativeKafka_",
         "streamfusion-paimon": "Java_tech_streamfusion_paimon_NativePaimon_",
         "streamfusion-orc": "Java_tech_streamfusion_orc_NativeOrc_",
