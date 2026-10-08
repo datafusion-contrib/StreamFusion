@@ -47,8 +47,11 @@ final class FlussTables {
         return null;
       }
       RowType type = FlinkTypeFactory$.MODULE$.toLogicalRowType(scan.getRowType());
-      if (type.getFieldCount() == 0 || !supportedArrowLayout(type)) {
-        context.decline("fluss source: empty projection or unsupported physical types");
+      RowType physical = (RowType) field(source, "tableOutputType");
+      if (!supportedArrowLayout(type)
+          || (type.getFieldCount() == 0
+              && physical.getFieldNames().contains(RowDataArrowConverter.ROW_KIND_COLUMN))) {
+        context.decline("fluss source: unsupported physical types");
         return null;
       }
       ScanWatermarkSpec watermark = ScanWatermarkSpec.of(scan);
@@ -71,7 +74,6 @@ final class FlussTables {
               (Configuration) field(source, "flussConfig"),
               (java.util.Map<?, ?>) field(source, "tableOptions"));
       TablePath path = (TablePath) field(source, "tablePath");
-      RowType physical = (RowType) field(source, "tableOutputType");
       FlinkSource<RowData> delegate =
           new FlinkSource<>(
               config,

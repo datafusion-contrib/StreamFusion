@@ -19,6 +19,52 @@ import org.junit.jupiter.params.provider.ValueSource;
 class NativeCalcChangelogSchemaTest {
   private static final RowType TYPE = RowType.of(new IntType());
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void zeroColumnBatchesRetainRowsAndChangelogAcrossNativeEvaluation(boolean changelog)
+      throws Exception {
+    var calc =
+        new NativeCalcOperator(
+            new int[] {1},
+            new int[] {0},
+            new int[] {0},
+            new long[] {1},
+            new double[0],
+            new String[0],
+            new int[] {0},
+            -1,
+            new String[] {"value"},
+            NativeUdf.Binding.EMPTY);
+    try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(calc)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      List<RowData> rows = new ArrayList<>();
+      for (int i = 0; i < 37; i++)
+        rows.add(new GenericRowData(changelog ? RowKind.values()[i % 4] : RowKind.INSERT, 0));
+      var root = RowDataArrowConverter.write(rows, RowType.of(), NativeAllocator.SHARED, changelog);
+      assertEquals(changelog ? 1 : 0, root.getFieldVectors().size());
+      harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
+      int count = 0;
+      for (Object record : harness.getOutput()) {
+        if (record instanceof StreamRecord<?> output) {
+          try (var batch = ((ArrowBatch) output.getValue()).root()) {
+            for (int i = 0; i < batch.getRowCount(); i++) {
+              assertEquals(1L, batch.getVector("value").getObject(i));
+              if (changelog)
+                assertEquals(
+                    rows.get(count).getRowKind().toByteValue(),
+                    ((org.apache.arrow.vector.TinyIntVector)
+                            batch.getVector(RowDataArrowConverter.ROW_KIND_COLUMN))
+                        .get(i));
+              count++;
+            }
+          }
+        }
+      }
+      assertEquals(37, count);
+    }
+  }
+
   @Test
   void unionInputsMayAlternatePresenceOfRowKind() throws Exception {
     var calc =

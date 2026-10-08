@@ -94,6 +94,57 @@ class FlussSqlTest {
   }
 
   @ParameterizedTest
+  @ValueSource(strings = {"NONE", "LZ4_FRAME", "ZSTD"})
+  void emptyProjectionPreservesRows(String compression) throws Exception {
+    String source = table("a BIGINT, b STRING", "ARROW", compression, "");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    for (int i = 0; i < 37; i++) {
+      writer.append(GenericRow.of((long) i, BinaryString.fromString("v" + i)));
+      if (i % 7 == 0) writer.flush();
+    }
+    writer.flush();
+    var expected = java.util.Collections.nCopies(37, "+I[1]");
+    assertEquals(expected, query(source, "1", false, false));
+    assertEquals(expected, query(source, "1", true, true));
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      var counts = query(source, "COUNT(*)", nativeRun, nativeRun);
+      assertFalse(counts.isEmpty());
+      assertTrue(counts.get(counts.size() - 1).endsWith("[37]"), counts.toString());
+    }
+    String empty = table("a BIGINT, b STRING", "ARROW", compression, "");
+    assertEquals(List.of(), query(empty, "1", false, false));
+    assertEquals(List.of(), query(empty, "1", true, true));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"NONE", "LZ4_FRAME", "ZSTD"})
+  void nestedFieldProjectionPreservesParentNulls(String compression) throws Exception {
+    String source =
+        table(
+            "id BIGINT, customer ROW<address ROW<city STRING, zip INT>, name STRING>",
+            "ARROW",
+            compression,
+            "");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    writer.append(GenericRow.of(1L, null));
+    writer.append(GenericRow.of(2L, GenericRow.of(null, BinaryString.fromString("n"))));
+    writer.append(GenericRow.of(3L, GenericRow.of(GenericRow.of(null, 1), null)));
+    writer.append(
+        GenericRow.of(4L, GenericRow.of(GenericRow.of(BinaryString.fromString("Paris"), 2), null)));
+    writer.flush();
+    List<String> expected = List.of("+I[null]", "+I[null]", "+I[null]", "+I[Paris]");
+    var tables = environment(true);
+    try {
+      String plan = tables.explainSql("SELECT customer.address.city FROM " + qualified(source));
+      assertTrue(plan.contains("NativeCalc"), plan);
+    } finally {
+      tables.getCatalog("fluss").orElseThrow().close();
+    }
+    assertEquals(expected, query(source, "customer.address.city", false, false));
+    assertEquals(expected, query(source, "customer.address.city", true, true));
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"FULL", "WAL"})
   void primaryKeyLogProjectionPreservesUpdatesAndDeletes(String image) throws Exception {
     String source =

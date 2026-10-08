@@ -47,6 +47,7 @@ import org.apache.fluss.rpc.util.CommonRpcMessageUtils;
 import org.apache.fluss.rpc.util.PredicateMessageUtils;
 import org.apache.fluss.shaded.netty4.io.netty.buffer.Unpooled;
 import tech.streamfusion.operator.NativeAllocator;
+import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.operator.TaskOffHeapMemory;
 
 /** Java connection, metadata routing and RPC transport for columnar Fluss log traffic. */
@@ -214,6 +215,9 @@ public final class FlussArrowClient implements AutoCloseable {
           recordBatchFilter == null
               ? null
               : PredicateMessageUtils.toPbPredicate(recordBatchFilter, table.getRowType());
+      if (outputSchema.getFields().isEmpty()
+          && table.getRowType().getFieldNames().contains(RowDataArrowConverter.ROW_KIND_COLUMN))
+        throw new IOException("Fluss physical schema collides with the changelog sidecar");
       if (!projectRead) {
         metadata.updateTableOrPartitionMetadata(path, null);
         partitionCreator =
@@ -227,7 +231,7 @@ public final class FlussArrowClient implements AutoCloseable {
       // Released 1.0 schemas start at 1 and evolve only by appending nullable columns.
       // Broker projection is positional, so old batches cannot supply newly added positions.
       boolean prune = projectRead && table.getSchemaId() == 1;
-      projectedFields =
+      int[] selectedFields =
           java.util.stream.IntStream.range(0, table.getRowType().getFieldCount())
               .filter(
                   i ->
@@ -239,8 +243,11 @@ public final class FlussArrowClient implements AutoCloseable {
                                           .getName()
                                           .equals(table.getRowType().getFields().get(i).getName())))
               .toArray();
-      if (projectedFields.length == 0)
-        throw new IOException("Empty Fluss projection is not accelerated");
+      if (selectedFields.length == 0 && !outputSchema.getFields().isEmpty())
+        throw new IOException("Fluss projection contains no physical table columns");
+      // Fluss 1.0 cannot serialize a zero-field broker projection. Retain one wire column;
+      // local schema conversion drops it while preserving row counts and changelog kinds.
+      projectedFields = selectedFields.length == 0 ? new int[] {0} : selectedFields;
     } catch (Throwable failure) {
       try {
         connectionLease.close();

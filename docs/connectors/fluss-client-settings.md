@@ -132,7 +132,7 @@ newer connector implementation version is declined altogether.
 | `table.merge-engine`, `table.merge-engine.versioned.ver-column` | Merge-engine sources and sinks fall back, including aggregation undo recovery. |
 | All `table.auto-partition.*` options | Released enumerator/partition creator own discovery, expiry and validation; native readers handle removal and native writers resolve actual partition bucket counts. |
 | All `table.datalake.*` options | Lake/hybrid sources and lake sinks stay stock. Catalog-side lake creation/tiering is not replaced. |
-| Flink source projection | Nonempty physical top-level projection is supported; nested field pruning and empty projection remain stock. Evolved schemas use full batches with local nullable trailing-column handling. |
+| Flink source projection | Physical top-level and zero-column projections are supported. Nested SQL field access runs natively on the containing struct; Fluss 1.0 does not prune individual nested fields on the wire. Evolved schemas use full batches with local nullable trailing-column handling. |
 | Flink filter/limit/count pushdowns | Partition pruning and statistics-based streaming log batch filtering are supported, with residual predicates retained. Point lookup, limit and count pushdowns stay stock. |
 | Flink watermark pushdowns/options | Shared ScanWatermarkSpec admits verified periodic expressions and idle timeouts. Source watermarks, alignment and on-event emit fall back. |
 | Flink sink materialization, row modifications, target-column/constraint abilities | Shared constraint gate and sink ability gate retain the stock sink when host enforcement is needed. |
