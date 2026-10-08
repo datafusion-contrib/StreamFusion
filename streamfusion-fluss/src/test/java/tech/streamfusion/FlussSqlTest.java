@@ -169,7 +169,7 @@ class FlussSqlTest {
   }
 
   @Test
-  void statisticsEnabledAppendUsesStockWriterWithNativeInput() throws Exception {
+  void statisticsEnabledAppendUsesNativeWriter() throws Exception {
     String source = table("a INT, b BIGINT", "ARROW", "NONE", "");
     var writer = connection.getTable(path(source)).newAppend().createWriter();
     writer.append(GenericRow.of(1, 10L));
@@ -181,7 +181,7 @@ class FlussSqlTest {
         output,
         true,
         true,
-        false);
+        true);
     assertEquals(List.of("+I[1, 10]", "+I[2, 20]"), query(output, "*", false, false));
   }
 
@@ -254,6 +254,58 @@ class FlussSqlTest {
       } finally {
         tables.getCatalog("fluss").orElseThrow().close();
       }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"plain", "partitioned", "statistics", "partitioned-statistics"})
+  void bucketKeyAppendAndStatisticsKeepNativeEndpoints(String variant) throws Exception {
+    boolean partitioned = variant.contains("partitioned");
+    boolean statistics = variant.contains("statistics");
+    String source = table("a INT NOT NULL, b BIGINT, part STRING", "ARROW", "NONE", "");
+    var writer = connection.getTable(path(source)).newAppend().createWriter();
+    for (int i = 0; i < 512; i++)
+      writer.append(
+          GenericRow.of(
+              i - 256,
+              i % 3 == 0 ? null : (long) (i % 7),
+              BinaryString.fromString(i % 2 == 0 ? "old" : "new")));
+    writer.flush();
+    List<String> expected = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      String output = "bucketed_" + UUID.randomUUID().toString().replace("-", "");
+      ddl(
+          "CREATE TABLE "
+              + qualified(output)
+              + " (a INT NOT NULL, b BIGINT, part STRING) "
+              + (partitioned ? "PARTITIONED BY (part) " : "")
+              + "WITH ('bucket.num'='2', 'bucket.key'='a', 'table.log.format'='ARROW',"
+              + " 'table.log.arrow.compression.type'='LZ4_FRAME', 'scan.startup.mode'='earliest',"
+              + " 'scan.bounded.mode'='latest-offset'"
+              + (statistics ? ", 'table.statistics.columns'='a,b'" : "")
+              + ")");
+      if (partitioned) {
+        ddl("ALTER TABLE " + qualified(output) + " ADD PARTITION (part='old')");
+        ddl("ALTER TABLE " + qualified(output) + " SET ('bucket.num'='4')");
+        ddl("ALTER TABLE " + qualified(output) + " ADD PARTITION (part='new')");
+      }
+      insert(
+          "INSERT INTO "
+              + qualified(output)
+              + " SELECT a AS renamed, b, part FROM "
+              + qualified(source),
+          output,
+          nativeRun,
+          nativeRun,
+          nativeRun);
+      var actual = query(output, "*", false, false).stream().sorted().toList();
+      assertEquals(512, actual.size());
+      if (expected == null) expected = actual;
+      else assertEquals(expected, actual);
+      assertEquals(actual, query(output, "*", true, true).stream().sorted().toList());
+      assertEquals(
+          query(output, "a,part", " WHERE b=3 AND a>=0", false, false).stream().sorted().toList(),
+          query(output, "a,part", " WHERE b=3 AND a>=0", true, true).stream().sorted().toList());
     }
   }
 
@@ -460,9 +512,15 @@ class FlussSqlTest {
 
   private static List<String> query(
       String source, String fields, boolean nativeRun, boolean nativeSource) throws Exception {
+    return query(source, fields, "", nativeRun, nativeSource);
+  }
+
+  private static List<String> query(
+      String source, String fields, String predicate, boolean nativeRun, boolean nativeSource)
+      throws Exception {
     var tables = environment(nativeRun);
     try {
-      String sql = "SELECT " + fields + " FROM " + qualified(source);
+      String sql = "SELECT " + fields + " FROM " + qualified(source) + predicate;
       plan(tables, sql, source + (nativeRun ? "_native_read" : "_stock_read"), nativeSource, false);
       List<String> rows = new ArrayList<>();
       try (var iterator = tables.executeSql(sql).collect()) {

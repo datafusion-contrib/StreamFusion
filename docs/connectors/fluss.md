@@ -101,11 +101,17 @@ explicit enable/disable option is also supported. Unsupported scanner/writer pol
 filesystem settings and unknown keys retain the stock endpoint, even when explicitly
 set to their defaults. Diagnostics name settings without their values.
 
-The Arrow sink is limited to insert-only input and explicitly resolved `ARROW` append-only tables without bucket keys. Partitioned
+The Arrow sink is limited to insert-only input and explicitly resolved `ARROW` append-only tables. Partitioned
 inputs are split using the existing Rust Arrow partition kernel; payloads remain columnar,
 and only each group's first-row partition keys are exposed to Fluss's own partition-name
 getter. The released dynamic partition creator owns creation and auto-partition validation.
-Each partition uses its metadata bucket count and its own sticky assigner; writer sequences,
+Each partition uses its metadata bucket count. Tables without bucket keys use their own sticky
+assigner. Scalar bucket keys use a connector-owned Rust encoder matching Fluss 1.0's compacted
+key bytes and two-stage Murmur hash, verified against the released SDK. The existing partition
+kernel groups rows by the resulting bucket number in stable order, with one payload permutation;
+a single-bucket batch shares its input buffers. Composite keys, including timestamp components,
+are supported; complex bucket keys stay stock. Fluss forbids partition columns in bucket
+keys. Writer sequences,
 request coalescing and acknowledgement chains are keyed by the complete table/partition/bucket. Input fields map positionally to destination columns. Production uses
 `ProduceLog` with the table's Arrow compression setting: matching that setting is needed
 because broker projection reconstructs IPC compression metadata from table configuration.
@@ -125,10 +131,16 @@ queue reservations are charged to the shared TaskManager memory budget. Primary-
 batch sinks, explicit undo-recovery identities, explicit bucket/dynamic-partition shuffle,
 merge engines, lake writes, row modifications and sink materialization use the stock
 Flink sink.
-Tables with enabled `table.statistics.columns` also retain the stock append writer:
-the Arrow V0 encoder does not produce the SDK's batch min/max/null statistics.
-This is checked from the resolved catalog options during planning, with a runtime
-guard against statistics enabled between planning and writer startup.
+Statistics-enabled streaming writes emit V1 log batches. Rust scans the configured Arrow columns
+for minimum/maximum row indexes and null counts; only two extrema per column are converted for
+the released SDK's schema-aware statistics serializer. This preserves Java NaN/signed-zero,
+string, decimal and timestamp ordering without materializing every input row. Unsupported
+min/max types retain the SDK's null-count-only behavior. Statistics are recomputed after each
+bucket split and size split, so each batch describes precisely its own rows. The broker can
+prune these batches during streaming reads; residual row filters remain necessary.
+Tables without statistics continue to emit V0 batches. The optional `streamfusion-fluss` artifact
+now bundles its own `libstreamfusion_fluss` extension for hashing and statistics; the core
+remains connector-neutral. Java SDK connections, routing metadata and RPCs remain unchanged.
 
 Append delivery matches the released connector's default at-least-once recovery contract.
 Writer IDs and per-bucket sequences deduplicate retries within one writer lifetime, and
@@ -278,6 +290,127 @@ SF_FLUSS_COVERAGE_BENCH=true mvn -Pbench -pl streamfusion-fluss -am test \
 Use `fluss.coverage.rows=100000` for the smaller corpus and
 `fluss.coverage.workloads=partitioned-read` for an isolated partitioned-read sweep.
 The benchmark is disabled in ordinary local and CI test runs.
+
+## Bucket-key and streaming-statistics validation (2026-10-08)
+
+A clean released Flink 1.18.1 build passes all 132 Fluss tests without skips. Flink
+2.2.1 passes the initial 130-test full suite and a clean final 92-test writer, planner,
+compression, framing and ownership run, including all five expanded SDK/type tests.
+Javadocs and native-payload JAR packaging also pass.
+
+Released Fluss 1.0 SDK parity tests cover scalar and composite compacted keys,
+signed hash tails, UTF-8, fixed-width character/binary values, positive/negative
+large decimals, NaNs, signed zero and fractional/local timestamps. Bucket groups
+preserve row order and match SDK assignment for one, seven and sixteen buckets.
+Statistics match the SDK's serialized bytes, including reordered mappings,
+all-null columns, sliced inputs and null-count-only binary/nested columns. Component
+metadata distinguishes timestamps from user rows with identical child names.
+
+Integration tests verify actual keyed log placement with NONE/LZ4/ZSTD, forced
+request-size splits, broker pruning of native-produced statistics, partitioned SQL
+parity with mixed bucket counts, and native dynamic partition creation after changing
+the bucket default. Writer IDs, per-bucket acknowledgement ordering and delivery
+guarantees are unchanged.
+
+The release `FlussCoverageBenchmark` uses the same full-job timer and corpus described
+above: Flink 2.2.1, Fluss 1.0.0, Java 17, parallelism four, 1 s checkpoints, 2 GiB
+test heap, ARROW/NONE, one warmup per mode and three rotated measured trials. The
+source has four buckets and statistics on all three columns. Stock uses Flink's
+source and sink; previous disables only the native sink, reproducing the earlier
+fallback while retaining the current native source and interior operators.
+
+`bucketed-write` routes `(id, metric)` keys; `statistics-write` uses sticky buckets
+and statistics on all columns; `bucketed-statistics-write` combines those features.
+These destinations have two or sixteen partitions: `p0` retains two buckets and the
+remaining partitions have four. Fluss forbids partition columns in bucket keys,
+so `bucketed-string-write` uses an unpartitioned two-bucket destination with keys
+`(id, part)` and two or sixteen distinct strings. The cardinality column below
+therefore means partitions for the first three workloads and strings for the last.
+
+The released stock keyed writer can fail buffered records if a newly created
+partition's actual bucket count differs from its temporary default. All keyed
+comparison modes pre-create identical partitions outside timing. A separate native
+integration test exercises creation with actual two/four-bucket counts; pre-creation
+is not used to claim dynamic-creation throughput.
+
+Every warmup and measured job checks exact output multiset parity outside timing;
+native plans assert the endpoints and partition splitter. The timer retains planning,
+startup, Arrow conversion, JNI, routing, RPC, acknowledgement flush and task teardown.
+The final [100,000-row trials](../benchmarks/fluss-write-2026-10-08/100k.csv),
+[500,000-row trials](../benchmarks/fluss-write-2026-10-08/500k.csv),
+[configuration](../benchmarks/fluss-write-2026-10-08/environment.json), and
+[representative executed plan](../benchmarks/fluss-write-2026-10-08/plans/500k-output_16_bucketed_statistics_write_native_1.plan.txt)
+retain all 144 final measured samples. [Every warmup/measured plan, including earlier
+sweeps](../benchmarks/fluss-write-2026-10-08/all-plans.tar.gz) is archived; representative
+final plans also remain directly readable. Values are median seconds [complete min–max].
+
+| Rows | Workload | Partitions / strings | Stock seconds | Previous seconds | Native seconds | vs. stock | vs. previous |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 100,000 | bucketed-statistics-write | 2 | 4.283 [4.184–7.220] | 2.192 [2.192–2.192] | 0.199 [0.184–0.213] | 21.52× | 11.01× |
+| 100,000 | bucketed-statistics-write | 16 | 4.375 [4.358–4.398] | 2.265 [2.212–2.570] | 0.565 [0.482–0.575] | 7.74× | 4.01× |
+| 100,000 | bucketed-string-write | 2 strings | 4.197 [4.186–4.286] | 2.282 [2.179–2.369] | 0.172 [0.161–0.174] | 24.41× | 13.28× |
+| 100,000 | bucketed-string-write | 16 strings | 4.179 [4.177–4.190] | 2.230 [2.160–2.558] | 0.150 [0.149–0.158] | 27.90× | 14.89× |
+| 100,000 | bucketed-write | 2 | 4.321 [4.319–4.330] | 2.238 [2.214–2.295] | 0.221 [0.216–0.246] | 19.54× | 10.13× |
+| 100,000 | bucketed-write | 16 | 4.421 [4.254–4.510] | 2.429 [2.230–2.579] | 0.620 [0.593–0.676] | 7.14× | 3.92× |
+| 100,000 | statistics-write | 2 | 4.457 [4.411–9.201] | 2.407 [2.397–2.601] | 0.317 [0.315–0.338] | 14.04× | 7.58× |
+| 100,000 | statistics-write | 16 | 4.722 [4.552–9.395] | 2.582 [2.562–2.715] | 0.740 [0.707–0.940] | 6.38× | 3.49× |
+| 500,000 | bucketed-statistics-write | 2 | 4.293 [4.288–4.416] | 2.374 [2.364–2.722] | 0.229 [0.227–0.235] | 18.78× | 10.39× |
+| 500,000 | bucketed-statistics-write | 16 | 4.519 [4.474–4.530] | 2.510 [2.435–2.677] | 0.660 [0.632–0.680] | 6.85× | 3.81× |
+| 500,000 | bucketed-string-write | 2 strings | 4.262 [4.258–4.276] | 2.266 [2.260–2.275] | 0.169 [0.167–0.194] | 25.16× | 13.38× |
+| 500,000 | bucketed-string-write | 16 strings | 4.302 [4.269–4.336] | 2.247 [2.244–2.362] | 0.165 [0.164–0.174] | 26.10× | 13.63× |
+| 500,000 | bucketed-write | 2 | 4.424 [4.313–4.440] | 2.336 [2.333–2.389] | 0.261 [0.255–0.287] | 16.97× | 8.96× |
+| 500,000 | bucketed-write | 16 | 4.510 [4.468–4.519] | 2.570 [2.482–2.825] | 0.670 [0.659–0.749] | 6.73× | 3.83× |
+| 500,000 | statistics-write | 2 | 4.706 [4.458–9.426] | 2.311 [2.311–2.335] | 0.316 [0.268–0.344] | 14.88× | 7.31× |
+| 500,000 | statistics-write | 16 | 5.190 [4.720–9.737] | 2.897 [2.667–2.918] | 0.723 [0.704–1.294] | 7.18× | 4.01× |
+
+All final native medians beat stock by **6.38–27.90×** and previous by
+**3.49–14.89×**. These are short-job totals influenced by metadata readiness,
+connection lifecycle, scheduling and fetch waits; the larger corpus can finish
+sooner. They establish gains within this boundary, not a sustained-throughput
+scaling curve or a uniform gain for arbitrary types, bucket counts or workload shapes.
+
+The earlier [complete 100k matrix](../benchmarks/fluss-write-2026-10-08/pre-metadata-fix-100k.csv)
+retains a sixteen-partition keyed native median of 2.661 s versus previous 2.308 s.
+Wall profiling exposed duplicate cold partition metadata requests among writers
+sharing the SDK updater. Coordinating the cold lookup under its own update lock
+moves the final unprofiled native median to 0.620 s; no independent routing cache
+was added. All [before wall trials](../benchmarks/fluss-write-2026-10-08/before-wall.csv),
+[after wall trials](../benchmarks/fluss-write-2026-10-08/after-wall.csv), and
+[inclusive sample scopes](../benchmarks/fluss-write-2026-10-08/wall-inclusive-scopes.csv)
+remain separate from the main matrix. Instrumented medians are 1.599/0.639 s;
+metadata readiness and scheduling still vary. Wall counts overlap and sum across
+threads, so they are not elapsed job time.
+
+A [control on the final rebuilt helper](../benchmarks/fluss-write-2026-10-08/final-helper-control.csv)
+checks the last timestamp-identity guard with the same sixteen-partition integer-key workload:
+native median 0.629 s [0.496–0.664], stock 4.383 s and previous 2.284 s. All nine
+control trials pass parity and remain separate from the 144-sample matrix.
+
+The [initial partial sweep](../benchmarks/fluss-write-2026-10-08/initial-100k-partial.csv)
+also retains its 27 measured samples. It stopped at invalid string-key table DDL
+before that workload's warmup: the partition column was also specified as a bucket
+key. No measured sample is discarded. The final matrix uses the valid unpartitioned
+string-key fixture described above.
+
+Release Criterion fixtures call production key grouping and statistics collection
+at 256/4,096 rows, string widths 8/256 and cardinalities 1/128, including null payloads.
+The [allocation/Arrow-sharing report](../benchmarks/fluss-write-2026-10-08/kernel-allocations.csv)
+confirms shared payload buffers for one-bucket groups and newly allocated permutation
+buffers for multiple buckets. Allocation requests are not copied-byte measurements;
+these fixture smoke checks are not Criterion timing claims.
+
+```sh
+SF_FLUSS_COVERAGE_BENCH=true mvn -Pbench -pl streamfusion-fluss -am test \
+  -Dtest=FlussCoverageBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.extraJvmArgs=-Xmx2g -Dfluss.coverage.rows=500000 -Dfluss.coverage.runs=3 \
+  -Dfluss.coverage.workloads=bucketed-write,statistics-write,bucketed-statistics-write,bucketed-string-write
+```
+
+Use `fluss.coverage.rows=100000` for the smaller sweep. `fluss.coverage.partitions`
+selects comma-separated cardinalities (default `2,16`). Optional `profile.asprof`
+points to an installed async-profiler executable; `profile.event=wall` records each
+measured job separately, with profiler start/stop outside its timer. Profiled results
+must remain separate from uninstrumented comparisons.
 
 ## SQL regression tests and CI
 

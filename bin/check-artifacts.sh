@@ -131,15 +131,12 @@ if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|fluss|parquet|orc|de
   exit 1
 fi
 
-for suffix in kafka json csv raw avro protobuf parquet orc paimon; do
+for suffix in kafka fluss json csv raw avro protobuf parquet orc paimon; do
   assert_native_payload \
     "$repo_root/streamfusion-$suffix/target/streamfusion-$suffix${artifact_suffix}-$version.jar" \
     "streamfusion-$suffix" "libstreamfusion_$suffix" "$suffix"
 done
 
-assert_no_native_payload \
-  "$repo_root/streamfusion-fluss/target/streamfusion-fluss${artifact_suffix}-$version.jar" \
-  streamfusion-fluss
 assert_no_native_payload \
   "$repo_root/streamfusion-runtime/target/streamfusion-runtime${artifact_suffix}-$version.jar" \
   streamfusion-runtime

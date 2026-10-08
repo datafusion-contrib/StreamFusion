@@ -6,6 +6,7 @@ members = [
   "native-build",
   "format-support",
   "kafka",
+  "fluss",
   "json",
   "csv",
   "raw",

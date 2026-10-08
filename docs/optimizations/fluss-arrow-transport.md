@@ -201,3 +201,23 @@ metrics. It does not establish the location of every earlier outlier. No further
 fixed networking delay or dominant copy scope appears in this recording. Remaining
 SDK serialization, codecs and Arrow interoperability require broader changes;
 join state work and skew are separate from the easy transport lifecycle fix.
+
+
+## Share cold partition metadata lookups
+
+Partitioned Arrow writers share the Java SDK connection and its metadata updater. The SDK's
+cache check happens before its blocking update lock, so several writers can all queue the same
+cold lookup. The Arrow writer first uses the SDK cache directly and coordinates a missing
+partition lookup under that same updater lock. The SDK then rechecks the cache, performs
+creation when enabled, and supplies the actual partition bucket count. Cache hits remain
+unlocked; there is no independent partition or leader cache to invalidate. Dynamic creation,
+disabled creation, changed bucket defaults and actual routing remain covered by connector tests.
+
+The release wall-profile control for 100,000 rows and sixteen keyed partitions moves the
+native three-run median from 1.599 s [0.636–1.697] to 0.639 s [0.567–0.656]. Hashing and IPC
+encoding occupy little of the sampled wait; cold SDK metadata lookups exposed the contention.
+The two fixtures change only lookup coordination, but scheduling and metadata readiness still
+vary; the measured ratio does not attribute every saved millisecond to the lock. These
+instrumented runs stay separate from the final unprofiled feature matrix. Inclusive wall samples sum across threads, overlap between scopes, and are
+not elapsed job time. All before/after trials and sample scopes are retained with the
+[write benchmark artifacts](../benchmarks/fluss-write-2026-10-08/wall-inclusive-scopes.csv).

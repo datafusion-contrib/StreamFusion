@@ -155,6 +155,97 @@ class FlussArrowClientTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"NONE", "LZ4_FRAME", "ZSTD"})
+  void nativeBucketKeyWritesReachSdkBucketsAndEmitPrunableStatistics(String compression)
+      throws Exception {
+    TablePath path = TablePath.of("arrow_test", "bucket_stats_" + compression.toLowerCase());
+    connection
+        .getAdmin()
+        .createTable(
+            path,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column("id", DataTypes.BIGINT().copy(false))
+                        .column("value", DataTypes.BIGINT())
+                        .build())
+                .distributedBy(7, "id")
+                .property("table.log.format", "ARROW")
+                .property("table.log.arrow.compression.type", compression)
+                .property("table.statistics.columns", "value,id")
+                .build(),
+            false)
+        .get();
+    var info = connection.getAdmin().getTableInfo(path).get();
+    var schema = FlussArrowSchema.wireSchema(info.getRowType());
+    var config = cluster.config();
+    config.set(ConfigOptions.CLIENT_WRITER_REQUEST_MAX_SIZE, new MemorySize(2048));
+    try (var allocator = new RootAllocator();
+        var root = VectorSchemaRoot.create(schema, allocator);
+        var writer = new FlussArrowClient(config, path, schema, allocator, false);
+        var scanner = connection.getTable(path).newScan().createLogScanner()) {
+      root.allocateNew();
+      for (int batch = 0; batch < 3; batch++) {
+        for (int i = 0; i < 1024; i++) {
+          ((BigIntVector) root.getVector(0)).setSafe(i, (long) batch * 1024 + i - 1024);
+          if (i % 5 == 0) ((BigIntVector) root.getVector(1)).setNull(i);
+          else ((BigIntVector) root.getVector(1)).setSafe(i, batch);
+        }
+        root.setRowCount(1024);
+        writer.appendAsync(root);
+      }
+      writer.flush();
+      var buckets =
+          java.util.stream.IntStream.range(0, 7)
+              .mapToObj(i -> new TableBucket(info.getTableId(), i))
+              .toList();
+      for (var bucket : buckets) scanner.subscribe(bucket.getBucket(), 0);
+      var encoder =
+          org.apache.fluss.row.encode.KeyEncoder.ofBucketKeyEncoder(
+              info.getRowType(), List.of("id"), null);
+      int count = 0;
+      var seen = new java.util.HashSet<Long>();
+      long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+      while (count < 3072 && System.nanoTime() < deadline) {
+        var records = scanner.poll(Duration.ofMillis(100));
+        for (var bucket : records.buckets())
+          for (var record : records.records(bucket)) {
+            long id = record.getRow().getLong(0);
+            assertTrue(seen.add(id));
+            assertEquals(
+                org.apache.fluss.bucketing.FlussBucketingFunction.bucketForRowKey(
+                    encoder.encodeKey(record.getRow()), 7),
+                bucket.getBucket());
+            count++;
+          }
+      }
+      assertEquals(3072, count);
+      var filter =
+          new org.apache.fluss.predicate.PredicateBuilder(info.getRowType()).equal(1, 100L);
+      try (var reader =
+          new FlussArrowClient(cluster.config(), path, schema, allocator, true, filter)) {
+        for (var bucket : buckets) {
+          long end =
+              connection
+                  .getAdmin()
+                  .listOffsets(path, List.of(bucket.getBucket()), new OffsetSpec.LatestSpec())
+                  .all()
+                  .get()
+                  .get(bucket.getBucket());
+          if (end == 0) continue;
+          var fetched = reader.fetch(new LogSplit(bucket, null, 0, end));
+          assertFalse(fetched.isEmpty());
+          for (var record : fetched)
+            try (record) {
+              assertNull(record.root(), "broker must skip nonmatching native-produced batches");
+              assertEquals(end, record.nextOffset());
+            }
+        }
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"NONE", "LZ4_FRAME", "ZSTD"})
   void arrowAppendIsReadableByStockClientAndProjectedArrowClient(String compression)
       throws Exception {
     TablePath path = table("append_" + compression.toLowerCase(), false, compression, "FULL");
@@ -649,6 +740,95 @@ class FlussArrowClientTest {
           org.apache.fluss.exception.PartitionNotExistException.class,
           () -> writer.appendAsync(root, "2"));
       assertEquals(1, connection.getAdmin().listPartitionInfos(path).get().size());
+    }
+  }
+
+  @Test
+  void keyedNativeWriterCreatesPartitionsUsingTheirActualRescaledBucketCount() throws Exception {
+    TablePath path = TablePath.of("arrow_test", "dynamic_keyed");
+    connection
+        .getAdmin()
+        .createTable(
+            path,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column("id", DataTypes.BIGINT())
+                        .column("value", DataTypes.BIGINT())
+                        .build())
+                .partitionedBy("id")
+                .distributedBy(2, "value")
+                .property("table.log.format", "ARROW")
+                .property("table.statistics.columns", "*")
+                .build(),
+            false)
+        .get();
+    var schema =
+        FlussArrowSchema.wireSchema(connection.getAdmin().getTableInfo(path).get().getRowType());
+    try (var allocator = new RootAllocator();
+        var root = VectorSchemaRoot.create(schema, allocator);
+        var writer = new FlussArrowClient(cluster.config(), path, schema, allocator, false)) {
+      root.allocateNew();
+      for (int i = 0; i < 128; i++) {
+        ((BigIntVector) root.getVector(0)).setSafe(i, 1L);
+        ((BigIntVector) root.getVector(1)).setSafe(i, (long) i);
+      }
+      root.setRowCount(128);
+      writer.appendAsync(root, "1");
+      writer.flush();
+      connection
+          .getAdmin()
+          .alterTable(
+              path, List.of(org.apache.fluss.metadata.TableChange.modifyBucketCount(4)), false)
+          .get();
+      for (int i = 0; i < 128; i++) ((BigIntVector) root.getVector(0)).setSafe(i, 2L);
+      writer.appendAsync(root, "2");
+      writer.flush();
+      var info = writer.tableInfo();
+      var encoder =
+          org.apache.fluss.row.encode.KeyEncoder.ofBucketKeyEncoder(
+              info.getRowType(), List.of("value"), null);
+      var partitions = connection.getAdmin().listPartitionInfos(path).get();
+      assertEquals(2, partitions.size());
+      for (var partition : partitions) {
+        int expected = partition.getPartitionName().equals("1") ? 2 : 4;
+        assertEquals(expected, partition.getBucketCount());
+        int count = 0;
+        try (var reader = new FlussArrowClient(cluster.config(), path, schema, allocator)) {
+          for (int bucket = 0; bucket < expected; bucket++) {
+            long end =
+                connection
+                    .getAdmin()
+                    .listOffsets(
+                        path,
+                        partition.getPartitionName(),
+                        List.of(bucket),
+                        new OffsetSpec.LatestSpec())
+                    .all()
+                    .get()
+                    .get(bucket);
+            for (var record :
+                reader.fetch(
+                    new LogSplit(
+                        new TableBucket(info.getTableId(), partition.getPartitionId(), bucket),
+                        partition.getPartitionName(),
+                        0,
+                        end)))
+              try (record) {
+                if (record.root() == null) continue;
+                var values = (BigIntVector) record.root().getVector(1);
+                for (int row = 0; row < record.root().getRowCount(); row++) {
+                  assertEquals(
+                      bucket,
+                      org.apache.fluss.bucketing.FlussBucketingFunction.bucketForRowKey(
+                          encoder.encodeKey(GenericRow.of(0L, values.get(row))), expected));
+                  count++;
+                }
+              }
+          }
+        }
+        assertEquals(128, count);
+      }
     }
   }
 

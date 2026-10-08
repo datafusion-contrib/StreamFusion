@@ -1,0 +1,45 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.coverage_bench.output_16_bucketed_write_native_1], fields=[id, metric, part])
++- LogicalProject(id=[$0], metric=[$1], part=[$2])
+   +- LogicalTableScan(table=[[fluss, coverage_bench, source_16]])
+
+== Optimized Physical Plan ==
+NativeFlussSink(reuseBarrier=[142])
++- NativeFlussSource(table=[coverage_bench.source_16], reuseBarrier=[141])
+
+== Optimized Execution Plan ==
+NativeFlussSink
++- NativeFlussSource(table=[coverage_bench.source_16])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 609,
+    "type" : "Source: native-fluss-source",
+    "pact" : "Data Source",
+    "contents" : "Source: native-fluss-source",
+    "parallelism" : 4
+  }, {
+    "id" : 610,
+    "type" : "native-fluss-partition-split",
+    "pact" : "Operator",
+    "contents" : "native-fluss-partition-split",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 609,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 612,
+    "type" : "native-fluss-append-sink: Writer",
+    "pact" : "Operator",
+    "contents" : "native-fluss-append-sink: Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 610,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

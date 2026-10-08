@@ -72,10 +72,10 @@ class FlussTablesTest {
   }
 
   @Test
-  void keepsPrimaryKeyWritesAndKeyedBucketRoutingOnFlink() throws Exception {
+  void admitsKeyedBucketsButKeepsPrimaryKeyWritesOnFlink() throws Exception {
     assertNull(FlussTables.sinkFallback(sink(false, List.of(), config())));
     assertNotNull(FlussTables.sinkFallback(sink(true, List.of(), config())));
-    assertNotNull(FlussTables.sinkFallback(sink(false, List.of("f0"), config())));
+    assertNull(FlussTables.sinkFallback(sink(false, List.of("f0"), config())));
     Configuration custom = config();
     custom.setString("client.writer.acks", "0");
     assertNotNull(FlussTables.sinkFallback(sink(false, List.of(), custom)));
@@ -156,12 +156,10 @@ class FlussTablesTest {
   }
 
   @Test
-  void statisticsEnabledTablesRequireTheStockAppendWriter() {
+  void statisticsEnabledTablesAdmitNativeAppendWriter() {
     assertNull(FlussTables.sinkOptionsFallback(Map.of("table.log.format", "ARROW")));
     for (String columns : List.of("*", "f0"))
-      assertTrue(
-          FlussTables.sinkOptionsFallback(Map.of("table.statistics.columns", columns))
-              .contains("table.statistics.columns"));
+      assertNull(FlussTables.sinkOptionsFallback(Map.of("table.statistics.columns", columns)));
   }
 
   private static Configuration config() {

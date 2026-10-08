@@ -243,6 +243,18 @@ final class FlussTables {
                       .get("table.log.format"))) {
         fallback = "append production requires an explicitly resolved ARROW table";
       }
+      if (fallback == null
+          && (!((List<?>) field(tableSink, "bucketKeys")).isEmpty()
+              || new TableConfig(
+                      Configuration.fromMap(
+                          sink.contextResolvedTable().getResolvedTable().getOptions()))
+                  .isStatisticsEnabled())) {
+        try {
+          tech.streamfusion.fluss.NativeFluss.requireLoaded();
+        } catch (LinkageError unavailable) {
+          fallback = "native bucket/statistics extension is unavailable";
+        }
+      }
       if (fallback != null) {
         context.decline("fluss sink: " + fallback);
         return null;
@@ -273,7 +285,31 @@ final class FlussTables {
     if (clientFallback != null) return clientFallback;
     if (((int[]) field(sink, "primaryKeyIndexes")).length != 0)
       return "primary-key production is explicitly not accelerated";
-    if (!((List<?>) field(sink, "bucketKeys")).isEmpty()) return "bucket-key routing uses Flink";
+
+    RowType rowType = (RowType) field(sink, "tableRowType");
+    for (Object key : (List<?>) field(sink, "bucketKeys")) {
+      var type = rowType.getTypeAt(rowType.getFieldNames().indexOf(key.toString()));
+      if (!switch (type.getTypeRoot()) {
+        case BOOLEAN,
+                TINYINT,
+                SMALLINT,
+                INTEGER,
+                BIGINT,
+                FLOAT,
+                DOUBLE,
+                CHAR,
+                VARCHAR,
+                BINARY,
+                VARBINARY,
+                DECIMAL,
+                DATE,
+                TIME_WITHOUT_TIME_ZONE,
+                TIMESTAMP_WITHOUT_TIME_ZONE,
+                TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
+            true;
+        default -> false;
+      }) return "complex bucket-key encoding uses Flink";
+    }
     if (!(boolean) field(sink, "streaming")) return "batch sinks use Flink";
     if (field(sink, "producerId") != null)
       return "explicit undo-recovery producer identity uses Flink";
@@ -311,9 +347,7 @@ final class FlussTables {
   static String sinkOptionsFallback(java.util.Map<String, String> options) {
     String transportFallback = tableTransportFallback(options);
     if (transportFallback != null) return transportFallback;
-    TableConfig tableConfig = new TableConfig(Configuration.fromMap(options));
-    if (tableConfig.isStatisticsEnabled())
-      return "table.statistics.columns requires the stock writer's batch statistics";
+
     return null;
   }
 

@@ -200,6 +200,20 @@ public final class FlussArrowLogBatch {
       int sequence,
       org.apache.arrow.vector.compression.CompressionCodec compression)
       throws IOException {
+    return encode(root, schemaId, writerId, sequence, compression, null);
+  }
+
+  static byte[] encode(
+      VectorSchemaRoot root,
+      int schemaId,
+      long writerId,
+      int sequence,
+      org.apache.arrow.vector.compression.CompressionCodec compression,
+      byte[] statistics)
+      throws IOException {
+    byte magic = statistics == null ? LOG_MAGIC_VALUE_V0 : LOG_MAGIC_VALUE_V1;
+    int headerSize = recordBatchHeaderSize(magic);
+    int statisticsSize = statistics == null ? 0 : statistics.length;
     require(schemaId >= 0 && schemaId <= 65535, "schema id exceeds log header range");
     require(root.getRowCount() > 0, "empty append batch");
     require(
@@ -212,17 +226,18 @@ public final class FlussArrowLogBatch {
       long paddedMetadata = (metadataSize + 7L) & ~7L;
       int size =
           Math.toIntExact(
-              V0_RECORD_BATCH_HEADER_SIZE + 8L + paddedMetadata + arrow.computeBodyLength());
+              headerSize + statisticsSize + 8L + paddedMetadata + arrow.computeBodyLength());
       result = new byte[size];
       ByteBuffer target = ByteBuffer.wrap(result);
-      target.position(V0_RECORD_BATCH_HEADER_SIZE);
+      target.position(headerSize);
+      if (statistics != null) target.put(statistics);
       try (WriteChannel channel = new WriteChannel(new OutputBufferChannel(target))) {
         MessageSerializer.serialize(channel, arrow);
       }
       require(!target.hasRemaining(), "Arrow serialized length mismatch");
     }
     ByteBuffer header = ByteBuffer.wrap(result).order(ByteOrder.LITTLE_ENDIAN);
-    byte magic = LOG_MAGIC_VALUE_V0;
+    if (statistics != null) header.putInt(statisticsLengthOffset(magic), statisticsSize);
     header.putInt(LENGTH_OFFSET, result.length - LOG_OVERHEAD);
     header.put(MAGIC_OFFSET, magic);
     header.putShort(schemaIdOffset(magic), (short) schemaId);

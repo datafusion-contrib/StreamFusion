@@ -1,0 +1,10 @@
+workload,partitions,rows,mode,run,seconds
+bucketed-write,16,100000,stock,0,4.371422773
+bucketed-write,16,100000,previous,0,2.416918467
+bucketed-write,16,100000,native,0,0.638678544
+bucketed-write,16,100000,native,1,0.567344843
+bucketed-write,16,100000,stock,1,4.579626351
+bucketed-write,16,100000,previous,1,2.387087035
+bucketed-write,16,100000,previous,2,2.237169183
+bucketed-write,16,100000,native,2,0.656261213
+bucketed-write,16,100000,stock,2,4.416914887
