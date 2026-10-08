@@ -36,6 +36,7 @@ import org.apache.paimon.table.sink.StreamTableWrite;
 import org.apache.paimon.table.source.ReadBuilder;
 import org.apache.paimon.table.source.StreamTableScan;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.operator.RowDataArrowConverter;
@@ -211,6 +212,60 @@ class PaimonChangelogSinkWriteTest {
     assertFalse(changes.get(0).isEmpty());
     assertEquals(contents.get(0), contents.get(1));
     assertEquals(changes.get(0), changes.get(1));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"false,false", "true,false", "false,true", "true,true"})
+  void fullCompactionIncludesFilesWhoseCheckpointCommitIsDelayed(
+      boolean nativeWriter, boolean explicitRestore) throws Exception {
+    FileStoreTable table =
+        PaimonTestTables.createPrimaryKeyTable(
+            Files.createTempDirectory("pk-delayed-commit"),
+            Map.of(
+                "bucket",
+                "2",
+                "changelog-producer",
+                "full-compaction",
+                "full-compaction.delta-commits",
+                "3",
+                "num-sorted-run.compaction-trigger",
+                "100",
+                "num-levels",
+                "4"));
+    List<Object[]> input = PaimonTestTables.changelog(4, 2);
+    try (Writer writer = new Writer(table, nativeWriter, new MemoryState())) {
+      if (explicitRestore) {
+        writer.write.setWriteRestore(
+            new org.apache.paimon.operation.FileSystemWriteRestore(
+                table.coreOptions(),
+                table.snapshotManager(),
+                table.store().newScan(),
+                table.store().newIndexFileHandler()));
+      }
+      writer.write(input.subList(0, 2));
+      writer.commit(true, 1);
+      writer.commit(false, 2);
+      assertEquals(2, table.latestSnapshot().orElseThrow().commitIdentifier());
+      writer.write(input.subList(2, 3));
+      List<CommitMessage> pending =
+          writer.write.prepareCommit(false, 4).stream().map(Committable::commitMessage).toList();
+      assertEquals(
+          1,
+          writer.delegate.getWrite().checkpoint().size(),
+          "an unrelated committed bucket must be cleaned while another has pending data");
+      List<CommitMessage> compacted =
+          writer.write.prepareCommit(false, 6).stream().map(Committable::commitMessage).toList();
+      writer.commit.commit(4, pending);
+      writer.commit.commit(6, compacted);
+      List<String> changes = changelogRows(table);
+      assertEquals(4, changes.size(), changes.toString());
+      assertTrue(changes.stream().anyMatch(row -> row.contains("name-2")), changes.toString());
+      writer.commit(false, 7);
+      writer.commit(false, 8);
+      assertTrue(
+          writer.delegate.getWrite().checkpoint().isEmpty(),
+          "committed idle writers must still be released");
+    }
   }
 
   @ParameterizedTest

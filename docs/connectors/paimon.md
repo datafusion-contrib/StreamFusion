@@ -735,6 +735,12 @@ For fixed and dynamic buckets:
   `changelog-producer.compaction-interval`, including idle checkpoints and restored buckets.
   These scheduling options also work with `changelog-producer = none` or `input`.
   Ordinary table compaction can still run between scheduled full compactions, as in stock Paimon.
+  Native file hand-off also marks the bucket's data checkpoint before Paimon checks idle cleanup.
+  Otherwise its own increment can look empty before the native files are attached, allowing the
+  writer to close and scheduled compaction to reopen an older snapshot. The released Paimon
+  1.0/2.0 writer-container hook updates only that bucket's modification identifier; unrelated
+  committed idle buckets still close. Its field layout and accessibility are checked at planning
+  time, with stock-sink fallback if the hook is unavailable.
 - **Deletion vectors:** for `deduplicate` tables with `none`, `input`, or `lookup`, Paimon's
   lookup compactor produces the deletion vectors and its index metadata is retained in the
   checkpoint commit. Read visibility follows Paimon's options: uncompacted level-0 files are
@@ -770,6 +776,25 @@ the performance diagnostics below are opt-in.
 That rolled-file fixture uses stock fixed-bucket ingestion as its arrival-order oracle: released
 Java postpone writers can give two files the same millisecond creation time and replay them out
 of order. Native postpone files use strictly increasing creation times as described above.
+
+### Native file hand-off and checkpoint visibility
+
+The post-merge [Paimon job on `d0c47748`](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37813589585/job/113444470047)
+timed out waiting for a full-compaction changelog. Stock replay of its retained warehouse reads
+all 256 final values in batch, but only 236 terminal keys from the stored changelog. Stock replay
+of the [second PR #308 attempt](https://github.com/datafusion-contrib/StreamFusion/actions/runs/37821936324/job/113481393493)
+also reads all 256 final values in batch while its changelog retains older values.
+
+A deterministic stock/native regression delays publication of checkpoint 4 until after scheduled
+full-compaction checkpoint 6. Stock retains the pending update, while the original native
+implementation emits only the original inserts. The native writer had been closed during commit
+preparation: Paimon's own commit increment appeared empty before the native
+data files were added. Reopening from the earlier committed snapshot lost their compaction input.
+Marking the native checkpoint in its bucket's writer container preserves that compaction input
+until the data commit becomes visible. Regression coverage exercises default and explicitly
+installed Paimon 2.0 restore providers, delayed commits under Paimon 1.0, and cleanup of an
+unrelated committed bucket while another bucket still has pending data. No task-wide retention
+barrier is used. This race is distinct from the released split-commit recovery defect below; neither timeout extension nor retry changes either contract.
 
 ### Released Paimon 2.0 split-commit recovery diagnostic
 

@@ -220,6 +220,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
         if (!buffer.pendingFiles.isEmpty()) {
           delegate.notifyNewFiles(
               NEW_FILES_SNAPSHOT, buffer.partition, buffer.bucket, buffer.pendingFiles);
+          PaimonWriterLifecycle.modified(delegate, buffer.partition, buffer.bucket, checkpointId);
           if (delegate instanceof GlobalFullCompactionSinkWrite) {
             // The public compaction entry also records this bucket in Paimon's checkpoint state.
             // notifyNewFiles alone does not enroll it in the scheduled full compaction.

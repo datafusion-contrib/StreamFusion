@@ -110,7 +110,10 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   }
 
   private NativeKeyValueSinkWrite(
-      FileStoreTable table, StoreSinkWrite delegate, String postponePrefix, StoreSinkWriteState state) {
+      FileStoreTable table,
+      StoreSinkWrite delegate,
+      String postponePrefix,
+      StoreSinkWriteState state) {
     this.state = state;
     var restored = state.get(table.name(), SEQUENCE_STATE);
     if (restored != null) {
@@ -334,6 +337,7 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
         if (!postpone && !buffer.pendingFiles.isEmpty()) {
           delegate.notifyNewFiles(
               NEW_FILES_SNAPSHOT, buffer.partition, buffer.bucket, buffer.pendingFiles);
+          PaimonWriterLifecycle.modified(delegate, buffer.partition, buffer.bucket, checkpointId);
           if (delegate instanceof GlobalFullCompactionSinkWrite) {
             // The public compaction entry also records this bucket in Paimon's checkpoint state.
             // notifyNewFiles alone does not enroll it in the scheduled full compaction.
