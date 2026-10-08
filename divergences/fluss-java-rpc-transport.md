@@ -15,10 +15,15 @@ bridge; compressed data and under-aligned native imports still allocate.
 This choice permits append-only and primary-key log reads, including their aligned
 change-type sidecar, and append-only production on a released broker today. It also
 requires a narrow admission whitelist and exact connector-version pin. Unsupported
-options and primary-key writes retain the stock connector. Initial primary-key
+data-plane settings and primary-key writes retain the stock connector. Connection settings
+are delegated to the released Java transport. Partitioned append writes reuse the existing
+native Arrow partition splitter and Fluss's partition naming/creation; bucket counts come
+from each partition's metadata. Statistics batch filters use Fluss's released predicate
+encoder, with residual query filters and filtered-offset progress preserved. Initial primary-key
 snapshots and remote range pruning are not optimized.
 
-The integration remains optional and off by default. A future move to the stable
+The integration remains optional and enables verified substitutions by default when installed.
+`-Dstreamfusion.fluss.enabled=false` disables those substitutions. A future move to the stable
 public Arrow polling contract is tracked by [issue #25](https://github.com/datafusion-contrib/StreamFusion/issues/25);
 that issue is not closed by this lower-level transport. Coverage and measured limits
 live in [the connector documentation](../docs/connectors/fluss.md).

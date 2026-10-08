@@ -15,6 +15,9 @@ serialized operator configuration rather than process-global state before a stab
   two-phase global half, `windowRank` also covers window deduplication. All default on.
   Optional connector operators only activate once the matching connector extension and format JAR
   are installed; otherwise the plan falls back to Flink's own path.
+- **`-Dstreamfusion.fluss.enabled=false`** — disable the optional Fluss extension’s source/sink
+  substitutions. This JVM property defaults to true when `streamfusion-fluss` is installed;
+  only the verified combinations in [Fluss](connectors/fluss.md) accelerate.
 - **`-Dstreamfusion.expression.<NAME>.allowIncompatible=true`** — opt into the faster pure-Rust
   path for expressions that otherwise use a byte-exact JVM upcall or fall back (`UPPER`/`LOWER`,
   `REGEXP_EXTRACT`, `DATE_FORMAT`/`EXTRACT` over `TIMESTAMP_LTZ`, `ROUND` on float, transcendental

@@ -1,0 +1,34 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.coverage_bench.output_16_partitioned_write_stock_1], fields=[id, metric, part])
++- LogicalProject(id=[$0], metric=[$1], part=[$2])
+   +- LogicalTableScan(table=[[fluss, coverage_bench, source_16]])
+
+== Optimized Physical Plan ==
+Sink(table=[fluss.coverage_bench.output_16_partitioned_write_stock_1], fields=[id, metric, part])
++- TableSourceScan(table=[[fluss, coverage_bench, source_16]], fields=[id, metric, part])
+
+== Optimized Execution Plan ==
+Sink(table=[fluss.coverage_bench.output_16_partitioned_write_stock_1], fields=[id, metric, part])
++- TableSourceScan(table=[[fluss, coverage_bench, source_16]], fields=[id, metric, part])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 414,
+    "type" : "Source: source_16[294]",
+    "pact" : "Data Source",
+    "contents" : "[294]:TableSourceScan(table=[[fluss, coverage_bench, source_16]], fields=[id, metric, part])",
+    "parallelism" : 4
+  }, {
+    "id" : 416,
+    "type" : "Sink(coverage_bench.output_16_partitioned_write_stock_1): Writer",
+    "pact" : "Operator",
+    "contents" : "Sink(coverage_bench.output_16_partitioned_write_stock_1): Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 414,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

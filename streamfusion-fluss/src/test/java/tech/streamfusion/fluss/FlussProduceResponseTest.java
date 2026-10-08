@@ -32,6 +32,18 @@ class FlussProduceResponseTest {
   }
 
   @Test
+  void duplicateAcknowledgementsCannotCrossPartitionsWithTheSameBucketNumber() {
+    var bucket = new org.apache.fluss.metadata.TableBucket(1, 42L, 3);
+    var reply = response(3, Errors.DUPLICATE_SEQUENCE_EXCEPTION);
+    reply.getBucketsRespAt(0).setPartitionId(42);
+    assertDoesNotThrow(() -> FlussArrowClient.validateAppendResponse(reply, bucket));
+    reply.getBucketsRespAt(0).setPartitionId(43);
+    assertThrows(IOException.class, () -> FlussArrowClient.validateAppendResponse(reply, bucket));
+    reply.getBucketsRespAt(0).clearPartitionId();
+    assertThrows(IOException.class, () -> FlussArrowClient.validateAppendResponse(reply, bucket));
+  }
+
+  @Test
   void authorizationAndLostSequencesStillFailTheWriter() {
     assertThrows(
         AuthorizationException.class,

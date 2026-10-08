@@ -13,12 +13,14 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.flink.source.FlinkSource;
 import org.apache.fluss.metadata.TablePath;
+import org.apache.fluss.predicate.Predicate;
 
 /** Fluss log scan whose task boundary emits Arrow and aligned CDC kinds. */
 public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
     implements StreamPhysicalRel, ColumnarOutput, ShareableScan, ProjectableNativeSource {
   private final RelDataType outputType;
   private final FlinkSource<?> delegate;
+  private final Predicate filter;
   private final Configuration config;
   private final TablePath path;
   private final ScanWatermarkSpec watermark;
@@ -34,6 +36,7 @@ public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
       FlinkSource<?> delegate,
       Configuration config,
       TablePath path,
+      Predicate filter,
       ScanWatermarkSpec watermark,
       String sourceKey,
       boolean preserveSchemaForSharing,
@@ -43,6 +46,7 @@ public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
     this.delegate = delegate;
     this.config = config;
     this.path = path;
+    this.filter = filter;
     this.watermark = watermark;
     this.sourceKey = sourceKey;
     this.preserveSchemaForSharing = preserveSchemaForSharing;
@@ -68,6 +72,7 @@ public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
         delegate,
         config,
         path,
+        filter,
         watermark,
         sourceKey,
         preserveSchemaForSharing,
@@ -76,7 +81,10 @@ public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
 
   @Override
   public RelWriter explainTerms(RelWriter writer) {
-    RelWriter explained = super.explainTerms(writer).item("table", path);
+    RelWriter explained =
+        super.explainTerms(writer)
+            .item("table", path)
+            .itemIf("batchFilter", filter, filter != null);
     return shareToken == 0
         ? NativeRelDigests.withBarrier(explained, reuseBarrier)
         : explained.itemIf(
@@ -99,6 +107,7 @@ public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
         delegate,
         config,
         path,
+        filter,
         watermark,
         sourceKey,
         preserveSchemaForSharing,
@@ -133,6 +142,7 @@ public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
         delegate,
         config,
         path,
+        filter,
         next,
         sourceKey,
         preserveSchemaForSharing,
@@ -148,6 +158,7 @@ public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
         delegate,
         config,
         path,
+        filter,
         watermark);
   }
 }

@@ -1,0 +1,48 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.coverage_bench.output_16_filtered_read_native_1], fields=[id, metric, part])
++- LogicalProject(id=[$0], metric=[$1], part=[$2])
+   +- LogicalFilter(condition=[=($1, 7)])
+      +- LogicalTableScan(table=[[fluss, coverage_bench, source_16]])
+
+== Optimized Physical Plan ==
+NativeFlussSink(reuseBarrier=[157])
++- NativeCalc(reuseBarrier=[156])
+   +- NativeFlussSource(table=[coverage_bench.source_16], batchFilter=[Equal(metric, 7)], reuseBarrier=[155])
+
+== Optimized Execution Plan ==
+NativeFlussSink
++- NativeCalc
+   +- NativeFlussSource(table=[coverage_bench.source_16], batchFilter=[Equal(metric, 7)])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 441,
+    "type" : "Source: native-fluss-source",
+    "pact" : "Data Source",
+    "contents" : "Source: native-fluss-source",
+    "parallelism" : 4
+  }, {
+    "id" : 442,
+    "type" : "NativeCalcExecNode[320]",
+    "pact" : "Operator",
+    "contents" : "[320]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 441,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 444,
+    "type" : "native-fluss-append-sink: Writer",
+    "pact" : "Operator",
+    "contents" : "native-fluss-append-sink: Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 442,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

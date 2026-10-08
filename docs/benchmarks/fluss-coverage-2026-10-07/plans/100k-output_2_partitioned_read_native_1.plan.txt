@@ -1,0 +1,34 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.coverage_bench.output_2_partitioned_read_native_1], fields=[id, metric, part])
++- LogicalProject(id=[$0], metric=[$1], part=[$2])
+   +- LogicalTableScan(table=[[fluss, coverage_bench, partitioned_source_2]])
+
+== Optimized Physical Plan ==
+NativeFlussSink(reuseBarrier=[50])
++- NativeFlussSource(table=[coverage_bench.partitioned_source_2], reuseBarrier=[49])
+
+== Optimized Execution Plan ==
+NativeFlussSink
++- NativeFlussSource(table=[coverage_bench.partitioned_source_2])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 169,
+    "type" : "Source: native-fluss-source",
+    "pact" : "Data Source",
+    "contents" : "Source: native-fluss-source",
+    "parallelism" : 4
+  }, {
+    "id" : 171,
+    "type" : "native-fluss-append-sink: Writer",
+    "pact" : "Operator",
+    "contents" : "native-fluss-append-sink: Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 169,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

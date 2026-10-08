@@ -13,6 +13,7 @@ import org.apache.fluss.metadata.TablePath;
 
 public final class StreamPhysicalNativeFlussSink extends StreamPhysicalNativeSingleRel
     implements ColumnarInput {
+  private final List<String> partitionKeys;
   private final RowType type;
   private final Configuration config;
   private final TablePath path;
@@ -24,11 +25,13 @@ public final class StreamPhysicalNativeFlussSink extends StreamPhysicalNativeSin
       RelDataType outputType,
       RowType type,
       Configuration config,
-      TablePath path) {
+      TablePath path,
+      List<String> partitionKeys) {
     super(cluster, traits, input, outputType);
     this.type = type;
     this.config = config;
     this.path = path;
+    this.partitionKeys = List.copyOf(partitionKeys);
   }
 
   @Override
@@ -39,12 +42,17 @@ public final class StreamPhysicalNativeFlussSink extends StreamPhysicalNativeSin
   @Override
   public RelNode copy(RelTraitSet traits, List<RelNode> inputs) {
     return new StreamPhysicalNativeFlussSink(
-        getCluster(), traits, inputs.get(0), outputRowType, type, config, path);
+        getCluster(), traits, inputs.get(0), outputRowType, type, config, path, partitionKeys);
   }
 
   @Override
   public ExecNode<?> translateToExecNode() {
     return new NativeFlussSinkExecNode(
-        ShortcutUtils.unwrapTableConfig(this), type, getRelDetailedDescription(), config, path);
+        ShortcutUtils.unwrapTableConfig(this),
+        type,
+        getRelDetailedDescription(),
+        config,
+        path,
+        partitionKeys);
   }
 }

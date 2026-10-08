@@ -45,7 +45,8 @@ queue overlaps encoding with RPC work and permits independent buckets to progres
 concurrently. Each bucket keeps a sequential future chain, including retries, so its
 writer sequence cannot be reordered. Checkpoint flush waits for every acknowledgement.
 Sealed batches use the released SDK's sticky no-key assigner and cluster metadata.
-Explicit client configuration beyond bootstrap servers retains the stock endpoint,
+Connection settings are delegated to the released Java transport; unsupported explicit
+scanner/writer policies retain the stock endpoint,
 as does a statistics-enabled sink; see the [settings audit](../connectors/fluss-client-settings.md).
 Already queued batches can share one request without concatenating their wire arrays:
 the released client's composite byte view traverses the separate arrays during its
@@ -127,7 +128,7 @@ seconds (6.05×), and q14 from 2.934 to 0.923 seconds (3.18×). Stock medians re
 cannot be attributed to shutdown. The [complete control samples](../benchmarks/fluss-close-controls.csv)
 include every trial. These are lifecycle improvements in bounded jobs, not a claim
 that sustained Arrow processing becomes six times faster. Immediate shutdown is now
-the default within the opt-in connector after the 37 transport contract cases, all
+the default within the optional connector after the 37 transport contract cases, all
 10 ported SQL cases, and the complete 23-query
 RocksDB correctness smoke passed. Set `-Dstreamfusion.fluss.fast-close.enabled=false`
 to reproduce the SDK quiet-period control.

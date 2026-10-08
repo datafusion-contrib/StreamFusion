@@ -10,21 +10,21 @@ public final class FlussPlannerExtension implements NativePlannerExtension {
   public void addSubstitutions(List<Substitution<?>> entries) {
     entries.add(
         Substitution.of(StreamPhysicalTableSourceScan.class, "flussSource", FlussTables::source)
-            .matching(
-                scan ->
-                    Boolean.getBoolean("streamfusion.fluss.enabled") && FlussTables.isSource(scan))
+            .matching(scan -> enabled() && FlussTables.isSource(scan))
             .changelogSafe());
     entries.add(
         Substitution.of(StreamPhysicalSink.class, "flussSink", FlussTables::sink)
-            .matching(
-                sink ->
-                    Boolean.getBoolean("streamfusion.fluss.enabled") && FlussTables.isSink(sink))
+            .matching(sink -> enabled() && FlussTables.isSink(sink))
             .changelogSafe());
+  }
+
+  private static boolean enabled() {
+    return Boolean.parseBoolean(System.getProperty("streamfusion.fluss.enabled", "true"));
   }
 
   @Override
   public String sourceSharingKey(org.apache.calcite.rel.RelNode node) {
-    if (Boolean.getBoolean("streamfusion.fluss.enabled")
+    if (enabled()
         && node instanceof StreamPhysicalTableSourceScan scan
         && FlussTables.isSource(scan)) return FlussTables.sourceSharingKey(scan);
     return null;

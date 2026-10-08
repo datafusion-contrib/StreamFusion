@@ -198,7 +198,7 @@ is `SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench` for the end-to
 
 ## Fluss-to-Fluss Nexmark
 
-The opt-in connector runs all 23 runnable queries with released Fluss 1.0.0 at both
+The optional connector runs all 23 runnable queries with released Fluss 1.0.0 at both
 ends. Append-only outputs use Arrow production; primary-key outputs retain Flink's
 stock writer. Profiling removed redundant connection shutdowns, heap receive staging,
 frame growth copies and whole-vector LZ4 staging.
@@ -236,7 +236,8 @@ All measured trials remain in the results. Primary-key outputs use stock product
 and pass separate correctness checks. Deterministic Fluss outputs match stock Flink;
 q12 observes processing time. [Configuration, all trials, SQL/CI validation and
 profiles](docs/connectors/fluss.md#matched-transport-measurements) are documented.
-The connector remains experimental and opt-in.
+The connector remains experimental; verified substitutions are enabled by default when installed.
+Set `-Dstreamfusion.fluss.enabled=false` to use the stock connector endpoints.
 
 ## Related work
 

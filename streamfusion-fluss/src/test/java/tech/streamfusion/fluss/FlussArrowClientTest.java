@@ -430,6 +430,297 @@ class FlussArrowClientTest {
   }
 
   @Test
+  void fetchFailuresWakeTheMailboxAndFailPollingRatherThanAvailability() throws Exception {
+    TablePath path = table("invalid_fetch_offset", false, "NONE", "FULL");
+    var type =
+        org.apache.fluss.flink.utils.FlinkConversions.toFlinkRowType(
+            connection.getAdmin().getTableInfo(path).get().getRowType());
+    long tableId = connection.getAdmin().getTableInfo(path).get().getTableId();
+    try (var reader =
+        new FlussArrowSourceReader(readerContext(), cluster.config(), path, type, -1, null)) {
+      reader.addSplits(
+          List.of(
+              new LogSplit(
+                  new TableBucket(tableId, 0), null, 1_000_000, LogSplit.NO_STOPPING_OFFSET)));
+      reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
+      assertThrows(
+          java.util.concurrent.ExecutionException.class,
+          () -> reader.pollNext(readerOutput(new ArrayList<>(), false)));
+      assertEquals(1_000_000, reader.snapshotState(1).get(0).asLogSplit().getStartingOffset());
+    }
+  }
+
+  @Test
+  void filteredOffsetsCheckpointEvenWhenNoRowsMatch() throws Exception {
+    TablePath path = TablePath.of("arrow_test", "filtered_offsets");
+    var rowType =
+        DataTypes.ROW(
+            DataTypes.FIELD("id", DataTypes.BIGINT()),
+            DataTypes.FIELD("value", DataTypes.BIGINT()));
+    connection
+        .getAdmin()
+        .createTable(
+            path,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column("id", DataTypes.BIGINT())
+                        .column("value", DataTypes.BIGINT())
+                        .build())
+                .distributedBy(1)
+                .property("table.log.format", "ARROW")
+                .property("table.statistics.columns", "*")
+                .build(),
+            false)
+        .get();
+    var writer = connection.getTable(path).newAppend().createWriter();
+    for (int batch = 0; batch < 3; batch++) {
+      for (int i = 0; i < 100; i++)
+        writer.append(GenericRow.of((long) (batch * 100 + i), (long) batch));
+      writer.flush();
+    }
+    var type = org.apache.fluss.flink.utils.FlinkConversions.toFlinkRowType(rowType);
+    long id = connection.getAdmin().getTableInfo(path).get().getTableId();
+    var filter = new org.apache.fluss.predicate.PredicateBuilder(rowType).equal(1, 100L);
+    List<Long> collected = new ArrayList<>();
+    try (var reader =
+        new FlussArrowSourceReader(
+            readerContext(), cluster.config(), path, type, -1, null, filter)) {
+      reader.addSplits(List.of(new LogSplit(new TableBucket(id, 0), null, 0, 300)));
+      reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
+      assertEquals(0, reader.snapshotState(1).get(0).asLogSplit().getStartingOffset());
+      reader.pollNext(readerOutput(collected, false));
+      assertTrue(collected.isEmpty());
+      var checkpoint = reader.snapshotState(2);
+      assertTrue(checkpoint.isEmpty() || checkpoint.get(0).asLogSplit().getStartingOffset() == 300);
+    }
+  }
+
+  @Test
+  void partitionedCheckpointRestoresOnlyCollectedRows() throws Exception {
+    TablePath path = TablePath.of("arrow_test", "partition_checkpoint");
+    connection
+        .getAdmin()
+        .createTable(
+            path,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column("id", DataTypes.BIGINT())
+                        .column("value", DataTypes.BIGINT())
+                        .build())
+                .partitionedBy("id")
+                .distributedBy(1)
+                .property("table.log.format", "ARROW")
+                .build(),
+            false)
+        .get();
+    var writer = connection.getTable(path).newAppend().createWriter();
+    for (int first = 1; first <= 5; first += 2) {
+      for (int i = first; i <= Math.min(5, first + 1); i++)
+        writer.append(GenericRow.of(42L, (long) i));
+      writer.flush();
+    }
+    var info = connection.getAdmin().getTableInfo(path).get();
+    var partition = connection.getAdmin().listPartitionInfos(path).get().get(0);
+    var type = org.apache.fluss.flink.utils.FlinkConversions.toFlinkRowType(info.getRowType());
+    var bucket = new TableBucket(info.getTableId(), partition.getPartitionId(), 0);
+    List<Long> collected = new ArrayList<>();
+    List<org.apache.fluss.flink.source.split.SourceSplitBase> checkpoint;
+    try (var reader =
+        new FlussArrowSourceReader(readerContext(), cluster.config(), path, type, -1, null)) {
+      reader.addSplits(List.of(new LogSplit(bucket, partition.getPartitionName(), 0, 5)));
+      reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
+      reader.pollNext(readerOutput(collected, false));
+      checkpoint = reader.snapshotState(1);
+      assertEquals(2, checkpoint.get(0).asLogSplit().getStartingOffset());
+    }
+    try (var reader =
+        new FlussArrowSourceReader(readerContext(), cluster.config(), path, type, -1, null)) {
+      reader.addSplits(checkpoint);
+      reader.notifyNoMoreSplits();
+      org.apache.flink.core.io.InputStatus status;
+      do {
+        reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
+        status = reader.pollNext(readerOutput(collected, false));
+      } while (status != org.apache.flink.core.io.InputStatus.END_OF_INPUT);
+    }
+    assertEquals(List.of(1L, 2L, 3L, 4L, 5L), collected);
+  }
+
+  @Test
+  void removedPartitionDropsPrefetchAndCheckpointStateAndAcknowledgesItsBuckets() throws Exception {
+    TablePath path = TablePath.of("arrow_test", "removed_partition");
+    connection
+        .getAdmin()
+        .createTable(
+            path,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column("id", DataTypes.BIGINT())
+                        .column("value", DataTypes.BIGINT())
+                        .build())
+                .partitionedBy("id")
+                .distributedBy(2)
+                .property("table.log.format", "ARROW")
+                .build(),
+            false)
+        .get();
+    var writer = connection.getTable(path).newAppend().createWriter();
+    writer.append(GenericRow.of(1L, 10L));
+    writer.flush();
+    var partition = connection.getAdmin().listPartitionInfos(path).get().get(0);
+    long tableId = connection.getAdmin().getTableInfo(path).get().getTableId();
+    var type =
+        org.apache.fluss.flink.utils.FlinkConversions.toFlinkRowType(
+            connection.getAdmin().getTableInfo(path).get().getRowType());
+    List<org.apache.flink.api.connector.source.SourceEvent> events = new ArrayList<>();
+    try (var reader =
+        new FlussArrowSourceReader(readerContext(events), cluster.config(), path, type, -1, null)) {
+      var buckets =
+          List.of(
+              new TableBucket(tableId, partition.getPartitionId(), 0),
+              new TableBucket(tableId, partition.getPartitionId(), 1));
+      reader.addSplits(
+          buckets.stream()
+              .map(
+                  bucket ->
+                      (org.apache.fluss.flink.source.split.SourceSplitBase)
+                          new LogSplit(
+                              bucket, partition.getPartitionName(), 0, LogSplit.NO_STOPPING_OFFSET))
+              .toList());
+      reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
+      reader.handleSourceEvents(
+          new org.apache.fluss.flink.source.event.PartitionsRemovedEvent(
+              java.util.Map.of(partition.getPartitionId(), partition.getPartitionName())));
+      assertEquals(2, reader.snapshotState(1).size());
+      List<Long> collected = new ArrayList<>();
+      reader.pollNext(readerOutput(collected, false));
+      assertTrue(collected.isEmpty());
+      assertTrue(reader.snapshotState(2).isEmpty());
+      assertEquals(1, events.size());
+      assertEquals(
+          new java.util.HashSet<>(buckets),
+          new java.util.HashSet<>(
+              ((org.apache.fluss.flink.source.event.PartitionBucketsUnsubscribedEvent)
+                      events.get(0))
+                  .getRemovedTableBuckets()));
+    }
+  }
+
+  @Test
+  void disabledDynamicCreationWritesExistingPartitionsAndRejectsMissingOnes() throws Exception {
+    TablePath path = TablePath.of("arrow_test", "creation_disabled");
+    connection
+        .getAdmin()
+        .createTable(
+            path,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column("id", DataTypes.BIGINT())
+                        .column("value", DataTypes.BIGINT())
+                        .build())
+                .partitionedBy("id")
+                .distributedBy(2)
+                .property("table.log.format", "ARROW")
+                .build(),
+            false)
+        .get();
+    var stock = connection.getTable(path).newAppend().createWriter();
+    stock.append(GenericRow.of(1L, 10L));
+    stock.flush();
+    var config = cluster.config();
+    config.set(ConfigOptions.CLIENT_WRITER_DYNAMIC_CREATE_PARTITION_ENABLED, false);
+    var schema =
+        FlussArrowSchema.wireSchema(connection.getAdmin().getTableInfo(path).get().getRowType());
+    try (var allocator = new RootAllocator();
+        var root = VectorSchemaRoot.create(schema, allocator);
+        var writer = new FlussArrowClient(config, path, schema, allocator, false)) {
+      root.allocateNew();
+      ((BigIntVector) root.getVector(0)).setSafe(0, 1L);
+      ((BigIntVector) root.getVector(1)).setSafe(0, 20L);
+      root.setRowCount(1);
+      writer.appendAsync(root, "1");
+      writer.flush();
+      ((BigIntVector) root.getVector(0)).setSafe(0, 2L);
+      assertThrows(
+          org.apache.fluss.exception.PartitionNotExistException.class,
+          () -> writer.appendAsync(root, "2"));
+      assertEquals(1, connection.getAdmin().listPartitionInfos(path).get().size());
+    }
+  }
+
+  @Test
+  void saslAndConnectionSettingsUseTheReleasedHandshake() throws Exception {
+    try (var secured = new FlussTestCluster(true)) {
+      secured.start();
+      var config = secured.config();
+      config.setString("client.id", "secured-arrow");
+      config.setString("client.connect-timeout", "20s");
+      config.setString("client.request-timeout", "30s");
+      config.setString("netty.client.num-network-threads", "2");
+      try (var adminConnection = ConnectionFactory.createConnection(config)) {
+        var path = TablePath.of("security_test", "records");
+        adminConnection
+            .getAdmin()
+            .createDatabase("security_test", DatabaseDescriptor.EMPTY, true)
+            .get();
+        adminConnection
+            .getAdmin()
+            .createTable(
+                path,
+                TableDescriptor.builder()
+                    .schema(
+                        org.apache.fluss.metadata.Schema.newBuilder()
+                            .column("value", DataTypes.BIGINT())
+                            .build())
+                    .distributedBy(1)
+                    .property("table.log.format", "ARROW")
+                    .build(),
+                false)
+            .get();
+        for (boolean heap : new boolean[] {false, true}) {
+          config.setString("netty.client.allocator.heap-buffer-first", Boolean.toString(heap));
+          try (var allocator = new RootAllocator();
+              var root = VectorSchemaRoot.create(PROJECTION, allocator);
+              var producer = new FlussArrowClient(config, path, PROJECTION, allocator, false);
+              var consumer = new FlussArrowClient(config, path, PROJECTION, allocator)) {
+            root.allocateNew();
+            ((BigIntVector) root.getVector(0)).setSafe(0, heap ? 2L : 1L);
+            root.setRowCount(1);
+            producer.append(root);
+            var fetched =
+                consumer.fetch(
+                    new LogSplit(
+                        new TableBucket(producer.tableInfo().getTableId(), 0),
+                        null,
+                        heap ? 1 : 0,
+                        heap ? 2 : 1));
+            try {
+              assertEquals(
+                  1,
+                  fetched.stream()
+                      .filter(batch -> batch.root() != null)
+                      .mapToInt(batch -> batch.root().getRowCount())
+                      .sum());
+            } finally {
+              fetched.forEach(FlussArrowClient.Fetched::close);
+            }
+          }
+        }
+        var wrong = new org.apache.fluss.config.Configuration(config);
+        wrong.setString("client.security.sasl.password", "incorrect-fixture-password");
+        try (var allocator = new RootAllocator()) {
+          assertThrows(
+              Exception.class, () -> new FlussArrowClient(wrong, path, PROJECTION, allocator));
+        }
+      }
+    }
+  }
+
+  @Test
   void limitedFetchResumesBeforeAnIncompleteTrailingBatch() throws Exception {
     TablePath path = table("fetch_limit", false, "NONE", "FULL");
     Schema full =
@@ -712,6 +1003,11 @@ class FlussArrowClientTest {
   }
 
   private static org.apache.flink.api.connector.source.SourceReaderContext readerContext() {
+    return readerContext(new ArrayList<>());
+  }
+
+  private static org.apache.flink.api.connector.source.SourceReaderContext readerContext(
+      List<org.apache.flink.api.connector.source.SourceEvent> events) {
     org.apache.flink.configuration.Configuration config =
         new org.apache.flink.configuration.Configuration();
     config.set(
@@ -727,7 +1023,11 @@ class FlussArrowClientTest {
                   case "metricGroup" ->
                       org.apache.flink.metrics.groups.UnregisteredMetricsGroup
                           .createSourceReaderMetricGroup();
-                  case "sendSplitRequest", "sendSourceEventToCoordinator" -> null;
+                  case "sendSplitRequest" -> null;
+                  case "sendSourceEventToCoordinator" -> {
+                    events.add((org.apache.flink.api.connector.source.SourceEvent) args[0]);
+                    yield null;
+                  }
                   default -> throw new UnsupportedOperationException(method.getName());
                 });
   }

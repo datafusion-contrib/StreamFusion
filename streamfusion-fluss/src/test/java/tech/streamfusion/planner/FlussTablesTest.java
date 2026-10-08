@@ -27,6 +27,27 @@ class FlussTablesTest {
   private static final RowType TYPE = RowType.of(new BigIntType());
 
   @Test
+  void sourceSharingDistinguishesPredicateLiteralsWithTheSameDisplayText() throws Exception {
+    var type = org.apache.fluss.types.RowType.of(org.apache.fluss.types.DataTypes.STRING());
+    var builder = new org.apache.fluss.predicate.PredicateBuilder(type);
+    List<Object> oneLiterals = new java.util.ArrayList<>();
+    List<Object> twoLiterals = new java.util.ArrayList<>();
+    oneLiterals.add(org.apache.fluss.row.BinaryString.fromString("a, b"));
+    twoLiterals.add(org.apache.fluss.row.BinaryString.fromString("a"));
+    twoLiterals.add(org.apache.fluss.row.BinaryString.fromString("b"));
+    for (int i = 0; i < 21; i++) {
+      var literal = org.apache.fluss.row.BinaryString.fromString("item" + i);
+      oneLiterals.add(literal);
+      twoLiterals.add(literal);
+    }
+    var one = builder.in(0, oneLiterals);
+    var two = builder.in(0, twoLiterals);
+    org.junit.jupiter.api.Assertions.assertEquals(one.toString(), two.toString());
+    org.junit.jupiter.api.Assertions.assertNotEquals(
+        FlussTables.predicateKey(one), FlussTables.predicateKey(two));
+  }
+
+  @Test
   void admitsAppendAndPrimaryKeyLogsButKeepsInitialSnapshotsOnFlink() throws Exception {
     assertNull(FlussTables.sourceFallback(source(false, ScanStartupMode.FULL, config())));
     for (ScanStartupMode startup :
@@ -62,7 +83,7 @@ class FlussTablesTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("clientSettings")
-  void everyReleasedClientSettingFallsBackWithoutLeakingItsValue(String key) throws Exception {
+  void unverifiedClientSettingsFallBackWithoutLeakingTheirValues(String key) throws Exception {
     Configuration settings = config();
     settings.setString(key, "unverified-sensitive-value");
     for (String reason :
@@ -88,7 +109,7 @@ class FlussTablesTest {
     keys.add("client.scanner.remote-log.fetch.max-retries");
     keys.add("netty.client.future.option");
     keys.add("unknown.transport.option");
-    return keys.stream();
+    return keys.stream().filter(key -> !tech.streamfusion.fluss.FlussClientOptions.supported(key));
   }
 
   @Test
@@ -104,13 +125,34 @@ class FlussTablesTest {
 
   @Test
   void tableSettingsDroppedByTheFactoryCannotBypassAdmission() throws Exception {
-    for (String key : List.of("netty.client.allocator.heap-buffer-first", "client.future.option")) {
+    for (String key : List.of("netty.client.future.option", "client.future.option")) {
       Map<String, String> options = Map.of(key, "unverified-sensitive-value");
       assertTrue(
           FlussTables.sourceFallback(source(false, ScanStartupMode.EARLIEST, config(), options))
               .contains(key));
       assertTrue(FlussTables.sinkOptionsFallback(options).contains(key));
     }
+  }
+
+  @Test
+  void admitsSettingsOwnedByTheJavaConnection() throws Exception {
+    Map<String, String> options =
+        Map.of(
+            "client.id", "configured-client",
+            "client.connect-timeout", "20s",
+            "client.request-timeout", "30s",
+            "netty.client.num-network-threads", "2",
+            "netty.client.allocator.heap-buffer-first", "true",
+            "client.security.protocol", "PLAINTEXT",
+            "client.security.enable-plugin-discovery", "false",
+            "client.writer.dynamic-create-partition.enabled", "false");
+    Configuration configured = config();
+    options.forEach(configured::setString);
+    assertNull(FlussTables.sourceFallback(source(false, ScanStartupMode.EARLIEST, configured)));
+    assertNull(FlussTables.sinkFallback(sink(false, List.of(), configured)));
+    assertNull(
+        FlussTables.sourceFallback(source(false, ScanStartupMode.EARLIEST, config(), options)));
+    assertNull(FlussTables.sinkOptionsFallback(options));
   }
 
   @Test

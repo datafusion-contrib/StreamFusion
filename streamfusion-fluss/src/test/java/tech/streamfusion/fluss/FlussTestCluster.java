@@ -14,8 +14,14 @@ public final class FlussTestCluster implements AutoCloseable {
   private final GenericContainer<?> zookeeper;
   private final Broker coordinator;
   private final Broker tablet;
+  private final boolean sasl;
 
   public FlussTestCluster() throws IOException {
+    this(false);
+  }
+
+  public FlussTestCluster(boolean sasl) throws IOException {
+    this.sasl = sasl;
     zookeeper =
         new GenericContainer<>("zookeeper:3.9.2")
             .withNetwork(network)
@@ -42,6 +48,12 @@ public final class FlussTestCluster implements AutoCloseable {
   public Configuration config() {
     Configuration config = new Configuration();
     config.setString("bootstrap.servers", coordinator.getHost() + ":" + coordinator.externalPort);
+    if (sasl) {
+      config.setString("client.security.protocol", "SASL");
+      config.setString("client.security.sasl.mechanism", "PLAIN");
+      config.setString("client.security.sasl.username", "fixture");
+      config.setString("client.security.sasl.password", "fixture-password");
+    }
     return config;
   }
 
@@ -76,7 +88,14 @@ public final class FlussTestCluster implements AutoCloseable {
               + "internal.listener.name: INTERNAL\n"
               + "remote.data.dir: file:///tmp/remote-data\n"
               + "data.dir: /tmp/fluss/data\n"
-              + "default.replication.factor: 1\n");
+              + "default.replication.factor: 1\n"
+              + (sasl
+                  ? "security.protocol.map: FLUSS:SASL, INTERNAL:PLAINTEXT\n"
+                        + "security.sasl.enabled.mechanisms: PLAIN\n"
+                        + "security.sasl.plain.jaas.config:"
+                        + " org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required"
+                        + " user_fixture=\"fixture-password\";\n"
+                  : ""));
       withEnv("FLUSS_ENV_JAVA_OPTS", "-Xms128m -Xmx1g -XX:MaxDirectMemorySize=512m");
       waitingFor(Wait.forLogMessage(".*Successfully start Netty server.*\\n", 1))
           .withStartupTimeout(Duration.ofMinutes(2));
