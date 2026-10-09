@@ -378,6 +378,13 @@ covers duplicate three-way joins with batching off and sizes one/four; direct
 operator tests cover sidecar combinations, subsequent bundles, shared count,
 watermark flushes and checkpoint/restore.
 
+The direct five-batch retry test waits up to 30 seconds for the newly created
+bucket's leader assignment before opening its writer gateway. Table creation
+finishes before asynchronous assignment; an immediate metadata lookup can fail
+before the retry request itself is sent. The wait only establishes the test
+precondition. Replaying the same five batches three times must still produce
+exactly five offsets and the five expected rows.
+
 ## Partitioning and streaming-filter validation (2026-10-07)
 
 The expanded Fluss suite passes on released Flink 2.2.1 and 1.18.1: 119 tests per
