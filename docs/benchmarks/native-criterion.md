@@ -2127,3 +2127,8 @@ retention and flush with and without INSERT sidecars, 16/1,024/8,192 rows, one o
 each flush checks the complete duplicate-preserving output count. The existing
 allocation suite adds wide payload coverage. Unique updating fixtures explicitly
 provide the planner uniqueness contract required for replacement folding.
+
+The q23 fix validation passes all 16 release join fixtures and records 18
+[updating-join allocation profiles](q23-mini-batch-fix-2026-10-08/native-allocations.csv).
+The [Fluss q23 reruns](../connectors/fluss.md#q23-mini-batch-fix-validation-2026-10-08)
+retain end-to-end stock/native parity and timing separately from these native costs.

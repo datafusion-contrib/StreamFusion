@@ -1,0 +1,61 @@
+{
+  "harness_sha256": "ec50c7e98944979b6c362cd18d767400e991aa7ec3ff53fdf6fc01e628278b00",
+  "os": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "cpu": "Intel Core i7-12650H, 16 exposed logical CPUs",
+  "memory_total_kib": 10185312,
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+  "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+  "flink": "2.2.1",
+  "fluss": "1.0.0",
+  "zookeeper": "3.9.2",
+  "rows": 2000000,
+  "parallelism": 4,
+  "input_buckets": 4,
+  "output_buckets": 4,
+  "input_primary_key": false,
+  "primary_key_output_queries": [],
+  "warmups_per_engine": 1,
+  "measurements_per_engine": 3,
+  "mode_order": [
+    "memory-on",
+    "rocksdb-on"
+  ],
+  "engine_order": "alternating stock then native within each repetition",
+  "timezone": "UTC",
+  "watermark_delay_seconds": 4,
+  "checkpoint_interval_ms": 1000,
+  "mini_batch_on": {
+    "allow_latency_seconds": 2,
+    "size": 50000
+  },
+  "rocksdb_fixed_memory_per_slot": "128 mb",
+  "test_jvm_heap": "2g (last -Xmx option; verified fork command line)",
+  "broker_heap_each": "1g",
+  "broker_direct_memory_each": "512m",
+  "native_build": "release + mimalloc, bench profile",
+  "local_zero_copy_exchange": false,
+  "expression_variants": false,
+  "timer": "executeSql(insert).await() including execution, checkpoint/drain and job teardown; setup, input seeding, output parity and table cleanup excluded",
+  "parity": "exact append-only output multiset including duplicate multiplicity in every warmup and measured pair",
+  "transport": "Arrow Fluss-to-Fluss; stock primary-key writer for both engines; connector delivery guarantees differ from Kafka exactly-once",
+  "summary": "stock median seconds / native median seconds for q23 only",
+  "fix_commit": "1402a3a0596941511ba168587c96c43346e718fb",
+  "scope": "Post-fix q23 only; original four-mode sweep retained separately",
+  "source_sha256": {
+    "native/engine/src/updating_join.rs": "8a75eb14f9bd91e4e0138dcdd6551fc3e6f436b58d2a356137ff687a26029211",
+    "streamfusion-fluss/src/test/java/tech/streamfusion/NexmarkFlussBenchmark.java": "ec50c7e98944979b6c362cd18d767400e991aa7ec3ff53fdf6fc01e628278b00"
+  },
+  "baseline_revision": "d0c477487685d4c66833c89f85d4f8f3117d7c28",
+  "git_revision": "1402a3a0596941511ba168587c96c43346e718fb",
+  "queries": [
+    "q23"
+  ],
+  "host_pressure": "No continuous pressure recording; measurements begin after local unit tests and native allocation diagnostics finish.",
+  "effective_fork_heap_args": [
+    "-Xmx8g",
+    "-Xmx2g"
+  ],
+  "valid_cells": 2,
+  "failed_cells": 0,
+  "measured_durations": 12
+}

@@ -376,8 +376,11 @@ The [2026-10-08 four-mode results](connectors/fluss.md#four-mode-results-2026-10
 retain 90 valid cells and 540 measured durations, with one warmup and three trials
 per engine. Common-22-query median-speedup geomeans are **4.66× memory/off**,
 **5.07× memory/on**, **4.83× disk/off** and **5.71× disk/on**. All 23 queries pass
-with mini-batching off; both on modes fail q23 with a native regular-join
-changelog correctness error. Its failed cells remain visible, and all seven
+with mini-batching off; both original on sweeps failed q23 with a native regular-join
+changelog correctness error. The bug is fixed: [q23-only release reruns](connectors/fluss.md#q23-mini-batch-fix-validation-2026-10-08)
+pass exact parity at 2M events, with **6.61× memory/on** and **4.06× disk/on** median
+speedups. The original failed cells and aggregates remain visible as pre-fix
+evidence; these reruns add 12 durations rather than replace the full matrix. All seven
 primary-key output queries pass in all modes. Memory/off q4 and memory/on q16
 regress on their medians. Configuration, absolute times, variability and plans
 are retained; short-job lifecycle and host pressure limit sustained-throughput

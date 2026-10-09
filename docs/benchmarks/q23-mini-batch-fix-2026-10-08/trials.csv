@@ -1,0 +1,13 @@
+backend,mini_batch,query,engine,repetition,seconds
+memory,on,q23,stock,1,9.433779835
+memory,on,q23,stock,2,11.238238545
+memory,on,q23,stock,3,11.183320184
+memory,on,q23,native,1,1.691849356
+memory,on,q23,native,2,1.906046664
+memory,on,q23,native,3,1.453338671
+rocksdb,on,q23,stock,1,15.402330477
+rocksdb,on,q23,stock,2,17.551488132
+rocksdb,on,q23,stock,3,37.745810363
+rocksdb,on,q23,native,1,4.323778959
+rocksdb,on,q23,native,2,7.985667634
+rocksdb,on,q23,native,3,3.204781238

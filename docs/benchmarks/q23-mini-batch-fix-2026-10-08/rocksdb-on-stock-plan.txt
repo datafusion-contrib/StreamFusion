@@ -1,0 +1,202 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.nexmark.output_3b797b739f8746e1b496b1b92d94a0b1], fields=[auction, bidder, price, itemName, dateTime, seller])
++- LogicalProject(auction=[$0], bidder=[$1], price=[$2], itemName=[$16], dateTime=[$20], seller=[$22])
+   +- LogicalJoin(condition=[=($22, $1)], joinType=[inner])
+      :- LogicalJoin(condition=[=($7, $1)], joinType=[inner])
+      :  :- LogicalProject(auction=[$3.auction], bidder=[$3.bidder], price=[$3.price], channel=[$3.channel], url=[$3.url], dateTime=[$5], extra=[$3.extra])
+      :  :  +- LogicalFilter(condition=[=($0, 2)])
+      :  :     +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[$5])
+      :  :        +- LogicalWatermarkAssigner(rowtime=[rowtime], watermark=[-($5, 4000:INTERVAL SECOND)])
+      :  :           +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[TO_TIMESTAMP_LTZ($4, 3)])
+      :  :              +- LogicalTableScan(table=[[fluss, nexmark, events]])
+      :  +- LogicalProject(id=[$1.id], name=[$1.name], emailAddress=[$1.emailAddress], creditCard=[$1.creditCard], city=[$1.city], state=[$1.state], dateTime=[$5], extra=[$1.extra])
+      :     +- LogicalFilter(condition=[=($0, 0)])
+      :        +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[$5])
+      :           +- LogicalWatermarkAssigner(rowtime=[rowtime], watermark=[-($5, 4000:INTERVAL SECOND)])
+      :              +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[TO_TIMESTAMP_LTZ($4, 3)])
+      :                 +- LogicalTableScan(table=[[fluss, nexmark, events]])
+      +- LogicalProject(id=[$2.id], itemName=[$2.itemName], description=[$2.description], initialBid=[$2.initialBid], reserve=[$2.reserve], dateTime=[$5], expires=[TO_TIMESTAMP_LTZ($2.expires, 3)], seller=[$2.seller], category=[$2.category], extra=[$2.extra])
+         +- LogicalFilter(condition=[=($0, 1)])
+            +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[$5])
+               +- LogicalWatermarkAssigner(rowtime=[rowtime], watermark=[-($5, 4000:INTERVAL SECOND)])
+                  +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[TO_TIMESTAMP_LTZ($4, 3)])
+                     +- LogicalTableScan(table=[[fluss, nexmark, events]])
+
+== Optimized Physical Plan ==
+Sink(table=[fluss.nexmark.output_3b797b739f8746e1b496b1b92d94a0b1], fields=[auction, bidder, price, itemName, dateTime, seller])
++- Join(joinType=[InnerJoin], where=[=(seller, bidder)], select=[auction, bidder, price, itemName, dateTime, seller], leftInputSpec=[NoUniqueKey], rightInputSpec=[NoUniqueKey], miniBatch=[true])
+   :- Exchange(distribution=[hash[bidder]])
+   :  +- Calc(select=[auction, bidder, price])
+   :     +- Join(joinType=[InnerJoin], where=[=(id, bidder)], select=[auction, bidder, price, id], leftInputSpec=[NoUniqueKey], rightInputSpec=[NoUniqueKey], miniBatch=[true])
+   :        :- Exchange(distribution=[hash[bidder]])
+   :        :  +- Calc(select=[bid.auction AS auction, bid.bidder AS bidder, bid.price AS price], where=[=(event_type, 2)])
+   :        :     +- MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])
+   :        :        +- TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, bid, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, bid, dateTime])
+   :        +- Exchange(distribution=[hash[id]])
+   :           +- Calc(select=[person.id AS id], where=[=(event_type, 0)])
+   :              +- MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])
+   :                 +- TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, person, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, person, dateTime])
+   +- Exchange(distribution=[hash[seller]])
+      +- Calc(select=[auction.itemName AS itemName, CAST(Reinterpret(TO_TIMESTAMP_LTZ(dateTime, 3)) AS TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)) AS dateTime, auction.seller AS seller], where=[=(event_type, 1)])
+         +- MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])
+            +- TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, auction, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, auction, dateTime])
+
+== Optimized Execution Plan ==
+Sink(table=[fluss.nexmark.output_3b797b739f8746e1b496b1b92d94a0b1], fields=[auction, bidder, price, itemName, dateTime, seller])
++- Join(joinType=[InnerJoin], where=[(seller = bidder)], select=[auction, bidder, price, itemName, dateTime, seller], leftInputSpec=[NoUniqueKey], rightInputSpec=[NoUniqueKey], miniBatch=[true])
+   :- Exchange(distribution=[hash[bidder]])
+   :  +- Calc(select=[auction, bidder, price])
+   :     +- Join(joinType=[InnerJoin], where=[(id = bidder)], select=[auction, bidder, price, id], leftInputSpec=[NoUniqueKey], rightInputSpec=[NoUniqueKey], miniBatch=[true])
+   :        :- Exchange(distribution=[hash[bidder]])
+   :        :  +- Calc(select=[bid.auction AS auction, bid.bidder AS bidder, bid.price AS price], where=[(event_type = 2)])
+   :        :     +- MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])
+   :        :        +- TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, bid, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, bid, dateTime])
+   :        +- Exchange(distribution=[hash[id]])
+   :           +- Calc(select=[person.id AS id], where=[(event_type = 0)])
+   :              +- MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])
+   :                 +- TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, person, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, person, dateTime])
+   +- Exchange(distribution=[hash[seller]])
+      +- Calc(select=[auction.itemName AS itemName, CAST(Reinterpret(TO_TIMESTAMP_LTZ(dateTime, 3)) AS TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)) AS dateTime, auction.seller AS seller], where=[(event_type = 1)])
+         +- MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])
+            +- TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, auction, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, auction, dateTime])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 419,
+    "type" : "Source: events[295]",
+    "pact" : "Data Source",
+    "contents" : "[295]:TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, bid, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, bid, dateTime])",
+    "parallelism" : 4
+  }, {
+    "id" : 420,
+    "type" : "MiniBatchAssigner[296]",
+    "pact" : "Operator",
+    "contents" : "[296]:MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 419,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 421,
+    "type" : "Calc[297]",
+    "pact" : "Operator",
+    "contents" : "[297]:Calc(select=[bid.auction AS auction, bid.bidder AS bidder, bid.price AS price], where=[(event_type = 2)])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 420,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 423,
+    "type" : "Source: events[299]",
+    "pact" : "Data Source",
+    "contents" : "[299]:TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, person, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, person, dateTime])",
+    "parallelism" : 4
+  }, {
+    "id" : 424,
+    "type" : "MiniBatchAssigner[300]",
+    "pact" : "Operator",
+    "contents" : "[300]:MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 423,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 425,
+    "type" : "Calc[301]",
+    "pact" : "Operator",
+    "contents" : "[301]:Calc(select=[person.id AS id], where=[(event_type = 0)])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 424,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 427,
+    "type" : "Join[303]",
+    "pact" : "Operator",
+    "contents" : "[303]:Join(joinType=[InnerJoin], where=[(id = bidder)], select=[auction, bidder, price, id], leftInputSpec=[NoUniqueKey], rightInputSpec=[NoUniqueKey], miniBatch=[true])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 421,
+      "ship_strategy" : "HASH",
+      "side" : "second"
+    }, {
+      "id" : 425,
+      "ship_strategy" : "HASH",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 428,
+    "type" : "Calc[304]",
+    "pact" : "Operator",
+    "contents" : "[304]:Calc(select=[auction, bidder, price])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 427,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 430,
+    "type" : "Source: events[306]",
+    "pact" : "Data Source",
+    "contents" : "[306]:TableSourceScan(table=[[fluss, nexmark, events, project=[event_type, auction, dateTime], watermark=[-(TO_TIMESTAMP_LTZ(dateTime, 3), 4000:INTERVAL SECOND)], watermarkEmitStrategy=[on-periodic], filter=[]]], fields=[event_type, auction, dateTime])",
+    "parallelism" : 4
+  }, {
+    "id" : 431,
+    "type" : "MiniBatchAssigner[307]",
+    "pact" : "Operator",
+    "contents" : "[307]:MiniBatchAssigner(interval=[2000ms], mode=[ProcTime])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 430,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 432,
+    "type" : "Calc[308]",
+    "pact" : "Operator",
+    "contents" : "[308]:Calc(select=[auction.itemName AS itemName, CAST(Reinterpret(TO_TIMESTAMP_LTZ(dateTime, 3)) AS TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)) AS dateTime, auction.seller AS seller], where=[(event_type = 1)])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 431,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 434,
+    "type" : "Join[310]",
+    "pact" : "Operator",
+    "contents" : "[310]:Join(joinType=[InnerJoin], where=[(seller = bidder)], select=[auction, bidder, price, itemName, dateTime, seller], leftInputSpec=[NoUniqueKey], rightInputSpec=[NoUniqueKey], miniBatch=[true])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 428,
+      "ship_strategy" : "HASH",
+      "side" : "second"
+    }, {
+      "id" : 432,
+      "ship_strategy" : "HASH",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 440,
+    "type" : "Sink(nexmark.output_3b797b739f8746e1b496b1b92d94a0b1): Writer",
+    "pact" : "Operator",
+    "contents" : "Sink(nexmark.output_3b797b739f8746e1b496b1b92d94a0b1): Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 434,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

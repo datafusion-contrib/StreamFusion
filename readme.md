@@ -212,9 +212,11 @@ queries are:
 | ---: | ---: | ---: | ---: |
 | **4.66×** | **5.07×** | **4.83×** | **5.71×** |
 
-All 23 queries pass with mini-batching off. Both mini-batch-on modes pass 22 queries
-and expose a native regular-join correctness bug in q23, which emits deletes to
-its append-only sink; its failed cells remain visible in the full table.
+All 23 queries pass with mini-batching off. The original on-mode sweeps exposed
+an INSERT-sidecar bug in q23's chained non-unique joins. That bug is fixed:
+[q23 reruns](docs/connectors/fluss.md#q23-mini-batch-fix-validation-2026-10-08)
+pass exact parity at 2M events, with **6.61× memory/on** and **4.06× disk/on** median
+speedups. The original failed cells and common-22 geomeans remain as pre-fix evidence.
 Memory/off q4 and memory/on q16 regress on their medians. The 90 valid cells retain
 all 540 measured durations and deterministic parity checks (q12 observes processing
 time). These short, variable full-job timings include client teardown and do not

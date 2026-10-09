@@ -4,7 +4,9 @@
 module uses the released Apache Fluss Java connector 1.0.0. Disable its verified planner
 substitutions with `-Dstreamfusion.fluss.enabled=false`. All 23 runnable Nexmark queries pass
 with mini-batching off and matching deterministic output. The q23 mini-batch sidecar bug found by the
-[four-mode sweep](#readme-compatible-benchmark-matrix) is fixed in regular-join buffering.
+[four-mode sweep](#readme-compatible-benchmark-matrix) is fixed; its
+[post-fix two-million-event reruns](#q23-mini-batch-fix-validation-2026-10-08)
+pass exact parity with memory and RocksDB state.
 The admission whitelist keeps unsupported connector combinations
 on the stock connector. Benchmark evidence remains dominated by short jobs and does not
 establish uniform sustained speedups.
@@ -333,6 +335,48 @@ stock/native plans for every query and mode, including failed q23 plans.
 Compressed logs and JUnit reports for each mode, plus the isolated q23 failure,
 live beside the CSVs. Run `python3 docs/benchmarks/fluss-headline-2026-10-08/summarize.py`
 to regenerate the trial and summary CSVs from the archived logs.
+
+### q23 mini-batch fix validation (2026-10-08)
+
+The fix uses planner-proven join-key uniqueness when choosing buffering. A
+non-unique insert-only input retains every Arrow batch even when the preceding
+native join attaches an INSERT row-kind sidecar. This preserves duplicate rows
+and avoids invented replacement deletes. Unique updating inputs still fold
+first/preimage and final/postimage changes, while non-unique updating plans keep
+immediate execution. No Nexmark SQL, schemas, data, output table mode or planner
+admission was changed for the fix.
+
+Both q23 mini-batch-on cells were rerun at commit `1402a3a0`, using the original
+release/mimalloc configuration: two million events, parallelism four, four input
+and output buckets, append-only output, two-second/50,000-row mini-batching,
+one warmup pair and three measured stock/native pairs per backend. Every pair
+passes exact output multiset parity. Plans retain both native non-unique regular
+joins and the native append-only Fluss endpoints; RocksDB engagement is checked
+for both engines. The previous implementation fails this configuration before
+producing valid timing samples, so there is no pre-fix speedup to compare.
+
+| State, batching on | Stock trials (s) | Native trials (s) | Stock median (s) | Native median (s) | Median speedup |
+| --- | --- | --- | ---: | ---: | ---: |
+| Memory | 9.434 / 11.238 / 11.183 | 1.692 / 1.906 / 1.453 | 11.183 | 1.692 | **6.61×** |
+| RocksDB | 15.402 / 17.551 / 37.746 | 4.324 / 7.986 / 3.205 | 17.551 | 4.324 | **4.06×** |
+
+These are q23-only reruns, not a new complete four-mode sweep. The original
+90 valid cells, two failed cells and common-22-query geomeans above remain
+unchanged as pre-fix evidence. The new dataset adds 12 measured durations.
+Disk stock and native trials have substantial variability; the full-job timer
+includes teardown and these results do not establish sustained throughput.
+
+The [post-fix samples](../benchmarks/q23-mini-batch-fix-2026-10-08/trials.csv),
+[summary including ranges and sample standard deviations](../benchmarks/q23-mini-batch-fix-2026-10-08/summary.csv)
+and [environment and source hashes](../benchmarks/q23-mini-batch-fix-2026-10-08/environment.json)
+are retained with both logs, JUnit reports and executed plans. Run
+`python3 docs/benchmarks/q23-mini-batch-fix-2026-10-08/summarize.py` to regenerate
+these CSVs. The same directory retains the failing pre-fix unit regression,
+the passing 658-test native run (two existing ignores), 35 Java join tests,
+16 release Criterion join fixtures and 18 join allocation profiles. SQL parity
+covers duplicate three-way joins with batching off and sizes one/four; direct
+operator tests cover sidecar combinations, subsequent bundles, shared count,
+watermark flushes and checkpoint/restore.
 
 ## Partitioning and streaming-filter validation (2026-10-07)
 
