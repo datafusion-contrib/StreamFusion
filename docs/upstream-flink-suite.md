@@ -652,7 +652,9 @@ separate runner allocation. The parent gate still requires both lines to succeed
 The Flink wrapper installs its pinned Maven distribution under
 `.flink-suite/<line>/maven-wrapper`, which travels in the shared build with executable bits preserved.
 Packing and restoring reject a missing or nonexecutable distribution. Consumer jobs use this
-prepared wrapper home instead of downloading Maven independently on every runner. PR #310's
+prepared wrapper home instead of downloading Maven independently on every runner. Preparation
+caches that home alongside the isolated Maven repository so warm builds also reuse the distribution.
+PR #310's
 post-merge Flink 2.2 runtime shard failed during that redundant download, before Maven or any
 tests started; its PR checks had succeeded. Test failures remain blocking and are never retried
 or replaced by cached results.

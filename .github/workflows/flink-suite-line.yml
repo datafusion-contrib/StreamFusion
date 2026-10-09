@@ -45,11 +45,13 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - name: Restore the isolated suite Maven repository
+      - name: Restore the isolated suite Maven repository and wrapper
         id: maven-cache
         uses: actions/cache/restore@v4
         with:
-          path: .flink-suite/${{ inputs.line }}/m2
+          path: |
+            .flink-suite/${{ inputs.line }}/m2
+            .flink-suite/${{ inputs.line }}/maven-wrapper
           key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh') }}
           restore-keys: |
             upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-
@@ -92,11 +94,13 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-      - name: Save the isolated suite Maven repository on main
+      - name: Save the isolated suite Maven repository and wrapper on main
         if: github.ref == 'refs/heads/main' && steps.maven-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: .flink-suite/${{ inputs.line }}/m2
+          path: |
+            .flink-suite/${{ inputs.line }}/m2
+            .flink-suite/${{ inputs.line }}/maven-wrapper
           key: ${{ steps.maven-cache.outputs.cache-primary-key }}
       - name: Save the compiled pinned Flink checkout on main
         if: github.ref == 'refs/heads/main' && steps.flink-cache.outputs.cache-hit != 'true'
