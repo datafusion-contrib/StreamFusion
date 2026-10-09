@@ -87,6 +87,39 @@ class FlussArrowClientTest {
     return path;
   }
 
+  @Test
+  void emptyProjectionDoesNotAdmitUnknownColumnsOrSidecarCollisions() throws Exception {
+    TablePath ordinary = table("projection_validation", false, "NONE", "FULL");
+    TablePath reserved = TablePath.of("arrow_test", "projection_sidecar_collision");
+    connection
+        .getAdmin()
+        .createTable(
+            reserved,
+            TableDescriptor.builder()
+                .schema(
+                    org.apache.fluss.metadata.Schema.newBuilder()
+                        .column(RowDataArrowConverter.ROW_KIND_COLUMN, DataTypes.BIGINT())
+                        .build())
+                .distributedBy(1)
+                .property("table.log.format", "ARROW")
+                .build(),
+            false)
+        .get();
+    try (RootAllocator allocator = new RootAllocator()) {
+      assertThrows(
+          java.io.IOException.class,
+          () ->
+              new FlussArrowClient(
+                  cluster.config(),
+                  ordinary,
+                  new Schema(List.of(Field.nullable("missing", new ArrowType.Int(64, true)))),
+                  allocator));
+      assertThrows(
+          java.io.IOException.class,
+          () -> new FlussArrowClient(cluster.config(), reserved, new Schema(List.of()), allocator));
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {1, 4})
   void stickyBatchesRemainTogetherAcrossBuckets(int buckets) throws Exception {
@@ -321,6 +354,16 @@ class FlussArrowClientTest {
       TableBucket bucket = new TableBucket(reader.tableInfo().getTableId(), 0);
       assertEquals(expected, read(reader, bucket, 0, stop));
     }
+    try (RootAllocator allocator = new RootAllocator();
+        FlussArrowClient reader =
+            new FlussArrowClient(cluster.config(), path, new Schema(List.of()), allocator)) {
+      TableBucket bucket = new TableBucket(reader.tableInfo().getTableId(), 0);
+      assertEquals(
+          expected.subList(1, expected.size()).stream()
+              .map(value -> Integer.parseInt(value.substring(0, 1)))
+              .toList(),
+          readEmpty(reader, bucket, 1, stop, true));
+    }
   }
 
   @Test
@@ -444,9 +487,11 @@ class FlussArrowClientTest {
     }
   }
 
-  @Test
-  void checkpointRestoresOnlyCollectedRowsAndReleasesPrefetchedBatches() throws Exception {
-    TablePath path = table("recovery", false, "ZSTD", "FULL");
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void checkpointRestoresOnlyCollectedRowsAndReleasesPrefetchedBatches(boolean empty)
+      throws Exception {
+    TablePath path = table("recovery_" + empty, false, "ZSTD", "FULL");
     Schema full =
         new Schema(
             List.of(
@@ -471,9 +516,11 @@ class FlussArrowClientTest {
     }
     var type =
         (org.apache.flink.table.types.logical.RowType)
-            org.apache.flink.table.api.DataTypes.ROW(
-                    org.apache.flink.table.api.DataTypes.FIELD(
-                        "value", org.apache.flink.table.api.DataTypes.BIGINT()))
+            (empty
+                    ? org.apache.flink.table.api.DataTypes.ROW()
+                    : org.apache.flink.table.api.DataTypes.ROW(
+                        org.apache.flink.table.api.DataTypes.FIELD(
+                            "value", org.apache.flink.table.api.DataTypes.BIGINT())))
                 .getLogicalType();
     List<Long> collected = new ArrayList<>();
     List<org.apache.fluss.flink.source.split.SourceSplitBase> checkpoint;
@@ -487,7 +534,7 @@ class FlussArrowClientTest {
       reader.pollNext(readerOutput(collected, false));
       checkpoint = reader.snapshotState(2);
       assertEquals(2, checkpoint.get(0).asLogSplit().getStartingOffset());
-      assertEquals(List.of(10L, 20L), collected);
+      assertEquals(empty ? List.of(1L, 1L) : List.of(10L, 20L), collected);
     }
     try (FlussArrowSourceReader reader =
         new FlussArrowSourceReader(readerContext(), cluster.config(), path, type, -1, null)) {
@@ -501,7 +548,23 @@ class FlussArrowClientTest {
       } while (status != org.apache.flink.core.io.InputStatus.END_OF_INPUT);
       assertTrue(reader.snapshotState(3).isEmpty());
     }
-    assertEquals(List.of(10L, 20L, 30L, 40L, 50L), collected);
+    assertEquals(
+        empty ? java.util.Collections.nCopies(5, 1L) : List.of(10L, 20L, 30L, 40L, 50L), collected);
+    if (empty) {
+      List<Long> middle = new ArrayList<>();
+      try (FlussArrowSourceReader reader =
+          new FlussArrowSourceReader(readerContext(), cluster.config(), path, type, -1, null)) {
+        reader.addSplits(List.of(new LogSplit(bucket, null, 1, 4)));
+        reader.notifyNoMoreSplits();
+        org.apache.flink.core.io.InputStatus status;
+        do {
+          reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
+          status = reader.pollNext(readerOutput(middle, false));
+        } while (status != org.apache.flink.core.io.InputStatus.END_OF_INPUT);
+        assertTrue(reader.snapshotState(3).isEmpty());
+      }
+      assertEquals(java.util.Collections.nCopies(3, 1L), middle);
+    }
     try (FlussArrowSourceReader reader =
         new FlussArrowSourceReader(readerContext(), cluster.config(), path, type, -1, null)) {
       reader.addSplits(List.of(new LogSplit(bucket, null, 0, 5)));
@@ -1179,6 +1242,14 @@ class FlussArrowClientTest {
       }
       assertEquals(primaryKey ? 3 : 2, expected.size());
       assertEquals(expected, actual);
+      try (RootAllocator allocator = new RootAllocator();
+          FlussArrowClient reader =
+              new FlussArrowClient(cluster.config(), path, new Schema(List.of()), allocator)) {
+        var kinds =
+            readEmpty(
+                reader, new TableBucket(reader.tableInfo().getTableId(), 0), 0, stop, primaryKey);
+        assertEquals(primaryKey ? List.of(0, 1, 2) : List.of(0, 0), kinds);
+      }
     }
   }
 
@@ -1238,7 +1309,10 @@ class FlussArrowClientTest {
                   if (fail) throw new IllegalStateException("Injected downstream failure");
                   try (var root = ((tech.streamfusion.operator.ArrowBatch) args[0]).root()) {
                     for (int i = 0; i < root.getRowCount(); i++)
-                      collected.add((Long) root.getVector("value").getObject(i));
+                      collected.add(
+                          root.getFieldVectors().isEmpty()
+                              ? 1L
+                              : (Long) root.getVector("value").getObject(i));
                   }
                   if (failAfterConsume)
                     throw new IllegalStateException("Injected failure after consuming root");
@@ -1247,6 +1321,31 @@ class FlussArrowClientTest {
                   throw new UnsupportedOperationException(method.getName());
               }
             });
+  }
+
+  private static List<Integer> readEmpty(
+      FlussArrowClient reader, TableBucket bucket, long start, long stop, boolean primaryKey)
+      throws Exception {
+    List<Integer> result = new ArrayList<>();
+    long offset = start;
+    long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+    while (offset < stop && System.nanoTime() < deadline) {
+      for (var fetched : reader.fetch(new LogSplit(bucket, null, offset, stop))) {
+        try (fetched) {
+          if (fetched.root() != null) {
+            assertEquals(primaryKey ? 1 : 0, fetched.root().getFieldVectors().size());
+            var kinds =
+                (TinyIntVector) fetched.root().getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
+            for (int i = 0; i < fetched.root().getRowCount(); i++)
+              result.add(primaryKey ? (int) kinds.get(i) : 0);
+          }
+          assertTrue(fetched.nextOffset() > offset);
+          offset = fetched.nextOffset();
+        }
+      }
+    }
+    assertEquals(stop, offset);
+    return result;
   }
 
   private static List<String> read(

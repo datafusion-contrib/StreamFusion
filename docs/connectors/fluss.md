@@ -73,9 +73,21 @@ Earliest-offset sentinels are resolved through the SDK, including empty buckets;
 empty splits finish without repeated fetches. Fetch and produce requests include the
 actual partition routing bucket count, rather than the current table default.
 
-Nonempty top-level projections on schema-version-1 tables are sent to the broker.
+Top-level projections on schema-version-1 tables are sent to the broker.
+Constant SQL selections and `COUNT(*)` run natively; Flink normally retains one physical
+source column for these queries. Explicit zero-column reader outputs are also supported:
+the reader fetches one wire column because Fluss 1.0 cannot serialize an empty broker
+projection, then discards it locally. Empty Arrow schemas retain the batch's row count
+and offsets; primary-key logs also retain the change-type sidecar. This is not
+aggregate/count pushdown: every matching log row still enters the query's operators.
+Physical columns named `$row_kind$` conflict with the changelog sidecar and remain
+outside zero-column admission.
 On evolved tables, complete batches are selected locally, filling historical missing
 nullable trailing columns. Projected structs retain their complete nested fields.
+Nested SQL selections such as `customer.address.city` run in the existing native
+field-access kernel, preserving nulls at every parent level. Released Fluss 1.0 only
+supports top-level broker projection, so the containing struct is fetched in full;
+nested-field wire pruning is not advertised.
 CDC kinds stay aligned. Repeated scans share a source only when their partition and
 record-batch predicates match, using their serialized structure rather than display text.
 Checkpoint offsets advance after downstream collection;
@@ -90,7 +102,7 @@ Tiered logs use Fluss's downloader and local column selection; selective remote 
 reads are not implemented.
 
 Primary-key initial snapshots, batch-mode scans, data-lake hybrid reads, merge engines,
-point-lookup/limit/count pushdowns, empty projections and unsupported watermarks retain
+point-lookup/limit/count pushdowns and unsupported watermarks retain
 the stock source.
 
 The [client settings audit](fluss-client-settings.md) distinguishes settings delegated to
@@ -422,6 +434,8 @@ mini-cluster or claim to port every upstream partition, security, tiering or fai
 case. The supported/fallback scenarios are:
 
 - Append projection/reordering for ARROW and INDEXED (INDEXED stays stock).
+- Nested ROW leaf selection with null ancestors, constant selections, `COUNT(*)`,
+  and empty tables with NONE/LZ4_FRAME/ZSTD, asserting native source/field evaluation.
 - Primary-key projected log changes with FULL/WAL images, updates and deletes.
 - Append production with NONE/LZ4_FRAME/ZSTD and the upstream example rows; bounded
   Fluss input exercises the native Arrow source and sink instead of a literal source.
@@ -434,7 +448,10 @@ case. The supported/fallback scenarios are:
 The original 10 adapted cases passed locally on Flink 2.2 and 1.18. Expanded coverage adds
 partitioned append reads/writes with mixed bucket counts, live discovery, partition pruning,
 projected partitioned primary-key changelogs, delegated connection settings, statistics batch
-filtering with residual/projection checks, and distinct filtered scans. Tests compare output with
+filtering with residual/projection checks, and distinct filtered scans. Explicit zero-column
+reader tests retain FULL/WAL changelogs, evolved-schema row counts, checkpoint/restore and
+bounded ranges within batches; JNI tests preserve empty-schema row counts and change kinds.
+Tests compare output with
 stock Flink, assert expected values/changelog kinds, and save
 actual physical plans while checking acceleration or fallback. The ordinary CI Java
 reactor runs these tests on Flink 2.2 and 1.18. The optimized Flink 2.2 image job also
