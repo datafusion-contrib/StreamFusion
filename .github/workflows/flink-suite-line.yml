@@ -130,6 +130,12 @@ jobs:
             --root ".flink-suite/${{ matrix.line }}" --version "${{ matrix.version }}" \
             --archive upstream-build.tar.zst
           rm upstream-build.tar.zst
+      - name: Verify prepared Maven starts without downloading
+        run: |
+          export MAVEN_USER_HOME="$PWD/.flink-suite/${{ matrix.line }}/maven-wrapper"
+          export JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=9 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=9"
+          cd ".flink-suite/${{ matrix.line }}/flink-${{ matrix.version }}"
+          ./mvnw -v
       - name: Require declared runtime audit routes
         if: ${{ matrix.shard == '1' && !inputs.sql_inventory }}
         env:

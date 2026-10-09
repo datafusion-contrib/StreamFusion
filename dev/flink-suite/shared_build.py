@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import platform
 from pathlib import Path
 import subprocess
@@ -22,6 +23,7 @@ def prepare(root, repository, version):
     required = [
         root / f"flink-{version}/.git",
         root / "m2",
+        root / "maven-wrapper",
         root / "agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar",
         root / "streamfusion-classpath.txt",
         root / "runtime-shards.json",
@@ -29,6 +31,7 @@ def prepare(root, repository, version):
     for path in required:
         if not path.exists():
             raise ValueError(f"Missing shared build input: {path}")
+    require_maven(root)
     libraries = sorted((root / "streamfusion-source/native/target/debug").glob("libstreamfusion*"))
     libraries = [path for path in libraries if path.suffix in (".so", ".dylib")]
     if not libraries:
@@ -44,7 +47,7 @@ def prepare(root, repository, version):
     (root / "shared-build.json").write_text(json.dumps(metadata, indent=2) + "\n")
     # Keep executable bits and the clean pinned checkout. Cargo intermediates and copied
     # StreamFusion sources are unnecessary for test consumers and dominate archive size.
-    entries = [f"flink-{version}", "m2", "agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar",
+    entries = [f"flink-{version}", "m2", "maven-wrapper", "agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar",
                "streamfusion-classpath.txt", "runtime-shards.json", "shared-build.json"]
     entries += [str(path.relative_to(root)) for path in libraries]
     entries += [path.name for path in sorted(root.glob("*-unshaded.jar"))]
@@ -56,6 +59,7 @@ def restore(root, repository, version):
     for key, value in identity(repository, version).items():
         if metadata[key] != value:
             raise ValueError(f"Shared build {key} mismatch: {metadata[key]} != {value}")
+    require_maven(root)
     old = Path(metadata["suite_root"])
     classpath = root / "streamfusion-classpath.txt"
     relocated = []
@@ -70,6 +74,12 @@ def restore(root, repository, version):
     classpath.write_text(":".join(relocated))
     metadata["suite_root"] = str(root.resolve())
     (root / "shared-build.json").write_text(json.dumps(metadata, indent=2) + "\n")
+
+
+def require_maven(root):
+    executables = (root / "maven-wrapper/wrapper/dists").glob("**/bin/mvn")
+    if not any(path.is_file() and os.access(path, os.X_OK) for path in executables):
+        raise ValueError("Missing prepared Maven wrapper distribution")
 
 
 def main():

@@ -649,6 +649,14 @@ and consumer jobs in a reusable workflow: 1.18 consumers need only the 1.18 prep
 consumers need only the 2.2 preparation. Suite selection happens inside preparation, removing a
 separate runner allocation. The parent gate still requires both lines to succeed.
 
+The Flink wrapper installs its pinned Maven distribution under
+`.flink-suite/<line>/maven-wrapper`, which travels in the shared build with executable bits preserved.
+Packing and restoring reject a missing or nonexecutable distribution. Consumer jobs use this
+prepared wrapper home instead of downloading Maven independently on every runner. PR #310's
+post-merge Flink 2.2 runtime shard failed during that redundant download, before Maven or any
+tests started; its PR checks had succeeded. Test failures remain blocking and are never retried
+or replaced by cached results.
+
 The preparation job also caches the compiled, clean Flink checkout using an exact key containing
 the released Flink version, actual JDK version, runner platform/architecture, and build script/settings/workflow
 hash. Maven still runs the same build commands to validate and install its outputs; this is incremental
