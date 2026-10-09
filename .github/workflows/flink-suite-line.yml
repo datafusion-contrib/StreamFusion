@@ -45,11 +45,13 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - name: Restore the isolated suite Maven repository
+      - name: Restore the isolated suite Maven repository and wrapper
         id: maven-cache
         uses: actions/cache/restore@v4
         with:
-          path: .flink-suite/${{ inputs.line }}/m2
+          path: |
+            .flink-suite/${{ inputs.line }}/m2
+            .flink-suite/${{ inputs.line }}/maven-wrapper
           key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh') }}
           restore-keys: |
             upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-
@@ -92,11 +94,13 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-      - name: Save the isolated suite Maven repository on main
+      - name: Save the isolated suite Maven repository and wrapper on main
         if: github.ref == 'refs/heads/main' && steps.maven-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: .flink-suite/${{ inputs.line }}/m2
+          path: |
+            .flink-suite/${{ inputs.line }}/m2
+            .flink-suite/${{ inputs.line }}/maven-wrapper
           key: ${{ steps.maven-cache.outputs.cache-primary-key }}
       - name: Save the compiled pinned Flink checkout on main
         if: github.ref == 'refs/heads/main' && steps.flink-cache.outputs.cache-hit != 'true'
@@ -130,6 +134,12 @@ jobs:
             --root ".flink-suite/${{ matrix.line }}" --version "${{ matrix.version }}" \
             --archive upstream-build.tar.zst
           rm upstream-build.tar.zst
+      - name: Verify prepared Maven starts without downloading
+        run: |
+          export MAVEN_USER_HOME="$PWD/.flink-suite/${{ matrix.line }}/maven-wrapper"
+          export JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=9 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=9"
+          cd ".flink-suite/${{ matrix.line }}/flink-${{ matrix.version }}"
+          ./mvnw -v
       - name: Require declared runtime audit routes
         if: ${{ matrix.shard == '1' && !inputs.sql_inventory }}
         env:

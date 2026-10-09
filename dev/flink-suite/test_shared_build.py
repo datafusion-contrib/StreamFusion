@@ -18,6 +18,7 @@ class SharedBuildTest(unittest.TestCase):
             "flink-1.18.1/.git/HEAD", "flink-1.18.1/mvnw",
             "flink-1.18.1/target/test-classes/QueryITCase.class",
             "flink-1.18.1/target/surefire-reports/TEST-stale.xml",
+            "maven-wrapper/wrapper/dists/apache-maven-3.8.6-bin/hash/apache-maven-3.8.6/bin/mvn",
             "m2/module/current.jar", "agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar",
             "streamfusion-source/native/target/debug/libstreamfusion.so",
             "streamfusion-source/native/target/debug/deps/not-needed.rlib",
@@ -27,6 +28,8 @@ class SharedBuildTest(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("fixture")
         (self.root / "flink-1.18.1/mvnw").chmod(0o755)
+        self.maven = self.root / "maven-wrapper/wrapper/dists/apache-maven-3.8.6-bin/hash/apache-maven-3.8.6/bin/mvn"
+        self.maven.chmod(0o755)
         (self.root / "streamfusion-classpath.txt").write_text(str(self.root / "m2/module/current.jar"))
         identity = {"revision": "commit", "flink_version": "1.18.1", "platform": "test", "architecture": "test"}
         mock = patch.object(shared_build, "identity", return_value=identity)
@@ -45,6 +48,7 @@ class SharedBuildTest(unittest.TestCase):
         self.assertEqual(str(destination.resolve() / "m2/module/current.jar"),
                          (destination / "streamfusion-classpath.txt").read_text())
         self.assertTrue((destination / "flink-1.18.1/mvnw").stat().st_mode & 0o111)
+        self.assertTrue((destination / self.maven.relative_to(self.root)).stat().st_mode & 0o111)
         self.assertTrue((destination / "flink-1.18.1/target/test-classes/QueryITCase.class").exists())
         self.assertFalse((destination / "flink-1.18.1/target/surefire-reports").exists())
         self.assertFalse((destination / "diagnostics").exists())
@@ -72,6 +76,18 @@ class SharedBuildTest(unittest.TestCase):
         shutil.rmtree(self.root / "streamfusion-source/native")
         with self.assertRaisesRegex(ValueError, "native libraries"):
             shared_build.prepare(self.root, self.root, "1.18.1")
+
+    def test_missing_or_nonexecutable_maven_is_rejected(self):
+        shared_build.prepare(self.root, self.root, "1.18.1")
+        for missing in (False, True):
+            with self.subTest(missing=missing):
+                self.maven.chmod(0o644)
+                if missing:
+                    self.maven.unlink()
+                with self.assertRaisesRegex(ValueError, "Maven wrapper distribution"):
+                    shared_build.prepare(self.root, self.root, "1.18.1")
+                with self.assertRaisesRegex(ValueError, "Maven wrapper distribution"):
+                    shared_build.restore(self.root, self.root, "1.18.1")
 
 
 if __name__ == "__main__":

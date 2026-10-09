@@ -54,6 +54,7 @@ readonly AGENT_JAR="${AGENT_OUTPUT}/streamfusion-flink-suite-agent-1.0-SNAPSHOT.
 readonly CLASSPATH_FILE="${SUITE_ROOT}/streamfusion-classpath.txt"
 readonly MAVEN_SETTINGS="${REPO_ROOT}/dev/flink-suite/settings.xml"
 readonly SUITE_MAVEN_REPO="${SUITE_ROOT}/m2"
+readonly SUITE_MAVEN_USER_HOME="${SUITE_ROOT}/maven-wrapper"
 readonly UNSHADED_PLANNER_JAR="${SUITE_ROOT}/flink-table-planner-${FLINK_VERSION}-unshaded.jar"
 readonly UNSHADED_PLANNER_POM="${SUITE_ROOT}/flink-table-planner-${FLINK_VERSION}-effective.pom"
 readonly UNSHADED_BRIDGE_JAR="${SUITE_ROOT}/flink-table-calcite-bridge-${FLINK_VERSION}-unshaded.jar"
@@ -238,12 +239,16 @@ case "${SUITE_MODE}" in
 esac
 
 flink_mvn() {
-  (cd "${FLINK_ROOT}" && ./mvnw "$@")
+  (cd "${FLINK_ROOT}" && MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" ./mvnw "$@")
 }
 
 kafka_mvn() {
   (cd "${KAFKA_CONNECTOR_ROOT}" && {
-    if [[ -x ./mvnw ]]; then ./mvnw "$@"; else flink_mvn "$@"; fi
+    if [[ -x ./mvnw ]]; then
+      MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" ./mvnw "$@"
+    else
+      flink_mvn "$@"
+    fi
   })
 }
 
