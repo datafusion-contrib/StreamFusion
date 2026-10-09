@@ -198,46 +198,36 @@ is `SF_BENCHMARK=true mvn -pl :streamfusion-runtime test -Pbench` for the end-to
 
 ## Fluss-to-Fluss Nexmark
 
-The optional connector runs all 23 runnable queries with released Fluss 1.0.0 at both
-ends. Append-only outputs use Arrow production; primary-key outputs retain Flink's
-stock writer. Profiling removed redundant connection shutdowns, heap receive staging,
-frame growth copies and whole-vector LZ4 staging.
+The optional connector is also benchmarked against stock Flink using Fluss 1.0.0
+at both ends. The four-mode workload mirrors the Kafka headline settings: 2M
+events, parallelism four, four input/output buckets, primary-key output only where
+required, and mini-batching off/on (two seconds, 50,000 rows). Primary-key outputs
+retain Flink's stock writer in both engines.
 
-Matched Linux release results use 2M events, parallelism 4, RocksDB with fixed
-128 MiB state pools per slot, mini-batching off, exact expressions, one warmup and
-three measured runs. These timings include startup, flushes and synchronous teardown.
-Kafka uses JSON and exactly-once sinks; Fluss uses Arrow and at-least-once appends.
+Linux release/mimalloc results on an Intel Core i7-12650H use one warmup and three
+measured runs per engine and cell. Geomeans of median speedups over the same 22
+queries are:
 
-| Query | Stock Kafka, s | Native Kafka, s | Stock Fluss, s | Native Fluss, s | Kafka native / Fluss native |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| q0 | 2.361 | 1.381 | 4.884 | 0.397 | 3.47× |
-| q1 | 2.295 | 1.364 | 4.845 | 0.402 | 3.40× |
-| q2 | 1.342 | 1.194 | 4.519 | 0.301 | 3.97× |
-| q3 | 1.210 | 1.164 | 4.521 | 0.592 | 1.97× |
-| q5 | 3.392 | 4.593 | 54.040 | 4.384 | 1.05× |
-| q7 | 6.093 | 3.433 | 11.994 | 3.015 | 1.14× |
-| q8 | 1.347 | 1.271 | 11.832 | 0.725 | 1.75× |
-| q10 | 2.489 | 1.891 | 5.095 | 0.770 | 2.45× |
-| q11 | 5.210 | 1.172 | 11.923 | 0.407 | 2.88× |
-| q12 | 1.486 | 1.230 | 4.691 | 0.422 | 2.91× |
-| q13 | 2.159 | 1.480 | 4.872 | 0.395 | 3.74× |
-| q14 | 2.487 | 1.931 | 5.185 | 0.903 | 2.14× |
-| q20 | 15.271 | 4.194 | 10.042 | 3.785 | 1.11× |
-| q21 | 1.638 | 1.540 | 5.163 | 0.899 | 1.71× |
-| q22 | 2.228 | 1.372 | 5.075 | 0.375 | 3.66× |
-| q23 | 25.795 | 7.333 | 18.927 | 9.699 | 0.76× |
+| Memory, off | Memory, on | Disk, off | Disk, on |
+| ---: | ---: | ---: | ---: |
+| **4.66×** | **5.07×** | **4.83×** | **5.71×** |
 
-The geomean of median speedups over each transport's stock Flink is **8.56× for
-Fluss** and **1.57× for Kafka**. Comparing native medians directly, Fluss is
-**2.12× faster geometrically**. Removing Netty's two-second shutdown quiet period
-is a major bounded-job gain, not a claim about sustained throughput. Stateful
-queries retain substantial variance; q23's native Fluss median is slower than Kafka.
-All measured trials remain in the results. Primary-key outputs use stock production
-and pass separate correctness checks. Deterministic Fluss outputs match stock Flink;
-q12 observes processing time. [Configuration, all trials, SQL/CI validation and
-profiles](docs/connectors/fluss.md#matched-transport-measurements) are documented.
-The connector remains experimental; verified substitutions are enabled by default when installed.
-Set `-Dstreamfusion.fluss.enabled=false` to use the stock connector endpoints.
+All 23 queries pass with mini-batching off. The original on-mode sweeps exposed
+an INSERT-sidecar bug in q23's chained non-unique joins. That bug is fixed:
+[q23 reruns](docs/connectors/fluss.md#q23-mini-batch-fix-validation-2026-10-08)
+pass exact parity at 2M events, with **6.61× memory/on** and **4.06× disk/on** median
+speedups. The original failed cells and common-22 geomeans remain as pre-fix evidence.
+Memory/off q4 and memory/on q16 regress on their medians. The 90 valid cells retain
+all 540 measured durations and deterministic parity checks (q12 observes processing
+time). These short, variable full-job timings include client teardown and do not
+establish sustained throughput. Fluss uses Arrow and at-least-once appends; Kafka
+uses JSON and exactly-once output, and its headline native expression variants
+are disabled in this exact-SQL Fluss comparison.
+
+[Full matrix, configuration, trials, variability and failure evidence](docs/connectors/fluss.md#four-mode-results-2026-10-08)
+are documented, alongside the earlier matched Kafka/Fluss results. The connector
+remains experimental and enabled by default when installed; set
+`-Dstreamfusion.fluss.enabled=false` to use stock connector endpoints.
 
 ## Related work
 

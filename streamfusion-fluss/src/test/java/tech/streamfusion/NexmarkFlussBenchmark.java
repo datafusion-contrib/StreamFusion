@@ -46,6 +46,8 @@ class NexmarkFlussBenchmark {
   private static final int RUNS = Integer.getInteger("nexmark.runs", 3);
   private static final String BACKEND =
       System.getenv().getOrDefault("SF_FLUSS_STATE_BACKEND", "memory");
+  private static final boolean MINI_BATCH =
+      Boolean.parseBoolean(System.getenv().getOrDefault("SF_FLUSS_MINI_BATCH", "false"));
   private Path rocksDirectory;
   private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -88,14 +90,15 @@ class NexmarkFlussBenchmark {
             }
           }
           System.out.printf(
-              "[fluss] %s rows=%d parallelism=%d stock=%s native=%s primaryKeySink=%s backend=%s%n",
+              "[fluss] %s rows=%d parallelism=%d stock=%s native=%s primaryKeySink=%s backend=%s miniBatch=%s%n",
               query.label,
               ROWS,
               PARALLELISM,
               stock,
               nativeTimes,
               NexmarkMatrixBenchmark.UPSERT_KEYS.containsKey(query.label),
-              BACKEND);
+              BACKEND,
+              MINI_BATCH);
         }
       }
     } finally {
@@ -155,7 +158,14 @@ class NexmarkFlussBenchmark {
     env.enableCheckpointing(1000);
     env.getConfig().enableObjectReuse();
     StreamTableEnvironment tables = StreamTableEnvironment.create(env);
-    tables.getConfig().getConfiguration().setString("table.exec.mini-batch.enabled", "false");
+    tables
+        .getConfig()
+        .getConfiguration()
+        .setString("table.exec.mini-batch.enabled", Boolean.toString(MINI_BATCH));
+    if (MINI_BATCH) {
+      tables.getConfig().getConfiguration().setString("table.exec.mini-batch.allow-latency", "2 s");
+      tables.getConfig().getConfiguration().setString("table.exec.mini-batch.size", "50000");
+    }
     if (BACKEND.equals("rocksdb")) {
       tables
           .getConfig()

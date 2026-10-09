@@ -2,8 +2,12 @@
 
 **Status:** Experimental, enabled by default when installed. The optional `streamfusion-fluss`
 module uses the released Apache Fluss Java connector 1.0.0. Disable its verified planner
-substitutions with `-Dstreamfusion.fluss.enabled=false`. All 23 runnable Nexmark queries pass,
-with matching deterministic output. The admission whitelist keeps unsupported combinations
+substitutions with `-Dstreamfusion.fluss.enabled=false`. All 23 runnable Nexmark queries pass
+with mini-batching off and matching deterministic output. The q23 mini-batch sidecar bug found by the
+[four-mode sweep](#readme-compatible-benchmark-matrix) is fixed; its
+[post-fix two-million-event reruns](#q23-mini-batch-fix-validation-2026-10-08)
+pass exact parity with memory and RocksDB state.
+The admission whitelist keeps unsupported connector combinations
 on the stock connector. Benchmark evidence remains dominated by short jobs and does not
 establish uniform sustained speedups.
 [Final 2M-event results](#final-nexmark-validation) include all append-only trials and
@@ -227,6 +231,171 @@ The input event table is append-only. Output tables are primary-key tables only 
 q4, q9, q15, q16, q17, q18 and q19, following the Kafka suite's existing upsert keys.
 The remaining queries write append-only tables and must engage the Arrow append sink.
 The harness checks the actual broker table modes as well as the executed source/sink plans.
+
+### README-compatible benchmark matrix
+
+To run all four README state/mini-batch combinations against stock Flink using
+Fluss at both boundaries, run the following sequentially with Java 17 (release builds only):
+
+```sh
+for backend in memory rocksdb; do
+  for mini_batch in false true; do
+    SF_FLUSS_BENCH=true SF_ROWS=2000000 SF_FLUSS_STATE_BACKEND="$backend" \
+      SF_FLUSS_MINI_BATCH="$mini_batch" \
+      mvn -Pbench -pl streamfusion-fluss -am test \
+        -Dtest=NexmarkFlussBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+        -Dnexmark.warmups=1 -Dnexmark.runs=3 -Dsf.extraJvmArgs=-Xmx2g
+  done
+done
+```
+
+`SF_FLUSS_MINI_BATCH` defaults to `false`. When enabled, both engines use the
+headline Kafka settings: two seconds allowed latency and 50,000 rows per batch.
+Each result line identifies the backend and mini-batch mode and retains every
+measured duration. Memory means heap/native memory state; RocksDB means disk
+state, rather than disabling all memory use. Four Fluss buckets on both boundaries
+correspond to Kafka's four topic partitions; these are unpartitioned Fluss tables.
+SQL and deterministic parity checks remain exact, including queries whose Kafka
+headline native runs enable incompatible expression variants. Thus these runs
+match workload, state and mini-batch settings, but do not reproduce those semantic
+variants or Kafka's JSON encoding and exactly-once output guarantees.
+
+The original mini-batch-on sweep exposed a regular-join correctness gap in q23:
+native buffering treated sidecar-bearing input with non-unique join keys as
+replacement rows and invented deletes, which the append-only sink rejected.
+The fix retains every INSERT row on non-unique inputs even when an upstream join
+attaches a row-kind sidecar. Unique updating inputs keep replacement folding;
+non-unique updating inputs keep immediate execution. The reproduction uses
+`SF_MATRIX_QUERIES=q23 SF_ROWS=100000 SF_FLUSS_MINI_BATCH=true`.
+q23 remains an append-only output table. The failure logs and original matrix
+below are retained as pre-fix evidence. See the
+[regular-join page](../operators/joins/regular-join.md#mini-batch-coalescing) for the buffering contract.
+
+### Four-mode results (2026-10-08)
+
+The complete local sweep uses Flink 2.2.1, Fluss 1.0.0, Java 17 and a
+release/mimalloc build on Linux with an Intel Core i7-12650H (16 exposed logical
+CPUs) and 9.7 GiB host RAM. Each mode uses two million events, parallelism four,
+four input and output buckets, UTC, four-second watermarks and one-second
+checkpoints. The test JVM has a 2 GiB heap; each Fluss server has a 1 GiB heap and
+512 MiB direct-memory limit. Disk mode gives both engines fixed 128 MiB RocksDB
+state pools per slot. Mini-batching on uses two seconds allowed latency and
+50,000 rows. The benchmark profile disables same-JVM zero-copy exchange.
+
+Each query has one stock/native warmup pair and three measured pairs, in stock
+then native order, with a fresh JVM and broker cluster per mode. The source is
+append-only; only q4, q9 and q15–q19 have primary-key outputs. Their writer remains
+stock in both engines. Setup, input seeding, parity, sorting and output table
+cleanup are outside timing; SQL execution, checkpoint/drain and synchronous job
+teardown remain inside. All deterministic output checks pass for completed cells;
+q12's processing-time output is exempt from exact equality. No expression
+variants are enabled and Kafka is not rerun.
+
+The four sweeps produce **90 valid cells and 540 measured durations**. Both
+mini-batch-on sweeps fail during q23's native warmup with
+`Append-only production received a changelog`; that cell has no speedup. The
+100,000-event isolated reproduction fails identically. All seven primary-key
+queries pass in all four modes. Each table cell is stock median job duration /
+native median job duration, equivalent to relative input throughput for the same
+corpus. The geomean uses the same 22 queries in every column (q23 remains visible
+but is excluded from that common aggregate).
+
+| Query | Memory, off | Memory, on | Disk, off | Disk, on |
+| --- | ---: | ---: | ---: | ---: |
+| q0 | 9.64× | 10.11× | 10.22× | 11.29× |
+| q1 | 9.14× | 22.04× | 11.29× | 11.62× |
+| q2 | 13.07× | 14.50× | 15.50× | 16.52× |
+| q3 | 6.96× | 8.76× | 7.87× | 8.32× |
+| q4 | 0.70× | 2.55× | 1.87× | 1.45× |
+| q5 | 4.77× | 4.65× | 9.18× | 4.50× |
+| q7 | 1.00× | 1.21× | 3.15× | 4.19× |
+| q8 | 8.23× | 8.51× | 5.26× | 10.70× |
+| q9 | 4.68× | 2.05× | 1.38× | 3.08× |
+| q10 | 6.22× | 6.43× | 6.21× | 6.65× |
+| q11 | 14.16× | 14.54× | 31.59× | 19.94× |
+| q12 | 14.83× | 14.91× | 11.87× | 13.06× |
+| q13 | 11.39× | 10.54× | 12.26× | 10.14× |
+| q14 | 6.41× | 5.52× | 5.70× | 5.40× |
+| q15 | 1.33× | 1.82× | 1.53× | 1.64× |
+| q16 | 1.77× | 0.88× | 1.48× | 1.31× |
+| q17 | 1.41× | 1.69× | 1.56× | 1.68× |
+| q18 | 2.30× | 1.83× | 1.40× | 2.44× |
+| q19 | 2.21× | 2.45× | 1.29× | 2.53× |
+| q20 | 3.78× | 6.04× | 2.64× | 7.51× |
+| q21 | 5.91× | 5.84× | 6.09× | 6.34× |
+| q22 | 13.49× | 13.32× | 12.22× | 27.04× |
+| q23 | 7.17× | **FAILED** | 4.48× | **FAILED** |
+| **Geomean, common 22 queries** | **4.66×** | **5.07×** | **4.83×** | **5.71×** |
+
+Including q23 in the successful mini-batch-off columns gives geomeans of
+**4.75× memory/off** and **4.82× disk/off** over all 23 queries. Memory/off q4
+regresses to **0.70×**, and memory/on q16 regresses to **0.88×**; neither is removed.
+There are no median regressions in the disk columns in this sweep. These are
+short full-job measurements: stock Fluss client teardown contributes materially,
+and stateful queries retain large variability. Host memory use exceeded 8 GiB
+near updating queries; no continuous host-pressure recording was made. These
+results do not establish uniform sustained-throughput gains or an absolute
+comparison with the README's Apple M1 Max Kafka results.
+
+The [individual trials](../benchmarks/fluss-headline-2026-10-08/trials.csv),
+[min/median/max, sample standard deviation and speedups](../benchmarks/fluss-headline-2026-10-08/summary.csv),
+[all 92 cell statuses](../benchmarks/fluss-headline-2026-10-08/status.csv) and
+[environment](../benchmarks/fluss-headline-2026-10-08/environment.json) retain the
+complete configuration and variability. The
+[executed plan archive](../benchmarks/fluss-headline-2026-10-08/plans.tar.gz) contains
+stock/native plans for every query and mode, including failed q23 plans.
+Compressed logs and JUnit reports for each mode, plus the isolated q23 failure,
+live beside the CSVs. Run `python3 docs/benchmarks/fluss-headline-2026-10-08/summarize.py`
+to regenerate the trial and summary CSVs from the archived logs.
+
+### q23 mini-batch fix validation (2026-10-08)
+
+The fix uses planner-proven join-key uniqueness when choosing buffering. A
+non-unique insert-only input retains every Arrow batch even when the preceding
+native join attaches an INSERT row-kind sidecar. This preserves duplicate rows
+and avoids invented replacement deletes. Unique updating inputs still fold
+first/preimage and final/postimage changes, while non-unique updating plans keep
+immediate execution. No Nexmark SQL, schemas, data, output table mode or planner
+admission was changed for the fix.
+
+Both q23 mini-batch-on cells were rerun at commit `1402a3a0`, using the original
+release/mimalloc configuration: two million events, parallelism four, four input
+and output buckets, append-only output, two-second/50,000-row mini-batching,
+one warmup pair and three measured stock/native pairs per backend. Every pair
+passes exact output multiset parity. Plans retain both native non-unique regular
+joins and the native append-only Fluss endpoints; RocksDB engagement is checked
+for both engines. The previous implementation fails this configuration before
+producing valid timing samples, so there is no pre-fix speedup to compare.
+
+| State, batching on | Stock trials (s) | Native trials (s) | Stock median (s) | Native median (s) | Median speedup |
+| --- | --- | --- | ---: | ---: | ---: |
+| Memory | 9.434 / 11.238 / 11.183 | 1.692 / 1.906 / 1.453 | 11.183 | 1.692 | **6.61×** |
+| RocksDB | 15.402 / 17.551 / 37.746 | 4.324 / 7.986 / 3.205 | 17.551 | 4.324 | **4.06×** |
+
+These are q23-only reruns, not a new complete four-mode sweep. The original
+90 valid cells, two failed cells and common-22-query geomeans above remain
+unchanged as pre-fix evidence. The new dataset adds 12 measured durations.
+Disk stock and native trials have substantial variability; the full-job timer
+includes teardown and these results do not establish sustained throughput.
+
+The [post-fix samples](../benchmarks/q23-mini-batch-fix-2026-10-08/trials.csv),
+[summary including ranges and sample standard deviations](../benchmarks/q23-mini-batch-fix-2026-10-08/summary.csv)
+and [environment and source hashes](../benchmarks/q23-mini-batch-fix-2026-10-08/environment.json)
+are retained with both logs, JUnit reports and executed plans. Run
+`python3 docs/benchmarks/q23-mini-batch-fix-2026-10-08/summarize.py` to regenerate
+these CSVs. The same directory retains the failing pre-fix unit regression,
+the passing 658-test native run (two existing ignores), 35 Java join tests,
+16 release Criterion join fixtures and 18 join allocation profiles. SQL parity
+covers duplicate three-way joins with batching off and sizes one/four; direct
+operator tests cover sidecar combinations, subsequent bundles, shared count,
+watermark flushes and checkpoint/restore.
+
+The direct five-batch retry test waits up to 30 seconds for the newly created
+bucket's leader assignment before opening its writer gateway. Table creation
+finishes before asynchronous assignment; an immediate metadata lookup can fail
+before the retry request itself is sent. The wait only establishes the test
+precondition. Replaying the same five batches three times must still produce
+exactly five offsets and the five expected rows.
 
 ## Partitioning and streaming-filter validation (2026-10-07)
 

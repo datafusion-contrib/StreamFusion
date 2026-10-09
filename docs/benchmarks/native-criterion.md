@@ -2118,3 +2118,17 @@ conversion, and the rowwise blackhole sink remain inside the measured boundary.
 The [performance audit reproduction guide](performance-audit.md) records matched fixture commits,
 release/allocator controls, serial shared-host execution, and Java/full-job comparisons for the
 pending-dedup, interval-probe, window, Delta, and Paimon audit candidates.
+
+## Append-only join sidecars
+
+`operators/append_only_updating_join_sidecars` measures production mini-batch input
+retention and flush with and without INSERT sidecars, 16/1,024/8,192 rows, one or
+64 join keys, and nullable payloads. Fixture construction stays outside timing;
+each flush checks the complete duplicate-preserving output count. The existing
+allocation suite adds wide payload coverage. Unique updating fixtures explicitly
+provide the planner uniqueness contract required for replacement folding.
+
+The q23 fix validation passes all 16 release join fixtures and records 18
+[updating-join allocation profiles](q23-mini-batch-fix-2026-10-08/native-allocations.csv).
+The [Fluss q23 reruns](../connectors/fluss.md#q23-mini-batch-fix-validation-2026-10-08)
+retain end-to-end stock/native parity and timing separately from these native costs.

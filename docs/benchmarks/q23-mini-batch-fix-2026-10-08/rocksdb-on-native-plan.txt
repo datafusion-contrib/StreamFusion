@@ -1,0 +1,288 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[fluss.nexmark.output_05c19ee68dba440497e63faf9973d5c4], fields=[auction, bidder, price, itemName, dateTime, seller])
++- LogicalProject(auction=[$0], bidder=[$1], price=[$2], itemName=[$16], dateTime=[$20], seller=[$22])
+   +- LogicalJoin(condition=[=($22, $1)], joinType=[inner])
+      :- LogicalJoin(condition=[=($7, $1)], joinType=[inner])
+      :  :- LogicalProject(auction=[$3.auction], bidder=[$3.bidder], price=[$3.price], channel=[$3.channel], url=[$3.url], dateTime=[$5], extra=[$3.extra])
+      :  :  +- LogicalFilter(condition=[=($0, 2)])
+      :  :     +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[$5])
+      :  :        +- LogicalWatermarkAssigner(rowtime=[rowtime], watermark=[-($5, 4000:INTERVAL SECOND)])
+      :  :           +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[TO_TIMESTAMP_LTZ($4, 3)])
+      :  :              +- LogicalTableScan(table=[[fluss, nexmark, events]])
+      :  +- LogicalProject(id=[$1.id], name=[$1.name], emailAddress=[$1.emailAddress], creditCard=[$1.creditCard], city=[$1.city], state=[$1.state], dateTime=[$5], extra=[$1.extra])
+      :     +- LogicalFilter(condition=[=($0, 0)])
+      :        +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[$5])
+      :           +- LogicalWatermarkAssigner(rowtime=[rowtime], watermark=[-($5, 4000:INTERVAL SECOND)])
+      :              +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[TO_TIMESTAMP_LTZ($4, 3)])
+      :                 +- LogicalTableScan(table=[[fluss, nexmark, events]])
+      +- LogicalProject(id=[$2.id], itemName=[$2.itemName], description=[$2.description], initialBid=[$2.initialBid], reserve=[$2.reserve], dateTime=[$5], expires=[TO_TIMESTAMP_LTZ($2.expires, 3)], seller=[$2.seller], category=[$2.category], extra=[$2.extra])
+         +- LogicalFilter(condition=[=($0, 1)])
+            +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[$5])
+               +- LogicalWatermarkAssigner(rowtime=[rowtime], watermark=[-($5, 4000:INTERVAL SECOND)])
+                  +- LogicalProject(event_type=[$0], person=[$1], auction=[$2], bid=[$3], dateTime=[$4], rowtime=[TO_TIMESTAMP_LTZ($4, 3)])
+                     +- LogicalTableScan(table=[[fluss, nexmark, events]])
+
+== Optimized Physical Plan ==
+NativeFlussSink(reuseBarrier=[488])
++- NativeColumnarUpdatingJoin(reuseBarrier=[487], leftJoinKeyUnique=[false], rightJoinKeyUnique=[false])
+   :- NativeColumnarExchange(reuseBarrier=[481])
+   :  +- NativeCalc(reuseBarrier=[480])
+   :     +- NativeColumnarUpdatingJoin(reuseBarrier=[479], leftJoinKeyUnique=[false], rightJoinKeyUnique=[false])
+   :        :- NativeColumnarExchange(reuseBarrier=[460])
+   :        :  +- NativeCalc(reuseBarrier=[459])
+   :        :     +- NativeMiniBatchAssigner(reuseBarrier=[458])
+   :        :        +- NativeCalc(reuseBarrier=[457])
+   :        :           +- NativeShare(consumers=[3], shareToken=[455])
+   :        :              +- NativeFlussSource(table=[nexmark.events], shareToken=[455])
+   :        +- NativeColumnarExchange(reuseBarrier=[478])
+   :           +- NativeCalc(reuseBarrier=[477])
+   :              +- NativeMiniBatchAssigner(reuseBarrier=[476])
+   :                 +- NativeCalc(reuseBarrier=[475])
+   :                    +- NativeShare(consumers=[3], shareToken=[455])
+   :                       +- NativeFlussSource(table=[nexmark.events], shareToken=[455])
+   +- NativeColumnarExchange(reuseBarrier=[486])
+      +- NativeCalc(reuseBarrier=[485])
+         +- NativeMiniBatchAssigner(reuseBarrier=[484])
+            +- NativeCalc(reuseBarrier=[483])
+               +- NativeShare(consumers=[3], shareToken=[455])
+                  +- NativeFlussSource(table=[nexmark.events], shareToken=[455])
+
+== Optimized Execution Plan ==
+NativeFlussSink
++- NativeColumnarUpdatingJoin(leftJoinKeyUnique=[false], rightJoinKeyUnique=[false])
+   :- NativeColumnarExchange
+   :  +- NativeCalc
+   :     +- NativeColumnarUpdatingJoin(leftJoinKeyUnique=[false], rightJoinKeyUnique=[false])
+   :        :- NativeColumnarExchange
+   :        :  +- NativeCalc
+   :        :     +- NativeMiniBatchAssigner
+   :        :        +- NativeCalc
+   :        :           +- NativeShare(consumers=[3])(reuse_id=[1])
+   :        :              +- NativeFlussSource(table=[nexmark.events])
+   :        +- NativeColumnarExchange
+   :           +- NativeCalc
+   :              +- NativeMiniBatchAssigner
+   :                 +- NativeCalc
+   :                    +- Reused(reference_id=[1])
+   +- NativeColumnarExchange
+      +- NativeCalc
+         +- NativeMiniBatchAssigner
+            +- NativeCalc
+               +- Reused(reference_id=[1])
+
+== Physical Execution Plan ==
+{
+  "nodes" : [ {
+    "id" : 463,
+    "type" : "Source: native-fluss-source",
+    "pact" : "Data Source",
+    "contents" : "Source: native-fluss-source",
+    "parallelism" : 4
+  }, {
+    "id" : 464,
+    "type" : "NativeShareExecNode[330]",
+    "pact" : "Operator",
+    "contents" : "[330]:NativeShare(consumers=[3])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 463,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 465,
+    "type" : "NativeCalcExecNode[331]",
+    "pact" : "Operator",
+    "contents" : "[331]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 464,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 466,
+    "type" : "NativeMiniBatchAssignerExecNode[332]",
+    "pact" : "Operator",
+    "contents" : "[332]:NativeMiniBatchAssigner",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 465,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 467,
+    "type" : "NativeCalcExecNode[333]",
+    "pact" : "Operator",
+    "contents" : "[333]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 466,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 468,
+    "type" : "NativeColumnarExchangeExecNode[334]",
+    "pact" : "Operator",
+    "contents" : "[334]:NativeColumnarExchange",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 467,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 470,
+    "type" : "NativeCalcExecNode[335]",
+    "pact" : "Operator",
+    "contents" : "[335]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 464,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 471,
+    "type" : "NativeMiniBatchAssignerExecNode[336]",
+    "pact" : "Operator",
+    "contents" : "[336]:NativeMiniBatchAssigner",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 470,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 472,
+    "type" : "NativeCalcExecNode[337]",
+    "pact" : "Operator",
+    "contents" : "[337]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 471,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 473,
+    "type" : "NativeColumnarExchangeExecNode[338]",
+    "pact" : "Operator",
+    "contents" : "[338]:NativeColumnarExchange",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 472,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 475,
+    "type" : "NativeColumnarUpdatingJoinExecNode[339]",
+    "pact" : "Operator",
+    "contents" : "[339]:NativeColumnarUpdatingJoin(leftJoinKeyUnique=[false], rightJoinKeyUnique=[false])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 468,
+      "ship_strategy" : "columnar-key-group",
+      "side" : "second"
+    }, {
+      "id" : 473,
+      "ship_strategy" : "columnar-key-group",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 476,
+    "type" : "NativeCalcExecNode[340]",
+    "pact" : "Operator",
+    "contents" : "[340]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 475,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 477,
+    "type" : "NativeColumnarExchangeExecNode[341]",
+    "pact" : "Operator",
+    "contents" : "[341]:NativeColumnarExchange",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 476,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 479,
+    "type" : "NativeCalcExecNode[342]",
+    "pact" : "Operator",
+    "contents" : "[342]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 464,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 480,
+    "type" : "NativeMiniBatchAssignerExecNode[343]",
+    "pact" : "Operator",
+    "contents" : "[343]:NativeMiniBatchAssigner",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 479,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 481,
+    "type" : "NativeCalcExecNode[344]",
+    "pact" : "Operator",
+    "contents" : "[344]:NativeCalc",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 480,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 482,
+    "type" : "NativeColumnarExchangeExecNode[345]",
+    "pact" : "Operator",
+    "contents" : "[345]:NativeColumnarExchange",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 481,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 484,
+    "type" : "NativeColumnarUpdatingJoinExecNode[346]",
+    "pact" : "Operator",
+    "contents" : "[346]:NativeColumnarUpdatingJoin(leftJoinKeyUnique=[false], rightJoinKeyUnique=[false])",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 477,
+      "ship_strategy" : "columnar-key-group",
+      "side" : "second"
+    }, {
+      "id" : 482,
+      "ship_strategy" : "columnar-key-group",
+      "side" : "second"
+    } ]
+  }, {
+    "id" : 490,
+    "type" : "native-fluss-append-sink: Writer",
+    "pact" : "Operator",
+    "contents" : "native-fluss-append-sink: Writer",
+    "parallelism" : 4,
+    "predecessors" : [ {
+      "id" : 484,
+      "ship_strategy" : "FORWARD",
+      "side" : "second"
+    } ]
+  } ]
+}

@@ -1,0 +1,38 @@
+{
+  "timestamp_utc": "20261009T012852.351071Z",
+  "commit": "0f9009bc04a9e685425a5f81c4aed0ba159afb52",
+  "dirty": true,
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: x86_64-unknown-linux-gnu\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "cpu_count": 16,
+  "mode": "smoke",
+  "suites": [
+    [
+      "streamfusion",
+      "operators"
+    ]
+  ],
+  "filter": "updating_join",
+  "features": [],
+  "save_baseline": null,
+  "baseline": null,
+  "commands": [
+    [
+      "cargo",
+      "bench",
+      "--manifest-path",
+      "/root/data/StreamFusion/native/Cargo.toml",
+      "--locked",
+      "-p",
+      "streamfusion",
+      "--bench",
+      "operators",
+      "--",
+      "updating_join",
+      "--test"
+    ]
+  ],
+  "environment": {
+    "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
+  }
+}

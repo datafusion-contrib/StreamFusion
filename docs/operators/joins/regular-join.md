@@ -18,6 +18,13 @@ The native matcher requires:
   MAP and MULTISET fields fall back, including those nested inside ARRAY or ROW and those used
   only as payloads. The Arrow row codec does not support these types.
 
+Insert-only inputs may carry an explicit INSERT `$row_kind$` sidecar from an upstream
+native join. Mini-batch buffering uses the planner's join-key uniqueness proof, rather
+than sidecar presence, to preserve every row on a non-unique input. This fixes chained
+append-only joins such as Nexmark q23; repeated keys remain independent rows across
+bundle boundaries. Non-unique mini-batch inputs reject non-INSERT sidecars as a violated
+admission contract. Updating non-unique inputs continue to execute immediately.
+
 ## Keyless INNER joins
 
 `CROSS JOIN` and INNER joins whose entire condition is a supported non-equi predicate run

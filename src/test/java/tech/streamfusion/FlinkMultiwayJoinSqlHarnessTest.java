@@ -12,21 +12,24 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Nexmark q23's shape: a multi-way (three input) inner equi-join that chains {@code bid ⋈ person} and
- * {@code bid ⋈ auction}. StreamFusion already accelerates chained regular equi-joins, so q23 runs
- * fully native. The only reason the canonical q23.sql does not plan in this Flink build is a parser
- * quirk — it references the reserved identifier {@code dateTime} bare ({@code A.dateTime}); quoting it
- * as {@code A.`dateTime`} (the form the DDL declares) parses and accelerates identically.
+ * Nexmark q23's shape: a multi-way (three input) inner equi-join that chains {@code bid ⋈ person}
+ * and {@code bid ⋈ auction}. StreamFusion already accelerates chained regular equi-joins, so q23
+ * runs fully native. The only reason the canonical q23.sql does not plan in this Flink build is a
+ * parser quirk — it references the reserved identifier {@code dateTime} bare ({@code A.dateTime});
+ * quoting it as {@code A.`dateTime`} (the form the DDL declares) parses and accelerates
+ * identically.
  */
 class FlinkMultiwayJoinSqlHarnessTest {
 
-  @Test
-  void threeWayInnerJoinMatchesHost() throws Exception {
-    NativeParity.assertParity(
-        environment(),
+  @ParameterizedTest
+  @ValueSource(longs = {-1, 1, 4})
+  void threeWayInnerJoinMatchesHost(long miniBatchSize) throws Exception {
+    NativeParity.assertKindedParity(
+        environment(miniBatchSize),
         "SELECT B.bidder, B.price, B.channel, P.id AS person_id, P.name,"
             + " A.itemName, A.`dateTime` AS auction_dateTime, A.seller"
             + " FROM bid B"
@@ -34,11 +37,16 @@ class FlinkMultiwayJoinSqlHarnessTest {
             + " JOIN auction A ON A.seller = B.bidder");
   }
 
-  private static Supplier<TableEnvironment> environment() {
+  private static Supplier<TableEnvironment> environment(long miniBatchSize) {
     return () -> {
       StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
       env.setParallelism(1);
       StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+      if (miniBatchSize > 0) {
+        tEnv.getConfig().set("table.exec.mini-batch.enabled", "true");
+        tEnv.getConfig().set("table.exec.mini-batch.allow-latency", "1 s");
+        tEnv.getConfig().set("table.exec.mini-batch.size", Long.toString(miniBatchSize));
+      }
 
       DataStream<Row> bid =
           fromData(
@@ -48,6 +56,7 @@ class FlinkMultiwayJoinSqlHarnessTest {
                   Types.LONG,
                   Types.LONG,
                   Types.STRING),
+              Row.of(1L, 100L, "apple"),
               Row.of(1L, 100L, "apple"),
               Row.of(1L, 150L, "google"),
               Row.of(2L, 200L, "baidu"),
@@ -66,6 +75,7 @@ class FlinkMultiwayJoinSqlHarnessTest {
                   Types.LONG,
                   Types.STRING,
                   Types.LOCAL_DATE_TIME),
+              Row.of(1L, "widget", LocalDateTime.of(2023, 1, 1, 12, 0, 0)),
               Row.of(1L, "widget", LocalDateTime.of(2023, 1, 1, 12, 0, 0)),
               Row.of(1L, "gadget", LocalDateTime.of(2023, 1, 2, 13, 30, 0)),
               Row.of(2L, "gizmo", LocalDateTime.of(2023, 1, 3, 9, 15, 0)));

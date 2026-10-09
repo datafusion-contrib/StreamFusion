@@ -1040,7 +1040,13 @@ class FlussArrowClientTest {
     var info = connection.getAdmin().getTableInfo(path).get();
     var metadata = ((FlussConnection) connection).getMetadataUpdater();
     var bucket = new TableBucket(info.getTableId(), 0);
-    metadata.checkAndUpdateMetadata(path, bucket);
+    long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+    metadata.updateTableOrPartitionMetadata(path, null);
+    while (metadata.getCluster().leaderFor(bucket) == null && System.nanoTime() < deadline) {
+      Thread.sleep(50);
+      metadata.updateTableOrPartitionMetadata(path, null);
+    }
+    assertNotNull(metadata.getCluster().leaderFor(bucket), "Bucket leader was not assigned");
     var gateway = metadata.newTabletServerClientForNode(metadata.leaderFor(path, bucket));
     long writerId = gateway.initWriter(new InitWriterRequest()).get().getWriterId();
     Schema full = FlussArrowSchema.wireSchema(info.getRowType());
