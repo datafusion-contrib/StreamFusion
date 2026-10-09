@@ -62,6 +62,12 @@ class NativeColumnarUpdatingJoinOperatorTest {
 
   private static NativeColumnarUpdatingJoinOperator rawKeyedOperator(
       boolean miniBatch, long miniBatchSize, long leftStateTtlMillis, long rightStateTtlMillis) {
+    return rawKeyedOperator(miniBatch, miniBatchSize, leftStateTtlMillis, rightStateTtlMillis, false);
+  }
+
+  private static NativeColumnarUpdatingJoinOperator rawKeyedOperator(
+      boolean miniBatch, long miniBatchSize, long leftStateTtlMillis, long rightStateTtlMillis,
+      boolean unique) {
     return new NativeColumnarUpdatingJoinOperator(
         new int[] {0},
         new int[] {0},
@@ -77,8 +83,8 @@ class NativeColumnarUpdatingJoinOperatorTest {
         new String[0],
         NativeUdf.Binding.EMPTY,
         new int[] {-1},
-        false,
-        false,
+        unique,
+        unique,
         miniBatch,
         miniBatchSize,
         leftStateTtlMillis,
@@ -206,7 +212,7 @@ class NativeColumnarUpdatingJoinOperatorTest {
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
             harness =
                 new KeyedTwoInputStreamOperatorTestHarness<>(
-                    rawKeyedOperator(true, 4),
+                    rawKeyedOperator(true, 4, 0, 0, true),
                     batch -> 0,
                     batch -> 0,
                     Types.INT,
@@ -271,16 +277,68 @@ class NativeColumnarUpdatingJoinOperatorTest {
       harness.open();
       harness.processElement1(
           new StreamRecord<>(
-              appendBatch(allocator, LEFT, row(RowKind.INSERT, 1, 10), row(RowKind.INSERT, 1, 11))));
+              batch(allocator, LEFT, row(RowKind.INSERT, 1, 10), row(RowKind.INSERT, 1, 11))));
       harness.processElement2(
-          new StreamRecord<>(appendBatch(allocator, RIGHT, row(RowKind.INSERT, 1, 100))));
+          new StreamRecord<>(batch(allocator, RIGHT, row(RowKind.INSERT, 1, 100))));
       assertEquals(List.of(), collect(harness));
 
       harness.processElement1(
-          new StreamRecord<>(appendBatch(allocator, LEFT, row(RowKind.INSERT, 2, 20))));
+          new StreamRecord<>(batch(allocator, LEFT, row(RowKind.INSERT, 2, 20))));
       assertEquals(
           List.of(change(RowKind.INSERT, 1, 10, 1, 100), change(RowKind.INSERT, 1, 11, 1, 100)),
           collect(harness));
+    }
+  }
+
+  @Test
+  void insertSidecarMultiplicitySurvivesMiniBatchCheckpoint() throws Exception {
+    OperatorSubtaskState snapshot;
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> before =
+            new KeyedTwoInputStreamOperatorTestHarness<>(
+                rawKeyedOperator(true, 10),
+                batch -> 0,
+                batch -> 0,
+                Types.INT,
+                MAX_PARALLELISM,
+                1,
+                0)) {
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      before.processElement2(
+          new StreamRecord<>(
+              batch(allocator, RIGHT, row(RowKind.INSERT, 1, 100), row(RowKind.INSERT, 1, 100))));
+      before.prepareSnapshotPreBarrier(1L);
+      snapshot = before.snapshot(1L, 1L);
+      assertEquals(List.of(), collect(before));
+    }
+    try (BufferAllocator allocator = new RootAllocator();
+        KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch>
+            restored =
+                new KeyedTwoInputStreamOperatorTestHarness<>(
+                    rawKeyedOperator(true, 10),
+                    batch -> 0,
+                    batch -> 0,
+                    Types.INT,
+                    MAX_PARALLELISM,
+                    1,
+                    0)) {
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(snapshot);
+      restored.open();
+      restored.processElement1(
+          new StreamRecord<>(
+              batch(allocator, LEFT, row(RowKind.INSERT, 1, 10), row(RowKind.INSERT, 1, 10))));
+      restored.processWatermark1(new Watermark(1));
+      assertEquals(
+          java.util.Collections.nCopies(4, change(RowKind.INSERT, 1, 10, 1, 100)),
+          collect(restored));
+      restored.processElement1(
+          new StreamRecord<>(batch(allocator, LEFT, row(RowKind.INSERT, 1, 20))));
+      restored.processWatermark2(new Watermark(2));
+      assertEquals(
+          java.util.Collections.nCopies(2, change(RowKind.INSERT, 1, 20, 1, 100)),
+          collect(restored));
     }
   }
 

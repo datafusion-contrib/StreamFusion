@@ -2118,3 +2118,12 @@ conversion, and the rowwise blackhole sink remain inside the measured boundary.
 The [performance audit reproduction guide](performance-audit.md) records matched fixture commits,
 release/allocator controls, serial shared-host execution, and Java/full-job comparisons for the
 pending-dedup, interval-probe, window, Delta, and Paimon audit candidates.
+
+## Append-only join sidecars
+
+`operators/append_only_updating_join_sidecars` measures production mini-batch input
+retention and flush with and without INSERT sidecars, 16/1,024/8,192 rows, one or
+64 join keys, and nullable payloads. Fixture construction stays outside timing;
+each flush checks the complete duplicate-preserving output count. The existing
+allocation suite adds wide payload coverage. Unique updating fixtures explicitly
+provide the planner uniqueness contract required for replacement folding.

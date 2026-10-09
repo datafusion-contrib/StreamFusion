@@ -3,8 +3,8 @@
 **Status:** Experimental, enabled by default when installed. The optional `streamfusion-fluss`
 module uses the released Apache Fluss Java connector 1.0.0. Disable its verified planner
 substitutions with `-Dstreamfusion.fluss.enabled=false`. All 23 runnable Nexmark queries pass
-with mini-batching off and matching deterministic output. Mini-batching on exposes
-the [q23 regular-join correctness gap](#readme-compatible-benchmark-matrix).
+with mini-batching off and matching deterministic output. The q23 mini-batch sidecar bug found by the
+[four-mode sweep](#readme-compatible-benchmark-matrix) is fixed in regular-join buffering.
 The admission whitelist keeps unsupported connector combinations
 on the stock connector. Benchmark evidence remains dominated by short jobs and does not
 establish uniform sustained speedups.
@@ -246,14 +246,16 @@ headline native runs enable incompatible expression variants. Thus these runs
 match workload, state and mini-batch settings, but do not reproduce those semantic
 variants or Kafka's JSON encoding and exactly-once output guarantees.
 
-The mini-batch-on sweep exposes a regular-join correctness gap in q23: native
-buffering treats sidecar-bearing input with non-unique join keys as replacement
-rows and invents deletes, which the append-only sink rejects. It also reproduces
-with `SF_MATRIX_QUERIES=q23 SF_ROWS=100000 SF_FLUSS_MINI_BATCH=true`.
-q23 must remain an append-only output table; making it primary-key would mask
-the wrong changelog rather than match the Kafka workload. Record a failed cell
-instead of a speedup, and retain the valid preceding measurements. The
-[regular-join page](../operators/joins/regular-join.md#admission) documents the gap.
+The original mini-batch-on sweep exposed a regular-join correctness gap in q23:
+native buffering treated sidecar-bearing input with non-unique join keys as
+replacement rows and invented deletes, which the append-only sink rejected.
+The fix retains every INSERT row on non-unique inputs even when an upstream join
+attaches a row-kind sidecar. Unique updating inputs keep replacement folding;
+non-unique updating inputs keep immediate execution. The reproduction uses
+`SF_MATRIX_QUERIES=q23 SF_ROWS=100000 SF_FLUSS_MINI_BATCH=true`.
+q23 remains an append-only output table. The failure logs and original matrix
+below are retained as pre-fix evidence. See the
+[regular-join page](../operators/joins/regular-join.md#mini-batch-coalescing) for the buffering contract.
 
 ### Four-mode results (2026-10-08)
 

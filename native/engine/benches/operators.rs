@@ -748,6 +748,58 @@ fn bench_retract_topn(c: &mut Criterion) {
     group.finish();
 }
 
+// Timed boundary: retain both Arrow inputs and flush their full duplicate-preserving join.
+fn bench_append_only_updating_join_sidecars(c: &mut Criterion) {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("k", DataType::Int64, true),
+        Field::new("v", DataType::Int64, true),
+    ]));
+    let mut group = c.benchmark_group("append_only_updating_join_sidecars");
+    for rows in [16usize, 1024, 8192] {
+        for keys in [1usize, 64] {
+            for sidecar in [false, true] {
+                let make = |count: usize| {
+                    let mut fields = schema.fields().to_vec();
+                    let mut arrays: Vec<arrow::array::ArrayRef> = vec![
+                        Arc::new(Int64Array::from_iter_values(
+                            (0..count).map(|i| (i % keys) as i64),
+                        )),
+                        Arc::new(Int64Array::from_iter((0..count).map(|i| {
+                            if i % 7 == 0 {
+                                None
+                            } else {
+                                Some(i as i64)
+                            }
+                        }))),
+                    ];
+                    if sidecar {
+                        fields.push(Arc::new(Field::new("$row_kind$", DataType::Int8, false)));
+                        arrays.push(Arc::new(Int8Array::from(vec![0; count])));
+                    }
+                    RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap()
+                };
+                let left = make(rows);
+                let right = make(keys);
+                group.throughput(Throughput::Elements(rows as u64));
+                group.bench_function(format!("rows_{rows}/keys_{keys}/sidecar_{sidecar}"), |b| {
+                    b.iter_batched(
+                        || UniqueUpdatingJoin::new(schema.clone(), true),
+                        |mut join| {
+                            join.push(&right, false);
+                            join.push(&left, true);
+                            let output = join.flush();
+                            assert_eq!(output.num_rows(), rows);
+                            black_box(output);
+                        },
+                        BatchSize::SmallInput,
+                    )
+                });
+            }
+        }
+    }
+    group.finish();
+}
+
 fn bench_unique_updating_join_logical_bundle(c: &mut Criterion) {
     let data_schema = Arc::new(Schema::new(vec![
         Field::new("k", DataType::Int64, false),
@@ -804,7 +856,8 @@ fn bench_unique_updating_join_logical_bundle(c: &mut Criterion) {
     .unwrap();
     let physical_size = 256;
     let setup = |mini_batch| {
-        let mut join = UniqueUpdatingJoin::new(data_schema.clone(), mini_batch);
+        let mut join = UniqueUpdatingJoin::new(data_schema.clone(), mini_batch)
+            .with_unique_join_keys(true, true);
         join.push(&right, false);
         join.push(&left, true);
         if mini_batch {
@@ -1370,6 +1423,7 @@ criterion_group!(
     bench_over,
     bench_retract_topn,
     bench_unique_updating_join_logical_bundle,
+    bench_append_only_updating_join_sidecars,
     bench_append_topn_logical_bundle,
     bench_dedup_keep_first,
     bench_normalize_logical_bundle,

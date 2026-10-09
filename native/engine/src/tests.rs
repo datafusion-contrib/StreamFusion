@@ -6285,7 +6285,9 @@ fn updating_join_emits_matches_with_arriving_kind() {
 
 #[test]
 fn unique_updating_join_replays_only_each_sides_final_bundle_change() {
-    let mut joiner = inner_joiner().with_mini_batch(true);
+    let mut joiner = inner_joiner()
+        .with_unique_join_keys(true, true)
+        .with_mini_batch(true);
     assert_eq!(
         joiner
             .push(&changelog_join_batch(vec![1], vec![100], vec![0]), false, 0)
@@ -6337,8 +6339,77 @@ fn append_only_updating_join_buffers_both_sides_without_losing_multiplicity() {
 }
 
 #[test]
+fn append_only_updating_join_preserves_insert_sidecars_across_bundles() {
+    for left_sidecar in [false, true] {
+        for right_sidecar in [false, true] {
+            let mut joiner = inner_joiner().with_mini_batch(true);
+            let batch = |keys: Vec<i64>, values: Vec<i64>, sidecar: bool| {
+                if sidecar {
+                    let kinds = vec![0; keys.len()];
+                    changelog_join_batch(keys, values, kinds)
+                } else {
+                    append_join_batch(keys, values)
+                }
+            };
+            joiner
+                .push(&batch(vec![1, 1], vec![100, 100], right_sidecar), false, 0)
+                .unwrap();
+            joiner
+                .push(
+                    &batch(vec![1, 1, 1], vec![10, 10, 20], left_sidecar),
+                    true,
+                    0,
+                )
+                .unwrap();
+            let out = joiner.flush_mini_batch().unwrap();
+            assert_eq!(row_kinds(&out), vec![0; 6]);
+            let mut left = values(&out, 1);
+            left.sort();
+            assert_eq!(left, vec![10, 10, 10, 10, 20, 20]);
+
+            joiner
+                .push(&batch(vec![1], vec![30], left_sidecar), true, 0)
+                .unwrap();
+            let out = joiner.flush_mini_batch().unwrap();
+            assert_eq!(row_kinds(&out), vec![0; 2]);
+            assert_eq!(values(&out, 1), vec![30, 30]);
+
+            joiner
+                .push(&batch(vec![1], vec![200], right_sidecar), false, 0)
+                .unwrap();
+            let out = joiner.flush_mini_batch().unwrap();
+            assert_eq!(row_kinds(&out), vec![0; 4]);
+            let mut left = values(&out, 1);
+            left.sort();
+            assert_eq!(left, vec![10, 10, 20, 30]);
+            assert_eq!(values(&out, 3), vec![200; 4]);
+        }
+    }
+}
+
+#[test]
+fn non_unique_mini_batch_join_rejects_updating_sidecars() {
+    for kind in [1, 2, 3] {
+        for is_left in [false, true] {
+            let mut joiner = inner_joiner().with_mini_batch(true);
+            let error = joiner
+                .push(
+                    &changelog_join_batch(vec![1], vec![10], vec![kind]),
+                    is_left,
+                    0,
+                )
+                .unwrap_err();
+            assert!(error.to_string().contains("must be insert-only"));
+            assert_eq!(joiner.staged_records(is_left), 0);
+        }
+    }
+}
+
+#[test]
 fn updating_join_bundle_metric_retains_both_records_of_an_update() {
-    let mut joiner = inner_joiner().with_mini_batch(true);
+    let mut joiner = inner_joiner()
+        .with_unique_join_keys(true, true)
+        .with_mini_batch(true);
     joiner
         .push(&changelog_join_batch(vec![1], vec![10], vec![0]), true, 0)
         .unwrap();
@@ -6964,7 +7035,10 @@ fn updating_join_ttl_sweep_reclaims_idle_rows_silently() {
 // an expired stored row replays a fresh insert rather than a retraction of the corpse.
 #[test]
 fn updating_join_ttl_mini_batch_ignores_expired_durable_rows() {
-    let mut joiner = inner_joiner().with_mini_batch(true).with_state_ttl(0, 1000);
+    let mut joiner = inner_joiner()
+        .with_unique_join_keys(true, true)
+        .with_mini_batch(true)
+        .with_state_ttl(0, 1000);
     joiner
         .push(
             &changelog_join_batch(vec![1], vec![10], vec![0]),

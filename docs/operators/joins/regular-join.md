@@ -18,17 +18,12 @@ The native matcher requires:
   MAP and MULTISET fields fall back, including those nested inside ARRAY or ROW and those used
   only as payloads. The Arrow row codec does not support these types.
 
-**Known correctness gap:** mini-batch execution can incorrectly fold an input
-without unique join keys when its Arrow batch has an explicit `$row_kind$`
-sidecar. The buffering path currently reduces those rows by join key as though
-each key identified one row, losing multiset multiplicity and inventing
-replacement deletes. The chained insert-only joins in Nexmark q23 reproduce this
-with Fluss input and mini-batching enabled; the append-only sink rejects the
-invented changelog. This combination does not fall back automatically. Disable
-mini-batching for affected queries until the non-unique bundle handling is fixed.
-See the [four-mode benchmark validation](../../connectors/fluss.md#readme-compatible-benchmark-matrix)
-for the reproduction settings and recorded failure. Mini-batching off passes q23
-output parity at two million events.
+Insert-only inputs may carry an explicit INSERT `$row_kind$` sidecar from an upstream
+native join. Mini-batch buffering uses the planner's join-key uniqueness proof, rather
+than sidecar presence, to preserve every row on a non-unique input. This fixes chained
+append-only joins such as Nexmark q23; repeated keys remain independent rows across
+bundle boundaries. Non-unique mini-batch inputs reject non-INSERT sidecars as a violated
+admission contract. Updating non-unique inputs continue to execute immediately.
 
 ## Keyless INNER joins
 

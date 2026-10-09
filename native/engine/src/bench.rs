@@ -365,6 +365,11 @@ impl UniqueUpdatingJoin {
         )
     }
 
+    pub fn with_unique_join_keys(mut self, left: bool, right: bool) -> Self {
+        self.0 = self.0.with_unique_join_keys(left, right);
+        self
+    }
+
     pub fn push(&mut self, batch: &RecordBatch, left: bool) -> RecordBatch {
         self.0.push(batch, left, 0).expect("budget exceeded")
     }

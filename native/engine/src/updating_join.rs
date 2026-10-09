@@ -991,10 +991,17 @@ impl<S: JoinStateStore> UpdatingJoiner<S> {
         is_left: bool,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
-        // An insert-only edge has no `$row_kind$` column. Flink's three regular-join bundle shapes
-        // cannot cancel or replace any valid row on such an edge, so retaining the Arrow batches is
-        // the exact reduced bundle and is substantially cheaper than row encoding plus re-decoding.
-        if row_kind_column(batch).is_none() {
+        // Mini-batch admission proves both inputs insert-only when either join key is
+        // non-unique. Upstream joins can still attach an INSERT-only row-kind sidecar;
+        // its presence does not permit replacing rows with the same non-unique key.
+        let kinds = row_kind_column(batch);
+        let non_unique = !self.side_join_key_unique(is_left);
+        if kinds.is_none() || non_unique {
+            if non_unique && kinds.is_some_and(|kinds| kinds.iter().any(|kind| kind != Some(0))) {
+                return Err(DataFusionError::Execution(
+                    "Non-unique mini-batch join input must be insert-only".into(),
+                ));
+            }
             let bytes = batch.get_array_memory_size();
             if is_left {
                 self.left_append_batches.push(batch.clone());
