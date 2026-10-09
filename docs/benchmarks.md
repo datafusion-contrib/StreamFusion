@@ -367,7 +367,23 @@ build. These measurements complement the Flink comparisons on this page.
 
 The [Fluss-to-Fluss suite](connectors/fluss.md#final-nexmark-validation) uses the
 same queries and event corpus with released Fluss 1.0.0 as both input and output.
-All 23 runnable queries pass at 2M events. The earlier memory-state sweep of 16 append-only queries has a
+The harness also supports the [full state/mini-batch matrix](connectors/fluss.md#readme-compatible-benchmark-matrix)
+via `SF_FLUSS_STATE_BACKEND=memory|rocksdb` and
+`SF_FLUSS_MINI_BATCH=false|true`: four input/output buckets, primary-key outputs
+only for updating queries, and identical two-second/50,000-row mini-batch settings
+on stock Flink and StreamFusion. Use Java 17 and the release `bench` profile.
+The [2026-10-08 four-mode results](connectors/fluss.md#four-mode-results-2026-10-08)
+retain 90 valid cells and 540 measured durations, with one warmup and three trials
+per engine. Common-22-query median-speedup geomeans are **4.66× memory/off**,
+**5.07× memory/on**, **4.83× disk/off** and **5.71× disk/on**. All 23 queries pass
+with mini-batching off; both on modes fail q23 with a native regular-join
+changelog correctness error. Its failed cells remain visible, and all seven
+primary-key output queries pass in all modes. Memory/off q4 and memory/on q16
+regress on their medians. Configuration, absolute times, variability and plans
+are retained; short-job lifecycle and host pressure limit sustained-throughput
+claims. This sweep uses exact SQL rather than Kafka's incompatible variants.
+
+The earlier memory-state sweep of 16 append-only queries has a
 **2.02× geomean of median speedups on memory state** over stock Fluss, with one warmup and three
 measured pairs each, including teardown. q2/q20/q23 have substantial variance and
 short-job lifecycle costs dominate many queries. Primary-key outputs retain the
