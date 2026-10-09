@@ -100,6 +100,7 @@ jobs:
 
       - name: Test upstream execution evidence checks
         run: |
+          python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
           python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
           python3 -m unittest discover -s bin -p 'test_check_flink_suite_classpath.py'
@@ -107,6 +108,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
           python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
+          python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
@@ -126,6 +128,9 @@ jobs:
       # Builds the debug native library through the Maven exec hook, then runs the
       # full JUnit suite. The Kafka decode harnesses use Testcontainers, which the
       # hosted runners' preinstalled Docker daemon serves directly.
+      - name: Resolve Java dependencies before tests
+        run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.line == '1.18' && 'flink-1.18' || '' }}"
+
       - name: Run Java test suite
         run: mvn -B -ntp ${{ matrix.profile }} test
 
@@ -205,6 +210,9 @@ jobs:
           shared-key: debug-jvm
           save-if: ${{ github.ref == 'refs/heads/main' && matrix.profile == 'paimon' && matrix.format == 'orc' }}
 
+      - name: Resolve lake module dependencies before tests
+        run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profile }}" --projects "${{ matrix.module }}" --also-make
+
       - name: Run optional lake module suite
         env:
           SF_PAIMON_FILE_FORMAT: ${{ matrix.format || 'parquet' }}
@@ -245,6 +253,9 @@ jobs:
           key: ubuntu-22.04-glibc-2.35
           workspaces: native -> target/release-staging
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Resolve image dependencies before builds and tests
+        run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profile }}"
 
       - name: Verify Java host APIs and deployment module ownership
         run: |
@@ -381,6 +392,9 @@ jobs:
             (cd native && cargo check -p "$package" --all-targets) || status=1
           done
           exit "$status"
+
+      - name: Resolve tagged module dependencies before tests
+        run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.line == '1.18' && 'flink-1.18' || '' }}" --projects streamfusion-runtime
 
       - name: Run tagged Java module suites
         env:
