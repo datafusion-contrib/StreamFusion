@@ -184,6 +184,10 @@ Compilation and Arrow schema/framing/ownership/admission contracts also pass wit
 Flink 1.18. The full end-to-end benchmark and packaging validation use Flink 2.2.
 
 The module's Docker integration fixture runs released Fluss 1.0.0 and ZooKeeper 3.9.2.
+Docker assigns and binds the brokers' host ports before the fixture generates their
+advertised listeners and invokes the released image's entrypoint. This avoids reserving
+and releasing a host socket before container startup, which allowed a competing process
+to claim the port and failed PR #308's post-merge CI before its client tests ran.
 The Fluss brokers use a 1 GiB JVM heap and a 512 MiB direct-memory
 limit. Fluss also requires its coordinator and ZooKeeper; their overhead remains part
 of the topology and is not claimed to be identical to Kafka's:
