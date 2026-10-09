@@ -56,7 +56,12 @@ The sink owns the level-0 file of a primary-key bucket and nothing else:
 - **Compaction rewrites are stock speed**, as for append tables (31).
 - **An idle Paimon writer is closed and reopened.** Paimon's writer sees files, not rows, so
   between checkpoints it can look idle; Paimon then closes it and the next hand-off recreates it
-  with a scan of the bucket's committed files. Paimon's dedicated compactor pays the same scan. A
+  with a scan of the bucket's committed files. The native data increment is added
+  after Paimon's internal cleanup, so its modification identifier must first include the native
+  checkpoint. A verified hook into the released 1.0/2.0 writer-container fields marks only the
+  modified bucket before cleanup; unavailable fields or access cause planning-time stock fallback.
+  This keeps full compaction from reopening a snapshot that excludes pending native files, while
+  unrelated committed buckets remain eligible for cleanup. Paimon's dedicated compactor pays the same scan. A
   bundle entry on the merge-tree writer with a sequence hand-off would remove it; that proposal is
   [issue #49](https://github.com/datafusion-contrib/StreamFusion/issues/49).
 - **Compaction results land one checkpoint later** unless the table waits for compaction, which is

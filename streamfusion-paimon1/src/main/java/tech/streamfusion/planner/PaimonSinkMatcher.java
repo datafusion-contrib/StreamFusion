@@ -30,6 +30,7 @@ import tech.streamfusion.paimon.NativePaimonFileFormat;
 import tech.streamfusion.paimon.PaimonCodecs;
 import tech.streamfusion.paimon.PaimonKeyValueLayout;
 import tech.streamfusion.paimon.PaimonMergeOptions;
+import tech.streamfusion.paimon.PaimonWriterLifecycle;
 
 /**
  * Whitelist-first admission for the columnar Paimon sink. The table is resolved the way Paimon's
@@ -111,6 +112,9 @@ final class PaimonSinkMatcher {
       return Planned.fallback("bucket mode " + bucketMode + " is not supported");
     }
     if (primaryKey) {
+      if (!PaimonWriterLifecycle.supported()) {
+        return Planned.fallback("the released writer-cleanup lifecycle hook is unavailable");
+      }
       String reason = primaryKeyFallbackReason(table, coreOptions, options);
       if (reason != null) {
         return Planned.fallback(reason);
