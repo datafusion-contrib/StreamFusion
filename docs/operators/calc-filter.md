@@ -17,6 +17,15 @@ batches and batches carrying a row-kind column; Calc caches each schema separate
 those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
 retractions received from a source that advertised insert-only output.
 
+With `streamfusion.logFallbackReasons=true`, planning also logs the final function-engine assignment
+for each admitted Calc/filter. Distinct SQL function, UDF and cast calls appear under `native` or
+`jvm`; casts are retained because they can select JVM evaluation, while arithmetic, comparison and
+boolean operators are omitted. A mixed node can list functions in both groups; a whole-Calc
+generated evaluator lists every function under `jvm` and retains the reason that selected
+row-at-a-time Flink evaluation. This is the reliable way to distinguish a fully native scalar plan
+from JVM work inside a `NativeCalc`. The always-on planning summary separately counts Calc/filter
+nodes containing JVM functions.
+
 Filter projections can repeat input columns, including nullable and nested values. Each repeated
 reference owns a retained Arrow view until the final reference transfers the source buffers,
 so releasing the input cannot erase another projected copy or its changelog row kind.

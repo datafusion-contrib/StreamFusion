@@ -46,6 +46,11 @@ final class PlanContext {
     scan.recordFallback(reason);
   }
 
+  /** Records the final Rust/JVM function assignment for one admitted Calc or filter. */
+  void functionExecution(String operator, RexExpression expression) {
+    scan.recordFunctionExecution(operator, expression);
+  }
+
   boolean repeatedSource(String sharingKey) {
     return repeatedSources.contains(sharingKey);
   }

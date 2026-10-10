@@ -83,8 +83,14 @@ StreamFusion exports the shared pool and operator state to the Flink UI/metrics 
 ## Diagnostics
 
 - **`-Dstreamfusion.logFallbackReasons=true`** — substitution is silent by default; this logs each
-  plan node that stayed on Flink and why, as the plan is decided. `EXPLAIN` shows native nodes (e.g.
-  `NativeCalc`) directly for an accelerated plan.
+  plan node that stayed on Flink and why, plus the final function-engine assignment for every
+  admitted Calc/filter. The assignment lists distinct SQL function and UDF calls under `native` and
+  `jvm`; casts are retained because their type and failure semantics can select JVM evaluation,
+  while arithmetic, comparison and boolean operators are omitted. A JVM assignment also records why
+  a host-exact upcall or whole-Calc generated evaluator was selected. The always-on summary counts
+  both operator fallbacks and Calc/filter nodes containing JVM functions. `EXPLAIN` still shows the
+  surrounding native node (for example `NativeCalc`), which by itself does not prove that every
+  scalar function runs in Rust.
 
 See [Benchmarks](benchmarks.md) for how to reproduce the throughput numbers, and
 [Optimizations](optimizations/index.md) for how these flags map to specific performance techniques.

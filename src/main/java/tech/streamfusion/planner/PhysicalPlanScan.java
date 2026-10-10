@@ -68,7 +68,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
 
   private final List<String> operatorTypes = new ArrayList<>();
   private final List<String> fallbackReasons = new ArrayList<>();
+  private final List<String> functionExecutions = new ArrayList<>();
   private int substitutions;
+  private int jvmFunctionOperators;
   private boolean completePlan;
   private org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
       executionEnvironment;
@@ -116,7 +118,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     roots = FlinkPlannerCompat.prepareTimestampComparisons(roots);
     operatorTypes.clear();
     fallbackReasons.clear();
+    functionExecutions.clear();
     substitutions = 0;
+    jvmFunctionOperators = 0;
     keyedStateUnsupportedReason = null;
     roots.forEach(this::record);
     // Master switch: with native acceleration off, substitute nothing — the query runs on the host.
@@ -143,14 +147,22 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
       optimized.add(substitute(root, repeatedSources, finalOutput));
     }
     optimized = shareIdenticalSources(optimized);
+    for (String execution : functionExecutions) {
+      if (NativeConfig.logFallbackReasons()) {
+        LOG.info("{}", execution);
+      } else {
+        LOG.debug("{}", execution);
+      }
+    }
     // The one always-on plan-time summary; -Dstreamfusion.logFallbackReasons=true itemizes the
     // reasons and explainSummary() carries them into explain output.
     LOG.info(
-        "StreamFusion substituted {} of {} plan operators natively ({} fallback reason(s)"
-            + " recorded)",
+        "StreamFusion substituted {} of {} plan operators natively ({} operator fallback reason(s)"
+            + " recorded; {} Calc/filter node(s) use JVM functions)",
         substitutions,
         operatorTypes.size(),
-        fallbackReasons.size());
+        fallbackReasons.size(),
+        jvmFunctionOperators);
     return optimized;
   }
 
@@ -166,12 +178,15 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     // Pass 1 substitutes native (columnar) operators.
     int previousSubstitutions = substitutions;
+    int previousFunctionExecutions = functionExecutions.size();
+    int previousJvmFunctionOperators = jvmFunctionOperators;
     RelNode substituted = rewrite(root, new PlanContext(this, repeatedSources));
     if (root instanceof org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink
         && substituted instanceof ColumnarInput
         && (JsonStringIdentity.projectsBinaryString(root)
             || LegacyBinaryResults.reachesSink(root))) {
       substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
       recordFallback(
           LegacyBinaryResults.reachesSink(root)
               ? "legacy binary variable bytes require a row sink"
@@ -186,6 +201,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // row-wise operator allowed is a rowwise source/sink, bridged by a transpose at the perimeter.
     if (substitutions > previousSubstitutions && !fullyColumnar(substituted, true)) {
       substitutions = previousSubstitutions; // retain counts from other admitted roots
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
       return root;
     }
     // Pass 2 inserts a row↔columnar transpose at each perimeter edge (rowwise source/sink ↔
@@ -797,6 +813,22 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
   }
 
+  void recordFunctionExecution(String operator, RexExpression expression) {
+    List<String> nativeCalls = expression.nativeFunctionCalls();
+    List<String> jvmCalls = expression.jvmFunctionCalls();
+    String execution = operator + " functions: native=" + nativeCalls + ", jvm=" + jvmCalls;
+    if (!jvmCalls.isEmpty()) {
+      jvmFunctionOperators++;
+      execution += ", reason=" + expression.jvmExecutionReason();
+    }
+    functionExecutions.add(execution);
+  }
+
+  private void rollbackFunctionExecutions(int previousSize, int previousJvmCount) {
+    functionExecutions.subList(previousSize, functionExecutions.size()).clear();
+    jvmFunctionOperators = previousJvmCount;
+  }
+
   // ------------------------------------------------------------------------- extension discovery
 
   private static List<NativePlannerExtension> loadExtensions() {
@@ -870,6 +902,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
    */
   public List<String> fallbackReasons() {
     return List.copyOf(fallbackReasons);
+  }
+
+  /** Final function-engine assignments for admitted Calc/filter nodes, in traversal order. */
+  public List<String> functionExecutions() {
+    return List.copyOf(functionExecutions);
   }
 
   /**

@@ -6,9 +6,11 @@ import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
@@ -21,6 +23,7 @@ import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.SqlJsonConstructorNullClause;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import tech.streamfusion.operator.EncodedPredicate;
@@ -153,6 +156,8 @@ final class RexExpression {
   // and bake its local index; the operator registers them at open() and patches the slots.
   private final List<tech.streamfusion.operator.NativeUdf.Descriptor> udfs = new ArrayList<>();
   private final List<Integer> udfIdSlots = new ArrayList<>();
+  private final Set<String> nativeFunctionCalls = new LinkedHashSet<>();
+  private final Set<String> jvmFunctionCalls = new LinkedHashSet<>();
 
   private final List<Integer> projectionRoots = new ArrayList<>();
   private final java.util.Set<Integer> variableBinaryProjections = new java.util.HashSet<>();
@@ -174,6 +179,7 @@ final class RexExpression {
   private int binaryUdfCalls;
   private boolean rowFusion;
   private boolean javaStringInputs;
+  private String jvmExecutionReason;
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
   private ClassLoader expressionClassLoader = RexExpression.class.getClassLoader();
 
@@ -341,20 +347,29 @@ final class RexExpression {
   private static CalcEncoding tryEncodeCalc(Calc calc) {
     RexExpression encoder = forCalc(calc);
     boolean supported = encoder.emitCalc(calc);
-    if (supported && !encoder.rowFusion
-        && (encoder.requiresCalcRowOrder(calc.getProgram())
-            || encoder.requiresFixedBinaryRow(calc.getProgram()))) {
+    if (supported && !encoder.rowFusion) {
+      boolean requiresRowOrder = encoder.requiresCalcRowOrder(calc.getProgram());
+      boolean requiresFixedBinary = encoder.requiresFixedBinaryRow(calc.getProgram());
+      if (!requiresRowOrder && !requiresFixedBinary) {
+        return new CalcEncoding(encoder, true);
+      }
       // Preserve native admission before selecting a different evaluation schedule. A fresh
       // encoder must not retain descriptors or pools from the column-at-a-time attempt.
       // Fixed BINARY results use the row's declared schema rather than a variable binary UDF result.
       encoder = forCalc(calc);
+      encoder.jvmExecutionReason =
+          requiresRowOrder
+              ? "multiple fallible/JVM expressions require Flink's row-major error order"
+              : "fixed BINARY results require whole-Calc JVM evaluation";
       supported = encoder.emitRowCalc(calc);
     }
     if (!supported
         && (containsSqlJson(calc.getProgram()) || containsCollectionStringFunction(calc.getProgram()))) {
       // A failed native attempt may have populated pools and UDF bindings. Generate the complete
       // Calc in a fresh encoder so short-circuiting and row evaluation order stay with Flink.
+      String nativeReason = encoder.reasonOrDefault();
       encoder = forCalc(calc);
+      encoder.jvmExecutionReason = nativeReason;
       supported = encoder.emitRowCalc(calc);
     }
     return new CalcEncoding(encoder, supported);
@@ -423,13 +438,21 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
-    if (binaryUdfCallCount(program) > 1
-        || containsRuntimeCharset(program)
-        || program.getProjectList().stream()
+    if (binaryUdfCallCount(program) > 1) {
+      jvmExecutionReason = "multiple binary UDF calls require whole-Calc JVM evaluation";
+      return emitRowCalc(calc);
+    }
+    if (containsRuntimeCharset(program)) {
+      jvmExecutionReason = "runtime charset resolution requires whole-Calc JVM evaluation";
+      return emitRowCalc(calc);
+    }
+    if (program.getProjectList().stream()
             .anyMatch(ref -> LegacyBinaryResults.containsEncode(program.expandLocalRef(ref)))
         || program.getCondition() != null
-            && LegacyBinaryResults.containsEncode(program.expandLocalRef(program.getCondition())))
+            && LegacyBinaryResults.containsEncode(program.expandLocalRef(program.getCondition()))) {
+      jvmExecutionReason = "legacy binary results require whole-Calc JVM evaluation";
       return emitRowCalc(calc);
+    }
     projectionRoot = null;
     if (program.getCondition() != null) {
       RexNode condition =
@@ -679,6 +702,9 @@ final class RexExpression {
       }
       for (RexNode argument : arguments) if (!emit(argument)) return false;
       outputNames = calc.getRowType().getFieldNames().toArray(new String[0]);
+      nativeFunctionCalls.clear();
+      jvmFunctionCalls.clear();
+      captureCalcFunctions(calc, jvmFunctionCalls);
       return true;
     } catch (Exception unsupported) {
       return reject("host Calc cannot be generated: " + unsupported.getMessage());
@@ -687,6 +713,59 @@ final class RexExpression {
 
   private String reasonOrDefault() {
     return reason != null ? reason : "unsupported Calc expression";
+  }
+
+  List<String> nativeFunctionCalls() {
+    return List.copyOf(nativeFunctionCalls);
+  }
+
+  List<String> jvmFunctionCalls() {
+    return List.copyOf(jvmFunctionCalls);
+  }
+
+  String jvmExecutionReason() {
+    return jvmExecutionReason != null
+        ? jvmExecutionReason
+        : "host-exact or scalar-UDF implementation selected";
+  }
+
+  private void captureCalcFunctions(Calc calc, Set<String> calls) {
+    RexProgram program = calc.getProgram();
+    if (program.getCondition() != null) {
+      captureFunctions(
+          RexUtil.expandSearch(
+              calc.getCluster().getRexBuilder(),
+              null,
+              program.expandLocalRef(program.getCondition())),
+          calls);
+    }
+    for (RexLocalRef projection : program.getProjectList()) {
+      captureFunctions(
+          RexUtil.expandSearch(
+              calc.getCluster().getRexBuilder(), null, program.expandLocalRef(projection)),
+          calls);
+    }
+  }
+
+  private static void captureFunctions(RexNode expression, Set<String> calls) {
+    expression.accept(
+        new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitCall(RexCall call) {
+            if (isFunction(call)) {
+              calls.add(call.getOperator().getName().toUpperCase(Locale.ROOT));
+            }
+            return super.visitCall(call);
+          }
+        });
+  }
+
+  private static boolean isFunction(RexCall call) {
+    SqlSyntax syntax = call.getOperator().getSyntax();
+    return call.getKind() == SqlKind.CAST
+        || syntax == SqlSyntax.FUNCTION
+        || syntax == SqlSyntax.FUNCTION_STAR
+        || syntax == SqlSyntax.FUNCTION_ID;
   }
 
   /** The pre-order node index of each projection tree's root. */
@@ -793,7 +872,20 @@ final class RexExpression {
       return emitLiteral((RexLiteral) node);
     }
     if (node instanceof RexCall) {
-      return emitCall((RexCall) node);
+      RexCall call = (RexCall) node;
+      int root = kinds.size();
+      if (!emitCall(call)) {
+        return false;
+      }
+      if (isFunction(call)) {
+        String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
+        if (root < kinds.size() && isJvmKind(kinds.get(root))) {
+          jvmFunctionCalls.add(name);
+        } else {
+          nativeFunctionCalls.add(name);
+        }
+      }
+      return true;
     }
     if (node instanceof RexFieldAccess) {
       RexFieldAccess access = (RexFieldAccess) node;
@@ -2683,6 +2775,7 @@ final class RexExpression {
     } catch (IllegalArgumentException e) {
       return reject(e.getMessage());
     }
+    captureFunctions(expression, jvmFunctionCalls);
     int returnCode = hostCastTypeCode(call.getType());
     boolean binaryStringResult =
         SqlTypeFamily.CHARACTER.contains(call.getType())
@@ -2746,6 +2839,10 @@ final class RexExpression {
       }
     }
     return true;
+  }
+
+  private static boolean isJvmKind(int kind) {
+    return kind == KIND_UDF || kind == KIND_ROW_UDF || kind == KIND_DECIMAL_ROUND_TEXT;
   }
 
   private RexNode hostExpressionArguments(

@@ -116,6 +116,7 @@ final class FilterCalcMatcher {
 
   static RelNode substitute(Calc calc, PlanContext ctx) {
     RexExpression condition = FilterCalcMatcher.encodedCondition(calc);
+    ctx.functionExecution("NativeFilter", condition);
     return new StreamPhysicalNativeFilter(
         calc.getCluster(),
         calc.getTraitSet(),
