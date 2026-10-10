@@ -1245,6 +1245,33 @@ this durable snapshot state. A passing randomized run does not establish absence
 StreamFusion remains on released Paimon 1.0.0; fixing the split-commit recovery requires a
 verified upstream release, not a planner workaround or a forked dependency.
 
+The same incomplete commit also has a deterministic full-compaction changelog reproducer,
+without deletion vectors: commit `10`, consume the initial stream snapshot, then write `20`
+and inject a manifest-read failure after APPEND and before COMPACT. After recovery a fresh
+batch reader returns `20`, but the incremental stream scan returns no final changelog.
+The no-failure control returns the update. This uses released Paimon writer/commit/read APIs
+without a Flink job or native operators. Standalone runs excluding StreamFusion production
+classes reproduce the result on both JDK 11 and 17. The explicit recovery assertion fails on 1.0.0;
+it is an opt-in diagnostic, not a passing recovery test:
+
+```bash
+mvn -Pflink-1.18,paimon1 -pl streamfusion-paimon1 -am \
+  -Dtest=PaimonFullCompactionRecoveryReproducerTest \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.paimon1.reproduceFullCompactionCommit=true test
+```
+
+[#318](https://github.com/datafusion-contrib/StreamFusion/issues/318) tracks this defect
+and the remaining CI investigation. In [run 38020828273](https://github.com/datafusion-contrib/StreamFusion/actions/runs/38020828273/job/114121230011),
+241 of 242 upstream cases passed; the unchanged full-compaction streaming test timed out
+after injected-failure recovery. The writer finished while its consumer kept waiting.
+That invocation did not retain the warehouse, so the standalone defect does not prove
+its exact cause. The Paimon 1.0 workflow now enables the existing failed-warehouse capture
+and uploads snapshots, manifests and data files with its diagnostics. Upstream assertions,
+randomized inputs and deadlines remain authoritative; the capture is diagnostic rather
+than an atomic backup. Compare stock/native replay over that retained state before
+claiming the timeout resolved.
+
 Run the opt-in diagnostic with JDK 17. **The recovery case is expected to fail on 1.0.0**
 (`expected: 20 but was: 10`); the control passes. It is separate from the regular test gate:
 
