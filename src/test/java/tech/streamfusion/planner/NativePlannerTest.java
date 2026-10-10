@@ -14,6 +14,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableResult;
+import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.Test;
@@ -111,6 +112,65 @@ class NativePlannerTest {
 
     assertTrue(scan.substitutions() > 0, "native operator was not substituted in");
     assertEquals(List.of(3, 4, 5), result);
+  }
+
+  @Test
+  void reportsNativeMixedAndWholeCalcJvmExecution() {
+    TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
+    tEnv.createTemporarySystemFunction("JVM_ONLY", JvmOnlyFunction.class);
+
+    tEnv.explainSql(
+        "SELECT JVM_ONLY(c0), CHAR_LENGTH(CAST(c0 + 1 AS STRING)) "
+            + "FROM (VALUES (3), (4), (5)) AS t(c0)");
+    String mixed = String.join("\n", scan.functionExecutions());
+    assertTrue(
+        mixed.contains("NativeCalc functions: native=[CAST, CHAR_LENGTH], jvm=[JVM_ONLY]"), mixed);
+    assertTrue(mixed.contains("reason=host-exact or scalar-UDF implementation selected"), mixed);
+
+    tEnv.explainSql(
+        "SELECT JVM_ONLY(c0), JVM_ONLY(CAST(c0 AS BIGINT)) "
+            + "FROM (VALUES (3), (4), (5)) AS t(c0)");
+    String wholeJvm = String.join("\n", scan.functionExecutions());
+    assertTrue(wholeJvm.contains("native=[]"), wholeJvm);
+    assertTrue(wholeJvm.contains("jvm=[JVM_ONLY, CAST]"), wholeJvm);
+    assertTrue(
+        wholeJvm.contains(
+            "reason=multiple fallible/JVM expressions require Flink's row-major error order"),
+        wholeJvm);
+
+    tEnv.explainSql("SELECT CHAR_LENGTH(c0) FROM (VALUES ('a'), ('bb')) AS t(c0)");
+    String nativeExecution = String.join("\n", scan.functionExecutions());
+    assertTrue(
+        nativeExecution.contains("NativeCalc functions: native=[CHAR_LENGTH], jvm=[]"),
+        nativeExecution);
+  }
+
+  @Test
+  void reportsWholeCalcJvmForMultipleIfBranchCoercions() {
+    TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    PhysicalPlanScan scan = NativePlanner.install(tEnv);
+
+    tEnv.explainSql(
+        "SELECT IF(c0 = 'online', c0, 'null'), IF(c0 = 'x', 'z50', '') "
+            + "FROM (VALUES ('online'), ('x')) AS t(c0)");
+
+    String execution = String.join("\n", scan.functionExecutions());
+    assertTrue(execution.contains("NativeCalc functions: native=[], jvm=[IF]"), execution);
+    assertTrue(
+        execution.contains(
+            "reason=multiple fallible/JVM expressions require Flink's row-major error order"),
+        execution);
+  }
+
+  public static class JvmOnlyFunction extends ScalarFunction {
+    public Integer eval(Integer value) {
+      return value;
+    }
+
+    public Long eval(Long value) {
+      return value;
+    }
   }
 
   @Test

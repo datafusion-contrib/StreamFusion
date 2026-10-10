@@ -56,6 +56,7 @@ final class CalcMatcher {
   static RelNode substitute(Calc calc, PlanContext ctx) {
     RelNode input = calc.getInputs().get(0);
     RexExpression encoded = CalcMatcher.encode(calc);
+    ctx.functionExecution("NativeCalc", encoded);
     // Nested projection pushdown: when the input is rowwise (about to be transposed) and the calc
     // reads only some of its columns / struct sub-fields, prune the entry transpose to just those
     // and remap the calc's top-level column references to the compacted positions. The transpose
