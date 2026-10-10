@@ -31,9 +31,12 @@ final class NativeUnixTimeFormat {
     }
     if (quoted) return null;
     var format = new SimpleDateFormat(pattern);
+    Object numbersCandidate;
     if (!format.getCalendar().getCalendarType().equals("gregory")
-        || !(format.getNumberFormat() instanceof DecimalFormat numbers)
-        || numbers.getDecimalFormatSymbols().getZeroDigit() != '0') return null;
+        || !((numbersCandidate = format.getNumberFormat()) instanceof DecimalFormat)
+        || ((DecimalFormat) numbersCandidate).getDecimalFormatSymbols().getZeroDigit() != '0')
+      return null;
+
     // Use the same ZoneId -> TimeZone conversion and serialized zone ID as Flink code generation.
     var zone = TimeZone.getTimeZone(TimeZone.getTimeZone(ZoneId.of(zoneId)).getID());
     return zone.getRawOffset() + "|" + pattern;

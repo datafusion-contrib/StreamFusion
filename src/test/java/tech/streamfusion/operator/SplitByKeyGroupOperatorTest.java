@@ -40,10 +40,10 @@ import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.ColumnarKeyGroupPartitioner;
 
 class SplitByKeyGroupOperatorTest {
-
   private static final RowType SCHEMA =
       RowType.of(new LogicalType[] {new BigIntType(), new IntType()}, new String[] {"k", "v"});
   private static final RowType NESTED_SCHEMA =
@@ -157,11 +157,15 @@ class SplitByKeyGroupOperatorTest {
         }
       }
       assertEquals(rows.size(), total);
-      List<Integer> parentKeyGroups = fragments.keySet().stream().sorted().toList();
+      List<Integer> parentKeyGroups =
+          fragments.keySet().stream().sorted().collect(ListCollectors.toList());
       for (ArrowBatch fragment : fragments.values()) {
         assertEquals(
             parentKeyGroups,
-            java.util.Arrays.stream(fragment.parentKeyGroups()).boxed().sorted().toList());
+            java.util.Arrays.stream(fragment.parentKeyGroups())
+                .boxed()
+                .sorted()
+                .collect(ListCollectors.toList()));
       }
       for (ArrowBatch fragment : fragments.values()) {
         fragment.root().close();

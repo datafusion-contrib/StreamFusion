@@ -46,7 +46,10 @@ public final class OrcOutput extends FSDataOutputStream {
 
   @Override
   public void sync() throws IOException {
-    if (!discarded && output instanceof FSDataOutputStream stream) stream.sync();
+    if (!discarded && output instanceof FSDataOutputStream) {
+      FSDataOutputStream stream = ((FSDataOutputStream) output);
+      stream.sync();
+    }
   }
 
   @Override

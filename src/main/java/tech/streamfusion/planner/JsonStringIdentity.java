@@ -15,15 +15,21 @@ final class JsonStringIdentity {
   private JsonStringIdentity() {}
 
   static boolean containsSensitiveString(RexNode expression) {
-    if (expression instanceof RexLiteral literal
-        && !literal.isNull()
-        && SqlTypeFamily.CHARACTER.contains(literal.getType())) {
+    if (expression instanceof RexLiteral
+        && !((RexLiteral) expression).isNull()
+        && SqlTypeFamily.CHARACTER.contains(((RexLiteral) expression).getType())) {
+      RexLiteral literal = ((RexLiteral) expression);
+
       return containsUnpairedSurrogate(literal.getValueAs(String.class));
     }
-    if (expression instanceof RexFieldAccess access) {
+    if (expression instanceof RexFieldAccess) {
+      RexFieldAccess access = ((RexFieldAccess) expression);
+
       return containsSensitiveString(access.getReferenceExpr());
     }
-    if (!(expression instanceof RexCall call)) return false;
+    if (!(expression instanceof RexCall)) return false;
+    RexCall call = ((RexCall) expression);
+
     if (call.getOperator().getName().equals("REGEXP_EXTRACT_ALL")
         || call.getOperator().getName().equals("STR_TO_MAP")) return true;
     if (SqlTypeFamily.CHARACTER.contains(call.getType())
@@ -59,9 +65,11 @@ final class JsonStringIdentity {
 
   private static boolean crossesOperatorBoundary(
       RelNode node, RelNode parent, boolean finalOutput) {
-    if (node instanceof StreamPhysicalCalc calc
+    if (node instanceof StreamPhysicalCalc
         && !(parent == null && finalOutput)
         && !(parent instanceof StreamPhysicalSink)) {
+      StreamPhysicalCalc calc = ((StreamPhysicalCalc) node);
+
       var program = calc.getProgram();
       for (var projection : program.getProjectList()) {
         RexNode expression = program.expandLocalRef(projection);
@@ -76,16 +84,21 @@ final class JsonStringIdentity {
   }
 
   static boolean containsBinaryString(RexNode expression) {
-    if (expression instanceof RexFieldAccess access) {
+    if (expression instanceof RexFieldAccess) {
+      RexFieldAccess access = ((RexFieldAccess) expression);
+
       return containsBinaryString(access.getReferenceExpr());
     }
-    return expression instanceof RexCall call
-        && (call.getOperator().getName().equals("FROM_BASE64")
-            || call.getOperands().stream().anyMatch(JsonStringIdentity::containsBinaryString));
+    return expression instanceof RexCall
+        && (((RexCall) expression).getOperator().getName().equals("FROM_BASE64")
+            || ((RexCall) expression)
+                .getOperands().stream().anyMatch(JsonStringIdentity::containsBinaryString));
   }
 
   static boolean projectsBinaryString(RelNode node) {
-    if (node instanceof StreamPhysicalCalc calc) {
+    if (node instanceof StreamPhysicalCalc) {
+      StreamPhysicalCalc calc = ((StreamPhysicalCalc) node);
+
       var program = calc.getProgram();
       for (var projection : program.getProjectList()) {
         RexNode expression = program.expandLocalRef(projection);

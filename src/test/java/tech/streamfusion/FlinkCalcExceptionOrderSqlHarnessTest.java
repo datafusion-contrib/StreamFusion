@@ -47,7 +47,9 @@ class FlinkCalcExceptionOrderSqlHarnessTest {
                                     "SELECT g%s(id), f%s(id) FROM src",
                                     "SELECT g%s(id) FROM src WHERE f%s(id) IS NOT NULL",
                                     "SELECT f%s(id) FROM src WHERE g%s(id) IS NOT NULL")
-                                .map(sql -> Arguments.of(count, sql.formatted(suffix, suffix)))));
+                                .map(
+                                    sql ->
+                                        Arguments.of(count, String.format(sql, suffix, suffix)))));
   }
 
   @ParameterizedTest

@@ -278,7 +278,9 @@ class FlinkUpdateFastFirstBoundOperatorTest {
               : INPUT;
       while (!nativeHarness.getOutput().isEmpty()) {
         Object event = nativeHarness.getOutput().poll();
-        if (event instanceof StreamRecord<?> record) {
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
+
           try (var root = ((ArrowBatch) record.getValue()).root()) {
             for (RowData row : RowDataArrowConverter.read(root, output)) actual.add(values(row));
           }
@@ -287,8 +289,10 @@ class FlinkUpdateFastFirstBoundOperatorTest {
       List<List<Object>> expected = new ArrayList<>();
       while (!flink.getOutput().isEmpty()) {
         Object event = flink.getOutput().poll();
-        if (event instanceof StreamRecord<?> record)
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
           expected.add(values((RowData) record.getValue()));
+        }
       }
       assertEquals(expected, actual, "rank=" + rank + ", time=" + now);
     }

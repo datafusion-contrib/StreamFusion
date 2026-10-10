@@ -7,7 +7,6 @@ import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
-import tech.streamfusion.arrow.TimestampAccessor;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
@@ -23,13 +22,13 @@ import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.arrow.TimestampAccessor;
 
 /**
  * The columnar interval-join operator buffers each side per equi-join key and emits a matched pair
  * (left columns then right columns, as an Arrow batch) when the second of its two rows arrives.
  */
 class NativeIntervalJoinOperatorTest {
-
   private static final int MAX_PARALLELISM = 128;
 
   // Both inputs share the schema [k BIGINT, v BIGINT, rt TIMESTAMP_LTZ(3)].
@@ -150,7 +149,8 @@ class NativeIntervalJoinOperatorTest {
           harness.processElement2(new StreamRecord<>(batch(allocator, row(1, 99, rightTime))));
           stock.processElement2(new StreamRecord<>(GenericRowData.of(1L, 99L, rightTime)));
           var expected = stockRows(stock);
-          assertEquals(List.of(), expected, "released Rocks clears nonpositive surviving timestamps");
+          assertEquals(
+              List.of(), expected, "released Rocks clears nonpositive surviving timestamps");
           assertEquals(expected, collectNullable(harness), "native rocks=" + rocks);
         }
       }
@@ -179,7 +179,8 @@ class NativeIntervalJoinOperatorTest {
     try {
       backend = Class.forName("org.apache.flink.state.rocksdb.EmbeddedRocksDBStateBackend");
     } catch (ClassNotFoundException legacy) {
-      backend = Class.forName("org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend");
+      backend =
+          Class.forName("org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend");
     }
     return (org.apache.flink.runtime.state.StateBackend) backend.getConstructor().newInstance();
   }
@@ -196,13 +197,19 @@ class NativeIntervalJoinOperatorTest {
     var output = org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(
         RowType.of(new BigIntType(), new BigIntType(), new BigIntType(),
             new BigIntType(), new BigIntType(), new BigIntType()));
-    String code = "public class AuditIntervalCondition extends org.apache.flink.api.common.functions.AbstractRichFunction "
-        + "implements org.apache.flink.table.runtime.generated.JoinCondition { "
-        + "public AuditIntervalCondition(Object[] refs) {} "
-        + "public boolean apply(org.apache.flink.table.data.RowData a, org.apache.flink.table.data.RowData b) { return true; }}";
-    var function = new org.apache.flink.table.runtime.operators.join.interval.IntervalJoinFunction(
-        new org.apache.flink.table.runtime.generated.GeneratedJoinCondition("AuditIntervalCondition", code, new Object[0]),
-        output, new boolean[] {true});
+    String code =
+        "public class AuditIntervalCondition extends"
+            + " org.apache.flink.api.common.functions.AbstractRichFunction implements"
+            + " org.apache.flink.table.runtime.generated.JoinCondition { public"
+            + " AuditIntervalCondition(Object[] refs) {} public boolean"
+            + " apply(org.apache.flink.table.data.RowData a, org.apache.flink.table.data.RowData b)"
+            + " { return true; }}";
+    var function =
+        new org.apache.flink.table.runtime.operators.join.interval.IntervalJoinFunction(
+            new org.apache.flink.table.runtime.generated.GeneratedJoinCondition(
+                "AuditIntervalCondition", code, new Object[0]),
+            output,
+            new boolean[] {true});
     var kinds = new org.apache.flink.table.runtime.operators.join.FlinkJoinType[] {
       org.apache.flink.table.runtime.operators.join.FlinkJoinType.INNER,
       org.apache.flink.table.runtime.operators.join.FlinkJoinType.LEFT,
@@ -223,7 +230,9 @@ class NativeIntervalJoinOperatorTest {
     List<List<Long>> output = new ArrayList<>();
     while (!harness.getOutput().isEmpty()) {
       Object event = harness.getOutput().poll();
-      if (event instanceof StreamRecord<?> record) {
+      if (event instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) event);
+
         RowData row = (RowData) record.getValue();
         List<Long> fields = new ArrayList<>();
         for (int column = 0; column < row.getArity(); column++)

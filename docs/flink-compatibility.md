@@ -2,7 +2,8 @@
 
 The default build targets Flink **2.2.1** and also admits the released **2.2.0** planner ABI.
 The `flink-1.18` profile builds a separate **1.18.1** payload from the same source tree.
-Both require Java 17. The 1.18 build is a development target until the connector matrix,
+Both support JDK 11 and JDK 17. Deployable artifacts target Java 11 (class version 55),
+including the separately built planner loader. The 1.18 build is a development target until the connector matrix,
 real-cluster upgrade checks and required CI/release matrix in
 [#187](https://github.com/datafusion-contrib/StreamFusion/issues/187),
 [#188](https://github.com/datafusion-contrib/StreamFusion/issues/188) and
@@ -13,6 +14,58 @@ runs both lines, with Delta acceleration restricted to 2.2 and a separate 1.18 h
 audit. Each run records result totals and distinguishes native execution, expected fallback and
 cases without an execution contract. Passing this matrix does not establish real-cluster
 cross-line upgrade support or enable publication of the experimental line.
+
+## Java compatibility
+
+Build and run the declared Flink line on JDK 11 or JDK 17. Maven uses `--release 11` on
+both build JDKs, so newer build environments cannot introduce newer Java APIs into the
+payload. The dependency gate rejects base bytecode above Java 11; the deployment JAR check
+also inspects shaded and embedded classes and applies Java 11 multi-release JAR selection.
+No connector or format dependency is replaced with a local or forked build.
+
+| Flink payload | JDK 11 | JDK 17 |
+| --- | --- | --- |
+| 2.2.1 (also admits the 2.2.0 planner ABI) | Build/runtime CI | Build/runtime CI |
+| 1.18.1 | Build/runtime CI | Build/runtime CI |
+
+The normal reactor includes core, loader, Kafka, Fluss, and the separate JSON, CSV, raw,
+Avro, Confluent Avro, Protobuf, Parquet and ORC modules. The opt-in Delta module remains a
+2.2-only integration; Paimon 2.0 supports both lines. Their declared dependencies pass the
+same Java 11 gate, and the lake CI runs both JDKs. The legacy Paimon 1.0 compatibility suite
+and upstream Flink instrumentation are separate development workflows; their execution
+coverage is documented in their respective pages. The instrumentation agent itself uses
+JDK 17 and is not installed in a StreamFusion deployment.
+
+Use the same JDK version on JobManagers and TaskManagers. This matters for generated Flink
+expressions, Unicode token boundaries, and JDK-dependent string/time behavior. Parity tests
+compare native and stock Flink on the same running JDK rather than assuming different JDKs
+produce identical results. JDK 11 SQL/JSON uses Unicode 10.0; JDK 17 uses Unicode 13.0.
+Both retain the corresponding Jackson numeric and token behavior, including an exhaustive
+BMP token-suffix check through JNI.
+
+```sh
+# Select a JDK 11 or JDK 17 installation through JAVA_HOME.
+mvn -Pdelta,paimon package -DskipTests
+python3 bin/check-java-bytecode.py
+# Inspect the separate Flink 1.18 artifacts from a clean build.
+mvn -Pflink-1.18,paimon clean package -DskipTests
+python3 bin/check-java-bytecode.py
+```
+
+Java 11 support does not expand native platform coverage or remove the existing 1.18
+release-readiness and upgrade constraints above.
+
+Local validation on macOS Apple Silicon used JDK 11.0.27 and 17.0.12 with release/mimalloc
+native libraries. Each 2.2/JDK combination passed 386 selected runtime, recovery, loader,
+Fluss buffer, Delta row and Paimon cases. Each 1.18/JDK combination passed 372 cases with
+11 existing JSON_QUOTE/JSON_UNQUOTE-dependent cases skipped because that released Flink line lacks
+the function. These are selected integration regressions, not the full CI suite. Each
+combination includes 14 grouped-type cases across two checkpoint restores and 138 Paimon
+snapshot key/type cases. The direct JSON token test compares all 65,536 BMP suffixes against
+stock Flink on the running JDK. Java 11 packaging checks passed 17 deployment JARs on 2.2
+and 16 on 1.18, including effective classes from embedded payloads. Docker-based Fluss
+cluster tests require CI or a local Docker daemon and were not executed in this local audit.
+
 
 ## Building and installing
 

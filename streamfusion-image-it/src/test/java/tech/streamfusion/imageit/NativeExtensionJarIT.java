@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 
 /** Proves each deployable extension JAR can load the matching native library it packages. */
 class NativeExtensionJarIT {
-
   private static final Duration LOAD_TIMEOUT = Duration.ofSeconds(30);
 
   @Test
@@ -62,7 +61,6 @@ class NativeExtensionJarIT {
    * Runs in a fresh JVM so each extension gets its own isolated core/native-library class loader.
    */
   public static final class ExtensionProbe {
-
     private ExtensionProbe() {}
 
     public static void main(String[] args) throws Exception {
@@ -125,17 +123,26 @@ class NativeExtensionJarIT {
     }
 
     private static String facadeClass(String extension) {
-      return switch (extension) {
-        case "kafka" -> "tech.streamfusion.kafka.NativeKafka";
-        case "json" -> "tech.streamfusion.format.json.NativeJsonFormat";
-        case "csv" -> "tech.streamfusion.format.csv.NativeCsvFormat";
-        case "raw" -> "tech.streamfusion.format.raw.NativeRawFormat";
-        case "avro" -> "tech.streamfusion.format.avro.NativeAvroFormat";
-        case "avro-confluent-registry" -> "tech.streamfusion.format.avro.NativeAvroFormat";
-        case "protobuf" -> "tech.streamfusion.format.protobuf.NativeProtobufFormat";
-        case "parquet" -> "tech.streamfusion.parquet.NativeParquet";
-        default -> throw new IllegalArgumentException("Unknown extension: " + extension);
-      };
+      switch (extension) {
+        case "kafka":
+          return "tech.streamfusion.kafka.NativeKafka";
+        case "json":
+          return "tech.streamfusion.format.json.NativeJsonFormat";
+        case "csv":
+          return "tech.streamfusion.format.csv.NativeCsvFormat";
+        case "raw":
+          return "tech.streamfusion.format.raw.NativeRawFormat";
+        case "avro":
+          return "tech.streamfusion.format.avro.NativeAvroFormat";
+        case "avro-confluent-registry":
+          return "tech.streamfusion.format.avro.NativeAvroFormat";
+        case "protobuf":
+          return "tech.streamfusion.format.protobuf.NativeProtobufFormat";
+        case "parquet":
+          return "tech.streamfusion.parquet.NativeParquet";
+        default:
+          throw new IllegalArgumentException("Unknown extension: " + extension);
+      }
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -151,15 +158,22 @@ class NativeExtensionJarIT {
     }
 
     private static String formatIdentifier(String extension) {
-      return switch (extension) {
-        case "json" -> "json";
-        case "csv" -> "csv";
-        case "raw" -> "raw";
-        case "avro" -> "avro";
-        case "avro-confluent-registry" -> "avro-confluent";
-        case "protobuf" -> "protobuf";
-        default -> null;
-      };
+      switch (extension) {
+        case "json":
+          return "json";
+        case "csv":
+          return "csv";
+        case "raw":
+          return "raw";
+        case "avro":
+          return "avro";
+        case "avro-confluent-registry":
+          return "avro-confluent";
+        case "protobuf":
+          return "protobuf";
+        default:
+          return null;
+      }
     }
   }
 

@@ -63,7 +63,6 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 
 @Tag("streamfusion-kafka")
 class NativeKafkaJsonEncoderTest {
-
   private static final RowType ROW_TYPE =
       RowType.of(
           new LogicalType[] {
@@ -255,7 +254,7 @@ class NativeKafkaJsonEncoderTest {
             GenericRowData.of(
                 StringData.fromString(controls.toString()),
                 new GenericMapData(Map.of(StringData.fromString("unitsep"), 1))),
-            GenericRowData.of(StringData.fromString(""), null));
+            GenericRowData.of(StringData.fromString("\u000b"), null));
 
     assertMatchesFlink(rows, rowType, TimestampFormat.SQL, false);
   }
@@ -573,8 +572,23 @@ class NativeKafkaJsonEncoderTest {
   }
 
   /** A {@link MapData} view over two parallel arrays — the shape duplicate keys arrive in. */
-  private record ArrayBackedMapData(GenericArrayData keys, GenericArrayData values)
-      implements MapData {
+  private static final class ArrayBackedMapData implements MapData {
+    private final GenericArrayData keys;
+    private final GenericArrayData values;
+
+    private ArrayBackedMapData(GenericArrayData keys, GenericArrayData values) {
+      this.keys = keys;
+      this.values = values;
+    }
+
+    public GenericArrayData keys() {
+      return keys;
+    }
+
+    public GenericArrayData values() {
+      return values;
+    }
+
     @Override
     public int size() {
       return keys.size();
@@ -588,6 +602,28 @@ class NativeKafkaJsonEncoderTest {
     @Override
     public ArrayData valueArray() {
       return values;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      ArrayBackedMapData that = (ArrayBackedMapData) other;
+      return java.util.Objects.equals(keys, that.keys)
+          && java.util.Objects.equals(values, that.values);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(keys);
+      result = 31 * result + java.util.Objects.hashCode(values);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "ArrayBackedMapData[keys=" + keys + ", values=" + values + "]";
     }
   }
 

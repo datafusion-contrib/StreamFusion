@@ -1,7 +1,6 @@
 package tech.streamfusion.orc;
 
 import java.lang.invoke.MethodHandle;
-import tech.streamfusion.arrow.TimestampAccessor;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.nio.ByteOrder;
@@ -16,6 +15,7 @@ import org.apache.arrow.vector.complex.MapVector;
 import org.apache.arrow.vector.complex.StructVector;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
+import tech.streamfusion.arrow.TimestampAccessor;
 
 /**
  * Copies Arrow columns into either host's Hive vectors, without creating rows or value objects.
@@ -122,22 +122,44 @@ final class ArrowOrcVectors {
       access = ACCESS.get(output.getClass());
       type = field.getType();
       componentTimestamp = TimestampAccessor.isComponentTimestamp(field);
-      instantTimestamp = !legacyTimestampLtz && (componentTimestamp
-          ? "UTC".equals(field.getChildren().get(0).getMetadata().get("streamfusion.timestamp.timezone"))
-          : type instanceof ArrowType.Timestamp timestamp && "UTC".equals(timestamp.getTimezone()));
+      instantTimestamp =
+          !legacyTimestampLtz
+              && (componentTimestamp
+                  ? "UTC"
+                      .equals(
+                          field
+                              .getChildren()
+                              .get(0)
+                              .getMetadata()
+                              .get("streamfusion.timestamp.timezone"))
+                  : type instanceof ArrowType.Timestamp
+                      && "UTC".equals(((ArrowType.Timestamp) type).getTimezone()));
       List<Field> fields = field.getChildren();
-      Object[] nested =
-          componentTimestamp ? new Object[0] : switch (type.getTypeID()) {
-            case Struct -> (Object[]) access.get(output, "fields");
-            case List -> new Object[] {access.get(output, "child")};
-            case Map -> new Object[] {access.get(output, "keys"), access.get(output, "values")};
-            default -> new Object[0];
-          };
+      Object[] nested;
+      if (componentTimestamp) {
+        nested = new Object[0];
+      } else {
+        switch (type.getTypeID()) {
+          case Struct:
+            nested = (Object[]) access.get(output, "fields");
+            break;
+          case List:
+            nested = new Object[] {access.get(output, "child")};
+            break;
+          case Map:
+            nested = new Object[] {access.get(output, "keys"), access.get(output, "values")};
+            break;
+          default:
+            nested = new Object[0];
+            break;
+        }
+      }
       if (type instanceof ArrowType.Map) fields = fields.get(0).getChildren();
       children = new Column[nested.length];
       for (int i = 0; i < nested.length; i++) children[i] = new Column(fields.get(i), nested[i], legacyTimestampLtz);
-      if (type instanceof ArrowType.Decimal decimal
-          && !(access.get(output, "vector") instanceof long[])) {
+      if (type instanceof ArrowType.Decimal && !(access.get(output, "vector") instanceof long[])) {
+        ArrowType.Decimal decimal = ((ArrowType.Decimal) type);
+
         var elementType = access.get(output, "vector").getClass().getComponentType();
         try {
           boolean small = decimal.getPrecision() <= 18;
@@ -157,7 +179,8 @@ final class ArrowOrcVectors {
           throw new IllegalStateException(e);
         }
       } else decimalSetter = null;
-      if (componentTimestamp || type instanceof ArrowType.Timestamp) access.invoke(output, "setIsUTC", true);
+      if (componentTimestamp || type instanceof ArrowType.Timestamp)
+        access.invoke(output, "setIsUTC", true);
     }
 
     void copy(FieldVector input, int start, int count) {
@@ -195,14 +218,24 @@ final class ArrowOrcVectors {
         }
         return;
       }
-      var data =
-          switch (type.getTypeID()) {
-            case List, Map, Struct -> null;
-            default -> input.getDataBuffer();
-          };
+      org.apache.arrow.memory.ArrowBuf data;
       switch (type.getTypeID()) {
-        case Int, Date -> {
-          int width = type instanceof ArrowType.Int t ? t.getBitWidth() / 8 : 4;
+        case List:
+        case Map:
+        case Struct:
+          data = null;
+          break;
+        default:
+          data = input.getDataBuffer();
+          break;
+      }
+      switch (type.getTypeID()) {
+        case Int:
+        case Date:
+          {
+            {
+              int width =
+                  type instanceof ArrowType.Int ? ((ArrowType.Int) type).getBitWidth() / 8 : 4;
           long[] values = (long[]) access.get(output, "vector");
           if (width == 8) {
             data.nioBuffer((long) start * 8, count * 8)
@@ -229,8 +262,11 @@ final class ArrowOrcVectors {
             for (int i = 0; i < count; i++) values[i] = bytes[i];
           } else throw new IllegalArgumentException(type.toString());
         }
-
-        case Bool -> {
+            break;
+          }
+        case Bool:
+          {
+            {
           long[] values = (long[]) access.get(output, "vector");
           int bits = 0;
           for (int i = 0; i < count; i++) {
@@ -239,7 +275,11 @@ final class ArrowOrcVectors {
             values[i] = (bits >>> (row & 7)) & 1;
           }
         }
-        case FloatingPoint -> {
+            break;
+          }
+        case FloatingPoint:
+          {
+            {
           double[] values = (double[]) access.get(output, "vector");
           if (((ArrowType.FloatingPoint) type).getPrecision()
               == org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE) {
@@ -251,7 +291,11 @@ final class ArrowOrcVectors {
             for (int i = 0; i < count; i++) values[i] = data.getFloat((long) (start + i) * 4);
           }
         }
-        case FixedSizeBinary -> {
+            break;
+          }
+        case FixedSizeBinary:
+          {
+            {
           int width = ((ArrowType.FixedSizeBinary) type).getByteWidth();
           int length = Math.multiplyExact(count, width);
           capacity(length);
@@ -265,7 +309,12 @@ final class ArrowOrcVectors {
             lengths[i] = width;
           }
         }
-        case Utf8, Binary -> {
+            break;
+          }
+        case Utf8:
+        case Binary:
+          {
+            {
           var offsets = input.getOffsetBuffer();
           int begin = offsets.getInt((long) start * 4);
           int length = offsets.getInt((long) (start + count) * 4) - begin;
@@ -283,10 +332,17 @@ final class ArrowOrcVectors {
             from = to;
           }
         }
-        case Decimal -> {
+            break;
+          }
+        case Decimal:
+          {
+            {
           var decimal = (ArrowType.Decimal) type;
           if (decimal.getBitWidth() != 128) throw new IllegalArgumentException(type.toString());
-          if (access.get(output, "vector") instanceof long[] values) {
+              Object valuesCandidate;
+              if ((valuesCandidate = access.get(output, "vector")) instanceof long[]) {
+                long[] values = ((long[]) valuesCandidate);
+
             for (int i = 0; i < count; i++) values[i] = data.getLong((long) (start + i) * 16);
             break;
           }
@@ -310,7 +366,12 @@ final class ArrowOrcVectors {
             }
           }
         }
-        case List, Map -> {
+            break;
+          }
+        case List:
+        case Map:
+          {
+            {
           var list = (ListVector) input;
           var offsets = (long[]) access.get(output, "offsets");
           var lengths = (long[]) access.get(output, "lengths");
@@ -333,11 +394,18 @@ final class ArrowOrcVectors {
             children[0].copy(list.getDataVector(), begin, end - begin);
           }
         }
-        case Struct -> {
+            break;
+          }
+        case Struct:
+          {
+            {
           var fields = ((StructVector) input).getChildrenFromFields();
           for (int c = 0; c < children.length; c++) children[c].copy(fields.get(c), start, count);
         }
-        default -> throw new IllegalArgumentException("Unsupported ORC Arrow type: " + type);
+            break;
+          }
+        default:
+          throw new IllegalArgumentException("Unsupported ORC Arrow type: " + type);
       }
     }
   }

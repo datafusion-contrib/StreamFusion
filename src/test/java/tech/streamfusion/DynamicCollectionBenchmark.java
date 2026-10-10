@@ -25,7 +25,8 @@ class DynamicCollectionBenchmark {
   private static final String ELEMENT_TYPE =
       System.getProperty("collection.type", INTS ? "INT" : "BIGINT");
   private static final int NULL_EVERY = Integer.getInteger("collection.nullEvery", 8);
-  private static final int ELEMENT_NULL_EVERY = Integer.getInteger("collection.elementNullEvery", 7);
+  private static final int ELEMENT_NULL_EVERY =
+      Integer.getInteger("collection.elementNullEvery", 7);
   private static final String[] STRING_VALUES = strings();
   private static final boolean EXPECT_NATIVE =
       Boolean.parseBoolean(System.getProperty("collection.native", "true"));
@@ -121,12 +122,16 @@ class DynamicCollectionBenchmark {
 
   private static Object inputArray(long row) {
     if (EMPTY_ARRAYS) {
-      return switch (ELEMENT_TYPE) {
-        case "STRING" -> new String[0];
-        case "BOOLEAN" -> new Boolean[0];
-        case "BIGINT" -> new Long[0];
-        default -> new Integer[0];
-      };
+      switch (ELEMENT_TYPE) {
+        case "STRING":
+          return new String[0];
+        case "BOOLEAN":
+          return new Boolean[0];
+        case "BIGINT":
+          return new Long[0];
+        default:
+          return new Integer[0];
+      }
     }
     if (ELEMENT_TYPE.equals("STRING")) {
       if (WIDTH == 0) return new String[] {STRING_VALUES[0], null, "tail"};
@@ -194,13 +199,23 @@ class DynamicCollectionBenchmark {
                       Types.MAP(Types.STRING, Types.LONG),
                       Types.STRING)));
     } else {
-      org.apache.flink.api.common.typeinfo.TypeInformation<?> arrayType = switch (ELEMENT_TYPE) {
-        case "INT" -> Types.OBJECT_ARRAY(Types.INT);
-        case "BIGINT" -> Types.OBJECT_ARRAY(Types.LONG);
-        case "STRING" -> Types.OBJECT_ARRAY(Types.STRING);
-        case "BOOLEAN" -> Types.OBJECT_ARRAY(Types.BOOLEAN);
-        default -> throw new IllegalArgumentException("Unsupported collection.type: " + ELEMENT_TYPE);
-      };
+      org.apache.flink.api.common.typeinfo.TypeInformation<?> arrayType;
+      switch (ELEMENT_TYPE) {
+        case "INT":
+          arrayType = Types.OBJECT_ARRAY(Types.INT);
+          break;
+        case "BIGINT":
+          arrayType = Types.OBJECT_ARRAY(Types.LONG);
+          break;
+        case "STRING":
+          arrayType = Types.OBJECT_ARRAY(Types.STRING);
+          break;
+        case "BOOLEAN":
+          arrayType = Types.OBJECT_ARRAY(Types.BOOLEAN);
+          break;
+        default:
+          throw new IllegalArgumentException("Unsupported collection.type: " + ELEMENT_TYPE);
+      }
       table.createTemporaryView(
           "inputs",
           env.fromSequence(0, ROWS - 1)

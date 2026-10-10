@@ -244,11 +244,14 @@ class FlinkWindowCountDistinctSqlHarnessTest {
   }
 
   private static String window(String shape) {
-    return switch (shape) {
-      case "TUMBLE" -> "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '10' SECOND)";
-      case "HOP" -> "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
-      default -> "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
-    };
+    switch (shape) {
+      case "TUMBLE":
+        return "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '10' SECOND)";
+      case "HOP":
+        return "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
+      default:
+        return "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
+    }
   }
 
   private static TableEnvironment environment(String phase) {

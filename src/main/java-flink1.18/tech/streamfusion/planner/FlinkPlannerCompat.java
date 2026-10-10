@@ -19,14 +19,22 @@ final class FlinkPlannerCompat {
   static RelNode prepareForRewrite(RelNode node) {
     if (node
         instanceof
-        org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLegacySink<?>
-            sink) {
+        org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLegacySink<?>) {
+      org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLegacySink<?> sink =
+          ((org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLegacySink<?>)
+              node);
+
       return PreparedLegacySink.prepare(sink);
     }
     if (node
         instanceof
-        org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowDeduplicate
-            dedup) {
+        org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowDeduplicate) {
+      org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowDeduplicate
+          dedup =
+              ((org.apache.flink.table.planner.plan.nodes.physical.stream
+                      .StreamPhysicalWindowDeduplicate)
+                  node);
+
       Boolean keepLast = WindowDeduplicateMatcher.keepLastRow(dedup);
       if (keepLast != null)
         return tech.streamfusion.compat.FlinkCompat.prepareWindowDeduplicate(dedup, keepLast);

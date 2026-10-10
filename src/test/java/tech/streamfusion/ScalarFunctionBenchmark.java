@@ -24,6 +24,7 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 
@@ -43,8 +44,41 @@ class ScalarFunctionBenchmark {
   private static final String ENGINE =
       System.getProperty("scalar.engine", "both").toLowerCase(Locale.ROOT);
 
-  private record Query(
-      String name, String input, String expression, String outputType, String groupBy) {
+  private static final class Query {
+    private final String name;
+    private final String input;
+    private final String expression;
+    private final String outputType;
+    private final String groupBy;
+
+    private Query(String name, String input, String expression, String outputType, String groupBy) {
+      this.name = name;
+      this.input = input;
+      this.expression = expression;
+      this.outputType = outputType;
+      this.groupBy = groupBy;
+    }
+
+    public String name() {
+      return name;
+    }
+
+    public String input() {
+      return input;
+    }
+
+    public String expression() {
+      return expression;
+    }
+
+    public String outputType() {
+      return outputType;
+    }
+
+    public String groupBy() {
+      return groupBy;
+    }
+
     Query(String name, String input, String expression, String outputType) {
       this(name, input, expression, outputType, "");
     }
@@ -65,6 +99,44 @@ class ScalarFunctionBenchmark {
           + outputType()
           + ", anchor BOOLEAN) WITH ('connector' = 'blackhole')";
     }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Query that = (Query) other;
+      return java.util.Objects.equals(name, that.name)
+          && java.util.Objects.equals(input, that.input)
+          && java.util.Objects.equals(expression, that.expression)
+          && java.util.Objects.equals(outputType, that.outputType)
+          && java.util.Objects.equals(groupBy, that.groupBy);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(name);
+      result = 31 * result + java.util.Objects.hashCode(input);
+      result = 31 * result + java.util.Objects.hashCode(expression);
+      result = 31 * result + java.util.Objects.hashCode(outputType);
+      result = 31 * result + java.util.Objects.hashCode(groupBy);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Query[name="
+          + name
+          + ", input="
+          + input
+          + ", expression="
+          + expression
+          + ", outputType="
+          + outputType
+          + ", groupBy="
+          + groupBy
+          + "]";
+    }
   }
 
   private static final List<Query> SCALAR_FUNCTIONS =
@@ -74,27 +146,44 @@ class ScalarFunctionBenchmark {
           new Query("DOUBLE_TRUNCATE_AMBIGUOUS", "tt_double_ambiguous", "TRUNCATE(n,s)", "DOUBLE"),
           new Query("DOUBLE_TRUNCATE_OUTSIDE", "tt_double_outside", "TRUNCATE(n,s)", "DOUBLE"),
           new Query("DOUBLE_TRUNCATE_LARGE", "tt_double_large", "TRUNCATE(n,s)", "DOUBLE"),
-          new Query("DOUBLE_TRUNCATE_CASE", "tt_double_bounded",
-              "CASE WHEN n > 0 THEN TRUNCATE(n,s) ELSE -1E0 END", "DOUBLE"),
-          new Query("DOUBLE_TRUNCATE_COALESCE", "tt_double_bounded",
-              "COALESCE(TRUNCATE(n,s),1E0)", "DOUBLE"),
-          new Query("DOUBLE_TRUNCATE_NESTED", "tt_double_bounded",
-              "TRUNCATE(TRUNCATE(n,3),s)", "DOUBLE"),
+          new Query(
+              "DOUBLE_TRUNCATE_CASE",
+              "tt_double_bounded",
+              "CASE WHEN n > 0 THEN TRUNCATE(n,s) ELSE -1E0 END",
+              "DOUBLE"),
+          new Query(
+              "DOUBLE_TRUNCATE_COALESCE",
+              "tt_double_bounded",
+              "COALESCE(TRUNCATE(n,s),1E0)",
+              "DOUBLE"),
+          new Query(
+              "DOUBLE_TRUNCATE_NESTED", "tt_double_bounded", "TRUNCATE(TRUNCATE(n,3),s)", "DOUBLE"),
           new Query("EXACT_ABS_BIGINT", "bigint", "ABS(n)", "BIGINT"),
           new Query("EXACT_SIGN_DECIMAL", "tt_decimal", "SIGN(n)", "DECIMAL(38,9)"),
           new Query("DECIMAL_FLOOR_STRING", "tt_decimal", "CAST(FLOOR(n) AS STRING)", "STRING"),
-          new Query("DECIMAL_ROUND_RUNTIME_STRING", "tt_decimal_scale", "CAST(ROUND(n,s) AS STRING)", "STRING"),
-          new Query("DECIMAL_TRUNCATE_RUNTIME_STRING", "tt_decimal_scale", "CAST(TRUNCATE(n,s) AS STRING)", "STRING"),
+          new Query(
+              "DECIMAL_ROUND_RUNTIME_STRING",
+              "tt_decimal_scale",
+              "CAST(ROUND(n,s) AS STRING)",
+              "STRING"),
+          new Query(
+              "DECIMAL_TRUNCATE_RUNTIME_STRING",
+              "tt_decimal_scale",
+              "CAST(TRUNCATE(n,s) AS STRING)",
+              "STRING"),
           new Query("DECIMAL_CEIL_STRING", "tt_decimal", "CAST(CEIL(n) AS STRING)", "STRING"),
           new Query("GREATEST_RUNTIME_STRING", "text", "GREATEST(s, 'm')", "STRING"),
           new Query("IF_BOOLEAN", "integer", "IF(n > 0, TRUE, FALSE)", "BOOLEAN"),
-          new Query("IF_TIMESTAMP_LTZ", "tt_timestamp_ltz",
+          new Query(
+              "IF_TIMESTAMP_LTZ",
+              "tt_timestamp_ltz",
               "IF(ts IS NULL, CAST(TO_TIMESTAMP_LTZ(0,3) AS TIMESTAMP_LTZ(9)), ts)",
               "TIMESTAMP_LTZ(9)"),
           new Query("BOOLEAN_TO_STRING", "integer", "CAST(n > 0 AS STRING)", "STRING"),
           new Query("LIKE_ESCAPE", "text", "s LIKE '%!_%' ESCAPE '!'", "BOOLEAN"),
           new Query("REGEXP_COUNT", "text", "REGEXP_COUNT(s, 'a')", "INT"),
-          new Query("PARSE_URL", "text", "PARSE_URL(CONCAT('http://example.org/', s), 'PATH')", "STRING"),
+          new Query(
+              "PARSE_URL", "text", "PARSE_URL(CONCAT('http://example.org/', s), 'PATH')", "STRING"),
           new Query("PRINTF_BIGINT", "bigint", "PRINTF('n=%020d', n)", "STRING"),
           new Query("BTRIM_DYNAMIC", "text", "BTRIM(s, LEFT(s, 1))", "STRING"),
           new Query("IS_ALPHA", "text", "IS_ALPHA(s)", "BOOLEAN"),
@@ -154,14 +243,31 @@ class ScalarFunctionBenchmark {
           new Query("TRY_STRING_TO_BOOLEAN", "boolean_text", "TRY_CAST(s AS BOOLEAN)", "BOOLEAN"),
           new Query("TRY_STRING_TO_DATE", "tt_date_text", "TRY_CAST(s AS DATE)", "DATE"),
           new Query("TRY_STRING_TO_TIME", "tt_time_text", "TRY_CAST(s AS TIME(3))", "TIME(3)"),
-          new Query("TRY_STRING_TO_TIMESTAMP", "tt_timestamp_text", "TRY_CAST(s AS TIMESTAMP(9))", "TIMESTAMP(9)"),
-          new Query("TRY_STRING_TO_TIMESTAMP_LTZ", "tt_timestamp_text", "TRY_CAST(s AS TIMESTAMP_LTZ(9))", "TIMESTAMP_LTZ(9)"),
+          new Query(
+              "TRY_STRING_TO_TIMESTAMP",
+              "tt_timestamp_text",
+              "TRY_CAST(s AS TIMESTAMP(9))",
+              "TIMESTAMP(9)"),
+          new Query(
+              "TRY_STRING_TO_TIMESTAMP_LTZ",
+              "tt_timestamp_text",
+              "TRY_CAST(s AS TIMESTAMP_LTZ(9))",
+              "TIMESTAMP_LTZ(9)"),
           new Query("TRY_DATE_COMPOSED", "tt_date_text", "TRY_CAST(TRIM(s) AS DATE)", "DATE"),
           new Query("TRY_TIME_COMPOSED", "tt_time_text", "TRY_CAST(TRIM(s) AS TIME(3))", "TIME(3)"),
-          new Query("TRY_TIMESTAMP_COMPOSED", "tt_timestamp_text", "TRY_CAST(TRIM(s) AS TIMESTAMP(9))", "TIMESTAMP(9)"),
+          new Query(
+              "TRY_TIMESTAMP_COMPOSED",
+              "tt_timestamp_text",
+              "TRY_CAST(TRIM(s) AS TIMESTAMP(9))",
+              "TIMESTAMP(9)"),
           new Query("TRY_DATE_NONCANONICAL", "tt_date_noncanonical", "TRY_CAST(s AS DATE)", "DATE"),
-          new Query("TRY_TIME_NONCANONICAL", "tt_time_noncanonical", "TRY_CAST(s AS TIME(3))", "TIME(3)"),
-          new Query("TRY_TIMESTAMP_NONCANONICAL", "tt_timestamp_noncanonical", "TRY_CAST(s AS TIMESTAMP(9))", "TIMESTAMP(9)"),
+          new Query(
+              "TRY_TIME_NONCANONICAL", "tt_time_noncanonical", "TRY_CAST(s AS TIME(3))", "TIME(3)"),
+          new Query(
+              "TRY_TIMESTAMP_NONCANONICAL",
+              "tt_timestamp_noncanonical",
+              "TRY_CAST(s AS TIMESTAMP(9))",
+              "TIMESTAMP(9)"),
           new Query("DECIMAL_ROUND_POS", "tt_decimal", "ROUND(n, 2)", "DECIMAL(32,2)"),
           new Query("DECIMAL_TRUNCATE_POS", "tt_decimal", "TRUNCATE(n, 2)", "DECIMAL(32,2)"),
           new Query("DECIMAL_TRUNCATE_NEG", "tt_decimal", "TRUNCATE(n, -3)", "DECIMAL(30,0)"),
@@ -235,7 +341,7 @@ class ScalarFunctionBenchmark {
                   new Query("DECODE_UTF16BE", "tt_utf16be", "DECODE(b, 'UTF-16BE')"),
                   new Query("DECODE_UTF16LE", "tt_utf16le", "DECODE(b, 'UTF-16LE')"),
                   new Query("UNHEX", "hex", "UNHEX(s)", "BYTES")))
-          .toList();
+          .collect(ListCollectors.toList());
 
   private static final List<Query> FUNCTIONS =
       Stream.of(
@@ -562,7 +668,7 @@ class ScalarFunctionBenchmark {
                   new Query(
                       "JSON_EXISTS", "tt_json", "JSON_EXISTS(s, 'lax $.user.name')", "BOOLEAN")))
           .flatMap(List::stream)
-          .toList();
+          .collect(ListCollectors.toList());
 
   @Test
   void individualFunctions() throws Exception {
@@ -634,7 +740,9 @@ class ScalarFunctionBenchmark {
                     engine == 1 ? "native" : "flink",
                     trial - WARMUP,
                     seconds,
-                    query.input().equals("tt_fixed_bytes") ? TextTimeBenchmarkInputs.fixedBinaryWidth() : 0));
+                    query.input().equals("tt_fixed_bytes")
+                        ? TextTimeBenchmarkInputs.fixedBinaryWidth()
+                        : 0));
           }
         }
       }
@@ -720,15 +828,30 @@ class ScalarFunctionBenchmark {
     String names = System.getProperty("scalar.functions", "ALL").toUpperCase(Locale.ROOT);
     Map<String, Query> queries = new LinkedHashMap<>();
     for (String name : names.split(",", -1)) {
-      List<Query> matches =
-          switch (name.trim()) {
-            case "ALL" -> FUNCTIONS;
-            case "SCALAR" -> SCALAR_FUNCTIONS;
-            case "SEARCH" -> SEARCH_FUNCTIONS;
-            case "ENCODING" -> ENCODING_FUNCTIONS;
-            case "TEXT_TIME" -> TextTimeFunctions.QUERIES;
-            default -> FUNCTIONS.stream().filter(q -> q.name().equals(name.trim())).toList();
-          };
+      List<Query> matches;
+      switch (name.trim()) {
+        case "ALL":
+          matches = FUNCTIONS;
+          break;
+        case "SCALAR":
+          matches = SCALAR_FUNCTIONS;
+          break;
+        case "SEARCH":
+          matches = SEARCH_FUNCTIONS;
+          break;
+        case "ENCODING":
+          matches = ENCODING_FUNCTIONS;
+          break;
+        case "TEXT_TIME":
+          matches = TextTimeFunctions.QUERIES;
+          break;
+        default:
+          matches =
+              FUNCTIONS.stream()
+                  .filter(q -> q.name().equals(name.trim()))
+                  .collect(ListCollectors.toList());
+          break;
+      }
       if (matches.isEmpty()) {
         throw new IllegalArgumentException("Unknown scalar.functions: " + name);
       }
@@ -755,7 +878,8 @@ class ScalarFunctionBenchmark {
     String plan = NativePlanner.explain(tables, query.sql());
     if (!expectsNative(query)) {
       if (plan.contains("NativeCalc")) {
-        throw new IllegalStateException(query.name() + " expected previous-version fallback: " + plan);
+        throw new IllegalStateException(
+            query.name() + " expected previous-version fallback: " + plan);
       }
       return;
     }
@@ -861,20 +985,36 @@ class ScalarFunctionBenchmark {
                       names.toArray(String[]::new), types.toArray(TypeInformation<?>[]::new))),
           schema.build());
     } else if (isIntegerInput(input)) {
-      TypeInformation<?> type =
-          switch (input) {
-            case "tinyint" -> Types.BYTE;
-            case "smallint" -> Types.SHORT;
-            case "integer" -> Types.INT;
-            default -> Types.LONG;
-          };
-      DataType dataType =
-          switch (input) {
-            case "tinyint" -> DataTypes.TINYINT();
-            case "smallint" -> DataTypes.SMALLINT();
-            case "integer" -> DataTypes.INT();
-            default -> DataTypes.BIGINT();
-          };
+      TypeInformation<?> type;
+      switch (input) {
+        case "tinyint":
+          type = Types.BYTE;
+          break;
+        case "smallint":
+          type = Types.SHORT;
+          break;
+        case "integer":
+          type = Types.INT;
+          break;
+        default:
+          type = Types.LONG;
+          break;
+      }
+      DataType dataType;
+      switch (input) {
+        case "tinyint":
+          dataType = DataTypes.TINYINT();
+          break;
+        case "smallint":
+          dataType = DataTypes.SMALLINT();
+          break;
+        case "integer":
+          dataType = DataTypes.INT();
+          break;
+        default:
+          dataType = DataTypes.BIGINT();
+          break;
+      }
       tables.createTemporaryView(
           "inputs",
           env.fromSequence(0, ROWS - 1)
@@ -1008,12 +1148,16 @@ class ScalarFunctionBenchmark {
 
   private static Number integerValue(long row, String input) {
     long value = row % 2 == 0 ? row / 2 : -(row / 2) - 1;
-    return switch (input) {
-      case "tinyint" -> (byte) value;
-      case "smallint" -> (short) value;
-      case "integer" -> (int) value;
-      default -> value;
-    };
+    switch (input) {
+      case "tinyint":
+        return (byte) value;
+      case "smallint":
+        return (short) value;
+      case "integer":
+        return (int) value;
+      default:
+        return value;
+    }
   }
 
   private static boolean isNull(long row) {

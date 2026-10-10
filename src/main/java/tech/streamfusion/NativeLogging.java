@@ -11,18 +11,27 @@ import org.slf4j.LoggerFactory;
  * {@code log} crate; the logger name is the Rust log target with {@code ::} rewritten to {@code .}.
  */
 public final class NativeLogging {
-
   private NativeLogging() {}
 
   /** Called from native code; 1=error, 2=warn, 3=info, 4=debug, anything else trace. */
   static void log(int level, String logger, String message) {
     Logger target = LoggerFactory.getLogger(logger);
     switch (level) {
-      case 1 -> target.error(message);
-      case 2 -> target.warn(message);
-      case 3 -> target.info(message);
-      case 4 -> target.debug(message);
-      default -> target.trace(message);
+      case 1:
+        target.error(message);
+        break;
+      case 2:
+        target.warn(message);
+        break;
+      case 3:
+        target.info(message);
+        break;
+      case 4:
+        target.debug(message);
+        break;
+      default:
+        target.trace(message);
+        break;
     }
   }
 }

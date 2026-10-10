@@ -34,7 +34,6 @@ import tech.streamfusion.Native;
 /** The columnar updating INNER join: Arrow batches in on both sides, a changelog of batches out. */
 @ExtendWith(CoalescingOff.class)
 class NativeColumnarUpdatingJoinOperatorTest {
-
   private static final int MAX_PARALLELISM = 128;
 
   private static final RowType LEFT =
@@ -140,8 +139,11 @@ class NativeColumnarUpdatingJoinOperatorTest {
         long rows = 0;
         int batches = 0;
         for (Object value : harness.getOutput()) {
-          if (value instanceof StreamRecord<?> record
-              && record.getValue() instanceof ArrowBatch batch) {
+          Object batchCandidate;
+          if (value instanceof StreamRecord<?>
+              && (batchCandidate = ((StreamRecord<?>) value).getValue()) instanceof ArrowBatch) {
+            ArrowBatch batch = ((ArrowBatch) batchCandidate);
+
             assertTrue(batch.rowCount() <= 4096);
             rows += batch.rowCount();
             batches++;

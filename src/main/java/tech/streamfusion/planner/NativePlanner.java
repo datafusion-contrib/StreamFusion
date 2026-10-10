@@ -17,7 +17,6 @@ import org.apache.flink.table.planner.plan.optimize.program.StreamOptimizeContex
  * per-root program hook.
  */
 public final class NativePlanner {
-
   private static final String PROGRAM_NAME = "streamfusion_native";
 
   private NativePlanner() {}
@@ -72,9 +71,14 @@ public final class NativePlanner {
    */
   public static PhysicalPlanScan install(TableEnvironment tableEnv) {
     PhysicalPlanScan scan = install(tableEnv.getConfig());
-    if (tableEnv instanceof org.apache.flink.table.api.internal.TableEnvironmentImpl internal
-        && internal.getPlanner()
-            instanceof org.apache.flink.table.planner.delegation.PlannerBase planner) {
+    Object plannerCandidate;
+    if (tableEnv instanceof org.apache.flink.table.api.internal.TableEnvironmentImpl
+        && (plannerCandidate =
+                ((org.apache.flink.table.api.internal.TableEnvironmentImpl) tableEnv).getPlanner())
+            instanceof org.apache.flink.table.planner.delegation.PlannerBase) {
+      org.apache.flink.table.planner.delegation.PlannerBase planner =
+          ((org.apache.flink.table.planner.delegation.PlannerBase) plannerCandidate);
+
       scan.executionEnvironment(planner.getExecEnv());
     }
     return scan;

@@ -16,11 +16,15 @@ public final class FlinkCompat {
 
   public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
       org.apache.calcite.sql.SqlOperator operator) {
-    if (operator
-            instanceof
-            org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-        && function.getDefinition()
-            instanceof org.apache.flink.table.functions.ScalarFunction scalar) {
+    Object scalarCandidate;
+    if (operator instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction
+        && (scalarCandidate =
+                ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) operator)
+                    .getDefinition())
+            instanceof org.apache.flink.table.functions.ScalarFunction) {
+      org.apache.flink.table.functions.ScalarFunction scalar =
+          ((org.apache.flink.table.functions.ScalarFunction) scalarCandidate);
+
       return scalar;
     }
     // Subclasses can specialize makeFunction with argument values/types during host codegen.
@@ -100,7 +104,10 @@ public final class FlinkCompat {
   public static org.apache.flink.table.planner.plan.logical.WindowingStrategy windowDedupWindowing(
       org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowDeduplicate
           node) {
-    if (node instanceof PreparedWindowDeduplicate prepared) return prepared.windowing;
+    if (node instanceof PreparedWindowDeduplicate) {
+      PreparedWindowDeduplicate prepared = ((PreparedWindowDeduplicate) node);
+      return prepared.windowing;
+    }
     var query =
         org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery.reuseOrCreate(
             node.getCluster().getMetadataQuery());

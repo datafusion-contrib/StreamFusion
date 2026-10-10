@@ -8,6 +8,7 @@ import java.util.Random;
 import org.apache.flink.table.api.JsonValueOnEmptyOrError;
 import org.apache.flink.table.runtime.functions.SqlJsonUtils;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 
 class NativeJsonDoubleTest {
   @Test
@@ -34,7 +35,8 @@ class NativeJsonDoubleTest {
               + "e"
               + (random.nextInt(800) - 400));
     }
-    List<String> documents = numbers.stream().map(number -> "{\"n\":" + number + "}").toList();
+    List<String> documents =
+        numbers.stream().map(number -> "{\"n\":" + number + "}").collect(ListCollectors.toList());
     List<String> actual =
         NativeJsonBufferHistoryTest.nativeRows(
             documents,

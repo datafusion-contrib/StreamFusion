@@ -25,10 +25,13 @@ public final class PaimonCodecs {
   }
 
   static ColumnarFileCodec reader(String format, boolean legacyTimestamp) {
-    return switch (format) {
-      case "parquet" -> new tech.streamfusion.parquet.ParquetCodec();
-      case "orc" -> new tech.streamfusion.orc.OrcCodec(null, legacyTimestamp);
-      default -> throw new IllegalArgumentException("Unsupported file format " + format);
-    };
+    switch (format) {
+      case "parquet":
+        return new tech.streamfusion.parquet.ParquetCodec();
+      case "orc":
+        return new tech.streamfusion.orc.OrcCodec(null, legacyTimestamp);
+      default:
+        throw new IllegalArgumentException("Unsupported file format " + format);
+    }
   }
 }

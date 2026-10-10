@@ -73,7 +73,7 @@ jobs:
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
-    name: Java tests (debug native build)${{ matrix.suffix }}
+    name: Java tests (debug native build)${{ matrix.suffix }}${{ matrix.jdk == '11' && ' (JDK 11)' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -81,9 +81,19 @@ jobs:
           - line: '2.2'
             profile: ''
             suffix: ''
+            jdk: '17'
           - line: '1.18'
             profile: '-Pflink-1.18'
             suffix: ' (Flink 1.18)'
+            jdk: '17'
+          - line: '2.2'
+            profile: ''
+            suffix: ''
+            jdk: '11'
+          - line: '1.18'
+            profile: '-Pflink-1.18'
+            suffix: ' (Flink 1.18)'
+            jdk: '11'
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -95,10 +105,12 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ matrix.jdk }}
           cache: maven
 
+      # The upstream-suite instrumentation agent is a separate JDK 17 development tool.
       - name: Test upstream execution evidence checks
+        if: matrix.jdk == '17'
         run: |
           python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
@@ -112,7 +124,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_package_release.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
-        if: matrix.line == '1.18'
+        if: matrix.line == '1.18' && matrix.jdk == '17'
         run: |
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml -Dstreamfusion.flink-suite.flink-line=1.18 test
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml -Dstreamfusion.flink-suite.flink-line=1.18 -Dstreamfusion.flink-suite.native-rocksdb=true test
@@ -134,11 +146,17 @@ jobs:
       - name: Run Java test suite
         run: mvn -B -ntp ${{ matrix.profile }} test
 
+      - name: Check deployed Java 11 bytecode including embedded payloads
+        run: |
+          mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true
+          python3 -m unittest discover -s bin -p 'test_check_java_bytecode.py'
+          python3 bin/check-java-bytecode.py
+
       - name: Upload Java failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: java-failure-diagnostics-${{ matrix.line }}
+          name: java-failure-diagnostics-${{ matrix.line }}${{ matrix.jdk == '11' && '-jdk11' || '' }}
           path: |
             **/surefire-reports/*.xml
             **/surefire-reports/*.txt
@@ -153,7 +171,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: portable-sql-audit-${{ matrix.line }}
+          name: portable-sql-audit-${{ matrix.line }}${{ matrix.jdk == '11' && '-jdk11' || '' }}
           path: streamfusion-runtime/target/sql-audit/*.json
           if-no-files-found: error
 
@@ -164,7 +182,7 @@ jobs:
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
-    name: ${{ matrix.name }} tests (debug native build)
+    name: ${{ matrix.name }} tests (debug native build)${{ matrix.jdk == '11' && ' (JDK 11)' || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
@@ -172,21 +190,50 @@ jobs:
       matrix:
         include:
           - name: Delta
+            jdk: '17'
             profile: delta
             module: streamfusion-delta
           - name: Paimon Parquet
+            jdk: '17'
             profile: paimon
             module: streamfusion-paimon
             format: parquet
           - name: Paimon ORC
+            jdk: '17'
             profile: paimon
             module: streamfusion-paimon
             format: orc
           - name: Paimon Parquet (Flink 1.18)
+            jdk: '17'
             profile: paimon,flink-1.18
             module: streamfusion-paimon
             format: parquet
           - name: Paimon ORC (Flink 1.18)
+            jdk: '17'
+            profile: paimon,flink-1.18
+            module: streamfusion-paimon
+            format: orc
+          - name: Delta
+            jdk: '11'
+            profile: delta
+            module: streamfusion-delta
+          - name: Paimon Parquet
+            jdk: '11'
+            profile: paimon
+            module: streamfusion-paimon
+            format: parquet
+          - name: Paimon ORC
+            jdk: '11'
+            profile: paimon
+            module: streamfusion-paimon
+            format: orc
+          - name: Paimon Parquet (Flink 1.18)
+            jdk: '11'
+            profile: paimon,flink-1.18
+            module: streamfusion-paimon
+            format: parquet
+          - name: Paimon ORC (Flink 1.18)
+            jdk: '11'
             profile: paimon,flink-1.18
             module: streamfusion-paimon
             format: orc
@@ -199,7 +246,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ matrix.jdk }}
           cache: maven
 
       - uses: dtolnay/rust-toolchain@1.94.0

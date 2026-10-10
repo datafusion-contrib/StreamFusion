@@ -1,7 +1,6 @@
 package tech.streamfusion.paimon;
 
 import java.util.ArrayList;
-import tech.streamfusion.arrow.TimestampAccessor;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +18,7 @@ import org.apache.paimon.types.LocalZonedTimestampType;
 import org.apache.paimon.types.MapType;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.types.TimestampType;
+import tech.streamfusion.arrow.TimestampAccessor;
 
 /**
  * Carries the parts of a Paimon schema that Arrow does not model onto the Arrow fields the native
@@ -31,7 +31,6 @@ import org.apache.paimon.types.TimestampType;
  * columns or lost a NOT NULL through a cast.
  */
 final class PaimonArrowFields {
-
   static final String FIELD_ID_KEY = "PARQUET:field_id";
   static final String TIMESTAMP_UNIT_KEY = "streamfusion:timestamp_unit";
   private static final int MAX_NATIVE_TIMESTAMP_PRECISION = 6;
@@ -68,7 +67,9 @@ final class PaimonArrowFields {
     }
     List<Field> children = arrow.getChildren();
     switch (type.getTypeRoot()) {
-      case ARRAY -> {
+      case ARRAY:
+        {
+          {
         DataType element = ((ArrayType) type).getElementType();
         children =
             List.of(
@@ -79,7 +80,11 @@ final class PaimonArrowFields {
                     SpecialFields.getArrayElementFieldId(fieldId, depth + 1),
                     depth + 1));
       }
-      case MAP -> {
+          break;
+        }
+      case MAP:
+        {
+          {
         MapType map = (MapType) type;
         Field entries = children.get(0);
         children =
@@ -101,7 +106,11 @@ final class PaimonArrowFields {
                             SpecialFields.getMapValueFieldId(fieldId, depth + 1),
                             depth + 1))));
       }
-      case ROW -> {
+          break;
+        }
+      case ROW:
+        {
+          {
         List<DataField> nested = ((RowType) type).getFields();
         List<Field> annotated = new ArrayList<>();
         for (int i = 0; i < nested.size(); i++) {
@@ -109,7 +118,14 @@ final class PaimonArrowFields {
         }
         children = annotated;
       }
-      default -> {}
+          break;
+        }
+      default:
+        {
+          {
+          }
+          break;
+        }
     }
     FieldType fieldType = arrow.getFieldType();
     ArrowType arrowType = fieldType.getType();
@@ -147,21 +163,41 @@ final class PaimonArrowFields {
     Integer precision = timestampPrecision(type);
     if (precision != null) {
       return precision > MAX_NATIVE_TIMESTAMP_PRECISION
-          ? "timestamp precision " + precision + " exceeds the native Paimon limit of 6 (Parquet uses INT96)"
+          ? "timestamp precision "
+              + precision
+              + " exceeds the native Paimon limit of 6 (Parquet uses INT96)"
           : null;
     }
     DataTypeRoot root = type.getTypeRoot();
-    return switch (root) {
-      case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE, DECIMAL, CHAR, VARCHAR,
-          BINARY, VARBINARY, DATE -> null;
-      case ARRAY -> unsupportedTypeReason(((ArrayType) type).getElementType());
-      case MAP -> {
+    switch (root) {
+      case BOOLEAN:
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case FLOAT:
+      case DOUBLE:
+      case DECIMAL:
+      case CHAR:
+      case VARCHAR:
+      case BINARY:
+      case VARBINARY:
+      case DATE:
+        return null;
+      case ARRAY:
+        return unsupportedTypeReason(((ArrayType) type).getElementType());
+      case MAP:
+        {
+          {
         MapType map = (MapType) type;
         String key = unsupportedTypeReason(map.getKeyType());
-        yield key != null ? key : unsupportedTypeReason(map.getValueType());
+            return key != null ? key : unsupportedTypeReason(map.getValueType());
       }
-      case ROW -> unsupportedTypeReason((RowType) type);
-      default -> "type " + type + " is not verified by the native writer";
-    };
+        }
+      case ROW:
+        return unsupportedTypeReason((RowType) type);
+      default:
+        return "type " + type + " is not verified by the native writer";
+    }
   }
 }

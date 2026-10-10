@@ -38,6 +38,10 @@ import tech.streamfusion.operator.WatermarkExpression;
  * operator falls back to Flink.
  */
 final class RexExpression {
+  // UnicodeDecoder replaced U+FFFE on JDK 11; newer JDKs preserve it as a character.
+  private static final boolean REPLACE_REVERSED_UTF16_BOM =
+      new String(new byte[] {(byte) 0xff, (byte) 0xfe}, java.nio.charset.StandardCharsets.UTF_16BE)
+          .equals("\ufffd");
 
   // Node kinds, mirrored on the native side.
   private static final int KIND_INPUT_REF = 0;
@@ -342,7 +346,44 @@ final class RexExpression {
     return encoded.supported() ? null : encoded.encoder().reasonOrDefault();
   }
 
-  private record CalcEncoding(RexExpression encoder, boolean supported) {}
+  private static final class CalcEncoding {
+    private final RexExpression encoder;
+    private final boolean supported;
+
+    private CalcEncoding(RexExpression encoder, boolean supported) {
+      this.encoder = encoder;
+      this.supported = supported;
+    }
+
+    public RexExpression encoder() {
+      return encoder;
+    }
+
+    public boolean supported() {
+      return supported;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      CalcEncoding that = (CalcEncoding) other;
+      return java.util.Objects.equals(encoder, that.encoder) && supported == that.supported;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(encoder);
+      result = 31 * result + Boolean.hashCode(supported);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "CalcEncoding[encoder=" + encoder + ", supported=" + supported + "]";
+    }
+  }
 
   private static CalcEncoding tryEncodeCalc(Calc calc) {
     RexExpression encoder = forCalc(calc);
@@ -491,15 +532,18 @@ final class RexExpression {
   }
 
   private static boolean containsRuntimeCharset(RexNode node) {
-    if (node instanceof org.apache.calcite.rex.RexFieldAccess access) {
+    if (node instanceof org.apache.calcite.rex.RexFieldAccess) {
+      org.apache.calcite.rex.RexFieldAccess access = ((org.apache.calcite.rex.RexFieldAccess) node);
+
       return containsRuntimeCharset(access.getReferenceExpr());
     }
-    return node instanceof RexCall call
-        && ((call.getOperator().getName().equals("ENCODE")
-                || call.getOperator().getName().equals("DECODE"))
-            && call.getOperands().size() == 2
-            && !(call.getOperands().get(1) instanceof RexLiteral)
-            || call.getOperands().stream().anyMatch(RexExpression::containsRuntimeCharset));
+    return node instanceof RexCall
+        && ((((RexCall) node).getOperator().getName().equals("ENCODE")
+                    || ((RexCall) node).getOperator().getName().equals("DECODE"))
+                && ((RexCall) node).getOperands().size() == 2
+                && !(((RexCall) node).getOperands().get(1) instanceof RexLiteral)
+            || ((RexCall) node)
+                .getOperands().stream().anyMatch(RexExpression::containsRuntimeCharset));
   }
 
   private static int binaryUdfCallCount(RexProgram program) {
@@ -531,46 +575,63 @@ final class RexExpression {
   }
 
   private static boolean containsSqlJson(RexNode node) {
-    if (node instanceof org.apache.calcite.rex.RexFieldAccess access) {
+    if (node instanceof org.apache.calcite.rex.RexFieldAccess) {
+      org.apache.calcite.rex.RexFieldAccess access = ((org.apache.calcite.rex.RexFieldAccess) node);
+
       return containsSqlJson(access.getReferenceExpr());
     }
-    if (!(node instanceof RexCall call)) return false;
-    return switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
-      case "JSON_VALUE",
-          "JSON_EXISTS",
-          "JSON_QUERY",
-          "JSON_QUOTE",
-          "JSON_UNQUOTE",
-          "JSON_STRING",
-          "JSON_OBJECT",
-          "JSON_ARRAY",
-          "JSON",
-          "IS JSON VALUE",
-          "IS NOT JSON VALUE",
-          "IS JSON OBJECT",
-          "IS NOT JSON OBJECT",
-          "IS JSON ARRAY",
-          "IS NOT JSON ARRAY",
-          "IS JSON SCALAR",
-          "IS NOT JSON SCALAR" ->
-          true;
-      default -> call.getOperands().stream().anyMatch(RexExpression::containsSqlJson);
-    };
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = ((RexCall) node);
+
+    switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
+      case "JSON_VALUE":
+      case "JSON_EXISTS":
+      case "JSON_QUERY":
+      case "JSON_QUOTE":
+      case "JSON_UNQUOTE":
+      case "JSON_STRING":
+      case "JSON_OBJECT":
+      case "JSON_ARRAY":
+      case "JSON":
+      case "IS JSON VALUE":
+      case "IS NOT JSON VALUE":
+      case "IS JSON OBJECT":
+      case "IS NOT JSON OBJECT":
+      case "IS JSON ARRAY":
+      case "IS NOT JSON ARRAY":
+      case "IS JSON SCALAR":
+      case "IS NOT JSON SCALAR":
+        return true;
+      default:
+        return call.getOperands().stream().anyMatch(RexExpression::containsSqlJson);
+    }
   }
 
   private static int rowCalcTypeCode(RelDataType type) {
-    boolean nested =
-        switch (type.getSqlTypeName()) {
-          case ARRAY -> type.getComponentType().getSqlTypeName() != SqlTypeName.BINARY
-              && rowCalcTypeCode(type.getComponentType()) >= 0;
-          case MAP -> SqlTypeFamily.CHARACTER.contains(type.getKeyType())
-              && SqlTypeFamily.CHARACTER.contains(type.getValueType());
-          case ROW ->
-              type.getFieldList().stream().allMatch(field ->
-                  field.getType().getSqlTypeName() != SqlTypeName.BINARY
-                      && rowCalcTypeCode(field.getType()) >= 0);
-          default -> false;
-        };
+    boolean nested;
+    switch (type.getSqlTypeName()) {
+      case ARRAY:
+        nested =
+            type.getComponentType().getSqlTypeName() != SqlTypeName.BINARY
+                && rowCalcTypeCode(type.getComponentType()) >= 0;
+        break;
+      case MAP:
+        nested =
+            SqlTypeFamily.CHARACTER.contains(type.getKeyType())
+                && SqlTypeFamily.CHARACTER.contains(type.getValueType());
+        break;
+      case ROW:
+        nested =
+            type.getFieldList().stream()
+                .allMatch(
+                    field ->
+                        field.getType().getSqlTypeName() != SqlTypeName.BINARY
+                            && rowCalcTypeCode(field.getType()) >= 0);
+        break;
+      default:
+        nested = false;
+        break;
+    }
     return nested ? tech.streamfusion.operator.NativeUdf.TYPE_INTERNAL : hostCastTypeCode(type);
   }
 
@@ -582,12 +643,16 @@ final class RexExpression {
   }
 
   private static boolean containsCollectionStringFunction(RexNode node) {
-    if (node instanceof org.apache.calcite.rex.RexFieldAccess access) {
+    if (node instanceof org.apache.calcite.rex.RexFieldAccess) {
+      org.apache.calcite.rex.RexFieldAccess access = ((org.apache.calcite.rex.RexFieldAccess) node);
+
       return containsCollectionStringFunction(access.getReferenceExpr());
     }
-    return node instanceof RexCall call
-        && (java.util.Set.of("REGEXP_EXTRACT_ALL", "STR_TO_MAP").contains(call.getOperator().getName())
-            || call.getOperands().stream().anyMatch(RexExpression::containsCollectionStringFunction));
+    return node instanceof RexCall
+        && (java.util.Set.of("REGEXP_EXTRACT_ALL", "STR_TO_MAP")
+                .contains(((RexCall) node).getOperator().getName())
+            || ((RexCall) node)
+                .getOperands().stream().anyMatch(RexExpression::containsCollectionStringFunction));
   }
 
   private boolean emitRowCalc(Calc calc) {
@@ -913,18 +978,21 @@ final class RexExpression {
       long value = 0;
       if (!literal.isNull()) {
         try {
-          value =
-              switch (temporalType) {
-                case 9 ->
-                    literal
-                        .getValueAs(org.apache.calcite.util.DateString.class)
-                        .getDaysSinceEpoch();
-                case 10 ->
-                    literal.getValueAs(org.apache.calcite.util.TimeString.class).getMillisOfDay();
-                case 12, 13 -> literal.getValueAs(Long.class);
-                default ->
-                    throw new IllegalArgumentException("unsupported temporal literal " + type);
-              };
+          switch (temporalType) {
+            case 9:
+              value =
+                  literal.getValueAs(org.apache.calcite.util.DateString.class).getDaysSinceEpoch();
+              break;
+            case 10:
+              value = literal.getValueAs(org.apache.calcite.util.TimeString.class).getMillisOfDay();
+              break;
+            case 12:
+            case 13:
+              value = literal.getValueAs(Long.class);
+              break;
+            default:
+              throw new IllegalArgumentException("unsupported temporal literal " + type);
+          }
         } catch (ArithmeticException e) {
           return reject("temporal literal exceeds its integer range");
         }
@@ -1088,13 +1156,24 @@ final class RexExpression {
     if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
       return emitUdf(call);
     }
-    if (switch (call.getKind()) {
-      case LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL ->
-          call.getOperands().stream()
-              .anyMatch(operand -> SqlTypeFamily.CHARACTER.contains(operand.getType()));
-      default -> false;
-    }) {
-      return reject("Flink string ordering depends on its Java or serialized representation");
+    {
+      boolean switchResult0;
+      switch (call.getKind()) {
+        case LESS_THAN:
+        case LESS_THAN_OR_EQUAL:
+        case GREATER_THAN:
+        case GREATER_THAN_OR_EQUAL:
+          switchResult0 =
+              call.getOperands().stream()
+                  .anyMatch(operand -> SqlTypeFamily.CHARACTER.contains(operand.getType()));
+          break;
+        default:
+          switchResult0 = false;
+          break;
+      }
+      if (switchResult0) {
+        return reject("Flink string ordering depends on its Java or serialized representation");
+      }
     }
     if ((call.getKind() == SqlKind.EQUALS || call.getKind() == SqlKind.NOT_EQUALS)
         && hasImplicitStringNumericCast(call)) {
@@ -1156,15 +1235,26 @@ final class RexExpression {
     if (isDecimalArithmetic(call)) {
       int precision = call.getType().getPrecision();
       int scale = call.getType().getScale();
-      int kind =
-          switch (call.getKind()) {
-            case PLUS -> KIND_DECIMAL_ADD;
-            case MINUS -> KIND_DECIMAL_SUBTRACT;
-            case TIMES -> KIND_DECIMAL_MULTIPLY;
-            case DIVIDE -> KIND_DECIMAL_DIVIDE;
-            case MOD -> KIND_DECIMAL_MOD;
-            default -> throw new IllegalStateException("not decimal arithmetic: " + call.getKind());
-          };
+      int kind;
+      switch (call.getKind()) {
+        case PLUS:
+          kind = KIND_DECIMAL_ADD;
+          break;
+        case MINUS:
+          kind = KIND_DECIMAL_SUBTRACT;
+          break;
+        case TIMES:
+          kind = KIND_DECIMAL_MULTIPLY;
+          break;
+        case DIVIDE:
+          kind = KIND_DECIMAL_DIVIDE;
+          break;
+        case MOD:
+          kind = KIND_DECIMAL_MOD;
+          break;
+        default:
+          throw new IllegalStateException("not decimal arithmetic: " + call.getKind());
+      }
       add(kind, precision * 100 + scale, 2);
       for (RexNode operand : call.getOperands()) {
         if (!emit(operand)) {
@@ -1174,16 +1264,33 @@ final class RexExpression {
       return true;
     }
     String functionName = call.getOperator().getName().toUpperCase(Locale.ROOT);
-    int clockField =
-        switch (functionName) {
-          case "CURRENT_TIMESTAMP", "CURRENT_ROW_TIMESTAMP", "NOW" -> 0;
-          case "LOCALTIMESTAMP" -> 1;
-          case "CURRENT_DATE" -> 2;
-          case "CURRENT_TIME", "LOCALTIME" -> 3;
-          case "CURRENT_WATERMARK" -> 5;
-          case "UNIX_TIMESTAMP" -> call.getOperands().isEmpty() ? 4 : -1;
-          default -> -1;
-        };
+    int clockField;
+    switch (functionName) {
+      case "CURRENT_TIMESTAMP":
+      case "CURRENT_ROW_TIMESTAMP":
+      case "NOW":
+        clockField = 0;
+        break;
+      case "LOCALTIMESTAMP":
+        clockField = 1;
+        break;
+      case "CURRENT_DATE":
+        clockField = 2;
+        break;
+      case "CURRENT_TIME":
+      case "LOCALTIME":
+        clockField = 3;
+        break;
+      case "CURRENT_WATERMARK":
+        clockField = 5;
+        break;
+      case "UNIX_TIMESTAMP":
+        clockField = call.getOperands().isEmpty() ? 4 : -1;
+        break;
+      default:
+        clockField = -1;
+        break;
+    }
     if (clockField >= 0) {
       if (clockField == 5 && !watermarkAvailable) {
         return reject("CURRENT_WATERMARK requires a Calc runtime context");
@@ -1219,12 +1326,31 @@ final class RexExpression {
     if (call.getOperator()
         == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.IF) {
       if (call.getOperands().size() != 3) return reject("IF requires three operands");
-      boolean supportedType = switch (call.getType().getSqlTypeName()) {
-        case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, REAL, DOUBLE, DECIMAL,
-            CHAR, VARCHAR, DATE, TIME, TIMESTAMP, TIMESTAMP_WITH_LOCAL_TIME_ZONE,
-            BINARY, VARBINARY -> true;
-        default -> false;
-      };
+      boolean supportedType;
+      switch (call.getType().getSqlTypeName()) {
+        case BOOLEAN:
+        case TINYINT:
+        case SMALLINT:
+        case INTEGER:
+        case BIGINT:
+        case FLOAT:
+        case REAL:
+        case DOUBLE:
+        case DECIMAL:
+        case CHAR:
+        case VARCHAR:
+        case DATE:
+        case TIME:
+        case TIMESTAMP:
+        case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        case BINARY:
+        case VARBINARY:
+          supportedType = true;
+          break;
+        default:
+          supportedType = false;
+          break;
+      }
       if (!supportedType) return reject("IF requires a verified scalar result type");
       if (!RexUtil.isDeterministic(call)
           || containsScalarUdf(call)
@@ -1242,20 +1368,37 @@ final class RexExpression {
       }
       return true;
     }
-    if (call.getOperator()
-            instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-        && function.getDefinition()
+    Object functionCandidate;
+    if ((functionCandidate = call.getOperator())
+            instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction
+        && ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction)
+                    functionCandidate)
+                .getDefinition()
             == org.apache.flink.table.functions.BuiltInFunctionDefinitions.IF_NULL) {
       return emitBuiltinCall(call, 158);
     }
     if (call.getOperator()
         == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.HASH_CODE) {
       if (call.getOperands().size() != 1) return reject("HASH_CODE requires one operand");
-      return switch (call.getOperands().get(0).getType().getSqlTypeName()) {
-        case BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, REAL, DOUBLE,
-            DECIMAL, CHAR, VARCHAR, DATE, TIME, TIMESTAMP -> emitBuiltinCall(call, 162);
-        default -> reject("HASH_CODE requires a verified scalar type");
-      };
+      switch (call.getOperands().get(0).getType().getSqlTypeName()) {
+        case BOOLEAN:
+        case TINYINT:
+        case SMALLINT:
+        case INTEGER:
+        case BIGINT:
+        case FLOAT:
+        case REAL:
+        case DOUBLE:
+        case DECIMAL:
+        case CHAR:
+        case VARCHAR:
+        case DATE:
+        case TIME:
+        case TIMESTAMP:
+          return emitBuiltinCall(call, 162);
+        default:
+          return reject("HASH_CODE requires a verified scalar type");
+      }
     }
     if ("ENCODE".equals(functionName)) {
       return emitCharsetFunction(call, 120, SqlTypeFamily.CHARACTER);
@@ -1294,13 +1437,28 @@ final class RexExpression {
     if ("JSON_EXISTS".equals(functionName)) {
       return emitJsonExists(call);
     }
-    int jsonPredicate = switch (functionName) {
-      case "IS JSON VALUE", "IS NOT JSON VALUE" -> 144;
-      case "IS JSON OBJECT", "IS NOT JSON OBJECT" -> 145;
-      case "IS JSON ARRAY", "IS NOT JSON ARRAY" -> 146;
-      case "IS JSON SCALAR", "IS NOT JSON SCALAR" -> 147;
-      default -> -1;
-    };
+    int jsonPredicate;
+    switch (functionName) {
+      case "IS JSON VALUE":
+      case "IS NOT JSON VALUE":
+        jsonPredicate = 144;
+        break;
+      case "IS JSON OBJECT":
+      case "IS NOT JSON OBJECT":
+        jsonPredicate = 145;
+        break;
+      case "IS JSON ARRAY":
+      case "IS NOT JSON ARRAY":
+        jsonPredicate = 146;
+        break;
+      case "IS JSON SCALAR":
+      case "IS NOT JSON SCALAR":
+        jsonPredicate = 147;
+        break;
+      default:
+        jsonPredicate = -1;
+        break;
+    }
     if (jsonPredicate >= 0) {
       return emitIsJson(call, jsonPredicate, functionName.startsWith("IS NOT"));
     }
@@ -1651,18 +1809,31 @@ final class RexExpression {
       return reject("JSON_OBJECT requires a NULL policy and key/value pairs");
     }
     Object policyValue = ((RexLiteral) args.get(0)).getValue();
-    if (!(policyValue instanceof SqlJsonConstructorNullClause nullClause)) {
+    if (!(policyValue instanceof SqlJsonConstructorNullClause)) {
       return reject("JSON_OBJECT: unsupported NULL policy");
     }
-    String policy =
-        switch (nullClause) {
-          case NULL_ON_NULL -> "NULL";
-          case ABSENT_ON_NULL -> "ABSENT";
-        };
+    SqlJsonConstructorNullClause nullClause = ((SqlJsonConstructorNullClause) policyValue);
+
+    String policy;
+    switch (nullClause) {
+      case NULL_ON_NULL:
+        policy = "NULL";
+        break;
+      case ABSENT_ON_NULL:
+        policy = "ABSENT";
+        break;
+      default:
+        throw new IncompatibleClassChangeError();
+    }
     for (int index = 1; index < args.size(); index += 2) {
-      if (!(args.get(index) instanceof RexLiteral key) || !isCharacter(key) || key.isNull()) {
+      Object keyCandidate;
+      if (!((keyCandidate = args.get(index)) instanceof RexLiteral)
+          || !isCharacter(((RexLiteral) keyCandidate))
+          || ((RexLiteral) keyCandidate).isNull()) {
         return reject("JSON_OBJECT requires non-null literal character keys");
       }
+      RexLiteral key = ((RexLiteral) keyCandidate);
+
       String name = key.getValueAs(String.class);
       if (name == null || name.codePoints().anyMatch(c -> c >= 0xd800 && c <= 0xdfff)) {
         return reject("JSON_OBJECT requires keys with well-formed Unicode");
@@ -1684,15 +1855,24 @@ final class RexExpression {
 
   private static boolean isJsonScalarValue(RexNode value) {
     // Flink treats direct JSON constructors as raw JSON, despite their character return type.
-    if (value instanceof RexCall call
+    if (value instanceof RexCall
         && List.of("JSON_OBJECT", "JSON_ARRAY", "JSON")
-            .contains(call.getOperator().getName().toUpperCase(Locale.ROOT))) {
+            .contains(((RexCall) value).getOperator().getName().toUpperCase(Locale.ROOT))) {
       return false;
     }
-    return switch (value.getType().getSqlTypeName()) {
-      case CHAR, VARCHAR, BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, DECIMAL -> true;
-      default -> false;
-    };
+    switch (value.getType().getSqlTypeName()) {
+      case CHAR:
+      case VARCHAR:
+      case BOOLEAN:
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case DECIMAL:
+        return true;
+      default:
+        return false;
+    }
   }
 
   private boolean emitCharsetFunction(RexCall call, int op, SqlTypeFamily inputFamily) {
@@ -1716,12 +1896,16 @@ final class RexExpression {
         .contains(charset)) {
       return reject(call.getOperator().getName() + ": unverified charset " + charset);
     }
-    add(KIND_CALL, op, 2);
+    add(KIND_CALL, op, op == 121 ? 3 : 2);
     if (!emit(args.get(0))) {
       return false;
     }
     add(KIND_LIT_STRING, strings.size(), 0);
     strings.add(charset);
+    if (op == 121) {
+      add(KIND_LIT_BOOL, longs.size(), 0);
+      longs.add(REPLACE_REVERSED_UTF16_BOM ? 1L : 0L);
+    }
     return true;
   }
 
@@ -1762,11 +1946,15 @@ final class RexExpression {
   }
 
   private static boolean isAsciiLiteralResult(RexNode node) {
-    if (node instanceof RexLiteral literal) {
+    if (node instanceof RexLiteral) {
+      RexLiteral literal = ((RexLiteral) node);
+
       String value = literal.getValueAs(String.class);
       return value == null || value.chars().allMatch(ch -> ch < 128);
     }
-    if (node instanceof RexCall call && call.getKind() == SqlKind.CASE) {
+    if (node instanceof RexCall && ((RexCall) node).getKind() == SqlKind.CASE) {
+      RexCall call = ((RexCall) node);
+
       List<RexNode> operands = call.getOperands();
       for (int i = 1; i < operands.size() - 1; i += 2) {
         if (!isAsciiLiteralResult(operands.get(i))) {
@@ -1817,9 +2005,11 @@ final class RexExpression {
   }
 
   private boolean requiresRowShortCircuit(RexNode node) {
-    if (!(node instanceof RexCall call)) {
+    if (!(node instanceof RexCall)) {
       return false;
     }
+    RexCall call = ((RexCall) node);
+
     return isExactDoubleTruncate(call) || mayFailOnRow(call)
         || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit);
   }
@@ -1855,15 +2045,16 @@ final class RexExpression {
             || args.size() == 4 && !isIntLiteralAtLeast(args.get(3), 1))) {
       return true;
     }
+    Object roundCandidate;
     if ((call.getOperator()
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
             || call.getOperator()
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
         && args.size() == 2
         && args.get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL
-        && args.get(1) instanceof RexLiteral round
-        && !round.isNull()
-        && !isIntLiteralAtLeast(round, -38)) {
+        && (roundCandidate = args.get(1)) instanceof RexLiteral
+        && !((RexLiteral) roundCandidate).isNull()
+        && !isIntLiteralAtLeast(((RexLiteral) roundCandidate), -38)) {
       return true;
     }
     if ("JSON_VALUE".equals(name)) {
@@ -1887,13 +2078,16 @@ final class RexExpression {
   }
 
   private static boolean hasNonzeroIntegerDivisor(RexCall call) {
+    Object divisorCandidate;
     return SqlTypeFamily.INTEGER.getTypeNames().contains(call.getType().getSqlTypeName())
         && call.getOperands().size() == 2
-        && call.getOperands().stream().allMatch(
-            arg -> SqlTypeFamily.INTEGER.getTypeNames().contains(arg.getType().getSqlTypeName()))
-        && call.getOperands().get(1) instanceof RexLiteral divisor
-        && !divisor.isNull()
-        && divisor.getValueAs(BigDecimal.class).signum() != 0;
+        && call.getOperands().stream()
+            .allMatch(
+                arg ->
+                    SqlTypeFamily.INTEGER.getTypeNames().contains(arg.getType().getSqlTypeName()))
+        && (divisorCandidate = call.getOperands().get(1)) instanceof RexLiteral
+        && !((RexLiteral) divisorCandidate).isNull()
+        && ((RexLiteral) divisorCandidate).getValueAs(BigDecimal.class).signum() != 0;
   }
 
   private boolean jsonRuntimeAvailable() {
@@ -1913,18 +2107,28 @@ final class RexExpression {
       return false;
     }
     if (JsonPathSpec.unicodeVersion() == null) {
-      return reject("JSON_VALUE requires verified JDK 17, 21, 24 or 25 token rules");
+      return reject("JSON_VALUE requires verified JDK 11, 17, 21, 24 or 25 token rules");
     }
     List<RexNode> args = call.getOperands();
     SqlTypeName returnType = call.getType().getSqlTypeName();
-    int op =
-        switch (returnType) {
-          case VARCHAR -> 141;
-          case BOOLEAN -> 148;
-          case INTEGER -> 149;
-          case DOUBLE -> 150;
-          default -> -1;
-        };
+    int op;
+    switch (returnType) {
+      case VARCHAR:
+        op = 141;
+        break;
+      case BOOLEAN:
+        op = 148;
+        break;
+      case INTEGER:
+        op = 149;
+        break;
+      case DOUBLE:
+        op = 150;
+        break;
+      default:
+        op = -1;
+        break;
+    }
     if (op < 0) {
       return reject("JSON_VALUE supports RETURNING VARCHAR, BOOLEAN, INTEGER or DOUBLE");
     }
@@ -1940,13 +2144,16 @@ final class RexExpression {
       String behavior = jsonSymbol(args.get(i++));
       String defaultValue = null;
       if ("DEFAULT".equals(behavior)) {
+        Object literalCandidate;
         if (i >= args.size()
-            || !(args.get(i++) instanceof RexLiteral literal)
-            || (defaultValue = jsonDefault(literal, returnType)) == null) {
+            || !((literalCandidate = args.get(i++)) instanceof RexLiteral)
+            || (defaultValue = jsonDefault(((RexLiteral) literalCandidate), returnType)) == null) {
           return reject(
               "JSON_VALUE DEFAULT requires a non-null literal matching RETURNING; DOUBLE defaults"
                   + " are not admitted");
         }
+
+
       } else if (!"NULL".equals(behavior) && !"ERROR".equals(behavior)) {
         return reject("JSON_VALUE has an unsupported behavior");
       }
@@ -2009,7 +2216,7 @@ final class RexExpression {
       return false;
     }
     if (JsonPathSpec.unicodeVersion() == null) {
-      return reject("IS JSON requires verified JDK 17, 21, 24 or 25 token rules");
+      return reject("IS JSON requires verified JDK 11, 17, 21, 24 or 25 token rules");
     }
     if (call.getOperands().size() != 1 || !isCharacter(call.getOperands().get(0))) {
       return reject("IS JSON requires one character argument");
@@ -2030,7 +2237,7 @@ final class RexExpression {
       return false;
     }
     if (JsonPathSpec.unicodeVersion() == null) {
-      return reject("JSON_EXISTS requires verified JDK 17, 21, 24 or 25 token rules");
+      return reject("JSON_EXISTS requires verified JDK 11, 17, 21, 24 or 25 token rules");
     }
     List<RexNode> args = call.getOperands();
     String path = jsonPath(args);
@@ -2081,21 +2288,25 @@ final class RexExpression {
   }
 
   private static String jsonPath(List<RexNode> args) {
+    Object literalCandidate2;
     if (args.size() < 2
         || !isCharacter(args.get(0))
-        || !(args.get(1) instanceof RexLiteral literal)
-        || !isCharacter(literal)
-        || literal.isNull()) {
+        || !((literalCandidate2 = args.get(1)) instanceof RexLiteral)
+        || !isCharacter(((RexLiteral) literalCandidate2))
+        || ((RexLiteral) literalCandidate2).isNull()) {
       return null;
     }
+    RexLiteral literal = ((RexLiteral) literalCandidate2);
+
     return JsonPathSpec.normalize(literal.getValueAs(String.class));
   }
 
   private static String jsonSymbol(RexNode node) {
-    return node instanceof RexLiteral literal
-            && literal.getType().getSqlTypeName() == SqlTypeName.SYMBOL
-            && literal.getValue() instanceof Enum<?> symbol
-        ? symbol.name()
+    Object symbolCandidate;
+    return node instanceof RexLiteral
+            && ((RexLiteral) node).getType().getSqlTypeName() == SqlTypeName.SYMBOL
+            && (symbolCandidate = ((RexLiteral) node).getValue()) instanceof Enum<?>
+        ? ((Enum<?>) symbolCandidate).name()
         : null;
   }
 
@@ -2346,10 +2557,22 @@ final class RexExpression {
             ? emitHostExpression(call, true)
             : emitBuiltinCall(call, 160);
       }
-      if (switch (targetType) {
-        case DECIMAL, DATE, TIME, TIMESTAMP, TIMESTAMP_WITH_LOCAL_TIME_ZONE -> true;
-        default -> false;
-      }) return emitHostExpression(call, true);
+      {
+        boolean switchResult1;
+        switch (targetType) {
+          case DECIMAL:
+          case DATE:
+          case TIME:
+          case TIMESTAMP:
+          case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+            switchResult1 = true;
+            break;
+          default:
+            switchResult1 = false;
+            break;
+        }
+        if (switchResult1) return emitHostExpression(call, true);
+      }
     }
     if (tryCast && !(source == SqlTypeName.DECIMAL && targetType == SqlTypeName.DECIMAL)) {
       return reject("unsupported TRY_CAST " + source + "→" + targetType);
@@ -2477,12 +2700,17 @@ final class RexExpression {
     if (name.getFamily() == SqlTypeFamily.INTERVAL_DAY_TIME) {
       return 13;
     }
-    return switch (name) {
-      case DATE -> 9;
-      case TIME -> 10;
-      case TIMESTAMP, TIMESTAMP_WITH_LOCAL_TIME_ZONE -> 11;
-      default -> -1;
-    };
+    switch (name) {
+      case DATE:
+        return 9;
+      case TIME:
+        return 10;
+      case TIMESTAMP:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return 11;
+      default:
+        return -1;
+    }
   }
 
   private String nativeUnixTimeFormat(RexCall call) {
@@ -2496,7 +2724,10 @@ final class RexExpression {
         && input != SqlTypeName.TINYINT) return null;
     String pattern = "yyyy-MM-dd HH:mm:ss";
     if (call.getOperands().size() == 2) {
-      if (!(call.getOperands().get(1) instanceof RexLiteral literal)) return null;
+      Object literalCandidate3;
+      if (!((literalCandidate3 = call.getOperands().get(1)) instanceof RexLiteral)) return null;
+      RexLiteral literal = ((RexLiteral) literalCandidate3);
+
       pattern = literal.getValueAs(String.class);
     }
     return NativeUnixTimeFormat.encode(pattern, sessionZoneId);
@@ -2521,19 +2752,23 @@ final class RexExpression {
       return !call.getOperands().isEmpty();
     }
     if ("DATE_FORMAT".equals(name)) {
+      Object formatCandidate;
       if (NativeConfig.allowsIncompatible("DATE_FORMAT")
           && call.getOperands().size() == 2
-          && call.getOperands().get(1) instanceof RexLiteral format
+          && (formatCandidate = call.getOperands().get(1)) instanceof RexLiteral
           && call.getOperands().get(0).getType().getSqlTypeName()
               == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
-          && toChronoFormat(format.getValueAs(String.class)) != null) {
+          && toChronoFormat(((RexLiteral) formatCandidate).getValueAs(String.class)) != null) {
         return false;
       }
+      Object timestampOperandCandidate;
+      Object formatLiteralCandidate;
       return call.getOperands().size() != 2
-          || !(call.getOperands().get(1) instanceof RexLiteral format)
+          || !((formatLiteralCandidate = call.getOperands().get(1)) instanceof RexLiteral)
           || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.TIMESTAMP
-          || call.getOperands().get(0) instanceof RexCall child && needsTemporalFunction(child)
-          || toChronoFormat(format.getValueAs(String.class)) == null;
+          || (timestampOperandCandidate = call.getOperands().get(0)) instanceof RexCall
+              && needsTemporalFunction(((RexCall) timestampOperandCandidate))
+          || toChronoFormat(((RexLiteral) formatLiteralCandidate).getValueAs(String.class)) == null;
     }
     if (call.getKind() == SqlKind.EXTRACT) {
       String unit = String.valueOf(((RexLiteral) call.getOperands().get(0)).getValue());
@@ -2543,7 +2778,9 @@ final class RexExpression {
           && extractField(unit) != null) {
         return false;
       }
-      if (call.getOperands().get(1) instanceof RexCall child && needsTemporalFunction(child)) {
+      Object childCandidate;
+      if ((childCandidate = call.getOperands().get(1)) instanceof RexCall
+          && needsTemporalFunction(((RexCall) childCandidate))) {
         return true;
       }
       return !(java.util.Set.of("QUARTER", "WEEK", "DOY", "DOW").contains(unit)
@@ -2555,20 +2792,28 @@ final class RexExpression {
     }
     boolean temporalOperand =
         call.getOperands().stream().anyMatch(operand -> temporalTypeCode(operand.getType()) >= 0);
-    return switch (call.getKind()) {
-      case CAST -> temporalOperand || temporalTypeCode(call.getType()) >= 0;
-      case EQUALS,
-              NOT_EQUALS,
-              LESS_THAN,
-              LESS_THAN_OR_EQUAL,
-              GREATER_THAN,
-              GREATER_THAN_OR_EQUAL,
-              IS_DISTINCT_FROM,
-              IS_NOT_DISTINCT_FROM ->
-          temporalOperand;
-      case PLUS, MINUS, TIMES, DIVIDE, MOD, MINUS_PREFIX -> temporalOperand;
-      default -> "DATETIME_PLUS".equals(name) || "-".equals(name) && temporalOperand;
-    };
+    switch (call.getKind()) {
+      case CAST:
+        return temporalOperand || temporalTypeCode(call.getType()) >= 0;
+      case EQUALS:
+      case NOT_EQUALS:
+      case LESS_THAN:
+      case LESS_THAN_OR_EQUAL:
+      case GREATER_THAN:
+      case GREATER_THAN_OR_EQUAL:
+      case IS_DISTINCT_FROM:
+      case IS_NOT_DISTINCT_FROM:
+        return temporalOperand;
+      case PLUS:
+      case MINUS:
+      case TIMES:
+      case DIVIDE:
+      case MOD:
+      case MINUS_PREFIX:
+        return temporalOperand;
+      default:
+        return "DATETIME_PLUS".equals(name) || "-".equals(name) && temporalOperand;
+    }
   }
 
   private static boolean needsExactScalarFunction(RexCall call) {
@@ -2576,44 +2821,86 @@ final class RexExpression {
         || call.getKind() == SqlKind.SIMILAR) return true;
     if (call.getOperands().isEmpty()) return false;
     SqlTypeName input = call.getOperands().get(0).getType().getSqlTypeName();
-    boolean integral = switch (input) {
-      case TINYINT, SMALLINT, INTEGER, BIGINT -> true;
-      default -> false;
-    };
+    boolean integral;
+    switch (input) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+        integral = true;
+        break;
+      default:
+        integral = false;
+        break;
+    }
     boolean exact = integral || input == SqlTypeName.DECIMAL;
     if (call.getKind() == SqlKind.MINUS_PREFIX) return exact;
-    return switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
-      case "ABS", "SIGN" -> exact;
-      case "FLOOR", "CEIL", "CEILING" -> integral && call.getOperands().size() == 1;
-      case "TRUNCATE" -> integral;
-      case "TRY_CAST" -> input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
-      case "REGEXP", "REGEXP_REPLACE", "REGEXP_COUNT", "REGEXP_INSTR", "REGEXP_SUBSTR" -> true;
-      case "REGEXP_EXTRACT_ALL", "STR_TO_MAP" -> true;
-      case "PARSE_URL" -> true;
-      case "PRINTF" -> true;
-      case "STARTSWITH", "ENDSWITH" -> SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType());
-      case "ELT" -> input == SqlTypeName.INTEGER && SqlTypeFamily.BINARY.contains(call.getType());
-      case "FROM_BASE64", "IS_DECIMAL", "IS_DIGIT", "IS_ALPHA" -> true;
-      case "SHA2" -> call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
-      case "SPLIT_INDEX" -> call.getOperands().size() == 3
-          && SqlTypeFamily.INTEGER.contains(call.getOperands().get(1).getType());
-      case "BTRIM", "LTRIM", "RTRIM" ->
-          call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
-      case "GREATEST", "LEAST" ->
-          SqlTypeFamily.CHARACTER.contains(call.getType())
-              || temporalTypeCode(call.getType()) >= 0
-              || call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
-                  && call.getOperands().stream().anyMatch(
-                      operand -> !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
-                          operand.getType(), call.getType()));
-      default -> false;
-    };
+    switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
+      case "ABS":
+      case "SIGN":
+        return exact;
+      case "FLOOR":
+      case "CEIL":
+      case "CEILING":
+        return integral && call.getOperands().size() == 1;
+      case "TRUNCATE":
+        return integral;
+      case "TRY_CAST":
+        return input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
+      case "REGEXP":
+      case "REGEXP_REPLACE":
+      case "REGEXP_COUNT":
+      case "REGEXP_INSTR":
+      case "REGEXP_SUBSTR":
+        return true;
+      case "REGEXP_EXTRACT_ALL":
+      case "STR_TO_MAP":
+        return true;
+      case "PARSE_URL":
+        return true;
+      case "PRINTF":
+        return true;
+      case "STARTSWITH":
+      case "ENDSWITH":
+        return SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType());
+      case "ELT":
+        return input == SqlTypeName.INTEGER && SqlTypeFamily.BINARY.contains(call.getType());
+      case "FROM_BASE64":
+      case "IS_DECIMAL":
+      case "IS_DIGIT":
+      case "IS_ALPHA":
+        return true;
+      case "SHA2":
+        return call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
+      case "SPLIT_INDEX":
+        return call.getOperands().size() == 3
+            && SqlTypeFamily.INTEGER.contains(call.getOperands().get(1).getType());
+      case "BTRIM":
+      case "LTRIM":
+      case "RTRIM":
+        return call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
+      case "GREATEST":
+      case "LEAST":
+        return SqlTypeFamily.CHARACTER.contains(call.getType())
+            || temporalTypeCode(call.getType()) >= 0
+            || call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
+                && call.getOperands().stream()
+                    .anyMatch(
+                        operand ->
+                            !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                                operand.getType(), call.getType()));
+      default:
+        return false;
+    }
   }
 
   private static boolean containsMetadataDependentDecimalRounding(RexNode node) {
-    return node instanceof RexCall call
-        && (isDecimalIntegralRounding(call) || isDecimalRuntimeRounding(call)
-            || call.getOperands().stream().anyMatch(RexExpression::containsMetadataDependentDecimalRounding));
+    return node instanceof RexCall
+        && (isDecimalIntegralRounding(((RexCall) node))
+            || isDecimalRuntimeRounding(((RexCall) node))
+            || ((RexCall) node)
+                .getOperands().stream()
+                    .anyMatch(RexExpression::containsMetadataDependentDecimalRounding));
   }
 
   private static boolean isDecimalIntegralRounding(RexCall call) {
@@ -2634,8 +2921,10 @@ final class RexExpression {
   }
 
   private static boolean containsRuntimeDecimalRounding(RexNode node) {
-    return node instanceof RexCall call && (isDecimalRuntimeRounding(call)
-        || call.getOperands().stream().anyMatch(RexExpression::containsRuntimeDecimalRounding));
+    return node instanceof RexCall
+        && (isDecimalRuntimeRounding(((RexCall) node))
+            || ((RexCall) node)
+                .getOperands().stream().anyMatch(RexExpression::containsRuntimeDecimalRounding));
   }
 
   private boolean validateDecimalRoundingBoundary(RexNode node) {
@@ -2654,45 +2943,69 @@ final class RexExpression {
   }
 
   private static boolean unnormalizedDecimalRounding(RexNode node) {
-    if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL
-        || !(node instanceof RexCall call)) return false;
+    if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL || !(node instanceof RexCall))
+      return false;
+    RexCall call = ((RexCall) node);
+
     if (isDecimalIntegralRounding(call) || isDecimalRuntimeRounding(call)) return true;
     if (call.getOperator()
         == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.IF) return false;
     if (call.getKind() == SqlKind.CAST
         && !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
             call.getOperands().get(0).getType(), call.getType())) return false;
-    if (switch (call.getKind()) {
-      case PLUS, MINUS, TIMES, DIVIDE, MOD -> true;
-      default -> false;
-    }) return false;
+    {
+      boolean switchResult2;
+      switch (call.getKind()) {
+        case PLUS:
+        case MINUS:
+        case TIMES:
+        case DIVIDE:
+        case MOD:
+          switchResult2 = true;
+          break;
+        default:
+          switchResult2 = false;
+          break;
+      }
+      if (switchResult2) return false;
+    }
     // Flink rounding can change DecimalData precision and scale. Selection and sign-only
     // consumers retain that metadata; Arrow normalization would change the host writer behavior.
     return call.getOperands().stream().anyMatch(RexExpression::unnormalizedDecimalRounding);
   }
 
   private static boolean containsExactScalarFunction(RexNode node) {
-    return node instanceof RexCall call
-        && (needsExactScalarFunction(call)
-            || call.getOperands().stream().anyMatch(RexExpression::containsExactScalarFunction));
+    return node instanceof RexCall
+        && (needsExactScalarFunction(((RexCall) node))
+            || ((RexCall) node)
+                .getOperands().stream().anyMatch(RexExpression::containsExactScalarFunction));
   }
 
   private static long nativeRoundingWidth(RexCall call) {
     String name = call.getOperator().getName();
+    Object unitCandidate;
     if (!("FLOOR".equals(name) || "CEIL".equals(name) || "CEILING".equals(name))
         || call.getOperands().size() != 2
         || call.getOperands().get(0).getType().getSqlTypeName() != SqlTypeName.TIMESTAMP
-        || !(call.getOperands().get(1) instanceof RexLiteral unit)) {
+        || !((unitCandidate = call.getOperands().get(1)) instanceof RexLiteral)) {
       return -1;
     }
-    return switch (String.valueOf(unit.getValue())) {
-      case "DAY" -> 86_400_000L;
-      case "HOUR" -> 3_600_000L;
-      case "MINUTE" -> 60_000L;
-      case "SECOND" -> 1_000L;
-      case "MILLISECOND" -> 1L;
-      default -> -1L;
-    };
+    RexLiteral unit = ((RexLiteral) unitCandidate);
+
+    switch (String.valueOf(unit.getValue())) {
+      case "DAY":
+        return 86_400_000L;
+      case "HOUR":
+        return 3_600_000L;
+      case "MINUTE":
+        return 60_000L;
+      case "SECOND":
+        return 1_000L;
+      case "MILLISECOND":
+        return 1L;
+      default:
+        return -1L;
+    }
   }
 
   private static boolean isTimestampIdentityCast(RexCall call) {
@@ -2707,7 +3020,9 @@ final class RexExpression {
   }
 
   private static boolean containsDecimalUdf(RexNode node) {
-    if (!(node instanceof RexCall call)) return false;
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = ((RexCall) node);
+
     if (call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
         && tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
       return true;
@@ -2716,7 +3031,9 @@ final class RexExpression {
   }
 
   private static boolean containsScalarUdf(RexNode node) {
-    if (!(node instanceof RexCall call)) return false;
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = ((RexCall) node);
+
     if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
       return true;
     }
@@ -2799,15 +3116,16 @@ final class RexExpression {
     Method eval;
     try {
       var argumentTypes = types.toArray(org.apache.flink.table.types.logical.LogicalType[]::new);
-      function = expression instanceof RexCall generatedCall && isExactDoubleTruncate(generatedCall)
-          ? FlinkExpressionFunction.doubleTruncate(generatedCall, argumentTypes,
-              temporalConfig, expressionClassLoader)
-          : new FlinkExpressionFunction(
-              expression,
-              argumentTypes,
-              temporalConfig,
-              expressionClassLoader,
-              binaryStringResult);
+      function =
+          expression instanceof RexCall && isExactDoubleTruncate(((RexCall) expression))
+              ? FlinkExpressionFunction.doubleTruncate(
+                  ((RexCall) expression), argumentTypes, temporalConfig, expressionClassLoader)
+              : new FlinkExpressionFunction(
+                  expression,
+                  argumentTypes,
+                  temporalConfig,
+                  expressionClassLoader,
+                  binaryStringResult);
       eval = FlinkExpressionFunction.class.getMethod("eval", Object[].class);
     } catch (Exception e) {
       return reject("host expression cannot be generated: " + e.getMessage());
@@ -2854,12 +3172,15 @@ final class RexExpression {
     if (node instanceof RexLiteral) {
       return node;
     }
-    if (node instanceof RexCall call
+    if (node instanceof RexCall
         && (fuseConsumers
-            || needsTemporalFunction(call) && nativeUnixTimeFormat(call) == null
-            || needsExactPower(call)
-            || isExactDoubleTruncate(call)
-            || needsExactScalarFunction(call))) {
+            || needsTemporalFunction(((RexCall) node))
+                && nativeUnixTimeFormat(((RexCall) node)) == null
+            || needsExactPower(((RexCall) node))
+            || isExactDoubleTruncate(((RexCall) node))
+            || needsExactScalarFunction(((RexCall) node)))) {
+      RexCall call = ((RexCall) node);
+
       List<RexNode> operands = new ArrayList<>();
       for (RexNode operand : call.getOperands()) {
         operands.add(hostExpressionArguments(operand, arguments, types, codes, fuseConsumers));
@@ -3266,7 +3587,9 @@ final class RexExpression {
   }
 
   private boolean validateGeneratedExpression(RexNode node) {
-    if (!(node instanceof RexCall call)) return true;
+    if (!(node instanceof RexCall)) return true;
+    RexCall call = ((RexCall) node);
+
     if (!validateHostStringInputs(call)) return false;
     if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
         && checkedUdfMethod(call) == null) {
@@ -3276,13 +3599,24 @@ final class RexExpression {
   }
 
   private boolean validateHostStringInputs(RexNode node) {
-    if (!(node instanceof RexCall call)) return true;
+    if (!(node instanceof RexCall)) return true;
+    RexCall call = ((RexCall) node);
+
     String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
-    boolean stringOrdering = switch (call.getKind()) {
-      case LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL ->
-          call.getOperands().stream().anyMatch(operand -> SqlTypeFamily.CHARACTER.contains(operand.getType()));
-      default -> false;
-    };
+    boolean stringOrdering;
+    switch (call.getKind()) {
+      case LESS_THAN:
+      case LESS_THAN_OR_EQUAL:
+      case GREATER_THAN:
+      case GREATER_THAN_OR_EQUAL:
+        stringOrdering =
+            call.getOperands().stream()
+                .anyMatch(operand -> SqlTypeFamily.CHARACTER.contains(operand.getType()));
+        break;
+      default:
+        stringOrdering = false;
+        break;
+    }
     boolean dynamicTrim = java.util.Set.of("BTRIM", "LTRIM", "RTRIM").contains(name)
         && call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral);
     if ((dynamicTrim || stringOrdering || (name.equals("GREATEST") || name.equals("LEAST"))
@@ -3384,14 +3718,24 @@ final class RexExpression {
     RexNode source = operands.get(1);
     SqlTypeName sourceType = source.getType().getSqlTypeName();
     String calendarUnit = String.valueOf(((RexLiteral) operands.get(0)).getValue());
-    int calendarOp =
-        switch (calendarUnit) {
-          case "QUARTER" -> 133;
-          case "WEEK" -> 134;
-          case "DOY" -> 135;
-          case "DOW" -> 136;
-          default -> -1;
-        };
+    int calendarOp;
+    switch (calendarUnit) {
+      case "QUARTER":
+        calendarOp = 133;
+        break;
+      case "WEEK":
+        calendarOp = 134;
+        break;
+      case "DOY":
+        calendarOp = 135;
+        break;
+      case "DOW":
+        calendarOp = 136;
+        break;
+      default:
+        calendarOp = -1;
+        break;
+    }
     if (calendarOp >= 0
         && (sourceType == SqlTypeName.DATE || sourceType == SqlTypeName.TIMESTAMP)) {
       add(KIND_CALL, calendarOp, 1);
@@ -3914,19 +4258,34 @@ final class RexExpression {
   /** Reuses the literal-set trim kernels for SQL's BOTH/LEADING/TRAILING syntax. */
   private boolean emitTrim(RexCall call) {
     List<RexNode> operands = call.getOperands();
+    Object trimCandidate;
+    Object flagCandidate;
     if (operands.size() != 3
-        || !(operands.get(0) instanceof RexLiteral flag)
-        || !(operands.get(1) instanceof RexLiteral trim)
-        || !isCharacter(trim)
+        || !((flagCandidate = operands.get(0)) instanceof RexLiteral)
+        || !((trimCandidate = operands.get(1)) instanceof RexLiteral)
+        || !isCharacter(((RexLiteral) trimCandidate))
         || !isCharacter(operands.get(2))) {
       return reject("TRIM requires a literal trim set");
     }
-    int op = switch (String.valueOf(flag.getValue())) {
-      case "BOTH" -> 113;
-      case "LEADING" -> 139;
-      case "TRAILING" -> 140;
-      default -> -1;
-    };
+    RexLiteral flag = ((RexLiteral) flagCandidate);
+
+    RexLiteral trim = ((RexLiteral) trimCandidate);
+
+    int op;
+    switch (String.valueOf(flag.getValue())) {
+      case "BOTH":
+        op = 113;
+        break;
+      case "LEADING":
+        op = 139;
+        break;
+      case "TRAILING":
+        op = 140;
+        break;
+      default:
+        op = -1;
+        break;
+    }
     if (op < 0) {
       return reject("unsupported TRIM direction");
     }

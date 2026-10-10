@@ -68,16 +68,20 @@ class FlinkMixedWindowAvgSqlHarnessTest {
     String plan = NativePlanner.explain(environment(phase, boundaries), sql);
     assertTrue(plan.contains(phase.equals("TWO_PHASE")
         ? "NativeColumnarGlobalWindowAggregate" : "NativeColumnarWindowAggregate"), plan);
-    if (phase.equals("TWO_PHASE")) assertTrue(plan.contains("NativeColumnarLocalWindowAggregate"), plan);
+    if (phase.equals("TWO_PHASE"))
+      assertTrue(plan.contains("NativeColumnarLocalWindowAggregate"), plan);
     NativeParity.assertParity(() -> environment(phase, boundaries), sql);
   }
 
   private static String window(String shape) {
-    return switch (shape) {
-      case "TUMBLE" -> "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '10' SECOND)";
-      case "HOP" -> "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
-      default -> "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
-    };
+    switch (shape) {
+      case "TUMBLE":
+        return "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '10' SECOND)";
+      case "HOP":
+        return "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
+      default:
+        return "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
+    }
   }
 
   private static TableEnvironment environment(String phase, boolean boundaries) {
@@ -98,11 +102,19 @@ class FlinkMixedWindowAvgSqlHarnessTest {
         Types.INT, Types.INT, Types.LONG, Types.BIG_DEC, Types.BIG_DEC, Types.LONG))
         .assignTimestampsAndWatermarks(WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofDays(1))
             .withTimestampAssigner((row, previous) -> (Long) row.getField(5)));
-    table.createTemporaryView("src", input, Schema.newBuilder()
-        .column("k", DataTypes.INT()).column("i", DataTypes.INT()).column("v", DataTypes.BIGINT())
-        .column("d", DataTypes.DECIMAL(20, 2)).column("wide", DataTypes.DECIMAL(38, 0))
-        .column("ts", DataTypes.BIGINT()).columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
-        .watermark("rt", "SOURCE_WATERMARK()").build());
+    table.createTemporaryView(
+        "src",
+        input,
+        Schema.newBuilder()
+            .column("k", DataTypes.INT())
+            .column("i", DataTypes.INT())
+            .column("v", DataTypes.BIGINT())
+            .column("d", DataTypes.DECIMAL(20, 2))
+            .column("wide", DataTypes.DECIMAL(38, 0))
+            .column("ts", DataTypes.BIGINT())
+            .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
+            .watermark("rt", "SOURCE_WATERMARK()")
+            .build());
     return table;
   }
 }

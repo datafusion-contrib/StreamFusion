@@ -11,19 +11,21 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class FlinkDoubleTruncateSqlHarnessTest {
   @ParameterizedTest
-  @ValueSource(strings = {
-    "SELECT id, TRUNCATE(x) FROM src",
-    "SELECT id, TRUNCATE(x, p) FROM src",
-    "SELECT id, TRUNCATE(x, 3) FROM src",
-    "SELECT id, TRUNCATE(x, -3) FROM src",
-    "SELECT id, TRUNCATE(x, CAST(NULL AS INT)) FROM src",
-    "SELECT id, TRUNCATE(TRUNCATE(x, 3), 1) FROM src",
-    "SELECT id, TRUNCATE(TRUNCATE(x, 3), p) FROM src",
-    "SELECT id, CASE WHEN x > 0 THEN TRUNCATE(x,p) ELSE -1E0 END FROM src",
-    "SELECT id, COALESCE(TRUNCATE(x,p),1E0) FROM src",
-    "SELECT id, COALESCE(TRUNCATE(CAST(TRUNCATE(CAST(x AS DECIMAL(20,6)),1) AS DOUBLE),p),1E0) FROM src",
-    "SELECT id, TRUNCATE(x, p) FROM src WHERE id < 0"
-  })
+  @ValueSource(
+      strings = {
+        "SELECT id, TRUNCATE(x) FROM src",
+        "SELECT id, TRUNCATE(x, p) FROM src",
+        "SELECT id, TRUNCATE(x, 3) FROM src",
+        "SELECT id, TRUNCATE(x, -3) FROM src",
+        "SELECT id, TRUNCATE(x, CAST(NULL AS INT)) FROM src",
+        "SELECT id, TRUNCATE(TRUNCATE(x, 3), 1) FROM src",
+        "SELECT id, TRUNCATE(TRUNCATE(x, 3), p) FROM src",
+        "SELECT id, CASE WHEN x > 0 THEN TRUNCATE(x,p) ELSE -1E0 END FROM src",
+        "SELECT id, COALESCE(TRUNCATE(x,p),1E0) FROM src",
+        "SELECT id, COALESCE(TRUNCATE(CAST(TRUNCATE(CAST(x AS DECIMAL(20,6)),1) AS DOUBLE),p),1E0)"
+            + " FROM src",
+        "SELECT id, TRUNCATE(x, p) FROM src WHERE id < 0"
+      })
   void preservesResolvedDoubleTypesNullsAndDecimalBoundaries(String sql) throws Exception {
     BuiltinFunctionParity.assertParity(FlinkDoubleTruncateSqlHarnessTest::ordinary, sql);
   }
@@ -69,12 +71,21 @@ class FlinkDoubleTruncateSqlHarnessTest {
     for (int i = 0; i < 5003; i++) {
       int scale = i % 13 - 6;
       double limit = 1e15 / Math.pow(10, Math.max(scale, 0));
-      double magnitude = switch (i % 4) {
-        case 0 -> limit;
-        case 1 -> Math.nextDown(limit);
-        case 2 -> Math.nextUp(limit);
-        default -> 1e12 + 0.12345;
-      };
+      double magnitude;
+      switch (i % 4) {
+        case 0:
+          magnitude = limit;
+          break;
+        case 1:
+          magnitude = Math.nextDown(limit);
+          break;
+        case 2:
+          magnitude = Math.nextUp(limit);
+          break;
+        default:
+          magnitude = 1e12 + 0.12345;
+          break;
+      }
       rows.add(Row.of(i, i % 23 == 0 ? null : (i / 4 % 2 == 0 ? magnitude : -magnitude),
           i % 17 == 0 ? null : scale));
     }

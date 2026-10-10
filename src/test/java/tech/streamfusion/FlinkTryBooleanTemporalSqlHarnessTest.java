@@ -113,8 +113,13 @@ class FlinkTryBooleanTemporalSqlHarnessTest {
   @ValueSource(strings = {"BOOLEAN", "DATE", "TIME(3)", "TIMESTAMP(9)", "TIMESTAMP_LTZ(9)"})
   void unselectedAndFilteredChildFailuresAreSkipped(String type) throws Exception {
     String failing = "TRY_CAST(CAST(1 / (id - id) AS STRING) AS " + type + ")";
-    BuiltinFunctionParity.assertParity(() -> environment("UTC", false),
-        "SELECT CASE WHEN id >= 0 THEN TRY_CAST(s AS " + type + ") ELSE " + failing + " END FROM src");
+    BuiltinFunctionParity.assertParity(
+        () -> environment("UTC", false),
+        "SELECT CASE WHEN id >= 0 THEN TRY_CAST(s AS "
+            + type
+            + ") ELSE "
+            + failing
+            + " END FROM src");
     BuiltinFunctionParity.assertParity(() -> environment("UTC", false),
         "SELECT " + failing + " FROM src WHERE id < 0");
   }
@@ -151,13 +156,23 @@ class FlinkTryBooleanTemporalSqlHarnessTest {
       var env = new TestStreamEnvironment(cluster.getMiniCluster(), 1);
       var table = StreamTableEnvironment.create(env);
       table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
-      table.createTemporaryView("src", env.fromSequence(0, 5002)
-          .map(i -> switch ((int) (i % 4)) {
-            case 0 -> Row.of("yes", "1969-12-31 23:59:59.999999999");
-            case 1 -> Row.of("NO", "2024-03-10 02:30:00.123456789");
-            case 2 -> Row.of("invalid", "bad");
-            default -> Row.of(null, null);
-          }).returns(Types.ROW_NAMED(new String[] {"b", "s"}, Types.STRING, Types.STRING)));
+      table.createTemporaryView(
+          "src",
+          env.fromSequence(0, 5002)
+              .map(
+                  i -> {
+                    switch ((int) (i % 4)) {
+                      case 0:
+                        return Row.of("yes", "1969-12-31 23:59:59.999999999");
+                      case 1:
+                        return Row.of("NO", "2024-03-10 02:30:00.123456789");
+                      case 2:
+                        return Row.of("invalid", "bad");
+                      default:
+                        return Row.of(null, null);
+                    }
+                  })
+              .returns(Types.ROW_NAMED(new String[] {"b", "s"}, Types.STRING, Types.STRING)));
       var scan = NativePlanner.install(table);
       var result = table.executeSql("SELECT TRY_CAST(b AS BOOLEAN), "
           + "TRY_CAST(s AS TIMESTAMP(9)), TRY_CAST(s AS TIMESTAMP_LTZ(9)) FROM src");
@@ -186,8 +201,11 @@ class FlinkTryBooleanTemporalSqlHarnessTest {
   private static TableEnvironment environment(String zone, boolean legacy) {
     List<Row> rows = new ArrayList<>();
     for (int i = 0; i < VALUES.length; i++) rows.add(Row.of(i, VALUES[i]));
-    var table = BuiltinFunctionParity.environment(ROW(FIELD("id", INT()), FIELD("s", STRING())), rows, zone);
-    if (legacy) table.getConfig().getConfiguration().setString("table.exec.legacy-cast-behaviour", "ENABLED");
+    var table =
+        BuiltinFunctionParity.environment(
+            ROW(FIELD("id", INT()), FIELD("s", STRING())), rows, zone);
+    if (legacy)
+      table.getConfig().getConfiguration().setString("table.exec.legacy-cast-behaviour", "ENABLED");
     return table;
   }
 }

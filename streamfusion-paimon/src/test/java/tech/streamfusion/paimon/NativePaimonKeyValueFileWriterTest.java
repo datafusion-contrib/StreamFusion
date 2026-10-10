@@ -29,6 +29,7 @@ import org.apache.paimon.types.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.KeyedUpsertBuffer;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -38,7 +39,6 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * sequence range, delete count, statistics, and footer must agree.
  */
 class NativePaimonKeyValueFileWriterTest {
-
   private static final int ROWS = 300;
   private static final int KEYS = 90;
   private static final int PUSH_ROWS = 37;
@@ -62,24 +62,42 @@ class NativePaimonKeyValueFileWriterTest {
     Map<String, String> options = new LinkedHashMap<>();
     options.put("bucket", "2");
     switch (variant) {
-      case "default" -> {}
-      case "thin", "thin-none" -> {
+      case "default":
+        {
+          {
+          }
+          break;
+        }
+      case "thin":
+      case "thin-none":
+        {
+          {
         options.put("data-file.thin-mode", "true");
         if (variant.equals("thin-none")) {
           options.put("metadata.stats-mode", "none");
         }
       }
-      case "ignore-delete" -> options.put("ignore-delete", "true");
-      case "single-bucket-zstd" -> {
+          break;
+        }
+      case "ignore-delete":
+        options.put("ignore-delete", "true");
+        break;
+      case "single-bucket-zstd":
+        {
+          {
         options.put("bucket", "1");
         options.put("file.compression", "zstd");
       }
-      case "input",
-          "input-counts",
-          "input-none",
-          "input-ignore-delete",
-          "input-thin",
-          "input-thin-counts" -> {
+          break;
+        }
+      case "input":
+      case "input-counts":
+      case "input-none":
+      case "input-ignore-delete":
+      case "input-thin":
+      case "input-thin-counts":
+        {
+          {
         if (variant.contains("thin")) {
           options.put("data-file.thin-mode", "true");
         }
@@ -93,7 +111,10 @@ class NativePaimonKeyValueFileWriterTest {
           options.put("ignore-delete", "true");
         }
       }
-      default -> throw new IllegalArgumentException(variant);
+          break;
+        }
+      default:
+        throw new IllegalArgumentException(variant);
     }
     List<Object[]> changelog = PaimonTestTables.changelog(ROWS, KEYS);
     FileStoreTable nativeTable =
@@ -247,7 +268,7 @@ class NativePaimonKeyValueFileWriterTest {
                         .partition(PaimonTestTables.primaryKeyPaimonRow(row))
                         .equals(partition))
             .map(PaimonTestTables::primaryKeyFlinkRow)
-            .toList();
+            .collect(ListCollectors.toList());
     PaimonKeyValueLayout layout = PaimonKeyValueLayout.of(table);
     long time = org.apache.paimon.data.Timestamp.now().getMillisecond();
     PaimonPostponeFileOrder order =

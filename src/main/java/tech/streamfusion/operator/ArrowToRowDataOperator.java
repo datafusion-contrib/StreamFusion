@@ -35,7 +35,6 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  */
 public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
     implements OneInputStreamOperator<ArrowBatch, RowData> {
-
   private final RowType rowType;
   private final GeneratedProjection generatedProjection;
   private transient Projection<RowData, BinaryRowData> projection;
@@ -46,12 +45,31 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
 
   public ArrowToRowDataOperator(RowType rowType) {
     this.rowType = rowType;
-    boolean projectBinaryRow = rowType.getChildren().stream().allMatch(type -> switch (type.getTypeRoot()) {
-      case BINARY, VARBINARY, BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, FLOAT, DOUBLE, DATE,
-          TIME_WITHOUT_TIME_ZONE, INTERVAL_YEAR_MONTH, INTERVAL_DAY_TIME -> true;
-      case DECIMAL -> ((DecimalType) type).getPrecision() <= 18;
-      default -> false;
-    });
+    boolean projectBinaryRow =
+        rowType.getChildren().stream()
+            .allMatch(
+                type -> {
+                  switch (type.getTypeRoot()) {
+                    case BINARY:
+                    case VARBINARY:
+                    case BOOLEAN:
+                    case TINYINT:
+                    case SMALLINT:
+                    case INTEGER:
+                    case BIGINT:
+                    case FLOAT:
+                    case DOUBLE:
+                    case DATE:
+                    case TIME_WITHOUT_TIME_ZONE:
+                    case INTERVAL_YEAR_MONTH:
+                    case INTERVAL_DAY_TIME:
+                      return true;
+                    case DECIMAL:
+                      return ((DecimalType) type).getPrecision() <= 18;
+                    default:
+                      return false;
+                  }
+                });
     generatedProjection = projectBinaryRow
         ? ProjectionCodeGenerator.generateProjection(
             new CodeGeneratorContext(new Configuration(), getClass().getClassLoader()),

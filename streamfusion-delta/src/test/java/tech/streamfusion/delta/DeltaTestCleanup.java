@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Comparator;
+import tech.streamfusion.compat.ListCollectors;
 
 /** Test-only cleanup after released Hadoop checksum writers finish their background work. */
 final class DeltaTestCleanup {
@@ -14,7 +15,8 @@ final class DeltaTestCleanup {
     long deadline = System.nanoTime() + 1_000_000_000L;
     while (true) {
       try (var files = Files.walk(directory)) {
-        for (Path file : files.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(file);
+        for (Path file : files.sorted(Comparator.reverseOrder()).collect(ListCollectors.toList()))
+          Files.deleteIfExists(file);
         return;
       } catch (IOException | UncheckedIOException failure) {
         IOException cause = failure instanceof UncheckedIOException

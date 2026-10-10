@@ -26,14 +26,23 @@ class DecimalExpressionBenchmark {
   void compareExpressions() throws Exception {
     for (boolean wide : new boolean[] {false, true}) {
       for (String name : new String[] {"CAST", "ADD", "SUBTRACT", "MULTIPLY"}) {
-        String expression =
-            switch (name) {
-              case "CAST" -> wide ? "CAST(a AS DECIMAL(28, 6))" : "CAST(a AS DECIMAL(12, 2))";
-              case "ADD" -> "a + b";
-              case "SUBTRACT" -> "a - b";
-              case "MULTIPLY" -> "a * b";
-              default -> throw new IllegalArgumentException(name);
-            };
+        String expression;
+        switch (name) {
+          case "CAST":
+            expression = wide ? "CAST(a AS DECIMAL(28, 6))" : "CAST(a AS DECIMAL(12, 2))";
+            break;
+          case "ADD":
+            expression = "a + b";
+            break;
+          case "SUBTRACT":
+            expression = "a - b";
+            break;
+          case "MULTIPLY":
+            expression = "a * b";
+            break;
+          default:
+            throw new IllegalArgumentException(name);
+        }
         TableEnvironment check = environment(wide);
         String sql = prepare(check, expression);
         String plan = NativePlanner.explain(check, sql);

@@ -33,7 +33,6 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  */
 @SuppressWarnings("deprecation")
 final class GroupWindowAggregateMatcher {
-
   private GroupWindowAggregateMatcher() {}
 
   static boolean matches(StreamPhysicalGroupWindowAggregate agg) {
@@ -161,7 +160,11 @@ final class GroupWindowAggregateMatcher {
   }
 
   private static Duration size(StreamPhysicalGroupWindowAggregate agg) {
-    if (agg.window() instanceof TumblingGroupWindow tumblingGroupWindow) {
+    Object tumblingGroupWindowCandidate;
+    if ((tumblingGroupWindowCandidate = agg.window()) instanceof TumblingGroupWindow) {
+      TumblingGroupWindow tumblingGroupWindow =
+          ((TumblingGroupWindow) tumblingGroupWindowCandidate);
+
       return duration(tumblingGroupWindow.size());
     }
     return duration(((SlidingGroupWindow) agg.window()).size());

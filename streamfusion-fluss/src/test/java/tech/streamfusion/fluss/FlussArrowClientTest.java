@@ -33,6 +33,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 class FlussArrowClientTest {
@@ -230,7 +231,7 @@ class FlussArrowClientTest {
       var buckets =
           java.util.stream.IntStream.range(0, 7)
               .mapToObj(i -> new TableBucket(info.getTableId(), i))
-              .toList();
+              .collect(ListCollectors.toList());
       for (var bucket : buckets) scanner.subscribe(bucket.getBucket(), 0);
       var encoder =
           org.apache.fluss.row.encode.KeyEncoder.ofBucketKeyEncoder(
@@ -334,13 +335,24 @@ class FlussArrowClientTest {
       long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
       while (expected.size() < 3 && System.nanoTime() < deadline) {
         for (var record : scanner.poll(Duration.ofSeconds(1))) {
-          int kind =
-              switch (record.getChangeType()) {
-                case APPEND_ONLY, INSERT -> 0;
-                case UPDATE_BEFORE -> 1;
-                case UPDATE_AFTER -> 2;
-                case DELETE -> 3;
-              };
+          int kind;
+          switch (record.getChangeType()) {
+            case APPEND_ONLY:
+            case INSERT:
+              kind = 0;
+              break;
+            case UPDATE_BEFORE:
+              kind = 1;
+              break;
+            case UPDATE_AFTER:
+              kind = 2;
+              break;
+            case DELETE:
+              kind = 3;
+              break;
+            default:
+              throw new IncompatibleClassChangeError();
+          }
           expected.add(
               kind + ":" + (record.getRow().isNullAt(1) ? null : record.getRow().getLong(1)));
           stop = record.logOffset() + 1;
@@ -361,7 +373,7 @@ class FlussArrowClientTest {
       assertEquals(
           expected.subList(1, expected.size()).stream()
               .map(value -> Integer.parseInt(value.substring(0, 1)))
-              .toList(),
+              .collect(ListCollectors.toList()),
           readEmpty(reader, bucket, 1, stop, true));
     }
   }
@@ -743,7 +755,7 @@ class FlussArrowClientTest {
                       (org.apache.fluss.flink.source.split.SourceSplitBase)
                           new LogSplit(
                               bucket, partition.getPartitionName(), 0, LogSplit.NO_STOPPING_OFFSET))
-              .toList());
+              .collect(ListCollectors.toList()));
       reader.isAvailable().get(30, java.util.concurrent.TimeUnit.SECONDS);
       reader.handleSourceEvents(
           new org.apache.fluss.flink.source.event.PartitionsRemovedEvent(
@@ -1029,7 +1041,9 @@ class FlussArrowClientTest {
       assertEquals(8191L, root.getVector(0).getObject(8191));
       var bucket = new TableBucket(writer.tableInfo().getTableId(), 0);
       assertEquals(
-          java.util.stream.IntStream.range(0, 8192).mapToObj(i -> "0:" + i * 31L).toList(),
+          java.util.stream.IntStream.range(0, 8192)
+              .mapToObj(i -> "0:" + i * 31L)
+              .collect(ListCollectors.toList()),
           read(reader, bucket, 0, 8192));
     }
   }
@@ -1154,7 +1168,9 @@ class FlussArrowClientTest {
           new FlussArrowClient(cluster.config(), path, PROJECTION, allocator)) {
         var bucket = new TableBucket(writer.tableInfo().getTableId(), 0);
         List<String> expected =
-            java.util.stream.IntStream.rangeClosed(0, 12).mapToObj(i -> "0:" + (i * 10)).toList();
+            java.util.stream.IntStream.rangeClosed(0, 12)
+                .mapToObj(i -> "0:" + (i * 10))
+                .collect(ListCollectors.toList());
         assertEquals(expected, read(reader, bucket, 0, 13));
       }
     } finally {
@@ -1229,15 +1245,24 @@ class FlussArrowClientTest {
                 var kinds =
                     (TinyIntVector) fetched.root().getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
                 for (int i = 0; i < fetched.root().getRowCount(); i++) {
-                  String kind =
-                      kinds == null
-                          ? "APPEND_ONLY"
-                          : switch (kinds.get(i)) {
-                            case 0 -> "INSERT";
-                            case 1 -> "UPDATE_BEFORE";
-                            case 2 -> "UPDATE_AFTER";
-                            default -> throw new AssertionError("Unexpected evolution change type");
-                          };
+                  String kind;
+                  if (kinds == null) {
+                    kind = "APPEND_ONLY";
+                  } else {
+                    switch (kinds.get(i)) {
+                      case 0:
+                        kind = "INSERT";
+                        break;
+                      case 1:
+                        kind = "UPDATE_BEFORE";
+                        break;
+                      case 2:
+                        kind = "UPDATE_AFTER";
+                        break;
+                      default:
+                        throw new AssertionError("Unexpected evolution change type");
+                    }
+                  }
                   actual.add(kind + ":" + fetched.root().getVector("later").getObject(i));
                 }
               }
@@ -1274,19 +1299,26 @@ class FlussArrowClientTest {
         java.lang.reflect.Proxy.newProxyInstance(
             FlussArrowClientTest.class.getClassLoader(),
             new Class<?>[] {org.apache.flink.api.connector.source.SourceReaderContext.class},
-            (proxy, method, args) ->
-                switch (method.getName()) {
-                  case "getConfiguration" -> config;
-                  case "metricGroup" ->
-                      org.apache.flink.metrics.groups.UnregisteredMetricsGroup
-                          .createSourceReaderMetricGroup();
-                  case "sendSplitRequest" -> null;
-                  case "sendSourceEventToCoordinator" -> {
-                    events.add((org.apache.flink.api.connector.source.SourceEvent) args[0]);
-                    yield null;
+            (proxy, method, args) -> {
+              switch (method.getName()) {
+                case "getConfiguration":
+                  return config;
+                case "metricGroup":
+                  return org.apache.flink.metrics.groups.UnregisteredMetricsGroup
+                      .createSourceReaderMetricGroup();
+                case "sendSplitRequest":
+                  return null;
+                case "sendSourceEventToCoordinator":
+                  {
+                    {
+                      events.add((org.apache.flink.api.connector.source.SourceEvent) args[0]);
+                      return null;
+                    }
                   }
-                  default -> throw new UnsupportedOperationException(method.getName());
-                });
+                default:
+                  throw new UnsupportedOperationException(method.getName());
+              }
+            });
   }
 
   @SuppressWarnings("unchecked")
@@ -1309,7 +1341,10 @@ class FlussArrowClientTest {
               switch (method.getName()) {
                 case "createOutputForSplit":
                   return proxy;
-                case "releaseOutputForSplit", "emitWatermark", "markIdle", "markActive":
+                case "releaseOutputForSplit":
+                case "emitWatermark":
+                case "markIdle":
+                case "markActive":
                   return null;
                 case "collect":
                   if (fail) throw new IllegalStateException("Injected downstream failure");

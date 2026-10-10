@@ -11,15 +11,24 @@ public final class StateCompat {
 
   public static <K> void setCurrentKeyAndGroup(
       CheckpointableKeyedStateBackend<K> backend, K key, int group) {
-    if (backend instanceof RocksDBNativeKeyedStateBackend<K> nativeBackend) {
+    if (backend instanceof RocksDBNativeKeyedStateBackend<?>) {
+      RocksDBNativeKeyedStateBackend<K> nativeBackend =
+          ((RocksDBNativeKeyedStateBackend<K>) backend);
+
       nativeBackend.setCurrentKeyAndKeyGroup(key, group);
-    } else if (backend
-        instanceof org.apache.flink.runtime.state.heap.HeapKeyedStateBackend<K> host) {
+    } else if (backend instanceof org.apache.flink.runtime.state.heap.HeapKeyedStateBackend<?>) {
+      org.apache.flink.runtime.state.heap.HeapKeyedStateBackend<K> host =
+          ((org.apache.flink.runtime.state.heap.HeapKeyedStateBackend<K>) backend);
+
       // The canonical key identifies a partition; its hash is unrelated to that partition's group.
       host.getKeyContext().setCurrentKey(key);
       host.getKeyContext().setCurrentKeyGroupIndex(group);
-    } else if (backend instanceof AbstractKeyedStateBackend<K> host
-        && KeyGroupRangeAssignment.assignToKeyGroup(key, host.getNumberOfKeyGroups()) == group) {
+    } else if (backend instanceof AbstractKeyedStateBackend<?>
+        && KeyGroupRangeAssignment.assignToKeyGroup(
+                key, ((AbstractKeyedStateBackend<K>) backend).getNumberOfKeyGroups())
+            == group) {
+      AbstractKeyedStateBackend<K> host = ((AbstractKeyedStateBackend<K>) backend);
+
       host.setCurrentKey(key);
     } else {
       throw new IllegalStateException(

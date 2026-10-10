@@ -79,13 +79,18 @@ class FlinkWindowLateSliceSqlHarnessTest {
   })
   void aClosedSliceCanStillContributeToOpenFinalWindows(
       String phase, String shape, boolean filtered) throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" -> "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window = "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_end, SUM(v), COUNT(*), COUNT(DISTINCT v)"
             + (filtered ? " FILTER (WHERE v >= 11)" : "")

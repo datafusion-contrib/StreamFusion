@@ -147,32 +147,46 @@ class PaimonSnapshotMergeTest {
         "fan-in"
       })
   void unverifiedSnapshotsRetainJava(String reason) throws Exception {
-    Map<String, String> extra =
-        switch (reason) {
-          case "complex-sequence" -> Map.of("sequence.field", "nested");
-          case "partial-groups" ->
-              Map.of(
-                  "merge-engine",
-                  "partial-update",
-                  "ignore-delete",
-                  "true",
-                  "fields.seq.sequence-group",
-                  "txt");
-          case "partial-aggregate" ->
-              Map.of(
-                  "merge-engine",
-                  "partial-update",
-                  "ignore-delete",
-                  "true",
-                  "fields.v.aggregate-function",
-                  "sum",
-                  "fields.seq.sequence-group",
-                  "v");
-          case "aggregate" -> Map.of("merge-engine", "aggregation", "ignore-delete", "true");
-          case "memory" -> Map.of("sort-spill-buffer-size", "1 kb");
-          case "fan-in" -> Map.of("sort-spill-threshold", "2");
-          default -> Map.of();
-        };
+    Map<String, String> extra;
+    switch (reason) {
+      case "complex-sequence":
+        extra = Map.of("sequence.field", "nested");
+        break;
+      case "partial-groups":
+        extra =
+            Map.of(
+                "merge-engine",
+                "partial-update",
+                "ignore-delete",
+                "true",
+                "fields.seq.sequence-group",
+                "txt");
+        break;
+      case "partial-aggregate":
+        extra =
+            Map.of(
+                "merge-engine",
+                "partial-update",
+                "ignore-delete",
+                "true",
+                "fields.v.aggregate-function",
+                "sum",
+                "fields.seq.sequence-group",
+                "v");
+        break;
+      case "aggregate":
+        extra = Map.of("merge-engine", "aggregation", "ignore-delete", "true");
+        break;
+      case "memory":
+        extra = Map.of("sort-spill-buffer-size", "1 kb");
+        break;
+      case "fan-in":
+        extra = Map.of("sort-spill-threshold", "2");
+        break;
+      default:
+        extra = Map.of();
+        break;
+    }
     var options = new HashMap<>(extra);
     options.put("changelog-producer", "input");
     options.put("write-only", "true");
@@ -315,5 +329,51 @@ class PaimonSnapshotMergeTest {
     }
   }
 
-  record Result(List<String> rows, long offset, int merged) {}
+  static final class Result {
+    private final List<String> rows;
+    private final long offset;
+    private final int merged;
+
+    Result(List<String> rows, long offset, int merged) {
+      this.rows = rows;
+      this.offset = offset;
+      this.merged = merged;
+    }
+
+    public List<String> rows() {
+      return rows;
+    }
+
+    public long offset() {
+      return offset;
+    }
+
+    public int merged() {
+      return merged;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Result that = (Result) other;
+      return java.util.Objects.equals(rows, that.rows)
+          && offset == that.offset
+          && merged == that.merged;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(rows);
+      result = 31 * result + Long.hashCode(offset);
+      result = 31 * result + merged;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Result[rows=" + rows + ", offset=" + offset + ", merged=" + merged + "]";
+    }
+  }
 }

@@ -46,6 +46,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.compat.SourceFunction;
 import tech.streamfusion.planner.NativePlanner;
 
@@ -92,14 +93,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void lateRetractionsChangeOnlyUnfiredWindows(
       String phase, String shape, boolean groupingOnly, boolean filtered) throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_end"
             + (groupingOnly
@@ -408,14 +414,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void signedChangesAfterCheckpointPreserveEmptyNullAndNegativeGroups(
       String phase, String shape, boolean rocks, boolean groupingOnly) throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_end"
             + (groupingOnly
@@ -446,18 +457,30 @@ class FlinkRetractingWindowSqlHarnessTest {
           row -> {
             Long sum = (Long) row.getField(2);
             Long avg = sum == null ? null : sum / (Long) row.getField(3);
-            Double floating =
-                switch ((Integer) row.getField(0)) {
-                  case 7 -> (double) Long.MAX_VALUE;
-                  case 8 -> 10.5;
-                  default -> avg == null ? null : avg.doubleValue();
-                };
-            BigDecimal decimalSum =
-                switch ((Integer) row.getField(0)) {
-                  case 6 -> new BigDecimal("9223372036854775808.00");
-                  case 7 -> new BigDecimal("18446744073709551614.00");
-                  default -> sum == null ? null : BigDecimal.valueOf(sum).setScale(2);
-                };
+            Double floating;
+            switch ((Integer) row.getField(0)) {
+              case 7:
+                floating = (double) Long.MAX_VALUE;
+                break;
+              case 8:
+                floating = 10.5;
+                break;
+              default:
+                floating = avg == null ? null : avg.doubleValue();
+                break;
+            }
+            BigDecimal decimalSum;
+            switch ((Integer) row.getField(0)) {
+              case 6:
+                decimalSum = new BigDecimal("9223372036854775808.00");
+                break;
+              case 7:
+                decimalSum = new BigDecimal("18446744073709551614.00");
+                break;
+              default:
+                decimalSum = sum == null ? null : BigDecimal.valueOf(sum).setScale(2);
+                break;
+            }
             return Row.join(
                 row,
                 Row.of(
@@ -493,14 +516,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void filteredChangesPreserveIndependentAccumulatorsAndWindowLivenessAfterRecovery(
       String phase, String shape, boolean rocks, boolean visibleLiveCount) throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_end, COUNT(*) FILTER (WHERE v > 10),"
             + " COUNT(v) FILTER (WHERE v >= 0), SUM(v) FILTER (WHERE v < 10),"
@@ -646,14 +674,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void updatingTopOneRequiresWindowRetractionAndGroupLiveness(
       String phase, String shape, boolean distinct) throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_start, window_end, "
             + (distinct ? "COUNT(DISTINCT v)" : "COUNT(v), SUM(v)")
@@ -698,20 +731,31 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void groupingOnlyWindowsFollowTopOneMovingBetweenWindows(
       String phase, String shape, String keyMode) throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
-    String key =
-        switch (keyMode) {
-          case "NULLABLE" -> "CASE WHEN k = 1 THEN CAST(NULL AS INT) ELSE k END";
-          case "NONE" -> "";
-          default -> "k";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
+    String key;
+    switch (keyMode) {
+      case "NULLABLE":
+        key = "CASE WHEN k = 1 THEN CAST(NULL AS INT) ELSE k END";
+        break;
+      case "NONE":
+        key = "";
+        break;
+      default:
+        key = "k";
+        break;
+    }
     String prefix = key.isEmpty() ? "" : key + ", ";
     String sql =
         "SELECT "
@@ -735,7 +779,7 @@ class FlinkRetractingWindowSqlHarnessTest {
                       return projected;
                     })
                 .distinct()
-                .toList());
+                .collect(ListCollectors.toList()));
     expected.sort(Comparator.comparing(Row::toString));
     assertEquals(expected, collect(environment(phase), sql).rows());
     var table = environment(phase);
@@ -771,14 +815,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void numericAggregatesRetractReplacedTopRows(String phase, String shape, String type)
       throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     boolean floating = type.equals("FLOAT") || type.equals("DOUBLE");
     String sql =
         "SELECT k, window_start, window_end, COUNT(v), AVG(CAST(v AS "
@@ -792,16 +841,28 @@ class FlinkRetractingWindowSqlHarnessTest {
     for (Row row : expected) {
       Long value = (Long) row.getField(4);
       if (value != null) {
-        row.setField(
-            4,
-            switch (type) {
-              case "TINYINT" -> value.byteValue();
-              case "SMALLINT" -> value.shortValue();
-              case "INT" -> value.intValue();
-              case "FLOAT" -> value.floatValue();
-              case "DOUBLE" -> value.doubleValue();
-              default -> value;
-            });
+        Object selectedValue;
+        switch (type) {
+          case "TINYINT":
+            selectedValue = value.byteValue();
+            break;
+          case "SMALLINT":
+            selectedValue = value.shortValue();
+            break;
+          case "INT":
+            selectedValue = value.intValue();
+            break;
+          case "FLOAT":
+            selectedValue = value.floatValue();
+            break;
+          case "DOUBLE":
+            selectedValue = value.doubleValue();
+            break;
+          default:
+            selectedValue = value;
+            break;
+        }
+        row.setField(4, selectedValue);
       }
     }
     if (floating) expected.replaceAll(row -> Row.join(row, Row.of(row.getField(4))));
@@ -827,14 +888,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void floatingAggregatesPreserveNonfiniteValuesAndSignedZero(String phase, String shape)
       throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_end, AVG(f), AVG(v), COUNT(v), COUNT(*), SUM(f), SUM(v) FROM TABLE("
             + window
@@ -907,7 +973,7 @@ class FlinkRetractingWindowSqlHarnessTest {
                     }
                     return copy;
                   })
-              .toList();
+              .collect(ListCollectors.toList());
       if (!nativeEnabled) {
         host = bits;
         assertEquals(7 * (shape.equals("TUMBLE") ? 1 : shape.equals("HOP") ? 2 : 3), host.size());
@@ -928,14 +994,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void decimalSumAndAverageRetractTopRowsAndPreserveScale(String phase, String shape)
       throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_start, window_end, SUM(CAST(v AS DECIMAL(12,2))),"
             + " SUM(CAST(v AS DECIMAL(38,18))), AVG(CAST(v AS DECIMAL(12,3))),"
@@ -965,14 +1036,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void decimalSumAndAveragePreserveDifferentOverflowRules(
       String phase, String shape, String function) throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE changes, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String sql =
         "SELECT k, window_end, "
             + function
@@ -1040,23 +1116,42 @@ class FlinkRetractingWindowSqlHarnessTest {
         host = result.rows();
         assertEquals(11 * (shape.equals("TUMBLE") ? 1 : shape.equals("HOP") ? 2 : 3), host.size());
         for (Row row : host) {
-          BigDecimal expected =
-              switch ((Integer) row.getField(0)) {
-                case 2 -> new BigDecimal("3.25");
-                case 4 -> new BigDecimal("-0.25");
-                case 6 -> new BigDecimal("-3.00");
-                case 8 -> new BigDecimal("-2.50");
-                case 10 -> new BigDecimal("0.25");
-                case 11 -> new BigDecimal("0.75");
-                default -> null;
-              };
+          BigDecimal expected;
+          switch ((Integer) row.getField(0)) {
+            case 2:
+              expected = new BigDecimal("3.25");
+              break;
+            case 4:
+              expected = new BigDecimal("-0.25");
+              break;
+            case 6:
+              expected = new BigDecimal("-3.00");
+              break;
+            case 8:
+              expected = new BigDecimal("-2.50");
+              break;
+            case 10:
+              expected = new BigDecimal("0.25");
+              break;
+            case 11:
+              expected = new BigDecimal("0.75");
+              break;
+            default:
+              expected = null;
+              break;
+          }
           if (function.equals("AVG")) {
-            expected =
-                switch ((Integer) row.getField(0)) {
-                  case 6 -> new BigDecimal("3.000000");
-                  case 11 -> new BigDecimal("0.750000");
-                  default -> null;
-                };
+            switch ((Integer) row.getField(0)) {
+              case 6:
+                expected = new BigDecimal("3.000000");
+                break;
+              case 11:
+                expected = new BigDecimal("0.750000");
+                break;
+              default:
+                expected = null;
+                break;
+            }
           }
           assertEquals(expected, row.getField(2), row.toString());
         }
@@ -1088,14 +1183,19 @@ class FlinkRetractingWindowSqlHarnessTest {
   })
   void reducedSumAndAverageKeepExplicitFallback(String phase, String shape, String type)
       throws Exception {
-    String window =
-        switch (shape) {
-          case "TUMBLE" -> "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
-          case "HOP" ->
-              "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
-          default ->
-              "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
-        };
+    String window;
+    switch (shape) {
+      case "TUMBLE":
+        window = "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)";
+        break;
+      case "HOP":
+        window = "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)";
+        break;
+      default:
+        window =
+            "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)";
+        break;
+    }
     String value = type.equals("BIGINT") ? "v" : "CAST(v AS " + type + ")";
     String sql =
         "SELECT k, window_start, window_end, COUNT("
@@ -1146,7 +1246,44 @@ class FlinkRetractingWindowSqlHarnessTest {
     return distinct ? Row.of(key, left, right, count) : Row.of(key, left, right, count, value);
   }
 
-  private record Result(List<Row> rows, JobID job) {}
+  private static final class Result {
+    private final List<Row> rows;
+    private final JobID job;
+
+    private Result(List<Row> rows, JobID job) {
+      this.rows = rows;
+      this.job = job;
+    }
+
+    public List<Row> rows() {
+      return rows;
+    }
+
+    public JobID job() {
+      return job;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Result that = (Result) other;
+      return java.util.Objects.equals(rows, that.rows) && java.util.Objects.equals(job, that.job);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(rows);
+      result = 31 * result + java.util.Objects.hashCode(job);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Result[rows=" + rows + ", job=" + job + "]";
+    }
+  }
 
   private static void assertWindowRows(JobID job, String phase) {
     if (phase.equals("TWO_PHASE")) {
@@ -1167,7 +1304,7 @@ class FlinkRetractingWindowSqlHarnessTest {
                 + ": "
                 + reporter.findOperatorMetricGroups(job, "Native").stream()
                     .map(g -> g.getAllVariables().get("<operator_name>"))
-                    .toList());
+                    .collect(ListCollectors.toList()));
     long inputs = 0, outputs = 0;
     for (var group : groups) {
       var metrics = reporter.getMetricsByGroup(group);

@@ -53,7 +53,21 @@ class FlinkArrayDistinctSqlHarnessTest {
     for (int i = 0; i < 5003; i++) {
       Object[] values = null;
       if (i % 7 != 0) {
-        int length = switch (i % 5) { case 0 -> 0; case 1 -> 2; case 2 -> 8; default -> 64; };
+        int length;
+        switch (i % 5) {
+          case 0:
+            length = 0;
+            break;
+          case 1:
+            length = 2;
+            break;
+          case 2:
+            length = 8;
+            break;
+          default:
+            length = 64;
+            break;
+        }
         values = strings ? new String[length] : new Boolean[length];
         String[] text = {"", "é中😀", "a\0b", "same", "same ", "x".repeat(264)};
         for (int j = 0; j < length; j++) {
@@ -101,13 +115,21 @@ class FlinkArrayDistinctSqlHarnessTest {
   }
 
   static TableEnvironment environment(String kind) {
-    DataType element =
-        switch (kind) {
-          case "TINYINT" -> TINYINT();
-          case "SMALLINT" -> SMALLINT();
-          case "INT" -> INT();
-          default -> BIGINT();
-        };
+    DataType element;
+    switch (kind) {
+      case "TINYINT":
+        element = TINYINT();
+        break;
+      case "SMALLINT":
+        element = SMALLINT();
+        break;
+      case "INT":
+        element = INT();
+        break;
+      default:
+        element = BIGINT();
+        break;
+    }
     List<Row> rows = new ArrayList<>();
     Long[][] samples = {
       null,
@@ -132,23 +154,38 @@ class FlinkArrayDistinctSqlHarnessTest {
       Long[] sample = samples[i % samples.length];
       Object array = null;
       if (sample != null) {
-        Object[] values =
-            switch (kind) {
-              case "TINYINT" -> new Byte[sample.length];
-              case "SMALLINT" -> new Short[sample.length];
-              case "INT" -> new Integer[sample.length];
-              default -> new Long[sample.length];
-            };
+        Object[] values;
+        switch (kind) {
+          case "TINYINT":
+            values = new Byte[sample.length];
+            break;
+          case "SMALLINT":
+            values = new Short[sample.length];
+            break;
+          case "INT":
+            values = new Integer[sample.length];
+            break;
+          default:
+            values = new Long[sample.length];
+            break;
+        }
         for (int j = 0; j < sample.length; j++) {
           Long value = sample[j];
           if (value != null) {
-            values[j] =
-                switch (kind) {
-                  case "TINYINT" -> (Object) value.byteValue();
-                  case "SMALLINT" -> (Object) value.shortValue();
-                  case "INT" -> (Object) value.intValue();
-                  default -> value;
-                };
+            switch (kind) {
+              case "TINYINT":
+                values[j] = (Object) value.byteValue();
+                break;
+              case "SMALLINT":
+                values[j] = (Object) value.shortValue();
+                break;
+              case "INT":
+                values[j] = (Object) value.intValue();
+                break;
+              default:
+                values[j] = value;
+                break;
+            }
           }
         }
         array = values;

@@ -22,6 +22,7 @@ import org.apache.flink.table.api.JsonValueOnEmptyOrError;
 import org.apache.flink.table.runtime.functions.SqlJsonUtils;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 
 /** Compares actual JNI evaluation with Flink under controlled Jackson recycler histories. */
 class NativeJsonBufferHistoryTest {
@@ -75,16 +76,27 @@ class NativeJsonBufferHistoryTest {
               () ->
                   documents.stream()
                       .map(
-                          document ->
-                              Boolean.toString(
-                                  switch (op) {
-                                    case 144 -> SqlJsonUtils.isJsonValue(document);
-                                    case 145 -> SqlJsonUtils.isJsonObject(document);
-                                    case 146 -> SqlJsonUtils.isJsonArray(document);
-                                    case 147 -> SqlJsonUtils.isJsonScalar(document);
-                                    default -> throw new AssertionError(op);
-                                  }))
-                      .toList());
+                          document -> {
+                            boolean selectedValue;
+                            switch (op) {
+                              case 144:
+                                selectedValue = SqlJsonUtils.isJsonValue(document);
+                                break;
+                              case 145:
+                                selectedValue = SqlJsonUtils.isJsonObject(document);
+                                break;
+                              case 146:
+                                selectedValue = SqlJsonUtils.isJsonArray(document);
+                                break;
+                              case 147:
+                                selectedValue = SqlJsonUtils.isJsonScalar(document);
+                                break;
+                              default:
+                                throw new AssertionError(op);
+                            }
+                            return Boolean.toString(selectedValue);
+                          })
+                      .collect(ListCollectors.toList()));
       for (int batchSize : new int[] {1, documents.size()}) {
         assertEquals(
             expected,
@@ -232,12 +244,19 @@ class NativeJsonBufferHistoryTest {
   }
 
   static String unicodeVersion() {
-    return switch (Runtime.version().feature()) {
-      case 17 -> "13.0";
-      case 21 -> "15.0";
-      case 24, 25 -> "16.0";
-      default -> throw new IllegalStateException("Unverified JDK");
-    };
+    switch (Runtime.version().feature()) {
+      case 11:
+        return "10.0";
+      case 17:
+        return "13.0";
+      case 21:
+        return "15.0";
+      case 24:
+      case 25:
+        return "16.0";
+      default:
+        throw new IllegalStateException("Unverified JDK");
+    }
   }
 
   static List<String> nativeRows(List<String> documents, int op, String[] literals, int batchSize) {

@@ -7,9 +7,12 @@ final class ArrowRowTypeSupport {
   private ArrowRowTypeSupport() {}
 
   static boolean supports(LogicalType type) {
-    return switch (type.getTypeRoot()) {
-      case MAP, MULTISET -> false;
-      default -> type.getChildren().stream().allMatch(ArrowRowTypeSupport::supports);
-    };
+    switch (type.getTypeRoot()) {
+      case MAP:
+      case MULTISET:
+        return false;
+      default:
+        return type.getChildren().stream().allMatch(ArrowRowTypeSupport::supports);
+    }
   }
 }

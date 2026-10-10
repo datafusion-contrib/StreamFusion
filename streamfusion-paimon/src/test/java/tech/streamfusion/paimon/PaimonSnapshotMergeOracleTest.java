@@ -33,6 +33,7 @@ import org.apache.paimon.utils.UserDefinedSeqComparator;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -52,7 +53,47 @@ class PaimonSnapshotMergeOracleTest {
               new RowType(List.of(new DataField(0, "_KEY_id", DataTypes.INT().notNull()))),
               VALUES));
 
-  record Version(int key, long sequence, byte kind, Double userSequence, String a, Integer b) {
+  static final class Version {
+    private final int key;
+    private final long sequence;
+    private final byte kind;
+    private final Double userSequence;
+    private final String a;
+    private final Integer b;
+
+    Version(int key, long sequence, byte kind, Double userSequence, String a, Integer b) {
+      this.key = key;
+      this.sequence = sequence;
+      this.kind = kind;
+      this.userSequence = userSequence;
+      this.a = a;
+      this.b = b;
+    }
+
+    public int key() {
+      return key;
+    }
+
+    public long sequence() {
+      return sequence;
+    }
+
+    public byte kind() {
+      return kind;
+    }
+
+    public Double userSequence() {
+      return userSequence;
+    }
+
+    public String a() {
+      return a;
+    }
+
+    public Integer b() {
+      return b;
+    }
+
     KeyValue javaRow() {
       return new KeyValue()
           .replace(
@@ -65,6 +106,48 @@ class PaimonSnapshotMergeOracleTest {
     RowData arrowRow() {
       return GenericRowData.of(
           key, sequence, kind, key, userSequence, a == null ? null : StringData.fromString(a), b);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Version that = (Version) other;
+      return key == that.key
+          && sequence == that.sequence
+          && kind == that.kind
+          && java.util.Objects.equals(userSequence, that.userSequence)
+          && java.util.Objects.equals(a, that.a)
+          && java.util.Objects.equals(b, that.b);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + key;
+      result = 31 * result + Long.hashCode(sequence);
+      result = 31 * result + kind;
+      result = 31 * result + java.util.Objects.hashCode(userSequence);
+      result = 31 * result + java.util.Objects.hashCode(a);
+      result = 31 * result + java.util.Objects.hashCode(b);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Version[key="
+          + key
+          + ", sequence="
+          + sequence
+          + ", kind="
+          + kind
+          + ", userSequence="
+          + userSequence
+          + ", a="
+          + a
+          + ", b="
+          + b
+          + "]";
     }
   }
 
@@ -225,7 +308,9 @@ class PaimonSnapshotMergeOracleTest {
       int end = Math.min(rows.size(), offsets[run] + batchRows);
       try (var root =
           RowDataArrowConverter.write(
-              rows.subList(offsets[run], end).stream().map(Version::arrowRow).toList(),
+              rows.subList(offsets[run], end).stream()
+                  .map(Version::arrowRow)
+                  .collect(ListCollectors.toList()),
               INPUT,
               allocator)) {
         offsets[run] = end;

@@ -24,6 +24,7 @@ import org.apache.paimon.types.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.KeyedUpsertBuffer;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
@@ -102,7 +103,7 @@ class PaimonFieldAggregatorTest {
         }
         buffer.push(
             RowDataArrowConverter.write(
-                rows.stream().<RowData>map(FlinkRowData::new).toList(),
+                rows.stream().<RowData>map(FlinkRowData::new).collect(ListCollectors.toList()),
                 LogicalTypeConversion.toLogicalType(type),
                 allocator,
                 true),

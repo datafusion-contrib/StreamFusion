@@ -234,9 +234,47 @@ class NativeAsyncLookupJoinOperatorTest {
     return values;
   }
 
-  private record Call(RowData row, ResultFuture<RowData> result) {
+  private static final class Call {
+    private final RowData row;
+    private final ResultFuture<RowData> result;
+
+    private Call(RowData row, ResultFuture<RowData> result) {
+      this.row = row;
+      this.result = result;
+    }
+
+    public RowData row() {
+      return row;
+    }
+
+    public ResultFuture<RowData> result() {
+      return result;
+    }
+
     void complete() {
       result.complete(List.of(row));
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Call that = (Call) other;
+      return java.util.Objects.equals(row, that.row)
+          && java.util.Objects.equals(result, that.result);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(row);
+      result = 31 * result + java.util.Objects.hashCode(result);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Call[row=" + row + ", result=" + result + "]";
     }
   }
 

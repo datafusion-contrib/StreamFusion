@@ -130,10 +130,10 @@ public final class NativePaimonSnapshotReader implements AutoCloseable {
     for (int i = 0; i < keys.getFieldCount(); i++) {
       var type = keys.getTypeAt(i);
       int precision =
-          type instanceof org.apache.paimon.types.TimestampType timestamp
-              ? timestamp.getPrecision()
-              : type instanceof org.apache.paimon.types.LocalZonedTimestampType timestamp
-                  ? timestamp.getPrecision()
+          type instanceof org.apache.paimon.types.TimestampType
+              ? ((org.apache.paimon.types.TimestampType) type).getPrecision()
+              : type instanceof org.apache.paimon.types.LocalZonedTimestampType
+                  ? ((org.apache.paimon.types.LocalZonedTimestampType) type).getPrecision()
                   : 0;
       // Java ORC aliases fractional timestamps in the last negative second to the first
       // positive second. Decoded keys can therefore violate a sorted run's ordering.

@@ -26,6 +26,7 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 
 @org.junit.jupiter.api.extension.ExtendWith(tech.streamfusion.operator.CoalescingOff.class)
 @org.junit.jupiter.api.parallel.Execution(org.junit.jupiter.api.parallel.ExecutionMode.SAME_THREAD)
@@ -109,11 +110,73 @@ class StatefulSqlRescaleTest {
     }
   }
 
-  private record Stage(
-      Path checkpoint,
-      List<Map<String, Object>> recovery,
-      List<String> operatorIds,
-      Map<String, Object> evidence) {}
+  private static final class Stage {
+    private final Path checkpoint;
+    private final List<Map<String, Object>> recovery;
+    private final List<String> operatorIds;
+    private final Map<String, Object> evidence;
+
+    private Stage(
+        Path checkpoint,
+        List<Map<String, Object>> recovery,
+        List<String> operatorIds,
+        Map<String, Object> evidence) {
+      this.checkpoint = checkpoint;
+      this.recovery = recovery;
+      this.operatorIds = operatorIds;
+      this.evidence = evidence;
+    }
+
+    public Path checkpoint() {
+      return checkpoint;
+    }
+
+    public List<Map<String, Object>> recovery() {
+      return recovery;
+    }
+
+    public List<String> operatorIds() {
+      return operatorIds;
+    }
+
+    public Map<String, Object> evidence() {
+      return evidence;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Stage that = (Stage) other;
+      return java.util.Objects.equals(checkpoint, that.checkpoint)
+          && java.util.Objects.equals(recovery, that.recovery)
+          && java.util.Objects.equals(operatorIds, that.operatorIds)
+          && java.util.Objects.equals(evidence, that.evidence);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(checkpoint);
+      result = 31 * result + java.util.Objects.hashCode(recovery);
+      result = 31 * result + java.util.Objects.hashCode(operatorIds);
+      result = 31 * result + java.util.Objects.hashCode(evidence);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Stage[checkpoint="
+          + checkpoint
+          + ", recovery="
+          + recovery
+          + ", operatorIds="
+          + operatorIds
+          + ", evidence="
+          + evidence
+          + "]";
+    }
+  }
 
   private static Stage runStage(
       String backend,
@@ -176,12 +239,16 @@ class StatefulSqlRescaleTest {
           new org.apache.flink.streaming.api.graph.StreamGraphHasherV2()
               .traverseStreamGraphAndGenerateHashes(graph);
       List<String> ids =
-          hashes.values().stream().map(OperatorID::new).map(Object::toString).sorted().toList();
+          hashes.values().stream()
+              .map(OperatorID::new)
+              .map(Object::toString)
+              .sorted()
+              .collect(ListCollectors.toList());
       List<OperatorID> aggregateIds =
           graph.getStreamNodes().stream()
               .filter(n -> n.getOperatorName().contains("NativeColumnarGroupAggExecNode"))
               .map(n -> new OperatorID(hashes.get(n.getId())))
-              .toList();
+              .collect(ListCollectors.toList());
       if (nativeRun) assertEquals(1, aggregateIds.size(), graph.getStreamNodes().toString());
       var client = env.executeAsync(graph);
       try {
@@ -268,7 +335,7 @@ class StatefulSqlRescaleTest {
               "resultTypes",
               query.getResolvedSchema().getColumnDataTypes().stream()
                   .map(Object::toString)
-                  .toList(),
+                  .collect(ListCollectors.toList()),
               "cleanup",
               Map.of(
                   "taskReservedBytes",

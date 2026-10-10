@@ -2,7 +2,8 @@ use arrow::array::ArrayRef;
 use arrow::datatypes::DataType;
 use datafusion::common::{exec_err, Result, ScalarValue};
 use datafusion::logical_expr::{
-    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
+    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, TypeSignature,
+    Volatility,
 };
 
 #[derive(Clone, Copy)]
@@ -18,17 +19,17 @@ pub(super) enum Charset {
 pub(super) fn function(decode: bool) -> ScalarUDF {
     ScalarUDF::new_from_impl(CharsetFunction {
         decode,
-        signature: Signature::exact(
-            vec![
-                if decode {
-                    DataType::Binary
-                } else {
-                    DataType::Utf8
-                },
-                DataType::Utf8,
-            ],
-            Volatility::Immutable,
-        ),
+        signature: if decode {
+            Signature::one_of(
+                vec![
+                    TypeSignature::Exact(vec![DataType::Binary, DataType::Utf8]),
+                    TypeSignature::Exact(vec![DataType::Binary, DataType::Utf8, DataType::Boolean]),
+                ],
+                Volatility::Immutable,
+            )
+        } else {
+            Signature::exact(vec![DataType::Utf8, DataType::Utf8], Volatility::Immutable)
+        },
     })
 }
 
@@ -60,9 +61,15 @@ impl ScalarUDFImpl for CharsetFunction {
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
-        let [input, ColumnarValue::Scalar(ScalarValue::Utf8(Some(charset)))] = args.args.as_slice()
-        else {
-            return exec_err!("ENCODE/DECODE expects an input and a non-null literal charset");
+        let (input, charset, replace_reversed_bom) = match args.args.as_slice() {
+            [input, ColumnarValue::Scalar(ScalarValue::Utf8(Some(charset)))] => {
+                (input, charset, false)
+            }
+            [input, ColumnarValue::Scalar(ScalarValue::Utf8(Some(charset))), ColumnarValue::Scalar(ScalarValue::Boolean(Some(replace)))]
+                if self.decode => (input, charset, *replace),
+            _ => return exec_err!(
+                "ENCODE/DECODE expects an input, a non-null literal charset, and an optional literal DECODE profile"
+            ),
         };
         let charset = match charset.as_str() {
             "UTF-8" => Charset::Utf8,
@@ -76,7 +83,7 @@ impl ScalarUDFImpl for CharsetFunction {
         let scalar = matches!(input, ColumnarValue::Scalar(_));
         let input: ArrayRef = input.to_array(if scalar { 1 } else { args.number_rows })?;
         let output = if self.decode {
-            super::decode::decode(&input, charset)?
+            super::decode::decode(&input, charset, replace_reversed_bom)?
         } else {
             super::encode::encode(&input, charset)?
         };

@@ -26,7 +26,6 @@ import tech.streamfusion.kafka.NativeKafka;
 
 /** Conservative match boundary for native JSON serialization into Flink's Kafka sink. */
 final class KafkaSinkMatcher {
-
   private KafkaSinkMatcher() {}
 
   static final class Planned {
@@ -253,7 +252,9 @@ final class KafkaSinkMatcher {
    * control characters in practice — declining keeps the byte-parity contract airtight.
    */
   private static boolean jsonFieldNamesEscapeFreely(LogicalType type) {
-    if (type instanceof RowType row) {
+    if (type instanceof RowType) {
+      RowType row = ((RowType) type);
+
       for (RowType.RowField field : row.getFields()) {
         if (field.getName().chars().anyMatch(c -> c < 0x20)
             || !jsonFieldNamesEscapeFreely(field.getType())) {

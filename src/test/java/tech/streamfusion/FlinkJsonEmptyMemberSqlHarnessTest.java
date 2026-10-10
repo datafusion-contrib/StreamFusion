@@ -70,12 +70,18 @@ class FlinkJsonEmptyMemberSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(strings = {"INTEGER", "BOOLEAN", "DOUBLE"})
   void typedReturningKeepsEmptyAndErrorPolicies(String type) throws Exception {
-    String value =
-        switch (type) {
-          case "INTEGER" -> "-2147483648";
-          case "BOOLEAN" -> "false";
-          default -> "-1.25e-10";
-        };
+    String value;
+    switch (type) {
+      case "INTEGER":
+        value = "-2147483648";
+        break;
+      case "BOOLEAN":
+        value = "false";
+        break;
+      default:
+        value = "-1.25e-10";
+        break;
+    }
     NativeParity.assertParity(
         () ->
             TextTimeFunctionTestInputs.textRows(

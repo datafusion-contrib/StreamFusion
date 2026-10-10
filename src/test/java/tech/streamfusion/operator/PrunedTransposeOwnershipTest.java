@@ -95,11 +95,20 @@ class PrunedTransposeOwnershipTest {
       harness.processElement(new StreamRecord<>(new GenericRowData(SOURCE.getFieldCount())));
       assertTrue(harness.getOutput().isEmpty());
       switch (boundary) {
-        case "end" -> harness.endInput();
-        case "watermark" -> harness.processWatermark(new Watermark(1000));
-        case "checkpoint" -> harness.prepareSnapshotPreBarrier(1);
-        case "timer" -> harness.setProcessingTime(110);
-        default -> throw new AssertionError(boundary);
+        case "end":
+          harness.endInput();
+          break;
+        case "watermark":
+          harness.processWatermark(new Watermark(1000));
+          break;
+        case "checkpoint":
+          harness.prepareSnapshotPreBarrier(1);
+          break;
+        case "timer":
+          harness.setProcessingTime(110);
+          break;
+        default:
+          throw new AssertionError(boundary);
       }
       try (var root = firstBatch(harness).root()) {
         List<RowData> rows = RowDataArrowConverter.read(root, PRUNED);

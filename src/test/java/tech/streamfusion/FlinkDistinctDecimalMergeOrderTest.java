@@ -14,6 +14,7 @@ import org.apache.flink.table.data.DecimalDataUtils;
 import org.apache.flink.table.dataview.NullAwareMapSerializer;
 import org.apache.flink.table.runtime.typeutils.DecimalDataSerializer;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 
 class FlinkDistinctDecimalMergeOrderTest {
   @Test
@@ -91,7 +92,7 @@ class FlinkDistinctDecimalMergeOrderTest {
             expected,
             map.keySet().stream()
                 .map(key -> key == null ? null : key.toBigDecimal().unscaledValue().toString())
-                .toList(),
+                .collect(ListCollectors.toList()),
             fixture.get("name").asText());
       }
     }

@@ -65,12 +65,18 @@ class MixedPayloadImageIT {
     String line = System.getProperty("streamfusion.flink.line");
     String otherLine = line.equals("1.18") ? "2.2" : "1.18";
     Path mismatched = mismatchedPayload(module, otherLine);
-    String destination =
-        switch (module) {
-          case "loader" -> "00-streamfusion-loader.jar";
-          case "core" -> "streamfusion-core.jar";
-          default -> "renamed-extension.jar";
-        };
+    String destination;
+    switch (module) {
+      case "loader":
+        destination = "00-streamfusion-loader.jar";
+        break;
+      case "core":
+        destination = "streamfusion-core.jar";
+        break;
+      default:
+        destination = "renamed-extension.jar";
+        break;
+    }
     DockerImageName image = DockerImageName.parse(System.getProperty("streamfusion.image.name"));
     try (GenericContainer<?> container =
         new GenericContainer<>(image)

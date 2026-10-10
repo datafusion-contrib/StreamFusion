@@ -12,6 +12,7 @@ import org.apache.flink.streaming.api.graph.StreamEdge;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.StreamExchangeMode;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.ColumnarKeyGroupPartitioner;
 
 class ColumnarExchangeAlignmentFlagTest {
@@ -52,7 +53,7 @@ class ColumnarExchangeAlignmentFlagTest {
         env.getStreamGraph().getStreamNodes().stream()
             .flatMap(node -> node.getOutEdges().stream())
             .filter(edge -> edge.getPartitioner() instanceof ColumnarKeyGroupPartitioner)
-            .toList();
+            .collect(ListCollectors.toList());
     assertEquals(1, columnarEdges.size());
     assertFalse(columnarEdges.get(0).supportsUnalignedCheckpoints());
   }

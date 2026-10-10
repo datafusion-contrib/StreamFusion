@@ -37,13 +37,21 @@ class StatefulRecoveryMatrixTest {
     List<Row> prefix = new ArrayList<>();
     for (int i = 0; i < 4096; i++) {
       int key = random.nextInt(5) == 0 ? random.nextInt(128) : 0;
-      String amount =
-          switch (random.nextInt(5)) {
-            case 0 -> null;
-            case 1 -> "999999999999999999.99";
-            case 2 -> "-999999999999999999.99";
-            default -> BigDecimal.valueOf(random.nextInt(20001) - 10000, 2).toPlainString();
-          };
+      String amount;
+      switch (random.nextInt(5)) {
+        case 0:
+          amount = null;
+          break;
+        case 1:
+          amount = "999999999999999999.99";
+          break;
+        case 2:
+          amount = "-999999999999999999.99";
+          break;
+        default:
+          amount = BigDecimal.valueOf(random.nextInt(20001) - 10000, 2).toPlainString();
+          break;
+      }
       String text = i % 7 == 0 ? null : "é🙂".repeat(256) + random.nextInt(16);
       prefix.add(row(bigKey, RowKind.INSERT, key, amount, text));
     }

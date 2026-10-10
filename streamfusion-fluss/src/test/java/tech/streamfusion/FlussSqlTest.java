@@ -41,6 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.fluss.FlussTestCluster;
 import tech.streamfusion.planner.NativePlanner;
 
@@ -289,8 +290,14 @@ class FlussSqlTest {
       for (var partition : partitions)
         assertEquals(
             partition.getPartitionName().equals("old") ? 2 : 4, partition.getBucketCount());
-      var stock = query(output, "a, b, part", false, false).stream().sorted().toList();
-      var accelerated = query(output, "a, b, part", true, true).stream().sorted().toList();
+      var stock =
+          query(output, "a, b, part", false, false).stream()
+              .sorted()
+              .collect(ListCollectors.toList());
+      var accelerated =
+          query(output, "a, b, part", true, true).stream()
+              .sorted()
+              .collect(ListCollectors.toList());
       assertEquals(128, stock.size());
       assertEquals(stock, accelerated);
       var tables = environment(true);
@@ -349,14 +356,21 @@ class FlussSqlTest {
           nativeRun,
           nativeRun,
           nativeRun);
-      var actual = query(output, "*", false, false).stream().sorted().toList();
+      var actual =
+          query(output, "*", false, false).stream().sorted().collect(ListCollectors.toList());
       assertEquals(512, actual.size());
       if (expected == null) expected = actual;
       else assertEquals(expected, actual);
-      assertEquals(actual, query(output, "*", true, true).stream().sorted().toList());
       assertEquals(
-          query(output, "a,part", " WHERE b=3 AND a>=0", false, false).stream().sorted().toList(),
-          query(output, "a,part", " WHERE b=3 AND a>=0", true, true).stream().sorted().toList());
+          actual,
+          query(output, "*", true, true).stream().sorted().collect(ListCollectors.toList()));
+      assertEquals(
+          query(output, "a,part", " WHERE b=3 AND a>=0", false, false).stream()
+              .sorted()
+              .collect(ListCollectors.toList()),
+          query(output, "a,part", " WHERE b=3 AND a>=0", true, true).stream()
+              .sorted()
+              .collect(ListCollectors.toList()));
     }
   }
 
@@ -376,8 +390,10 @@ class FlussSqlTest {
     writer.upsert(GenericRow.of(1, BinaryString.fromString("p0"), 11L)).get();
     writer.delete(GenericRow.of(1, BinaryString.fromString("p1"), null)).get();
     writer.flush();
-    var stock = query(source, "a, b", false, false).stream().sorted().toList();
-    var accelerated = query(source, "a, b", true, true).stream().sorted().toList();
+    var stock =
+        query(source, "a, b", false, false).stream().sorted().collect(ListCollectors.toList());
+    var accelerated =
+        query(source, "a, b", true, true).stream().sorted().collect(ListCollectors.toList());
     assertTrue(stock.stream().anyMatch(row -> row.startsWith("-D")));
     assertEquals(stock, accelerated);
   }
@@ -503,8 +519,8 @@ class FlussSqlTest {
           java.util.stream.IntStream.range(100, 300)
               .mapToObj(i -> "+I[" + i + "]")
               .sorted()
-              .toList(),
-          result.stream().sorted().toList());
+              .collect(ListCollectors.toList()),
+          result.stream().sorted().collect(ListCollectors.toList()));
     } finally {
       tables.getCatalog("fluss").orElseThrow().close();
     }

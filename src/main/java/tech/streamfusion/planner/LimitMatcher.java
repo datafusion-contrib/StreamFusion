@@ -1,6 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.RowDataArrowConverter;
 import java.lang.reflect.Field;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
@@ -11,6 +10,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSortLimit;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.planner.plan.utils.RankProcessStrategy;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Recognizes a global {@code FETCH}/{@code LIMIT} — Flink's {@code StreamPhysicalLimit} (plain
@@ -29,7 +29,6 @@ import org.apache.flink.table.planner.plan.utils.RankProcessStrategy;
  * the latter replaces rows by their unique key while retaining the skipped prefix.
  */
 final class LimitMatcher {
-
   private LimitMatcher() {}
 
   static boolean matches(Sort sort) {
@@ -99,7 +98,10 @@ final class LimitMatcher {
         return null;
       }
       int[] rowKeyColumns = null;
-      if (strategy instanceof RankProcessStrategy.UpdateFastStrategy updateFast) {
+      if (strategy instanceof RankProcessStrategy.UpdateFastStrategy) {
+        RankProcessStrategy.UpdateFastStrategy updateFast =
+            ((RankProcessStrategy.UpdateFastStrategy) strategy);
+
         rowKeyColumns = updateFast.getPrimaryKeys();
       }
       if (offset > 0 && rowKeyColumns == null) {

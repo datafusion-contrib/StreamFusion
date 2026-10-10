@@ -102,7 +102,9 @@ class NativeIntervalJoinWatermarkTest {
 
       List<Long> totals = new ArrayList<>();
       for (Object event : window.getOutput()) {
-        if (event instanceof StreamRecord<?> record) {
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
+
           try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
             var rows = RowDataArrowConverter.read(root, WINDOW_OUTPUT);
             for (var row : rows) {
@@ -113,7 +115,8 @@ class NativeIntervalJoinWatermarkTest {
           }
         }
       }
-      assertEquals(List.of(10L), totals, "the join's output watermark must not make its next pair late");
+      assertEquals(
+          List.of(10L), totals, "the join's output watermark must not make its next pair late");
     }
   }
 
@@ -140,7 +143,9 @@ class NativeIntervalJoinWatermarkTest {
   private static List<Long> watermarks(Iterable<?> events) {
     List<Long> result = new ArrayList<>();
     for (Object event : events) {
-      if (event instanceof Watermark watermark) {
+      if (event instanceof Watermark) {
+        Watermark watermark = ((Watermark) event);
+
         result.add(watermark.getTimestamp());
       }
     }
@@ -154,9 +159,13 @@ class NativeIntervalJoinWatermarkTest {
       throws Exception {
     while (!join.getOutput().isEmpty()) {
       Object event = join.getOutput().poll();
-      if (event instanceof StreamRecord<?> record) {
+      if (event instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) event);
+
         window.processElement((StreamRecord<ArrowBatch>) record);
-      } else if (event instanceof Watermark watermark) {
+      } else if (event instanceof Watermark) {
+        Watermark watermark = ((Watermark) event);
+
         window.processWatermark(watermark);
       }
     }

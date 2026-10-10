@@ -25,6 +25,7 @@ import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.DataTypes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.compat.ListCollectors;
 
 /** Scan planning plus production file reads; table writes and commits are outside timing. */
 @EnabledIfEnvironmentVariable(named = "SF_PAIMON_PARTITION_PRUNING_BENCHMARK", matches = "true")
@@ -36,7 +37,8 @@ class PaimonPartitionPruningBenchmark {
   @Test
   void comparePartitionPredicateHandoff() throws Exception {
     int rows = Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_PARTITION_ROWS", "131072"));
-    int repetitions = Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_PARTITION_REPEATS", "3"));
+    int repetitions =
+        Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_PARTITION_REPEATS", "3"));
     assertTrue(rows > 0 && rows % PARTITIONS == 0 && repetitions > 0);
     for (int width : new int[] {64, 256}) {
       Path directory = Files.createTempDirectory("paimon-partition-pruning");
@@ -50,7 +52,9 @@ class PaimonPartitionPruningBenchmark {
         }
       } finally {
         try (var files = Files.walk(directory)) {
-          for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file);
+          for (Path file :
+              files.sorted(java.util.Comparator.reverseOrder()).collect(ListCollectors.toList()))
+            Files.delete(file);
         }
       }
     }
@@ -68,9 +72,12 @@ class PaimonPartitionPruningBenchmark {
     var payload = BinaryString.fromString("x".repeat(width));
     try (var writer = builder.newWrite(); var commit = builder.newCommit()) {
       for (int row = 0; row < rows; row++) {
-        writer.write(GenericRow.of((long) row,
-            BinaryString.fromString(String.format(java.util.Locale.ROOT, "p%02d", row % PARTITIONS)),
-            payload));
+        writer.write(
+            GenericRow.of(
+                (long) row,
+                BinaryString.fromString(
+                    String.format(java.util.Locale.ROOT, "p%02d", row % PARTITIONS)),
+                payload));
       }
       commit.commit(1, writer.prepareCommit(true, 1));
     }
@@ -148,7 +155,8 @@ class PaimonPartitionPruningBenchmark {
     assertEquals(expected, selected);
     assertEquals(PARTITIONS * expected * (expected - 1) / 2, checksum);
     assertEquals(mode == Mode.NATIVE_FULL ? rows : expected, decoded);
-    if (mode != Mode.STOCK_PRUNED) assertEquals(files, nativeFiles, "must run native file decoding");
+    if (mode != Mode.STOCK_PRUNED)
+      assertEquals(files, nativeFiles, "must run native file decoding");
     if (iteration >= 0) {
       System.out.printf(java.util.Locale.ROOT,
           "PAIMON_PARTITION_PRUNING mode=%s rows=%d partitions=%d payload_bytes=%d iteration=%d "

@@ -32,7 +32,6 @@ import tech.streamfusion.planner.FlinkKeyGroupUtils;
  * already-closed window is dropped as late. Uses UTC so the rendered window bounds are deterministic.
  */
 class NativeColumnarWindowRankOperatorTest {
-
   private static final int MAX_PARALLELISM = 128;
 
   private static final org.apache.flink.table.types.logical.RowType TEST_ROW_TYPE =
@@ -268,7 +267,9 @@ class NativeColumnarWindowRankOperatorTest {
         List<Long> ids = new ArrayList<>();
         while (!restored.getOutput().isEmpty()) {
           Object event = restored.getOutput().poll();
-          if (event instanceof StreamRecord<?> record) {
+          if (event instanceof StreamRecord<?>) {
+            StreamRecord<?> record = ((StreamRecord<?>) event);
+
             try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
               for (RowData r : RowDataArrowConverter.read(root, SCHEMA)) {
                 ids.add(r.getLong(0));

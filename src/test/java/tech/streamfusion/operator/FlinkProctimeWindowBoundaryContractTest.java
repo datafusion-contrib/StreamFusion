@@ -48,16 +48,22 @@ class FlinkProctimeWindowBoundaryContractTest {
   @SuppressWarnings("unchecked")
   private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness()
       throws Exception {
-    Class<?> builders = compatibleClass(
-        "org.apache.flink.table.runtime.operators.aggregate.window.WindowAggOperatorBuilder",
-        "org.apache.flink.table.runtime.operators.aggregate.window.SlicingWindowAggOperatorBuilder");
+    Class<?> builders =
+        compatibleClass(
+            "org.apache.flink.table.runtime.operators.aggregate.window.WindowAggOperatorBuilder",
+            "org.apache.flink.table.runtime.operators.aggregate.window.SlicingWindowAggOperatorBuilder");
     Object builder = builders.getMethod("builder").invoke(null);
     Class<?> assigners = compatibleClass(
         "org.apache.flink.table.runtime.operators.window.tvf.slicing.SliceAssigners",
         "org.apache.flink.table.runtime.operators.window.slicing.SliceAssigners");
-    Object assigner = assigners.getMethod("tumbling", int.class, java.time.ZoneId.class, Duration.class)
-        .invoke(null, -1, ZoneOffset.UTC, Duration.ofSeconds(1));
-    configure(builder, "inputSerializer", new RowDataSerializer(RowType.of(new BigIntType(), new BigIntType())));
+    Object assigner =
+        assigners
+            .getMethod("tumbling", int.class, java.time.ZoneId.class, Duration.class)
+            .invoke(null, -1, ZoneOffset.UTC, Duration.ofSeconds(1));
+    configure(
+        builder,
+        "inputSerializer",
+        new RowDataSerializer(RowType.of(new BigIntType(), new BigIntType())));
     configure(builder, "keySerializer", new BinaryRowDataSerializer(1));
     configure(builder, "shiftTimeZone", ZoneOffset.UTC);
     configure(builder, "assigner", assigner);
@@ -67,7 +73,8 @@ class FlinkProctimeWindowBoundaryContractTest {
       }
     };
     configure(builder, "aggregate", aggregate, new RowDataSerializer(RowType.of(new BigIntType())));
-    var operator = (OneInputStreamOperator<RowData, RowData>) builders.getMethod("build").invoke(builder);
+    var operator =
+        (OneInputStreamOperator<RowData, RowData>) builders.getMethod("build").invoke(builder);
     RowType keyType = RowType.of(new BigIntType());
     var keySerializer = new RowDataSerializer(keyType);
     return new KeyedOneInputStreamOperatorTestHarness<>(operator,
@@ -93,7 +100,9 @@ class FlinkProctimeWindowBoundaryContractTest {
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness) {
     List<List<Long>> output = new ArrayList<>();
     for (Object event; (event = harness.getOutput().poll()) != null; ) {
-      if (event instanceof StreamRecord<?> record) {
+      if (event instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) event);
+
         RowData row = (RowData) record.getValue();
         output.add(List.of(row.getLong(1), row.getLong(2), row.getLong(3)));
       }

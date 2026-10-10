@@ -56,7 +56,6 @@ import org.apache.flink.util.IOUtils;
  */
 @Internal
 public class PlannerModule {
-
   static final String FLINK_TABLE_PLANNER_FAT_JAR = "flink-table-planner.jar";
   private static final String STREAMFUSION_PLANNER_JAR = "streamfusion-planner.jar";
   private static final Set<String> STREAMFUSION_PLANNER_EXTENSIONS =
@@ -180,12 +179,17 @@ public class PlannerModule {
 
   private static void verifyFlinkVersion() throws IOException {
     String line = FlinkPayloadIdentity.loaderLine();
-    Set<String> supportedVersions =
-        switch (line) {
-          case "2.2" -> Set.of("2.2.0", "2.2.1");
-          case "1.18" -> Set.of("1.18.1");
-          default -> throw new TableException("Unverified StreamFusion target Flink line: " + line);
-        };
+    Set<String> supportedVersions;
+    switch (line) {
+      case "2.2":
+        supportedVersions = Set.of("2.2.0", "2.2.1");
+        break;
+      case "1.18":
+        supportedVersions = Set.of("1.18.1");
+        break;
+      default:
+        throw new TableException("Unverified StreamFusion target Flink line: " + line);
+    }
     Package flinkApiPackage = PlannerFactory.class.getPackage();
     String version = flinkApiPackage == null ? null : flinkApiPackage.getImplementationVersion();
     if (version == null || !supportedVersions.contains(version)) {
@@ -235,7 +239,13 @@ public class PlannerModule {
       }
     }
     List<URL> extensions = new ArrayList<>();
-    for (Path path : installed.stream().sorted().toList()) {
+    for (Path path :
+        installed.stream()
+            .sorted()
+            .collect(
+                java.util.stream.Collectors.collectingAndThen(
+                    java.util.stream.Collectors.toList(),
+                    java.util.Collections::unmodifiableList))) {
       URL url = toUrl(path);
       Attributes attributes = FlinkPayloadIdentity.attributes(url);
       String module = attributes.getValue(FlinkPayloadIdentity.MODULE_ATTRIBUTE);
@@ -280,7 +290,6 @@ public class PlannerModule {
   }
 
   private static class PlannerComponentClassLoader extends ComponentClassLoader {
-
     private PlannerComponentClassLoader(
         URL[] classpath,
         ClassLoader ownerClassLoader,

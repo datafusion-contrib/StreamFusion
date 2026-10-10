@@ -14,6 +14,7 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.table.api.TableEnvironment;
+import tech.streamfusion.compat.ListCollectors;
 
 final class SqlAuditHarness {
   enum Kind {
@@ -34,21 +35,126 @@ final class SqlAuditHarness {
     KEYED_FIRST_FIELD
   }
 
-  record Spec(
-      String id,
-      RuntimeExecutionMode mode,
-      Map<String, String> settings,
-      String sql,
-      Set<String> tables,
-      Set<String> functions,
-      Kind expected,
-      String reason,
-      NativeFailureParity.Phase failurePhase,
-      Comparison comparison,
-      List<List<Object>> golden) {
+  static final class Spec {
+    private final String id;
+    private final RuntimeExecutionMode mode;
+    private final Map<String, String> settings;
+    private final String sql;
+    private final Set<String> tables;
+    private final Set<String> functions;
+    private final Kind expected;
+    private final String reason;
+    private final NativeFailureParity.Phase failurePhase;
+    private final Comparison comparison;
+    private final List<List<Object>> golden;
+
+    Spec(
+        String id,
+        RuntimeExecutionMode mode,
+        Map<String, String> settings,
+        String sql,
+        Set<String> tables,
+        Set<String> functions,
+        Kind expected,
+        String reason,
+        NativeFailureParity.Phase failurePhase,
+        Comparison comparison,
+        List<List<Object>> golden) {
+      this.id = id;
+      this.mode = mode;
+      this.settings = settings;
+      this.sql = sql;
+      this.tables = tables;
+      this.functions = functions;
+      this.expected = expected;
+      this.reason = reason;
+      this.failurePhase = failurePhase;
+      this.comparison = comparison;
+      this.golden = golden;
+    }
+
+    public String id() {
+      return id;
+    }
+
+    public RuntimeExecutionMode mode() {
+      return mode;
+    }
+
+    public Map<String, String> settings() {
+      return settings;
+    }
+
+    public String sql() {
+      return sql;
+    }
+
+    public Set<String> tables() {
+      return tables;
+    }
+
+    public Set<String> functions() {
+      return functions;
+    }
+
+    public Kind expected() {
+      return expected;
+    }
+
+    public String reason() {
+      return reason;
+    }
+
+    public NativeFailureParity.Phase failurePhase() {
+      return failurePhase;
+    }
+
+    public Comparison comparison() {
+      return comparison;
+    }
+
+    public List<List<Object>> golden() {
+      return golden;
+    }
+
     @Override
     public String toString() {
       return id;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Spec that = (Spec) other;
+      return java.util.Objects.equals(id, that.id)
+          && java.util.Objects.equals(mode, that.mode)
+          && java.util.Objects.equals(settings, that.settings)
+          && java.util.Objects.equals(sql, that.sql)
+          && java.util.Objects.equals(tables, that.tables)
+          && java.util.Objects.equals(functions, that.functions)
+          && java.util.Objects.equals(expected, that.expected)
+          && java.util.Objects.equals(reason, that.reason)
+          && java.util.Objects.equals(failurePhase, that.failurePhase)
+          && java.util.Objects.equals(comparison, that.comparison)
+          && java.util.Objects.equals(golden, that.golden);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(id);
+      result = 31 * result + java.util.Objects.hashCode(mode);
+      result = 31 * result + java.util.Objects.hashCode(settings);
+      result = 31 * result + java.util.Objects.hashCode(sql);
+      result = 31 * result + java.util.Objects.hashCode(tables);
+      result = 31 * result + java.util.Objects.hashCode(functions);
+      result = 31 * result + java.util.Objects.hashCode(expected);
+      result = 31 * result + java.util.Objects.hashCode(reason);
+      result = 31 * result + java.util.Objects.hashCode(failurePhase);
+      result = 31 * result + java.util.Objects.hashCode(comparison);
+      result = 31 * result + java.util.Objects.hashCode(golden);
+      return result;
     }
   }
 
@@ -179,12 +285,18 @@ final class SqlAuditHarness {
   }
 
   private static Object result(Comparison comparison, List<List<Object>> rows) {
-    return switch (comparison) {
-      case MATERIALIZED -> materialized(rows);
-      case KEYED_FIRST_FIELD -> keyed(rows);
-      case ORDERED_CHANGELOG -> rows;
-      case KINDED_MULTISET -> NativeParity.multiset(rows);
-    };
+    switch (comparison) {
+      case MATERIALIZED:
+        return materialized(rows);
+      case KEYED_FIRST_FIELD:
+        return keyed(rows);
+      case ORDERED_CHANGELOG:
+        return rows;
+      case KINDED_MULTISET:
+        return NativeParity.multiset(rows);
+      default:
+        throw new IncompatibleClassChangeError();
+    }
   }
 
   private static Map<List<Object>, Long> keyed(List<List<Object>> rows) {
@@ -192,14 +304,23 @@ final class SqlAuditHarness {
     for (var row : rows) {
       var fields = new ArrayList<>(row.subList(1, row.size()));
       switch (row.get(0).toString()) {
-        case "+I", "+U" -> keyed.put(fields.get(0), fields);
-        case "-D", "-U" -> {
+        case "+I":
+        case "+U":
+          keyed.put(fields.get(0), fields);
+          break;
+        case "-D":
+        case "-U":
+          {
+            {
           assertEquals(
               fields,
               keyed.remove(fields.get(0)),
               "retraction must remove the current keyed value");
         }
-        default -> throw new AssertionError("unknown RowKind: " + row);
+            break;
+          }
+        default:
+          throw new AssertionError("unknown RowKind: " + row);
       }
     }
     Map<List<Object>, Long> result = new HashMap<>();
@@ -210,12 +331,19 @@ final class SqlAuditHarness {
   static Map<List<Object>, Long> materialized(List<List<Object>> rows) {
     Map<List<Object>, Long> result = new HashMap<>();
     for (var row : rows) {
-      long delta =
-          switch (row.get(0).toString()) {
-            case "+I", "+U" -> 1;
-            case "-U", "-D" -> -1;
-            default -> throw new AssertionError("unknown RowKind: " + row);
-          };
+      long delta;
+      switch (row.get(0).toString()) {
+        case "+I":
+        case "+U":
+          delta = 1;
+          break;
+        case "-U":
+        case "-D":
+          delta = -1;
+          break;
+        default:
+          throw new AssertionError("unknown RowKind: " + row);
+      }
       result.merge(new ArrayList<>(row.subList(1, row.size())), delta, Long::sum);
     }
     result.values().removeIf(count -> count == 0);
@@ -247,7 +375,9 @@ final class SqlAuditHarness {
     record.put("phase", outcome.phase().name());
     record.put("rowCount", outcome.rows().size());
     record.put("resultTypes", outcome.resultTypes());
-    record.put("rowKinds", outcome.rows().stream().map(row -> row.get(0)).distinct().toList());
+    record.put(
+        "rowKinds",
+        outcome.rows().stream().map(row -> row.get(0)).distinct().collect(ListCollectors.toList()));
     record.put("substitutions", outcome.substitutions());
     record.put("operators", outcome.operatorTypes());
     record.put("fallbackReasons", outcome.fallbackReasons());

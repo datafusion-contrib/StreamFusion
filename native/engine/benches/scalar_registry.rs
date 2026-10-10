@@ -334,6 +334,60 @@ fn registry(c: &mut Criterion) {
             if !unicode {
                 cases.extend(parameterized(rows, nulls));
             }
+            for charset in ["UTF-16", "UTF-16BE", "UTF-16LE"] {
+                let text = if unicode {
+                    "\u{e9}\u{4e2d}\u{1f642}|alpha|beta".repeat(16)
+                } else {
+                    "alpha|beta".to_owned()
+                };
+                let mut bytes: Vec<u8> = text
+                    .encode_utf16()
+                    .flat_map(|unit| {
+                        if charset == "UTF-16LE" {
+                            unit.to_le_bytes()
+                        } else {
+                            unit.to_be_bytes()
+                        }
+                    })
+                    .collect();
+                bytes.extend_from_slice(if charset == "UTF-16LE" {
+                    &[0xfe, 0xff]
+                } else {
+                    &[0xff, 0xfe]
+                });
+                bytes.push(0); // Trailing malformed byte after the runtime-sensitive code unit.
+                let input = array(
+                    BinaryArray::from_iter(
+                        (0..rows + 1).map(|i| (!nulls || i % 7 != 0).then_some(bytes.as_slice())),
+                    ),
+                    rows,
+                );
+                for (jdk, replace) in [(11, true), (17, false)] {
+                    cases.push((
+                        format!("op=121/charset={charset}/jdk={jdk}"),
+                        flink_scalar_function(121, 3),
+                        vec![
+                            input.clone(),
+                            literal(charset),
+                            ColumnarValue::Scalar(ScalarValue::Boolean(Some(replace))),
+                        ],
+                    ));
+                }
+            }
+            for (jdk, version) in [(11, "10.0"), (17, "13.0")] {
+                let documents = array(
+                    StringArray::from_iter((0..rows + 1).map(|i| {
+                        (!nulls || i % 7 != 0)
+                            .then_some(["true\u{560}", r#"{"a":1}"#, "truea"][i % 3])
+                    })),
+                    rows,
+                );
+                cases.push((
+                    format!("op=144/jdk={jdk}"),
+                    flink_scalar_function(144, 2),
+                    vec![documents, literal(version)],
+                ));
+            }
             for (case, udf, args) in cases {
                 let types: Vec<_> = args.iter().map(ColumnarValue::data_type).collect();
                 let fields: Vec<_> = types

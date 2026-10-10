@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 import org.apache.flink.runtime.client.JobCancellationException;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.TableResult;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 
@@ -23,14 +24,89 @@ final class NativeFailureParity {
   enum Phase { SETUP, PLANNING, SUBMISSION, INITIALIZATION, ROW_EVALUATION, COLLECTION }
   enum Route { HOST, NATIVE, FALLBACK, UNPLANNED }
 
-  record Outcome(List<List<Object>> rows, Exception failure, Phase phase, Route route,
-      List<String> fallbackReasons, List<String> operatorTypes, int substitutions,
-      List<String> resultTypes, String plan) {
+  static final class Outcome {
+    private final List<List<Object>> rows;
+    private final Exception failure;
+    private final Phase phase;
+    private final Route route;
+    private final List<String> fallbackReasons;
+    private final List<String> operatorTypes;
+    private final int substitutions;
+    private final List<String> resultTypes;
+    private final String plan;
+
+    Outcome(
+        List<List<Object>> rows,
+        Exception failure,
+        Phase phase,
+        Route route,
+        List<String> fallbackReasons,
+        List<String> operatorTypes,
+        int substitutions,
+        List<String> resultTypes,
+        String plan) {
+      this.rows = rows;
+      this.failure = failure;
+      this.phase = phase;
+      this.route = route;
+      this.fallbackReasons = fallbackReasons;
+      this.operatorTypes = operatorTypes;
+      this.substitutions = substitutions;
+      this.resultTypes = resultTypes;
+      this.plan = plan;
+    }
+
+    public List<List<Object>> rows() {
+      return rows;
+    }
+
+    public Exception failure() {
+      return failure;
+    }
+
+    public Phase phase() {
+      return phase;
+    }
+
+    public Route route() {
+      return route;
+    }
+
+    public List<String> fallbackReasons() {
+      return fallbackReasons;
+    }
+
+    public List<String> operatorTypes() {
+      return operatorTypes;
+    }
+
+    public int substitutions() {
+      return substitutions;
+    }
+
+    public List<String> resultTypes() {
+      return resultTypes;
+    }
+
+    public String plan() {
+      return plan;
+    }
+
     @Override
     public String toString() {
-      return "Outcome[phase=" + phase + ", route=" + route + ", cause=" + rootCause()
-          + ", collected=" + rows.size() + ", rows=" + rows.stream().limit(10).toList()
-          + ", fallbackReasons=" + fallbackReasons + "]";
+      return "Outcome[phase="
+          + phase
+          + ", route="
+          + route
+          + ", cause="
+          + rootCause()
+          + ", collected="
+          + rows.size()
+          + ", rows="
+          + rows.stream().limit(10).collect(ListCollectors.toList())
+          + ", fallbackReasons="
+          + fallbackReasons
+          + "]";
     }
 
     Throwable rootCause() {
@@ -38,15 +114,62 @@ final class NativeFailureParity {
       while (cause != null && cause.getCause() != null) cause = cause.getCause();
       return cause;
     }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Outcome that = (Outcome) other;
+      return java.util.Objects.equals(rows, that.rows)
+          && java.util.Objects.equals(failure, that.failure)
+          && java.util.Objects.equals(phase, that.phase)
+          && java.util.Objects.equals(route, that.route)
+          && java.util.Objects.equals(fallbackReasons, that.fallbackReasons)
+          && java.util.Objects.equals(operatorTypes, that.operatorTypes)
+          && substitutions == that.substitutions
+          && java.util.Objects.equals(resultTypes, that.resultTypes)
+          && java.util.Objects.equals(plan, that.plan);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(rows);
+      result = 31 * result + java.util.Objects.hashCode(failure);
+      result = 31 * result + java.util.Objects.hashCode(phase);
+      result = 31 * result + java.util.Objects.hashCode(route);
+      result = 31 * result + java.util.Objects.hashCode(fallbackReasons);
+      result = 31 * result + java.util.Objects.hashCode(operatorTypes);
+      result = 31 * result + substitutions;
+      result = 31 * result + java.util.Objects.hashCode(resultTypes);
+      result = 31 * result + java.util.Objects.hashCode(plan);
+      return result;
+    }
   }
 
-  record Comparison(Outcome host, Outcome nativeRun) {
+  static final class Comparison {
+    private final Outcome host;
+    private final Outcome nativeRun;
+
+    Comparison(Outcome host, Outcome nativeRun) {
+      this.host = host;
+      this.nativeRun = nativeRun;
+    }
+
+    public Outcome host() {
+      return host;
+    }
+
+    public Outcome nativeRun() {
+      return nativeRun;
+    }
+
     void assertFailure(Class<? extends Throwable> causeType, Phase phase, Route nativeRoute) {
       assertFailure(causeType, null, phase, nativeRoute);
     }
 
-    void assertFailure(Class<? extends Throwable> causeType, String message, Phase phase,
-        Route nativeRoute) {
+    void assertFailure(
+        Class<? extends Throwable> causeType, String message, Phase phase, Route nativeRoute) {
       assertEquals(host.failure() == null, nativeRun.failure() == null, this::toString);
       for (Outcome outcome : List.of(host, nativeRun)) {
         assertNotNull(outcome.failure(), outcome.toString());
@@ -67,6 +190,28 @@ final class NativeFailureParity {
       assertEquals(NativeParity.multiset(host.rows()), NativeParity.multiset(nativeRun.rows()),
           this::toString);
       assertEquals(nativeRoute, nativeRun.route(), this::toString);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Comparison that = (Comparison) other;
+      return java.util.Objects.equals(host, that.host)
+          && java.util.Objects.equals(nativeRun, that.nativeRun);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(host);
+      result = 31 * result + java.util.Objects.hashCode(nativeRun);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Comparison[host=" + host + ", nativeRun=" + nativeRun + "]";
     }
   }
 
@@ -105,8 +250,10 @@ final class NativeFailureParity {
       if (nativeRun) scan = NativePlanner.install(table);
       phase = Phase.PLANNING;
       var query = table.sqlQuery(sql);
-      resultTypes = query.getResolvedSchema().getColumnDataTypes().stream()
-          .map(Object::toString).toList();
+      resultTypes =
+          query.getResolvedSchema().getColumnDataTypes().stream()
+              .map(Object::toString)
+              .collect(ListCollectors.toList());
       plan = query.explain();
       phase = Phase.SUBMISSION;
       if (recovery) {

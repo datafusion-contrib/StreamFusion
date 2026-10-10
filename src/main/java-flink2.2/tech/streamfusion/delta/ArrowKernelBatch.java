@@ -1,29 +1,28 @@
 package tech.streamfusion.delta;
 
-import io.delta.kernel.data.ColumnarBatch;
-import io.delta.kernel.data.ColumnVector;
 import io.delta.kernel.data.ArrayValue;
+import io.delta.kernel.data.ColumnVector;
+import io.delta.kernel.data.ColumnarBatch;
 import io.delta.kernel.data.MapValue;
 import io.delta.kernel.types.ArrayType;
 import io.delta.kernel.types.MapType;
 import io.delta.kernel.types.StructField;
 import io.delta.kernel.types.StructType;
 import java.math.BigDecimal;
-import tech.streamfusion.arrow.TimestampAccessor;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.complex.ListVector;
 import org.apache.arrow.vector.complex.MapVector;
 import org.apache.arrow.vector.complex.StructVector;
-import org.apache.arrow.vector.util.TransferPair;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
+import org.apache.arrow.vector.util.TransferPair;
+import tech.streamfusion.arrow.TimestampAccessor;
 
 /** A Delta Kernel batch that directly views Arrow vectors. */
 public final class ArrowKernelBatch implements ColumnarBatch, AutoCloseable {
-
   private final VectorSchemaRoot root;
   private final StructType schema;
   private final List<ArrowKernelVector> vectors;
@@ -287,12 +286,18 @@ public final class ArrowKernelBatch implements ColumnarBatch, AutoCloseable {
             ((org.apache.arrow.vector.types.pojo.ArrowType.Timestamp)
                     vector.getField().getType())
                 .getUnit();
-        return switch (unit) {
-          case SECOND -> Math.multiplyExact(value, 1_000_000L);
-          case MILLISECOND -> Math.multiplyExact(value, 1_000L);
-          case MICROSECOND -> value;
-          case NANOSECOND -> Math.floorDiv(value, 1_000L);
-        };
+        switch (unit) {
+          case SECOND:
+            return Math.multiplyExact(value, 1_000_000L);
+          case MILLISECOND:
+            return Math.multiplyExact(value, 1_000L);
+          case MICROSECOND:
+            return value;
+          case NANOSECOND:
+            return Math.floorDiv(value, 1_000L);
+          default:
+            throw new IncompatibleClassChangeError();
+        }
       }
       return ((BigIntVector) vector).get(index);
     }

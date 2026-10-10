@@ -56,6 +56,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 
@@ -63,7 +64,6 @@ import tech.streamfusion.planner.PhysicalPlanScan;
 @Tag("streamfusion-kafka")
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeKafkaSinkIntegrationTest {
-
   private static final int ROWS = 100;
   private static final AtomicBoolean FAILED_ONCE = new AtomicBoolean();
 
@@ -270,7 +270,7 @@ class NativeKafkaSinkIntegrationTest {
             paths
                 .filter(Files::isRegularFile)
                 .filter(file -> !file.getFileName().toString().startsWith("."))
-                .toList()) {
+                .collect(ListCollectors.toList())) {
           output.addAll(Files.readAllLines(path));
         }
       }
@@ -720,7 +720,7 @@ class NativeKafkaSinkIntegrationTest {
               .filter(listing -> listing.transactionalId().startsWith(prefix))
               .filter(listing -> listing.state() == TransactionState.ONGOING)
               .map(TransactionListing::transactionalId)
-              .toList();
+              .collect(ListCollectors.toList());
       assertTrue(ongoing.isEmpty(), () -> "transactions left open after restore: " + ongoing);
     }
   }
@@ -967,7 +967,6 @@ class NativeKafkaSinkIntegrationTest {
    */
   private static final class CommitPhaseFailingMap extends RichMapFunction<Row, Row>
       implements CheckpointedFunction, CheckpointListener {
-
     private transient ListState<Long> state;
     private long seen;
 
@@ -1007,7 +1006,6 @@ class NativeKafkaSinkIntegrationTest {
 
   private static final class CheckpointFailingMap extends RichMapFunction<Row, Row>
       implements CheckpointedFunction, CheckpointListener {
-
     private final long delayNanos;
     private volatile boolean checkpointCompleted;
     private transient ListState<Long> state;

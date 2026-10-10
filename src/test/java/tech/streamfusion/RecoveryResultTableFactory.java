@@ -61,9 +61,21 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
     return new CaptureSink(context.getPhysicalRowDataType());
   }
 
-  private record CaptureSink(DataType type) implements DynamicTableSink {
+  private static final class CaptureSink implements DynamicTableSink {
+    private final DataType type;
+
+    private CaptureSink(DataType type) {
+      this.type = type;
+    }
+
+    public DataType type() {
+      return type;
+    }
+
     @Override
-    public ChangelogMode getChangelogMode(ChangelogMode requested) { return requested; }
+    public ChangelogMode getChangelogMode(ChangelogMode requested) {
+      return requested;
+    }
 
     @Override
     public SinkRuntimeProvider getSinkRuntimeProvider(Context context) {
@@ -71,10 +83,34 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
     }
 
     @Override
-    public DynamicTableSink copy() { return new CaptureSink(type); }
+    public DynamicTableSink copy() {
+      return new CaptureSink(type);
+    }
 
     @Override
-    public String asSummaryString() { return "RecoveryResults"; }
+    public String asSummaryString() {
+      return "RecoveryResults";
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      CaptureSink that = (CaptureSink) other;
+      return java.util.Objects.equals(type, that.type);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(type);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "CaptureSink[type=" + type + "]";
+    }
   }
 
   static final class CaptureFunction extends RichSinkFunction<RowData>

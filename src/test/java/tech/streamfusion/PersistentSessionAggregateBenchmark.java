@@ -68,13 +68,15 @@ class PersistentSessionAggregateBenchmark {
         Boolean.parseBoolean(System.getProperty("persistent.session.native", "true"));
     for (int i = 0; i < WARMUP; i++) run(nativeEngine);
     String pid = Long.toString(ProcessHandle.current().pid());
-    Path output = Path.of(System.getProperty("profile.outputDir", "target/profiles/persistent-session"));
+    Path output =
+        Path.of(System.getProperty("profile.outputDir", "target/profiles/persistent-session"));
     Files.createDirectories(output);
     Path recording = output.resolve(nativeEngine ? "native.jfr" : "flink.jfr").toAbsolutePath();
     String profiler = System.getProperty("profile.asprof", "asprof");
     profileCommand(profiler, "start", "-e", "cpu", "-i", "1ms", "-f", recording.toString(), pid);
     try {
-      long deadline = System.nanoTime() + Long.getLong("persistent.session.seconds", 45L) * 1_000_000_000L;
+      long deadline =
+          System.nanoTime() + Long.getLong("persistent.session.seconds", 45L) * 1_000_000_000L;
       do {
         run(nativeEngine);
       } while (System.nanoTime() < deadline);
@@ -96,7 +98,8 @@ class PersistentSessionAggregateBenchmark {
     if (!plan.contains("NativeColumnarSessionWindowAggregate")
         || !plan.contains("RowDataToArrow")
         || !plan.contains("ArrowToRowData")) {
-      throw new IllegalStateException("Expected native session aggregate and both transposes: " + plan);
+      throw new IllegalStateException(
+          "Expected native session aggregate and both transposes: " + plan);
     }
   }
 
@@ -120,11 +123,14 @@ class PersistentSessionAggregateBenchmark {
   }
 
   private static long timestampSeconds(long row) {
-    return switch ((int) ((row / KEYS) % 3)) {
-      case 1 -> 2;
-      case 2 -> 1;
-      default -> 0;
-    };
+    switch ((int) ((row / KEYS) % 3)) {
+      case 1:
+        return 2;
+      case 2:
+        return 1;
+      default:
+        return 0;
+    }
   }
 
   private static TableEnvironment environment() {

@@ -129,8 +129,11 @@ class NativeWideDistinctRetentionTest {
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness) {
     List<String> result = new ArrayList<>();
     for (Object output : harness.getOutput()) {
-      if (output instanceof StreamRecord<?> record
-          && record.getValue() instanceof ArrowBatch batch) {
+      Object batchCandidate;
+      if (output instanceof StreamRecord<?>
+          && (batchCandidate = ((StreamRecord<?>) output).getValue()) instanceof ArrowBatch) {
+        ArrowBatch batch = ((ArrowBatch) batchCandidate);
+
         try (VectorSchemaRoot root = batch.root()) {
           for (RowData row : RowDataArrowConverter.read(root, OUTPUT)) {
             result.add(

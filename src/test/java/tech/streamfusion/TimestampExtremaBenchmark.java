@@ -88,40 +88,73 @@ class TimestampExtremaBenchmark {
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
     table.getConfig().set("table.exec.mini-batch.size", "1024");
     LocalDateTime base = LocalDateTime.of(1969, 12, 31, 23, 59, 59, 999000001);
-    var dataType =
-        switch (type) {
-          case "DATE" -> DataTypes.DATE();
-          case "TIME" -> DataTypes.TIME(3);
-          case "BOOLEAN" -> DataTypes.BOOLEAN();
-          case "TIMESTAMP" -> DataTypes.TIMESTAMP(9);
-          case "TIMESTAMP_LTZ" -> DataTypes.TIMESTAMP_LTZ(9);
-          default -> throw new IllegalArgumentException("Unknown extrema.types entry: " + type);
-        };
-    var valueType =
-        switch (type) {
-          case "DATE" -> Types.LOCAL_DATE;
-          case "TIME" -> Types.LOCAL_TIME;
-          case "BOOLEAN" -> Types.BOOLEAN;
-          case "TIMESTAMP_LTZ" -> Types.INSTANT;
-          default -> Types.LOCAL_DATE_TIME;
-        };
+    org.apache.flink.table.types.DataType dataType;
+    switch (type) {
+      case "DATE":
+        dataType = DataTypes.DATE();
+        break;
+      case "TIME":
+        dataType = DataTypes.TIME(3);
+        break;
+      case "BOOLEAN":
+        dataType = DataTypes.BOOLEAN();
+        break;
+      case "TIMESTAMP":
+        dataType = DataTypes.TIMESTAMP(9);
+        break;
+      case "TIMESTAMP_LTZ":
+        dataType = DataTypes.TIMESTAMP_LTZ(9);
+        break;
+      default:
+        throw new IllegalArgumentException("Unknown extrema.types entry: " + type);
+    }
+    org.apache.flink.api.common.typeinfo.TypeInformation<?> valueType;
+    switch (type) {
+      case "DATE":
+        valueType = Types.LOCAL_DATE;
+        break;
+      case "TIME":
+        valueType = Types.LOCAL_TIME;
+        break;
+      case "BOOLEAN":
+        valueType = Types.BOOLEAN;
+        break;
+      case "TIMESTAMP_LTZ":
+        valueType = Types.INSTANT;
+        break;
+      default:
+        valueType = Types.LOCAL_DATE_TIME;
+        break;
+    }
     table.createTemporaryView(
         "inputs",
         env.fromSequence(0, ROWS - 1)
             .map(
                 i -> {
                   LocalDateTime value = base.plusNanos(i % 4096 * 1_000_001);
-                  return Row.of(
-                      (int) (i % 64),
-                      i / 64 % 8 == 0
-                          ? null
-                          : switch (type) {
-                            case "DATE" -> base.toLocalDate().plusDays(i % 4096);
-                            case "TIME" -> java.time.LocalTime.ofNanoOfDay(i % 4096 * 1_000_000);
-                            case "BOOLEAN" -> i / 64 % 2 == 0;
-                            case "TIMESTAMP_LTZ" -> value.toInstant(ZoneOffset.UTC);
-                            default -> value;
-                          });
+                  Object selectedValue;
+                  if (i / 64 % 8 == 0) {
+                    selectedValue = null;
+                  } else {
+                    switch (type) {
+                      case "DATE":
+                        selectedValue = base.toLocalDate().plusDays(i % 4096);
+                        break;
+                      case "TIME":
+                        selectedValue = java.time.LocalTime.ofNanoOfDay(i % 4096 * 1_000_000);
+                        break;
+                      case "BOOLEAN":
+                        selectedValue = i / 64 % 2 == 0;
+                        break;
+                      case "TIMESTAMP_LTZ":
+                        selectedValue = value.toInstant(ZoneOffset.UTC);
+                        break;
+                      default:
+                        selectedValue = value;
+                        break;
+                    }
+                  }
+                  return Row.of((int) (i % 64), selectedValue);
                 })
             .returns(Types.ROW_NAMED(new String[] {"k", "ts"}, Types.INT, valueType)),
         Schema.newBuilder().column("k", DataTypes.INT()).column("ts", dataType).build());

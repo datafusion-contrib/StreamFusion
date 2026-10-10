@@ -31,6 +31,7 @@ import org.apache.paimon.types.RowType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.parquet.NativeParquet;
 
 class PaimonSnapshotKeyTypesTest {
@@ -53,16 +54,20 @@ class PaimonSnapshotKeyTypesTest {
                   BigDecimal.ZERO,
                   new BigDecimal("0.01"))
               .map(v -> Decimal.fromBigDecimal(v, precision, 2))
-              .toList());
+              .collect(ListCollectors.toList()));
     }
     add(
         cases,
         DataTypes.CHAR(4),
-        Stream.of("é   ", "Z   ", "😀   ", "e   ", "    ").map(BinaryString::fromString).toList());
+        Stream.of("é   ", "Z   ", "😀   ", "e   ", "    ")
+            .map(BinaryString::fromString)
+            .collect(ListCollectors.toList()));
     add(
         cases,
         DataTypes.VARCHAR(20),
-        Stream.of("é", "Z", "😀", "e", "", "e ", "ee").map(BinaryString::fromString).toList());
+        Stream.of("é", "Z", "😀", "e", "", "e ", "ee")
+            .map(BinaryString::fromString)
+            .collect(ListCollectors.toList()));
     add(
         cases,
         DataTypes.BINARY(2),
@@ -91,7 +96,7 @@ class PaimonSnapshotKeyTypesTest {
                   v ->
                       Timestamp.fromEpochMillis(
                           Math.floorDiv(v, 1000), (int) Math.floorMod(v, 1000) * 1000))
-              .toList();
+              .collect(ListCollectors.toList());
       add(cases, DataTypes.TIMESTAMP(precision), values);
       add(cases, DataTypes.TIMESTAMP_WITH_LOCAL_TIME_ZONE(precision), values);
       if (precision > 0) {
@@ -101,7 +106,7 @@ class PaimonSnapshotKeyTypesTest {
                     v ->
                         Timestamp.fromEpochMillis(
                             v.getMillisecond() + 1_000_000_000_000L, v.getNanoOfMillisecond()))
-                .toList();
+                .collect(ListCollectors.toList());
         for (boolean nativeWriter : new boolean[] {false, true}) {
           cases.add(Arguments.of(DataTypes.TIMESTAMP(precision), positive, nativeWriter, "orc"));
           cases.add(
@@ -236,10 +241,10 @@ class PaimonSnapshotKeyTypesTest {
         }
       }
       int precision =
-          keyType instanceof org.apache.paimon.types.TimestampType timestamp
-              ? timestamp.getPrecision()
-              : keyType instanceof org.apache.paimon.types.LocalZonedTimestampType timestamp
-                  ? timestamp.getPrecision()
+          keyType instanceof org.apache.paimon.types.TimestampType
+              ? ((org.apache.paimon.types.TimestampType) keyType).getPrecision()
+              : keyType instanceof org.apache.paimon.types.LocalZonedTimestampType
+                  ? ((org.apache.paimon.types.LocalZonedTimestampType) keyType).getPrecision()
                   : 0;
       boolean orderingRisk =
           format.equals("orc")

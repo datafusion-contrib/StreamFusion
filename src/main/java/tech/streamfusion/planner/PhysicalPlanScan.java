@@ -48,6 +48,7 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tech.streamfusion.compat.FlinkCompat;
+import tech.streamfusion.compat.ListCollectors;
 
 /**
  * Rewrites the host engine's optimized physical plan, replacing supported operators with native
@@ -63,7 +64,6 @@ import tech.streamfusion.compat.FlinkCompat;
  * config gate, changelog-safety and fallback reason rather than encoding them in its position.
  */
 public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimizeContext> {
-
   private static final Logger LOG = LoggerFactory.getLogger(PhysicalPlanScan.class);
 
   private final List<String> operatorTypes = new ArrayList<>();
@@ -686,7 +686,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     return replacements.isEmpty()
         ? roots
-        : roots.stream().map(root -> replaceInputs(root, replacements)).toList();
+        : roots.stream()
+            .map(root -> replaceInputs(root, replacements))
+            .collect(ListCollectors.toList());
   }
 
   private static void collectShareableScans(RelNode node, Map<String, List<RelNode>> groups) {

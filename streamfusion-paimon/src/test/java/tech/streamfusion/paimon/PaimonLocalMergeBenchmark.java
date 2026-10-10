@@ -17,6 +17,7 @@ import org.apache.paimon.flink.FlinkRowData;
 import org.apache.paimon.flink.LogicalTypeConversion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.RowDataArrowConverter;
@@ -63,7 +64,7 @@ class PaimonLocalMergeBenchmark {
                   RowDataArrowConverter.write(
                       input.subList(start, Math.min(start + 4096, count)).stream()
                           .<RowData>map(FlinkRowData::new)
-                          .toList(),
+                          .collect(ListCollectors.toList()),
                       type,
                       allocator,
                       true));

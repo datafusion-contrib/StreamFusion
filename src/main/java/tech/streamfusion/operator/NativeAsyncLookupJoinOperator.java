@@ -52,7 +52,6 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  */
 public class NativeAsyncLookupJoinOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
-
   private final RichAsyncFunction<RowData, RowData> runner;
   private final RowType probeType;
   private final RowType outputType;
@@ -153,8 +152,16 @@ public class NativeAsyncLookupJoinOperator extends FlinkStreamOperator<ArrowBatc
         pending.removeFirst();
       }
     } catch (ExecutionException error) {
-      if (error.getCause() instanceof Exception cause) throw cause;
-      if (error.getCause() instanceof Error cause) throw cause;
+      Object causeCandidate;
+      if ((causeCandidate = error.getCause()) instanceof Exception) {
+        Exception cause = ((Exception) causeCandidate);
+        throw cause;
+      }
+      Object causeCandidate2;
+      if ((causeCandidate2 = error.getCause()) instanceof Error) {
+        Error cause = ((Error) causeCandidate2);
+        throw cause;
+      }
       throw error;
     } catch (InterruptedException error) {
       Thread.currentThread().interrupt();
@@ -187,6 +194,58 @@ public class NativeAsyncLookupJoinOperator extends FlinkStreamOperator<ArrowBatc
     }
   }
 
-  private record PendingLookup(
-      RowData probe, CompletableFuture<Collection<RowData>> result, long startedNanos) {}
+  private static final class PendingLookup {
+    private final RowData probe;
+    private final CompletableFuture<Collection<RowData>> result;
+    private final long startedNanos;
+
+    private PendingLookup(
+        RowData probe, CompletableFuture<Collection<RowData>> result, long startedNanos) {
+      this.probe = probe;
+      this.result = result;
+      this.startedNanos = startedNanos;
+    }
+
+    public RowData probe() {
+      return probe;
+    }
+
+    public CompletableFuture<Collection<RowData>> result() {
+      return result;
+    }
+
+    public long startedNanos() {
+      return startedNanos;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      PendingLookup that = (PendingLookup) other;
+      return java.util.Objects.equals(probe, that.probe)
+          && java.util.Objects.equals(result, that.result)
+          && startedNanos == that.startedNanos;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(probe);
+      result = 31 * result + java.util.Objects.hashCode(result);
+      result = 31 * result + Long.hashCode(startedNanos);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "PendingLookup[probe="
+          + probe
+          + ", result="
+          + result
+          + ", startedNanos="
+          + startedNanos
+          + "]";
+    }
+  }
 }

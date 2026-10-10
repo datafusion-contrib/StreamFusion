@@ -19,6 +19,7 @@ import org.apache.paimon.memory.MemoryPoolFactory;
 import org.apache.paimon.table.FileStoreTable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
@@ -26,7 +27,44 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  */
 @EnabledIfEnvironmentVariable(named = "SF_PAIMON_SPILL_BENCHMARK", matches = "true")
 class PaimonAppendSpillBenchmark {
-  private record Bucket(BinaryRow partition, int bucket) {}
+  private static final class Bucket {
+    private final BinaryRow partition;
+    private final int bucket;
+
+    private Bucket(BinaryRow partition, int bucket) {
+      this.partition = partition;
+      this.bucket = bucket;
+    }
+
+    public BinaryRow partition() {
+      return partition;
+    }
+
+    public int bucket() {
+      return bucket;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Bucket that = (Bucket) other;
+      return java.util.Objects.equals(partition, that.partition) && bucket == that.bucket;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(partition);
+      result = 31 * result + bucket;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Bucket[partition=" + partition + ", bucket=" + bucket + "]";
+    }
+  }
 
   @Test
   void comparePreviousAndNativeSpill() throws Exception {
@@ -112,7 +150,9 @@ class PaimonAppendSpillBenchmark {
               }
             }
             var messages =
-                write.prepareCommit(true, 1).stream().map(c -> c.commitMessage()).toList();
+                write.prepareCommit(true, 1).stream()
+                    .map(c -> c.commitMessage())
+                    .collect(ListCollectors.toList());
             commit.commit(1, messages);
           } finally {
             write.close();

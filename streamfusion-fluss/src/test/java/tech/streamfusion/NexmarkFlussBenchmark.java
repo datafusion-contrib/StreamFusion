@@ -32,6 +32,7 @@ import org.apache.fluss.row.InternalRow;
 import org.apache.fluss.types.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.fluss.FlussTestCluster;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
@@ -90,7 +91,8 @@ class NexmarkFlussBenchmark {
             }
           }
           System.out.printf(
-              "[fluss] %s rows=%d parallelism=%d stock=%s native=%s primaryKeySink=%s backend=%s miniBatch=%s%n",
+              "[fluss] %s rows=%d parallelism=%d stock=%s native=%s primaryKeySink=%s backend=%s"
+                  + " miniBatch=%s%n",
               query.label,
               ROWS,
               PARALLELISM,
@@ -103,7 +105,8 @@ class NexmarkFlussBenchmark {
       }
     } finally {
       try (var files = Files.walk(rocksDirectory)) {
-        for (var file : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(file);
+        for (var file : files.sorted(Comparator.reverseOrder()).collect(ListCollectors.toList()))
+          Files.delete(file);
       }
       if (previous == null) System.clearProperty("streamfusion.fluss.enabled");
       else System.setProperty("streamfusion.fluss.enabled", previous);
@@ -137,16 +140,27 @@ class NexmarkFlussBenchmark {
     GenericRow row = new GenericRow(type.getFieldCount());
     for (int i = 0; i < type.getFieldCount(); i++) {
       JsonNode field = value.get(type.getFields().get(i).getName());
-      Object decoded =
-          field == null || field.isNull()
-              ? null
-              : switch (type.getTypeAt(i).getTypeRoot()) {
-                case INTEGER -> field.intValue();
-                case BIGINT -> field.longValue();
-                case STRING -> BinaryString.fromString(field.textValue());
-                case ROW -> row(field, (RowType) type.getTypeAt(i));
-                default -> throw new IllegalArgumentException("Unexpected Nexmark physical field");
-              };
+      Object decoded;
+      if (field == null || field.isNull()) {
+        decoded = null;
+      } else {
+        switch (type.getTypeAt(i).getTypeRoot()) {
+          case INTEGER:
+            decoded = field.intValue();
+            break;
+          case BIGINT:
+            decoded = field.longValue();
+            break;
+          case STRING:
+            decoded = BinaryString.fromString(field.textValue());
+            break;
+          case ROW:
+            decoded = row(field, (RowType) type.getTypeAt(i));
+            break;
+          default:
+            throw new IllegalArgumentException("Unexpected Nexmark physical field");
+        }
+      }
       row.setField(i, decoded);
     }
     return row;
@@ -234,10 +248,48 @@ class NexmarkFlussBenchmark {
     }
   }
 
-  private record Result(double seconds, SortedOutput rows) implements AutoCloseable {
+  private static final class Result implements AutoCloseable {
+    private final double seconds;
+    private final SortedOutput rows;
+
+    private Result(double seconds, SortedOutput rows) {
+      this.seconds = seconds;
+      this.rows = rows;
+    }
+
+    public double seconds() {
+      return seconds;
+    }
+
+    public SortedOutput rows() {
+      return rows;
+    }
+
     @Override
     public void close() throws IOException {
       rows.close();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Result that = (Result) other;
+      return Double.compare(seconds, that.seconds) == 0
+          && java.util.Objects.equals(rows, that.rows);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + Double.hashCode(seconds);
+      result = 31 * result + java.util.Objects.hashCode(rows);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Result[seconds=" + seconds + ", rows=" + rows + "]";
     }
   }
 

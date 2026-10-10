@@ -27,7 +27,10 @@ final class TextTimeBenchmarkInputs {
   static String fixedBinaryLiteral(int width) {
     byte[] value = new byte[width];
     for (int i = 0; i < value.length; i++) value[i] = (byte) (i * 17);
-    return "X'" + java.util.HexFormat.of().withUpperCase().formatHex(value) + "'";
+    return "X'"
+        + org.apache.flink.util.StringUtils.byteToHexString(value)
+            .toUpperCase(java.util.Locale.ROOT)
+        + "'";
   }
 
   static String fixedBinarySelection() {
@@ -35,32 +38,69 @@ final class TextTimeBenchmarkInputs {
   }
 
   static String baselineExpression(String input) {
-    return switch (input) {
-      case "tt_bytes", "tt_fixed_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "b";
-      case "tt_boolean" -> "b";
-      case "tt_decimal", "tt_decimal_scale", "tt_unix_time",
-          "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large" -> "n";
-      case "tt_decimal_array" -> "a";
-      case "tt_json_array" -> "a";
-      case "tt_timestamp", "tt_timestamp_ltz" -> "ts";
-      default -> "s";
-    };
+    switch (input) {
+      case "tt_bytes":
+      case "tt_fixed_bytes":
+      case "tt_utf16":
+      case "tt_utf16be":
+      case "tt_utf16le":
+        return "b";
+      case "tt_boolean":
+        return "b";
+      case "tt_decimal":
+      case "tt_decimal_scale":
+      case "tt_unix_time":
+      case "tt_double_bounded":
+      case "tt_double_boundary":
+      case "tt_double_ambiguous":
+      case "tt_double_outside":
+      case "tt_double_large":
+        return "n";
+      case "tt_decimal_array":
+        return "a";
+      case "tt_json_array":
+        return "a";
+      case "tt_timestamp":
+      case "tt_timestamp_ltz":
+        return "ts";
+      default:
+        return "s";
+    }
   }
 
   static String baselineType(String input) {
-    return switch (input) {
-      case "tt_bytes", "tt_utf16", "tt_utf16be", "tt_utf16le" -> "BYTES";
-      case "tt_boolean" -> "BOOLEAN";
-      case "tt_fixed_bytes" -> "BINARY(" + fixedBinaryWidth() + ")";
-      case "tt_decimal", "tt_decimal_scale" -> "DECIMAL(38,9)";
-      case "tt_unix_time" -> "BIGINT";
-      case "tt_double_bounded", "tt_double_boundary", "tt_double_ambiguous", "tt_double_outside", "tt_double_large" -> "DOUBLE";
-      case "tt_decimal_array" -> "ARRAY<DECIMAL(38,9)>";
-      case "tt_json_array" -> "ARRAY<STRING>";
-      case "tt_timestamp" -> "TIMESTAMP(9)";
-      case "tt_timestamp_ltz" -> "TIMESTAMP_LTZ(9)";
-      default -> "STRING";
-    };
+    switch (input) {
+      case "tt_bytes":
+      case "tt_utf16":
+      case "tt_utf16be":
+      case "tt_utf16le":
+        return "BYTES";
+      case "tt_boolean":
+        return "BOOLEAN";
+      case "tt_fixed_bytes":
+        return "BINARY(" + fixedBinaryWidth() + ")";
+      case "tt_decimal":
+      case "tt_decimal_scale":
+        return "DECIMAL(38,9)";
+      case "tt_unix_time":
+        return "BIGINT";
+      case "tt_double_bounded":
+      case "tt_double_boundary":
+      case "tt_double_ambiguous":
+      case "tt_double_outside":
+      case "tt_double_large":
+        return "DOUBLE";
+      case "tt_decimal_array":
+        return "ARRAY<DECIMAL(38,9)>";
+      case "tt_json_array":
+        return "ARRAY<STRING>";
+      case "tt_timestamp":
+        return "TIMESTAMP(9)";
+      case "tt_timestamp_ltz":
+        return "TIMESTAMP_LTZ(9)";
+      default:
+        return "STRING";
+    }
   }
 
   static TableEnvironment environment(
@@ -122,21 +162,41 @@ final class TextTimeBenchmarkInputs {
         || input.equals("tt_double_ambiguous") || input.equals("tt_double_outside")
         || input.equals("tt_double_large")) {
       int nullScaleEvery = Integer.getInteger("scalar.scaleNullEvery", 0);
-      tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
-          .map(i -> {
-            double magnitude = switch (input) {
-              case "tt_double_boundary" -> 1000.5 + i % 1024;
-              case "tt_double_ambiguous" -> 1000.1 + i % 1024;
-              case "tt_double_outside" -> 0.46;
-              case "tt_double_large" -> 1e12 + 0.12345 + i % 1024;
-              default -> 1000.12345 + i % 1024;
-            };
-            Double value = isNull(i, nullEvery) ? null : (i % 2 == 0 ? magnitude : -magnitude);
-            Integer scale = nullScaleEvery > 0 && i % nullScaleEvery == 0 ? null
-                : (input.equals("tt_double_boundary") || input.equals("tt_double_ambiguous")) ? 1 : (int) (i % 7) - 3;
-            return Row.of(value, scale);
-          })
-          .returns(Types.ROW_NAMED(new String[] {"n", "s"}, Types.DOUBLE, Types.INT)));
+      tables.createTemporaryView(
+          "inputs",
+          env.fromSequence(0, rows - 1)
+              .map(
+                  i -> {
+                    double magnitude;
+                    switch (input) {
+                      case "tt_double_boundary":
+                        magnitude = 1000.5 + i % 1024;
+                        break;
+                      case "tt_double_ambiguous":
+                        magnitude = 1000.1 + i % 1024;
+                        break;
+                      case "tt_double_outside":
+                        magnitude = 0.46;
+                        break;
+                      case "tt_double_large":
+                        magnitude = 1e12 + 0.12345 + i % 1024;
+                        break;
+                      default:
+                        magnitude = 1000.12345 + i % 1024;
+                        break;
+                    }
+                    Double value =
+                        isNull(i, nullEvery) ? null : (i % 2 == 0 ? magnitude : -magnitude);
+                    Integer scale =
+                        nullScaleEvery > 0 && i % nullScaleEvery == 0
+                            ? null
+                            : (input.equals("tt_double_boundary")
+                                    || input.equals("tt_double_ambiguous"))
+                                ? 1
+                                : (int) (i % 7) - 3;
+                    return Row.of(value, scale);
+                  })
+              .returns(Types.ROW_NAMED(new String[] {"n", "s"}, Types.DOUBLE, Types.INT)));
     } else if (input.equals("tt_decimal_scale")) {
       java.math.BigDecimal[] values = {
         new java.math.BigDecimal("12345678901234567890.123456700"),
@@ -217,16 +277,29 @@ final class TextTimeBenchmarkInputs {
           "inputs",
           env.fromSequence(0, rows - 1)
               .map(i -> Row.of(isNull(i, nullEvery) ? null : values[(int) (i % 2)], (int) (i % 4)))
-              .returns(Types.ROW_NAMED(new String[] {"b", "n"}, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.INT)),
-          Schema.newBuilder().column("b", DataTypes.BINARY(width)).column("n", DataTypes.INT()).build());
+              .returns(
+                  Types.ROW_NAMED(
+                      new String[] {"b", "n"}, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.INT)),
+          Schema.newBuilder()
+              .column("b", DataTypes.BINARY(width))
+              .column("n", DataTypes.INT())
+              .build());
     } else if (input.equals("tt_bytes") || input.startsWith("tt_utf16")) {
-      java.nio.charset.Charset charset =
-          switch (input) {
-            case "tt_utf16" -> StandardCharsets.UTF_16;
-            case "tt_utf16be" -> StandardCharsets.UTF_16BE;
-            case "tt_utf16le" -> StandardCharsets.UTF_16LE;
-            default -> StandardCharsets.UTF_8;
-          };
+      java.nio.charset.Charset charset;
+      switch (input) {
+        case "tt_utf16":
+          charset = StandardCharsets.UTF_16;
+          break;
+        case "tt_utf16be":
+          charset = StandardCharsets.UTF_16BE;
+          break;
+        case "tt_utf16le":
+          charset = StandardCharsets.UTF_16LE;
+          break;
+        default:
+          charset = StandardCharsets.UTF_8;
+          break;
+      }
       byte[][] values = {
         text[0].getBytes(charset), text[1].getBytes(charset)
       };
@@ -308,68 +381,106 @@ final class TextTimeBenchmarkInputs {
           "\""
               + quotePattern.repeat(bytes / quotePattern.getBytes(StandardCharsets.UTF_8).length)
               + "\"";
-      String[] values =
-          switch (input) {
-            case "tt_text" -> text;
-            case "tt_json_predicate" ->
-                new String[] {
-                  "{\"padding\":\"" + text[0] + "\"}",
-                  "[\"" + text[1] + "\"]",
-                  "\"" + text[0] + "\"",
-                  "{\"invalid\":\"" + text[1] + "\",}"
-                };
-            case "tt_quoted" -> new String[] {quoted, quoted};
-            case "tt_json_boolean", "tt_json_integer", "tt_json_double" -> {
-              String[] selected =
-                  switch (input) {
-                    case "tt_json_boolean" -> new String[] {"true", "false"};
-                    case "tt_json_integer" -> new String[] {"123456789", "-234567890"};
-                    default -> new String[] {"1.23456789", "-2.3456789e12"};
-                  };
-              yield new String[] {
-                "{\"v\":" + selected[0] + ",\"padding\":\"" + text[0] + "\"}",
-                "{\"v\":" + selected[1] + ",\"padding\":\"" + text[1] + "\"}"
+      String[] values;
+      switch (input) {
+        case "tt_text":
+          values = text;
+          break;
+        case "tt_json_predicate":
+          values =
+              new String[] {
+                "{\"padding\":\"" + text[0] + "\"}",
+                "[\"" + text[1] + "\"]",
+                "\"" + text[0] + "\"",
+                "{\"invalid\":\"" + text[1] + "\",}"
               };
+          break;
+        case "tt_quoted":
+          values = new String[] {quoted, quoted};
+          break;
+        case "tt_json_boolean":
+        case "tt_json_integer":
+        case "tt_json_double":
+          {
+            {
+              String[] selected;
+              switch (input) {
+                case "tt_json_boolean":
+                  selected = new String[] {"true", "false"};
+                  break;
+                case "tt_json_integer":
+                  selected = new String[] {"123456789", "-234567890"};
+                  break;
+                default:
+                  selected = new String[] {"1.23456789", "-2.3456789e12"};
+                  break;
+              }
+              values =
+                  new String[] {
+                    "{\"v\":" + selected[0] + ",\"padding\":\"" + text[0] + "\"}",
+                    "{\"v\":" + selected[1] + ",\"padding\":\"" + text[1] + "\"}"
+                  };
             }
-            case "tt_ascii" ->
-                new String[] {
-                  payload(unicode ? "\u4e2da" : "ab", bytes),
-                  payload(unicode ? "\u00e9b" : "cd", bytes)
-                };
-            case "tt_json_empty_member" ->
-                new String[] {
-                  "{\"\":\"Alice\",\"padding\":\"" + text[0] + "\"}",
-                  "{\" \":\"space\",\"padding\":\"" + text[1] + "\"}"
-                };
-            case "tt_json_surrogate" -> new String[] {"\"\\uD800\"", "\"?\""};
-            case "tt_json_escaped" ->
-                new String[] {
-                  "{\"a\\\\b\":{\"a\\nb\":\"Alice\"},\"padding\":\"" + text[0] + "\"}",
-                  "{\"a\\\\b\":{\"a\\nb\":\"Bob\"},\"padding\":\"" + text[1] + "\"}"
-                };
-            case "tt_json_dot_member" ->
-                new String[] {
-                  "{\"order-id\":{\"123\":{\"a\\tb\":\"Alice\"}},\"padding\":\"" + text[0] + "\"}",
-                  "{\"order-id\":{\"123\":{\"a\\tb\":\"Bob\"}},\"padding\":\"" + text[1] + "\"}"
-                };
-            case "tt_json_negative" -> {
+            break;
+          }
+        case "tt_ascii":
+          values =
+              new String[] {
+                payload(unicode ? "\u4e2da" : "ab", bytes),
+                payload(unicode ? "\u00e9b" : "cd", bytes)
+              };
+          break;
+        case "tt_json_empty_member":
+          values =
+              new String[] {
+                "{\"\":\"Alice\",\"padding\":\"" + text[0] + "\"}",
+                "{\" \":\"space\",\"padding\":\"" + text[1] + "\"}"
+              };
+          break;
+        case "tt_json_surrogate":
+          values = new String[] {"\"\\uD800\"", "\"?\""};
+          break;
+        case "tt_json_escaped":
+          values =
+              new String[] {
+                "{\"a\\\\b\":{\"a\\nb\":\"Alice\"},\"padding\":\"" + text[0] + "\"}",
+                "{\"a\\\\b\":{\"a\\nb\":\"Bob\"},\"padding\":\"" + text[1] + "\"}"
+              };
+          break;
+        case "tt_json_dot_member":
+          values =
+              new String[] {
+                "{\"order-id\":{\"123\":{\"a\\tb\":\"Alice\"}},\"padding\":\"" + text[0] + "\"}",
+                "{\"order-id\":{\"123\":{\"a\\tb\":\"Bob\"}},\"padding\":\"" + text[1] + "\"}"
+              };
+          break;
+        case "tt_json_negative":
+          {
+            {
               StringBuilder elements = new StringBuilder();
               for (int i = 0; i < 31; i++) elements.append("\"value").append(i).append("\",");
-              yield new String[] {
-                "{\"a\":[" + elements + "\"Alice\"],\"padding\":\"" + text[0] + "\"}",
-                "{\"a\":[" + elements + "\"Bob\"],\"padding\":\"" + text[1] + "\"}"
-              };
+              values =
+                  new String[] {
+                    "{\"a\":[" + elements + "\"Alice\"],\"padding\":\"" + text[0] + "\"}",
+                    "{\"a\":[" + elements + "\"Bob\"],\"padding\":\"" + text[1] + "\"}"
+                  };
             }
-            case "tt_json_member" ->
-                new String[] {
-                  "{\"\u7528\u6237\":{\"\u59d3.\u540d\":\""
-                      + (unicode ? "\u4e2d\\n\ud83d\ude00" : "Alice")
-                      + "\"},\"padding\":\""
-                      + text[0]
-                      + "\"}",
-                  "{\"\u7528\u6237\":{},\"padding\":\"" + text[1] + "\"}"
-                };
-            case "tt_json" -> {
+            break;
+          }
+        case "tt_json_member":
+          values =
+              new String[] {
+                "{\"\u7528\u6237\":{\"\u59d3.\u540d\":\""
+                    + (unicode ? "\u4e2d\\n\ud83d\ude00" : "Alice")
+                    + "\"},\"padding\":\""
+                    + text[0]
+                    + "\"}",
+                "{\"\u7528\u6237\":{},\"padding\":\"" + text[1] + "\"}"
+              };
+          break;
+        case "tt_json":
+          {
+            {
               int fields = Integer.getInteger("scalar.json.fields", 0);
               if (fields < 0) {
                 throw new IllegalArgumentException("scalar.json.fields must be nonnegative");
@@ -378,25 +489,41 @@ final class TextTimeBenchmarkInputs {
               for (int i = 0; i < fields; i++) {
                 members.append(",\"field").append(i).append("\":\"value").append(i).append("\"");
               }
-              yield new String[] {
-                "{\"user\":{\"name\":\""
-                    + (unicode ? "\u4e2d\\n\ud83d\ude00" : "Alice")
-                    + "\",\"active\":true}"
-                    + members
-                    + ",\"padding\":\""
-                    + text[0]
-                    + "\"}",
-                "{\"user\":{\"active\":false}" + members + ",\"padding\":\"" + text[1] + "\"}"
-              };
+              values =
+                  new String[] {
+                    "{\"user\":{\"name\":\""
+                        + (unicode ? "\u4e2d\\n\ud83d\ude00" : "Alice")
+                        + "\",\"active\":true}"
+                        + members
+                        + ",\"padding\":\""
+                        + text[0]
+                        + "\"}",
+                    "{\"user\":{\"active\":false}" + members + ",\"padding\":\"" + text[1] + "\"}"
+                  };
             }
-            case "tt_date_noncanonical" -> new String[] {"2000-2-29", "1969-1-2"};
-            case "tt_time_noncanonical" -> new String[] {"12:34:56.1", "23:59:59.12"};
-            case "tt_timestamp_noncanonical" -> new String[] {"2024-02-30 00:00:00", "2024-02-29 24:00:00"};
-            case "tt_date_text" -> new String[] {"2000-02-29", "1969-12-31"};
-            case "tt_time_text" -> new String[] {"12:34:56.789", "23:59:59.001"};
-            case "tt_timestamp_text" -> new String[] {"2000-02-29 12:34:56", "1969-12-31 23:59:59"};
-            default -> throw new IllegalArgumentException("Unknown text/time input: " + input);
-          };
+            break;
+          }
+        case "tt_date_noncanonical":
+          values = new String[] {"2000-2-29", "1969-1-2"};
+          break;
+        case "tt_time_noncanonical":
+          values = new String[] {"12:34:56.1", "23:59:59.12"};
+          break;
+        case "tt_timestamp_noncanonical":
+          values = new String[] {"2024-02-30 00:00:00", "2024-02-29 24:00:00"};
+          break;
+        case "tt_date_text":
+          values = new String[] {"2000-02-29", "1969-12-31"};
+          break;
+        case "tt_time_text":
+          values = new String[] {"12:34:56.789", "23:59:59.001"};
+          break;
+        case "tt_timestamp_text":
+          values = new String[] {"2000-02-29 12:34:56", "1969-12-31 23:59:59"};
+          break;
+        default:
+          throw new IllegalArgumentException("Unknown text/time input: " + input);
+      }
       tables.createTemporaryView(
           "inputs",
           env.fromSequence(0, rows - 1)

@@ -28,7 +28,6 @@ import tech.streamfusion.compat.FlinkCompat;
 
 /** Shared admission and encoding for single-phase and local window aggregation. */
 final class WindowAggregateMatcher {
-
   static final int KIND_SUM = 0;
   /** MIN/MAX (the Rust GroupAggState routes these to the Extremes multiset). */
   static final int KIND_MIN = 1;
@@ -350,20 +349,21 @@ final class WindowAggregateMatcher {
   }
 
   static boolean supportedDistinctValueType(SqlTypeName type) {
-    return switch (type) {
-      case TINYINT,
-          SMALLINT,
-          INTEGER,
-          BIGINT,
-          DECIMAL,
-          CHAR,
-          VARCHAR,
-          DATE,
-          TIMESTAMP,
-          TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
-          true;
-      default -> false;
-    };
+    switch (type) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case DECIMAL:
+      case CHAR:
+      case VARCHAR:
+      case DATE:
+      case TIMESTAMP:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return true;
+      default:
+        return false;
+    }
   }
 
   /**
@@ -756,8 +756,8 @@ final class WindowAggregateMatcher {
   }
 
   static boolean insertOnlyInput(RelNode node) {
-    return node instanceof StreamPhysicalRel physical
-        && ChangelogPlanUtils.inputInsertOnly(physical);
+    return node instanceof StreamPhysicalRel
+        && ChangelogPlanUtils.inputInsertOnly(((StreamPhysicalRel) node));
   }
 
   private static boolean supportedInput(

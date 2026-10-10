@@ -35,6 +35,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.orc.NativeOrc;
@@ -46,13 +47,75 @@ class OrcReaderComparisonBenchmark {
   private static final int BATCH_ROWS = 4096;
   @TempDir java.nio.file.Path directory;
 
-  private record Fixture(FileStoreTable table, ReadBuilder read, List<Split> splits, boolean pk) {}
+  private static final class Fixture {
+    private final FileStoreTable table;
+    private final ReadBuilder read;
+    private final List<Split> splits;
+    private final boolean pk;
+
+    private Fixture(FileStoreTable table, ReadBuilder read, List<Split> splits, boolean pk) {
+      this.table = table;
+      this.read = read;
+      this.splits = splits;
+      this.pk = pk;
+    }
+
+    public FileStoreTable table() {
+      return table;
+    }
+
+    public ReadBuilder read() {
+      return read;
+    }
+
+    public List<Split> splits() {
+      return splits;
+    }
+
+    public boolean pk() {
+      return pk;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Fixture that = (Fixture) other;
+      return java.util.Objects.equals(table, that.table)
+          && java.util.Objects.equals(read, that.read)
+          && java.util.Objects.equals(splits, that.splits)
+          && pk == that.pk;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(table);
+      result = 31 * result + java.util.Objects.hashCode(read);
+      result = 31 * result + java.util.Objects.hashCode(splits);
+      result = 31 * result + Boolean.hashCode(pk);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Fixture[table="
+          + table
+          + ", read="
+          + read
+          + ", splits="
+          + splits
+          + ", pk="
+          + pk
+          + "]";
+    }
+  }
 
   static Stream<Arguments> scalarTypes() {
     var timestamps =
         List.of(-2208988799877L, -1001L, -1000L, -1L, 0L, 1L, 1700000000123L).stream()
             .map(t -> org.apache.paimon.data.Timestamp.fromEpochMillis(t, 456000))
-            .toList();
+            .collect(ListCollectors.toList());
     return Stream.concat(
         PaimonValueTypesTest.values().filter(a -> a.get()[2].equals("orc")),
         Stream.of(

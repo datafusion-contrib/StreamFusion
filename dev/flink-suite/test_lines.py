@@ -32,6 +32,7 @@ class FlinkLineSelectionTest(unittest.TestCase):
                 config = dict(row.split("=", 1) for row in result.stdout.splitlines())
                 self.assertEqual(kafka, config["kafka.version"])
                 self.assertEqual(paimon, config["paimon.profile"])
+                self.assertEqual("java11-target" if line == "2.2" else "", config["flink.target.profile"])
                 for key in ("suite.root", "streamfusion.source", "maven.repo", "agent.jar", "classpath"):
                     path = Path(config[key])
                     self.assertTrue(path == root / line or root / line in path.parents, key)

@@ -78,13 +78,23 @@ class PaimonSpecializedAggregateTest {
                 new DataField(3, "nk", DataTypes.INT()),
                 new DataField(4, "txt", DataTypes.STRING()),
                 new DataField(5, "ts", DataTypes.STRING())));
-    DataType valueType =
-        switch (function) {
-          case "merge_map" -> DataTypes.MAP(DataTypes.INT(), DataTypes.STRING());
-          case "merge_map_with_keytime" -> DataTypes.MAP(DataTypes.INT(), nested);
-          case "nested_update", "nested_partial_update", "collect_rows" -> DataTypes.ARRAY(nested);
-          default -> DataTypes.BYTES();
-        };
+    DataType valueType;
+    switch (function) {
+      case "merge_map":
+        valueType = DataTypes.MAP(DataTypes.INT(), DataTypes.STRING());
+        break;
+      case "merge_map_with_keytime":
+        valueType = DataTypes.MAP(DataTypes.INT(), nested);
+        break;
+      case "nested_update":
+      case "nested_partial_update":
+      case "collect_rows":
+        valueType = DataTypes.ARRAY(nested);
+        break;
+      default:
+        valueType = DataTypes.BYTES();
+        break;
+    }
     RowType type =
         new RowType(
             List.of(
@@ -105,18 +115,34 @@ class PaimonSpecializedAggregateTest {
       Map<Integer, Object> map = new HashMap<>();
       map.put(i % 3, function.equals("merge_map") ? text : child);
       map.put(9, null);
-      Object value =
-          switch (function) {
-            case "merge_map", "merge_map_with_keytime" -> new GenericMap(map);
-            case "collect_rows" -> new GenericArray(new InternalRow[] {child, child});
-            case "nested_update", "nested_partial_update" ->
-                new GenericArray(new InternalRow[] {child, null, child});
-            case "hll_sketch" -> HllSketchUtil.sketchOf(i % 17, i % 11);
-            case "theta_sketch" -> ThetaSketch.sketchOf(i % 17, i % 11);
-            case "rbm32" -> RoaringBitmap32.bitmapOf(i % 17, i % 11).serialize();
-            case "rbm64" -> RoaringBitmap64.bitmapOf((1L << 40) + i % 17, i % 11).serialize();
-            default -> throw new AssertionError(function);
-          };
+      Object value;
+      switch (function) {
+        case "merge_map":
+        case "merge_map_with_keytime":
+          value = new GenericMap(map);
+          break;
+        case "collect_rows":
+          value = new GenericArray(new InternalRow[] {child, child});
+          break;
+        case "nested_update":
+        case "nested_partial_update":
+          value = new GenericArray(new InternalRow[] {child, null, child});
+          break;
+        case "hll_sketch":
+          value = HllSketchUtil.sketchOf(i % 17, i % 11);
+          break;
+        case "theta_sketch":
+          value = ThetaSketch.sketchOf(i % 17, i % 11);
+          break;
+        case "rbm32":
+          value = RoaringBitmap32.bitmapOf(i % 17, i % 11).serialize();
+          break;
+        case "rbm64":
+          value = RoaringBitmap64.bitmapOf((1L << 40) + i % 17, i % 11).serialize();
+          break;
+        default:
+          throw new AssertionError(function);
+      }
       input.add(GenericRow.of(i % 7, (long) i, i % 13 == 0 ? null : value));
     }
     assertWriterParity(mode, type, input);

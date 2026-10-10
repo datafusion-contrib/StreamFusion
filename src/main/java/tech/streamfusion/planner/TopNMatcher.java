@@ -37,7 +37,6 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * window {@code [offset+1, rankEnd]}) for a changelog input or an {@code OFFSET} (rank start > 1).
  */
 final class TopNMatcher {
-
   private TopNMatcher() {}
 
   static boolean matches(StreamPhysicalRank rank) {
@@ -49,14 +48,29 @@ final class TopNMatcher {
     if (rank.rankType() != RankType.ROW_NUMBER) {
       return "Top-N: only ROW_NUMBER ranks (RANK/DENSE_RANK fall back)";
     }
-    if (rank.rankRange() instanceof VariableRankRange variable) {
+    Object variableCandidate;
+    if ((variableCandidate = rank.rankRange()) instanceof VariableRankRange) {
+      VariableRankRange variable = ((VariableRankRange) variableCandidate);
+
       var type = rank.getInput().getRowType().getFieldList().get(variable.getRankEndIndex()).getType();
       if (type.isNullable()) {
         return "Top-N: nullable variable rank bounds require Flink's row-access semantics";
       }
       switch (type.getSqlTypeName()) {
-        case SMALLINT, INTEGER, BIGINT -> {}
-        default -> { return "Top-N: variable rank bounds require SMALLINT, INT or BIGINT"; }
+        case SMALLINT:
+        case INTEGER:
+        case BIGINT:
+          {
+            {
+            }
+            break;
+          }
+        default:
+          {
+            {
+              return "Top-N: variable rank bounds require SMALLINT, INT or BIGINT";
+            }
+          }
       }
       if (!partitionInvariant(rank.getInput(), variable.getRankEndIndex(), rank.partitionKey())) {
         if (rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy
@@ -127,25 +141,40 @@ final class TopNMatcher {
 
   /** The rank window upper bound (rankEnd): the operator emits ranks {@code [offset+1, limit]}. */
   static long limit(StreamPhysicalRank rank) {
-    return rank.rankRange() instanceof ConstantRankRange range ? range.getRankEnd() : Long.MAX_VALUE;
+    Object rankRangeCandidate;
+    return (rankRangeCandidate = rank.rankRange()) instanceof ConstantRankRange
+        ? ((ConstantRankRange) rankRangeCandidate).getRankEnd()
+        : Long.MAX_VALUE;
   }
 
   /** The 0-based offset (rankStart - 1); > 0 for an {@code OFFSET} (range not starting at rank 1). */
   static long offset(StreamPhysicalRank rank) {
-    return rank.rankRange() instanceof ConstantRankRange range ? range.getRankStart() - 1 : 0;
+    Object rankRangeCandidate;
+    return (rankRangeCandidate = rank.rankRange()) instanceof ConstantRankRange
+        ? ((ConstantRankRange) rankRangeCandidate).getRankStart() - 1
+        : 0;
   }
 
   static int rankEndColumn(StreamPhysicalRank rank) {
-    return rank.rankRange() instanceof VariableRankRange range ? range.getRankEndIndex() : -1;
+    Object rankRangeCandidate;
+    return (rankRangeCandidate = rank.rankRange()) instanceof VariableRankRange
+        ? ((VariableRankRange) rankRangeCandidate).getRankEndIndex()
+        : -1;
   }
 
   private static boolean partitionInvariant(RelNode input, int bound, ImmutableBitSet partitions) {
     if (partitions.get(bound)) return true;
-    if (input instanceof Exchange exchange) {
+    if (input instanceof Exchange) {
+      Exchange exchange = ((Exchange) input);
+
       return partitionInvariant(exchange.getInput(), bound, partitions);
     }
-    var program = input instanceof Calc calc ? calc.getProgram()
-        : input instanceof StreamPhysicalNativeCalc calc ? calc.sourceProgram() : null;
+    var program =
+        input instanceof Calc
+            ? ((Calc) input).getProgram()
+            : input instanceof StreamPhysicalNativeCalc
+                ? ((StreamPhysicalNativeCalc) input).sourceProgram()
+                : null;
     if (program == null) return false;
     // A computed key is invariant as a whole; MOD(k, 3) does not make k itself invariant.
     Set<RexNode> keys = new HashSet<>();
@@ -159,28 +188,44 @@ final class TopNMatcher {
 
   private static boolean partitionExpression(RexNode expression, Set<RexNode> keys) {
     if (expression instanceof RexLiteral || keys.contains(expression)) return true;
-    if (!(expression instanceof RexCall call)) return false;
+    if (!(expression instanceof RexCall)) return false;
+    RexCall call = ((RexCall) expression);
+
     return partitionArithmetic(call)
         && call.getOperands().stream().allMatch(operand -> partitionExpression(operand, keys));
   }
 
   private static boolean purePartitionExpression(RexNode expression) {
     if (expression instanceof RexLiteral || expression instanceof RexInputRef) return true;
-    return expression instanceof RexCall call
-        && partitionArithmetic(call)
-        && call.getOperands().stream().allMatch(TopNMatcher::purePartitionExpression);
+    return expression instanceof RexCall
+        && partitionArithmetic(((RexCall) expression))
+        && ((RexCall) expression)
+            .getOperands().stream().allMatch(TopNMatcher::purePartitionExpression);
   }
 
   private static boolean partitionArithmetic(RexCall call) {
     // Restrict the proof to pure numeric expressions; an arbitrary UDF's declaration is not proof
     // that repeated calls for the same partition return the same bound.
     if (call.getOperator() == org.apache.calcite.sql.fun.SqlStdOperatorTable.MOD) return true;
-    if (call.getOperator() instanceof BridgingSqlFunction function
-        && function.getDefinition() == BuiltInFunctionDefinitions.COALESCE) return true;
-    return switch (call.getKind()) {
-      case PLUS, MINUS, TIMES, DIVIDE, MOD, MINUS_PREFIX, CAST, COALESCE -> true;
-      default -> false;
-    };
+    Object functionCandidate;
+    if ((functionCandidate = call.getOperator()) instanceof BridgingSqlFunction
+        && ((BridgingSqlFunction) functionCandidate).getDefinition()
+            == BuiltInFunctionDefinitions.COALESCE) {
+      return true;
+    }
+    switch (call.getKind()) {
+      case PLUS:
+      case MINUS:
+      case TIMES:
+      case DIVIDE:
+      case MOD:
+      case MINUS_PREFIX:
+      case CAST:
+      case COALESCE:
+        return true;
+      default:
+        return false;
+    }
   }
 
   static boolean outputRankNumber(StreamPhysicalRank rank) {
@@ -222,6 +267,7 @@ final class TopNMatcher {
     // UpdatableTopNFunction/FastTop1Function state shape.
     if (rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy) {
       int[] updateFastPartitions = TopNMatcher.partitionColumns(rank);
+      Object rankRangeCandidate;
       return new StreamPhysicalNativeColumnarTopN(
           rank.getCluster(),
           rank.getTraitSet(),
@@ -238,9 +284,11 @@ final class TopNMatcher {
           false,
           ((RankProcessStrategy.UpdateFastStrategy) rank.rankStrategy()).getPrimaryKeys(),
           ChangelogPlanUtils.generateUpdateBefore(rank),
-          rank.rankRange() instanceof VariableRankRange variable
+          (rankRangeCandidate = rank.rankRange()) instanceof VariableRankRange
               && !partitionInvariant(
-                  rank.getInput(), variable.getRankEndIndex(), rank.partitionKey()));
+                  rank.getInput(),
+                  ((VariableRankRange) rankRangeCandidate).getRankEndIndex(),
+                  rank.partitionKey()));
     }
     int[] partitionColumns = TopNMatcher.partitionColumns(rank);
     long offset = TopNMatcher.offset(rank);
@@ -250,6 +298,7 @@ final class TopNMatcher {
         offset > 0 || !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) rank.getInput());
     // Columnar (Arrow in/out); keep the partitioned shuffle columnar where the input sits on a
     // columnar producer, else the transition pass transposes at the boundary.
+    Object rankRangeCandidate;
     return new StreamPhysicalNativeColumnarTopN(
         rank.getCluster(),
         rank.getTraitSet(),
@@ -266,8 +315,10 @@ final class TopNMatcher {
         retracting,
         null,
         ChangelogPlanUtils.generateUpdateBefore(rank),
-        rank.rankRange() instanceof VariableRankRange variable
+        (rankRangeCandidate = rank.rankRange()) instanceof VariableRankRange
             && !partitionInvariant(
-                rank.getInput(), variable.getRankEndIndex(), rank.partitionKey()));
+                rank.getInput(),
+                ((VariableRankRange) rankRangeCandidate).getRankEndIndex(),
+                rank.partitionKey()));
   }
 }

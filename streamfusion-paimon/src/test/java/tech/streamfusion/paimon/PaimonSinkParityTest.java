@@ -54,6 +54,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 
@@ -62,7 +63,6 @@ import tech.streamfusion.planner.PhysicalPlanScan;
  * against twins written by the stock Paimon connector in the same MiniCluster.
  */
 class PaimonSinkParityTest {
-
   private static final int ROWS = 300;
 
   private static final String[][] FIXTURE_COLUMNS = {
@@ -121,7 +121,7 @@ class PaimonSinkParityTest {
       for (DataFileMeta file :
           files.stream()
               .sorted(java.util.Comparator.comparingLong(DataFileMeta::minSequenceNumber))
-              .toList()) {
+              .collect(ListCollectors.toList())) {
         assertEquals(next, file.minSequenceNumber());
         next += file.rowCount();
         assertEquals(next - 1, file.maxSequenceNumber());

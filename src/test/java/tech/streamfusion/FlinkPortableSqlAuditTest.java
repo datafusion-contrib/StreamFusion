@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.SqlAuditHarness.Spec;
+import tech.streamfusion.compat.ListCollectors;
 
 @org.junit.jupiter.api.parallel.Execution(org.junit.jupiter.api.parallel.ExecutionMode.SAME_THREAD)
 class FlinkPortableSqlAuditTest {
@@ -478,8 +479,9 @@ class FlinkPortableSqlAuditTest {
 
   @AfterAll
   static void writeCoverage() throws Exception {
-    List<String> declared = cases().map(Spec::id).toList();
-    List<String> unexecuted = declared.stream().filter(id -> !RESULTS.containsKey(id)).toList();
+    List<String> declared = cases().map(Spec::id).collect(ListCollectors.toList());
+    List<String> unexecuted =
+        declared.stream().filter(id -> !RESULTS.containsKey(id)).collect(ListCollectors.toList());
     Map<String, Long> counts = new TreeMap<>();
     RESULTS
         .values()

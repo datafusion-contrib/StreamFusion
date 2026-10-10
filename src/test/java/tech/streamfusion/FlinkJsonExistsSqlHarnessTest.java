@@ -65,14 +65,19 @@ class FlinkJsonExistsSqlHarnessTest {
 
   @Test
   void unknownBooleanContextsKeepFlinkBoxedNullFailure() {
-    NativeFailureParity.run(
+    var comparison =
+        NativeFailureParity.run(
             () -> TextTimeFunctionTestInputs.textRows("null"),
-            "SELECT JSON_EXISTS(s, '$' UNKNOWN ON ERROR) IS TRUE FROM inputs")
-        .assertFailure(
-            NullPointerException.class,
-            "booleanValue",
-            NativeFailureParity.Phase.ROW_EVALUATION,
-            NativeFailureParity.Route.NATIVE);
+            "SELECT JSON_EXISTS(s, '$' UNKNOWN ON ERROR) IS TRUE FROM inputs");
+    comparison.assertFailure(
+        NullPointerException.class,
+        Runtime.version().feature() == 11 ? null : "booleanValue",
+        NativeFailureParity.Phase.ROW_EVALUATION,
+        NativeFailureParity.Route.NATIVE);
+    if (Runtime.version().feature() == 11) {
+      org.junit.jupiter.api.Assertions.assertNull(comparison.host().rootCause().getMessage());
+      org.junit.jupiter.api.Assertions.assertNull(comparison.nativeRun().rootCause().getMessage());
+    }
   }
 
   @Test

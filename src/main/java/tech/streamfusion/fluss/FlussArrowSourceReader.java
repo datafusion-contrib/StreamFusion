@@ -221,7 +221,9 @@ final class FlussArrowSourceReader implements SourceReader<ArrowBatch, SourceSpl
 
   @Override
   public void handleSourceEvents(SourceEvent event) {
-    if (!(event instanceof PartitionsRemovedEvent removed)) return;
+    if (!(event instanceof PartitionsRemovedEvent)) return;
+    PartitionsRemovedEvent removed = ((PartitionsRemovedEvent) event);
+
     var iterator = splits.entrySet().iterator();
     while (iterator.hasNext()) {
       var entry = iterator.next();

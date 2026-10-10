@@ -30,9 +30,9 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 
 class ArrowBucketRouterTest {
-
   private static final RowType SCHEMA =
       RowType.of(
           new LogicalType[] {
@@ -149,7 +149,8 @@ class ArrowBucketRouterTest {
                 flinkBinaryRow(PARTITION_TYPE, dt),
                 batch.partition(),
                 "partition BinaryRow of row " + row.getInt(3));
-            assertEquals(flinkBucket(row, numBuckets), batch.bucket(), "bucket of row " + row.getInt(3));
+            assertEquals(
+                flinkBucket(row, numBuckets), batch.bucket(), "bucket of row " + row.getInt(3));
             assertTrue(row.getInt(3) > previous, "arrival order kept within a destination");
             previous = row.getInt(3);
             total++;
@@ -186,7 +187,11 @@ class ArrowBucketRouterTest {
       int total = 0;
       for (BucketedArrowBatch batch : route(rows, 3, allocator, true)) {
         try (VectorSchemaRoot sub = batch.root()) {
-          assertEquals(SCHEMA.getFieldNames(), sub.getSchema().getFields().stream().map(f -> f.getName()).toList());
+          assertEquals(
+              SCHEMA.getFieldNames(),
+              sub.getSchema().getFields().stream()
+                  .map(f -> f.getName())
+                  .collect(ListCollectors.toList()));
           for (RowData row : RowDataArrowConverter.read(sub, SCHEMA)) {
             assertEquals(flinkBucket(row, 3), batch.bucket());
             total++;

@@ -2,9 +2,6 @@ package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.planner.NativePlanner;
-import tech.streamfusion.planner.PhysicalPlanScan;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -17,6 +14,9 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.operator.NativeAllocator;
+import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.planner.PhysicalPlanScan;
 
 /**
  * Opt-in soak: a long-running keyed windowed aggregation whose native state must be continuously
@@ -37,7 +37,6 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  */
 @EnabledIfEnvironmentVariable(named = "SF_SOAK", matches = "true")
 class NativeMemorySoakTest {
-
   private static final long ROWS =
       System.getenv("SF_SOAK_ROWS") != null
           ? Long.parseLong(System.getenv("SF_SOAK_ROWS"))
@@ -130,10 +129,46 @@ class NativeMemorySoakTest {
         ROWS, allocatorMid, allocatorLate, rssMid >> 20, rssLate >> 20, samples.size());
   }
 
-  private record Sample(long rssBytes, long allocatorBytes) {}
+  private static final class Sample {
+    private final long rssBytes;
+    private final long allocatorBytes;
+
+    private Sample(long rssBytes, long allocatorBytes) {
+      this.rssBytes = rssBytes;
+      this.allocatorBytes = allocatorBytes;
+    }
+
+    public long rssBytes() {
+      return rssBytes;
+    }
+
+    public long allocatorBytes() {
+      return allocatorBytes;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Sample that = (Sample) other;
+      return rssBytes == that.rssBytes && allocatorBytes == that.allocatorBytes;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + Long.hashCode(rssBytes);
+      result = 31 * result + Long.hashCode(allocatorBytes);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Sample[rssBytes=" + rssBytes + ", allocatorBytes=" + allocatorBytes + "]";
+    }
+  }
 
   private static final class Sampler implements Runnable {
-
     private final List<Sample> samples = new ArrayList<>();
     private volatile boolean running = true;
 
@@ -166,7 +201,10 @@ class NativeMemorySoakTest {
     Process ps =
         new ProcessBuilder("ps", "-o", "rss=", "-p", String.valueOf(ProcessHandle.current().pid()))
             .start();
-    try (var reader = ps.inputReader()) {
+    try (var reader =
+        new java.io.BufferedReader(
+            new java.io.InputStreamReader(
+                ps.getInputStream(), java.nio.charset.Charset.defaultCharset()))) {
       String line = reader.readLine();
       ps.waitFor();
       return Long.parseLong(line.trim()) * 1024;

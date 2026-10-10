@@ -27,6 +27,7 @@ import org.apache.paimon.types.DataTypes;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 class LegacyPaimonWriterLifetimeTest {
@@ -87,23 +88,23 @@ class LegacyPaimonWriterLifetimeTest {
             1,
             write.prepareCommit(true, 1).stream()
                 .map(c -> (org.apache.paimon.table.sink.CommitMessage) c.wrappedCommittable())
-                .toList());
+                .collect(ListCollectors.toList()));
         commit.commit(
             2,
             write.prepareCommit(false, 2).stream()
                 .map(c -> (org.apache.paimon.table.sink.CommitMessage) c.wrappedCommittable())
-                .toList());
+                .collect(ListCollectors.toList()));
         feed(write, router, allocator, 1, 100, 0);
         var pending =
             write.prepareCommit(false, 4).stream()
                 .map(c -> (org.apache.paimon.table.sink.CommitMessage) c.wrappedCommittable())
-                .toList();
+                .collect(ListCollectors.toList());
         assertEquals(
             1, delegate.getWrite().checkpoint().size(), "only the modified bucket remains open");
         var compacted =
             write.prepareCommit(false, 6).stream()
                 .map(c -> (org.apache.paimon.table.sink.CommitMessage) c.wrappedCommittable())
-                .toList();
+                .collect(ListCollectors.toList());
         commit.commit(4, pending);
         commit.commit(6, compacted);
         var builder = table.newReadBuilder();
@@ -142,7 +143,9 @@ class LegacyPaimonWriterLifetimeTest {
       int partition)
       throws Exception {
     var row = GenericRow.of(id, value, partition);
-    if (write instanceof NativeKeyValueSinkWrite nativeWrite) {
+    if (write instanceof NativeKeyValueSinkWrite) {
+      NativeKeyValueSinkWrite nativeWrite = ((NativeKeyValueSinkWrite) write);
+
       nativeWrite.writeBundle(
           router.getPartition(row).copy(),
           router.getBucket(row),

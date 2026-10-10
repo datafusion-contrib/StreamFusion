@@ -16,6 +16,7 @@ import org.apache.flink.util.InstantiationUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativeConfig;
 
 class TransposeBatchConfigurationTest {
@@ -40,8 +41,11 @@ class TransposeBatchConfigurationTest {
       List<Long> values = new ArrayList<>();
       while (!harness.getOutput().isEmpty()) {
         Object event = harness.getOutput().poll();
-        if (event instanceof StreamRecord<?> record
-            && record.getValue() instanceof ArrowBatch batch) {
+        Object batchCandidate;
+        if (event instanceof StreamRecord<?>
+            && (batchCandidate = ((StreamRecord<?>) event).getValue()) instanceof ArrowBatch) {
+          ArrowBatch batch = ((ArrowBatch) batchCandidate);
+
           try (var root = batch.root()) {
             sizes.add(root.getRowCount());
             var vector = (org.apache.arrow.vector.BigIntVector) root.getVector(0);
@@ -54,7 +58,9 @@ class TransposeBatchConfigurationTest {
               ? java.util.Collections.nCopies(13, 1)
               : limit == 5 ? List.of(5, 5, 3) : List.of(13),
           sizes);
-      assertEquals(java.util.stream.LongStream.range(0, 13).boxed().toList(), values);
+      assertEquals(
+          java.util.stream.LongStream.range(0, 13).boxed().collect(ListCollectors.toList()),
+          values);
     }
   }
 

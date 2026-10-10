@@ -5,9 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import tech.streamfusion.format.EncodeFormat;
-import tech.streamfusion.format.LogicalTypeDescriptors;
-import tech.streamfusion.operator.RowDataArrowConverter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +32,10 @@ import org.apache.flink.table.types.logical.VarBinaryType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.format.EncodeFormat;
+import tech.streamfusion.format.LogicalTypeDescriptors;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Referees every native raw sink byte against Flink's {@code RawFormatSerializationSchema}: the
@@ -45,12 +46,14 @@ import org.junit.jupiter.api.Test;
  */
 @Tag("streamfusion-kafka")
 class NativeKafkaRawEncoderTest {
-
   @Test
   void matchesFlinkForEveryTypeAndEndianness() throws Exception {
     assertMatchesFlink(
         new VarCharType(false, VarCharType.MAX_LENGTH),
-        List.of(StringData.fromString("plain"), StringData.fromString("雪 and 😀"), StringData.fromString("")));
+        List.of(
+            StringData.fromString("plain"),
+            StringData.fromString("雪 and 😀"),
+            StringData.fromString("")));
     assertMatchesFlink(
         new VarBinaryType(false, VarBinaryType.MAX_LENGTH),
         List.of(new byte[] {1, 2, 3}, new byte[0], new byte[] {-1, 0, 127}));
@@ -95,7 +98,11 @@ class NativeKafkaRawEncoderTest {
       EncodeFormat format = EncodeFormat.of("raw", options, rowType);
       assertNotNull(format, () -> type + " with " + endianness);
 
-      List<RowData> rows = values.stream().map(GenericRowData::of).map(RowData.class::cast).toList();
+      List<RowData> rows =
+          values.stream()
+              .map(GenericRowData::of)
+              .map(RowData.class::cast)
+              .collect(ListCollectors.toList());
       try (BufferAllocator allocator = new RootAllocator();
           CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
           VectorSchemaRoot root = RowDataArrowConverter.write(rows, rowType, allocator);

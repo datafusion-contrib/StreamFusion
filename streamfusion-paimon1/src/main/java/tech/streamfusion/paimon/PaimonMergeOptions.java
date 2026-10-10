@@ -37,7 +37,45 @@ public final class PaimonMergeOptions {
           "rbm32",
           "rbm64");
 
-  private record MergePlan(Map<String, Object> settings, List<Map<String, Object>> fields) {}
+  private static final class MergePlan {
+    private final Map<String, Object> settings;
+    private final List<Map<String, Object>> fields;
+
+    private MergePlan(Map<String, Object> settings, List<Map<String, Object>> fields) {
+      this.settings = settings;
+      this.fields = fields;
+    }
+
+    public Map<String, Object> settings() {
+      return settings;
+    }
+
+    public List<Map<String, Object>> fields() {
+      return fields;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      MergePlan that = (MergePlan) other;
+      return java.util.Objects.equals(settings, that.settings)
+          && java.util.Objects.equals(fields, that.fields);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(settings);
+      result = 31 * result + java.util.Objects.hashCode(fields);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "MergePlan[settings=" + settings + ", fields=" + fields + "]";
+    }
+  }
 
   static Object[] aggregators(FileStoreTable table) {
     MergePlan plan = plan(table);

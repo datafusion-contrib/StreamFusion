@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import tech.streamfusion.planner.FlinkKeyGroupUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,36 +11,39 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
+import org.apache.flink.streaming.api.watermark.Watermark;
+import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
-import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
-import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.GenericMapData;
+import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.RowType;
-import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.planner.FlinkKeyGroupUtils;
 
 /** The columnar GROUP BY operator: Arrow batches in, a changelog of Arrow batches out. */
 @ExtendWith(CoalescingOff.class)
 class NativeColumnarGroupAggregateOperatorTest {
-
   private static final int MAX_PARALLELISM = 128;
 
   private static final RowType INPUT =
-      RowType.of(new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"key", "value"});
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"key", "value"});
   private static final RowType OUTPUT =
-      RowType.of(new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"key", "sum"});
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"key", "sum"});
   private static final RowType COMPLEX_INPUT =
       RowType.of(
           new LogicalType[] {
@@ -408,7 +410,7 @@ class NativeColumnarGroupAggregateOperatorTest {
                   change(RowKind.UPDATE_BEFORE, keys[1], 20),
                   change(RowKind.UPDATE_AFTER, keys[1], 21)));
       expected.sort(byKey);
-      assertEquals(expected, changes.stream().sorted(byKey).toList());
+      assertEquals(expected, changes.stream().sorted(byKey).collect(ListCollectors.toList()));
     }
   }
 
@@ -545,7 +547,9 @@ class NativeColumnarGroupAggregateOperatorTest {
     for (int i = 0; i < expected.size(); i++) {
       assertEquals(expected.get(i).getRowKind(), actual.get(i).getRowKind());
       assertEquals(
-          serializer.toBinaryRow(expected.get(i)), serializer.toBinaryRow(actual.get(i)), "change " + i);
+          serializer.toBinaryRow(expected.get(i)),
+          serializer.toBinaryRow(actual.get(i)),
+          "change " + i);
     }
   }
 }

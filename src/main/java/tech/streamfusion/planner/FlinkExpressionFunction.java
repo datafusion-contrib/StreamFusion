@@ -88,7 +88,53 @@ public final class FlinkExpressionFunction extends ScalarFunction
         classLoader);
   }
 
-  private record Body(Context context, String code, RowType rowType) {}
+  private static final class Body {
+    private final Context context;
+    private final String code;
+    private final RowType rowType;
+
+    private Body(Context context, String code, RowType rowType) {
+      this.context = context;
+      this.code = code;
+      this.rowType = rowType;
+    }
+
+    public Context context() {
+      return context;
+    }
+
+    public String code() {
+      return code;
+    }
+
+    public RowType rowType() {
+      return rowType;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Body that = (Body) other;
+      return java.util.Objects.equals(context, that.context)
+          && java.util.Objects.equals(code, that.code)
+          && java.util.Objects.equals(rowType, that.rowType);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(context);
+      result = 31 * result + java.util.Objects.hashCode(code);
+      result = 31 * result + java.util.Objects.hashCode(rowType);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Body[context=" + context + ", code=" + code + ", rowType=" + rowType + "]";
+    }
+  }
 
   static FlinkExpressionFunction doubleTruncate(RexCall call, LogicalType[] argumentTypes,
       ReadableConfig config, ClassLoader classLoader) {
@@ -143,12 +189,17 @@ public final class FlinkExpressionFunction extends ScalarFunction
 
   private static String temporalBody(RexNode expression, ExprCodeGenerator generator,
       Context context, ReadableConfig config) {
-    if (!(expression instanceof RexCall call)
-        || call.getOperator() != FlinkSqlOperatorTable.TRY_CAST
-        || call.getOperands().size() != 1
-        || !SqlTypeFamily.CHARACTER.contains(call.getOperands().get(0).getType())
-        || config.get(org.apache.flink.table.api.config.ExecutionConfigOptions
-            .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR).isEnabled()) return null;
+    if (!(expression instanceof RexCall)
+        || ((RexCall) expression).getOperator() != FlinkSqlOperatorTable.TRY_CAST
+        || ((RexCall) expression).getOperands().size() != 1
+        || !SqlTypeFamily.CHARACTER.contains(((RexCall) expression).getOperands().get(0).getType())
+        || config
+            .get(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR)
+            .isEnabled()) return null;
+    RexCall call = ((RexCall) expression);
+
     SqlTypeName type = call.getType().getSqlTypeName();
     if (call.getOperands().get(0) instanceof RexInputRef) return null;
     String method;
@@ -174,11 +225,16 @@ public final class FlinkExpressionFunction extends ScalarFunction
 
   private static String canonicalTemporalPrefix(
       RexNode expression, Context context, ReadableConfig config) {
-    if (!(expression instanceof RexCall call)
-        || call.getOperator() != FlinkSqlOperatorTable.TRY_CAST
-        || call.getOperands().size() != 1
-        || !(call.getOperands().get(0) instanceof RexInputRef input)
-        || !SqlTypeFamily.CHARACTER.contains(input.getType())) return "";
+    Object inputCandidate;
+    if (!(expression instanceof RexCall)
+        || ((RexCall) expression).getOperator() != FlinkSqlOperatorTable.TRY_CAST
+        || ((RexCall) expression).getOperands().size() != 1
+        || !((inputCandidate = ((RexCall) expression).getOperands().get(0)) instanceof RexInputRef)
+        || !SqlTypeFamily.CHARACTER.contains(((RexInputRef) inputCandidate).getType())) return "";
+    RexInputRef input = ((RexInputRef) inputCandidate);
+
+    RexCall call = ((RexCall) expression);
+
     SqlTypeName target = call.getType().getSqlTypeName();
     String parser = CanonicalTemporalParser.class.getCanonicalName();
     String inputTerm = "input.getString(" + input.getIndex() + ")";
@@ -189,17 +245,24 @@ public final class FlinkExpressionFunction extends ScalarFunction
       if (config.get(org.apache.flink.table.api.config.ExecutionConfigOptions
           .TABLE_EXEC_LEGACY_CAST_BEHAVIOUR).isEnabled()) return "";
       resultType = "java.lang.Integer";
-      value = parser + (target == SqlTypeName.DATE ? ".parseDate(" : ".parseTimeMillis(") + inputTerm + ")";
+      value =
+          parser
+              + (target == SqlTypeName.DATE ? ".parseDate(" : ".parseTimeMillis(")
+              + inputTerm
+              + ")";
       if (target == SqlTypeName.TIME) {
         var logical = (org.apache.flink.table.types.logical.TimeType)
             org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(call.getType());
-        result = "tech.streamfusion.compat.FlinkCompat.applyParsedTimePrecision(sfCanonicalTemporal, "
-            + logical.getPrecision() + ")";
+        result =
+            "tech.streamfusion.compat.FlinkCompat.applyParsedTimePrecision(sfCanonicalTemporal, "
+                + logical.getPrecision()
+                + ")";
       }
     } else if (target == SqlTypeName.TIMESTAMP || target == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
       resultType = "org.apache.flink.table.data.TimestampData";
       String zone = target == SqlTypeName.TIMESTAMP ? "null" : context.addReusableSessionTimeZone();
-      value = parser + ".parse(" + inputTerm + ", " + call.getType().getPrecision() + ", " + zone + ")";
+      value =
+          parser + ".parse(" + inputTerm + ", " + call.getType().getPrecision() + ", " + zone + ")";
     } else return "";
     // Direct references can be inspected before the released fallback without repeating child effects.
     return "if (!input.isNullAt(" + input.getIndex() + ")) {\n"
@@ -208,18 +271,35 @@ public final class FlinkExpressionFunction extends ScalarFunction
   }
 
   static org.apache.calcite.rex.RexCall decimalRoundingTextCall(RexNode expression) {
-    if (!(expression instanceof org.apache.calcite.rex.RexCall cast)
-        || cast.getKind() != org.apache.calcite.sql.SqlKind.CAST
-        || cast.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.VARCHAR
-        || cast.getType().getPrecision() != Integer.MAX_VALUE
-        || !(cast.getOperands().get(0) instanceof org.apache.calcite.rex.RexCall round)
-        || (round.getOperator() != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
-            && round.getOperator() != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
-        || round.getOperands().size() != 2
-        || !(round.getOperands().get(0) instanceof org.apache.calcite.rex.RexInputRef value)
-        || !(round.getOperands().get(1) instanceof org.apache.calcite.rex.RexInputRef scale)
-        || value.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.DECIMAL
-        || scale.getType().getSqlTypeName() != org.apache.calcite.sql.type.SqlTypeName.INTEGER) return null;
+    Object scaleCandidate;
+    Object valueCandidate;
+    Object roundCandidate;
+    if (!(expression instanceof org.apache.calcite.rex.RexCall)
+        || ((org.apache.calcite.rex.RexCall) expression).getKind()
+            != org.apache.calcite.sql.SqlKind.CAST
+        || ((org.apache.calcite.rex.RexCall) expression).getType().getSqlTypeName()
+            != org.apache.calcite.sql.type.SqlTypeName.VARCHAR
+        || ((org.apache.calcite.rex.RexCall) expression).getType().getPrecision()
+            != Integer.MAX_VALUE
+        || !((roundCandidate = ((org.apache.calcite.rex.RexCall) expression).getOperands().get(0))
+            instanceof org.apache.calcite.rex.RexCall)
+        || (((org.apache.calcite.rex.RexCall) roundCandidate).getOperator()
+                != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
+            && ((org.apache.calcite.rex.RexCall) roundCandidate).getOperator()
+                != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE)
+        || ((org.apache.calcite.rex.RexCall) roundCandidate).getOperands().size() != 2
+        || !((valueCandidate =
+                ((org.apache.calcite.rex.RexCall) roundCandidate).getOperands().get(0))
+            instanceof org.apache.calcite.rex.RexInputRef)
+        || !((scaleCandidate =
+                ((org.apache.calcite.rex.RexCall) roundCandidate).getOperands().get(1))
+            instanceof org.apache.calcite.rex.RexInputRef)
+        || ((org.apache.calcite.rex.RexInputRef) valueCandidate).getType().getSqlTypeName()
+            != org.apache.calcite.sql.type.SqlTypeName.DECIMAL
+        || ((org.apache.calcite.rex.RexInputRef) scaleCandidate).getType().getSqlTypeName()
+            != org.apache.calcite.sql.type.SqlTypeName.INTEGER) return null;
+    org.apache.calcite.rex.RexCall round = ((org.apache.calcite.rex.RexCall) roundCandidate);
+
     return round;
   }
 
@@ -350,9 +430,13 @@ public final class FlinkExpressionFunction extends ScalarFunction
   }
 
   private void setArgument(int position, Object value) {
-    if (value instanceof String text) {
+    if (value instanceof String) {
+      String text = ((String) value);
+
       value = StringData.fromString(text);
-    } else if (value instanceof BigDecimal decimal) {
+    } else if (value instanceof BigDecimal) {
+      BigDecimal decimal = ((BigDecimal) value);
+
       DecimalType type = (DecimalType) argumentTypes[position];
       value =
           tech.streamfusion.arrow.DecimalAccessor.fromInternalValue(

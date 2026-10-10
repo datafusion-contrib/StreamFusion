@@ -84,25 +84,51 @@ class TypedDistinctBenchmark {
     table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(twoPhase));
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
     table.getConfig().set("table.exec.mini-batch.size", "1024");
-    var info =
-        switch (type) {
-          case "BIGINT" -> Types.LONG;
-          case "INT" -> Types.INT;
-          case "SMALLINT" -> Types.SHORT;
-          case "TINYINT" -> Types.BYTE;
-          case "DECIMAL" -> Types.BIG_DEC;
-          case "STRING8", "STRING256" -> Types.STRING;
-          default -> throw new IllegalArgumentException(type);
-        };
-    var logical =
-        switch (type) {
-          case "BIGINT" -> org.apache.flink.table.api.DataTypes.BIGINT();
-          case "INT" -> org.apache.flink.table.api.DataTypes.INT();
-          case "SMALLINT" -> org.apache.flink.table.api.DataTypes.SMALLINT();
-          case "TINYINT" -> org.apache.flink.table.api.DataTypes.TINYINT();
-          case "DECIMAL" -> org.apache.flink.table.api.DataTypes.DECIMAL(20, 2);
-          default -> org.apache.flink.table.api.DataTypes.STRING();
-        };
+    org.apache.flink.api.common.typeinfo.TypeInformation<?> info;
+    switch (type) {
+      case "BIGINT":
+        info = Types.LONG;
+        break;
+      case "INT":
+        info = Types.INT;
+        break;
+      case "SMALLINT":
+        info = Types.SHORT;
+        break;
+      case "TINYINT":
+        info = Types.BYTE;
+        break;
+      case "DECIMAL":
+        info = Types.BIG_DEC;
+        break;
+      case "STRING8":
+      case "STRING256":
+        info = Types.STRING;
+        break;
+      default:
+        throw new IllegalArgumentException(type);
+    }
+    org.apache.flink.table.types.DataType logical;
+    switch (type) {
+      case "BIGINT":
+        logical = org.apache.flink.table.api.DataTypes.BIGINT();
+        break;
+      case "INT":
+        logical = org.apache.flink.table.api.DataTypes.INT();
+        break;
+      case "SMALLINT":
+        logical = org.apache.flink.table.api.DataTypes.SMALLINT();
+        break;
+      case "TINYINT":
+        logical = org.apache.flink.table.api.DataTypes.TINYINT();
+        break;
+      case "DECIMAL":
+        logical = org.apache.flink.table.api.DataTypes.DECIMAL(20, 2);
+        break;
+      default:
+        logical = org.apache.flink.table.api.DataTypes.STRING();
+        break;
+    }
     table.createTemporaryView(
         "src",
         table.fromDataStream(
@@ -110,16 +136,27 @@ class TypedDistinctBenchmark {
                 .map(
                     i -> {
                       long v = i / 64 % CARDINALITY - CARDINALITY / 2;
-                      Object value =
-                          switch (type) {
-                            case "BIGINT" -> v;
-                            case "INT" -> (int) v;
-                            case "SMALLINT" -> (short) v;
-                            case "TINYINT" -> (byte) v;
-                            case "DECIMAL" -> java.math.BigDecimal.valueOf(v).movePointRight(9);
-                            default ->
-                                Long.toString(v) + "x".repeat(type.equals("STRING8") ? 8 : 256);
-                          };
+                      Object value;
+                      switch (type) {
+                        case "BIGINT":
+                          value = v;
+                          break;
+                        case "INT":
+                          value = (int) v;
+                          break;
+                        case "SMALLINT":
+                          value = (short) v;
+                          break;
+                        case "TINYINT":
+                          value = (byte) v;
+                          break;
+                        case "DECIMAL":
+                          value = java.math.BigDecimal.valueOf(v).movePointRight(9);
+                          break;
+                        default:
+                          value = Long.toString(v) + "x".repeat(type.equals("STRING8") ? 8 : 256);
+                          break;
+                      }
                       return Row.of(
                           SKEW && i % 10 != 0 ? 0 : (int) (i % 64),
                           NULL_EVERY > 0 && i % NULL_EVERY == 0 ? null : value);

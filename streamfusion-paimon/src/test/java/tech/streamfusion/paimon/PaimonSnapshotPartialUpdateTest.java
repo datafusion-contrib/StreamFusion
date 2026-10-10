@@ -31,6 +31,7 @@ import org.apache.paimon.types.RowType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.KeyedUpsertBuffer;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -174,11 +175,12 @@ class PaimonSnapshotPartialUpdateTest {
                 new DataField(
                     2,
                     "other",
-                    valueType instanceof RowType nested
+                    valueType instanceof RowType
                         ? new RowType(
-                            nested.getFields().stream()
-                                .map(f -> new DataField(f.id() + 10, f.name(), f.type()))
-                                .toList())
+                            ((RowType) valueType)
+                                .getFields().stream()
+                                    .map(f -> new DataField(f.id() + 10, f.name(), f.type()))
+                                    .collect(ListCollectors.toList()))
                         : valueType)));
     var table =
         PaimonMergeEngineTest.table(
@@ -218,7 +220,7 @@ class PaimonSnapshotPartialUpdateTest {
           List<RowData> rows =
               run.stream()
                   .map(row -> (RowData) new org.apache.paimon.flink.FlinkRowData(row))
-                  .toList();
+                  .collect(ListCollectors.toList());
           buffer.push(RowDataArrowConverter.write(rows, type, allocator, true), 0);
           files.addAll(
               new NativePaimonKeyValueFileWriter(table, layout)

@@ -31,12 +31,83 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 public final class FlussArrowLogBatch {
   private FlussArrowLogBatch() {}
 
-  public record Decoded(
-      VectorSchemaRoot root, int schemaId, long baseOffset, long nextOffset, long timestamp)
-      implements AutoCloseable {
+  public static final class Decoded implements AutoCloseable {
+    private final VectorSchemaRoot root;
+    private final int schemaId;
+    private final long baseOffset;
+    private final long nextOffset;
+    private final long timestamp;
+
+    public Decoded(
+        VectorSchemaRoot root, int schemaId, long baseOffset, long nextOffset, long timestamp) {
+      this.root = root;
+      this.schemaId = schemaId;
+      this.baseOffset = baseOffset;
+      this.nextOffset = nextOffset;
+      this.timestamp = timestamp;
+    }
+
+    public VectorSchemaRoot root() {
+      return root;
+    }
+
+    public int schemaId() {
+      return schemaId;
+    }
+
+    public long baseOffset() {
+      return baseOffset;
+    }
+
+    public long nextOffset() {
+      return nextOffset;
+    }
+
+    public long timestamp() {
+      return timestamp;
+    }
+
     @Override
     public void close() {
       if (root != null) root.close();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Decoded that = (Decoded) other;
+      return java.util.Objects.equals(root, that.root)
+          && schemaId == that.schemaId
+          && baseOffset == that.baseOffset
+          && nextOffset == that.nextOffset
+          && timestamp == that.timestamp;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(root);
+      result = 31 * result + schemaId;
+      result = 31 * result + Long.hashCode(baseOffset);
+      result = 31 * result + Long.hashCode(nextOffset);
+      result = 31 * result + Long.hashCode(timestamp);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Decoded[root="
+          + root
+          + ", schemaId="
+          + schemaId
+          + ", baseOffset="
+          + baseOffset
+          + ", nextOffset="
+          + nextOffset
+          + ", timestamp="
+          + timestamp
+          + "]";
     }
   }
 
@@ -128,7 +199,10 @@ public final class FlussArrowLogBatch {
     } catch (Throwable failure) {
       root.close();
       if (kindVector != null) kindVector.close();
-      if (failure instanceof IOException io) throw io;
+      if (failure instanceof IOException) {
+        IOException io = ((IOException) failure);
+        throw io;
+      }
       throw failure;
     }
   }
@@ -136,8 +210,10 @@ public final class FlussArrowLogBatch {
   // Arrow-rs reads the final string/binary offset during FFI import, before align_buffers runs.
   private static void alignVariableOffsets(List<FieldVector> vectors, BufferAllocator allocator) {
     for (var vector : vectors) {
-      if (vector instanceof BaseVariableWidthVector variable
-          && (variable.getOffsetBuffer().memoryAddress() & 3) != 0) {
+      if (vector instanceof BaseVariableWidthVector
+          && (((BaseVariableWidthVector) vector).getOffsetBuffer().memoryAddress() & 3) != 0) {
+        BaseVariableWidthVector variable = ((BaseVariableWidthVector) vector);
+
         var buffers = new ArrayList<>(vector.getFieldBuffers());
         ArrowBuf offsets = variable.getOffsetBuffer();
         try (ArrowBuf aligned = allocator.buffer(offsets.capacity())) {
@@ -253,13 +329,19 @@ public final class FlussArrowLogBatch {
   }
 
   private static byte rowKind(byte flussKind) throws IOException {
-    return switch (flussKind) {
-      case 0, 1 -> RowKind.INSERT.toByteValue();
-      case 2 -> RowKind.UPDATE_BEFORE.toByteValue();
-      case 3 -> RowKind.UPDATE_AFTER.toByteValue();
-      case 4 -> RowKind.DELETE.toByteValue();
-      default -> throw new IOException("invalid Fluss change type: " + flussKind);
-    };
+    switch (flussKind) {
+      case 0:
+      case 1:
+        return RowKind.INSERT.toByteValue();
+      case 2:
+        return RowKind.UPDATE_BEFORE.toByteValue();
+      case 3:
+        return RowKind.UPDATE_AFTER.toByteValue();
+      case 4:
+        return RowKind.DELETE.toByteValue();
+      default:
+        throw new IOException("invalid Fluss change type: " + flussKind);
+    }
   }
 
   private static void require(boolean condition, String message) throws IOException {

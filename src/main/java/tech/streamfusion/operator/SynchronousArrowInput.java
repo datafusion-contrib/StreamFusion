@@ -21,11 +21,14 @@ public final class SynchronousArrowInput {
   @SuppressWarnings("unchecked")
   public static Transformation<RowData> forTranspose(
       Transformation<RowData> input, RowType sourceType) {
+    Object infoCandidate;
     if (!(input instanceof PhysicalTransformation<?>)
-        || !(input.getOutputType() instanceof InternalTypeInfo<?> info)
-        || !info.toLogicalType().equals(sourceType)) {
+        || !((infoCandidate = input.getOutputType()) instanceof InternalTypeInfo<?>)
+        || !((InternalTypeInfo<?>) infoCandidate).toLogicalType().equals(sourceType)) {
       return input;
     }
+    InternalTypeInfo<?> info = ((InternalTypeInfo<?>) infoCandidate);
+
     var edge = new PartitionTransformation<>(input, new ForwardPartitioner<RowData>());
     edge.setOutputType(new InputType((InternalTypeInfo<RowData>) info));
     return edge;
@@ -80,7 +83,7 @@ public final class SynchronousArrowInput {
 
     @Override
     public boolean equals(Object other) {
-      return other instanceof InputType type && original.equals(type.original);
+      return other instanceof InputType && original.equals(((InputType) other).original);
     }
 
     @Override
@@ -153,7 +156,8 @@ public final class SynchronousArrowInput {
 
     @Override
     public boolean equals(Object other) {
-      return other instanceof InputSerializer serializer && original.equals(serializer.original);
+      return other instanceof InputSerializer
+          && original.equals(((InputSerializer) other).original);
     }
 
     @Override

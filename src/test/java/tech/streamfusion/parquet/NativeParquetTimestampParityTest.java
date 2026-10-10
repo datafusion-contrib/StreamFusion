@@ -145,21 +145,29 @@ class NativeParquetTimestampParityTest {
       var map = new java.util.LinkedHashMap<Integer, TimestampData>();
       map.put(1, ts);
       map.put(2, null);
-      Object value =
-          switch (i % 4) {
-            case 0 -> null;
-            case 1 -> GenericRowData.of(null, null, null);
-            case 2 ->
-                GenericRowData.of(
-                    ts,
-                    new org.apache.flink.table.data.GenericArrayData(new Object[0]),
-                    new org.apache.flink.table.data.GenericMapData(java.util.Map.of()));
-            default ->
-                GenericRowData.of(
-                    ts,
-                    new org.apache.flink.table.data.GenericArrayData(new Object[] {ts, null, ts}),
-                    new org.apache.flink.table.data.GenericMapData(map));
-          };
+      Object value;
+      switch (i % 4) {
+        case 0:
+          value = null;
+          break;
+        case 1:
+          value = GenericRowData.of(null, null, null);
+          break;
+        case 2:
+          value =
+              GenericRowData.of(
+                  ts,
+                  new org.apache.flink.table.data.GenericArrayData(new Object[0]),
+                  new org.apache.flink.table.data.GenericMapData(java.util.Map.of()));
+          break;
+        default:
+          value =
+              GenericRowData.of(
+                  ts,
+                  new org.apache.flink.table.data.GenericArrayData(new Object[] {ts, null, ts}),
+                  new org.apache.flink.table.data.GenericMapData(map));
+          break;
+      }
       rows.add(GenericRowData.of(value, i));
     }
     Path stock = directory.resolve("nested-stock.parquet");
@@ -229,7 +237,8 @@ class NativeParquetTimestampParityTest {
             row.getFieldRepetitionCount(0) == 0
                 ? null
                 : int96
-                    ? java.util.HexFormat.of().formatHex(row.getInt96(0, 0).getBytes())
+                    ? org.apache.flink.util.StringUtils.byteToHexString(
+                        row.getInt96(0, 0).getBytes())
                     : row.getLong(0, 0));
       }
     }

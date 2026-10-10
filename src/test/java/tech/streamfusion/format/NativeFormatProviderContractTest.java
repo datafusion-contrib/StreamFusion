@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 
 /**
  * Pins the SPI's linkage contract: the extension-JAR smoke test instantiates providers through
@@ -28,7 +29,6 @@ import org.junit.jupiter.api.Test;
  * JDK and this project, then asks for its constructor, which links the class.
  */
 class NativeFormatProviderContractTest {
-
   @Test
   void spiSignaturesReferenceOnlyProbeSafeTypes() {
     for (Method method : NativeFormatProvider.class.getDeclaredMethods()) {
@@ -81,7 +81,7 @@ class NativeFormatProviderContractTest {
           .map(String::trim)
           .filter(line -> !line.isEmpty() && !line.startsWith("#"))
           .distinct()
-          .toList();
+          .collect(ListCollectors.toList());
     }
   }
 

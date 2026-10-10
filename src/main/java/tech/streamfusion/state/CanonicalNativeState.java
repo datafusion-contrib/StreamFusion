@@ -17,7 +17,6 @@ import org.apache.flink.runtime.state.VoidNamespaceSerializer;
 
 /** Backend-independent representation of native state inside a Flink canonical savepoint. */
 public final class CanonicalNativeState {
-
   static final String STATE_NAME = "__streamfusion_canonical_native_state_v1";
   static final String ASYNC_HEADER_STATE_NAME = "__streamfusion_canonical_native_state_v2_header";
   static final String ASYNC_PAYLOAD_STATE_NAME = "__streamfusion_canonical_native_state_v2_payload";
@@ -282,7 +281,44 @@ public final class CanonicalNativeState {
     }
   }
 
-  private record SavedKeyContext(Object key, int keyGroup) {}
+  private static final class SavedKeyContext {
+    private final Object key;
+    private final int keyGroup;
+
+    private SavedKeyContext(Object key, int keyGroup) {
+      this.key = key;
+      this.keyGroup = keyGroup;
+    }
+
+    public Object key() {
+      return key;
+    }
+
+    public int keyGroup() {
+      return keyGroup;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      SavedKeyContext that = (SavedKeyContext) other;
+      return java.util.Objects.equals(key, that.key) && keyGroup == that.keyGroup;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(key);
+      result = 31 * result + keyGroup;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "SavedKeyContext[key=" + key + ", keyGroup=" + keyGroup + "]";
+    }
+  }
 
   private static byte[] header(String operatorId, long timerDeadline, int chunks, byte[] payload) {
     byte[] operator = operatorId.getBytes(StandardCharsets.UTF_8);

@@ -84,7 +84,10 @@ Catalog credentials.
 The runner clones Flink `release-2.2.1`, Kafka connector `v5.0.0`, and Paimon `2.0.0` (its
 `release-2.0.0-rc10` tag), plus Delta `v4.4.0` for its SQL tests, under `.flink-suite/2.2`, verifies that each checkout is clean, builds and
 installs StreamFusion and its supported format/connector modules, and builds the required upstream
-reactors with tests skipped. A test-only
+reactors with tests skipped. The suite runs on JDK 17 and selects Flink 2.2's released
+`java11-target` build profile so its isolated dependencies meet StreamFusion's Java 11
+bytecode gate; Flink 1.18 retains its upstream compiler target. This changes compiler
+configuration, without rewriting upstream source or bypassing dependency validation. A test-only
 Java agent then installs StreamFusion whenever an upstream test creates a streaming planner, and
 loads the native library at that moment the way a TaskManager loads it once at startup, so no
 upstream job pays the first-load latency inside its first native task; batch planners remain stock

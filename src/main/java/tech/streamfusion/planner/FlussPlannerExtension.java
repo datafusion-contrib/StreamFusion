@@ -25,8 +25,11 @@ public final class FlussPlannerExtension implements NativePlannerExtension {
   @Override
   public String sourceSharingKey(org.apache.calcite.rel.RelNode node) {
     if (enabled()
-        && node instanceof StreamPhysicalTableSourceScan scan
-        && FlussTables.isSource(scan)) return FlussTables.sourceSharingKey(scan);
+        && node instanceof StreamPhysicalTableSourceScan
+        && FlussTables.isSource(((StreamPhysicalTableSourceScan) node))) {
+      StreamPhysicalTableSourceScan scan = ((StreamPhysicalTableSourceScan) node);
+      return FlussTables.sourceSharingKey(scan);
+    }
     return null;
   }
 }

@@ -1,9 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.format.FormatCodes;
-import tech.streamfusion.format.NativeFormatContext;
-import tech.streamfusion.format.NativeFormatOptions;
-import tech.streamfusion.format.NativeFormatProviders;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -12,6 +8,11 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.format.FormatCodes;
+import tech.streamfusion.format.NativeFormatContext;
+import tech.streamfusion.format.NativeFormatOptions;
+import tech.streamfusion.format.NativeFormatProviders;
 
 /**
  * A keyed Kafka table the shallow decode path reproduces natively: {@code key.format = 'raw'} with
@@ -29,7 +30,6 @@ import org.apache.flink.table.types.logical.RowType;
  * row type and stay on Flink for keyed tables for now).
  */
 final class KeyedDecodeSpec {
-
   private final Map<String, String> optionsWithMarkers;
   private final RowType valueRowType;
 
@@ -78,13 +78,14 @@ final class KeyedDecodeSpec {
       if (!prefix.isEmpty()) {
         return null; // Flink rejects a key prefix with ALL — field overlaps
       }
-      valuePositions = IntStream.range(0, physical.getFieldCount()).boxed().toList();
+      valuePositions =
+          IntStream.range(0, physical.getFieldCount()).boxed().collect(ListCollectors.toList());
     } else if ("EXCEPT_KEY".equals(include)) {
       valuePositions =
           IntStream.range(0, physical.getFieldCount())
               .filter(position -> position != keyPosition)
               .boxed()
-              .toList();
+              .collect(ListCollectors.toList());
     } else {
       return null;
     }

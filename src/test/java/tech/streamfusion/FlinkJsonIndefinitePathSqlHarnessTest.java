@@ -195,15 +195,24 @@ class FlinkJsonIndefinitePathSqlHarnessTest {
           "inputs",
           env.fromSequence(0, 5002)
               .map(
-                  id ->
-                      Row.of(
-                          id,
-                          switch ((int) (id % 4)) {
-                            case 0 -> "{\"a\":[]}";
-                            case 1 -> "{\"a\":null}";
-                            case 2 -> "{}";
-                            default -> "[1]";
-                          }))
+                  id -> {
+                    String selectedValue;
+                    switch ((int) (id % 4)) {
+                      case 0:
+                        selectedValue = "{\"a\":[]}";
+                        break;
+                      case 1:
+                        selectedValue = "{\"a\":null}";
+                        break;
+                      case 2:
+                        selectedValue = "{}";
+                        break;
+                      default:
+                        selectedValue = "[1]";
+                        break;
+                    }
+                    return Row.of(id, selectedValue);
+                  })
               .returns(Types.ROW_NAMED(new String[] {"id", "s"}, Types.LONG, Types.STRING)));
       var scan = NativePlanner.install(table);
       var result =

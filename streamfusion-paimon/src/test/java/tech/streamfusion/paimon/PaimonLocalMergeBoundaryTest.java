@@ -28,6 +28,7 @@ import org.apache.paimon.types.DataTypes;
 import org.apache.paimon.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.RowDataArrowConverter;
@@ -107,7 +108,7 @@ class PaimonLocalMergeBoundaryTest {
                         RowDataArrowConverter.write(
                             input.stream()
                                 .<org.apache.flink.table.data.RowData>map(FlinkRowData::new)
-                                .toList(),
+                                .collect(ListCollectors.toList()),
                             flinkType,
                             allocator,
                             true))));
@@ -128,7 +129,9 @@ class PaimonLocalMergeBoundaryTest {
           ((BoundedOneInput) ours.getOneInputOperator()).endInput();
           ours.prepareSnapshotPreBarrier(2);
           for (Object event : ours.getOutput()) {
-            if (event instanceof StreamRecord<?> record) {
+            if (event instanceof StreamRecord<?>) {
+              StreamRecord<?> record = ((StreamRecord<?>) event);
+
               try (var root = ((ArrowBatch) record.getValue()).root()) {
                 var kinds = (TinyIntVector) root.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
                 int i = 0;
@@ -145,7 +148,9 @@ class PaimonLocalMergeBoundaryTest {
           ((BoundedOneInput) stock.getOneInputOperator()).endInput();
           stock.prepareSnapshotPreBarrier(2);
           for (Object event : stock.getOutput()) {
-            if (event instanceof StreamRecord<?> record) {
+            if (event instanceof StreamRecord<?>) {
+              StreamRecord<?> record = ((StreamRecord<?>) event);
+
               var row = (InternalRow) record.getValue();
               output.add(row.getRowKind().shortString() + PaimonTestTables.render(row, type));
             } else output.add(event.toString());

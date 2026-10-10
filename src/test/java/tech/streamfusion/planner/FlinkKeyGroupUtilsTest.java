@@ -13,10 +13,10 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 
 class FlinkKeyGroupUtilsTest {
-
   @Test
   void honorsProgramWideMaxParallelism() {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -65,7 +65,7 @@ class FlinkKeyGroupUtilsTest {
                     node.getOperatorFactory()
                         .getStreamOperatorClass(Thread.currentThread().getContextClassLoader())
                         .equals(NativeColumnarGroupAggregateOperator.class))
-            .toList();
+            .collect(ListCollectors.toList());
     assertFalse(nativeKeyedNodes.isEmpty(), "group aggregate was not planned natively");
     var hashes =
         new org.apache.flink.streaming.api.graph.StreamGraphHasherV2()

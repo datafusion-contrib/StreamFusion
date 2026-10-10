@@ -12,7 +12,45 @@ import org.apache.paimon.operation.AbstractFileStoreWrite;
 public final class PaimonWriterLifecycle {
   private static final Access ACCESS = access();
 
-  private record Access(Field writers, Field modified) {}
+  private static final class Access {
+    private final Field writers;
+    private final Field modified;
+
+    private Access(Field writers, Field modified) {
+      this.writers = writers;
+      this.modified = modified;
+    }
+
+    public Field writers() {
+      return writers;
+    }
+
+    public Field modified() {
+      return modified;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Access that = (Access) other;
+      return java.util.Objects.equals(writers, that.writers)
+          && java.util.Objects.equals(modified, that.modified);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(writers);
+      result = 31 * result + java.util.Objects.hashCode(modified);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Access[writers=" + writers + ", modified=" + modified + "]";
+    }
+  }
 
   private PaimonWriterLifecycle() {}
 
@@ -40,9 +78,11 @@ public final class PaimonWriterLifecycle {
 
   static void modified(StoreSinkWrite sink, BinaryRow partition, int bucket, long checkpoint)
       throws IOException {
-    if (ACCESS == null || !(sink instanceof StoreSinkWriteImpl delegate)) {
+    if (ACCESS == null || !(sink instanceof StoreSinkWriteImpl)) {
       throw new IOException("Paimon native writer lifecycle is unavailable");
     }
+    StoreSinkWriteImpl delegate = ((StoreSinkWriteImpl) sink);
+
     try {
       var writers = (Map<?, ?>) ACCESS.writers().get(delegate.getWrite().getWrite());
       var buckets = (Map<?, ?>) writers.get(partition);

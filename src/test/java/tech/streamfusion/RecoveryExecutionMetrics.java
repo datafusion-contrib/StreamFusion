@@ -50,8 +50,14 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
               var variables = group.getAllVariables();
               String operator = variables.getOrDefault("<operator_name>", "");
               if (!operator.startsWith("Native")) return;
-              if (!(metrics.get("numRecordsIn") instanceof Counter input)
-                  || !(metrics.get("numRecordsOut") instanceof Counter output)) return;
+              Object outputCandidate;
+              Object inputCandidate;
+              if (!((inputCandidate = metrics.get("numRecordsIn")) instanceof Counter)
+                  || !((outputCandidate = metrics.get("numRecordsOut")) instanceof Counter)) return;
+              Counter input = ((Counter) inputCandidate);
+
+              Counter output = ((Counter) outputCandidate);
+
               observations.add(
                   Map.of(
                       "operator",

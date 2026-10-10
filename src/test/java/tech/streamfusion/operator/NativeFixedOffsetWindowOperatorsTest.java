@@ -75,7 +75,10 @@ class NativeFixedOffsetWindowOperatorsTest {
                       List.of(GenericRowData.of(7L, null)), input, NativeAllocator.SHARED))));
       int emitted = 0;
       while (!harness.getOutput().isEmpty()) {
-        if (harness.getOutput().poll() instanceof StreamRecord<?> record) {
+        Object recordCandidate;
+        if ((recordCandidate = harness.getOutput().poll()) instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) recordCandidate);
+
           try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
             emitted += root.getRowCount();
             assertEquals(1, root.getRowCount());
@@ -292,7 +295,10 @@ class NativeFixedOffsetWindowOperatorsTest {
   private static List<List<Long>> collect(Queue<Object> output) {
     List<List<Long>> rows = new ArrayList<>();
     while (!output.isEmpty()) {
-      if (output.poll() instanceof StreamRecord<?> record) {
+      Object recordCandidate2;
+      if ((recordCandidate2 = output.poll()) instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) recordCandidate2);
+
         try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
           for (int i = 0; i < root.getRowCount(); i++) {
             rows.add(
