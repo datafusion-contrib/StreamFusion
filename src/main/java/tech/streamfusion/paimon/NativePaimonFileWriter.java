@@ -24,7 +24,6 @@ import tech.streamfusion.format.ColumnarFileCodec;
  * files.
  */
 public final class NativePaimonFileWriter implements BundleFormatWriter {
-
   private enum Mode {
     UNDECIDED,
     NATIVE,
@@ -133,11 +132,16 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
 
   @Override
   public boolean reachTargetSize(boolean suggestedCheck, long targetSize) throws IOException {
-    return switch (mode) {
-      case NATIVE -> suggestedCheck && encoder.estimatedBytes() >= targetSize;
-      case STOCK -> stock.reachTargetSize(suggestedCheck, targetSize);
-      case UNDECIDED -> false;
-    };
+    switch (mode) {
+      case NATIVE:
+        return suggestedCheck && encoder.estimatedBytes() >= targetSize;
+      case STOCK:
+        return stock.reachTargetSize(suggestedCheck, targetSize);
+      case UNDECIDED:
+        return false;
+      default:
+        throw new IncompatibleClassChangeError();
+    }
   }
 
   @Nullable
@@ -155,7 +159,9 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
     if (closed) return;
     closed = true;
     switch (mode) {
-      case NATIVE -> {
+      case NATIVE:
+        {
+          {
         try {
           encoder.finish();
         } finally {
@@ -163,8 +169,14 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
           encoder = null;
         }
       }
-      case STOCK -> stock.close();
-      case UNDECIDED -> stock().close();
+          break;
+        }
+      case STOCK:
+        stock.close();
+        break;
+      case UNDECIDED:
+        stock().close();
+        break;
     }
   }
 }

@@ -6,7 +6,23 @@ import java.util.Map;
 import java.util.Set;
 
 /** Whitelist of verified Java ORC writer options shared by Flink and Paimon. */
-public record OrcWriterSettings(Map<String, String> config, String fallbackReason) {
+public final class OrcWriterSettings {
+  private final Map<String, String> config;
+  private final String fallbackReason;
+
+  public OrcWriterSettings(Map<String, String> config, String fallbackReason) {
+    this.config = config;
+    this.fallbackReason = fallbackReason;
+  }
+
+  public Map<String, String> config() {
+    return config;
+  }
+
+  public String fallbackReason() {
+    return fallbackReason;
+  }
+
   public static String timestampFallback(org.apache.flink.table.types.logical.LogicalType type) {
     if (java.util.TimeZone.getDefault().hasSameRules(java.util.TimeZone.getTimeZone("UTC")))
       return null;
@@ -113,5 +129,27 @@ public record OrcWriterSettings(Map<String, String> config, String fallbackReaso
 
   public static OrcWriterSettings fallback(String reason) {
     return new OrcWriterSettings(Map.of(), reason);
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    if (this == other) return true;
+    if (other == null || getClass() != other.getClass()) return false;
+    OrcWriterSettings that = (OrcWriterSettings) other;
+    return java.util.Objects.equals(config, that.config)
+        && java.util.Objects.equals(fallbackReason, that.fallbackReason);
+  }
+
+  @Override
+  public int hashCode() {
+    int result = 0;
+    result = 31 * result + java.util.Objects.hashCode(config);
+    result = 31 * result + java.util.Objects.hashCode(fallbackReason);
+    return result;
+  }
+
+  @Override
+  public String toString() {
+    return "OrcWriterSettings[config=" + config + ", fallbackReason=" + fallbackReason + "]";
   }
 }

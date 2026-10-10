@@ -1,8 +1,8 @@
 package tech.streamfusion.planner;
 
 import java.time.DateTimeException;
-import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.TimeZone;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
@@ -126,11 +126,17 @@ public final class CanonicalTemporalParser {
   }
 
   private static int daysInMonth(int year, int month) {
-    return switch (month) {
-      case 2 -> java.time.Year.isLeap(year) ? 29 : 28;
-      case 4, 6, 9, 11 -> 30;
-      default -> 31;
-    };
+    switch (month) {
+      case 2:
+        return java.time.Year.isLeap(year) ? 29 : 28;
+      case 4:
+      case 6:
+      case 9:
+      case 11:
+        return 30;
+      default:
+        return 31;
+    }
   }
 
   private static int digits(String text, int start, int end) {

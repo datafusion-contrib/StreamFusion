@@ -61,14 +61,21 @@ final class FlussTables {
       }
       var startup = (FlinkConnectorOptionsUtils.StartupOptions) field(source, "startupOptions");
       var bounded = (FlinkConnectorOptionsUtils.BoundedOptions) field(source, "boundedOptions");
-      OffsetsInitializer start =
-          switch (startup.startupMode) {
-            case EARLIEST, FULL -> OffsetsInitializer.earliest();
-            case LATEST -> OffsetsInitializer.latest();
-            case TIMESTAMP -> OffsetsInitializer.timestamp(startup.startupTimestampMs);
-            default ->
-                throw new IllegalArgumentException("snapshot startup is outside Arrow admission");
-          };
+      OffsetsInitializer start;
+      switch (startup.startupMode) {
+        case EARLIEST:
+        case FULL:
+          start = OffsetsInitializer.earliest();
+          break;
+        case LATEST:
+          start = OffsetsInitializer.latest();
+          break;
+        case TIMESTAMP:
+          start = OffsetsInitializer.timestamp(startup.startupTimestampMs);
+          break;
+        default:
+          throw new IllegalArgumentException("snapshot startup is outside Arrow admission");
+      }
       Configuration config =
           clientConfiguration(
               (Configuration) field(source, "flussConfig"),
@@ -190,8 +197,8 @@ final class FlussTables {
   static String predicateKey(org.apache.fluss.predicate.Predicate predicate)
       throws java.io.IOException {
     if (predicate == null) return "none";
-    return java.util.HexFormat.of()
-        .formatHex(org.apache.flink.util.InstantiationUtil.serializeObject(predicate));
+    return org.apache.flink.util.StringUtils.byteToHexString(
+        org.apache.flink.util.InstantiationUtil.serializeObject(predicate));
   }
 
   static String sourceFallback(FlinkTableSource source) throws ReflectiveOperationException {
@@ -291,26 +298,33 @@ final class FlussTables {
     RowType rowType = (RowType) field(sink, "tableRowType");
     for (Object key : (List<?>) field(sink, "bucketKeys")) {
       var type = rowType.getTypeAt(rowType.getFieldNames().indexOf(key.toString()));
-      if (!switch (type.getTypeRoot()) {
-        case BOOLEAN,
-                TINYINT,
-                SMALLINT,
-                INTEGER,
-                BIGINT,
-                FLOAT,
-                DOUBLE,
-                CHAR,
-                VARCHAR,
-                BINARY,
-                VARBINARY,
-                DECIMAL,
-                DATE,
-                TIME_WITHOUT_TIME_ZONE,
-                TIMESTAMP_WITHOUT_TIME_ZONE,
-                TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
-            true;
-        default -> false;
-      }) return "complex bucket-key encoding uses Flink";
+      {
+        boolean switchResult0;
+        switch (type.getTypeRoot()) {
+          case BOOLEAN:
+          case TINYINT:
+          case SMALLINT:
+          case INTEGER:
+          case BIGINT:
+          case FLOAT:
+          case DOUBLE:
+          case CHAR:
+          case VARCHAR:
+          case BINARY:
+          case VARBINARY:
+          case DECIMAL:
+          case DATE:
+          case TIME_WITHOUT_TIME_ZONE:
+          case TIMESTAMP_WITHOUT_TIME_ZONE:
+          case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+            switchResult0 = true;
+            break;
+          default:
+            switchResult0 = false;
+            break;
+        }
+        if (!switchResult0) return "complex bucket-key encoding uses Flink";
+      }
     }
     if (!(boolean) field(sink, "streaming")) return "batch sinks use Flink";
     if (field(sink, "producerId") != null)

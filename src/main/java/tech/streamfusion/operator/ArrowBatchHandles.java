@@ -21,7 +21,6 @@ import org.apache.flink.runtime.execution.CancelTaskException;
  * consumer cancels instead of masking the originating failure with a missing-handle error.
  */
 public final class ArrowBatchHandles {
-
   public static final long TOKEN_HI;
   public static final long TOKEN_LO;
 
@@ -52,7 +51,8 @@ public final class ArrowBatchHandles {
       throw new IllegalStateException(
           "zero-copy exchange handle crossed a process boundary: the columnar shuffle was planned"
               + " for a single-process deployment but producer and consumer run in different JVMs."
-              + " Set streamfusion.exchange.zeroCopyLocal=false for multi-TaskManager deployments.");
+              + " Set streamfusion.exchange.zeroCopyLocal=false for multi-TaskManager"
+              + " deployments.");
     }
     OwnedBatch owned = IN_FLIGHT.remove(handle);
     if (owned == null) {
@@ -103,5 +103,42 @@ public final class ArrowBatchHandles {
     return NEXT.get();
   }
 
-  private record OwnedBatch(long owner, ArrowBatch batch) {}
+  private static final class OwnedBatch {
+    private final long owner;
+    private final ArrowBatch batch;
+
+    private OwnedBatch(long owner, ArrowBatch batch) {
+      this.owner = owner;
+      this.batch = batch;
+    }
+
+    public long owner() {
+      return owner;
+    }
+
+    public ArrowBatch batch() {
+      return batch;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      OwnedBatch that = (OwnedBatch) other;
+      return owner == that.owner && java.util.Objects.equals(batch, that.batch);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + Long.hashCode(owner);
+      result = 31 * result + java.util.Objects.hashCode(batch);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "OwnedBatch[owner=" + owner + ", batch=" + batch + "]";
+    }
+  }
 }

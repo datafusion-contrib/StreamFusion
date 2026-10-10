@@ -11,7 +11,6 @@ import org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.types.logical.LogicalType;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 
 /** Whitelist-first admission for the path-based Delta data-file writer. */
@@ -67,7 +66,8 @@ final class DeltaSinkMatcher {
     ObjectIdentifier identifier = sink.contextResolvedTable().getIdentifier();
     if (path == null) {
       return Planned.fallback(
-          "native Delta writes currently require a path-based table on the published connector API");
+          "native Delta writes currently require a path-based table on the published connector"
+              + " API");
     }
     for (SinkAbilitySpec ability : sink.abilitySpecs()) {
       if (ability instanceof OverwriteSpec) {
@@ -78,7 +78,8 @@ final class DeltaSinkMatcher {
         (RowType) table.getResolvedSchema().toPhysicalRowDataType().getLogicalType();
     for (LogicalType type : rowType.getChildren()) {
       if (!supported(type)) {
-        return Planned.fallback("Delta column type " + type + " is not verified by the native writer");
+        return Planned.fallback(
+            "Delta column type " + type + " is not verified by the native writer");
       }
     }
     String constraintFallback = SinkConstraintGate.fallbackReason(sink);
@@ -133,25 +134,34 @@ final class DeltaSinkMatcher {
   }
 
   private static boolean supported(LogicalType type) {
-    boolean supported = switch (type.getTypeRoot()) {
-      case BOOLEAN,
-          TINYINT,
-          SMALLINT,
-          INTEGER,
-          BIGINT,
-          FLOAT,
-          DOUBLE,
-          DECIMAL,
-          CHAR,
-          VARCHAR,
-          BINARY,
-          VARBINARY,
-          DATE,
-          TIMESTAMP_WITHOUT_TIME_ZONE,
-          TIMESTAMP_WITH_LOCAL_TIME_ZONE -> true;
-      case ARRAY, MAP, ROW -> type.getChildren().stream().allMatch(DeltaSinkMatcher::supported);
-      default -> false;
-    };
+    boolean supported;
+    switch (type.getTypeRoot()) {
+      case BOOLEAN:
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case FLOAT:
+      case DOUBLE:
+      case DECIMAL:
+      case CHAR:
+      case VARCHAR:
+      case BINARY:
+      case VARBINARY:
+      case DATE:
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        supported = true;
+        break;
+      case ARRAY:
+      case MAP:
+      case ROW:
+        supported = type.getChildren().stream().allMatch(DeltaSinkMatcher::supported);
+        break;
+      default:
+        supported = false;
+        break;
+    }
     return supported;
   }
 

@@ -40,8 +40,7 @@
         <revision>0.1.0-rc4</revision>
         <central.autoPublish>true</central.autoPublish>
         <central.waitUntil>published</central.waitUntil>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- 2.2.0 is the latest 2.2 planner-loader artifact available from Maven Central. The
              production payload is built against 2.2.1, so the two sides exercise both explicitly
@@ -148,9 +147,30 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
                 <version>3.6.3</version>
-                <executions><execution>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>extra-enforcer-rules</artifactId>
+                        <version>1.7.0</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>java-11-compatibility</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration><rules>
+                            <requireJavaVersion><version>[11,)</version></requireJavaVersion>
+                            <enforceBytecodeVersion><maxJdkVersion>11</maxJdkVersion></enforceBytecodeVersion>
+                        </rules></configuration>
+                    </execution>
+                    <execution>
                     <id>target-flink-line</id>
                     <goals><goal>enforce</goal></goals>
                     <configuration><rules><bannedDependencies>

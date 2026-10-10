@@ -42,14 +42,18 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * read back, the manifest's per-file metadata and statistics, and the Parquet footers must agree.
  */
 class NativePaimonParquetWriterTest {
-
   @Test
   void wideTimestampFilesAndStatisticsMatchTheStockWriter() throws Exception {
-    var type = RowType.of(
-        new org.apache.paimon.types.DataField(0, "id", org.apache.paimon.types.DataTypes.INT().notNull()),
-        new org.apache.paimon.types.DataField(1, "ts", org.apache.paimon.types.DataTypes.TIMESTAMP(6)),
-        new org.apache.paimon.types.DataField(2, "ltz", org.apache.paimon.types.DataTypes.TIMESTAMP_WITH_LOCAL_TIME_ZONE(6)));
-    var options = Map.of("file.format", "parquet", "write-only", "true", "changelog-producer", "input");
+    var type =
+        RowType.of(
+            new org.apache.paimon.types.DataField(
+                0, "id", org.apache.paimon.types.DataTypes.INT().notNull()),
+            new org.apache.paimon.types.DataField(
+                1, "ts", org.apache.paimon.types.DataTypes.TIMESTAMP(6)),
+            new org.apache.paimon.types.DataField(
+                2, "ltz", org.apache.paimon.types.DataTypes.TIMESTAMP_WITH_LOCAL_TIME_ZONE(6)));
+    var options =
+        Map.of("file.format", "parquet", "write-only", "true", "changelog-producer", "input");
     var stock = PaimonMergeEngineTest.table(options, type);
     var nativeTable = PaimonMergeEngineTest.table(options, type);
     List<InternalRow> rows = new ArrayList<>();
@@ -80,18 +84,29 @@ class NativePaimonParquetWriterTest {
     Map<String, String> options = new LinkedHashMap<>();
     options.put("file.format", "parquet");
     switch (variant) {
-      case "unaware-zstd" -> options.put("bucket", "-1");
-      case "fixed-snappy" -> {
+      case "unaware-zstd":
+        options.put("bucket", "-1");
+        break;
+      case "fixed-snappy":
+        {
+          {
         options.put("bucket", "3");
         options.put("bucket-key", "id");
         options.put("file.compression", "snappy");
       }
-      case "unaware-uncompressed-v2" -> {
+          break;
+        }
+      case "unaware-uncompressed-v2":
+        {
+          {
         options.put("bucket", "-1");
         options.put("file.compression", "none");
         options.put("parquet.writer.version", "PARQUET_2_0");
       }
-      default -> throw new IllegalArgumentException(variant);
+          break;
+        }
+      default:
+        throw new IllegalArgumentException(variant);
     }
     List<Object[]> values = PaimonTestTables.values(ROWS);
     FileStoreTable nativeTable =

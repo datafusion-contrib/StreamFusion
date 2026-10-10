@@ -292,12 +292,18 @@ class FlinkGroupedValueSqlHarnessTest {
   }
 
   private static String value(String type, int value) {
-    return switch (type) {
-      case "DATE" -> "2020-01-" + value;
-      case "TIME(0)", "TIME(3)" -> "12:34:" + value + ".123";
-      case "BOOLEAN" -> value == 20 ? "false" : "true";
-      case "TIMESTAMP(9)" -> "2020-01-01 00:00:" + value + ".123456789";
-      default -> Integer.toString(value);
-    };
+    switch (type) {
+      case "DATE":
+        return "2020-01-" + value;
+      case "TIME(0)":
+      case "TIME(3)":
+        return "12:34:" + value + ".123";
+      case "BOOLEAN":
+        return value == 20 ? "false" : "true";
+      case "TIMESTAMP(9)":
+        return "2020-01-01 00:00:" + value + ".123456789";
+      default:
+        return Integer.toString(value);
+    }
   }
 }

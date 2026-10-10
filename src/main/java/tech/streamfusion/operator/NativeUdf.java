@@ -55,7 +55,6 @@ import tech.streamfusion.planner.FlinkExpressionFunction;
  * {@code close()} unregisters, so the registry doesn't leak across a task's lifetime.
  */
 public final class NativeUdf {
-
   private NativeUdf() {}
 
   /** Functions embedded in generated expressions share the owning Calc's lifecycle. */
@@ -125,10 +124,10 @@ public final class NativeUdf {
       this.returnType = returnType;
       Class<?>[] params = eval.getParameterTypes();
       this.generated =
-          function instanceof FlinkExpressionFunction expression
+          function instanceof FlinkExpressionFunction
                   && eval.getName().equals("eval")
                   && Arrays.equals(params, new Class<?>[] {Object[].class})
-              ? expression
+              ? ((FlinkExpressionFunction) function)
               : null;
       this.fixedArity = eval.isVarArgs() ? params.length - 1 : params.length;
       this.varArgComponent = eval.isVarArgs() ? params[params.length - 1].getComponentType() : null;
@@ -330,7 +329,9 @@ public final class NativeUdf {
     private void openFunction(ScalarFunction function, FunctionContext context,
         IdentityHashMap<ScalarFunction, Boolean> opened) {
       if (function == null || opened.put(function, Boolean.TRUE) != null) return;
-      if (function instanceof FunctionDependencies dependencies) {
+      if (function instanceof FunctionDependencies) {
+        FunctionDependencies dependencies = ((FunctionDependencies) function);
+
         for (ScalarFunction dependency : dependencies.functions()) {
           openFunction(dependency, context, opened);
         }
@@ -595,7 +596,9 @@ public final class NativeUdf {
         }
       case TYPE_BINARY:
         {
-          if (vector instanceof FixedSizeBinaryVector fixed) {
+          if (vector instanceof FixedSizeBinaryVector) {
+            FixedSizeBinaryVector fixed = ((FixedSizeBinaryVector) vector);
+
             for (int r = 0; r < rows; r++) {
               if (!fixed.isNull(r)) out[r] = fixed.get(r);
             }
@@ -612,7 +615,10 @@ public final class NativeUdf {
       case TYPE_LONG:
       case TYPE_INTERVAL_MILLIS:
         {
-          if (vector instanceof org.apache.arrow.vector.IntervalDayVector intervals) {
+          if (vector instanceof org.apache.arrow.vector.IntervalDayVector) {
+            org.apache.arrow.vector.IntervalDayVector intervals =
+                ((org.apache.arrow.vector.IntervalDayVector) vector);
+
             for (int r = 0; r < rows; r++) {
               if (!intervals.isNull(r)) {
                 out[r] = intervals.getObject(r).toMillis();
@@ -811,12 +817,10 @@ public final class NativeUdf {
       default:
         if (code >= DECIMAL_BASE) {
           DecimalData decimal =
-              value instanceof DecimalData internal
-                  ? internal
+              value instanceof DecimalData
+                  ? ((DecimalData) value)
                   : DecimalData.fromBigDecimal(
-                      (BigDecimal) value,
-                      (code - DECIMAL_BASE) / 100,
-                      (code - DECIMAL_BASE) % 100);
+                      (BigDecimal) value, (code - DECIMAL_BASE) / 100, (code - DECIMAL_BASE) % 100);
           tech.streamfusion.arrow.DecimalAccessor.set(
               (org.apache.arrow.vector.DecimalVector) vector, row, decimal);
           break;

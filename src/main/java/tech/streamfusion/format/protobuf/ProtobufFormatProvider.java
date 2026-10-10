@@ -1,6 +1,5 @@
 package tech.streamfusion.format.protobuf;
 
-import java.io.Serial;
 import java.util.Base64;
 import java.util.Map;
 import tech.streamfusion.format.EncodeFormat;
@@ -14,7 +13,6 @@ import tech.streamfusion.planner.ProtobufDescriptors;
 
 /** Native provider for Flink's protobuf value format. */
 public final class ProtobufFormatProvider implements NativeFormatProvider {
-
   @Override
   public String formatIdentifier() {
     return "protobuf";
@@ -121,7 +119,7 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
 
   /** Serializable job-graph payload produced by the planner and consumed once per task decoder. */
   private static final class ProtobufDecoderPlan implements java.io.Serializable {
-    @Serial private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
     private final byte[] descriptor;
     private final String messageName;
@@ -140,7 +138,7 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
 
   /** Named rather than a lambda so accidental task-side descriptor generation cannot creep back in. */
   private static final class DecoderFactory implements NativeMessageDecoderFactory {
-    @Serial private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
     private final ProtobufDecoderPlan plan;
 

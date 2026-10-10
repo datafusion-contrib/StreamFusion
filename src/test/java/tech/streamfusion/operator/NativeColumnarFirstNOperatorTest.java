@@ -217,7 +217,9 @@ class NativeColumnarFirstNOperatorTest {
     List<List<Long>> rows = new ArrayList<>();
     while (!h.getOutput().isEmpty()) {
       Object event = h.getOutput().poll();
-      if (event instanceof StreamRecord<?> record) {
+      if (event instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) event);
+
         try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
           for (RowData row : RowDataArrowConverter.read(root, OUTPUT)) {
             rows.add(

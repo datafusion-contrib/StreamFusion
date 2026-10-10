@@ -30,18 +30,19 @@ fn indefinite(steps: &[Step<'_>]) -> bool {
 impl<'a> Path<'a> {
     // The Java encoder normalizes the mode and admits this same path grammar.
     pub fn parse(path: &'a str, unicode: &str) -> Option<Self> {
-        static IDENTIFIERS: std::sync::LazyLock<[regex::Regex; 3]> =
+        static IDENTIFIERS: std::sync::LazyLock<[regex::Regex; 4]> =
             std::sync::LazyLock::new(|| {
                 const CATEGORIES: &str =
                     r"[\p{L}\p{Nl}\p{Sc}\p{Pc}\p{Nd}\p{Mc}\p{Mn}\p{Cf}\x7f-\x9f]";
-                ["13.0", "15.0", "16.0"].map(|version| {
+                ["10.0", "13.0", "15.0", "16.0"].map(|version| {
                     regex::Regex::new(&format!(r"[{CATEGORIES}&&\p{{Age={version}}}]")).unwrap()
                 })
             });
         let identifier = &IDENTIFIERS[match unicode {
-            "13.0" => 0,
-            "15.0" => 1,
-            "16.0" => 2,
+            "10.0" => 0,
+            "13.0" => 1,
+            "15.0" => 2,
+            "16.0" => 3,
             _ => return None,
         }];
         let (lax, mut text) = if let Some(text) = path.strip_prefix("lax ") {
@@ -122,7 +123,7 @@ impl<'a> Path<'a> {
             lax,
             steps,
             identifier,
-            legacy_decimal_exponent: unicode == "13.0",
+            legacy_decimal_exponent: matches!(unicode, "10.0" | "13.0"),
         })
     }
 
@@ -935,6 +936,17 @@ mod tests {
             .unwrap()
             .read("true\u{870}")
             .is_err());
+    }
+
+    #[test]
+    fn java_11_token_boundaries_use_unicode_10() {
+        let java11 = Path::parse("$", "10.0").unwrap();
+        let java17 = Path::parse("$", "13.0").unwrap();
+        assert!(java11.read("true\u{560}").is_ok()); // Armenian letter assigned in Unicode 11.
+        assert!(java17.read("true\u{560}").is_err());
+        assert!(java11.read("true\u{531}").is_err());
+        assert!(java11.read("true\u{1f600}").is_ok()); // Jackson tests UTF-16 units.
+        assert!(java11.read("1e2147483648").is_err());
     }
 
     #[test]

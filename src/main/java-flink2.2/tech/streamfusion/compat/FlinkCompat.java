@@ -16,11 +16,15 @@ public final class FlinkCompat {
 
   public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
       org.apache.calcite.sql.SqlOperator operator) {
-    if (operator
-            instanceof
-            org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction function
-        && function.getDefinition()
-            instanceof org.apache.flink.table.functions.ScalarFunction scalar) {
+    Object scalarCandidate;
+    if (operator instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction
+        && (scalarCandidate =
+                ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) operator)
+                    .getDefinition())
+            instanceof org.apache.flink.table.functions.ScalarFunction) {
+      org.apache.flink.table.functions.ScalarFunction scalar =
+          ((org.apache.flink.table.functions.ScalarFunction) scalarCandidate);
+
       return scalar;
     }
     return null;

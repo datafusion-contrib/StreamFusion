@@ -22,7 +22,10 @@ final class PreparedLegacySink extends StreamPhysicalLegacySink<Object> {
   static RelNode prepare(StreamPhysicalLegacySink<?> sink) {
     if (sink instanceof PreparedLegacySink) return sink;
     String[] keys = null;
-    if (sink.sink() instanceof UpsertStreamTableSink<?> upsert) {
+    Object upsertCandidate;
+    if ((upsertCandidate = sink.sink()) instanceof UpsertStreamTableSink<?>) {
+      UpsertStreamTableSink<?> upsert = ((UpsertStreamTableSink<?>) upsertCandidate);
+
       var proven = UpdatingPlanChecker.getUniqueKeyForUpsertSink(sink, upsert);
       if (proven.isDefined()) keys = proven.get();
     }

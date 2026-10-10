@@ -96,17 +96,33 @@ class PaimonSnapshotModesTest {
   @ValueSource(
       strings = {"BOOLEAN", "BIGINT", "FLOAT", "DECIMAL", "STRING", "BINARY", "DATE", "TIMESTAMP"})
   void scalarSequencesOmittedByProjectionMatchStock(String sequenceType) throws Exception {
-    var type =
-        switch (sequenceType) {
-          case "BOOLEAN" -> DataTypes.BOOLEAN();
-          case "BIGINT" -> DataTypes.BIGINT();
-          case "FLOAT" -> DataTypes.FLOAT();
-          case "DECIMAL" -> DataTypes.DECIMAL(38, 2);
-          case "STRING" -> DataTypes.STRING();
-          case "BINARY" -> DataTypes.VARBINARY(8);
-          case "DATE" -> DataTypes.DATE();
-          default -> DataTypes.TIMESTAMP(6);
-        };
+    org.apache.paimon.types.DataType type;
+    switch (sequenceType) {
+      case "BOOLEAN":
+        type = DataTypes.BOOLEAN();
+        break;
+      case "BIGINT":
+        type = DataTypes.BIGINT();
+        break;
+      case "FLOAT":
+        type = DataTypes.FLOAT();
+        break;
+      case "DECIMAL":
+        type = DataTypes.DECIMAL(38, 2);
+        break;
+      case "STRING":
+        type = DataTypes.STRING();
+        break;
+      case "BINARY":
+        type = DataTypes.VARBINARY(8);
+        break;
+      case "DATE":
+        type = DataTypes.DATE();
+        break;
+      default:
+        type = DataTypes.TIMESTAMP(6);
+        break;
+    }
     var fields =
         new RowType(
             List.of(
@@ -132,28 +148,43 @@ class PaimonSnapshotModesTest {
         for (int checkpoint = 1; checkpoint <= 3; checkpoint++) {
           for (int i = 0; i < 12; i++) {
             int n = (i + checkpoint) % 5 - 2;
-            Object value =
-                switch (sequenceType) {
-                  case "BOOLEAN" -> n > 0;
-                  case "BIGINT" -> (long) n;
-                  case "FLOAT" ->
-                      new Float[] {
-                            Float.NaN,
-                            Float.intBitsToFloat(0xffc00001),
-                            -0.0f,
-                            0.0f,
-                            Float.POSITIVE_INFINITY
-                          }
-                          [n + 2];
-                  case "DECIMAL" ->
-                      org.apache.paimon.data.Decimal.fromBigDecimal(
-                          java.math.BigDecimal.valueOf(n, 2), 38, 2);
-                  case "STRING" ->
-                      BinaryString.fromString(List.of("é", "😀", "e", "Z", "").get(n + 2));
-                  case "BINARY" -> new byte[] {(byte) n};
-                  case "DATE" -> n;
-                  default -> org.apache.paimon.data.Timestamp.fromEpochMillis(n, 1000);
-                };
+            Object value;
+            switch (sequenceType) {
+              case "BOOLEAN":
+                value = n > 0;
+                break;
+              case "BIGINT":
+                value = (long) n;
+                break;
+              case "FLOAT":
+                value =
+                    new Float[] {
+                          Float.NaN,
+                          Float.intBitsToFloat(0xffc00001),
+                          -0.0f,
+                          0.0f,
+                          Float.POSITIVE_INFINITY
+                        }
+                        [n + 2];
+                break;
+              case "DECIMAL":
+                value =
+                    org.apache.paimon.data.Decimal.fromBigDecimal(
+                        java.math.BigDecimal.valueOf(n, 2), 38, 2);
+                break;
+              case "STRING":
+                value = BinaryString.fromString(List.of("é", "😀", "e", "Z", "").get(n + 2));
+                break;
+              case "BINARY":
+                value = new byte[] {(byte) n};
+                break;
+              case "DATE":
+                value = n;
+                break;
+              default:
+                value = org.apache.paimon.data.Timestamp.fromEpochMillis(n, 1000);
+                break;
+            }
             writer.write(
                 GenericRow.of(
                     i,

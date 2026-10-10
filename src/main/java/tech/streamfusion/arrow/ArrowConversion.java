@@ -18,43 +18,6 @@
 
 package tech.streamfusion.arrow;
 
-import tech.streamfusion.arrow.vectors.ArrowArrayColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowBigIntColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowBinaryColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowBooleanColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowDateColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowDecimalColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowDoubleColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowFloatColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowIntColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowMapColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowNullColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowRowColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowSmallIntColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowTimeColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowTinyIntColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowVarBinaryColumnVector;
-import tech.streamfusion.arrow.vectors.ArrowVarCharColumnVector;
-import tech.streamfusion.arrow.writers.ArrayWriter;
-import tech.streamfusion.arrow.writers.ArrowFieldWriter;
-import tech.streamfusion.arrow.writers.BigIntWriter;
-import tech.streamfusion.arrow.writers.BinaryWriter;
-import tech.streamfusion.arrow.writers.BooleanWriter;
-import tech.streamfusion.arrow.writers.DateWriter;
-import tech.streamfusion.arrow.writers.DecimalWriter;
-import tech.streamfusion.arrow.writers.DoubleWriter;
-import tech.streamfusion.arrow.writers.FloatWriter;
-import tech.streamfusion.arrow.writers.IntWriter;
-import tech.streamfusion.arrow.writers.MapWriter;
-import tech.streamfusion.arrow.writers.NullWriter;
-import tech.streamfusion.arrow.writers.RowWriter;
-import tech.streamfusion.arrow.writers.SmallIntWriter;
-import tech.streamfusion.arrow.writers.TimeWriter;
-import tech.streamfusion.arrow.writers.TimestampWriter;
-import tech.streamfusion.arrow.writers.TinyIntWriter;
-import tech.streamfusion.arrow.writers.VarBinaryWriter;
-import tech.streamfusion.arrow.writers.VarCharWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -99,8 +62,8 @@ import org.apache.flink.table.types.logical.BinaryType;
 import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.CharType;
 import org.apache.flink.table.types.logical.DateType;
-import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.DayTimeIntervalType;
+import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.DoubleType;
 import org.apache.flink.table.types.logical.FloatType;
 import org.apache.flink.table.types.logical.IntType;
@@ -117,6 +80,43 @@ import org.apache.flink.table.types.logical.VarBinaryType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.table.types.logical.YearMonthIntervalType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeDefaultVisitor;
+import tech.streamfusion.arrow.vectors.ArrowArrayColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowBigIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowBinaryColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowBooleanColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowDateColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowDecimalColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowDoubleColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowFloatColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowMapColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowNullColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowRowColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowSmallIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowTimeColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowTinyIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowVarBinaryColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowVarCharColumnVector;
+import tech.streamfusion.arrow.writers.ArrayWriter;
+import tech.streamfusion.arrow.writers.ArrowFieldWriter;
+import tech.streamfusion.arrow.writers.BigIntWriter;
+import tech.streamfusion.arrow.writers.BinaryWriter;
+import tech.streamfusion.arrow.writers.BooleanWriter;
+import tech.streamfusion.arrow.writers.DateWriter;
+import tech.streamfusion.arrow.writers.DecimalWriter;
+import tech.streamfusion.arrow.writers.DoubleWriter;
+import tech.streamfusion.arrow.writers.FloatWriter;
+import tech.streamfusion.arrow.writers.IntWriter;
+import tech.streamfusion.arrow.writers.MapWriter;
+import tech.streamfusion.arrow.writers.NullWriter;
+import tech.streamfusion.arrow.writers.RowWriter;
+import tech.streamfusion.arrow.writers.SmallIntWriter;
+import tech.streamfusion.arrow.writers.TimeWriter;
+import tech.streamfusion.arrow.writers.TimestampWriter;
+import tech.streamfusion.arrow.writers.TinyIntWriter;
+import tech.streamfusion.arrow.writers.VarBinaryWriter;
+import tech.streamfusion.arrow.writers.VarCharWriter;
 
 /**
  * The Arrow ↔ {@link RowData} type mapping, reader factory, and writer factory, ported (and trimmed) from
@@ -130,7 +130,6 @@ import org.apache.flink.table.types.logical.utils.LogicalTypeDefaultVisitor;
  * This preserves Flink's range and any fractional nanos already present in a runtime value.
  */
 public final class ArrowConversion {
-
   private ArrowConversion() {}
 
   /** The Arrow schema for a row type, with the two-component timestamp convention above. */
@@ -248,13 +247,18 @@ public final class ArrowConversion {
   public static ArrowWriter<RowData> createRowDataArrowWriter(
       VectorSchemaRoot root, RowType rowType, int fixedWidthCapacity) {
     if (fixedWidthCapacity < -1) {
-      throw new IllegalArgumentException("Fixed-width capacity must be non-negative or unspecified");
+      throw new IllegalArgumentException(
+          "Fixed-width capacity must be non-negative or unspecified");
     }
     ArrowFieldWriter<RowData>[] fieldWriters = new ArrowFieldWriter[root.getFieldVectors().size()];
     List<FieldVector> vectors = root.getFieldVectors();
     for (int i = 0; i < vectors.size(); i++) {
       FieldVector vector = vectors.get(i);
-      if (fixedWidthCapacity >= 0 && vector instanceof org.apache.arrow.vector.BaseFixedWidthVector fixed) {
+      if (fixedWidthCapacity >= 0
+          && vector instanceof org.apache.arrow.vector.BaseFixedWidthVector) {
+        org.apache.arrow.vector.BaseFixedWidthVector fixed =
+            ((org.apache.arrow.vector.BaseFixedWidthVector) vector);
+
         fixed.allocateNew(fixedWidthCapacity);
       } else {
         vector.allocateNew();

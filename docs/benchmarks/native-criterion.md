@@ -5,6 +5,11 @@ fixtures built before measurement. They isolate where allocation and materializa
 inside a native island. They complement release-mode Flink comparisons; they cannot establish an
 end-to-end speedup or replace both transposes, JNI, scheduling, or host-backed I/O in those comparisons.
 
+The `scalar_registry` fixtures also exercise the production IS JSON kernel with the JDK 11
+and JDK 17 Unicode profiles, including a token suffix whose classification changed after
+Unicode 10.0. This includes the JSON recycler upcall; JVM startup remains outside measurement and the
+fixture does not measure Flink job throughput.
+
 ## Running and comparing
 
 Run from a checkout with Rust, Maven, and a JDK available. The runner discovers workspace benchmark targets

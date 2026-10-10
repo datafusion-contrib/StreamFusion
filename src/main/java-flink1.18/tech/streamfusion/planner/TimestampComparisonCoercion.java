@@ -10,6 +10,7 @@ import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.sql.type.SqlTypeName;
+import tech.streamfusion.compat.ListCollectors;
 
 /** Supplies the mixed-timestamp comparison coercion missing from Flink 1.18's code generator. */
 final class TimestampComparisonCoercion {
@@ -17,14 +18,16 @@ final class TimestampComparisonCoercion {
 
   static List<RelNode> normalize(List<RelNode> roots) {
     Map<RelNode, RelNode> rewritten = new IdentityHashMap<>();
-    return roots.stream().map(root -> normalize(root, rewritten)).toList();
+    return roots.stream().map(root -> normalize(root, rewritten)).collect(ListCollectors.toList());
   }
 
   private static RelNode normalize(RelNode node, Map<RelNode, RelNode> rewritten) {
     RelNode existing = rewritten.get(node);
     if (existing != null) return existing;
     List<RelNode> inputs =
-        node.getInputs().stream().map(input -> normalize(input, rewritten)).toList();
+        node.getInputs().stream()
+            .map(input -> normalize(input, rewritten))
+            .collect(ListCollectors.toList());
     RelNode prepared =
         inputs.equals(node.getInputs()) ? node : node.copy(node.getTraitSet(), inputs);
     var builder = node.getCluster().getRexBuilder();
@@ -34,19 +37,22 @@ final class TimestampComparisonCoercion {
               @Override
               public RexNode visitCall(RexCall original) {
                 RexCall call = (RexCall) super.visitCall(original);
-                boolean comparison =
-                    switch (call.getKind()) {
-                      case EQUALS,
-                              NOT_EQUALS,
-                              LESS_THAN,
-                              LESS_THAN_OR_EQUAL,
-                              GREATER_THAN,
-                              GREATER_THAN_OR_EQUAL,
-                              IS_DISTINCT_FROM,
-                              IS_NOT_DISTINCT_FROM ->
-                          true;
-                      default -> false;
-                    };
+                boolean comparison;
+                switch (call.getKind()) {
+                  case EQUALS:
+                  case NOT_EQUALS:
+                  case LESS_THAN:
+                  case LESS_THAN_OR_EQUAL:
+                  case GREATER_THAN:
+                  case GREATER_THAN_OR_EQUAL:
+                  case IS_DISTINCT_FROM:
+                  case IS_NOT_DISTINCT_FROM:
+                    comparison = true;
+                    break;
+                  default:
+                    comparison = false;
+                    break;
+                }
                 if (!comparison || call.getOperands().size() != 2) return call;
                 RelDataType left = call.getOperands().get(0).getType();
                 RelDataType right = call.getOperands().get(1).getType();

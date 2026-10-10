@@ -80,8 +80,11 @@ public final class FlussArrowSchema {
       VectorSchemaRoot input, Schema target, BufferAllocator allocator) {
     FieldVector kinds = input.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
     if (kinds != null) {
-      if (!(kinds instanceof org.apache.arrow.vector.TinyIntVector changeTypes))
+      if (!(kinds instanceof org.apache.arrow.vector.TinyIntVector))
         throw new IllegalArgumentException("Invalid changelog sidecar type");
+      org.apache.arrow.vector.TinyIntVector changeTypes =
+          ((org.apache.arrow.vector.TinyIntVector) kinds);
+
       for (int i = 0; i < input.getRowCount(); i++) {
         if (changeTypes.isNull(i) || changeTypes.get(i) != 0)
           throw new IllegalArgumentException("Append-only production received a changelog");
@@ -118,9 +121,11 @@ public final class FlussArrowSchema {
 
   private static void convertVector(FieldVector source, FieldVector target) {
     int count = source.getValueCount();
-    if (source.getField().getType()
-            instanceof org.apache.arrow.vector.types.pojo.ArrowType.Timestamp timestamp
-        && timestamp.getUnit() == org.apache.arrow.vector.types.TimeUnit.MILLISECOND
+    Object timestampCandidate;
+    if ((timestampCandidate = source.getField().getType())
+            instanceof org.apache.arrow.vector.types.pojo.ArrowType.Timestamp
+        && ((org.apache.arrow.vector.types.pojo.ArrowType.Timestamp) timestampCandidate).getUnit()
+            == org.apache.arrow.vector.types.TimeUnit.MILLISECOND
         && TimestampAccessor.isComponentTimestamp(target.getField())
         && SHARE_MILLIS_INPUT) {
       var struct = (org.apache.arrow.vector.complex.StructVector) target;
@@ -139,10 +144,12 @@ public final class FlussArrowSchema {
       }
       return;
     }
+    Object timestampCandidate2;
     if (TimestampAccessor.isComponentTimestamp(source.getField())
-        && target.getField().getType()
-            instanceof org.apache.arrow.vector.types.pojo.ArrowType.Timestamp timestamp
-        && timestamp.getUnit() == org.apache.arrow.vector.types.TimeUnit.MILLISECOND) {
+        && (timestampCandidate2 = target.getField().getType())
+            instanceof org.apache.arrow.vector.types.pojo.ArrowType.Timestamp
+        && ((org.apache.arrow.vector.types.pojo.ArrowType.Timestamp) timestampCandidate2).getUnit()
+            == org.apache.arrow.vector.types.TimeUnit.MILLISECOND) {
       var struct = (org.apache.arrow.vector.complex.StructVector) source;
       var millis = (org.apache.arrow.vector.BigIntVector) struct.getChild("millis");
       target.loadFieldBuffers(

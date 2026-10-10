@@ -16,6 +16,7 @@ import org.apache.fluss.record.*;
 import org.apache.fluss.row.encode.KeyEncoder;
 import org.apache.fluss.types.DataTypes;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -104,7 +105,9 @@ class FlussArrowWriteTest {
               {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
             }) {
           var names =
-              java.util.Arrays.stream(keys).mapToObj(i -> TYPE.getFieldNames().get(i)).toList();
+              java.util.Arrays.stream(keys)
+                  .mapToObj(i -> TYPE.getFieldNames().get(i))
+                  .collect(ListCollectors.toList());
           var encoder = KeyEncoder.ofBucketKeyEncoder(TYPE, names, null);
           int[] precisions =
               java.util.Arrays.stream(keys).map(i -> i == 14 ? 3 : i >= 15 ? 9 : 0).toArray();

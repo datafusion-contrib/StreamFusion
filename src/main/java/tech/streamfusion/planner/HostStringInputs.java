@@ -12,10 +12,14 @@ final class HostStringInputs {
   private HostStringInputs() {}
 
   static boolean areJavaBacked(RelNode input) {
-    if (input instanceof StreamPhysicalDataStreamScan scan) {
+    if (input instanceof StreamPhysicalDataStreamScan) {
+      StreamPhysicalDataStreamScan scan = ((StreamPhysicalDataStreamScan) input);
+
       return hasExternalStrings(scan.dataStreamTable().dataType());
     }
-    if (!(input instanceof TableScan scan)) return false;
+    if (!(input instanceof TableScan)) return false;
+    TableScan scan = ((TableScan) input);
+
     TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
     if (table == null) return false;
     Object source = table.tableSource();

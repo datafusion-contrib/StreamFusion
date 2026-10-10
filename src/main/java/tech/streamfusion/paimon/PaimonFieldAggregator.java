@@ -68,12 +68,18 @@ public final class PaimonFieldAggregator {
         int incoming = program[3 * i + 1];
         Object a = value(accumulator, computed, view, row);
         Object b = value(incoming, computed, view, row);
-        Object value =
-            switch (program[3 * i + 2]) {
-              case 1 -> aggregate.retract(a, b);
-              case 2 -> aggregate.aggReversed(a, b);
-              default -> aggregate.agg(a, b);
-            };
+        Object value;
+        switch (program[3 * i + 2]) {
+          case 1:
+            value = aggregate.retract(a, b);
+            break;
+          case 2:
+            value = aggregate.aggReversed(a, b);
+            break;
+          default:
+            value = aggregate.agg(a, b);
+            break;
+        }
         if (uses[i] > 0) computed[i] = value;
         release(accumulator, uses, computed);
         release(incoming, uses, computed);

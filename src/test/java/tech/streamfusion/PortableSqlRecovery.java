@@ -24,6 +24,7 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.compat.SourceFunction;
 
 /** Fail only after a checkpoint containing a nonempty aggregate prefix has completed. */
@@ -52,7 +53,9 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
   PortableSqlRecovery(String stateBackend) {
     this(
         stateBackend,
-        java.util.stream.IntStream.range(0, 96).mapToObj(i -> Row.of(i % 3, (long) i)).toList(),
+        java.util.stream.IntStream.range(0, 96)
+            .mapToObj(i -> Row.of(i % 3, (long) i))
+            .collect(ListCollectors.toList()),
         Types.ROW_NAMED(new String[] {"k", "v"}, Types.INT, Types.LONG),
         Schema.newBuilder().column("k", DataTypes.INT()).column("v", DataTypes.BIGINT()).build(),
         false,
@@ -230,7 +233,8 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     org.junit.jupiter.api.Assertions.assertEquals(2, runIds.size());
     Proof reference = PROOFS.get(runIds.get(0));
     Proof recovered = PROOFS.get(runIds.get(1));
-    List<Integer> expected = java.util.Arrays.stream(boundaries).boxed().toList();
+    List<Integer> expected =
+        java.util.Arrays.stream(boundaries).boxed().collect(ListCollectors.toList());
     org.junit.jupiter.api.Assertions.assertTrue(reference.injected.isEmpty());
     org.junit.jupiter.api.Assertions.assertEquals(expected, recovered.restoredOffsets);
     org.junit.jupiter.api.Assertions.assertEquals(
@@ -238,7 +242,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     org.junit.jupiter.api.Assertions.assertTrue(recovered.completedOffsets.containsAll(expected));
     for (String id : runIds) {
       org.junit.jupiter.api.Assertions.assertEquals(
-          new java.util.TreeMap<>(watermarks).values().stream().toList(),
+          new java.util.TreeMap<>(watermarks).values().stream().collect(ListCollectors.toList()),
           PROOFS.get(id).emittedWatermarks,
           "controlled watermark sequence");
       org.junit.jupiter.api.Assertions.assertEquals(
@@ -269,7 +273,7 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
                   "emittedWatermarks",
                   List.copyOf(proof.emittedWatermarks));
             })
-        .toList();
+        .collect(ListCollectors.toList());
   }
 
   @Override

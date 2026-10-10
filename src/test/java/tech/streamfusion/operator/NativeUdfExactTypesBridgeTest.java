@@ -10,8 +10,8 @@ import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.DecimalVector;
-import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.FixedSizeBinaryVector;
+import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.complex.StructVector;
@@ -300,8 +300,10 @@ class NativeUdfExactTypesBridgeTest {
         byte[][] samples = {new byte[] {99, 0, 0, 0},
             new byte[] {0, (byte) 0xff, (byte) 0x80, 0}, fixed ? new byte[4] : new byte[0]};
         for (int i = 0; i < samples.length; i++) {
-          if (values instanceof FixedSizeBinaryVector binary) binary.setSafe(i, samples[i]);
-          else ((VarBinaryVector) values).setSafe(i, samples[i]);
+          if (values instanceof FixedSizeBinaryVector) {
+            FixedSizeBinaryVector binary = ((FixedSizeBinaryVector) values);
+            binary.setSafe(i, samples[i]);
+          } else ((VarBinaryVector) values).setSafe(i, samples[i]);
         }
         values.setNull(3);
         input.setRowCount(4);

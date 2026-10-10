@@ -57,18 +57,25 @@ class FlinkWindowJoinRecoveryContractTest {
   private static KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData>
       harness() throws Exception {
     RowType type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType(), new BigIntType());
-    String code = "public class RecoveryJoinCondition extends org.apache.flink.api.common.functions.AbstractRichFunction "
-        + "implements org.apache.flink.table.runtime.generated.JoinCondition { "
-        + "public RecoveryJoinCondition(Object[] refs) {} "
-        + "public boolean apply(org.apache.flink.table.data.RowData a, org.apache.flink.table.data.RowData b) { return true; }}";
+    String code =
+        "public class RecoveryJoinCondition extends"
+            + " org.apache.flink.api.common.functions.AbstractRichFunction implements"
+            + " org.apache.flink.table.runtime.generated.JoinCondition { public"
+            + " RecoveryJoinCondition(Object[] refs) {} public boolean"
+            + " apply(org.apache.flink.table.data.RowData a, org.apache.flink.table.data.RowData b)"
+            + " { return true; }}";
     var operator =
         WindowJoinOperatorBuilder.builder()
-        .leftSerializer(new RowDataSerializer(type))
-        .rightSerializer(new RowDataSerializer(type))
-        .generatedJoinCondition(new GeneratedJoinCondition("RecoveryJoinCondition", code, new Object[0]))
-        .leftWindowEndIndex(3).rightWindowEndIndex(3)
-        .filterNullKeys(new boolean[] {true}).joinType(FlinkJoinType.INNER)
-        .withShiftTimezone(ZoneOffset.UTC).build();
+            .leftSerializer(new RowDataSerializer(type))
+            .rightSerializer(new RowDataSerializer(type))
+            .generatedJoinCondition(
+                new GeneratedJoinCondition("RecoveryJoinCondition", code, new Object[0]))
+            .leftWindowEndIndex(3)
+            .rightWindowEndIndex(3)
+            .filterNullKeys(new boolean[] {true})
+            .joinType(FlinkJoinType.INNER)
+            .withShiftTimezone(ZoneOffset.UTC)
+            .build();
     RowDataSerializer keySerializer = new RowDataSerializer(RowType.of(new BigIntType()));
     return new KeyedTwoInputStreamOperatorTestHarness<>(
         operator,
@@ -85,7 +92,9 @@ class FlinkWindowJoinRecoveryContractTest {
       KeyedTwoInputStreamOperatorTestHarness<RowData, RowData, RowData, RowData> harness) {
     List<List<Long>> rows = new ArrayList<>();
     for (Object event; (event = harness.getOutput().poll()) != null; ) {
-      if (event instanceof StreamRecord<?> record) {
+      if (event instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) event);
+
         RowData row = (RowData) record.getValue();
         rows.add(List.of(row.getLong(1), row.getLong(5)));
       }

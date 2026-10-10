@@ -24,11 +24,21 @@ final class PaimonParquetFloatingStats {
     serializers = new Serializer[type.getFieldCount()];
     for (int i = 0; i < columns.length; i++) {
       switch (type.getTypeAt(i).getTypeRoot()) {
-        case FLOAT, DOUBLE -> {
+        case FLOAT:
+        case DOUBLE:
+          {
+            {
           columns[i] = new FullSimpleColStatsCollector();
           serializers[i] = InternalSerializers.create(type.getTypeAt(i));
         }
-        default -> {}
+            break;
+          }
+        default:
+          {
+            {
+            }
+            break;
+          }
       }
     }
   }
@@ -51,8 +61,10 @@ final class PaimonParquetFloatingStats {
 
       public SimpleColStats[] extract(FileIO io, Path path, long size, Object metadata)
           throws IOException {
-        if (!(metadata instanceof PaimonParquetFloatingStats floating))
+        if (!(metadata instanceof PaimonParquetFloatingStats))
           return delegate.extract(io, path, size, metadata);
+        PaimonParquetFloatingStats floating = ((PaimonParquetFloatingStats) metadata);
+
         var result = delegate.extract(io, path, size);
         for (int i = 0; i < result.length; i++)
           if (floating.columns[i] != null)

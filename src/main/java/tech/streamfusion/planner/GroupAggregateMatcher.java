@@ -17,7 +17,6 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * cardinality. The admission checks below keep unsupported value types and aggregate forms on Flink.
  */
 final class GroupAggregateMatcher {
-
   private GroupAggregateMatcher() {}
 
   static boolean matches(StreamPhysicalGroupAggregate agg) {
@@ -69,7 +68,8 @@ final class GroupAggregateMatcher {
           }
         }
         if ((call.isDistinct() && kind == 14) || call.getArgList().size() != 1) {
-          return "GROUP BY: ordered values require one argument; SINGLE_VALUE DISTINCT is unsupported";
+          return "GROUP BY: ordered values require one argument; SINGLE_VALUE DISTINCT is"
+              + " unsupported";
         }
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
@@ -134,29 +134,35 @@ final class GroupAggregateMatcher {
   }
 
   private static boolean orderedValueType(SqlTypeName type) {
-    return switch (type) {
-      case TINYINT,
-          SMALLINT,
-          INTEGER,
-          BIGINT,
-          DECIMAL,
-          CHAR,
-          VARCHAR,
-          DATE,
-          TIME,
-          BOOLEAN,
-          TIMESTAMP,
-          TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
-          true;
-      default -> false;
-    };
+    switch (type) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case DECIMAL:
+      case CHAR:
+      case VARCHAR:
+      case DATE:
+      case TIME:
+      case BOOLEAN:
+      case TIMESTAMP:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return true;
+      default:
+        return false;
+    }
   }
 
   static boolean isIntegerType(SqlTypeName type) {
-    return switch (type) {
-      case TINYINT, SMALLINT, INTEGER, BIGINT -> true;
-      default -> false;
-    };
+    switch (type) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+        return true;
+      default:
+        return false;
+    }
   }
 
   /** Integer sums wrap at the input width; extrema retain that same type. */
@@ -248,16 +254,30 @@ final class GroupAggregateMatcher {
 
   private static int aggregateKind(StreamPhysicalGroupAggregate agg, AggregateCall call) {
     switch (call.getAggregation().getKind()) {
-      case FIRST_VALUE -> {
+      case FIRST_VALUE:
+        {
+          {
         return ChangelogPlanUtils.inputInsertOnly(agg) ? 12 : 15;
       }
-      case LAST_VALUE -> {
+        }
+      case LAST_VALUE:
+        {
+          {
         return ChangelogPlanUtils.inputInsertOnly(agg) ? 13 : 16;
       }
-      case SINGLE_VALUE -> {
+        }
+      case SINGLE_VALUE:
+        {
+          {
         return 14;
       }
-      default -> {}
+        }
+      default:
+        {
+          {
+          }
+          break;
+        }
     }
     if (call.getAggregation().getKind() != org.apache.calcite.sql.SqlKind.SUM0) {
       return WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
@@ -270,10 +290,15 @@ final class GroupAggregateMatcher {
         || call.isDistinct()) return -1;
     var value = agg.getInput().getRowType().getFieldList().get(call.getArgList().get(0)).getType();
     if (value.isNullable()) return -1;
-    return switch (value.getSqlTypeName()) {
-      case TINYINT, SMALLINT, INTEGER, BIGINT -> WindowAggregateMatcher.KIND_SUM;
-      default -> -1;
-    };
+    switch (value.getSqlTypeName()) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+        return WindowAggregateMatcher.KIND_SUM;
+      default:
+        return -1;
+    }
   }
 
   static int[] valueColumns(StreamPhysicalGroupAggregate agg) {
@@ -294,11 +319,22 @@ final class GroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < codes.length; i++) {
       AggregateCall call = aggCalls.apply(i);
-      if (!call.getArgList().isEmpty()
-          && switch (call.getAggregation().getKind()) {
-            case MIN, MAX, FIRST_VALUE, LAST_VALUE, SINGLE_VALUE -> true;
-            default -> false;
-          }) {
+      boolean retainsValue = false;
+      if (!call.getArgList().isEmpty()) {
+        switch (call.getAggregation().getKind()) {
+          case MIN:
+          case MAX:
+          case FIRST_VALUE:
+          case LAST_VALUE:
+          case SINGLE_VALUE:
+            retainsValue = true;
+            break;
+          default:
+            retainsValue = false;
+            break;
+        }
+      }
+      if (retainsValue) {
         codes[i] =
             retainedValueTypeCode(inputType.getFieldList().get(call.getArgList().get(0)).getType());
       }
@@ -316,11 +352,14 @@ final class GroupAggregateMatcher {
   }
 
   static int retainedValueTypeCode(RelDataType type) {
-    return switch (type.getSqlTypeName()) {
-      case TIME -> 9;
-      case BOOLEAN -> 10;
-      default -> WindowAggregateMatcher.typeCode(type);
-    };
+    switch (type.getSqlTypeName()) {
+      case TIME:
+        return 9;
+      case BOOLEAN:
+        return 10;
+      default:
+        return WindowAggregateMatcher.typeCode(type);
+    }
   }
 
   static int[] keyColumns(StreamPhysicalGroupAggregate agg) {

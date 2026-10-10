@@ -5,7 +5,6 @@ import org.apache.flink.metrics.MetricGroup;
 
 /** Metrics shared by native operators that buffer a Flink logical mini-batch. */
 final class MiniBatchMetrics {
-
   enum FlushReason {
     COUNT,
     WATERMARK,
@@ -87,10 +86,18 @@ final class MiniBatchMetrics {
     }
     bundles.inc();
     switch (reason) {
-      case COUNT -> countFlushes.inc();
-      case WATERMARK -> watermarkFlushes.inc();
-      case CHECKPOINT -> checkpointFlushes.inc();
-      case FINISH -> finishFlushes.inc();
+      case COUNT:
+        countFlushes.inc();
+        break;
+      case WATERMARK:
+        watermarkFlushes.inc();
+        break;
+      case CHECKPOINT:
+        checkpointFlushes.inc();
+        break;
+      case FINISH:
+        finishFlushes.inc();
+        break;
     }
     outputRows.inc(emittedRows);
     touchedKeys.inc(changedKeys);

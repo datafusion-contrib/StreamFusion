@@ -32,10 +32,9 @@ public final class FlinkLookupCompat {
 
   public static boolean supportsTable(org.apache.calcite.plan.RelOptTable table) {
     return table instanceof org.apache.flink.table.planner.plan.schema.TableSourceTable
-        || table
-                instanceof
-                org.apache.flink.table.planner.plan.schema.LegacyTableSourceTable<?> legacy
-            && legacy.tableSource()
+        || table instanceof org.apache.flink.table.planner.plan.schema.LegacyTableSourceTable<?>
+            && ((org.apache.flink.table.planner.plan.schema.LegacyTableSourceTable<?>) table)
+                    .tableSource()
                 instanceof org.apache.flink.table.sources.LookupableTableSource<?>;
   }
 
@@ -165,7 +164,6 @@ public final class FlinkLookupCompat {
       RowType probeType,
       boolean leftOuter,
       int rightFields) {
-
     return calc == null
         ? new LookupJoinRunner(fetcher, collector, leftOuter, rightFields)
         : new LookupJoinWithCalcRunner(fetcher, calc, collector, leftOuter, rightFields);
@@ -183,7 +181,6 @@ public final class FlinkLookupCompat {
       RowDataSerializer rightSerializer,
       boolean leftOuter,
       int capacity) {
-
     return calc == null
         ? new AsyncLookupJoinRunner(
             fetcher, converter, collector, rightSerializer, leftOuter, capacity)

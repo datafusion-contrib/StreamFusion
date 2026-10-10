@@ -17,11 +17,11 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.types.variant.Variant;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Retained row views used only for Delta changelog and primary-key bookkeeping. */
 public final class ArrowKernelRows implements RowData, AutoCloseable {
-
   private final VectorSchemaRoot root;
   private final StructType deltaSchema;
   private final VectorizedColumnBatch flinkBatch;
@@ -79,7 +79,7 @@ public final class ArrowKernelRows implements RowData, AutoCloseable {
     return new FilteredColumnarBatch(
         new ArrowKernelBatch(
             new VectorSchemaRoot(
-                retained.stream().map(FieldVector::getField).toList(),
+                retained.stream().map(FieldVector::getField).collect(ListCollectors.toList()),
                 retained,
                 root.getRowCount()),
             deltaSchema,
@@ -151,7 +151,12 @@ public final class ArrowKernelRows implements RowData, AutoCloseable {
     }
     @Override public DecimalData getDecimal(int pos, int precision, int scale) { return owner.flinkBatch.getDecimal(rowId, pos, precision, scale); }
     @Override public TimestampData getTimestamp(int pos, int precision) { return owner.flinkBatch.getTimestamp(rowId, pos, precision); }
-    @Override public <T> RawValueData<T> getRawValue(int pos) { throw new UnsupportedOperationException("RawValueData is not supported"); }
+
+    @Override
+    public <T> RawValueData<T> getRawValue(int pos) {
+      throw new UnsupportedOperationException("RawValueData is not supported");
+    }
+
     @Override public byte[] getBinary(int pos) {
       Bytes bytes = owner.flinkBatch.getByteArray(rowId, pos);
       if (bytes.offset == 0 && bytes.len == bytes.data.length) {

@@ -282,7 +282,9 @@ class NativeGroupedValueStateTest {
     List<List<Object>> result = new ArrayList<>();
     while (!harness.getOutput().isEmpty()) {
       Object item = harness.getOutput().poll();
-      if (item instanceof StreamRecord<?> record) {
+      if (item instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) item);
+
         try (var root = ((ArrowBatch) record.getValue()).root()) {
           for (RowData row : RowDataArrowConverter.read(root, type)) {
             List<Object> fields = new ArrayList<>();

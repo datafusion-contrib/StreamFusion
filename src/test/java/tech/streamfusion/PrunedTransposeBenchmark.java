@@ -8,6 +8,8 @@ import java.util.Set;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.connector.ChangelogMode;
@@ -27,12 +29,10 @@ import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tech.streamfusion.compat.RichMapFunction;
-import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.RowDataToArrowOperator;
-import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
+import tech.streamfusion.planner.NativePlanner;
 
 /** Row-fed SQL diagnostic; the source deliberately has no projection pushdown. */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
@@ -79,8 +79,10 @@ public class PrunedTransposeBenchmark {
                 - beforeArrow;
             harness.endInput();
             for (Object record : harness.getOutput()) {
-              if (record instanceof StreamRecord<?> stream)
+              if (record instanceof StreamRecord<?>) {
+                StreamRecord<?> stream = ((StreamRecord<?>) record);
                 ((ArrowBatch) stream.getValue()).root().close();
+              }
             }
           }
         }
@@ -177,8 +179,35 @@ public class PrunedTransposeBenchmark {
     }
   }
 
-  private record WideRows(RowType type, boolean binary, int bytes, int rows)
-      implements ScanTableSource {
+  private static final class WideRows implements ScanTableSource {
+    private final RowType type;
+    private final boolean binary;
+    private final int bytes;
+    private final int rows;
+
+    private WideRows(RowType type, boolean binary, int bytes, int rows) {
+      this.type = type;
+      this.binary = binary;
+      this.bytes = bytes;
+      this.rows = rows;
+    }
+
+    public RowType type() {
+      return type;
+    }
+
+    public boolean binary() {
+      return binary;
+    }
+
+    public int bytes() {
+      return bytes;
+    }
+
+    public int rows() {
+      return rows;
+    }
+
     @Override
     public ChangelogMode getChangelogMode() {
       return ChangelogMode.insertOnly();
@@ -211,6 +240,40 @@ public class PrunedTransposeBenchmark {
     @Override
     public String asSummaryString() {
       return "ReusingWideRows";
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      WideRows that = (WideRows) other;
+      return java.util.Objects.equals(type, that.type)
+          && binary == that.binary
+          && bytes == that.bytes
+          && rows == that.rows;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(type);
+      result = 31 * result + Boolean.hashCode(binary);
+      result = 31 * result + bytes;
+      result = 31 * result + rows;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "WideRows[type="
+          + type
+          + ", binary="
+          + binary
+          + ", bytes="
+          + bytes
+          + ", rows="
+          + rows
+          + "]";
     }
   }
 

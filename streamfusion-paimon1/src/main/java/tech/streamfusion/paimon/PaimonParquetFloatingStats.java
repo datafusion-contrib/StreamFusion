@@ -20,11 +20,15 @@ final class PaimonParquetFloatingStats {
     boolean[] floating = new boolean[type.getFieldCount()];
     boolean any = false;
     for (int i = 0; i < floating.length; i++) {
-      floating[i] =
-          switch (type.getTypeAt(i).getTypeRoot()) {
-            case FLOAT, DOUBLE -> true;
-            default -> false;
-          };
+      switch (type.getTypeAt(i).getTypeRoot()) {
+        case FLOAT:
+        case DOUBLE:
+          floating[i] = true;
+          break;
+        default:
+          floating[i] = false;
+          break;
+      }
       any |= floating[i];
     }
     if (!any) return delegate;

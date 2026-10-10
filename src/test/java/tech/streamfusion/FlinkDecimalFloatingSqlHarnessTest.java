@@ -52,14 +52,24 @@ class FlinkDecimalFloatingSqlHarnessTest {
     Random random = new Random(93);
     Row[] rows = new Row[5003];
     for (int i = 0; i < rows.length; i++) {
-      BigInteger coefficient =
-          switch (i % 19) {
-            case 0 -> BigInteger.ZERO;
-            case 1 -> BigInteger.ONE;
-            case 2 -> limit.subtract(BigInteger.ONE);
-            case 3 -> new BigInteger("10000000596046447753906250000000000001").mod(limit);
-            default -> new BigInteger(128, random).mod(limit);
-          };
+      BigInteger coefficient;
+      switch (i % 19) {
+        case 0:
+          coefficient = BigInteger.ZERO;
+          break;
+        case 1:
+          coefficient = BigInteger.ONE;
+          break;
+        case 2:
+          coefficient = limit.subtract(BigInteger.ONE);
+          break;
+        case 3:
+          coefficient = new BigInteger("10000000596046447753906250000000000001").mod(limit);
+          break;
+        default:
+          coefficient = new BigInteger(128, random).mod(limit);
+          break;
+      }
       if (i % 2 == 0) coefficient = coefficient.negate();
       BigDecimal value = new BigDecimal(coefficient, scale);
       BigDecimal[] values =

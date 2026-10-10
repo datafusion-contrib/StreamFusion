@@ -39,10 +39,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 class PaimonChangelogSinkWriteTest {
-
   static Stream<Map<String, String>> modes() {
     return Stream.of(
         Map.of("changelog-producer", "input"),
@@ -248,13 +248,17 @@ class PaimonChangelogSinkWriteTest {
       assertEquals(2, table.latestSnapshot().orElseThrow().commitIdentifier());
       writer.write(input.subList(2, 3));
       List<CommitMessage> pending =
-          writer.write.prepareCommit(false, 4).stream().map(Committable::commitMessage).toList();
+          writer.write.prepareCommit(false, 4).stream()
+              .map(Committable::commitMessage)
+              .collect(ListCollectors.toList());
       assertEquals(
           1,
           writer.delegate.getWrite().checkpoint().size(),
           "an unrelated committed bucket must be cleaned while another has pending data");
       List<CommitMessage> compacted =
-          writer.write.prepareCommit(false, 6).stream().map(Committable::commitMessage).toList();
+          writer.write.prepareCommit(false, 6).stream()
+              .map(Committable::commitMessage)
+              .collect(ListCollectors.toList());
       writer.commit.commit(4, pending);
       writer.commit.commit(6, compacted);
       List<String> changes = changelogRows(table);

@@ -28,7 +28,6 @@ import org.apache.flink.table.types.logical.TimestampType;
 import org.junit.jupiter.api.Test;
 
 class NativeColumnarLocalGroupAggregateOperatorTest {
-
   private static final RowType INPUT =
       RowType.of(
           new LogicalType[] {new BigIntType(), new BigIntType()}, new String[] {"key", "value"});
@@ -144,7 +143,9 @@ class NativeColumnarLocalGroupAggregateOperatorTest {
             var actual = new ArrayList<TimestampData>();
             while (!harness.getOutput().isEmpty()) {
               Object event = harness.getOutput().poll();
-              if (event instanceof StreamRecord<?> record) {
+              if (event instanceof StreamRecord<?>) {
+                StreamRecord<?> record = ((StreamRecord<?>) event);
+
                 try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
                   for (RowData row : RowDataArrowConverter.read(root, input)) {
                     actual.add(row.isNullAt(0) ? null : row.getTimestamp(0, precision));
@@ -208,7 +209,9 @@ class NativeColumnarLocalGroupAggregateOperatorTest {
     List<List<Long>> rows = new ArrayList<>();
     while (!harness.getOutput().isEmpty()) {
       Object event = harness.getOutput().poll();
-      if (event instanceof StreamRecord<?> record) {
+      if (event instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) event);
+
         try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
           for (RowData row : RowDataArrowConverter.read(root, PARTIAL)) {
             rows.add(List.of(row.getLong(0), row.getLong(1)));

@@ -29,12 +29,19 @@ final class JsonPathSpec {
 
   static String unicodeVersion() {
     // Jackson terminates root true/false/null tokens with Character.isJavaIdentifierPart(char).
-    return switch (Runtime.version().feature()) {
-      case 17 -> "13.0";
-      case 21 -> "15.0";
-      case 24, 25 -> "16.0";
-      default -> null;
-    };
+    switch (Runtime.version().feature()) {
+      case 11:
+        return "10.0";
+      case 17:
+        return "13.0";
+      case 21:
+        return "15.0";
+      case 24:
+      case 25:
+        return "16.0";
+      default:
+        return null;
+    }
   }
 
   static String normalize(String path) {

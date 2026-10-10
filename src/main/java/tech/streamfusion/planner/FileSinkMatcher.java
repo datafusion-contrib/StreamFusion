@@ -23,7 +23,6 @@ import org.apache.flink.table.types.logical.RowType;
  * back to the host with that reason, never silently.
  */
 final class FileSinkMatcher {
-
   private FileSinkMatcher() {}
 
   interface Format {
@@ -46,7 +45,59 @@ final class FileSinkMatcher {
     tech.streamfusion.format.ColumnarFileCodec codec(RowType type, List<String> partitions);
   }
 
-  record Settings(String[] keys, String[] values, String fallbackReason) {}
+  static final class Settings {
+    private final String[] keys;
+    private final String[] values;
+    private final String fallbackReason;
+
+    Settings(String[] keys, String[] values, String fallbackReason) {
+      this.keys = keys;
+      this.values = values;
+      this.fallbackReason = fallbackReason;
+    }
+
+    public String[] keys() {
+      return keys;
+    }
+
+    public String[] values() {
+      return values;
+    }
+
+    public String fallbackReason() {
+      return fallbackReason;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Settings that = (Settings) other;
+      return java.util.Objects.equals(keys, that.keys)
+          && java.util.Objects.equals(values, that.values)
+          && java.util.Objects.equals(fallbackReason, that.fallbackReason);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(keys);
+      result = 31 * result + java.util.Objects.hashCode(values);
+      result = 31 * result + java.util.Objects.hashCode(fallbackReason);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Settings[keys="
+          + keys
+          + ", values="
+          + values
+          + ", fallbackReason="
+          + fallbackReason
+          + "]";
+    }
+  }
 
   /** Everything the physical node and exec node need to build the native sink's operator chain. */
   static final class Planned {

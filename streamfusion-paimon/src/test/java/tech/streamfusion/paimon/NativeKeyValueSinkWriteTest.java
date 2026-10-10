@@ -39,6 +39,7 @@ import org.apache.paimon.types.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
@@ -48,7 +49,6 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * it feeds its files to.
  */
 class NativeKeyValueSinkWriteTest {
-
   private static final int BATCH_ROWS = 23;
 
   private static Map<String, String> options(String... keyValues) {
@@ -146,7 +146,10 @@ class NativeKeyValueSinkWriteTest {
     List<DataFileMeta> cachedFiles;
     try (var writer = new PaimonMergeEngineTest.Writer(table, true, state, 7)) {
       writer.write(List.of(GenericRow.of(1, 0L)));
-      cachedFiles = newFiles(writer.commit(1)).stream().map(Map.Entry::getValue).toList();
+      cachedFiles =
+          newFiles(writer.commit(1)).stream()
+              .map(Map.Entry::getValue)
+              .collect(ListCollectors.toList());
       var updates = new ArrayList<InternalRow>();
       for (long value = 1; value <= 40; value++) {
         updates.add(GenericRow.of(1, value));

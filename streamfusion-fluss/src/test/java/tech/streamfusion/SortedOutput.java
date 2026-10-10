@@ -71,7 +71,44 @@ final class SortedOutput implements AutoCloseable {
     }
   }
 
-  private record Head(String value, int chunk) {}
+  private static final class Head {
+    private final String value;
+    private final int chunk;
+
+    private Head(String value, int chunk) {
+      this.value = value;
+      this.chunk = chunk;
+    }
+
+    public String value() {
+      return value;
+    }
+
+    public int chunk() {
+      return chunk;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Head that = (Head) other;
+      return java.util.Objects.equals(value, that.value) && chunk == that.chunk;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(value);
+      result = 31 * result + chunk;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Head[value=" + value + ", chunk=" + chunk + "]";
+    }
+  }
 
   private static final class Merge implements AutoCloseable {
     private final List<DataInputStream> streams = new ArrayList<>();

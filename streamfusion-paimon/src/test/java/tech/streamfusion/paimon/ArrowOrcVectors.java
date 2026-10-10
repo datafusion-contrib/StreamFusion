@@ -44,14 +44,24 @@ final class ArrowOrcVectors {
         output.isNull[i] = input.isNull(start + i);
         output.noNulls &= !output.isNull[i];
       }
-      var data =
-          switch (type.getTypeID()) {
-            case List, Map, Struct -> null;
-            default -> input.getDataBuffer();
-          };
+      org.apache.arrow.memory.ArrowBuf data;
       switch (type.getTypeID()) {
-        case Int, Date -> {
-          int width = type instanceof ArrowType.Int t ? t.getBitWidth() / 8 : 4;
+        case List:
+        case Map:
+        case Struct:
+          data = null;
+          break;
+        default:
+          data = input.getDataBuffer();
+          break;
+      }
+      switch (type.getTypeID()) {
+        case Int:
+        case Date:
+          {
+            {
+              int width =
+                  type instanceof ArrowType.Int ? ((ArrowType.Int) type).getBitWidth() / 8 : 4;
           long[] values = ((LongColumnVector) output).vector;
           if (width == 8) {
             data.nioBuffer((long) start * 8, count * 8)
@@ -61,24 +71,38 @@ final class ArrowOrcVectors {
           } else {
             for (int i = 0; i < count; i++) {
               long at = (long) (start + i) * width;
-              values[i] =
                   switch (width) {
-                    case 1 -> data.getByte(at);
-                    case 2 -> data.getShort(at);
-                    case 4 -> data.getInt(at);
-                    default -> throw new IllegalArgumentException(type.toString());
-                  };
+                    case 1:
+                      values[i] = data.getByte(at);
+                      break;
+                    case 2:
+                      values[i] = data.getShort(at);
+                      break;
+                    case 4:
+                      values[i] = data.getInt(at);
+                      break;
+                    default:
+                      throw new IllegalArgumentException(type.toString());
+                  }
             }
           }
         }
-        case Bool -> {
+            break;
+          }
+        case Bool:
+          {
+            {
           long[] values = ((LongColumnVector) output).vector;
           for (int i = 0; i < count; i++) {
             int row = start + i;
             values[i] = (data.getByte(row / 8) >>> (row % 8)) & 1;
           }
         }
-        case FloatingPoint -> {
+            break;
+          }
+        case FloatingPoint:
+          {
+            {
           double[] values = ((DoubleColumnVector) output).vector;
           if (((ArrowType.FloatingPoint) type).getPrecision()
               == org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE) {
@@ -90,7 +114,11 @@ final class ArrowOrcVectors {
             for (int i = 0; i < count; i++) values[i] = data.getFloat((long) (start + i) * 4);
           }
         }
-        case FixedSizeBinary -> {
+            break;
+          }
+        case FixedSizeBinary:
+          {
+            {
           int width = ((ArrowType.FixedSizeBinary) type).getByteWidth();
           int length = Math.multiplyExact(count, width);
           if (bytes.length < length) bytes = new byte[length];
@@ -98,7 +126,12 @@ final class ArrowOrcVectors {
           var target = (BytesColumnVector) output;
           for (int i = 0; i < count; i++) target.setRef(i, bytes, i * width, width);
         }
-        case Utf8, Binary -> {
+            break;
+          }
+        case Utf8:
+        case Binary:
+          {
+            {
           var offsets = input.getOffsetBuffer();
           int begin = offsets.getInt((long) start * 4);
           int length = offsets.getInt((long) (start + count) * 4) - begin;
@@ -111,10 +144,16 @@ final class ArrowOrcVectors {
             target.setRef(i, bytes, from - begin, to - from);
           }
         }
-        case Decimal -> {
+            break;
+          }
+        case Decimal:
+          {
+            {
           var decimal = (ArrowType.Decimal) type;
           if (decimal.getBitWidth() != 128) throw new IllegalArgumentException(type.toString());
-          if (output instanceof Decimal64ColumnVector target) {
+              if (output instanceof Decimal64ColumnVector) {
+                Decimal64ColumnVector target = ((Decimal64ColumnVector) output);
+
             for (int i = 0; i < count; i++)
               target.vector[i] = data.getLong((long) (start + i) * 16);
             break;
@@ -131,14 +170,28 @@ final class ArrowOrcVectors {
             }
           }
         }
-        case Timestamp -> {
-          long units =
+            break;
+          }
+        case Timestamp:
+          {
+            {
+              long units;
               switch (((ArrowType.Timestamp) type).getUnit()) {
-                case SECOND -> 1;
-                case MILLISECOND -> 1000;
-                case MICROSECOND -> 1_000_000;
-                case NANOSECOND -> 1_000_000_000;
-              };
+                case SECOND:
+                  units = 1;
+                  break;
+                case MILLISECOND:
+                  units = 1000;
+                  break;
+                case MICROSECOND:
+                  units = 1_000_000;
+                  break;
+                case NANOSECOND:
+                  units = 1_000_000_000;
+                  break;
+                default:
+                  throw new IncompatibleClassChangeError();
+              }
           var target = (TimestampColumnVector) output;
           target.setIsUTC(true);
           for (int i = 0; i < count; i++) {
@@ -149,7 +202,12 @@ final class ArrowOrcVectors {
             target.nanos[i] = nanos;
           }
         }
-        case List, Map -> {
+            break;
+          }
+        case List:
+        case Map:
+          {
+            {
           var list = (ListVector) input;
           var target = (MultiValuedColumnVector) output;
           int begin = list.getOffsetBuffer().getInt((long) start * 4);
@@ -173,13 +231,20 @@ final class ArrowOrcVectors {
                 list.getDataVector(), ((ListColumnVector) output).child, begin, end - begin);
           }
         }
-        case Struct -> {
+            break;
+          }
+        case Struct:
+          {
+            {
           var fields = ((StructVector) input).getChildrenFromFields();
           var target = (StructColumnVector) output;
           for (int c = 0; c < children.length; c++)
             children[c].copy(fields.get(c), target.fields[c], start, count);
         }
-        default -> throw new IllegalArgumentException("Benchmark adapter: " + type);
+            break;
+          }
+        default:
+          throw new IllegalArgumentException("Benchmark adapter: " + type);
       }
     }
   }

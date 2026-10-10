@@ -4,29 +4,28 @@ import static io.delta.kernel.internal.util.Utils.singletonCloseableIterator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.delta.flink.sink.Conversions;
 import io.delta.flink.sink.DeltaSinkConf;
 import io.delta.flink.sink.DeltaWriterResult;
 import io.delta.flink.table.HadoopTable;
 import io.delta.kernel.Scan;
 import io.delta.kernel.Snapshot;
 import io.delta.kernel.TableManager;
-import io.delta.kernel.data.FilteredColumnarBatch;
 import io.delta.kernel.data.ColumnVector;
+import io.delta.kernel.data.FilteredColumnarBatch;
 import io.delta.kernel.data.Row;
 import io.delta.kernel.defaults.engine.DefaultEngine;
 import io.delta.kernel.engine.Engine;
 import io.delta.kernel.internal.InternalScanFileUtils;
 import io.delta.kernel.internal.data.ScanStateRow;
-import io.delta.kernel.types.IntegerType;
 import io.delta.kernel.types.ArrayType;
+import io.delta.kernel.types.IntegerType;
 import io.delta.kernel.types.LongType;
 import io.delta.kernel.types.MapType;
 import io.delta.kernel.types.StringType;
 import io.delta.kernel.types.StructField;
 import io.delta.kernel.types.StructType;
-import io.delta.kernel.utils.CloseableIterator;
 import io.delta.kernel.utils.CloseableIterable;
+import io.delta.kernel.utils.CloseableIterator;
 import io.delta.kernel.utils.FileStatus;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,29 +43,27 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
-import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
-import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
-import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
-import tech.streamfusion.planner.NativePlanner;
-import tech.streamfusion.planner.PhysicalPlanScan;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.planner.PhysicalPlanScan;
 
 /** Existing Delta SQL partition and merge-on-read scenarios through the native data-file writer. */
 class DeltaSinkParityTest {
-
   private static final StructType DELTA_SCHEMA =
       new StructType(
           List.of(
@@ -88,7 +85,11 @@ class DeltaSinkParityTest {
 
     StringBuilder log = new StringBuilder();
     try (java.util.stream.Stream<Path> files = Files.list(nativePath.resolve("_delta_log"))) {
-      for (Path file : files.filter(path -> path.toString().endsWith(".json")).sorted().toList()) {
+      for (Path file :
+          files
+              .filter(path -> path.toString().endsWith(".json"))
+              .sorted()
+              .collect(ListCollectors.toList())) {
         log.append(Files.readString(file));
       }
     }
@@ -153,7 +154,10 @@ class DeltaSinkParityTest {
     assertAccelerated(scan);
     List<Path> parquetFiles;
     try (java.util.stream.Stream<Path> files = Files.walk(path)) {
-      parquetFiles = files.filter(file -> file.toString().endsWith(".parquet")).toList();
+      parquetFiles =
+          files
+              .filter(file -> file.toString().endsWith(".parquet"))
+              .collect(ListCollectors.toList());
     }
     assertEquals(2, parquetFiles.size());
     long rows = 0;
@@ -253,7 +257,8 @@ class DeltaSinkParityTest {
     assertEquals(3, readLogicalRows(path).size());
     assertTrue(
         scan.fallbackReasons().stream()
-            .anyMatch(reason -> reason.contains("Arrow-backed Delta views require operator chaining")),
+            .anyMatch(
+                reason -> reason.contains("Arrow-backed Delta views require operator chaining")),
         scan::explainSummary);
   }
 

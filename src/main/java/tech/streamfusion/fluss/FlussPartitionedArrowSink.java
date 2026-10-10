@@ -38,7 +38,17 @@ public final class FlussPartitionedArrowSink extends SinkAdapter<PartitionedArro
     }
   }
 
-  private record Writer(FlussArrowClient client) implements SinkWriter<PartitionedArrowBatch> {
+  private static final class Writer implements SinkWriter<PartitionedArrowBatch> {
+    private final FlussArrowClient client;
+
+    private Writer(FlussArrowClient client) {
+      this.client = client;
+    }
+
+    public FlussArrowClient client() {
+      return client;
+    }
+
     @Override
     public void write(PartitionedArrowBatch batch, Context context) throws IOException {
       try (VectorSchemaRoot root = batch.root()) {
@@ -54,6 +64,26 @@ public final class FlussPartitionedArrowSink extends SinkAdapter<PartitionedArro
     @Override
     public void close() throws Exception {
       client.close();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Writer that = (Writer) other;
+      return java.util.Objects.equals(client, that.client);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(client);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Writer[client=" + client + "]";
     }
   }
 }

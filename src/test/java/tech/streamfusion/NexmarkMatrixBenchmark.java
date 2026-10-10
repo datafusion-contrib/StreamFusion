@@ -1,7 +1,5 @@
 package tech.streamfusion;
 
-import tech.streamfusion.planner.NativePlanner;
-import tech.streamfusion.planner.PhysicalPlanScan;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
@@ -15,7 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.EnvironmentSettings;
-import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.types.logical.RowType;
@@ -28,6 +25,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
+import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.planner.PhysicalPlanScan;
 
 /**
  * The full Nexmark matrix: every query StreamFusion currently accelerates end-to-end, each run against
@@ -65,13 +65,14 @@ import org.testcontainers.utility.DockerImageName;
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NexmarkMatrixBenchmark {
-
   private static final long ROWS =
       System.getenv("SF_ROWS") != null ? Long.parseLong(System.getenv("SF_ROWS")) : 500_000L;
   // The Kafka-fed comparisons run both engines at a representative multi-subtask parallelism; the
   // corpus topic is created with one partition per subtask so every source instance has a split.
   private static final int PARALLELISM =
-      System.getenv("SF_PARALLELISM") != null ? Integer.parseInt(System.getenv("SF_PARALLELISM")) : 4;
+      System.getenv("SF_PARALLELISM") != null
+          ? Integer.parseInt(System.getenv("SF_PARALLELISM"))
+          : 4;
   private static final int KAFKA_PARTITIONS =
       System.getenv("SF_KAFKA_PARTITIONS") != null
           ? Integer.parseInt(System.getenv("SF_KAFKA_PARTITIONS"))
@@ -196,12 +197,15 @@ class NexmarkMatrixBenchmark {
         "INSERT INTO sink SELECT auction, bidder, price, `dateTime`, extra FROM bid"),
     new Query(
         "q1",
-        false, // exact Decimal128 * + HALF_UP cast is native + byte-parity by default (the reported cell)
+        false, // exact Decimal128 * + HALF_UP cast is native + byte-parity by default (the reported
+        // cell)
         null,
         "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price DECIMAL(23, 3), `dateTime` %TS%,"
             + " extra STRING) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, `dateTime`, extra FROM bid",
-        // …and a second cell on the faster approximate-decimal path (double math, diverges from Flink's
+        "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, `dateTime`, extra FROM"
+            + " bid",
+        // …and a second cell on the faster approximate-decimal path (double math, diverges from
+        // Flink's
         // exact rounding at an edge) — same parity-vs-non-parity split as q21's regex/case.
         "approximate decimal (incompatible)",
         Map.of("streamfusion.expression.decimalArithmetic.approximate", "true")),
@@ -234,11 +238,11 @@ class NexmarkMatrixBenchmark {
         null,
         "CREATE TABLE sink (auction BIGINT, price BIGINT, bidder BIGINT, `dateTime` %TS%,"
             + " extra STRING) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT B.auction, B.price, B.bidder, B.`dateTime`, B.extra FROM bid B JOIN"
-            + " (SELECT MAX(price) AS maxprice, window_end AS `dateTime` FROM"
-            + " TABLE(TUMBLE(TABLE bid, DESCRIPTOR(`dateTime`), INTERVAL '10' SECOND))"
-            + " GROUP BY window_start, window_end) B1 ON B.price = B1.maxprice"
-            + " WHERE B.`dateTime` BETWEEN B1.`dateTime` - INTERVAL '10' SECOND AND B1.`dateTime`"),
+        "INSERT INTO sink SELECT B.auction, B.price, B.bidder, B.`dateTime`, B.extra FROM bid B"
+            + " JOIN (SELECT MAX(price) AS maxprice, window_end AS `dateTime` FROM"
+            + " TABLE(TUMBLE(TABLE bid, DESCRIPTOR(`dateTime`), INTERVAL '10' SECOND)) GROUP BY"
+            + " window_start, window_end) B1 ON B.price = B1.maxprice WHERE B.`dateTime` BETWEEN"
+            + " B1.`dateTime` - INTERVAL '10' SECOND AND B1.`dateTime`"),
     new Query(
         "q8",
         false,
@@ -260,12 +264,12 @@ class NexmarkMatrixBenchmark {
             + " reserve BIGINT, `dateTime` %TS%, expires %TS%, seller BIGINT, category BIGINT,"
             + " extra STRING, auction BIGINT, bidder BIGINT, price BIGINT, bid_dateTime %TS%,"
             + " bid_extra STRING) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT id, itemName, description, initialBid, reserve, `dateTime`, expires,"
-            + " seller, category, extra, auction, bidder, price, bid_dateTime, bid_extra FROM (SELECT"
-            + " A.*, B.auction, B.bidder, B.price, B.`dateTime` AS bid_dateTime, B.extra AS bid_extra,"
-            + " ROW_NUMBER() OVER (PARTITION BY A.id ORDER BY B.price DESC, B.`dateTime` ASC) AS rownum"
-            + " FROM auction A, bid B WHERE A.id = B.auction AND B.`dateTime` BETWEEN A.`dateTime` AND"
-            + " A.expires) WHERE rownum <= 1"),
+        "INSERT INTO sink SELECT id, itemName, description, initialBid, reserve, `dateTime`,"
+            + " expires, seller, category, extra, auction, bidder, price, bid_dateTime, bid_extra"
+            + " FROM (SELECT A.*, B.auction, B.bidder, B.price, B.`dateTime` AS bid_dateTime,"
+            + " B.extra AS bid_extra, ROW_NUMBER() OVER (PARTITION BY A.id ORDER BY B.price DESC,"
+            + " B.`dateTime` ASC) AS rownum FROM auction A, bid B WHERE A.id = B.auction AND"
+            + " B.`dateTime` BETWEEN A.`dateTime` AND A.expires) WHERE rownum <= 1"),
     new Query(
         "q10",
         false,
@@ -300,20 +304,21 @@ class NexmarkMatrixBenchmark {
         false,
         null,
         "CREATE TABLE sink (`day` STRING, total_bids BIGINT, rank1_bids BIGINT, rank2_bids BIGINT,"
-            + " rank3_bids BIGINT, total_bidders BIGINT, rank1_bidders BIGINT, rank2_bidders BIGINT,"
-            + " rank3_bidders BIGINT, total_auctions BIGINT, rank1_auctions BIGINT,"
+            + " rank3_bids BIGINT, total_bidders BIGINT, rank1_bidders BIGINT, rank2_bidders"
+            + " BIGINT, rank3_bidders BIGINT, total_auctions BIGINT, rank1_auctions BIGINT,"
             + " rank2_auctions BIGINT, rank3_auctions BIGINT) WITH ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT DATE_FORMAT(`dateTime`, 'yyyy-MM-dd') AS `day`, count(*) AS"
             + " total_bids, count(*) filter (where price < 10000) AS rank1_bids, count(*) filter"
-            + " (where price >= 10000 and price < 1000000) AS rank2_bids, count(*) filter (where price"
-            + " >= 1000000) AS rank3_bids, count(distinct bidder) AS total_bidders, count(distinct"
-            + " bidder) filter (where price < 10000) AS rank1_bidders, count(distinct bidder) filter"
-            + " (where price >= 10000 and price < 1000000) AS rank2_bidders, count(distinct bidder)"
-            + " filter (where price >= 1000000) AS rank3_bidders, count(distinct auction) AS"
-            + " total_auctions, count(distinct auction) filter (where price < 10000) AS rank1_auctions,"
-            + " count(distinct auction) filter (where price >= 10000 and price < 1000000) AS"
-            + " rank2_auctions, count(distinct auction) filter (where price >= 1000000) AS"
-            + " rank3_auctions FROM bid GROUP BY DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')",
+            + " (where price >= 10000 and price < 1000000) AS rank2_bids, count(*) filter (where"
+            + " price >= 1000000) AS rank3_bids, count(distinct bidder) AS total_bidders,"
+            + " count(distinct bidder) filter (where price < 10000) AS rank1_bidders,"
+            + " count(distinct bidder) filter (where price >= 10000 and price < 1000000) AS"
+            + " rank2_bidders, count(distinct bidder) filter (where price >= 1000000) AS"
+            + " rank3_bidders, count(distinct auction) AS total_auctions, count(distinct auction)"
+            + " filter (where price < 10000) AS rank1_auctions, count(distinct auction) filter"
+            + " (where price >= 10000 and price < 1000000) AS rank2_auctions, count(distinct"
+            + " auction) filter (where price >= 1000000) AS rank3_auctions FROM bid GROUP BY"
+            + " DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')",
         DATETIME_VARIANT,
         ALLOW_INCOMPATIBLE),
     new Query(
@@ -327,16 +332,16 @@ class NexmarkMatrixBenchmark {
             + " ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT channel, DATE_FORMAT(`dateTime`, 'yyyy-MM-dd') AS `day`,"
             + " max(DATE_FORMAT(`dateTime`, 'HH:mm')) AS `minute`, count(*) AS total_bids, count(*)"
-            + " filter (where price < 10000) AS rank1_bids, count(*) filter (where price >= 10000 and"
-            + " price < 1000000) AS rank2_bids, count(*) filter (where price >= 1000000) AS rank3_bids,"
-            + " count(distinct bidder) AS total_bidders, count(distinct bidder) filter (where price <"
-            + " 10000) AS rank1_bidders, count(distinct bidder) filter (where price >= 10000 and price"
-            + " < 1000000) AS rank2_bidders, count(distinct bidder) filter (where price >= 1000000) AS"
-            + " rank3_bidders, count(distinct auction) AS total_auctions, count(distinct auction)"
-            + " filter (where price < 10000) AS rank1_auctions, count(distinct auction) filter (where"
-            + " price >= 10000 and price < 1000000) AS rank2_auctions, count(distinct auction) filter"
-            + " (where price >= 1000000) AS rank3_auctions FROM bid GROUP BY channel,"
-            + " DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')",
+            + " filter (where price < 10000) AS rank1_bids, count(*) filter (where price >= 10000"
+            + " and price < 1000000) AS rank2_bids, count(*) filter (where price >= 1000000) AS"
+            + " rank3_bids, count(distinct bidder) AS total_bidders, count(distinct bidder) filter"
+            + " (where price < 10000) AS rank1_bidders, count(distinct bidder) filter (where price"
+            + " >= 10000 and price < 1000000) AS rank2_bidders, count(distinct bidder) filter"
+            + " (where price >= 1000000) AS rank3_bidders, count(distinct auction) AS"
+            + " total_auctions, count(distinct auction) filter (where price < 10000) AS"
+            + " rank1_auctions, count(distinct auction) filter (where price >= 10000 and price <"
+            + " 1000000) AS rank2_auctions, count(distinct auction) filter (where price >= 1000000)"
+            + " AS rank3_auctions FROM bid GROUP BY channel, DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')",
         DATETIME_VARIANT,
         ALLOW_INCOMPATIBLE),
     new Query(
@@ -346,48 +351,50 @@ class NexmarkMatrixBenchmark {
         "CREATE TABLE sink (auction BIGINT, `day` STRING, total_bids BIGINT, rank1_bids BIGINT,"
             + " rank2_bids BIGINT, rank3_bids BIGINT, min_price BIGINT, max_price BIGINT, avg_price"
             + " BIGINT, sum_price BIGINT) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT auction, DATE_FORMAT(`dateTime`, 'yyyy-MM-dd') AS `day`, count(*) AS"
-            + " total_bids, count(*) filter (where price < 10000) AS rank1_bids, count(*) filter (where"
-            + " price >= 10000 and price < 1000000) AS rank2_bids, count(*) filter (where price >="
-            + " 1000000) AS rank3_bids, min(price) AS min_price, max(price) AS max_price, avg(price) AS"
-            + " avg_price, sum(price) AS sum_price FROM bid GROUP BY auction, DATE_FORMAT(`dateTime`,"
-            + " 'yyyy-MM-dd')",
+        "INSERT INTO sink SELECT auction, DATE_FORMAT(`dateTime`, 'yyyy-MM-dd') AS `day`, count(*)"
+            + " AS total_bids, count(*) filter (where price < 10000) AS rank1_bids, count(*) filter"
+            + " (where price >= 10000 and price < 1000000) AS rank2_bids, count(*) filter (where"
+            + " price >= 1000000) AS rank3_bids, min(price) AS min_price, max(price) AS max_price,"
+            + " avg(price) AS avg_price, sum(price) AS sum_price FROM bid GROUP BY auction,"
+            + " DATE_FORMAT(`dateTime`, 'yyyy-MM-dd')",
         DATETIME_VARIANT,
         ALLOW_INCOMPATIBLE),
     new Query(
         "q18",
         false,
         null,
-        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url STRING,"
-            + " `dateTime` %TS%, extra STRING) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT auction, bidder, price, channel, url, `dateTime`, extra FROM (SELECT"
-            + " *, ROW_NUMBER() OVER (PARTITION BY bidder, auction ORDER BY `dateTime` DESC) AS"
-            + " rank_number FROM bid) WHERE rank_number <= 1"),
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url"
+            + " STRING, `dateTime` %TS%, extra STRING) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT auction, bidder, price, channel, url, `dateTime`, extra FROM"
+            + " (SELECT *, ROW_NUMBER() OVER (PARTITION BY bidder, auction ORDER BY `dateTime`"
+            + " DESC) AS rank_number FROM bid) WHERE rank_number <= 1"),
     new Query(
         "q19",
         false,
         null,
-        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url STRING,"
-            + " `dateTime` %TS%, extra STRING, rank_number BIGINT) WITH ('connector' = 'blackhole')",
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url"
+            + " STRING, `dateTime` %TS%, extra STRING, rank_number BIGINT) WITH ('connector' ="
+            + " 'blackhole')",
         "INSERT INTO sink SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY auction ORDER BY"
             + " price DESC) AS rank_number FROM bid) WHERE rank_number <= 10"),
     new Query(
         "q20",
         false,
         null,
-        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url STRING,"
-            + " bid_dateTime %TS%, bid_extra STRING, itemName STRING, description STRING, initialBid"
-            + " BIGINT, reserve BIGINT, auction_dateTime %TS%, expires %TS%, seller BIGINT, category"
-            + " BIGINT, auction_extra STRING) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT auction, bidder, price, channel, url, B.`dateTime`, B.extra, itemName,"
-            + " description, initialBid, reserve, A.`dateTime`, expires, seller, category, A.extra FROM"
-            + " bid AS B INNER JOIN auction AS A ON B.auction = A.id WHERE A.category = 10"),
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url"
+            + " STRING, bid_dateTime %TS%, bid_extra STRING, itemName STRING, description STRING,"
+            + " initialBid BIGINT, reserve BIGINT, auction_dateTime %TS%, expires %TS%, seller"
+            + " BIGINT, category BIGINT, auction_extra STRING) WITH ('connector' = 'blackhole')",
+        "INSERT INTO sink SELECT auction, bidder, price, channel, url, B.`dateTime`, B.extra,"
+            + " itemName, description, initialBid, reserve, A.`dateTime`, expires, seller,"
+            + " category, A.extra FROM bid AS B INNER JOIN auction AS A ON B.auction = A.id WHERE"
+            + " A.category = 10"),
     new Query(
         "q22",
         false,
         null,
-        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, dir1 STRING,"
-            + " dir2 STRING, dir3 STRING) WITH ('connector' = 'blackhole')",
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, dir1"
+            + " STRING, dir2 STRING, dir3 STRING) WITH ('connector' = 'blackhole')",
         "INSERT INTO sink SELECT auction, bidder, price, channel, SPLIT_INDEX(url, '/', 3) AS dir1,"
             + " SPLIT_INDEX(url, '/', 4) AS dir2, SPLIT_INDEX(url, '/', 5) AS dir3 FROM bid"),
     new Query(
@@ -395,16 +402,17 @@ class NexmarkMatrixBenchmark {
         false,
         null,
         "CREATE TABLE sink (auction BIGINT, num BIGINT) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT AuctionBids.auction, AuctionBids.num FROM (SELECT auction, count(*) AS"
-            + " num, window_start AS starttime, window_end AS endtime FROM TABLE(HOP(TABLE bid,"
-            + " DESCRIPTOR(`dateTime`), INTERVAL '2' SECOND, INTERVAL '10' SECOND)) GROUP BY auction,"
-            + " window_start, window_end) AS AuctionBids JOIN (SELECT max(CountBids.num) AS maxn,"
-            + " CountBids.starttime, CountBids.endtime FROM (SELECT count(*) AS num, window_start AS"
-            + " starttime, window_end AS endtime FROM TABLE(HOP(TABLE bid, DESCRIPTOR(`dateTime`),"
-            + " INTERVAL '2' SECOND, INTERVAL '10' SECOND)) GROUP BY auction, window_start, window_end)"
-            + " AS CountBids GROUP BY CountBids.starttime, CountBids.endtime) AS MaxBids ON"
-            + " AuctionBids.starttime = MaxBids.starttime AND AuctionBids.endtime = MaxBids.endtime AND"
-            + " AuctionBids.num >= MaxBids.maxn"),
+        "INSERT INTO sink SELECT AuctionBids.auction, AuctionBids.num FROM (SELECT auction,"
+            + " count(*) AS num, window_start AS starttime, window_end AS endtime FROM"
+            + " TABLE(HOP(TABLE bid, DESCRIPTOR(`dateTime`), INTERVAL '2' SECOND, INTERVAL '10'"
+            + " SECOND)) GROUP BY auction, window_start, window_end) AS AuctionBids JOIN (SELECT"
+            + " max(CountBids.num) AS maxn, CountBids.starttime, CountBids.endtime FROM (SELECT"
+            + " count(*) AS num, window_start AS starttime, window_end AS endtime FROM"
+            + " TABLE(HOP(TABLE bid, DESCRIPTOR(`dateTime`), INTERVAL '2' SECOND, INTERVAL '10'"
+            + " SECOND)) GROUP BY auction, window_start, window_end) AS CountBids GROUP BY"
+            + " CountBids.starttime, CountBids.endtime) AS MaxBids ON AuctionBids.starttime ="
+            + " MaxBids.starttime AND AuctionBids.endtime = MaxBids.endtime AND AuctionBids.num >="
+            + " MaxBids.maxn"),
     new Query(
         "q13",
         false,
@@ -412,19 +420,21 @@ class NexmarkMatrixBenchmark {
           "CREATE TEMPORARY VIEW bid_lookup AS SELECT *, PROCTIME() AS p_time FROM bid",
           "CREATE TABLE dim (k BIGINT, val STRING) WITH ('connector' = 'test-lookup')",
         },
-        "CREATE TABLE sink (auction BIGINT, price BIGINT, val STRING) WITH ('connector' = 'blackhole')",
+        "CREATE TABLE sink (auction BIGINT, price BIGINT, val STRING) WITH ('connector' ="
+            + " 'blackhole')",
         "INSERT INTO sink SELECT B.auction, B.price, D.val FROM bid_lookup AS B JOIN dim"
             + " FOR SYSTEM_TIME AS OF B.p_time AS D ON MOD(B.auction, 5) = D.k"),
     new Query(
         "q14",
         false,
         null,
-        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price DECIMAL(23, 3), bidTimeType STRING,"
-            + " `dateTime` %TS%, extra STRING, c_counts BIGINT) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, CASE WHEN HOUR(`dateTime`) >="
-            + " 8 AND HOUR(`dateTime`) <= 18 THEN 'dayTime' WHEN HOUR(`dateTime`) <= 6 OR"
-            + " HOUR(`dateTime`) >= 20 THEN 'nightTime' ELSE 'otherTime' END AS bidTimeType,"
-            + " `dateTime`, extra, count_char(extra, 'c') AS c_counts FROM bid",
+        "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price DECIMAL(23, 3), bidTimeType"
+            + " STRING, `dateTime` %TS%, extra STRING, c_counts BIGINT) WITH ('connector' ="
+            + " 'blackhole')",
+        "INSERT INTO sink SELECT auction, bidder, 0.908 * price AS price, CASE WHEN"
+            + " HOUR(`dateTime`) >= 8 AND HOUR(`dateTime`) <= 18 THEN 'dayTime' WHEN"
+            + " HOUR(`dateTime`) <= 6 OR HOUR(`dateTime`) >= 20 THEN 'nightTime' ELSE 'otherTime'"
+            + " END AS bidTimeType, `dateTime`, extra, count_char(extra, 'c') AS c_counts FROM bid",
         DATETIME_VARIANT,
         ALLOW_INCOMPATIBLE),
     new Query(
@@ -433,9 +443,9 @@ class NexmarkMatrixBenchmark {
         null,
         "CREATE TABLE sink (auction BIGINT, bidder BIGINT, price BIGINT, channel STRING,"
             + " channel_id STRING) WITH ('connector' = 'blackhole')",
-        "INSERT INTO sink SELECT auction, bidder, price, channel, CASE WHEN lower(channel) = 'apple'"
-            + " THEN '0' WHEN lower(channel) = 'google' THEN '1' WHEN lower(channel) = 'facebook' THEN"
-            + " '2' WHEN lower(channel) = 'baidu' THEN '3' ELSE REGEXP_EXTRACT(url,"
+        "INSERT INTO sink SELECT auction, bidder, price, channel, CASE WHEN lower(channel) ="
+            + " 'apple' THEN '0' WHEN lower(channel) = 'google' THEN '1' WHEN lower(channel) ="
+            + " 'facebook' THEN '2' WHEN lower(channel) = 'baidu' THEN '3' ELSE REGEXP_EXTRACT(url,"
             + " '(&|^)channel_id=([^&]*)', 2) END AS channel_id FROM bid WHERE REGEXP_EXTRACT(url,"
             + " '(&|^)channel_id=([^&]*)', 2) IS NOT NULL OR lower(channel) IN ('apple', 'google',"
             + " 'facebook', 'baidu')",
@@ -534,7 +544,9 @@ class NexmarkMatrixBenchmark {
       }
     }
 
-    StringBuilder out = new StringBuilder("\n##### NEXMARK MATRIX (" + ROWS + " events, best of " + RUNS + ") #####\n");
+    StringBuilder out =
+        new StringBuilder(
+            "\n##### NEXMARK MATRIX (" + ROWS + " events, best of " + RUNS + ") #####\n");
     for (Query q : queries) {
       out.append("\n===== ").append(q.label).append(" =====\n");
       for (String line : report.get(q.label)) {
@@ -614,7 +626,8 @@ class NexmarkMatrixBenchmark {
                 + RUNS
                 + ") #####\n");
     out.append(
-        "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink on/off  SF on/off\n");
+        "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink on/off"
+            + "  SF on/off\n");
 
     for (int i = 0; i < queries.length; i++) {
       Query q = queries[i];
@@ -698,7 +711,8 @@ class NexmarkMatrixBenchmark {
                   + ") #####\n");
       if (runOff && runOn) {
         out.append(
-            "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink on/off  SF on/off\n");
+            "query  Flink off  Native off  SF/Flink off  Flink on  Native on  SF/Flink on  Flink"
+                + " on/off  SF on/off\n");
       } else {
         out.append("query  Flink s      ev/s  StreamFusion s      ev/s  SF/Flink\n");
       }
@@ -884,7 +898,8 @@ class NexmarkMatrixBenchmark {
                   + "output: "
                   + outputRoot.toAbsolutePath()
                   + (retainOutput ? " (retained)\n" : " (temporary)\n")
-                  + "query  Flink s      ev/s  StreamFusion s      ev/s  SF/Flink  rows Flink/SF\n");
+                  + "query  Flink s      ev/s  StreamFusion s      ev/s  SF/Flink  rows"
+                  + " Flink/SF\n");
       double logSpeedupSum = 0.0;
       int completed = 0;
       for (Query q : queries) {
@@ -1342,7 +1357,9 @@ class NexmarkMatrixBenchmark {
     String bucketing =
         key != null
             ? "'bucket' = '4'"
-            : fixedBucket ? "'bucket' = '4', 'bucket-key' = '" + firstColumn + "'" : "'bucket' = '-1'";
+            : fixedBucket
+                ? "'bucket' = '4', 'bucket-key' = '" + firstColumn + "'"
+                : "'bucket' = '-1'";
     String options =
         "WITH ('connector' = 'paimon', 'path' = '"
             + output.toUri()
@@ -1379,7 +1396,8 @@ class NexmarkMatrixBenchmark {
   private static void deleteTree(Path root) throws Exception {
     for (int attempt = 0; attempt < 10 && Files.exists(root); attempt++) {
       try (java.util.stream.Stream<Path> paths = Files.walk(root)) {
-        for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+        for (Path path :
+            paths.sorted(java.util.Comparator.reverseOrder()).collect(ListCollectors.toList())) {
           try {
             Files.deleteIfExists(path);
           } catch (java.nio.file.DirectoryNotEmptyException concurrentDeltaMaintenance) {
@@ -1959,7 +1977,8 @@ class NexmarkMatrixBenchmark {
     } finally {
       tableConfigExtras = Map.of();
     }
-    System.out.println("[profile] " + (nativeRun ? "native " : "flink ") + label + " iterations: " + iterations);
+    System.out.println(
+        "[profile] " + (nativeRun ? "native " : "flink ") + label + " iterations: " + iterations);
   }
 
   /** Profiles one exactly-once Kafka input/output query repeatedly against a single broker. */
@@ -2156,7 +2175,8 @@ class NexmarkMatrixBenchmark {
             + dir.toUri()
             + "', 'format' = 'parquet')");
     tEnv.executeSql(
-            "INSERT INTO parquet_write SELECT event_type, person, auction, bid, `dateTime` FROM events")
+            "INSERT INTO parquet_write SELECT event_type, person, auction, bid, `dateTime` FROM"
+                + " events")
         .await();
     return dir;
   }
@@ -2189,18 +2209,19 @@ class NexmarkMatrixBenchmark {
     // `dateTime` (a plain TIMESTAMP(3) here, so DATE_FORMAT/HOUR stay native).
     tEnv.executeSql(
         "CREATE TEMPORARY VIEW person AS SELECT person.id AS id, person.name AS name,"
-            + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city AS"
-            + " city, person.state AS state, `dateTime`, person.extra AS extra FROM src WHERE"
+            + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city"
+            + " AS city, person.state AS state, `dateTime`, person.extra AS extra FROM src WHERE"
             + " event_type = 0");
     tEnv.executeSql(
         "CREATE TEMPORARY VIEW auction AS SELECT auction.id AS id, auction.itemName AS itemName,"
-            + " auction.description AS description, auction.initialBid AS initialBid, auction.reserve"
-            + " AS reserve, `dateTime`, auction.expires AS expires, auction.seller AS seller,"
-            + " auction.category AS category, auction.extra AS extra FROM src WHERE event_type = 1");
+            + " auction.description AS description, auction.initialBid AS initialBid,"
+            + " auction.reserve AS reserve, `dateTime`, auction.expires AS expires, auction.seller"
+            + " AS seller, auction.category AS category, auction.extra AS extra FROM src WHERE"
+            + " event_type = 1");
     tEnv.executeSql(
-        "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder, bid.price"
-            + " AS price, bid.channel AS channel, bid.url AS url, `dateTime`, bid.extra AS extra FROM"
-            + " src WHERE event_type = 2");
+        "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder,"
+            + " bid.price AS price, bid.channel AS channel, bid.url AS url, `dateTime`, bid.extra"
+            + " AS extra FROM src WHERE event_type = 2");
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
     runSetup(tEnv, q);
     PhysicalPlanScan scan = nativeRun ? NativePlanner.install(tEnv) : null;
@@ -2291,9 +2312,9 @@ class NexmarkMatrixBenchmark {
     tEnv.executeSql(
         "CREATE TABLE src ("
             + NexmarkKafkaBenchmark.SCHEMA
-            + ", rowtime AS TO_TIMESTAMP_LTZ(`dateTime`, 3),"
-            + " WATERMARK FOR rowtime AS rowtime - INTERVAL '4' SECOND"
-            + ") WITH ('connector' = 'kafka', 'topic' = 'nexmark', 'properties.bootstrap.servers' = '"
+            + ", rowtime AS TO_TIMESTAMP_LTZ(`dateTime`, 3), WATERMARK FOR rowtime AS rowtime -"
+            + " INTERVAL '4' SECOND) WITH ('connector' = 'kafka', 'topic' = 'nexmark',"
+            + " 'properties.bootstrap.servers' = '"
             + brokers
             + "', 'properties.group.id' = 'nexmark', 'properties.max.poll.records' = '8192',"
             + " 'scan.startup.mode' = 'earliest-offset',"
@@ -2310,22 +2331,24 @@ class NexmarkMatrixBenchmark {
 
   static void registerEventViews(StreamTableEnvironment tEnv) {
     // The same person/auction/bid logical streams the published Nexmark queries read, off the
-    // watermarked event-time rowtime. expires becomes a timestamp too so q4/q9's BETWEEN typechecks.
+    // watermarked event-time rowtime. expires becomes a timestamp too so q4/q9's BETWEEN
+    // typechecks.
     tEnv.executeSql(
         "CREATE TEMPORARY VIEW person AS SELECT person.id AS id, person.name AS name,"
-            + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city AS"
-            + " city, person.state AS state, rowtime AS `dateTime`, person.extra AS extra FROM src"
-            + " WHERE event_type = 0");
+            + " person.emailAddress AS emailAddress, person.creditCard AS creditCard, person.city"
+            + " AS city, person.state AS state, rowtime AS `dateTime`, person.extra AS extra FROM"
+            + " src WHERE event_type = 0");
     tEnv.executeSql(
         "CREATE TEMPORARY VIEW auction AS SELECT auction.id AS id, auction.itemName AS itemName,"
-            + " auction.description AS description, auction.initialBid AS initialBid, auction.reserve"
-            + " AS reserve, rowtime AS `dateTime`, TO_TIMESTAMP_LTZ(auction.expires, 3) AS expires,"
-            + " auction.seller AS seller, auction.category AS category, auction.extra AS extra FROM"
-            + " src WHERE event_type = 1");
+            + " auction.description AS description, auction.initialBid AS initialBid,"
+            + " auction.reserve AS reserve, rowtime AS `dateTime`,"
+            + " TO_TIMESTAMP_LTZ(auction.expires, 3) AS expires, auction.seller AS seller,"
+            + " auction.category AS category, auction.extra AS extra FROM src WHERE event_type ="
+            + " 1");
     tEnv.executeSql(
-        "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder, bid.price"
-            + " AS price, bid.channel AS channel, bid.url AS url, rowtime AS `dateTime`, bid.extra AS"
-            + " extra FROM src WHERE event_type = 2");
+        "CREATE TEMPORARY VIEW bid AS SELECT bid.auction AS auction, bid.bidder AS bidder,"
+            + " bid.price AS price, bid.channel AS channel, bid.url AS url, rowtime AS `dateTime`,"
+            + " bid.extra AS extra FROM src WHERE event_type = 2");
     tEnv.createTemporarySystemFunction("count_char", CountChar.class);
   }
 
@@ -2343,7 +2366,9 @@ class NexmarkMatrixBenchmark {
     double seconds = (System.nanoTime() - start) / 1e9;
     if (nativeRun && scan.substitutions() == 0) {
       throw new IllegalStateException(
-          q.label + ": native island did not engage; comparison is moot. " + scan.fallbackReasons());
+          q.label
+              + ": native island did not engage; comparison is moot. "
+              + scan.fallbackReasons());
     }
     return seconds;
   }

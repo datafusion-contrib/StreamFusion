@@ -42,21 +42,34 @@ class PaimonSnapshotMergeBenchmark {
     org.junit.jupiter.api.Assumptions.assumeTrue(
         selected == null || List.of(selected.split(",")).contains(keyType));
     int rows = Integer.parseInt(System.getenv().getOrDefault("SF_PAIMON_SNAPSHOT_ROWS", "65536"));
+    org.apache.paimon.types.DataType selectedValue0;
+    switch (keyType) {
+      case "decimal":
+        selectedValue0 = DataTypes.DECIMAL(38, 2).notNull();
+        break;
+      case "timestamp":
+        selectedValue0 = DataTypes.TIMESTAMP(6).notNull();
+        break;
+      case "binary":
+        selectedValue0 = DataTypes.VARBINARY(4).notNull();
+        break;
+      case "date":
+        selectedValue0 = DataTypes.DATE().notNull();
+        break;
+      case "float":
+        selectedValue0 = DataTypes.FLOAT().notNull();
+        break;
+      case "double":
+        selectedValue0 = DataTypes.DOUBLE().notNull();
+        break;
+      default:
+        selectedValue0 = DataTypes.INT().notNull();
+        break;
+    }
     var type =
         new RowType(
             List.of(
-                new DataField(
-                    0,
-                    "id",
-                    switch (keyType) {
-                      case "decimal" -> DataTypes.DECIMAL(38, 2).notNull();
-                      case "timestamp" -> DataTypes.TIMESTAMP(6).notNull();
-                      case "binary" -> DataTypes.VARBINARY(4).notNull();
-                      case "date" -> DataTypes.DATE().notNull();
-                      case "float" -> DataTypes.FLOAT().notNull();
-                      case "double" -> DataTypes.DOUBLE().notNull();
-                      default -> DataTypes.INT().notNull();
-                    }),
+                new DataField(0, "id", selectedValue0),
                 new DataField(1, "v", DataTypes.STRING()),
                 new DataField(2, "nested", DataTypes.ARRAY(DataTypes.INT())),
                 new DataField(3, "ordinal", DataTypes.INT().notNull())));
@@ -67,29 +80,43 @@ class PaimonSnapshotMergeBenchmark {
       options.put(
           "sort-spill-buffer-size",
           System.getenv().getOrDefault("SF_PAIMON_SNAPSHOT_BUDGET", "64 mb"));
-      options.putAll(
-          switch (keyType) {
-            case "first-row" ->
-                Map.of(
-                    "merge-engine",
-                    "first-row",
-                    "changelog-producer",
-                    "none",
-                    "ignore-delete",
-                    "true");
-            case "sequence" -> Map.of("sequence.field", "ordinal");
-            case "dynamic" -> Map.of("bucket", "-1");
-            case "partial-update" -> Map.of("merge-engine", "partial-update");
-            case "partial-delete" ->
-                Map.of(
-                    "merge-engine",
-                    "partial-update",
-                    "partial-update.remove-record-on-delete",
-                    "true");
-            case "partial-ignore" ->
-                Map.of("merge-engine", "partial-update", "ignore-delete", "true");
-            default -> Map.of();
-          });
+      java.util.Map<String, String> selectedValue1;
+      switch (keyType) {
+        case "first-row":
+          selectedValue1 =
+              Map.of(
+                  "merge-engine",
+                  "first-row",
+                  "changelog-producer",
+                  "none",
+                  "ignore-delete",
+                  "true");
+          break;
+        case "sequence":
+          selectedValue1 = Map.of("sequence.field", "ordinal");
+          break;
+        case "dynamic":
+          selectedValue1 = Map.of("bucket", "-1");
+          break;
+        case "partial-update":
+          selectedValue1 = Map.of("merge-engine", "partial-update");
+          break;
+        case "partial-delete":
+          selectedValue1 =
+              Map.of(
+                  "merge-engine",
+                  "partial-update",
+                  "partial-update.remove-record-on-delete",
+                  "true");
+          break;
+        case "partial-ignore":
+          selectedValue1 = Map.of("merge-engine", "partial-update", "ignore-delete", "true");
+          break;
+        default:
+          selectedValue1 = Map.of();
+          break;
+      }
+      options.putAll(selectedValue1);
       var table = PaimonMergeEngineTest.table(options, type);
       var builder = table.newStreamWriteBuilder().withCommitUser("bench");
       try (var writer = builder.newWrite();
@@ -182,16 +209,21 @@ class PaimonSnapshotMergeBenchmark {
   }
 
   private static Object key(int i, String type) {
-    return switch (type) {
-      case "decimal" ->
-          org.apache.paimon.data.Decimal.fromBigDecimal(java.math.BigDecimal.valueOf(i, 2), 38, 2);
-      case "timestamp" ->
-          org.apache.paimon.data.Timestamp.fromEpochMillis(
-              Math.floorDiv(i, 1000), Math.floorMod(i, 1000) * 1000);
-      case "binary" -> java.nio.ByteBuffer.allocate(4).putInt(i).array();
-      case "float" -> (float) i;
-      case "double" -> (double) i;
-      default -> i;
-    };
+    switch (type) {
+      case "decimal":
+        return org.apache.paimon.data.Decimal.fromBigDecimal(
+            java.math.BigDecimal.valueOf(i, 2), 38, 2);
+      case "timestamp":
+        return org.apache.paimon.data.Timestamp.fromEpochMillis(
+            Math.floorDiv(i, 1000), Math.floorMod(i, 1000) * 1000);
+      case "binary":
+        return java.nio.ByteBuffer.allocate(4).putInt(i).array();
+      case "float":
+        return (float) i;
+      case "double":
+        return (double) i;
+      default:
+        return i;
+    }
   }
 }

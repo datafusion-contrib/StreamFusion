@@ -36,6 +36,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.orc.NativeOrc;
@@ -88,7 +89,7 @@ class OrcWriterComparisonBenchmark {
           List<RowData> input =
               rows.subList(at, Math.min(rows.size(), at + BATCH_ROWS)).stream()
                   .map(r -> (RowData) new FlinkRowData(r))
-                  .toList();
+                  .collect(ListCollectors.toList());
           try (var root = RowDataArrowConverter.write(input, flink, allocator, false);
               var array = ArrowArray.allocateNew(allocator);
               var schema = ArrowSchema.allocateNew(allocator)) {
@@ -337,7 +338,7 @@ class OrcWriterComparisonBenchmark {
       var getters =
           Arrays.stream(projection)
               .mapToObj(c -> InternalRow.createFieldGetter(fullType.getTypeAt(c), c))
-              .toList();
+              .collect(ListCollectors.toList());
       List<InternalRow> input = new ArrayList<>();
       for (var values : PaimonTestTables.values(rows)) {
         var full = PaimonTestTables.paimonRow(values);

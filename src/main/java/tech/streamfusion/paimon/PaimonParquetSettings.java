@@ -14,7 +14,6 @@ import org.apache.paimon.options.Options;
  * silently dropped.
  */
 public final class PaimonParquetSettings {
-
   static final String ZSTD_LEVEL_KEY = "parquet.compression.codec.zstd.level";
   static final String BLOCK_SIZE_KEY = "parquet.block.size";
 
@@ -67,9 +66,19 @@ public final class PaimonParquetSettings {
       codec = "UNCOMPRESSED";
     }
     switch (codec) {
-      case "UNCOMPRESSED", "SNAPPY" -> {}
-      case "GZIP" -> translated.put("compression.gzip.level", "6");
-      case "ZSTD" -> {
+      case "UNCOMPRESSED":
+      case "SNAPPY":
+        {
+          {
+          }
+          break;
+        }
+      case "GZIP":
+        translated.put("compression.gzip.level", "6");
+        break;
+      case "ZSTD":
+        {
+          {
         String workers = parquetOptions.getString("parquet.compression.codec.zstd.workers", "0");
         if (!"0".equals(workers.trim())) {
           return fallback("multithreaded ZSTD is not supported by the native writer");
@@ -85,17 +94,24 @@ public final class PaimonParquetSettings {
         }
         translated.put("compression.zstd.level", level);
       }
-      default -> {
+          break;
+        }
+      default:
+        {
+          {
         return fallback("Parquet compression " + codec + " is not supported by the native writer");
       }
+        }
     }
     translated.put("compression", codec);
 
     String sizeFailure =
-        copyPositiveInt(parquetOptions, BLOCK_SIZE_KEY, "block.size", 128 * 1024 * 1024, translated);
+        copyPositiveInt(
+            parquetOptions, BLOCK_SIZE_KEY, "block.size", 128 * 1024 * 1024, translated);
     if (sizeFailure == null) {
       sizeFailure =
-          copyPositiveInt(parquetOptions, "parquet.page.size", "page.size", 1024 * 1024, translated);
+          copyPositiveInt(
+              parquetOptions, "parquet.page.size", "page.size", 1024 * 1024, translated);
     }
     if (sizeFailure == null) {
       sizeFailure =
@@ -118,11 +134,20 @@ public final class PaimonParquetSettings {
 
     String version = parquetOptions.getString("parquet.writer.version", "PARQUET_1_0");
     switch (version.toUpperCase(Locale.ROOT)) {
-      case "V1", "PARQUET_1_0" -> translated.put("writer.version", "1");
-      case "V2", "PARQUET_2_0" -> translated.put("writer.version", "2");
-      default -> {
+      case "V1":
+      case "PARQUET_1_0":
+        translated.put("writer.version", "1");
+        break;
+      case "V2":
+      case "PARQUET_2_0":
+        translated.put("writer.version", "2");
+        break;
+      default:
+        {
+          {
         return fallback("unsupported parquet.writer.version " + version);
       }
+        }
     }
 
     String validation = parquetOptions.getString("parquet.validation", "false");

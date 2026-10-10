@@ -1576,15 +1576,15 @@ reuse and release. Missing methods/classes, a different version or pool,
 or probe failure decline the native parser for JSON_VALUE, JSON_EXISTS and IS JSON; Calc
 can use Flink generation when the host runtime and batch boundary types support it.
 JobManagers and TaskManagers must use the same verified shaded Jackson runtime.
-The 2.2 profile admits JDK 17, 21, 24 and 25, selecting the corresponding Unicode version for
-Jackson's token-termination rules; other JDKs use Flink generation in Calc. The profile is selected on the
+The 2.2 profile admits JDK 11, 17, 21, 24 and 25, selecting the corresponding Unicode version for
+Jackson's token-termination rules (Unicode 10.0 on JDK 11 and 13.0 on JDK 17); other JDKs use Flink generation in Calc. The profile is selected on the
 JobManager, so TaskManagers must use the same JSON parsing rules. Jackson 2.18.2's resource limits
 (1000 nesting levels, 1000 number digits, 20 million UTF-16 string units, 50,000 member-name
 units) also apply to unselected values. Its numeric boundary has a buffer-dependent exception:
 the slow parser can accept an extra digit. Native evaluation uses the task thread's actual
 Jackson input-buffer capacity and preserves its growth, including invalid input and SIMD
 parsing. A batch exchanges this capacity through JNI; documents and results remain native. The 1.18
-profile uses the same reader on JDK 17, with Double numeric semantics and without the newer
+profile uses the same reader on JDK 11 and JDK 17, with Double numeric semantics and without the newer
 token/depth limits. Deep legacy nesting grows the native stack as needed.
 See the [SQL/JSON parser note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md)
 and [per-function benchmarks](../benchmarks/scalar-functions.md).

@@ -139,7 +139,44 @@ class FlinkSharedBinaryUdfSqlHarnessTest {
     if (!actual.rows().isEmpty()) assertTrue(outputs > 0, "native Calc emitted no rows");
   }
 
-  private record Result(List<List<Object>> rows, JobID job) {}
+  private static final class Result {
+    private final List<List<Object>> rows;
+    private final JobID job;
+
+    private Result(List<List<Object>> rows, JobID job) {
+      this.rows = rows;
+      this.job = job;
+    }
+
+    public List<List<Object>> rows() {
+      return rows;
+    }
+
+    public JobID job() {
+      return job;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Result that = (Result) other;
+      return java.util.Objects.equals(rows, that.rows) && java.util.Objects.equals(job, that.job);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(rows);
+      result = 31 * result + java.util.Objects.hashCode(job);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Result[rows=" + rows + ", job=" + job + "]";
+    }
+  }
 
   private static Result collect(TableEnvironment table, String sql) throws Exception {
     var result = table.executeSql(sql);

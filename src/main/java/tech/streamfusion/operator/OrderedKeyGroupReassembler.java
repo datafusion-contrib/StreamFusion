@@ -34,7 +34,6 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  */
 public final class OrderedKeyGroupReassembler extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, BoundedOneInput {
-
   private static final ListStateDescriptor<byte[]> STATE =
       new ListStateDescriptor<>(
           "streamfusion-ordered-key-group-fragments", BytePrimitiveArraySerializer.INSTANCE);
@@ -303,11 +302,150 @@ public final class OrderedKeyGroupReassembler extends FlinkStreamOperator<ArrowB
     super.close();
   }
 
-  private record ParentId(long epochHigh, long epochLow, long sequence) {}
+  private static final class ParentId {
+    private final long epochHigh;
+    private final long epochLow;
+    private final long sequence;
 
-  private record Epoch(long high, long low) {}
+    private ParentId(long epochHigh, long epochLow, long sequence) {
+      this.epochHigh = epochHigh;
+      this.epochLow = epochLow;
+      this.sequence = sequence;
+    }
 
-  private record RowCursor(ArrowBatch fragment, int sourceRow, int ordinal) {}
+    public long epochHigh() {
+      return epochHigh;
+    }
+
+    public long epochLow() {
+      return epochLow;
+    }
+
+    public long sequence() {
+      return sequence;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      ParentId that = (ParentId) other;
+      return epochHigh == that.epochHigh && epochLow == that.epochLow && sequence == that.sequence;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + Long.hashCode(epochHigh);
+      result = 31 * result + Long.hashCode(epochLow);
+      result = 31 * result + Long.hashCode(sequence);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "ParentId[epochHigh="
+          + epochHigh
+          + ", epochLow="
+          + epochLow
+          + ", sequence="
+          + sequence
+          + "]";
+    }
+  }
+
+  private static final class Epoch {
+    private final long high;
+    private final long low;
+
+    private Epoch(long high, long low) {
+      this.high = high;
+      this.low = low;
+    }
+
+    public long high() {
+      return high;
+    }
+
+    public long low() {
+      return low;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Epoch that = (Epoch) other;
+      return high == that.high && low == that.low;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + Long.hashCode(high);
+      result = 31 * result + Long.hashCode(low);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Epoch[high=" + high + ", low=" + low + "]";
+    }
+  }
+
+  private static final class RowCursor {
+    private final ArrowBatch fragment;
+    private final int sourceRow;
+    private final int ordinal;
+
+    private RowCursor(ArrowBatch fragment, int sourceRow, int ordinal) {
+      this.fragment = fragment;
+      this.sourceRow = sourceRow;
+      this.ordinal = ordinal;
+    }
+
+    public ArrowBatch fragment() {
+      return fragment;
+    }
+
+    public int sourceRow() {
+      return sourceRow;
+    }
+
+    public int ordinal() {
+      return ordinal;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      RowCursor that = (RowCursor) other;
+      return java.util.Objects.equals(fragment, that.fragment)
+          && sourceRow == that.sourceRow
+          && ordinal == that.ordinal;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(fragment);
+      result = 31 * result + sourceRow;
+      result = 31 * result + ordinal;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "RowCursor[fragment="
+          + fragment
+          + ", sourceRow="
+          + sourceRow
+          + ", ordinal="
+          + ordinal
+          + "]";
+    }
+  }
 
   private static final class PartialParent {
     private final int[] keyGroups;

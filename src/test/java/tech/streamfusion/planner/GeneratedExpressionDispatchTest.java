@@ -119,12 +119,18 @@ class GeneratedExpressionDispatchTest {
     var evaluator = FlinkExpressionFunction.class.getDeclaredField("evaluator");
     evaluator.setAccessible(true);
     var original = (FlinkExpressionFunction.Evaluator) evaluator.get(function);
-    Throwable failure =
-        switch (kind) {
-          case "checked" -> new java.io.IOException("generated checked failure");
-          case "runtime" -> new IllegalArgumentException("generated runtime failure");
-          default -> new AssertionError("generated error");
-        };
+    Throwable failure;
+    switch (kind) {
+      case "checked":
+        failure = new java.io.IOException("generated checked failure");
+        break;
+      case "runtime":
+        failure = new IllegalArgumentException("generated runtime failure");
+        break;
+      default:
+        failure = new AssertionError("generated error");
+        break;
+    }
     evaluator.set(
         function,
         new FlinkExpressionFunction.Evaluator() {
@@ -133,7 +139,10 @@ class GeneratedExpressionDispatchTest {
           @Override
           public Object eval(RowData row) throws Exception {
             if (++rows == 2) {
-              if (failure instanceof Error error) throw error;
+              if (failure instanceof Error) {
+                Error error = ((Error) failure);
+                throw error;
+              }
               throw (Exception) failure;
             }
             return original.eval(row);

@@ -12,14 +12,18 @@ final class LegacyBinaryResults {
   private LegacyBinaryResults() {}
 
   static boolean containsEncode(RexNode node) {
-    if (!(node instanceof RexCall call)) return false;
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = ((RexCall) node);
+
     return call.getOperator().getName().equals("ENCODE")
             && call.getType().getSqlTypeName() == SqlTypeName.BINARY
         || call.getOperands().stream().anyMatch(LegacyBinaryResults::containsEncode);
   }
 
   private static boolean containsLegacyCast(RexNode node) {
-    if (!(node instanceof RexCall call)) return false;
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = ((RexCall) node);
+
     return call.getType().getSqlTypeName() == SqlTypeName.BINARY
             && (call.getKind() == org.apache.calcite.sql.SqlKind.CAST
                 || call.getOperator()
@@ -33,7 +37,9 @@ final class LegacyBinaryResults {
   }
 
   static boolean projects(RelNode node) {
-    if (node instanceof StreamPhysicalCalc calc) {
+    if (node instanceof StreamPhysicalCalc) {
+      StreamPhysicalCalc calc = ((StreamPhysicalCalc) node);
+
       var program = calc.getProgram();
       boolean legacyCast = org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc)
           .get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_LEGACY_CAST_BEHAVIOUR)

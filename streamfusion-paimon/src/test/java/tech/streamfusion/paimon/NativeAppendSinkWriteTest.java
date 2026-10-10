@@ -26,10 +26,48 @@ import org.apache.paimon.table.sink.CommitMessage;
 import org.apache.paimon.table.source.DataSplit;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
 class NativeAppendSinkWriteTest {
-  private record Bucket(BinaryRow partition, int bucket) {}
+  private static final class Bucket {
+    private final BinaryRow partition;
+    private final int bucket;
+
+    private Bucket(BinaryRow partition, int bucket) {
+      this.partition = partition;
+      this.bucket = bucket;
+    }
+
+    public BinaryRow partition() {
+      return partition;
+    }
+
+    public int bucket() {
+      return bucket;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Bucket that = (Bucket) other;
+      return java.util.Objects.equals(partition, that.partition) && bucket == that.bucket;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(partition);
+      result = 31 * result + bucket;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Bucket[partition=" + partition + ", bucket=" + bucket + "]";
+    }
+  }
 
   @ParameterizedTest
   @ValueSource(strings = {"0 b", "1 b", "1 gb"})
@@ -91,7 +129,7 @@ class NativeAppendSinkWriteTest {
             List<CommitMessage> messages =
                 write.prepareCommit(true, checkpoint + 1).stream()
                     .map(committable -> committable.commitMessage())
-                    .toList();
+                    .collect(ListCollectors.toList());
             nativeCommit.commit(checkpoint + 1, messages);
             stockCommit.commit(checkpoint + 1, stockWrite.prepareCommit(true, checkpoint + 1));
             write.snapshotState();
@@ -108,7 +146,7 @@ class NativeAppendSinkWriteTest {
         List<DataFileMeta> ordered =
             files.stream()
                 .sorted(java.util.Comparator.comparingLong(DataFileMeta::minSequenceNumber))
-                .toList();
+                .collect(ListCollectors.toList());
         long next = 0;
         for (DataFileMeta file : ordered) {
           assertEquals(next, file.minSequenceNumber());

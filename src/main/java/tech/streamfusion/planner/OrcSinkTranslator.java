@@ -8,13 +8,16 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.orc.OrcConf;
 import org.apache.orc.TypeDescription;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.orc.OrcWriterSettings;
 
 /** Resolves the same DDL-over-Hadoop settings as Flink's ORC format factory. */
 final class OrcSinkTranslator {
   static RowType writeType(RowType type, List<String> partitions) {
     return new RowType(
-        type.getFields().stream().filter(f -> !partitions.contains(f.getName())).toList());
+        type.getFields().stream()
+            .filter(f -> !partitions.contains(f.getName()))
+            .collect(ListCollectors.toList()));
   }
 
   static String schema(RowType type, List<String> partitions) {

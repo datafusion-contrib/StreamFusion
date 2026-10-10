@@ -28,6 +28,7 @@ import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.ColumnarKeyGroupPartitioner;
 
 class AlignedColumnarExchangeRecoveryTest {
@@ -83,7 +84,7 @@ class AlignedColumnarExchangeRecoveryTest {
                       throw new java.io.UncheckedIOException(e);
                     }
                   })
-              .toList();
+              .collect(ListCollectors.toList());
     }
     assertEquals(ROWS, lines.size(), "aligned restore lost or duplicated rows");
     Set<String> unique = new HashSet<>(lines);
@@ -249,7 +250,7 @@ class AlignedColumnarExchangeRecoveryTest {
                       throw new java.io.UncheckedIOException(e);
                     }
                   })
-              .toList();
+              .collect(ListCollectors.toList());
     }
     assertEquals(ROWS, lines.size(), message + " lost or duplicated rows");
     Set<String> unique = new HashSet<>(lines);
@@ -275,7 +276,6 @@ class AlignedColumnarExchangeRecoveryTest {
 
   private static final class SlowCheckpointFailingMap extends RichMapFunction<RowData, String>
       implements CheckpointListener {
-
     private long seen;
 
     @Override

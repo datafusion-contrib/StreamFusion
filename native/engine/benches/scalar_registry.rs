@@ -334,6 +334,20 @@ fn registry(c: &mut Criterion) {
             if !unicode {
                 cases.extend(parameterized(rows, nulls));
             }
+            for (jdk, version) in [(11, "10.0"), (17, "13.0")] {
+                let documents = array(
+                    StringArray::from_iter((0..rows + 1).map(|i| {
+                        (!nulls || i % 7 != 0)
+                            .then_some(["true\u{560}", r#"{"a":1}"#, "truea"][i % 3])
+                    })),
+                    rows,
+                );
+                cases.push((
+                    format!("op=144/jdk={jdk}"),
+                    flink_scalar_function(144, 2),
+                    vec![documents, literal(version)],
+                ));
+            }
             for (case, udf, args) in cases {
                 let types: Vec<_> = args.iter().map(ColumnarValue::data_type).collect();
                 let fields: Vec<_> = types

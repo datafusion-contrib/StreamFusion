@@ -45,7 +45,6 @@ import tech.streamfusion.planner.FlinkKeyGroupUtils;
  * boundary converter, as the dedicated transpose operator does.
  */
 class NativeColumnarWindowAggregateOperatorTest {
-
   private static final int MAX_PARALLELISM = 128;
 
   // Input schema [value BIGINT, rt TIMESTAMP_LTZ(3)]; output [total BIGINT, window_start, window_end].
@@ -256,7 +255,9 @@ class NativeColumnarWindowAggregateOperatorTest {
       List<RowData> rows = new ArrayList<>();
       while (!restored.getOutput().isEmpty()) {
         Object event = restored.getOutput().poll();
-        if (event instanceof StreamRecord<?> record) {
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
+
           try (var root = ((ArrowBatch) record.getValue()).root()) {
             rows.addAll(RowDataArrowConverter.read(root, output));
           }

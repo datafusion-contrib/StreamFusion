@@ -18,12 +18,12 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 
 /** The native Parquet sink writes the same data the host's filesystem+parquet sink does. */
 class FlinkParquetSinkSqlHarnessTest {
-
   @Test
   void nativeParquetSinkMatchesHost() throws Exception {
     Path hostDirectory = Files.createTempDirectory("sink-host");
@@ -83,7 +83,7 @@ class FlinkParquetSinkSqlHarnessTest {
           files
               .filter(Files::isRegularFile)
               .filter(f -> f.getFileName().toString().startsWith("part-"))
-              .toList()) {
+              .collect(ListCollectors.toList())) {
         try (var reader =
             org.apache.parquet.hadoop.ParquetReader.builder(
                     new org.apache.parquet.hadoop.example.GroupReadSupport(),

@@ -17,9 +17,9 @@ import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 
 class ArrowBatchSerializerTest {
-
   private static final RowType SCHEMA =
       RowType.of(new LogicalType[] {new BigIntType(), new IntType()}, new String[] {"k", "v"});
 
@@ -84,9 +84,14 @@ class ArrowBatchSerializerTest {
       assertEquals(11, restored.parentEpochHigh());
       assertEquals(12, restored.parentEpochLow());
       assertEquals(13, restored.parentSequence());
-      assertEquals(List.of(0, 2), java.util.Arrays.stream(restored.rowOrdinals()).boxed().toList());
       assertEquals(
-          List.of(7, 9), java.util.Arrays.stream(restored.parentKeyGroups()).boxed().toList());
+          List.of(0, 2),
+          java.util.Arrays.stream(restored.rowOrdinals()).boxed().collect(ListCollectors.toList()));
+      assertEquals(
+          List.of(7, 9),
+          java.util.Arrays.stream(restored.parentKeyGroups())
+              .boxed()
+              .collect(ListCollectors.toList()));
       restored.root().close();
     }
   }
@@ -124,7 +129,9 @@ class ArrowBatchSerializerTest {
       DataOutputSerializer output = new DataOutputSerializer(256);
       for (int size : new int[] {1, 100_000, 2}) {
         List<RowData> rows =
-            java.util.stream.IntStream.range(0, size).mapToObj(i -> row(size, i)).toList();
+            java.util.stream.IntStream.range(0, size)
+                .mapToObj(i -> row(size, i))
+                .collect(ListCollectors.toList());
         serializer.serialize(
             new ArrowBatch(RowDataArrowConverter.write(rows, SCHEMA, allocator)), output);
       }

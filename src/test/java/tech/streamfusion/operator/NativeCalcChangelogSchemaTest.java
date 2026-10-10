@@ -46,7 +46,9 @@ class NativeCalcChangelogSchemaTest {
       harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
       int count = 0;
       for (Object record : harness.getOutput()) {
-        if (record instanceof StreamRecord<?> output) {
+        if (record instanceof StreamRecord<?>) {
+          StreamRecord<?> output = ((StreamRecord<?>) record);
+
           try (var batch = ((ArrowBatch) output.getValue()).root()) {
             for (int i = 0; i < batch.getRowCount(); i++) {
               assertEquals(1L, batch.getVector("value").getObject(i));

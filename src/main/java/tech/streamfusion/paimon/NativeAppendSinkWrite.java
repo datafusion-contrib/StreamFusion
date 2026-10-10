@@ -34,7 +34,44 @@ import tech.streamfusion.operator.NativeAllocator;
  * one Parquet encoder needs memory while preparing a checkpoint.
  */
 public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseable {
-  private record Bucket(BinaryRow partition, int bucket) {}
+  private static final class Bucket {
+    private final BinaryRow partition;
+    private final int bucket;
+
+    private Bucket(BinaryRow partition, int bucket) {
+      this.partition = partition;
+      this.bucket = bucket;
+    }
+
+    public BinaryRow partition() {
+      return partition;
+    }
+
+    public int bucket() {
+      return bucket;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Bucket that = (Bucket) other;
+      return java.util.Objects.equals(partition, that.partition) && bucket == that.bucket;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(partition);
+      result = 31 * result + bucket;
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Bucket[partition=" + partition + ", bucket=" + bucket + "]";
+    }
+  }
 
   private final StoreSinkWrite delegate;
   private final String[] directories;
@@ -132,13 +169,18 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
   }
 
   static int spillCodec(CoreOptions options) {
-    return switch (options.spillCompressOptions().compress().toLowerCase(java.util.Locale.ROOT)) {
-      case "none" -> 0;
-      case "zstd" -> 1;
-      case "lz4" -> 2;
-      case "lzo" -> 3;
-      default -> throw new IllegalArgumentException("Unsupported native Arrow spill compression");
-    };
+    switch (options.spillCompressOptions().compress().toLowerCase(java.util.Locale.ROOT)) {
+      case "none":
+        return 0;
+      case "zstd":
+        return 1;
+      case "lz4":
+        return 2;
+      case "lzo":
+        return 3;
+      default:
+        throw new IllegalArgumentException("Unsupported native Arrow spill compression");
+    }
   }
 
   private void writeDirect(BinaryRow partition, int bucket, VectorSchemaRoot root)

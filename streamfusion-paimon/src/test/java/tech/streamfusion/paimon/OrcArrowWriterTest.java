@@ -18,6 +18,7 @@ import org.apache.paimon.shade.org.apache.orc.Reader;
 import org.apache.paimon.types.RowType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.orc.OrcCodec;
@@ -65,7 +66,7 @@ class OrcArrowWriterTest {
     try (var allocator = NativeAllocator.SHARED.newChildAllocator("orc-slices", 0, Long.MAX_VALUE);
         var root =
             RowDataArrowConverter.write(
-                values.stream().map(PaimonTestTables::flinkRow).toList(),
+                values.stream().map(PaimonTestTables::flinkRow).collect(ListCollectors.toList()),
                 PaimonTestTables.FLINK_TYPE,
                 allocator);
         var output = io.newOutputStream(path, false);
@@ -117,7 +118,7 @@ class OrcArrowWriterTest {
     var codec = new OrcCodec(description.toString(), false, new PaimonOrcWriter());
     try (var root =
         RowDataArrowConverter.write(
-            values.stream().map(PaimonTestTables::flinkRow).toList(),
+            values.stream().map(PaimonTestTables::flinkRow).collect(ListCollectors.toList()),
             PaimonTestTables.FLINK_TYPE,
             NativeAllocator.SHARED)) {
       var writer =

@@ -3,11 +3,8 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import tech.streamfusion.planner.NativePlanner;
-import tech.streamfusion.planner.PhysicalPlanScan;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -15,6 +12,9 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.CloseableIterator;
+import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.planner.PhysicalPlanScan;
 
 /**
  * Runs a query twice from a fresh environment each time, once entirely on the host engine and once
@@ -25,7 +25,6 @@ import org.apache.flink.util.CloseableIterator;
  * each run needs its own with the same sources registered.
  */
 final class NativeParity {
-
   private NativeParity() {}
 
   static void assertParity(Supplier<TableEnvironment> environment, String sql) throws Exception {
@@ -79,7 +78,8 @@ final class NativeParity {
     TableEnvironment nativeEnvironment = environment.get();
     PhysicalPlanScan scan = NativePlanner.install(nativeEnvironment);
     List<List<Object>> actual = collectKinded(nativeEnvironment, sql);
-    assertTrue(scan.substitutions() > 0, "query did not route to native: " + scan.fallbackReasons());
+    assertTrue(
+        scan.substitutions() > 0, "query did not route to native: " + scan.fallbackReasons());
     assertEquals(host, actual, "ordered changelog differs from Flink");
   }
 
@@ -175,7 +175,10 @@ final class NativeParity {
     if (expectedReason != null) {
       assertTrue(
           scan.fallbackReasons().stream().anyMatch(r -> r.contains(expectedReason)),
-          "no fallback reason contained \"" + expectedReason + "\"; reasons=" + scan.fallbackReasons());
+          "no fallback reason contained \""
+              + expectedReason
+              + "\"; reasons="
+              + scan.fallbackReasons());
     }
   }
 
@@ -210,24 +213,33 @@ final class NativeParity {
   static Map<List<Object>, Long> multiset(List<List<Object>> rows) {
     Map<List<Object>, Long> counts = new HashMap<>();
     for (List<Object> row : rows) {
-      counts.merge(row.stream().map(NativeParity::comparableValue).toList(), 1L, Long::sum);
+      counts.merge(
+          row.stream().map(NativeParity::comparableValue).collect(ListCollectors.toList()),
+          1L,
+          Long::sum);
     }
     return counts;
   }
 
   /** Java arrays compare by identity; compare binary and collection outputs by content. */
   static Object comparableValue(Object value) {
-    if (value instanceof List<?> list) {
-      return list.stream().map(NativeParity::comparableValue).toList();
+    if (value instanceof List<?>) {
+      List<?> list = ((List<?>) value);
+
+      return list.stream().map(NativeParity::comparableValue).collect(ListCollectors.toList());
     }
-    if (value instanceof Map<?, ?> map) {
+    if (value instanceof Map<?, ?>) {
+      Map<?, ?> map = ((Map<?, ?>) value);
+
       Map<List<Object>, Long> entries = new HashMap<>();
       // Array keys that are distinct to Java can normalize to equal contents. Retain every entry.
       map.forEach((key, element) -> entries.merge(
           java.util.Arrays.asList(comparableValue(key), comparableValue(element)), 1L, Long::sum));
       return new ComparableMap(entries);
     }
-    if (value instanceof Row row) {
+    if (value instanceof Row) {
+      Row row = ((Row) value);
+
       Row values = Row.copy(row);
       var names = row.getFieldNames(false);
       if (names == null) {
@@ -241,8 +253,10 @@ final class NativeParity {
       }
       return values;
     }
-    if (value instanceof byte[] bytes) {
-      return HexFormat.of().formatHex(bytes);
+    if (value instanceof byte[]) {
+      byte[] bytes = ((byte[]) value);
+
+      return org.apache.flink.util.StringUtils.byteToHexString(bytes);
     }
     if (value != null && value.getClass().isArray()) {
       List<Object> values = new ArrayList<>();
@@ -254,5 +268,35 @@ final class NativeParity {
     return value;
   }
 
-  private record ComparableMap(Map<List<Object>, Long> entries) {}
+  private static final class ComparableMap {
+    private final Map<List<Object>, Long> entries;
+
+    private ComparableMap(Map<List<Object>, Long> entries) {
+      this.entries = entries;
+    }
+
+    public Map<List<Object>, Long> entries() {
+      return entries;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      ComparableMap that = (ComparableMap) other;
+      return java.util.Objects.equals(entries, that.entries);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(entries);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "ComparableMap[entries=" + entries + "]";
+    }
+  }
 }

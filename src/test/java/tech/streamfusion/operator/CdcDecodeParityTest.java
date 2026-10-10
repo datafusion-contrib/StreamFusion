@@ -1,11 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.format.FormatCodes;
-import tech.streamfusion.format.NativeFormatProvider;
-import tech.streamfusion.format.json.CanalJsonFormatProvider;
-import tech.streamfusion.format.json.DebeziumJsonFormatProvider;
-import tech.streamfusion.format.json.MaxwellJsonFormatProvider;
-import tech.streamfusion.format.json.OggJsonFormatProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +23,12 @@ import org.apache.flink.table.types.utils.TypeConversions;
 import org.apache.flink.util.Collector;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.format.FormatCodes;
+import tech.streamfusion.format.NativeFormatProvider;
+import tech.streamfusion.format.json.CanalJsonFormatProvider;
+import tech.streamfusion.format.json.DebeziumJsonFormatProvider;
+import tech.streamfusion.format.json.MaxwellJsonFormatProvider;
+import tech.streamfusion.format.json.OggJsonFormatProvider;
 
 /**
  * Pins the native CDC decode to Flink's own Maxwell/Canal/Debezium/OGG deserializers, message by
@@ -44,7 +44,6 @@ import org.junit.jupiter.api.Test;
  */
 @Tag("streamfusion-json")
 class CdcDecodeParityTest {
-
   private static final RowType ROW_TYPE =
       RowType.of(
           new LogicalType[] {new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH), new DoubleType()},
@@ -229,8 +228,10 @@ class CdcDecodeParityTest {
     // unwraps an array holding exactly one envelope — and under ignore-parse-errors skips junk
     // elements inside the fan-out loop first, so [{envelope}, 1] still unwraps there while every
     // other shape stays corrupt. Both engines must agree scenario by scenario, mode by mode.
-    String envelope = "{\"before\":null,\"after\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"op\":\"c\"}";
-    String second = "{\"before\":null,\"after\":{\"id\":2,\"name\":\"b\",\"score\":2.5},\"op\":\"c\"}";
+    String envelope =
+        "{\"before\":null,\"after\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"op\":\"c\"}";
+    String second =
+        "{\"before\":null,\"after\":{\"id\":2,\"name\":\"b\",\"score\":2.5},\"op\":\"c\"}";
     String oggEnvelope =
         "{\"before\":null,\"after\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"op_type\":\"I\"}";
     String[] debeziumScenarios = {
@@ -243,7 +244,8 @@ class CdcDecodeParityTest {
       "[1]",
       "[]",
     };
-    String maxwellWrapped = "[{\"data\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"type\":\"insert\"}]";
+    String maxwellWrapped =
+        "[{\"data\":{\"id\":1,\"name\":\"a\",\"score\":1.5},\"type\":\"insert\"}]";
     String canalWrapped =
         "[{\"data\":[{\"id\":1,\"name\":\"a\",\"score\":1.5}],\"type\":\"INSERT\"}]";
     for (boolean skipErrors : new boolean[] {false, true}) {
@@ -358,12 +360,17 @@ class CdcDecodeParityTest {
   }
 
   private static NativeFormatProvider provider(int format) {
-    return switch (format) {
-      case MAXWELL -> new MaxwellJsonFormatProvider();
-      case CANAL -> new CanalJsonFormatProvider();
-      case DEBEZIUM -> new DebeziumJsonFormatProvider();
-      case OGG -> new OggJsonFormatProvider();
-      default -> throw new IllegalArgumentException("Unknown CDC format: " + format);
-    };
+    switch (format) {
+      case MAXWELL:
+        return new MaxwellJsonFormatProvider();
+      case CANAL:
+        return new CanalJsonFormatProvider();
+      case DEBEZIUM:
+        return new DebeziumJsonFormatProvider();
+      case OGG:
+        return new OggJsonFormatProvider();
+      default:
+        throw new IllegalArgumentException("Unknown CDC format: " + format);
+    }
   }
 }

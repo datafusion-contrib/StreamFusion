@@ -21,7 +21,6 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalG
  * containing windows; attached-window partials merge into the one window they name.
  */
 final class GlobalWindowAggregateMatcher {
-
   private GlobalWindowAggregateMatcher() {}
 
   static boolean matches(StreamPhysicalGlobalWindowAggregate aggregate) {
@@ -92,14 +91,24 @@ final class GlobalWindowAggregateMatcher {
       int[] columns = partialColumns(aggregate);
       for (int i = 0; i < aggregate.aggCalls().size(); i++) {
         AggregateCall call = aggregate.aggCalls().apply(i);
-        SqlTypeName partialType =
-            call.getAggregation().getKind() == SqlKind.AVG
-                ? switch (call.getType().getSqlTypeName()) {
-                  case FLOAT, REAL, DOUBLE -> SqlTypeName.DOUBLE;
-                  case DECIMAL -> SqlTypeName.DECIMAL;
-                  default -> SqlTypeName.BIGINT;
-                }
-                : call.getType().getSqlTypeName();
+        SqlTypeName partialType;
+        if (call.getAggregation().getKind() == SqlKind.AVG) {
+          switch (call.getType().getSqlTypeName()) {
+            case FLOAT:
+            case REAL:
+            case DOUBLE:
+              partialType = SqlTypeName.DOUBLE;
+              break;
+            case DECIMAL:
+              partialType = SqlTypeName.DECIMAL;
+              break;
+            default:
+              partialType = SqlTypeName.BIGINT;
+              break;
+          }
+        } else {
+          partialType = call.getType().getSqlTypeName();
+        }
         if (inputType.getFieldList().get(columns[i]).getType().getSqlTypeName() != partialType) {
           return "global window aggregate: retracting result partial has an unexpected type";
         }

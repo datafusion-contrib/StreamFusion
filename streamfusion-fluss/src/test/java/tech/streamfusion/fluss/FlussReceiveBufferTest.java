@@ -17,12 +17,16 @@ class FlussReceiveBufferTest {
             java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(),
                 new Class<?>[] {org.apache.fluss.rpc.messages.ApiMessage.class},
-                (proxy, method, args) ->
-                    switch (method.getName()) {
-                      case "isLazilyParsed" -> true;
-                      case "getParsedByteBuf" -> responseBuffer;
-                      default -> throw new UnsupportedOperationException(method.getName());
-                    });
+                (proxy, method, args) -> {
+                  switch (method.getName()) {
+                    case "isLazilyParsed":
+                      return true;
+                    case "getParsedByteBuf":
+                      return responseBuffer;
+                    default:
+                      throw new UnsupportedOperationException(method.getName());
+                  }
+                });
     var pending =
         new java.util.concurrent.CompletableFuture<org.apache.fluss.rpc.messages.ApiMessage>();
     var interrupted = new java.util.concurrent.atomic.AtomicBoolean();

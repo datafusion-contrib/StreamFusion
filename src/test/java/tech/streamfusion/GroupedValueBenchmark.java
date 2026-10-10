@@ -35,7 +35,8 @@ class GroupedValueBenchmark {
 
   @Test
   void groupedValues() throws Exception {
-    if (DISTINCT && SINGLE) throw new IllegalArgumentException("Select DISTINCT first/last or SINGLE_VALUE");
+    if (DISTINCT && SINGLE)
+      throw new IllegalArgumentException("Select DISTINCT first/last or SINGLE_VALUE");
     for (String type :
         System.getProperty("grouped.value.types", DISTINCT || SINGLE ? "STRING" : "BIGINT,STRING")
             .split(",")) {
@@ -100,37 +101,64 @@ class GroupedValueBenchmark {
       table.getConfig().set("table.exec.mini-batch.size", "1024");
       table.getConfig().set("table.exec.mini-batch.allow-latency", "100 ms");
     }
-    var dataType =
-        switch (type) {
-          case "STRING" -> DataTypes.STRING();
-          case "BIGINT" -> DataTypes.BIGINT();
-          case "TIME" -> DataTypes.TIME(3);
-          case "BOOLEAN" -> DataTypes.BOOLEAN();
-          default ->
-              throw new IllegalArgumentException("Unknown grouped.value.types entry: " + type);
-        };
-    var valueType =
-        switch (type) {
-          case "STRING" -> Types.STRING;
-          case "TIME" -> Types.LOCAL_TIME;
-          case "BOOLEAN" -> Types.BOOLEAN;
-          default -> Types.LONG;
-        };
+    org.apache.flink.table.types.DataType dataType;
+    switch (type) {
+      case "STRING":
+        dataType = DataTypes.STRING();
+        break;
+      case "BIGINT":
+        dataType = DataTypes.BIGINT();
+        break;
+      case "TIME":
+        dataType = DataTypes.TIME(3);
+        break;
+      case "BOOLEAN":
+        dataType = DataTypes.BOOLEAN();
+        break;
+      default:
+        throw new IllegalArgumentException("Unknown grouped.value.types entry: " + type);
+    }
+    org.apache.flink.api.common.typeinfo.TypeInformation<?> valueType;
+    switch (type) {
+      case "STRING":
+        valueType = Types.STRING;
+        break;
+      case "TIME":
+        valueType = Types.LOCAL_TIME;
+        break;
+      case "BOOLEAN":
+        valueType = Types.BOOLEAN;
+        break;
+      default:
+        valueType = Types.LONG;
+        break;
+    }
     table.createTemporaryView(
         "inputs",
         env.fromSequence(0, ROWS - 1)
             .map(
-                i ->
-                    Row.of(
-                        SINGLE ? i.intValue() : (int) (i % 64),
-                        i / 64 % 8 == 0
-                            ? null
-                            : switch (type) {
-                              case "STRING" -> "value-" + (i % 1024);
-                              case "TIME" -> java.time.LocalTime.ofNanoOfDay(i % 1024 * 1_000_000);
-                              case "BOOLEAN" -> i / 64 % 2 == 0;
-                              default -> i % 1024;
-                            }))
+                i -> {
+                  Object selectedValue;
+                  if (i / 64 % 8 == 0) {
+                    selectedValue = null;
+                  } else {
+                    switch (type) {
+                      case "STRING":
+                        selectedValue = "value-" + (i % 1024);
+                        break;
+                      case "TIME":
+                        selectedValue = java.time.LocalTime.ofNanoOfDay(i % 1024 * 1_000_000);
+                        break;
+                      case "BOOLEAN":
+                        selectedValue = i / 64 % 2 == 0;
+                        break;
+                      default:
+                        selectedValue = i % 1024;
+                        break;
+                    }
+                  }
+                  return Row.of(SINGLE ? i.intValue() : (int) (i % 64), selectedValue);
+                })
             .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.INT, valueType)),
         Schema.newBuilder().column("k", DataTypes.INT()).column("v", dataType).build());
     String sqlType = dataType.getLogicalType().asSerializableString();

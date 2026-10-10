@@ -9,24 +9,25 @@ import java.util.List;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.TimeStampVector;
+import org.apache.arrow.vector.complex.StructVector;
 import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
+import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.TimestampData;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.api.Test;
-import org.apache.arrow.vector.complex.StructVector;
-import org.apache.flink.table.data.GenericRowData;
-import tech.streamfusion.arrow.writers.TimestampWriter;
 import tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector;
+import tech.streamfusion.arrow.writers.TimestampWriter;
 
 class TimestampAccessorTest {
   @Test
   void componentWriterPreservesRangeAndHiddenFractions() {
     try (BufferAllocator allocator = new RootAllocator();
-        StructVector vector = (StructVector) TimestampAccessor.field("ts", true).createVector(allocator)) {
+        StructVector vector =
+            (StructVector) TimestampAccessor.field("ts", true).createVector(allocator)) {
       vector.allocateNew();
       var writer = TimestampWriter.forRow(vector, 3);
       TimestampData[] values = {
@@ -53,7 +54,8 @@ class TimestampAccessorTest {
   @Test
   void cachedTimestampWriterSurvivesGrowthAndReset() {
     try (BufferAllocator allocator = new RootAllocator();
-        StructVector vector = (StructVector) TimestampAccessor.field("ts", true).createVector(allocator)) {
+        StructVector vector =
+            (StructVector) TimestampAccessor.field("ts", true).createVector(allocator)) {
       vector.setInitialCapacity(2);
       vector.allocateNew();
       var writer = TimestampWriter.forArray(vector, 9);
@@ -94,13 +96,23 @@ class TimestampAccessorTest {
   void readsFlinkValueWithoutNarrowingToNanoseconds(TimeUnit unit) {
     Field field =
         new Field("ts", FieldType.nullable(new ArrowType.Timestamp(unit, "UTC")), List.of());
-    long perSecond =
-        switch (unit) {
-          case SECOND -> 1;
-          case MILLISECOND -> 1000;
-          case MICROSECOND -> 1_000_000;
-          case NANOSECOND -> 1_000_000_000;
-        };
+    long perSecond;
+    switch (unit) {
+      case SECOND:
+        perSecond = 1;
+        break;
+      case MILLISECOND:
+        perSecond = 1000;
+        break;
+      case MICROSECOND:
+        perSecond = 1_000_000;
+        break;
+      case NANOSECOND:
+        perSecond = 1_000_000_000;
+        break;
+      default:
+        throw new IncompatibleClassChangeError();
+    }
     long[] values =
         unit == TimeUnit.SECOND
             ? new long[] {Long.MIN_VALUE / 1000, -1, 0, 1, Long.MAX_VALUE / 1000}

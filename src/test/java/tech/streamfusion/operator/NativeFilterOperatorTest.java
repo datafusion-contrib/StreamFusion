@@ -10,8 +10,8 @@ import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
-import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.GenericArrayData;
+import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
@@ -22,7 +22,6 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 
 class NativeFilterOperatorTest {
-
   private static final RowType SCHEMA =
       RowType.of(new LogicalType[] {new BigIntType(), new IntType()}, new String[] {"k", "v"});
 
@@ -163,7 +162,9 @@ class NativeFilterOperatorTest {
           new StreamRecord<>(
               new ArrowBatch(RowDataArrowConverter.write(rows, inputType, allocator, withRowKind))));
       for (Object emitted : harness.getOutput()) {
-        if (emitted instanceof StreamRecord<?> record) {
+        if (emitted instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) emitted);
+
           try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
             result.addAll(RowDataArrowConverter.read(root, outputType));
           }

@@ -34,6 +34,7 @@ import org.apache.fluss.types.DataTypes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tech.streamfusion.Native;
+import tech.streamfusion.compat.ListCollectors;
 
 /** Isolates acknowledged append and broker fetch/decode from Flink and query execution. */
 @EnabledIfEnvironmentVariable(named = "SF_FLUSS_TRANSPORT_BENCH", matches = "true")
@@ -70,7 +71,7 @@ class FlussTransportBenchmark {
                             ? tech.streamfusion.arrow.TimestampAccessor.field(
                                 field.getName(), field.isNullable())
                             : field)
-                .toList());
+                .collect(ListCollectors.toList()));
     try (FlussTestCluster cluster = new FlussTestCluster()) {
       cluster.start();
       try (var connection = ConnectionFactory.createConnection(cluster.config());

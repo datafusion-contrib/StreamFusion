@@ -25,6 +25,7 @@ import org.apache.paimon.types.RowKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.RowDataArrowConverter;
@@ -95,7 +96,7 @@ class PaimonLocalMergeNativeTest {
               List<RowData> batch =
                   rows.subList(start, Math.min(start + 17, (run + 1) * 90)).stream()
                       .<RowData>map(FlinkRowData::new)
-                      .toList();
+                      .collect(ListCollectors.toList());
               harness.processElement(
                   new StreamRecord<>(
                       new ArrowBatch(RowDataArrowConverter.write(batch, type, allocator, true))));
@@ -151,7 +152,9 @@ class PaimonLocalMergeNativeTest {
               new StreamRecord<>(
                   new ArrowBatch(
                       RowDataArrowConverter.write(
-                          rows.stream().<RowData>map(FlinkRowData::new).toList(),
+                          rows.stream()
+                              .<RowData>map(FlinkRowData::new)
+                              .collect(ListCollectors.toList()),
                           type,
                           allocator,
                           true))));

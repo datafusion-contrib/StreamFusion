@@ -98,8 +98,10 @@ class FlinkDynamicCollectionSqlHarnessTest {
     for (String function : List.of("MAP_KEYS", "MAP_VALUES")) {
       NativeParity.assertFallbackReasonContains(() -> typedMaps("STRING", true),
           "SELECT id, " + function + "(m) FROM src", "unsupported function/operator: " + function);
-      NativeParity.assertFallbackReasonContains(FlinkDynamicCollectionSqlHarnessTest::collections,
-          "SELECT id, " + function + "(grouped) FROM src", "unsupported function/operator: " + function);
+      NativeParity.assertFallbackReasonContains(
+          FlinkDynamicCollectionSqlHarnessTest::collections,
+          "SELECT id, " + function + "(grouped) FROM src",
+          "unsupported function/operator: " + function);
     }
   }
 
@@ -209,7 +211,9 @@ class FlinkDynamicCollectionSqlHarnessTest {
 
   private static Object normalize(Object value) {
     if (value == null) return null;
-    if (value instanceof Row row) {
+    if (value instanceof Row) {
+      Row row = ((Row) value);
+
       List<Object> fields = new ArrayList<>();
       for (int i = 0; i < row.getArity(); i++) fields.add(normalize(row.getField(i)));
       return fields;
@@ -219,7 +223,9 @@ class FlinkDynamicCollectionSqlHarnessTest {
       for (int i = 0; i < Array.getLength(value); i++) items.add(normalize(Array.get(value, i)));
       return items;
     }
-    if (value instanceof Map<?, ?> map) {
+    if (value instanceof Map<?, ?>) {
+      Map<?, ?> map = ((Map<?, ?>) value);
+
       List<Object> entries = new ArrayList<>();
       map.forEach((k, v) -> entries.add(Arrays.asList(normalize(k), normalize(v))));
       entries.sort(Comparator.comparing(Object::toString));
@@ -290,7 +296,69 @@ class FlinkDynamicCollectionSqlHarnessTest {
     return table;
   }
 
-  private record KeySpec(TypeInformation<?> info, DataType type, Object present, Object missing) {}
+  private static final class KeySpec {
+    private final TypeInformation<?> info;
+    private final DataType type;
+    private final Object present;
+    private final Object missing;
+
+    private KeySpec(TypeInformation<?> info, DataType type, Object present, Object missing) {
+      this.info = info;
+      this.type = type;
+      this.present = present;
+      this.missing = missing;
+    }
+
+    public TypeInformation<?> info() {
+      return info;
+    }
+
+    public DataType type() {
+      return type;
+    }
+
+    public Object present() {
+      return present;
+    }
+
+    public Object missing() {
+      return missing;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      KeySpec that = (KeySpec) other;
+      return java.util.Objects.equals(info, that.info)
+          && java.util.Objects.equals(type, that.type)
+          && java.util.Objects.equals(present, that.present)
+          && java.util.Objects.equals(missing, that.missing);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(info);
+      result = 31 * result + java.util.Objects.hashCode(type);
+      result = 31 * result + java.util.Objects.hashCode(present);
+      result = 31 * result + java.util.Objects.hashCode(missing);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "KeySpec[info="
+          + info
+          + ", type="
+          + type
+          + ", present="
+          + present
+          + ", missing="
+          + missing
+          + "]";
+    }
+  }
 
   private static TableEnvironment mixedKeyTypes(String kind) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -330,68 +398,73 @@ class FlinkDynamicCollectionSqlHarnessTest {
   }
 
   private static KeySpec keySpec(String kind) {
-    return switch (kind) {
-      case "DECIMAL18" ->
-          new KeySpec(
-              Types.BIG_DEC,
-              DataTypes.DECIMAL(18, 2),
-              new BigDecimal("123456789.12"),
-              new BigDecimal("-0.01"));
-      case "TIMESTAMP3" ->
-          new KeySpec(
-              Types.LOCAL_DATE_TIME,
-              DataTypes.TIMESTAMP(3),
-              LocalDateTime.parse("0001-01-01T00:00:00.123"),
-              LocalDateTime.parse("9999-12-31T23:59:59.999"));
-      case "TIMESTAMP_LTZ3" ->
-          new KeySpec(
-              Types.INSTANT,
-              DataTypes.TIMESTAMP_LTZ(3),
-              Instant.parse("1969-12-31T23:59:59.999Z"),
-              Instant.parse("2000-01-01T00:00:00Z"));
-      case "STRING" -> new KeySpec(Types.STRING, DataTypes.STRING(), "a", "missing");
-      case "TINYINT" ->
-          new KeySpec(Types.BYTE, DataTypes.TINYINT(), Byte.MIN_VALUE, Byte.MAX_VALUE);
-      case "SMALLINT" ->
-          new KeySpec(Types.SHORT, DataTypes.SMALLINT(), Short.MIN_VALUE, Short.MAX_VALUE);
-      case "INT" -> new KeySpec(Types.INT, DataTypes.INT(), Integer.MIN_VALUE, Integer.MAX_VALUE);
-      case "BIGINT" -> new KeySpec(Types.LONG, DataTypes.BIGINT(), Long.MIN_VALUE, Long.MAX_VALUE);
-      case "DECIMAL" ->
-          new KeySpec(
-              Types.BIG_DEC,
-              DataTypes.DECIMAL(38, 9),
-              new BigDecimal("12345678901234567890.123456789"),
-              new BigDecimal("-1.000000001"));
-      case "TIMESTAMP" ->
-          new KeySpec(
-              Types.LOCAL_DATE_TIME,
-              DataTypes.TIMESTAMP(9),
-              LocalDateTime.parse("0001-01-01T00:00:00.123456789"),
-              LocalDateTime.parse("9999-12-31T23:59:59.999999999"));
-      case "TIMESTAMP_LTZ" ->
-          new KeySpec(
-              Types.INSTANT,
-              DataTypes.TIMESTAMP_LTZ(9),
-              Instant.parse("1969-12-31T23:59:59.999999999Z"),
-              Instant.parse("2000-01-01T00:00:00Z"));
-      case "DATE" ->
-          new KeySpec(
-              Types.LOCAL_DATE,
-              DataTypes.DATE(),
-              LocalDate.of(1969, 12, 31),
-              LocalDate.of(2026, 1, 1));
-      case "TIME" ->
-          new KeySpec(
-              Types.LOCAL_TIME, DataTypes.TIME(3), LocalTime.of(1, 2, 3), LocalTime.of(23, 59, 59));
-      case "BOOLEAN" -> new KeySpec(Types.BOOLEAN, DataTypes.BOOLEAN(), false, true);
-      case "VARBINARY" ->
-          new KeySpec(
-              Types.PRIMITIVE_ARRAY(Types.BYTE),
-              DataTypes.BYTES(),
-              new byte[] {0, -1, 5},
-              new byte[] {5});
-      default -> throw new IllegalArgumentException(kind);
-    };
+    switch (kind) {
+      case "DECIMAL18":
+        return new KeySpec(
+            Types.BIG_DEC,
+            DataTypes.DECIMAL(18, 2),
+            new BigDecimal("123456789.12"),
+            new BigDecimal("-0.01"));
+      case "TIMESTAMP3":
+        return new KeySpec(
+            Types.LOCAL_DATE_TIME,
+            DataTypes.TIMESTAMP(3),
+            LocalDateTime.parse("0001-01-01T00:00:00.123"),
+            LocalDateTime.parse("9999-12-31T23:59:59.999"));
+      case "TIMESTAMP_LTZ3":
+        return new KeySpec(
+            Types.INSTANT,
+            DataTypes.TIMESTAMP_LTZ(3),
+            Instant.parse("1969-12-31T23:59:59.999Z"),
+            Instant.parse("2000-01-01T00:00:00Z"));
+      case "STRING":
+        return new KeySpec(Types.STRING, DataTypes.STRING(), "a", "missing");
+      case "TINYINT":
+        return new KeySpec(Types.BYTE, DataTypes.TINYINT(), Byte.MIN_VALUE, Byte.MAX_VALUE);
+      case "SMALLINT":
+        return new KeySpec(Types.SHORT, DataTypes.SMALLINT(), Short.MIN_VALUE, Short.MAX_VALUE);
+      case "INT":
+        return new KeySpec(Types.INT, DataTypes.INT(), Integer.MIN_VALUE, Integer.MAX_VALUE);
+      case "BIGINT":
+        return new KeySpec(Types.LONG, DataTypes.BIGINT(), Long.MIN_VALUE, Long.MAX_VALUE);
+      case "DECIMAL":
+        return new KeySpec(
+            Types.BIG_DEC,
+            DataTypes.DECIMAL(38, 9),
+            new BigDecimal("12345678901234567890.123456789"),
+            new BigDecimal("-1.000000001"));
+      case "TIMESTAMP":
+        return new KeySpec(
+            Types.LOCAL_DATE_TIME,
+            DataTypes.TIMESTAMP(9),
+            LocalDateTime.parse("0001-01-01T00:00:00.123456789"),
+            LocalDateTime.parse("9999-12-31T23:59:59.999999999"));
+      case "TIMESTAMP_LTZ":
+        return new KeySpec(
+            Types.INSTANT,
+            DataTypes.TIMESTAMP_LTZ(9),
+            Instant.parse("1969-12-31T23:59:59.999999999Z"),
+            Instant.parse("2000-01-01T00:00:00Z"));
+      case "DATE":
+        return new KeySpec(
+            Types.LOCAL_DATE,
+            DataTypes.DATE(),
+            LocalDate.of(1969, 12, 31),
+            LocalDate.of(2026, 1, 1));
+      case "TIME":
+        return new KeySpec(
+            Types.LOCAL_TIME, DataTypes.TIME(3), LocalTime.of(1, 2, 3), LocalTime.of(23, 59, 59));
+      case "BOOLEAN":
+        return new KeySpec(Types.BOOLEAN, DataTypes.BOOLEAN(), false, true);
+      case "VARBINARY":
+        return new KeySpec(
+            Types.PRIMITIVE_ARRAY(Types.BYTE),
+            DataTypes.BYTES(),
+            new byte[] {0, -1, 5},
+            new byte[] {5});
+      default:
+        throw new IllegalArgumentException(kind);
+    }
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -497,20 +570,36 @@ class FlinkDynamicCollectionSqlHarnessTest {
   }
 
   private static Object defaultKey(String kind) {
-    return switch (kind) {
-      case "STRING" -> "";
-      case "TINYINT" -> (byte) 0;
-      case "SMALLINT" -> (short) 0;
-      case "INT" -> 0;
-      case "BIGINT" -> 0L;
-      case "DECIMAL", "DECIMAL18" -> new BigDecimal("0.000000000");
-      case "TIMESTAMP", "TIMESTAMP3" -> LocalDateTime.parse("1970-01-01T00:00:00");
-      case "TIMESTAMP_LTZ", "TIMESTAMP_LTZ3" -> Instant.EPOCH;
-      case "DATE" -> LocalDate.of(1970, 1, 1);
-      case "TIME" -> LocalTime.MIDNIGHT;
-      case "BOOLEAN" -> false;
-      case "VARBINARY" -> new byte[0];
-      default -> throw new IllegalArgumentException(kind);
-    };
+    switch (kind) {
+      case "STRING":
+        return "";
+      case "TINYINT":
+        return (byte) 0;
+      case "SMALLINT":
+        return (short) 0;
+      case "INT":
+        return 0;
+      case "BIGINT":
+        return 0L;
+      case "DECIMAL":
+      case "DECIMAL18":
+        return new BigDecimal("0.000000000");
+      case "TIMESTAMP":
+      case "TIMESTAMP3":
+        return LocalDateTime.parse("1970-01-01T00:00:00");
+      case "TIMESTAMP_LTZ":
+      case "TIMESTAMP_LTZ3":
+        return Instant.EPOCH;
+      case "DATE":
+        return LocalDate.of(1970, 1, 1);
+      case "TIME":
+        return LocalTime.MIDNIGHT;
+      case "BOOLEAN":
+        return false;
+      case "VARBINARY":
+        return new byte[0];
+      default:
+        throw new IllegalArgumentException(kind);
+    }
   }
 }

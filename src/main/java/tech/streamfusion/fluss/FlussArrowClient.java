@@ -60,10 +60,47 @@ public final class FlussArrowClient implements AutoCloseable {
         || FlussDirectReceive.supported();
   }
 
-  public record Fetched(VectorSchemaRoot root, long nextOffset) implements AutoCloseable {
+  public static final class Fetched implements AutoCloseable {
+    private final VectorSchemaRoot root;
+    private final long nextOffset;
+
+    public Fetched(VectorSchemaRoot root, long nextOffset) {
+      this.root = root;
+      this.nextOffset = nextOffset;
+    }
+
+    public VectorSchemaRoot root() {
+      return root;
+    }
+
+    public long nextOffset() {
+      return nextOffset;
+    }
+
     @Override
     public void close() {
       if (root != null) root.close();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      Fetched that = (Fetched) other;
+      return java.util.Objects.equals(root, that.root) && nextOffset == that.nextOffset;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(root);
+      result = 31 * result + Long.hashCode(nextOffset);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "Fetched[root=" + root + ", nextOffset=" + nextOffset + "]";
     }
   }
 
@@ -104,8 +141,60 @@ public final class FlussArrowClient implements AutoCloseable {
   private long queuedBytes;
   private volatile boolean closed;
 
-  private record PendingAppend(
-      CompletableFuture<Void> future, int bytes, TaskOffHeapMemory.Reservation reservation) {}
+  private static final class PendingAppend {
+    private final CompletableFuture<Void> future;
+    private final int bytes;
+    private final TaskOffHeapMemory.Reservation reservation;
+
+    private PendingAppend(
+        CompletableFuture<Void> future, int bytes, TaskOffHeapMemory.Reservation reservation) {
+      this.future = future;
+      this.bytes = bytes;
+      this.reservation = reservation;
+    }
+
+    public CompletableFuture<Void> future() {
+      return future;
+    }
+
+    public int bytes() {
+      return bytes;
+    }
+
+    public TaskOffHeapMemory.Reservation reservation() {
+      return reservation;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      PendingAppend that = (PendingAppend) other;
+      return java.util.Objects.equals(future, that.future)
+          && bytes == that.bytes
+          && java.util.Objects.equals(reservation, that.reservation);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(future);
+      result = 31 * result + bytes;
+      result = 31 * result + java.util.Objects.hashCode(reservation);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "PendingAppend[future="
+          + future
+          + ", bytes="
+          + bytes
+          + ", reservation="
+          + reservation
+          + "]";
+    }
+  }
 
   private static final class AppendGroup {
     // Released Fluss 1.0 retains five batches per writer for retry deduplication.
@@ -142,14 +231,106 @@ public final class FlussArrowClient implements AutoCloseable {
     }
   }
 
-  public record TransportProfile(
-      long fetchRpcNanos,
-      long decodeNanos,
-      long encodeNanos,
-      long produceRpcNanos,
-      long produceRequests,
-      long receivedRecordBytes,
-      long borrowedRecordBytes) {}
+  public static final class TransportProfile {
+    private final long fetchRpcNanos;
+    private final long decodeNanos;
+    private final long encodeNanos;
+    private final long produceRpcNanos;
+    private final long produceRequests;
+    private final long receivedRecordBytes;
+    private final long borrowedRecordBytes;
+
+    public TransportProfile(
+        long fetchRpcNanos,
+        long decodeNanos,
+        long encodeNanos,
+        long produceRpcNanos,
+        long produceRequests,
+        long receivedRecordBytes,
+        long borrowedRecordBytes) {
+      this.fetchRpcNanos = fetchRpcNanos;
+      this.decodeNanos = decodeNanos;
+      this.encodeNanos = encodeNanos;
+      this.produceRpcNanos = produceRpcNanos;
+      this.produceRequests = produceRequests;
+      this.receivedRecordBytes = receivedRecordBytes;
+      this.borrowedRecordBytes = borrowedRecordBytes;
+    }
+
+    public long fetchRpcNanos() {
+      return fetchRpcNanos;
+    }
+
+    public long decodeNanos() {
+      return decodeNanos;
+    }
+
+    public long encodeNanos() {
+      return encodeNanos;
+    }
+
+    public long produceRpcNanos() {
+      return produceRpcNanos;
+    }
+
+    public long produceRequests() {
+      return produceRequests;
+    }
+
+    public long receivedRecordBytes() {
+      return receivedRecordBytes;
+    }
+
+    public long borrowedRecordBytes() {
+      return borrowedRecordBytes;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      TransportProfile that = (TransportProfile) other;
+      return fetchRpcNanos == that.fetchRpcNanos
+          && decodeNanos == that.decodeNanos
+          && encodeNanos == that.encodeNanos
+          && produceRpcNanos == that.produceRpcNanos
+          && produceRequests == that.produceRequests
+          && receivedRecordBytes == that.receivedRecordBytes
+          && borrowedRecordBytes == that.borrowedRecordBytes;
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + Long.hashCode(fetchRpcNanos);
+      result = 31 * result + Long.hashCode(decodeNanos);
+      result = 31 * result + Long.hashCode(encodeNanos);
+      result = 31 * result + Long.hashCode(produceRpcNanos);
+      result = 31 * result + Long.hashCode(produceRequests);
+      result = 31 * result + Long.hashCode(receivedRecordBytes);
+      result = 31 * result + Long.hashCode(borrowedRecordBytes);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "TransportProfile[fetchRpcNanos="
+          + fetchRpcNanos
+          + ", decodeNanos="
+          + decodeNanos
+          + ", encodeNanos="
+          + encodeNanos
+          + ", produceRpcNanos="
+          + produceRpcNanos
+          + ", produceRequests="
+          + produceRequests
+          + ", receivedRecordBytes="
+          + receivedRecordBytes
+          + ", borrowedRecordBytes="
+          + borrowedRecordBytes
+          + "]";
+    }
+  }
 
   public TransportProfile transportProfile() {
     return new TransportProfile(
@@ -204,10 +385,16 @@ public final class FlussArrowClient implements AutoCloseable {
               .map(
                   i -> {
                     var type = table.getRowType().getTypeAt(i);
-                    if (type instanceof org.apache.fluss.types.TimestampType t)
+                    if (type instanceof org.apache.fluss.types.TimestampType) {
+                      org.apache.fluss.types.TimestampType t =
+                          ((org.apache.fluss.types.TimestampType) type);
                       return t.getPrecision();
-                    if (type instanceof org.apache.fluss.types.LocalZonedTimestampType t)
+                    }
+                    if (type instanceof org.apache.fluss.types.LocalZonedTimestampType) {
+                      org.apache.fluss.types.LocalZonedTimestampType t =
+                          ((org.apache.fluss.types.LocalZonedTimestampType) type);
                       return t.getPrecision();
+                    }
                     return 0;
                   })
               .toArray();
@@ -654,14 +841,20 @@ public final class FlussArrowClient implements AutoCloseable {
     try (VectorSchemaRoot wire =
         FlussArrowSchema.forAppend(input, schemas.get(table.getSchemaId()), allocator)) {
       var compression = table.getTableConfig().getArrowCompressionInfo();
-      var codecType =
-          switch (compression.getCompressionType()) {
-            case NONE ->
-                org.apache.arrow.vector.compression.CompressionUtil.CodecType.NO_COMPRESSION;
-            case LZ4_FRAME ->
-                org.apache.arrow.vector.compression.CompressionUtil.CodecType.LZ4_FRAME;
-            case ZSTD -> org.apache.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
-          };
+      org.apache.arrow.vector.compression.CompressionUtil.CodecType codecType;
+      switch (compression.getCompressionType()) {
+        case NONE:
+          codecType = org.apache.arrow.vector.compression.CompressionUtil.CodecType.NO_COMPRESSION;
+          break;
+        case LZ4_FRAME:
+          codecType = org.apache.arrow.vector.compression.CompressionUtil.CodecType.LZ4_FRAME;
+          break;
+        case ZSTD:
+          codecType = org.apache.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
+          break;
+        default:
+          throw new IncompatibleClassChangeError();
+      }
       var codec =
           FlussArrowCompression.INSTANCE.createCodec(codecType, compression.getCompressionLevel());
       byte[] stats = null;
@@ -893,14 +1086,21 @@ public final class FlussArrowClient implements AutoCloseable {
       // The shared transport can outlive this reader; release a reply arriving after cancellation.
       future.thenAccept(
           reply -> {
-            if (reply instanceof ApiMessage message
-                && message.isLazilyParsed()
-                && message.getParsedByteBuf() != null) message.getParsedByteBuf().release();
+            if (reply instanceof ApiMessage
+                && ((ApiMessage) reply).isLazilyParsed()
+                && ((ApiMessage) reply).getParsedByteBuf() != null) {
+              ApiMessage message = ((ApiMessage) reply);
+              message.getParsedByteBuf().release();
+            }
           });
       Thread.currentThread().interrupt();
       throw new IOException(failure);
     } catch (ExecutionException failure) {
-      if (failure.getCause() instanceof RuntimeException runtime) throw runtime;
+      Object runtimeCandidate;
+      if ((runtimeCandidate = failure.getCause()) instanceof RuntimeException) {
+        RuntimeException runtime = ((RuntimeException) runtimeCandidate);
+        throw runtime;
+      }
       throw new IOException(failure.getCause());
     }
   }

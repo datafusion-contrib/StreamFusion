@@ -65,7 +65,6 @@ import org.apache.paimon.utils.InternalRowUtils;
  * forms, so a natively written table can be compared with a twin Paimon wrote itself.
  */
 final class PaimonTestTables {
-
   private PaimonTestTables() {}
 
   static String fileFormat() {
@@ -385,7 +384,9 @@ final class PaimonTestTables {
       return "null";
     }
     switch (type.getTypeRoot()) {
-      case ARRAY -> {
+      case ARRAY:
+        {
+          {
         InternalArray array = (InternalArray) value;
         DataType element = ((org.apache.paimon.types.ArrayType) type).getElementType();
         List<String> items = new ArrayList<>();
@@ -394,7 +395,10 @@ final class PaimonTestTables {
         }
         return "[" + String.join(",", items) + "]";
       }
-      case MAP -> {
+        }
+      case MAP:
+        {
+          {
         InternalMap map = (InternalMap) value;
         org.apache.paimon.types.MapType mapType = (org.apache.paimon.types.MapType) type;
         List<String> entries = new ArrayList<>();
@@ -410,18 +414,33 @@ final class PaimonTestTables {
         }
         return "{" + entries.stream().sorted().collect(Collectors.joining(",")) + "}";
       }
-      case ROW -> {
+        }
+      case ROW:
+        {
+          {
         return "(" + render((InternalRow) value, (org.apache.paimon.types.RowType) type) + ")";
       }
-      case BINARY, VARBINARY -> {
+        }
+      case BINARY:
+      case VARBINARY:
+        {
+          {
         return Arrays.toString((byte[]) value);
       }
-      case FLOAT, DOUBLE -> {
+        }
+      case FLOAT:
+      case DOUBLE:
+        {
+          {
         return Double.toString(withoutSignedZero(((Number) value).doubleValue()));
       }
-      default -> {
+        }
+      default:
+        {
+          {
         return value.toString();
       }
+        }
     }
   }
 

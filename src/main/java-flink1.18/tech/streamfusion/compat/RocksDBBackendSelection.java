@@ -33,7 +33,10 @@ final class RocksDBBackendSelection {
             .getName()
             .equals("org.apache.flink.contrib.streaming.state.RocksDBStateBackend")) return null;
     Configuration config = new Configuration();
-    if (tableConfig instanceof TableConfig table) config.addAll(table.getConfiguration());
+    if (tableConfig instanceof TableConfig) {
+      TableConfig table = ((TableConfig) tableConfig);
+      config.addAll(table.getConfiguration());
+    }
     config.addAll((Configuration) environment.getConfiguration());
     if (original == null) {
       String configured = config.get(StateBackendOptions.STATE_BACKEND);
@@ -50,7 +53,9 @@ final class RocksDBBackendSelection {
       CheckpointStorage storage = null;
       StateBackend delegate;
       EmbeddedRocksDBStateBackend rocks;
-      if (original instanceof RocksDBStateBackend legacy) {
+      if (original instanceof RocksDBStateBackend) {
+        RocksDBStateBackend legacy = ((RocksDBStateBackend) original);
+
         RocksDBStateBackend configured = legacy.configure(config, loader);
         delegate = configured;
         storage = (CheckpointStorage) configured.getCheckpointBackend();

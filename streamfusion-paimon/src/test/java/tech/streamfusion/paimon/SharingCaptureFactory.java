@@ -9,6 +9,7 @@ import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.factories.DynamicTableSinkFactory;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.compat.RichSinkFunction;
 import tech.streamfusion.compat.SinkFunctionProvider;
 
@@ -21,7 +22,7 @@ public class SharingCaptureFactory implements DynamicTableSinkFactory {
   }
 
   static synchronized List<String> rows() {
-    return ROWS.stream().sorted().toList();
+    return ROWS.stream().sorted().collect(ListCollectors.toList());
   }
 
   static synchronized void awaitSize(int count) throws InterruptedException {
@@ -53,7 +54,17 @@ public class SharingCaptureFactory implements DynamicTableSinkFactory {
     return new CaptureSink(context.getObjectIdentifier().getObjectName());
   }
 
-  private record CaptureSink(String name) implements DynamicTableSink {
+  private static final class CaptureSink implements DynamicTableSink {
+    private final String name;
+
+    private CaptureSink(String name) {
+      this.name = name;
+    }
+
+    public String name() {
+      return name;
+    }
+
     @Override
     public ChangelogMode getChangelogMode(ChangelogMode requested) {
       return requested;
@@ -72,6 +83,26 @@ public class SharingCaptureFactory implements DynamicTableSinkFactory {
     @Override
     public String asSummaryString() {
       return name;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (other == null || getClass() != other.getClass()) return false;
+      CaptureSink that = (CaptureSink) other;
+      return java.util.Objects.equals(name, that.name);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = 0;
+      result = 31 * result + java.util.Objects.hashCode(name);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "CaptureSink[name=" + name + "]";
     }
   }
 

@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSerializer;
 import tech.streamfusion.operator.CoalescingOff;
@@ -82,7 +83,6 @@ import tech.streamfusion.operator.TaskOffHeapMemory;
  */
 @ExtendWith(CoalescingOff.class)
 class RocksDBNativeStateBackendAllOperatorsTest {
-
   private static final int MAX_PARALLELISM = 128;
 
   @BeforeAll
@@ -144,7 +144,9 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       List<List<Long>> actual = new ArrayList<>();
       while (!harness.getOutput().isEmpty()) {
         Object event = harness.getOutput().poll();
-        if (event instanceof StreamRecord<?> record) {
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
+
           try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
             for (RowData row : RowDataArrowConverter.read(root, WINDOW_OUTPUT)) {
               actual.add(
@@ -212,7 +214,9 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       int partialRows = 0;
       while (!local.getOutput().isEmpty()) {
         Object event = local.getOutput().poll();
-        if (event instanceof StreamRecord<?> record) {
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
+
           ArrowBatch batch = (ArrowBatch) record.getValue();
           partialRows += batch.rowCount();
           global.processElement(new StreamRecord<>(batch));
@@ -262,7 +266,9 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       List<List<Object>> actual = new ArrayList<>();
       while (!harness.getOutput().isEmpty()) {
         Object event = harness.getOutput().poll();
-        if (event instanceof StreamRecord<?> record) {
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
+
           try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
             for (RowData row : RowDataArrowConverter.read(root, MIXED_WINDOW_OUTPUT)) {
               actual.add(List.of(row.getLong(0), row.getLong(1), row.getLong(2),
@@ -314,7 +320,9 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       int partialRows = 0;
       while (!local.getOutput().isEmpty()) {
         Object event = local.getOutput().poll();
-        if (event instanceof StreamRecord<?> record) {
+        if (event instanceof StreamRecord<?>) {
+          StreamRecord<?> record = ((StreamRecord<?>) event);
+
           ArrowBatch batch = (ArrowBatch) record.getValue();
           partialRows += batch.rowCount();
           global.processElement(new StreamRecord<>(batch));
@@ -1710,11 +1718,14 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       harness.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
           List.of(GenericRowData.of(9L, 10L), GenericRowData.of(9L, 20L),
               GenericRowData.of(9L, 30L), GenericRowData.of(9L, 5L)), TOPN_ROW, allocator))));
-      assertEquals(List.of(
-          List.of(RowKind.INSERT, 9L, 20L), List.of(RowKind.INSERT, 9L, 30L),
-          List.of(RowKind.UPDATE_BEFORE, 9L, 20L), List.of(RowKind.UPDATE_AFTER, 9L, 10L),
-          List.of(RowKind.UPDATE_BEFORE, 9L, 30L), List.of(RowKind.UPDATE_AFTER, 9L, 20L))
-              .stream().filter(row -> generateUpdateBefore || row.get(0) != RowKind.UPDATE_BEFORE).toList(),
+      assertEquals(
+          List.of(
+                  List.of(RowKind.INSERT, 9L, 20L), List.of(RowKind.INSERT, 9L, 30L),
+                  List.of(RowKind.UPDATE_BEFORE, 9L, 20L), List.of(RowKind.UPDATE_AFTER, 9L, 10L),
+                  List.of(RowKind.UPDATE_BEFORE, 9L, 30L), List.of(RowKind.UPDATE_AFTER, 9L, 20L))
+              .stream()
+              .filter(row -> generateUpdateBefore || row.get(0) != RowKind.UPDATE_BEFORE)
+              .collect(ListCollectors.toList()),
           collectDedupless(harness));
       // Emission changed row 10 to +U. Its retraction misses but removes its sort-key count.
       harness.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
@@ -1730,10 +1741,13 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       harness.open();
       harness.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
           List.of(GenericRowData.of(9L, 15L)), TOPN_ROW, allocator))));
-      assertEquals(List.of(
-          List.of(RowKind.UPDATE_BEFORE, 9L, 20L), List.of(RowKind.UPDATE_AFTER, 9L, 15L),
-          List.of(RowKind.UPDATE_BEFORE, 9L, 30L), List.of(RowKind.UPDATE_AFTER, 9L, 20L))
-              .stream().filter(row -> generateUpdateBefore || row.get(0) != RowKind.UPDATE_BEFORE).toList(),
+      assertEquals(
+          List.of(
+                  List.of(RowKind.UPDATE_BEFORE, 9L, 20L), List.of(RowKind.UPDATE_AFTER, 9L, 15L),
+                  List.of(RowKind.UPDATE_BEFORE, 9L, 30L), List.of(RowKind.UPDATE_AFTER, 9L, 20L))
+              .stream()
+              .filter(row -> generateUpdateBefore || row.get(0) != RowKind.UPDATE_BEFORE)
+              .collect(ListCollectors.toList()),
           collectDedupless(harness));
       // Row 20 must still retain +U after recovery and the following cascade.
       harness.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
@@ -2356,7 +2370,9 @@ class RocksDBNativeStateBackendAllOperatorsTest {
     List<List<Object>> rows = new ArrayList<>();
     while (!harness.getOutput().isEmpty()) {
       Object event = harness.getOutput().poll();
-      if (event instanceof StreamRecord<?> record) {
+      if (event instanceof StreamRecord<?>) {
+        StreamRecord<?> record = ((StreamRecord<?>) event);
+
         try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
           for (RowData row : RowDataArrowConverter.read(root, INPUT)) {
             assertTrue(row.isNullAt(0));

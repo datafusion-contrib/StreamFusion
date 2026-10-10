@@ -9,8 +9,8 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
-import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.api.watermark.Watermark;
+import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
@@ -18,9 +18,9 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 
 class OrderedKeyGroupReassemblerTest {
-
   private static final RowType SCHEMA =
       RowType.of(new LogicalType[] {new BigIntType()}, new String[] {"v"});
 
@@ -73,7 +73,9 @@ class OrderedKeyGroupReassemblerTest {
       restored.open();
       restored.processElement(
           new StreamRecord<>(fragment(allocator, 9, new long[] {1, 3}, new int[] {1, 3})));
-      assertEquals(List.of(0L, 1L, 2L, 3L), values(restored).stream().sorted().toList());
+      assertEquals(
+          List.of(0L, 1L, 2L, 3L),
+          values(restored).stream().sorted().collect(ListCollectors.toList()));
     }
   }
 
@@ -109,7 +111,8 @@ class OrderedKeyGroupReassemblerTest {
     try (OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> restored = harness()) {
       restored.initializeState(snapshot);
       restored.open();
-      assertEquals(1, restored.getOutput().size(), "restore must not overtake replayed channel data");
+      assertEquals(
+          1, restored.getOutput().size(), "restore must not overtake replayed channel data");
       restored.processWatermark(new Watermark(50));
       assertEquals(2, restored.getOutput().size());
       Watermark watermark =

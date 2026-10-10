@@ -23,9 +23,9 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.compat.ListCollectors;
 
 class KeyedUpsertBufferTest {
-
   private static final RowType SCHEMA =
       RowType.of(
           new LogicalType[] {new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH)},
@@ -81,7 +81,9 @@ class KeyedUpsertBufferTest {
       try (VectorSchemaRoot root = flushed.root) {
         assertEquals(
             List.of("_KEY_k", "_SEQUENCE_NUMBER", "_VALUE_KIND", "k", "v"),
-            root.getSchema().getFields().stream().map(f -> f.getName()).toList());
+            root.getSchema().getFields().stream()
+                .map(f -> f.getName())
+                .collect(ListCollectors.toList()));
         assertEquals(List.of(2L, 5L, 9L), longs(root, 0));
         assertEquals(List.of(14L, 12L, 13L), longs(root, 1));
         TinyIntVector kinds = (TinyIntVector) root.getVector(2);

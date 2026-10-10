@@ -16,7 +16,10 @@ coordinates for 2.2 remain unchanged. The `flink-1.18` development profile produ
 `streamfusion-*-flink1.18` coordinates and admits only Flink 1.18.1; release support remains gated
 by the outstanding validation in [#182](https://github.com/datafusion-contrib/StreamFusion/issues/182).
 See [Flink line compatibility](flink-compatibility.md) for build commands, dependency selections and
-known host differences. Builds and deployments require Java 17.
+known host differences. Builds and deployments support JDK 11 and JDK 17; all deployment artifacts target Java 11.
+Use the same JDK version on the client, JobManager and TaskManagers. The
+[Java compatibility matrix](flink-compatibility.md#java-compatibility) describes build checks
+and version-dependent runtime behavior.
 
 Images built by `bin/build-flink-image.sh` perform the same checks before starting a JobManager,
 TaskManager, standalone application or history server. The entrypoint checks the host ABI, the

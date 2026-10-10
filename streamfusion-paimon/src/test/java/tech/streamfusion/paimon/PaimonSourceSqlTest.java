@@ -19,6 +19,7 @@ import org.apache.paimon.table.FileStoreTableFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativePlanner;
 
 class PaimonSourceSqlTest {
@@ -52,7 +53,7 @@ class PaimonSourceSqlTest {
                         t
                             instanceof
                             org.apache.flink.streaming.api.transformations.SourceTransformation)
-                .toList();
+                .collect(ListCollectors.toList());
         assertEquals(1, sources.size());
         assertNotNull(sources.get(0).getUid());
         if (nativeSource) {
@@ -232,16 +233,22 @@ class PaimonSourceSqlTest {
   }
 
   private static Object sqlKey(int i, String type) {
-    return switch (type) {
-      case "DECIMAL(38, 2)" ->
-          org.apache.paimon.data.Decimal.fromBigDecimal(
-              java.math.BigDecimal.valueOf(i - 3, 2), 38, 2);
-      case "DATE" -> i - 3;
-      case "FLOAT" -> (float) i;
-      case "DOUBLE" -> (double) i;
-      case "TIMESTAMP(6)" -> org.apache.paimon.data.Timestamp.fromEpochMillis(-1, i * 1000);
-      case "VARBINARY(4)" -> new byte[] {(byte) (i + 125)};
-      default -> i;
-    };
+    switch (type) {
+      case "DECIMAL(38, 2)":
+        return org.apache.paimon.data.Decimal.fromBigDecimal(
+            java.math.BigDecimal.valueOf(i - 3, 2), 38, 2);
+      case "DATE":
+        return i - 3;
+      case "FLOAT":
+        return (float) i;
+      case "DOUBLE":
+        return (double) i;
+      case "TIMESTAMP(6)":
+        return org.apache.paimon.data.Timestamp.fromEpochMillis(-1, i * 1000);
+      case "VARBINARY(4)":
+        return new byte[] {(byte) (i + 125)};
+      default:
+        return i;
+    }
   }
 }

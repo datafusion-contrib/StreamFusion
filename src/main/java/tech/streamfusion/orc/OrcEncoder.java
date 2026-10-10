@@ -9,6 +9,7 @@ import java.util.stream.IntStream;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.format.ColumnarFileCodec;
 import tech.streamfusion.operator.NativeAllocator;
 
@@ -36,7 +37,10 @@ final class OrcEncoder implements ColumnarFileCodec.Encoder {
         IntStream.range(0, schema.getFields().size())
             .filter(c -> Arrays.stream(partitions).noneMatch(p -> p == c))
             .toArray();
-    var fields = Arrays.stream(projection).mapToObj(schema.getFields()::get).toList();
+    var fields =
+        Arrays.stream(projection)
+            .mapToObj(schema.getFields()::get)
+            .collect(ListCollectors.toList());
     var properties = new Properties();
     boolean legacyTimestampLtz = true;
     for (int i = 0; i < keys.length; i++) {

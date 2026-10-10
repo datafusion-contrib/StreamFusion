@@ -18,17 +18,15 @@
 
 package tech.streamfusion.arrow.writers;
 
+import org.apache.arrow.vector.complex.ListVector;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.data.ArrayData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.util.Preconditions;
 
-import org.apache.arrow.vector.complex.ListVector;
-
 /** {@link ArrowFieldWriter} for Array. */
 @Internal
 public abstract class ArrayWriter<T> extends ArrowFieldWriter<T> {
-
     public static ArrayWriter<RowData> forRow(
             ListVector listVector, ArrowFieldWriter<ArrayData> elementWriter) {
         return new ArrayWriterForRow(listVector, elementWriter);
@@ -57,7 +55,9 @@ public abstract class ArrayWriter<T> extends ArrowFieldWriter<T> {
         if (!isNullAt(in, ordinal)) {
             ((ListVector) getValueVector()).startNewValue(getCount());
             ArrayData array = readArray(in, ordinal);
-            if (elementWriter instanceof IntWriter.IntWriterForArray integers && array.size() > 1) {
+      if (elementWriter instanceof IntWriter.IntWriterForArray && array.size() > 1) {
+        IntWriter.IntWriterForArray integers = ((IntWriter.IntWriterForArray) elementWriter);
+
                 integers.writeArray(array);
             } else {
                 for (int i = 0; i < array.size(); i++) {
@@ -84,7 +84,6 @@ public abstract class ArrayWriter<T> extends ArrowFieldWriter<T> {
 
     /** {@link ArrayWriter} for {@link RowData} input. */
     public static final class ArrayWriterForRow extends ArrayWriter<RowData> {
-
         private ArrayWriterForRow(
                 ListVector listVector, ArrowFieldWriter<ArrayData> elementWriter) {
             super(listVector, elementWriter);
@@ -103,7 +102,6 @@ public abstract class ArrayWriter<T> extends ArrowFieldWriter<T> {
 
     /** {@link ArrayWriter} for {@link ArrayData} input. */
     public static final class ArrayWriterForArray extends ArrayWriter<ArrayData> {
-
         private ArrayWriterForArray(
                 ListVector listVector, ArrowFieldWriter<ArrayData> elementWriter) {
             super(listVector, elementWriter);

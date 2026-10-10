@@ -22,6 +22,7 @@ import org.apache.paimon.types.RowType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tech.streamfusion.compat.ListCollectors;
 
 /** Scalar edge values through actual native files and the released Java readers/statistics. */
 class PaimonValueTypesTest {
@@ -72,11 +73,15 @@ class PaimonValueTypesTest {
     add(
         result,
         DataTypes.CHAR(4),
-        Stream.of("a", "é😀", "x   ", "abcd").map(BinaryString::fromString).toList());
+        Stream.of("a", "é😀", "x   ", "abcd")
+            .map(BinaryString::fromString)
+            .collect(ListCollectors.toList()));
     add(
         result,
         DataTypes.VARCHAR(8),
-        Stream.of("", "é😀", "prefix ").map(BinaryString::fromString).toList());
+        Stream.of("", "é😀", "prefix ")
+            .map(BinaryString::fromString)
+            .collect(ListCollectors.toList()));
     add(result, DataTypes.BINARY(3), List.of(new byte[] {0, 0, 0}, new byte[] {-1, 0, 127}));
     add(
         result,

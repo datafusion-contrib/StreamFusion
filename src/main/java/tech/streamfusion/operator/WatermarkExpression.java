@@ -140,7 +140,9 @@ public final class WatermarkExpression implements Serializable {
   }
 
   static Values timestampValues(FieldVector input) {
-    if (input instanceof BigIntVector millis) {
+    if (input instanceof BigIntVector) {
+      BigIntVector millis = ((BigIntVector) input);
+
       return new Values() {
         @Override
         public boolean isNull(int row) {

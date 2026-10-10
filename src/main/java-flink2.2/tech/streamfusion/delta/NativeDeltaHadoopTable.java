@@ -107,8 +107,16 @@ public final class NativeDeltaHadoopTable extends HadoopTable {
       compression = "UNCOMPRESSED";
     }
     switch (compression) {
-      case "UNCOMPRESSED", "SNAPPY" -> {}
-      case "GZIP" -> {
+      case "UNCOMPRESSED":
+      case "SNAPPY":
+        {
+          {
+          }
+          break;
+        }
+      case "GZIP":
+        {
+          {
         String zlibLevel = configuration.get("zlib.compress.level");
         if (zlibLevel != null && !"DEFAULT_COMPRESSION".equalsIgnoreCase(zlibLevel)) {
           return EncoderConfig.fallback(
@@ -116,7 +124,11 @@ public final class NativeDeltaHadoopTable extends HadoopTable {
         }
         translated.put("compression.gzip.level", "6");
       }
-      case "ZSTD" -> {
+          break;
+        }
+      case "ZSTD":
+        {
+          {
         String workers = configuration.get("parquet.compression.codec.zstd.workers", "0").trim();
         if (!"0".equals(workers)) {
           return EncoderConfig.fallback("multithreaded ZSTD is not supported by the native writer");
@@ -132,10 +144,15 @@ public final class NativeDeltaHadoopTable extends HadoopTable {
         }
         translated.put("compression.zstd.level", level);
       }
-      default -> {
+          break;
+        }
+      default:
+        {
+          {
         return EncoderConfig.fallback(
             "Delta compression codec " + compression + " is not supported by the native writer");
       }
+        }
     }
     translated.put("compression", compression);
 
@@ -167,11 +184,20 @@ public final class NativeDeltaHadoopTable extends HadoopTable {
 
     String version = configuration.get("parquet.writer.version", "PARQUET_1_0");
     switch (version.toUpperCase(Locale.ROOT)) {
-      case "V1", "PARQUET_1_0" -> translated.put("writer.version", "1");
-      case "V2", "PARQUET_2_0" -> translated.put("writer.version", "2");
-      default -> {
+      case "V1":
+      case "PARQUET_1_0":
+        translated.put("writer.version", "1");
+        break;
+      case "V2":
+      case "PARQUET_2_0":
+        translated.put("writer.version", "2");
+        break;
+      default:
+        {
+          {
         return EncoderConfig.fallback("unsupported parquet.writer.version " + version);
       }
+        }
     }
     translated.put("timestamp.unit", "micros");
 
