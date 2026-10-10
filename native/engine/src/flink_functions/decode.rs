@@ -12,7 +12,11 @@ pub(crate) fn function() -> ScalarUDF {
     super::charset::function(true)
 }
 
-pub(super) fn decode(input: &ArrayRef, charset: Charset) -> Result<ArrayRef> {
+pub(super) fn decode(
+    input: &ArrayRef,
+    charset: Charset,
+    replace_reversed_bom: bool,
+) -> Result<ArrayRef> {
     let input = as_binary_array(input)?;
     if matches!(charset, Charset::Utf8) {
         if let Ok(strings) = StringArray::try_new(
@@ -33,7 +37,7 @@ pub(super) fn decode(input: &ArrayRef, charset: Charset) -> Result<ArrayRef> {
         text.clear();
         match charset {
             Charset::Utf16 | Charset::Utf16Be | Charset::Utf16Le => {
-                append_utf16(input.value(row), charset, &mut text);
+                append_utf16(input.value(row), charset, replace_reversed_bom, &mut text);
             }
             Charset::Utf8 => super::scalar::append_java_utf8(input.value(row), &mut text),
             Charset::Latin1 => text.extend(input.value(row).iter().map(|&byte| char::from(byte))),
@@ -51,7 +55,12 @@ pub(super) fn decode(input: &ArrayRef, charset: Charset) -> Result<ArrayRef> {
     Ok(Arc::new(output.finish()))
 }
 
-fn append_utf16(mut bytes: &[u8], charset: Charset, output: &mut String) {
+fn append_utf16(
+    mut bytes: &[u8],
+    charset: Charset,
+    replace_reversed_bom: bool,
+    output: &mut String,
+) {
     let little_endian = match charset {
         Charset::Utf16 if bytes.starts_with(&[0xff, 0xfe]) => {
             bytes = &bytes[2..];
@@ -88,6 +97,8 @@ fn append_utf16(mut bytes: &[u8], charset: Charset, output: &mut String) {
                 None
             };
             output.push(character.unwrap_or('\u{fffd}'));
+        } else if replace_reversed_bom && first == 0xfffe {
+            output.push('\u{fffd}');
         } else {
             output.push(char::from_u32(first as u32).unwrap_or('\u{fffd}'));
         }
@@ -101,6 +112,116 @@ fn append_utf16(mut bytes: &[u8], charset: Charset, output: &mut String) {
 mod tests {
     use super::*;
     use arrow::array::{BinaryArray, StringArray};
+    use arrow::datatypes::{DataType, Field};
+    use datafusion::common::ScalarValue;
+    use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs};
+
+    #[test]
+    fn utf16_runtime_profiles_preserve_bom_and_error_consumption() {
+        for (charset, bytes, modern, legacy) in [
+            (Charset::Utf16, &b"\xff\xfe"[..], "", ""),
+            (
+                Charset::Utf16,
+                &b"\xfe\xff\xff\xfe"[..],
+                "\u{fffe}",
+                "\u{fffd}",
+            ),
+            (
+                Charset::Utf16,
+                &b"\xff\xfe\xfe\xff"[..],
+                "\u{fffe}",
+                "\u{fffd}",
+            ),
+            (
+                Charset::Utf16Be,
+                &b"\xff\xfe\xfe\xff"[..],
+                "\u{fffe}\u{feff}",
+                "\u{fffd}\u{feff}",
+            ),
+            (
+                Charset::Utf16Le,
+                &b"\xfe\xff\xff\xfe"[..],
+                "\u{fffe}\u{feff}",
+                "\u{fffd}\u{feff}",
+            ),
+            (
+                Charset::Utf16Be,
+                &b"\x00a\xff\xfe\x00"[..],
+                "a\u{fffe}\u{fffd}",
+                "a\u{fffd}\u{fffd}",
+            ),
+            (
+                Charset::Utf16Be,
+                &b"\xd8\x00\xff\xfe"[..],
+                "\u{fffd}",
+                "\u{fffd}",
+            ),
+            (
+                Charset::Utf16Be,
+                &b"\xdc\x00\xff\xfe"[..],
+                "\u{fffd}\u{fffe}",
+                "\u{fffd}\u{fffd}",
+            ),
+            (
+                Charset::Utf16Be,
+                &b"\xd8\x3d\xde\x00\xff\xfe"[..],
+                "\u{1f600}\u{fffe}",
+                "\u{1f600}\u{fffd}",
+            ),
+        ] {
+            let input: ArrayRef = Arc::new(
+                BinaryArray::from(vec![Some(&b"skip"[..]), None, Some(bytes), Some(&b""[..])])
+                    .slice(1, 3),
+            );
+            for (replace, expected) in [(false, modern), (true, legacy)] {
+                let result = decode(&input, charset, replace).unwrap();
+                assert_eq!(
+                    as_string_array(&result).unwrap(),
+                    &StringArray::from(vec![None, Some(expected), Some("")])
+                );
+                result.to_data().validate_full().unwrap();
+                assert_eq!(
+                    decode(&input.slice(0, 0), charset, replace).unwrap().len(),
+                    0
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn decode_profile_is_a_non_null_literal_and_applies_to_scalars() {
+        let invoke = |profile: Option<ColumnarValue>| {
+            let mut args = vec![
+                ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![0xff, 0xfe]))),
+                ColumnarValue::Scalar(ScalarValue::Utf8(Some("UTF-16BE".into()))),
+            ];
+            args.extend(profile);
+            function().invoke_with_args(ScalarFunctionArgs {
+                args,
+                arg_fields: vec![],
+                number_rows: 1,
+                return_field: Arc::new(Field::new("out", DataType::Utf8, true)),
+                config_options: Arc::new(datafusion::common::config::ConfigOptions::new()),
+            })
+        };
+        for (profile, expected) in [
+            (None, "\u{fffe}"),
+            (Some(false), "\u{fffe}"),
+            (Some(true), "\u{fffd}"),
+        ] {
+            let result =
+                invoke(profile.map(|flag| ColumnarValue::Scalar(ScalarValue::Boolean(Some(flag)))))
+                    .unwrap();
+            assert!(
+                matches!(result, ColumnarValue::Scalar(ScalarValue::Utf8(Some(text))) if text == expected)
+            );
+        }
+        assert!(invoke(Some(ColumnarValue::Scalar(ScalarValue::Boolean(None)))).is_err());
+        assert!(invoke(Some(ColumnarValue::Array(Arc::new(
+            arrow::array::BooleanArray::from(vec![true])
+        ))))
+        .is_err());
+    }
 
     #[test]
     fn decode_keeps_jdk_malformed_sequence_grouping() {
@@ -109,7 +230,7 @@ mod tests {
             Some(&b"\xf0\x90\x80"[..]),
             None,
         ]));
-        let output = decode(&input, Charset::Utf8).unwrap();
+        let output = decode(&input, Charset::Utf8, false).unwrap();
         assert_eq!(
             as_string_array(&output).unwrap(),
             &StringArray::from(vec![Some("\u{fffd}"), Some("\u{fffd}"), None])
@@ -127,7 +248,7 @@ mod tests {
         let values = input.values().as_ptr();
         let offsets = input.offsets().as_ptr();
         let input: ArrayRef = Arc::new(input);
-        let output = decode(&input, Charset::Utf8).unwrap();
+        let output = decode(&input, Charset::Utf8, false).unwrap();
         let strings = as_string_array(&output).unwrap();
         assert_eq!(
             strings,
@@ -152,7 +273,7 @@ mod tests {
             (&b"\xfe\xff"[..], ""),
         ] {
             let mut output = String::new();
-            append_utf16(bytes, Charset::Utf16, &mut output);
+            append_utf16(bytes, Charset::Utf16, false, &mut output);
             assert_eq!(output, expected, "{bytes:02x?}");
         }
         for (charset, bytes) in [
@@ -163,7 +284,7 @@ mod tests {
                 BinaryArray::from(vec![Some(&b"skip"[..]), None, Some(bytes), Some(&b""[..])])
                     .slice(1, 3),
             );
-            let result = decode(&input, charset).unwrap();
+            let result = decode(&input, charset, false).unwrap();
             assert_eq!(
                 as_string_array(&result).unwrap(),
                 &StringArray::from(vec![None, Some("\u{feff}\u{fffd}"), Some("")])

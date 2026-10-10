@@ -37,6 +37,46 @@ class FlinkDecodeSqlHarnessTest {
   }
 
   @Test
+  void reversedBomMatchesRuntimeJdkInProjectionsAndFilters() throws Exception {
+    for (String charset : List.of("UTF-16", "UTF-16BE", "UTF-16LE")) {
+      String decoded = "DECODE(b, '" + charset + "')";
+      NativeParity.assertParity(
+          FlinkDecodeSqlHarnessTest::reversedBomBytes,
+          "SELECT id, HEX(" + decoded + "), CHAR_LENGTH(" + decoded + ") FROM inputs");
+      NativeParity.assertParity(
+          FlinkDecodeSqlHarnessTest::reversedBomBytes,
+          "SELECT id FROM inputs WHERE " + decoded + " = '\ufffd'");
+    }
+  }
+
+  private static TableEnvironment reversedBomBytes() {
+    List<Row> rows = new ArrayList<>();
+    rows.add(Row.of(0, null));
+    for (int[] units :
+        new int[][] {
+          {},
+          {0xfffe},
+          {0xfeff},
+          {0xfeff, 0xfffe},
+          {0xfffe, 0xfeff},
+          {0x61, 0xfffe},
+          {0xd800, 0xfffe},
+          {0xdc00, 0xfffe},
+          {0xd83d, 0xde00, 0xfffe}
+        }) {
+      for (boolean little : List.of(false, true)) {
+        byte[] bytes = new byte[units.length * 2];
+        for (int i = 0; i < units.length; i++) {
+          bytes[i * 2] = (byte) (units[i] >>> (little ? 0 : 8));
+          bytes[i * 2 + 1] = (byte) (units[i] >>> (little ? 8 : 0));
+        }
+        rows.add(Row.of(rows.size(), bytes));
+      }
+    }
+    return bytesTable(rows);
+  }
+
+  @Test
   void utf16RoundTripsAndPredicateComposition() throws Exception {
     NativeParity.assertParity(
         TextTimeFunctionTestInputs::strings,
@@ -71,6 +111,10 @@ class FlinkDecodeSqlHarnessTest {
       random.nextBytes(bytes);
       rows.add(Row.of(rows.size(), bytes));
     }
+    return bytesTable(rows);
+  }
+
+  private static TableEnvironment bytesTable(List<Row> rows) {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment tables = StreamTableEnvironment.create(env);

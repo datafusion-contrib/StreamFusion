@@ -18,7 +18,7 @@ public final class JsonRuntimeCompat {
     return version.getMajorVersion() == 2
         && version.getMinorVersion() == 14
         && version.getPatchLevel() == 2
-        && Runtime.version().feature() == 17
+        && (Runtime.version().feature() == 11 || Runtime.version().feature() == 17)
         && factory.isEnabled(JsonFactory.Feature.USE_THREAD_LOCAL_FOR_BUFFER_RECYCLING);
   }
 

@@ -8,6 +8,7 @@ readonly FLINK_TAG="release-${FLINK_VERSION}"
 case "${FLINK_VERSION}" in
   2.2.0|2.2.1)
     FLINK_LINE=2.2
+    FLINK_TARGET_PROFILE=java11-target
     STREAMFUSION_LINE_PROFILES=()
     STREAMFUSION_ARTIFACT_SUFFIX=""
     KAFKA_DEFAULT_VERSION=5.0.0
@@ -15,6 +16,7 @@ case "${FLINK_VERSION}" in
     ;;
   1.18.1)
     FLINK_LINE=1.18
+    FLINK_TARGET_PROFILE=""
     STREAMFUSION_LINE_PROFILES=(-Pflink-1.18)
     STREAMFUSION_ARTIFACT_SUFFIX=-flink1.18
     KAFKA_DEFAULT_VERSION=3.2.0
@@ -22,7 +24,7 @@ case "${FLINK_VERSION}" in
     ;;
   *) echo "Unsupported Flink suite version: ${FLINK_VERSION}" >&2; exit 2 ;;
 esac
-readonly FLINK_LINE STREAMFUSION_ARTIFACT_SUFFIX KAFKA_DEFAULT_VERSION PAIMON_FLINK_PROFILE
+readonly FLINK_LINE FLINK_TARGET_PROFILE STREAMFUSION_ARTIFACT_SUFFIX KAFKA_DEFAULT_VERSION PAIMON_FLINK_PROFILE
 readonly KAFKA_CONNECTOR_VERSION="${KAFKA_CONNECTOR_VERSION:-${KAFKA_DEFAULT_VERSION}}"
 # The published 3.2.0 source archive matches the final candidate; no v3.2.0 tag exists.
 if [[ "${KAFKA_CONNECTOR_VERSION}" == "3.2.0" ]]; then
@@ -137,6 +139,7 @@ case "${SUITE_MODE}" in
     ;;
   config)
     printf '%s\n' "flink.version=${FLINK_VERSION}" "flink.line=${FLINK_LINE}" \
+      "flink.target.profile=${FLINK_TARGET_PROFILE}" \
       "kafka.version=${KAFKA_CONNECTOR_VERSION}" "kafka.tag=${KAFKA_CONNECTOR_TAG}" \
       "paimon.profile=${PAIMON_FLINK_PROFILE}" \
       "suite.root=${SUITE_ROOT}" "streamfusion.source=${STREAMFUSION_BUILD_ROOT}" \
@@ -345,7 +348,7 @@ else
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${AGENT_ROOT}/pom.xml" "-Dsuite.agent.output=${AGENT_OUTPUT}" package || exit $?
 
   echo "Building the pinned Flink planner and its reactor dependencies..."
-  flink_mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
+  flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
     -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
     -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
     -pl flink-table/flink-table-planner -am -DskipTests -Dfast install || exit $?
@@ -353,7 +356,7 @@ else
   echo "Installing the untouched planner classes for StreamFusion's source-suite build..."
   jar --create --file "${UNSHADED_SQL_PARSER_JAR}" \
     -C "${FLINK_ROOT}/flink-table/flink-sql-parser/target/classes" . || exit $?
-  flink_mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
+  flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
     -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
     -pl flink-table/flink-sql-parser \
     help:effective-pom -Doutput="${UNSHADED_SQL_PARSER_POM}" || exit $?
@@ -363,7 +366,7 @@ else
     -DpomFile="${UNSHADED_SQL_PARSER_POM}" || exit $?
   jar --create --file "${UNSHADED_BRIDGE_JAR}" \
     -C "${FLINK_ROOT}/flink-table/flink-table-calcite-bridge/target/classes" . || exit $?
-  flink_mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
+  flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
     -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
     -pl flink-table/flink-table-calcite-bridge \
     help:effective-pom -Doutput="${UNSHADED_BRIDGE_POM}" || exit $?
@@ -373,7 +376,7 @@ else
     -DpomFile="${UNSHADED_BRIDGE_POM}" || exit $?
   jar --create --file "${UNSHADED_PLANNER_JAR}" \
     -C "${FLINK_ROOT}/flink-table/flink-table-planner/target/classes" . || exit $?
-  flink_mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
+  flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
     -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
     -pl flink-table/flink-table-planner \
     help:effective-pom -Doutput="${UNSHADED_PLANNER_POM}" || exit $?
@@ -418,7 +421,7 @@ else
 
   if [[ -n "${FORMAT_COMPILE_MODULES}" ]]; then
     echo "Compiling the untouched upstream Flink format integration tests..."
-    flink_mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
+    flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
       -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
       -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
       -pl "${FORMAT_COMPILE_MODULES}" \
@@ -663,7 +666,7 @@ elif [[ "${SUITE_MODE}" == "paimon" ]]; then
   # Keep either invocation's nonzero exit status for the common report checks below.
   (exit "${paimon_status}")
 else
-  flink_mvn "${MAVEN_TEST_ARGS[@]}"
+  flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} "${MAVEN_TEST_ARGS[@]}"
 fi
 readonly TEST_STATUS=$?
 

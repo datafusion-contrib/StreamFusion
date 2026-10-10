@@ -1135,7 +1135,10 @@ grouping for malformed sequences; ASCII replaces each non-ASCII byte; Latin-1 ma
 UTF-16 detects and consumes an initial BOM, defaulting to big-endian without one. UTF-16BE/LE
 use their fixed byte order and retain the BOM as a character. Malformed surrogate pairs and
 odd trailing bytes follow JDK UnicodeDecoder grouping, including consuming a high surrogate
-and a following non-low code unit together. NULL stays NULL. Other literal charsets fall back.
+and a following non-low code unit together. The planner probes the runtime UTF-16 decoder and
+encodes its U+FFFE rule: JDK 11 replaces this code unit with U+FFFD, while JDK 17 preserves it.
+This does not change initial BOM detection or fixed-endian U+FEFF preservation. JobManagers
+and TaskManagers must use the same decoding rules. NULL stays NULL. Other literal charsets fall back.
 
 Runtime charset expressions use the same generated evaluator as ENCODE, preserving JDK
 replacement grouping, aliases and runtime errors. CASE branches, NULL arguments and rows removed
@@ -1571,7 +1574,7 @@ FALSE, TRUE and UNKNOWN policies continue to use the Rust parser.
 These JSON functions use native first-document parsing and validate unselected fields too.
 Admission first probes the shaded Jackson runtime once per class loader: Flink 2.2 requires
 Jackson 2.18.2 and its default thread-local recycler pool; Flink 1.18 requires Jackson 2.14.2
-and thread-local buffer recycling. Both require successful buffer acquisition, cross-factory
+on JDK 11 or 17 and thread-local buffer recycling. Both require successful buffer acquisition, cross-factory
 reuse and release. Missing methods/classes, a different version or pool,
 or probe failure decline the native parser for JSON_VALUE, JSON_EXISTS and IS JSON; Calc
 can use Flink generation when the host runtime and batch boundary types support it.
@@ -1803,7 +1806,7 @@ under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` a
 ## Flink 1.18 compatibility
 
 The 1.18 development build uses the shared native SQL/JSON reader with its verified Jackson
-2.14.2/JDK 17 profile. Decimal JSON constructors retain the whole-Calc JVM route, once per
+2.14.2 profile on JDK 11 or 17. Decimal JSON constructors retain the whole-Calc JVM route, once per
 Arrow batch, to preserve that release's decimal spelling. See
 [Flink line compatibility](../flink-compatibility.md) for host-only syntax differences.
 

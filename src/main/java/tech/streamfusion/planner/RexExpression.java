@@ -38,6 +38,11 @@ import tech.streamfusion.operator.WatermarkExpression;
  * operator falls back to Flink.
  */
 final class RexExpression {
+  // UnicodeDecoder replaced U+FFFE on JDK 11; newer JDKs preserve it as a character.
+  private static final boolean REPLACE_REVERSED_UTF16_BOM =
+      new String(new byte[] {(byte) 0xff, (byte) 0xfe}, java.nio.charset.StandardCharsets.UTF_16BE)
+          .equals("\ufffd");
+
   // Node kinds, mirrored on the native side.
   private static final int KIND_INPUT_REF = 0;
   private static final int KIND_LIT_LONG = 1;
@@ -1891,12 +1896,16 @@ final class RexExpression {
         .contains(charset)) {
       return reject(call.getOperator().getName() + ": unverified charset " + charset);
     }
-    add(KIND_CALL, op, 2);
+    add(KIND_CALL, op, op == 121 ? 3 : 2);
     if (!emit(args.get(0))) {
       return false;
     }
     add(KIND_LIT_STRING, strings.size(), 0);
     strings.add(charset);
+    if (op == 121) {
+      add(KIND_LIT_BOOL, longs.size(), 0);
+      longs.add(REPLACE_REVERSED_UTF16_BOM ? 1L : 0L);
+    }
     return true;
   }
 
