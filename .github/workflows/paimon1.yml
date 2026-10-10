@@ -83,7 +83,9 @@ jobs:
       - name: Upstream SQL tests (reuse release libraries)
         env:
           SF_PAIMON1_TEST_FORKS: '1'
-        run: bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true
+        run: >-
+          bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true
+          -Dstreamfusion.flink-suite.retain-failed-warehouse=true
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@v4
