@@ -1256,11 +1256,14 @@ StreamFusion remains on released Paimon 1.0.0; fixing the split-commit recovery 
 verified upstream release, not a planner workaround or a forked dependency.
 
 An implementation is now submitted for canonical upstream review in
-[apache/paimon#10568](https://github.com/apache/paimon/pull/10568). It combines the data and
-required changelog into one commit, handles competing compaction refresh and checkpointed
-pending input, and repairs reader cleanup exposed by failure injection. Its local normal Maven
-selection passed 352 tests, with one opt-in performance test skipped; additional conflict reruns
-passed. This is not a released fix or a claim that the complete upstream CI matrix has passed.
+[apache/paimon#10568](https://github.com/apache/paimon/pull/10568). It preserves separate APPEND
+and COMPACT snapshots and resumes required compaction when only APPEND is durable. This retains
+incremental delta-query results and the existing file-retention protocol. It also handles
+competing compaction refresh, checkpointed pending input, and reader cleanup exposed by failure
+injection. The revised local normal Maven core selection passed 394 tests, with one opt-in
+performance test skipped, including 45 recovery cases and unchanged incremental scanners.
+The unchanged global compaction-writer check also passed on both upstream Flink profiles.
+This is not a released fix or a claim that the complete upstream CI matrix has passed.
 StreamFusion continues to use its canonical released dependencies, and #318 remains open until
 a verified release can be adopted.
 
