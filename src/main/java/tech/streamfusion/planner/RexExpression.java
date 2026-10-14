@@ -479,6 +479,10 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
+    if (NativeConfig.sharedStatefulUdfEnabled() && hasSharedStatefulUdf(program)) {
+      jvmExecutionReason = "shared stateful scalar UDF requires Flink's row-major evaluation";
+      return emitRowCalc(calc);
+    }
     if (binaryUdfCallCount(program) > 1) {
       jvmExecutionReason = "multiple binary UDF calls require whole-Calc JVM evaluation";
       return emitRowCalc(calc);
@@ -544,6 +548,27 @@ final class RexExpression {
                 && !(((RexCall) node).getOperands().get(1) instanceof RexLiteral)
             || ((RexCall) node)
                 .getOperands().stream().anyMatch(RexExpression::containsRuntimeCharset));
+  }
+
+  private static boolean hasSharedStatefulUdf(RexProgram program) {
+    java.util.Set<String> functions = new java.util.HashSet<>();
+    boolean[] shared = {false};
+    var visitor =
+        new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitCall(RexCall call) {
+            var function = tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator());
+            if (function != null
+                && !function.isDeterministic()
+                && !functions.add(function.functionIdentifier())) shared[0] = true;
+            return super.visitCall(call);
+          }
+        };
+    if (program.getCondition() != null)
+      program.expandLocalRef(program.getCondition()).accept(visitor);
+    for (RexLocalRef project : program.getProjectList())
+      program.expandLocalRef(project).accept(visitor);
+    return shared[0];
   }
 
   private static int binaryUdfCallCount(RexProgram program) {

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.TestFactory;
 
 class FlinkSharedUdfOrderSqlHarnessTest {
   @TestFactory
-  Stream<DynamicTest> sharedCallsRetainRowOrderThroughFallback() {
+  Stream<DynamicTest> sharedCallsRetainRowOrderThroughNativeRows() {
     return Stream.of(3, 2051)
         .flatMap(
             count ->
@@ -28,19 +28,15 @@ class FlinkSharedUdfOrderSqlHarnessTest {
                             DynamicTest.dynamicTest(
                                 count + ": " + sql,
                                 () ->
-                                    NativeParity.assertFallbackReasonContains(
-                                        () ->
-                                            FlinkCoalesceEvaluationSqlHarnessTest.environment(
-                                                count),
-                                        sql,
-                                        "shared stateful scalar UDF"))));
+                                    NativeParity.assertOrderedKindedParity(
+                                        () -> environment(count), sql))));
   }
 
   @Test
   void independentStatefulInstancesRetainNativeExecution() throws Exception {
-    NativeParity.assertParity(
+    NativeParity.assertOrderedKindedParity(
         () -> {
-          TableEnvironment table = FlinkCoalesceEvaluationSqlHarnessTest.environment(2051);
+          TableEnvironment table = environment(2051);
           table.createTemporarySystemFunction("other_tick", new OffsetTick(100));
           return table;
         },
@@ -49,20 +45,33 @@ class FlinkSharedUdfOrderSqlHarnessTest {
 
   @Test
   void oneGeneratedExpressionPreservesSharedCallsNatively() throws Exception {
-    NativeParity.assertParity(
-        () -> FlinkCoalesceEvaluationSqlHarnessTest.environment(2051),
-        "SELECT id, COALESCE(tick(id), tick(id + 10), 99) FROM src");
+    NativeParity.assertOrderedKindedParity(
+        () -> environment(2051), "SELECT id, COALESCE(tick(id), tick(id + 10), 99) FROM src");
   }
 
   @Test
   void deterministicSharedCallsRemainNative() throws Exception {
-    NativeParity.assertParity(
+    NativeParity.assertOrderedKindedParity(
         () -> {
-          TableEnvironment table = FlinkCoalesceEvaluationSqlHarnessTest.environment(2051);
+          TableEnvironment table = environment(2051);
           table.createTemporarySystemFunction("plus_one", new PlusOne());
           return table;
         },
         "SELECT id, plus_one(id), plus_one(id + 10) FROM src WHERE plus_one(id) > 1");
+  }
+
+  @Test
+  void defaultKeepsTheFasterHostRouteForNewSharedScalarShapes() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        () -> FlinkCoalesceEvaluationSqlHarnessTest.environment(2051),
+        "SELECT id, tick(id), tick(id + 10) FROM src",
+        "shared stateful scalar UDF");
+  }
+
+  private static TableEnvironment environment(int count) {
+    var table = FlinkCoalesceEvaluationSqlHarnessTest.environment(count);
+    table.getConfig().set("streamfusion.calc.sharedStatefulUdf.enabled", "true");
+    return table;
   }
 
   public static class OffsetTick extends ScalarFunction {

@@ -39,11 +39,11 @@ class FlinkUdfExactTypesSqlHarnessTest {
 
   @Test
   void repeatedCallsAndFiltersSpanMultipleBatches() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+    NativeParity.assertOrderedKindedParity(
         () -> environment(5003),
         "SELECT id, decimal_identity(d), decimal_identity(d), binary_identity(b), "
             + "decimal_from_text(s) FROM src "
-            + "WHERE MOD(id, 3) <> 0", "shared stateful scalar UDF");
+            + "WHERE MOD(id, 3) <> 0");
   }
 
   @Test
@@ -154,6 +154,7 @@ class FlinkUdfExactTypesSqlHarnessTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     StreamTableEnvironment table = StreamTableEnvironment.create(env);
+    table.getConfig().set("streamfusion.calc.sharedStatefulUdf.enabled", "true");
     table.createTemporarySystemFunction("decimal_identity", DecimalIdentity.class);
     table.createTemporarySystemFunction("decimal_from_text", DecimalFromText.class);
     table.createTemporarySystemFunction("binary_identity", BinaryIdentity.class);
