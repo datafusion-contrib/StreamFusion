@@ -1031,7 +1031,9 @@ visible window time and timer conversion. The runtime tests compare DST gaps/ove
 offsets, negative epochs, shared slices and SESSION connectivity against independent stock
 operators, including heap/RocksDB restore and backend transitions. SQL controls cover TVF,
 single/two-phase aggregation, join, rank and deduplication; completed-checkpoint controls verify
-restored windows still fire and drop late rows correctly.
+restored windows still fire and drop late rows correctly. The final regression selection passes
+155 checks on each released Flink line, including SESSION connectivity, processing-time planner
+coverage, mixed built-in/string DISTINCT shared windows, joins, ranks and late-slice controls.
 
 The release fixture suites contain 1,488 cases. Complete-job comparisons use
 `CalendarWindowBenchmark` with a row source, row blackhole sink, both transposes, Arrow IPC and
