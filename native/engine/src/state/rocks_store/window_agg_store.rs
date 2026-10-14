@@ -307,11 +307,20 @@ impl RocksWindowAggStore {
         entries: &[(Vec<u8>, i64)],
         state_columns: &[ArrayRef],
     ) -> Result<(), DataFusionError> {
-        if entries.is_empty() {
-            return Ok(());
+        self.put_with_slice_timers(entries, state_columns, std::iter::empty())
+    }
+
+    pub(crate) fn put_with_slice_timers<'a>(
+        &mut self,
+        entries: &[(Vec<u8>, i64)],
+        state_columns: &[ArrayRef],
+        timers: impl IntoIterator<Item = (i32, i64, &'a [u8])>,
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for (key_group, end, key) in timers {
+            writes.put(self.timer_key(key_group, end, key), [])?;
         }
         if state_columns.is_empty() {
-            let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
             for (db_key, start) in entries {
                 writes.put(db_key, start.to_le_bytes())?;
             }
@@ -321,7 +330,6 @@ impl RocksWindowAggStore {
             .state_converter
             .convert_columns(state_columns)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for ((db_key, start), row) in entries.iter().zip(rows.iter()) {
             let row = row.data();
             let mut value = Vec::with_capacity(8 + row.len());

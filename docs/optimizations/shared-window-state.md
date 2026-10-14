@@ -51,3 +51,20 @@ attributes 67 of 263 native samples to repeated routing. The corrected revision 
 992 release fixtures. The matched one-million-row recheck averages 0.770s native versus
 0.672s stock for HOP and 0.614s versus 0.569s for CUMULATE. Both remain slower; another CPU
 capture is investigating the remaining read/write costs before shipping.
+
+Shared persistent input writes timer and aggregate state together through the bounded write batch.
+Firing multi-gets each key's needed slices in one read and retains the same merge order, without
+expanding the resident set across keys. This revision passes 722 native tests, 264 affected checks
+on each released Flink line and 992 release fixtures. The preceding combined-write comparison
+still lost by 7–9%; the matched multi-get comparison averages 0.657s native versus 0.630s stock
+for HOP, and 0.623s versus 0.560s for CUMULATE. Both still lose.
+
+Window COUNT updates count selected valid rows directly through the existing scalar-count
+accumulator, avoiding a selected Arrow array for that aggregate. Ordinary COUNT keeps the same
+partial state, null semantics and checkpoint representation. The native suite passes 722 cases;
+300 affected checks on each released Flink line and 992 release fixtures also pass.
+The matched release recheck averages 0.783s native versus 0.817s stock for HOP
+(1.04× stock), and 0.612s native versus 0.550s stock for CUMULATE (0.90× stock).
+All three trials remain in the artifact, including a 5.684s previous-fallback HOP
+outlier. The small HOP advantage needs broader evidence; the cumulative loss
+still prevents treating the acceleration work as complete.

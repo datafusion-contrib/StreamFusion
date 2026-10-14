@@ -379,11 +379,9 @@ impl TumblingAggregator {
                         )))
             });
         let mut aggregates = build_aggregates(&kinds, &value_types);
-        if timestamp_panes {
-            for (aggregate, kind) in aggregates.iter_mut().zip(&kinds) {
-                if *kind == 3 {
-                    *aggregate = WindowAggregate::Count;
-                }
+        for (aggregate, kind) in aggregates.iter_mut().zip(&kinds) {
+            if *kind == 3 {
+                *aggregate = WindowAggregate::Count;
             }
         }
         TumblingAggregator {
@@ -945,7 +943,7 @@ impl TumblingAggregator {
                 .collect();
             self.hydrate_store_groups(batch, &touched)?;
             self.accumulate_grouped(grouped, values, batch.column_by_name(ROW_KIND_COLUMN))?;
-            return self.write_through_store();
+            return self.write_through_store_with_timers(self.shared_slices);
         }
         self.accumulate_grouped(grouped, values, batch.column_by_name(ROW_KIND_COLUMN))
     }
@@ -967,6 +965,16 @@ impl TumblingAggregator {
             .zip(values)
             .map(|(aggregate, values)| aggregate.timestamp_column(values))
             .collect::<Result<_, _>>()?;
+        let counts = self
+            .aggregates
+            .iter()
+            .map(|aggregate| matches!(aggregate, WindowAggregate::Count))
+            .collect::<Vec<_>>();
+        let count_nulls = values
+            .iter()
+            .zip(&counts)
+            .map(|(value, count)| count.then(|| value.logical_nulls()).flatten())
+            .collect::<Vec<_>>();
         let slice_values = values.iter().zip(&timestamps).all(|(array, timestamp)| {
             timestamp.is_some()
                 || array.data_type().is_primitive()
@@ -990,8 +998,9 @@ impl TumblingAggregator {
             let columns: Vec<Option<ArrayRef>> = values
                 .iter()
                 .zip(&timestamps)
-                .map(|(value, timestamp)| {
-                    if timestamp.is_some() {
+                .zip(&counts)
+                .map(|((value, timestamp), count)| {
+                    if timestamp.is_some() || *count {
                         Ok(None)
                     } else {
                         match slice {
@@ -1022,6 +1031,21 @@ impl TumblingAggregator {
             }
             let accumulators = self.accumulators(start, end, key);
             for (i, accumulator) in accumulators.iter_mut().enumerate() {
+                if counts[i] {
+                    let count = selected_rows
+                        .iter()
+                        .filter(|&&row| {
+                            count_nulls[i]
+                                .as_ref()
+                                .is_none_or(|nulls| nulls.is_valid(row as usize))
+                        })
+                        .count() as i64;
+                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                        .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
+                        .expect("window count factory")
+                        .merge_count(count);
+                    continue;
+                }
                 if let Some(column) = &timestamps[i] {
                     (accumulator.as_mut() as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
@@ -1449,6 +1473,14 @@ impl TumblingAggregator {
     /// between bundles and RocksDB owns durability and memory.
     #[cfg(feature = "rocksdb-state")]
     fn write_through_store(&mut self) -> Result<(), DataFusionError> {
+        self.write_through_store_with_timers(false)
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    fn write_through_store_with_timers(
+        &mut self,
+        persist_timers: bool,
+    ) -> Result<(), DataFusionError> {
         if self.store.is_none() {
             return Ok(());
         }
@@ -1489,7 +1521,17 @@ impl TumblingAggregator {
         self.store
             .as_mut()
             .expect("window-aggregate rocksdb store")
-            .put(&entries, &arrays)?;
+            .put_with_slice_timers(
+                &entries,
+                &arrays,
+                self.slice_timers
+                    .iter()
+                    .filter(|_| persist_timers)
+                    .flat_map(|(&end, keys)| {
+                        keys.iter()
+                            .map(move |(key, &group)| (group, end, key.row().data()))
+                    }),
+            )?;
         self.memory.account_shrink();
         Ok(())
     }

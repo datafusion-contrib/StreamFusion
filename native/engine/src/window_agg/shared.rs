@@ -153,7 +153,6 @@ impl TumblingAggregator {
             self.add_slice_timer(timer, key.owned(), key_group)?;
         }
         self.hydrate_and_accumulate(batch, grouped, &values)?;
-        self.persist_slice_timers()?;
         self.clear_resident_slice_timers();
         self.memory.account()
     }
@@ -221,8 +220,7 @@ impl TumblingAggregator {
         self.memory.set(self.computed_state_bytes());
         self.memory.account()?;
         #[cfg(feature = "rocksdb-state")]
-        self.write_through_store()?;
-        self.persist_slice_timers()?;
+        self.write_through_store_with_timers(true)?;
         self.clear_resident_slice_timers();
         Ok(())
     }
@@ -247,43 +245,49 @@ impl TumblingAggregator {
         Ok(())
     }
 
-    fn load_slice(
+    fn load_slices(
         &mut self,
-        end: i64,
+        ends: &[i64],
         key: &OwnedRow,
         key_group: i32,
     ) -> Result<(), DataFusionError> {
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
-            if self
-                .windows
-                .get(&end)
-                .is_some_and(|window| window.keys.contains_key(key))
-            {
+            let missing = ends
+                .iter()
+                .copied()
+                .filter(|end| {
+                    !self
+                        .windows
+                        .get(end)
+                        .is_some_and(|window| window.keys.contains_key(key))
+                })
+                .collect::<Vec<_>>();
+            if missing.is_empty() {
                 return Ok(());
             }
-            let state = store
-                .get(&[store.db_key(key_group, end, key.row().data())])?
-                .pop()
-                .flatten();
-            if let Some((start, state)) = state {
-                let accumulators = self.accumulators_from_scalars(&state);
-                self.windows
-                    .entry(end)
-                    .or_insert_with(|| AlignedWindow {
-                        start,
-                        keys: HashMap::default(),
-                    })
-                    .keys
-                    .insert(key.clone(), accumulators);
-                self.memory.set(self.computed_state_bytes());
-                if self.memory.tracking() {
-                    debug_assert_eq!(self.memory.state_bytes, self.computed_state_bytes());
+            let probes = missing
+                .iter()
+                .map(|&end| store.db_key(key_group, end, key.row().data()))
+                .collect::<Vec<_>>();
+            let states = store.get(&probes)?;
+            for (end, state) in missing.into_iter().zip(states) {
+                if let Some((start, state)) = state {
+                    let accumulators = self.accumulators_from_scalars(&state);
+                    self.windows
+                        .entry(end)
+                        .or_insert_with(|| AlignedWindow {
+                            start,
+                            keys: HashMap::default(),
+                        })
+                        .keys
+                        .insert(key.clone(), accumulators);
                 }
-                self.memory.account()?;
             }
+            self.memory.set(self.computed_state_bytes());
+            self.memory.account()?;
         }
-        let _ = (end, key, key_group);
+        let _ = (ends, key, key_group);
         Ok(())
     }
 
@@ -330,6 +334,7 @@ impl TumblingAggregator {
                 .map(|i| end - i * self.slide_millis)
                 .collect()
         };
+        self.load_slices(&namespaces, key, key_group)?;
         let mut merged = self
             .aggregates
             .iter()
@@ -337,7 +342,6 @@ impl TumblingAggregator {
             .collect::<Vec<_>>();
         let mut present = false;
         for namespace in namespaces {
-            self.load_slice(namespace, key, key_group)?;
             if let Some(source) = self
                 .windows
                 .get_mut(&namespace)
