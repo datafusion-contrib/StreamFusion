@@ -1316,7 +1316,7 @@ final class RexExpression {
       return emitItem(call);
     }
     if ("COALESCE".equals(functionName)) {
-      if (!RexUtil.isDeterministic(call)
+      if ((!RexUtil.isDeterministic(call) && !isNativeClockSelection(call))
           || containsScalarUdf(call)
           || requiresRowShortCircuit(call)) {
         return emitHostExpression(call, true);
@@ -2475,6 +2475,40 @@ final class RexExpression {
       default:
         return -1;
     }
+  }
+
+  private static boolean isNativeClockSelection(RexCall call) {
+    // Flink's materialized clock has millisecond precision. Its direct precision-3 COALESCE
+    // code generation has an argument-nullability mismatch on the supported 2.2 line.
+    return call.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && call.getType().getPrecision() > 3
+        && call.getOperands().stream().allMatch(RexExpression::isClockSelectionOperand);
+  }
+
+  private static boolean isClockSelectionOperand(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return false;
+    }
+    if (node instanceof RexInputRef) {
+      return true;
+    }
+    if (!(node instanceof RexCall)) {
+      return node instanceof RexLiteral && RexLiteral.isNullLiteral(node);
+    }
+    RexCall call = (RexCall) node;
+    if (call.getOperator()
+        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.PROCTIME) {
+      return call.getOperands().isEmpty();
+    }
+    if (call.getOperator()
+        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable
+            .PROCTIME_MATERIALIZE) {
+      return call.getOperands().size() == 1 && isClockSelectionOperand(call.getOperands().get(0));
+    }
+    return call.getKind() == SqlKind.CAST
+        && call.getOperands().size() == 1
+        && call.getType().getPrecision() >= call.getOperands().get(0).getType().getPrecision()
+        && isClockSelectionOperand(call.getOperands().get(0));
   }
 
   /**

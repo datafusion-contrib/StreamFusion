@@ -9,7 +9,7 @@ unsupported `MATCH_RECOGNIZE` operator.
 | Functions | Execution and admission |
 |---|---|
 | `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `LOCALTIME`, `LOCALTIMESTAMP`, `NOW()`, `CURRENT_ROW_TIMESTAMP()` | Rust clock functions; sampled during each batch evaluation, using the session zone for local fields. These nondeterministic functions are admitted by default. |
-| `PROCTIME()`, internal `PROCTIME_MATERIALIZE` | Rust processing-time clock, evaluated at execution time. |
+| `PROCTIME()`, internal `PROCTIME_MATERIALIZE` | Direct native calls and verified simple COALESCE selections use the Rust execution-time clock. Inside Flink-generated scalar or complete-Calc expressions, materialization reads the owning task's live processing-time service, bound at open and cleared at close. CASE/COALESCE input branches preserve their timestamp precision; materialized values follow Flink's millisecond clock and declared casts. See [generated processing time](calc-filter.md#generated-processing-time). |
 | `EXTRACT`, `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAYOFYEAR`, `DAYOFMONTH`, `DAYOFWEEK`, `HOUR`, `MINUTE`, `SECOND` | All forms Flink accepts for DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and intervals. The existing DATE/plain-TIMESTAMP quarter/week/day kernels stay in Rust; other cases use Flink's generated expression code. |
 | `TO_DATE(text)`, `TO_DATE(text, format)` | The one-argument parser stays in Rust; formatted parsing uses Flink. Dynamic formats, NULL behavior and invalid-input failures follow Flink. |
 | `TO_TIMESTAMP(text[, format])` | Flink parsing, including dynamic formats and full-range timestamp results. |

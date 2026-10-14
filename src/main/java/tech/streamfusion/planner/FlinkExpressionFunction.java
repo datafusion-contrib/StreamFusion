@@ -9,6 +9,7 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.api.common.functions.Function;
 import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
@@ -28,21 +29,46 @@ import org.apache.flink.table.types.logical.RowType;
 public final class FlinkExpressionFunction extends ScalarFunction
     implements tech.streamfusion.operator.NativeUdf.FunctionDependencies,
         tech.streamfusion.operator.NativeUdf.RowResult,
-        tech.streamfusion.operator.NativeUdf.InternalArguments {
+        tech.streamfusion.operator.NativeUdf.InternalArguments,
+        tech.streamfusion.operator.NativeUdf.ProcessingTimeAware {
   private static final long serialVersionUID = 1L;
 
   public interface Evaluator extends Function {
     Object eval(RowData input) throws Exception;
+
+    default void bindProcessingTime(ProcessingTimeService service) {}
 
     void open(FunctionContext context) throws Exception;
 
     void close() throws Exception;
   }
 
+  /** The access shape emitted by Flink's PROCTIME_MATERIALIZE code generator. */
+  public static final class ProcessingTimeContext {
+    private final ProcessingTimeService service;
+
+    public ProcessingTimeContext(ProcessingTimeService service) {
+      this.service = service;
+    }
+
+    public ProcessingTimeContext timerService() {
+      return this;
+    }
+
+    public long currentProcessingTime() {
+      if (service == null) {
+        throw new IllegalStateException(
+            "generated processing time requires the operator's runtime clock");
+      }
+      return service.getCurrentProcessingTime();
+    }
+  }
+
   private final GeneratedFunction<Evaluator> generated;
   private final LogicalType[] argumentTypes;
   private final List<ScalarFunction> functions;
   private final RowType rowResultType;
+  private transient ProcessingTimeService processingTimeService;
   private transient Evaluator evaluator;
   private transient GenericRowData input;
 
@@ -357,6 +383,14 @@ public final class FlinkExpressionFunction extends ScalarFunction
             + " implements "
             + Evaluator.class.getCanonicalName()
             + " {\n"
+            + "private "
+            + ProcessingTimeContext.class.getCanonicalName()
+            + " ctx;\n"
+            + "public void bindProcessingTime("
+            + ProcessingTimeService.class.getCanonicalName()
+            + " service) { ctx = new "
+            + ProcessingTimeContext.class.getCanonicalName()
+            + "(service); }\n"
             + context.reuseMemberCode()
             + (rowResultType == null
                 ? ""
@@ -410,10 +444,26 @@ public final class FlinkExpressionFunction extends ScalarFunction
   }
 
   @Override
+  public void processingTimeService(ProcessingTimeService service) {
+    if (evaluator != null) {
+      throw new IllegalStateException("cannot replace a live generated expression's runtime clock");
+    }
+    processingTimeService = service;
+  }
+
+  @Override
   public void open(FunctionContext context) throws Exception {
-    evaluator = generated.newInstance(context.getUserCodeClassLoader());
-    evaluator.open(context);
-    input = new GenericRowData(argumentTypes.length);
+    try {
+      evaluator = generated.newInstance(context.getUserCodeClassLoader());
+      evaluator.bindProcessingTime(processingTimeService);
+      evaluator.open(context);
+      input = new GenericRowData(argumentTypes.length);
+    } catch (Exception | Error failure) {
+      evaluator = null;
+      input = null;
+      processingTimeService = null;
+      throw failure;
+    }
   }
 
   public Object eval(Object... arguments) throws Exception {
@@ -452,9 +502,14 @@ public final class FlinkExpressionFunction extends ScalarFunction
 
   @Override
   public void close() throws Exception {
-    if (evaluator != null) {
-      evaluator.close();
+    try {
+      if (evaluator != null) {
+        evaluator.close();
+      }
+    } finally {
       evaluator = null;
+      input = null;
+      processingTimeService = null;
     }
   }
 

@@ -73,6 +73,41 @@ Unicode, NULLs and invalid-escape failures are Flink's own. AND/OR consumers fus
 expressions so invalid patterns are not evaluated on rows that Flink short-circuits; filtered-out
 batches do not evaluate projections. Existing two-argument LIKE keeps its current native path.
 
+## Generated processing time
+
+Generated scalar expressions and complete-row Calc evaluators bind processing time to the owning
+Calc or Filter task's live `ProcessingTimeService` during operator open. Flink's generated
+`PROCTIME_MATERIALIZE` access therefore works inside CASE/COALESCE selections and predicates,
+including complete-row evaluation selected to preserve filter/projection failure order.
+Simple TIMESTAMP_LTZ COALESCE selections over input columns, NULLs and processing-time clocks
+with widening precision casts use the existing native CASE path at precisions above three.
+No UDF or other nondeterministic/fallible expression enters this path. More complex expressions
+retain Flink generation and its call-order safeguards; complete-row generation still applies
+when multiple failure sites require it. A lower Calc containing only input references and a lazy
+PROCTIME indicator can fuse into this consumer; filters, other computations and remapped input
+coordinates keep their existing boundaries.
+
+The clock is read when the generated expression executes; no timestamp or running service is
+stored in the serialized plan. Close releases the evaluator's clock reference, and a restored or
+reopened binding uses its new task's service. Pure expressions still work in local unit contexts;
+evaluating generated processing time without a bound runtime clock reports an error.
+
+Controlled-clock tests cover CASE at TIMESTAMP_LTZ precision 0/3/6/9, preserving non-NULL input
+fractions and using Flink's declared casts for materialized clock values. Native Calc and Filter
+operator tests cover successive clocks, empty/all-filtered batches and INSERT/UPDATE/DELETE
+row kinds. Independent SQL jobs on both released Flink lines compare types and stable input
+branches, check clock values against each job's execution interval, and require actual native
+consumption across multiple Arrow batches. Precision-6/9 COALESCE and precision-3/6/9 CASE cover native selection and
+complete-row generated execution forced by multiple fallible projections in UTC, Asia/Shanghai and America/Los_Angeles.
+
+Released Flink 2.2.1 rejects the direct precision-3 COALESCE form combining a nullable timestamp
+and materialized PROCTIME with a generated argument-nullability mismatch. Its valid CASE form
+and precision-9 COALESCE are used for the SQL comparisons; this runtime binding does not alter
+host SQL validation or repair that separate host code-generation error.
+
+Release comparisons and the remaining 4.1% sustained-filter limitation are recorded in
+[the optimization ledger](../optimizations/identity-expression-passthroughs.md#processing-time-indicators).
+
 ## COALESCE
 
 `COALESCE` retains the first non-NULL operand without evaluating it again. When an operand
