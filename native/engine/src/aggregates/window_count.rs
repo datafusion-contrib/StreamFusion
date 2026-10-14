@@ -7,6 +7,10 @@ pub(crate) struct WindowCountAccumulator {
 }
 
 impl WindowCountAccumulator {
+    pub(crate) fn count(&self) -> i64 {
+        self.count
+    }
+
     pub(crate) fn merge_count(&mut self, count: i64) {
         self.count += count;
     }

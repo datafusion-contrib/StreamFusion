@@ -1546,6 +1546,17 @@ impl TumblingAggregator {
             .zip(&self.store_field_counts)
             .map(|(aggregate, &count)| {
                 let mut accumulator = aggregate.create_accumulator();
+                if matches!(aggregate, WindowAggregate::Count) {
+                    let ScalarValue::Int64(count) = scalars[column] else {
+                        panic!("COUNT partial state");
+                    };
+                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                        .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
+                        .expect("window count factory")
+                        .merge_count(count.unwrap_or(0));
+                    column += 1;
+                    return accumulator;
+                }
                 let state: Vec<ArrayRef> = scalars[column..column + count]
                     .iter()
                     .map(|scalar| scalar.to_array().expect("state array"))

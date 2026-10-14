@@ -353,6 +353,17 @@ impl TumblingAggregator {
                     .zip(source.iter_mut())
                     .zip(&self.aggregates)
                 {
+                    if matches!(aggregate, WindowAggregate::Count) {
+                        let count = (source.as_mut() as &mut dyn std::any::Any)
+                            .downcast_ref::<crate::aggregates::WindowCountAccumulator>()
+                            .expect("window count factory")
+                            .count();
+                        (target.as_mut() as &mut dyn std::any::Any)
+                            .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
+                            .expect("window count factory")
+                            .merge_count(count);
+                        continue;
+                    }
                     let state = source.state()?;
                     let columns = state
                         .iter()

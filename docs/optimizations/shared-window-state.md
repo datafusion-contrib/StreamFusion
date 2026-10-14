@@ -68,3 +68,12 @@ The matched release recheck averages 0.783s native versus 0.817s stock for HOP
 All three trials remain in the artifact, including a 5.684s previous-fallback HOP
 outlier. The small HOP advantage needs broader evidence; the cumulative loss
 still prevents treating the acceleration work as complete.
+
+COUNT restoration and shared-slice merging use the same scalar partial directly, avoiding
+one-element Arrow arrays while retaining the persisted Int64 representation. The source
+COUNT state remains reusable. This revision passed 722 native tests, 451 checks on each
+released Flink line (including 155 final calendar SQL checks), and 992 release fixtures.
+The matched HOP job averages 0.690s native versus 0.651s stock, and CUMULATE
+0.644s versus 0.590s stock. The temporary-array change retains a simpler scalar
+merge but does not establish acceleration for these persistent workloads. All
+trials, including the cumulative native 0.740s sample, remain in the artifact.
