@@ -66,11 +66,18 @@ impl TumblingAggregator {
             self.memory
                 .record((owned_row_bytes(&key) + std::mem::size_of::<(i64, i32)>()) as isize);
         }
+        Ok(added)
+    }
+
+    fn persist_slice_timers(&mut self) -> Result<(), DataFusionError> {
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut self.store {
-            store.put_slice_timer(key_group, end, key.row().data())?;
+            store.put_slice_timers(self.slice_timers.iter().flat_map(|(&end, keys)| {
+                keys.iter()
+                    .map(move |(key, &group)| (group, end, key.row().data()))
+            }))?;
         }
-        Ok(added)
+        Ok(())
     }
 
     fn clear_resident_slice_timers(&mut self) {
@@ -118,6 +125,7 @@ impl TumblingAggregator {
             .map(|i| batch.column_by_name(&format!("value{i}")).expect("value"))
             .collect::<Vec<_>>();
         let mut grouped = ahash::HashMap::default();
+        let mut timers = ahash::HashMap::default();
         for (row, assignment) in assignments.into_iter().enumerate() {
             if let Some((target, timer)) = assignment {
                 let key = encoded.row(row);
@@ -125,10 +133,27 @@ impl TumblingAggregator {
                     .entry((target - self.slide_millis, target, key))
                     .or_insert_with(Vec::new)
                     .push(row as u32);
-                self.add_slice_timer(timer, key.owned(), self.slice_key_group(batch, row))?;
+                timers.entry((timer, key)).or_insert(row);
             }
         }
+        #[cfg(feature = "rocksdb-state")]
+        let key_columns = key_column_indices(batch);
+        #[cfg(feature = "rocksdb-state")]
+        let mut encoder = self.store.as_ref().map(|_| {
+            BinaryRowBatchEncoder::new(batch, &key_columns, &self.key_timestamp_precisions)
+        });
+        for ((timer, key), row) in timers {
+            #[cfg(feature = "rocksdb-state")]
+            let key_group = self.store.as_ref().map_or(-1, |store| {
+                store.key_group(encoder.as_mut().expect("persistent key encoder").hash(row))
+            });
+            #[cfg(not(feature = "rocksdb-state"))]
+            let key_group = -1;
+            let _ = row;
+            self.add_slice_timer(timer, key.owned(), key_group)?;
+        }
         self.hydrate_and_accumulate(batch, grouped, &values)?;
+        self.persist_slice_timers()?;
         self.clear_resident_slice_timers();
         self.memory.account()
     }
@@ -197,6 +222,7 @@ impl TumblingAggregator {
         self.memory.account()?;
         #[cfg(feature = "rocksdb-state")]
         self.write_through_store()?;
+        self.persist_slice_timers()?;
         self.clear_resident_slice_timers();
         Ok(())
     }
@@ -478,6 +504,7 @@ impl TumblingAggregator {
             .map_or(i64::MIN, |Reverse((epoch, _))| epoch.saturating_sub(1));
         self.memory.set(self.computed_state_bytes());
         self.memory.account_shrink();
+        self.persist_slice_timers()?;
         self.clear_resident_slice_timers();
         Ok(self.final_batch(keys, starts, ends, results))
     }

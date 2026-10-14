@@ -236,21 +236,40 @@ fn run(c: &mut Criterion) {
                 let mut control = WindowRankState::memory(limit, limit == 1);
                 control.push(&batch);
                 let expected = canonical_rank(&control.flush(100));
-                group.bench_function(
-                    format!("component_timestamp/rows{rows}/keys{keys}/limit{limit}"),
-                    |b| {
-                        b.iter_batched(
-                            || WindowRankState::memory(limit, limit == 1),
-                            |mut op| {
-                                op.push(&batch);
-                                let output = op.flush(100);
-                                assert_eq!(canonical_rank(&output), expected);
-                                black_box(output)
-                            },
-                            BatchSize::SmallInput,
-                        )
-                    },
-                );
+                for rocks in [false, true] {
+                    group.bench_function(
+                        format!(
+                            "component_timestamp/rows{rows}/keys{keys}/limit{limit}/rocks{rocks}"
+                        ),
+                        |b| {
+                            b.iter_batched(
+                                || {
+                                    let directory = tempfile::tempdir().unwrap();
+                                    let op = if rocks {
+                                        WindowRankState::new(
+                                            directory.path().to_str().unwrap(),
+                                            batch.schema(),
+                                            include_str!("fixtures/rocks-options.json"),
+                                            limit,
+                                            limit == 1,
+                                        )
+                                    } else {
+                                        WindowRankState::memory(limit, limit == 1)
+                                    };
+                                    (directory, op)
+                                },
+                                |(_directory, mut op)| {
+                                    op.push(&batch.slice(0, rows / 2));
+                                    op.push(&batch.slice(rows / 2, rows / 2));
+                                    let output = op.flush(100);
+                                    assert_eq!(canonical_rank(&output), expected);
+                                    black_box(output)
+                                },
+                                BatchSize::SmallInput,
+                            )
+                        },
+                    );
+                }
             }
         }
     }

@@ -4112,19 +4112,15 @@ impl WindowRanker {
         #[cfg(feature = "rocksdb-state")]
         self.hydrate_store_groups(batch, &ws, &we, &partition_arrays, deadlines.as_ref())?;
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
-        #[cfg(feature = "rocksdb-state")]
-        let compact_timestamps = self.store.is_none();
-        #[cfg(not(feature = "rocksdb-state"))]
-        let compact_timestamps = true;
         let timestamps = data_arrays
             .iter()
             .map(|array| {
-                (compact_timestamps
-                    && streamfusion_bridge::timestamp::is_component_timestamp(array.data_type()))
-                .then(|| {
-                    streamfusion_bridge::timestamp::TimestampColumn::try_new(array.as_ref())
-                        .expect("window rank timestamp")
-                })
+                streamfusion_bridge::timestamp::is_component_timestamp(array.data_type()).then(
+                    || {
+                        streamfusion_bridge::timestamp::TimestampColumn::try_new(array.as_ref())
+                            .expect("window rank timestamp")
+                    },
+                )
             })
             .collect::<Vec<_>>();
         let track = self.memory.tracking();
@@ -4145,16 +4141,7 @@ impl WindowRanker {
                 .iter()
                 .zip(&timestamps)
                 .map(|(array, timestamp)| match timestamp {
-                    Some(column) => ScalarValue::Decimal128(
-                        (!column.is_null(row)).then(|| {
-                            column
-                                .value(row)
-                                .expect("window rank timestamp digits")
-                                .nanos()
-                        }),
-                        38,
-                        0,
-                    ),
+                    Some(column) => compact_timestamp_scalar(column, row),
                     None => {
                         ScalarValue::try_from_array(array, row).expect("window-rank row scalar")
                     }
@@ -4405,7 +4392,7 @@ impl WindowRanker {
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let mut columns: Vec<ArrayRef> = (0..fields.len())
             .map(|j| {
-                Self::payload_array(
+                scalars_to_array(
                     rows.iter().map(|r| r[j].clone()).collect(),
                     fields[j].data_type(),
                 )
@@ -4417,34 +4404,6 @@ impl WindowRanker {
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("window-rank output batch")
-    }
-
-    fn payload_array(values: Vec<ScalarValue>, data_type: &DataType) -> ArrayRef {
-        if streamfusion_bridge::timestamp::is_component_timestamp(data_type)
-            && values
-                .iter()
-                .all(|value| matches!(value, ScalarValue::Decimal128(_, 38, 0)))
-        {
-            let array =
-                streamfusion_bridge::timestamp::timestamp_array(values.into_iter().map(|value| {
-                    let ScalarValue::Decimal128(value, _, _) = value else {
-                        unreachable!()
-                    };
-                    value.map(|nanos| {
-                        streamfusion_bridge::timestamp::TimestampValue::from_nanos(nanos)
-                            .expect("window rank timestamp range")
-                    })
-                }));
-            return arrow::array::make_array(
-                array
-                    .to_data()
-                    .into_builder()
-                    .data_type(data_type.clone())
-                    .build()
-                    .expect("window rank timestamp schema"),
-            );
-        }
-        scalars_to_array(values, data_type)
     }
 
     fn snapshot_parts(&self, batch: Option<RecordBatch>) -> Vec<u8> {
@@ -4470,7 +4429,7 @@ impl WindowRanker {
         let fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let columns: Vec<ArrayRef> = (0..fields.len())
             .map(|j| {
-                Self::payload_array(
+                scalars_to_array(
                     rows.iter().map(|r| r[j].clone()).collect(),
                     fields[j].data_type(),
                 )

@@ -218,8 +218,17 @@ impl RocksWindowAggStore {
         end: i64,
         key: &[u8],
     ) -> Result<(), DataFusionError> {
+        self.put_slice_timers([(key_group, end, key)])
+    }
+
+    pub(crate) fn put_slice_timers<'a>(
+        &mut self,
+        timers: impl IntoIterator<Item = (i32, i64, &'a [u8])>,
+    ) -> Result<(), DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        writes.put(self.timer_key(key_group, end, key), [])?;
+        for (key_group, end, key) in timers {
+            writes.put(self.timer_key(key_group, end, key), [])?;
+        }
         writes.finish()
     }
 

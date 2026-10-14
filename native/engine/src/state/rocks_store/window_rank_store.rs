@@ -407,14 +407,27 @@ impl RocksWindowRankStore {
             .row_converter
             .convert_rows(parsed)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let timestamps = columns
+            .iter()
+            .map(|column| {
+                streamfusion_bridge::timestamp::is_component_timestamp(column.data_type())
+                    .then(|| {
+                        streamfusion_bridge::timestamp::TimestampColumn::try_new(column.as_ref())
+                    })
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut buffers = Vec::with_capacity(counts.len());
         let mut next = 0;
         for count in counts {
             let mut rows = Vec::with_capacity(count);
             for _ in 0..count {
                 let mut scalars = Vec::with_capacity(columns.len());
-                for column in &columns {
-                    scalars.push(ScalarValue::try_from_array(column, next)?);
+                for (column, timestamp) in columns.iter().zip(&timestamps) {
+                    scalars.push(match timestamp {
+                        Some(timestamp) => compact_timestamp_scalar(timestamp, next),
+                        None => ScalarValue::try_from_array(column, next)?,
+                    });
                 }
                 rows.push(scalars);
                 next += 1;
@@ -485,6 +498,103 @@ mod tests {
             bloom_filter_block_based_mode: false,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn timestamp_payload_digits_survive_persistent_checkpoint_and_continuation() {
+        use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
+        let times = [
+            Some(TimestampValue::new(-1, 999_999).unwrap()),
+            Some(TimestampValue::new(253_402_300_799_999, 999_999).unwrap()),
+            Some(TimestampValue::new(253_402_300_799_999, 999_998).unwrap()),
+            None,
+        ];
+        let batch = RecordBatch::try_from_iter(vec![
+            ("start", Arc::new(Int64Array::from(vec![0; 4])) as ArrayRef),
+            ("end", Arc::new(Int64Array::from(vec![100; 4])) as ArrayRef),
+            ("key", Arc::new(Int64Array::from(vec![1; 4])) as ArrayRef),
+            ("value", Arc::new(timestamp_array(times)) as ArrayRef),
+            (
+                "id",
+                Arc::new(Int64Array::from(vec![1, 2, 3, 4])) as ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let schema = batch.schema();
+        let types = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect::<Vec<_>>();
+        for ascending in [false, true] {
+            let create = || {
+                WindowRanker::new(
+                    0,
+                    1,
+                    vec![2],
+                    vec![SortColumn {
+                        index: 3,
+                        ascending,
+                        nulls_first: false,
+                    }],
+                    4,
+                    true,
+                )
+                .with_key_timestamp_precisions(vec![-1])
+            };
+            let store = RocksWindowRankStore::create(
+                test_config(if ascending {
+                    "timestamp-asc"
+                } else {
+                    "timestamp-desc"
+                }),
+                &types,
+                0..=127,
+            )
+            .unwrap();
+            let mut original = create().with_store(store, schema.clone());
+            original.push(&batch.slice(0, 2)).unwrap();
+            let snapshot = snapshot_dir(if ascending {
+                "timestamp-asc"
+            } else {
+                "timestamp-desc"
+            });
+            let manifest = original.checkpoint_store(100, &snapshot).unwrap();
+            drop(original);
+            let store = RocksWindowRankStore::open_merged(
+                test_config(if ascending {
+                    "timestamp-asc-restored"
+                } else {
+                    "timestamp-desc-restored"
+                }),
+                &types,
+                0..=127,
+                &[(snapshot, manifest.snapshot_id)],
+                true,
+            )
+            .unwrap();
+            let mut restored = create().with_store(store, schema.clone());
+            restored.push(&batch.slice(2, 2)).unwrap();
+            let output = restored.flush(100).unwrap();
+            let expected = if ascending {
+                vec![1, 3, 2, 4]
+            } else {
+                vec![2, 3, 1, 4]
+            };
+            assert_eq!(
+                column_i64(&output, "id").values().as_ref(),
+                expected.as_slice()
+            );
+            assert_eq!(output.schema().field(3), schema.field(3));
+            let digits = TimestampColumn::try_new(output.column(3).as_ref()).unwrap();
+            for (row, id) in expected.into_iter().enumerate() {
+                let value = times[id as usize - 1];
+                assert_eq!(digits.is_null(row), value.is_none());
+                if let Some(value) = value {
+                    assert_eq!(digits.value(row).unwrap(), value);
+                }
+            }
+        }
     }
 
     fn test_config(name: &str) -> RocksStoreConfig {

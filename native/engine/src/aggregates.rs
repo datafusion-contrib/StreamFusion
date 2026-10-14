@@ -915,11 +915,47 @@ pub(crate) fn window_state_types(kinds: &[i64], value_types: &[i64]) -> Vec<Data
         .collect()
 }
 
+/// Exact numeric timestamp state; typed array reconstruction preserves the original schema.
+pub(crate) fn compact_timestamp_scalar(
+    column: &streamfusion_bridge::timestamp::TimestampColumn<'_>,
+    row: usize,
+) -> ScalarValue {
+    ScalarValue::Decimal128(
+        (!column.is_null(row)).then(|| column.value(row).expect("timestamp digits").nanos()),
+        38,
+        0,
+    )
+}
+
 /// Builds an array from per-row scalars, using the given type for the empty case (where the
 /// element type cannot be inferred from the values).
 pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) -> ArrayRef {
     if scalars.is_empty() {
         return new_empty_array(data_type);
+    }
+    if streamfusion_bridge::timestamp::is_component_timestamp(data_type)
+        && scalars
+            .iter()
+            .all(|value| matches!(value, ScalarValue::Decimal128(_, 38, 0)))
+    {
+        let array =
+            streamfusion_bridge::timestamp::timestamp_array(scalars.into_iter().map(|value| {
+                let ScalarValue::Decimal128(value, _, _) = value else {
+                    unreachable!()
+                };
+                value.map(|nanos| {
+                    streamfusion_bridge::timestamp::TimestampValue::from_nanos(nanos)
+                        .expect("timestamp scalar range")
+                })
+            }));
+        return arrow::array::make_array(
+            array
+                .to_data()
+                .into_builder()
+                .data_type(data_type.clone())
+                .build()
+                .expect("timestamp scalar schema"),
+        );
     }
     let array = ScalarValue::iter_to_array(scalars).expect("failed to build array");
     // For scalars the reconstructed type already equals `data_type` (no-op). For a nested type

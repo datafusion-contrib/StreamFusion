@@ -31,3 +31,23 @@ fallback: 1.04× stock and 1.06× previous. Two warmups and three measured trial
 all unfavorable earlier revisions remain in the trial artifact.
 
 See the [calendar trial artifact](../benchmarks/results/calendar-windows-2026-10-14.json) for all revisions and raw trials.
+
+## Persistent timer writes
+
+Shared-window updates persist distinct resident timer keys together at the bundle boundary.
+Firing persists its remaining timer set before clearing resident state. This replaces a new
+RocksDB write batch per input row, including repeated keys, with bounded write batches over
+unique touched timer keys. Canonical import retains its single-key helper.
+
+The first regional RocksDB HOP aggregate profile averaged 1.802s native versus 0.595s stock
+for one million rows and 64 keys. A diagnostic CPU capture attributes 180 of 318 native samples
+to timer writes. The batched revision passes native, both-SDK operator and release-fixture checks. Its matched
+recheck averages 0.914s native versus 0.651s stock: substantially improved, but still slower.
+A follow-up CPU profile is investigating the remaining cost. All earlier results and instrumented captures remain in the artifact.
+
+The next revision groups timer/key pairs with borrowed encoded keys and computes key-group
+routing once per distinct pair through the existing batch encoder. The batched-write CPU capture
+attributes 67 of 263 native samples to repeated routing. The corrected revision passes 722 native tests, 264 affected checks on each Flink line and
+992 release fixtures. The matched one-million-row recheck averages 0.770s native versus
+0.672s stock for HOP and 0.614s versus 0.569s for CUMULATE. Both remain slower; another CPU
+capture is investigating the remaining read/write costs before shipping.
