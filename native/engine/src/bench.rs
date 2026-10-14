@@ -38,6 +38,31 @@ impl Filter {
     }
 }
 
+/// Stateless regional assignment through the production Arrow and calendar boundary.
+pub fn assign_calendar_windows(
+    input: &RecordBatch,
+    time_column: usize,
+    size: i64,
+    slide: i64,
+    cumulative: bool,
+    now: Option<i64>,
+    callback: jni::objects::GlobalRef,
+) -> RecordBatch {
+    let calendar = crate::window_calendar::WindowCalendar::new(callback);
+    crate::window_agg::assign_windows_with_calendar(
+        input,
+        time_column,
+        size,
+        slide,
+        cumulative,
+        now,
+        &streamfusion_bridge::timestamp::timestamp_type(),
+        0,
+        Some(&calendar),
+    )
+    .expect("calendar TVF assignment")
+}
+
 /// A tumbling-window aggregator driven by `update`/`flush`, as the stateful operator drives it.
 pub struct Tumbling(TumblingAggregator);
 
@@ -51,6 +76,95 @@ impl Tumbling {
             value_types,
             kinds,
         ))
+    }
+
+    pub fn calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.0.set_calendar(callback);
+    }
+
+    pub fn account_calendar_state(mut self, budget_bytes: i64) -> Self {
+        self.0 = self
+            .0
+            .with_memory_budget(budget_bytes)
+            .expect("calendar state fits budget");
+        self
+    }
+
+    pub fn assert_calendar_accounting(&self) {
+        assert_eq!(self.0.memory.state_bytes, self.0.computed_state_bytes());
+    }
+
+    pub fn retracting_calendar(size: i64, slide: i64, cumulative: bool) -> Self {
+        Self(TumblingAggregator::new(
+            size,
+            slide,
+            cumulative,
+            vec![0],
+            vec![LIVE_COUNT],
+        ))
+    }
+
+    pub fn restore_retracting_calendar(
+        size: i64,
+        slide: i64,
+        cumulative: bool,
+        bytes: &[u8],
+    ) -> Self {
+        Self(TumblingAggregator::restore(
+            size,
+            slide,
+            cumulative,
+            vec![0],
+            vec![LIVE_COUNT],
+            bytes,
+        ))
+    }
+
+    pub fn local_buffer_ready(&self, watermark: i64) -> bool {
+        self.0.local_buffer_ready(watermark)
+    }
+
+    pub fn fixed_calendar(size: i64, slide: i64, cumulative: bool, offset: i64) -> Self {
+        let mut aggregate = TumblingAggregator::new(size, slide, cumulative, vec![0], vec![3]);
+        aggregate.set_assignment_offset(offset);
+        Self(aggregate)
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub fn persistent_fixed_calendar(
+        directory: &str,
+        options: &str,
+        size: i64,
+        slide: i64,
+        cumulative: bool,
+    ) -> Self {
+        let state_types = window_state_types(&[3], &[0]);
+        let store = crate::state::RocksWindowAggStore::create(
+            PersistentSort::config(directory, options),
+            &state_types,
+            0..=0,
+        )
+        .expect("persistent calendar create");
+        Self(
+            TumblingAggregator::new(size, slide, cumulative, vec![0], vec![3])
+                .with_key_timestamp_precisions(vec![-1])
+                .with_store(store, vec![DataType::Utf8]),
+        )
+    }
+
+    pub fn restore_fixed_calendar(size: i64, slide: i64, cumulative: bool, bytes: &[u8]) -> Self {
+        Self(TumblingAggregator::restore(
+            size,
+            slide,
+            cumulative,
+            vec![0],
+            vec![3],
+            bytes,
+        ))
+    }
+
+    pub fn snapshot_fixed_calendar(&mut self) -> Vec<u8> {
+        self.0.snapshot()
     }
 
     /// The accounted variant: state is tracked against `budget_bytes`, measuring the
@@ -269,6 +383,24 @@ impl Session {
                 .with_memory_budget(budget_bytes)
                 .expect("empty state fits any budget"),
         )
+    }
+
+    pub fn calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.0.set_calendar(callback);
+    }
+
+    pub fn snapshot(&mut self) -> Vec<u8> {
+        self.0.snapshot()
+    }
+
+    pub fn restore(gap_millis: i64, value_type: i64, kinds: Vec<i64>, snapshot: &[u8]) -> Self {
+        let value_types = vec![value_type; kinds.len()];
+        Self(SessionAggregator::restore(
+            gap_millis,
+            value_types,
+            kinds,
+            snapshot,
+        ))
     }
 
     pub fn update(&mut self, batch: &RecordBatch) {
@@ -1017,6 +1149,9 @@ impl IntervalJoin {
 pub struct WindowJoin(WindowJoiner);
 
 impl WindowJoin {
+    pub fn calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.0.set_calendar(callback);
+    }
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1062,6 +1197,9 @@ pub struct PersistentWindowJoin(WindowJoiner);
 
 #[cfg(feature = "rocksdb-state")]
 impl PersistentWindowJoin {
+    pub fn calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.0.set_calendar(callback);
+    }
     fn operator(schema: SchemaRef) -> WindowJoiner {
         WindowJoin::new(vec![0], vec![0], 2, 3, 2, 3, schema.clone(), schema).0
     }
@@ -1663,6 +1801,9 @@ pub struct WindowRankState(crate::topn::WindowRanker);
 
 #[cfg(feature = "rocksdb-state")]
 impl WindowRankState {
+    pub fn calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.0.set_calendar(callback);
+    }
     pub fn memory(limit: i64, keep_last: bool) -> Self {
         let mut ranker = crate::topn::WindowRanker::new(
             0,

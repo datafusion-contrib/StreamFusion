@@ -12,14 +12,14 @@ import org.apache.flink.table.planner.plan.nodes.physical.common.CommonPhysicalJ
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowJoin;
 
 /**
- * Recognizes the event-time window joins the native operator implements:
- * {@code a JOIN b ON a.k = b.k} where both sides were windowed by identical event-time windowing
- * TVFs, so each row carries matching {@code window_start}/{@code window_end} columns. Requires an
- * INNER/LEFT/RIGHT/FULL join, equi-join keys of supported types
- * (bigint/int/string/boolean/date/timestamp/decimal) — zero or more, since the sides' window bounds are
- * always joined on, so a windows-only join (Nexmark q5) matches within each window — null-filtering keys,
- * a natively expressible residual (if any), and a window-attached event-time windowing on both sides.
- * Anything else (proctime, an inexpressible filter, an unsupported key type) falls back.
+ * Recognizes the event-time window joins the native operator implements: {@code a JOIN b ON a.k =
+ * b.k} where both sides were windowed by identical event-time windowing TVFs, so each row carries
+ * matching {@code window_start}/{@code window_end} columns. Requires an INNER/LEFT/RIGHT/FULL join,
+ * equi-join keys of supported types (bigint/int/string/boolean/date/timestamp/decimal) — zero or
+ * more, since the sides' window bounds are always joined on, so a windows-only join (Nexmark q5)
+ * matches within each window — null-filtering keys, a natively expressible residual (if any), and a
+ * window-attached event-time windowing on both sides. Anything else (proctime, an inexpressible
+ * filter, an unsupported key type) falls back.
  */
 final class WindowJoinMatcher {
 
@@ -40,8 +40,10 @@ final class WindowJoinMatcher {
     if (leftKeys.length != rightKeys.length) {
       return "window join: mismatched equi-join key counts";
     }
-    // Zero user equi-keys is allowed: the native joiner always joins on the two sides' window bounds
-    // (window_start/window_end), so with no extra key it matches every pair within a window (subject to
+    // Zero user equi-keys is allowed: the native joiner always joins on the two sides' window
+    // bounds
+    // (window_start/window_end), so with no extra key it matches every pair within a window
+    // (subject to
     // the residual) — Nexmark q5's `AuctionBids JOIN MaxBids ON starttime/endtime AND num >= maxn`.
     if (joinSpec.getNonEquiCondition().isPresent() && nonEquiPredicate(join) == null) {
       return "window join: the residual non-equi condition is not natively expressible";
@@ -67,6 +69,11 @@ final class WindowJoinMatcher {
     if (zoneReason != null) {
       return "window join: " + zoneReason;
     }
+    if (!java.util.Objects.equals(
+        WindowZoneGate.calendarZoneId(join, join.leftWindowing()),
+        WindowZoneGate.calendarZoneId(join, join.rightWindowing()))) {
+      return "window join: both sides must use the same window calendar";
+    }
     if (WindowZoneGate.boundaryOffsetMillis(join, join.leftWindowing())
         != WindowZoneGate.boundaryOffsetMillis(join, join.rightWindowing())) {
       return "window join: both sides must use the same window time domain";
@@ -86,8 +93,8 @@ final class WindowJoinMatcher {
   }
 
   /**
-   * The encoded residual non-equi condition (its input refs index into the joined
-   * {@code [left.., right..]} row), or null when there is none or it is not natively expressible.
+   * The encoded residual non-equi condition (its input refs index into the joined {@code [left..,
+   * right..]} row), or null when there is none or it is not natively expressible.
    */
   static RexExpression nonEquiPredicate(StreamPhysicalWindowJoin join) {
     Optional<RexNode> condition = ((CommonPhysicalJoin) join).joinSpec().getNonEquiCondition();
@@ -155,23 +162,24 @@ final class WindowJoinMatcher {
     // Shuffle each input by its join key (columnar where it sits on a columnar producer), the
     // same coupling as the interval join. The window join then matches per window in its state.
     return new StreamPhysicalNativeWindowJoin(
-        join.getCluster(),
-        join.getTraitSet(),
-        ctx.columnarInput(join.getLeft(), leftKeys),
-        ctx.columnarInput(join.getRight(), rightKeys),
-        join.getRowType(),
-        leftKeys,
-        rightKeys,
-        WindowJoinMatcher.leftWindowStart(join),
-        WindowJoinMatcher.leftWindowEnd(join),
-        WindowJoinMatcher.rightWindowStart(join),
-        WindowJoinMatcher.rightWindowEnd(join),
-        WindowJoinMatcher.joinTypeCode(join),
-        WindowJoinMatcher.nonEquiPredicate(join),
-        WindowJoinMatcher.isProctime(join),
-        WindowJoinMatcher.windowMillis(join),
-        WindowJoinMatcher.slideMillis(join),
-        WindowJoinMatcher.cumulative(join),
-        WindowZoneGate.boundaryOffsetMillis(join, join.leftWindowing()));
+            join.getCluster(),
+            join.getTraitSet(),
+            ctx.columnarInput(join.getLeft(), leftKeys),
+            ctx.columnarInput(join.getRight(), rightKeys),
+            join.getRowType(),
+            leftKeys,
+            rightKeys,
+            WindowJoinMatcher.leftWindowStart(join),
+            WindowJoinMatcher.leftWindowEnd(join),
+            WindowJoinMatcher.rightWindowStart(join),
+            WindowJoinMatcher.rightWindowEnd(join),
+            WindowJoinMatcher.joinTypeCode(join),
+            WindowJoinMatcher.nonEquiPredicate(join),
+            WindowJoinMatcher.isProctime(join),
+            WindowJoinMatcher.windowMillis(join),
+            WindowJoinMatcher.slideMillis(join),
+            WindowJoinMatcher.cumulative(join),
+            WindowZoneGate.boundaryOffsetMillis(join, join.leftWindowing()))
+        .withCalendarZone(WindowZoneGate.calendarZoneId(join, join.leftWindowing()));
   }
 }

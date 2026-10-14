@@ -12,11 +12,11 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalW
 
 /**
  * Recognizes the windowing table functions the native operator implements: an event-time
- * TUMBLE/HOP/CUMULATE (zero offset) over a timestamp rowtime, whose
- * input columns the row/Arrow conversion can all carry. The window assignment math is shared with the
- * window aggregate ({@link WindowAggregateMatcher#windowSize}/{@link WindowAggregateMatcher#windowSlide}/
- * {@link WindowAggregateMatcher#isCumulative}/{@link WindowAggregateMatcher#timeColumn}), so a TVF
- * feeding a window join or aggregate assigns windows identically to a fused window aggregate.
+ * TUMBLE/HOP/CUMULATE (zero offset) over a timestamp rowtime, whose input columns the row/Arrow
+ * conversion can all carry. The window assignment math is shared with the window aggregate ({@link
+ * WindowAggregateMatcher#windowSize}/{@link WindowAggregateMatcher#windowSlide}/ {@link
+ * WindowAggregateMatcher#isCumulative}/{@link WindowAggregateMatcher#timeColumn}), so a TVF feeding
+ * a window join or aggregate assigns windows identically to a fused window aggregate.
  */
 final class WindowTableFunctionMatcher {
 
@@ -83,15 +83,16 @@ final class WindowTableFunctionMatcher {
 
   static RelNode substitute(StreamPhysicalWindowTableFunction tvf, PlanContext ctx) {
     return new StreamPhysicalNativeWindowTableFunction(
-        tvf.getCluster(),
-        tvf.getTraitSet(),
-        tvf.getInputs().get(0),
-        tvf.getRowType(),
-        WindowTableFunctionMatcher.timeColumn(tvf),
-        WindowTableFunctionMatcher.windowMillis(tvf),
-        WindowTableFunctionMatcher.slideMillis(tvf),
-        WindowTableFunctionMatcher.cumulative(tvf),
-        WindowTableFunctionMatcher.isProctime(tvf),
-        WindowZoneGate.boundaryOffsetMillis(tvf, tvf.windowing()));
+            tvf.getCluster(),
+            tvf.getTraitSet(),
+            tvf.getInputs().get(0),
+            tvf.getRowType(),
+            WindowTableFunctionMatcher.timeColumn(tvf),
+            WindowTableFunctionMatcher.windowMillis(tvf),
+            WindowTableFunctionMatcher.slideMillis(tvf),
+            WindowTableFunctionMatcher.cumulative(tvf),
+            WindowTableFunctionMatcher.isProctime(tvf),
+            WindowZoneGate.boundaryOffsetMillis(tvf, tvf.windowing()))
+        .withCalendarZone(WindowZoneGate.calendarZoneId(tvf, tvf.windowing()));
   }
 }

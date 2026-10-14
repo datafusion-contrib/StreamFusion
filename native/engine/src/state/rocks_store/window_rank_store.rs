@@ -50,6 +50,7 @@ pub(crate) struct RocksWindowRankStore {
     row_converter: RowConverter,
     row_types: Vec<DataType>,
     watermark: i64,
+    next_exclusive_end: Option<i64>,
     timer_deadline: i64,
     generation: i64,
     write_batch_size: usize,
@@ -143,6 +144,7 @@ impl RocksWindowRankStore {
             row_converter,
             row_types: row_types.to_vec(),
             watermark: i64::MIN,
+            next_exclusive_end: None,
             timer_deadline: i64::MIN,
             generation: 0,
             write_batch_size: opened.write_batch_size,
@@ -263,7 +265,44 @@ impl RocksWindowRankStore {
         &mut self,
         watermark: i64,
     ) -> Result<Vec<StoredRankGroup>, DataFusionError> {
+        self.take_closed_with_calendar(watermark, None)
+    }
+
+    pub(crate) fn next_exclusive_end(&self) -> Option<i64> {
+        self.next_exclusive_end
+    }
+
+    pub(crate) fn take_closed_with_calendar(
+        &mut self,
+        watermark: i64,
+        calendar: Option<&crate::window_calendar::WindowCalendar>,
+    ) -> Result<Vec<StoredRankGroup>, DataFusionError> {
         let mut closed: Vec<(i64, i64, i32, Box<[u8]>, Box<[u8]>)> = Vec::new();
+        let deadlines = if let Some(calendar) = calendar {
+            let mut ends = std::collections::BTreeSet::new();
+            for key_group in self.key_groups.clone() {
+                let prefix = key_group.to_be_bytes();
+                let mut rows = self.db.raw_iterator();
+                rows.seek(prefix);
+                while let Some(key) = rows.key() {
+                    if key.len() < KEY_PREFIX_LEN || key[..4] != prefix {
+                        break;
+                    }
+                    ends.insert(window_end_from(&key[4..12]));
+                    rows.next();
+                }
+                rows.status().map_err(re)?;
+            }
+            let deadlines = calendar.end_thresholds(ends);
+            self.next_exclusive_end = deadlines
+                .values()
+                .filter(|&&end| end > watermark)
+                .min()
+                .copied();
+            Some(deadlines)
+        } else {
+            None
+        };
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for key_group in self.key_groups.clone() {
             let prefix = key_group.to_be_bytes();
@@ -276,8 +315,11 @@ impl RocksWindowRankStore {
                     break;
                 }
                 let end = window_end_from(&key[4..12]);
-                if end > watermark {
-                    break;
+                if deadlines.as_ref().map_or(end, |ends| ends[&end]) > watermark {
+                    if deadlines.is_none() {
+                        break;
+                    }
+                    continue;
                 }
                 let start = i64::from_be_bytes(key[12..KEY_PREFIX_LEN].try_into().unwrap());
                 closed.push((
@@ -291,7 +333,11 @@ impl RocksWindowRankStore {
             }
         }
         writes.finish()?;
-        closed.sort_unstable_by(|a, b| (a.0, a.1, a.3.as_ref()).cmp(&(b.0, b.1, b.3.as_ref())));
+        closed.sort_unstable_by(|a, b| {
+            let left = deadlines.as_ref().map_or(a.0, |values| values[&a.0]);
+            let right = deadlines.as_ref().map_or(b.0, |values| values[&b.0]);
+            (left, a.0, a.1, a.3.as_ref()).cmp(&(right, b.0, b.1, b.3.as_ref()))
+        });
         self.into_groups(closed)
     }
 

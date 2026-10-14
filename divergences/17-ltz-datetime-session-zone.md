@@ -47,3 +47,60 @@ local string) never arises for these functions.
 Comet routes the same operation through `chrono-tz` and documents these exact incompatibilities
 (`hour`/`date_trunc` over non-UTC, far-future DST). We take the extra step of a byte-parity default (the
 JVM upcall) and keep the native path opt-in, consistent with this project's parity-first rule.
+
+## Regional SESSION calendar
+
+Session connectivity now has a local assignment domain for regional LTZ inputs. The Arrow session
+state keeps those local bounds, and a batched callback invokes released `TimeWindowUtil` conversion
+for epoch deadlines. This uses Flink's JDK timezone rules rather than introducing an independently
+versioned native timezone database. The callback owns a scoped global reference and releases JNI
+locals within each call, following Comet's host-resource pattern.
+
+The existing Arroyo-inspired per-key session grouping/connected-run structure remains intact.
+Lateness is checked after merging candidate bounds; firing checks every session's converted
+end independently, so historical non-monotonic local-end deadlines do not become a prefix flush.
+RocksDB scans use the same deadline conversion without changing persisted bound/state bytes.
+The firing scan also records the earliest remaining deadline; Java rearms it and derives it again
+from restored bounds, including clipped/rescaled state. This matches end-minus-one timer firing
+and preserves independent-key processing-time recovery.
+
+Regional fixed-grid, TVF, join, rank and dedup consumers share the released calendar contract.
+The candidate planner propagates that contract consistently. Shipping still requires the full-job
+performance checks in [#325](https://github.com/datafusion-contrib/StreamFusion/issues/325).
+
+## Regional fixed-grid deadlines
+
+Single-phase fixed windows reuse the local-time assignment grid and the batched released-Flink
+calendar callback. Bounds remain local in the Arrow and persistent codecs. Each end has its own
+epoch deadline: neither a shifted watermark nor a local-end prefix models the 1883 Los Angeles
+case. Heap firing selects and orders windows by deadline; the regional persistent path scans and
+filters all ends. The fixed-offset prefix path remains intact.
+
+This preserves the Arroyo-style per-bin Arrow accumulator layout while adapting its firing index
+to Flink's calendar contract. Unique end conversion is batched across keys and rows. The firing
+pass caches the earliest remaining deadline for processing-time scheduling and restore. Existing
+plain TIMESTAMP output remains governed by the explicit input-type flag.
+
+The 84 released single-phase calendar/recovery cases and 96 GLOBAL-stage comparisons per line
+pass. Regional shared windows retain slice accumulators and keyed pending timers rather than
+independent copies per window, preserving released merge/expiration order under historical timer
+reordering. Independent LOCAL and complete LOCAL-to-GLOBAL controls now verify delivery and state behavior.
+The join/rank/dedup calendar matrix passes 100 cases on each released SDK, covering exact firing,
+late rows and heap/RocksDB restoration. Heap replay reconstructs durable rows before reapplying the
+epoch watermark because local bounds alone cannot establish lateness before the callback is installed.
+The SQL matrix covers all six consumers in fixed and regional zones; checkpoint controls retain
+exact bounds and late-row behavior across two completed restores. Full-job performance validation
+remains under #325.
+
+## Regional TVF assignment
+
+The stateless TVF reuses native `windows_for` after a batched released-JDK local-time conversion.
+It retains the original payload timestamps while appending local bounds; `window_time` is converted
+separately with released `TimeWindowUtil.toEpochMills`, not the timer conversion. Scoped JNI frames
+and exception propagation share the calendar resource pattern used by the stateful operators.
+
+The 1.18.1 TVF resets output row kinds to INSERT; 2.2.1 propagates them. A released-line compatibility
+constant selects output normalization, using a freshly allocated Arrow tag buffer to avoid mutating
+shared input buffers. The native kernel still fans out each input tag in its owned output array.
+The planner carries one calendar through TVF, aggregates, joins and rank/dedup. Uncovered shapes
+and incompatible input calendars retain the existing fallback rules.

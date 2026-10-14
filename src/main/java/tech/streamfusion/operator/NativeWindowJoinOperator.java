@@ -19,18 +19,20 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  * windowing-TVF inputs on their equi-join key within the same window. Each input row carries the
  * {@code window_start}/{@code window_end} columns assigned upstream. Both inputs are buffered
  * natively; on a watermark the native joiner emits the INNER matches of every window the watermark
- * has closed and evicts them — a buffer-then-emit-on-watermark flow (unlike the interval join, which
- * emits as rows arrive). The buffering, the per-window hash join, and the eviction live natively;
- * this layer moves batches across the bridge and owns the handle's checkpointed state.
+ * has closed and evicts them — a buffer-then-emit-on-watermark flow (unlike the interval join,
+ * which emits as rows arrive). The buffering, the per-window hash join, and the eviction live
+ * natively; this layer moves batches across the bridge and owns the handle's checkpointed state.
  *
- * <p>Flink delivers each input's watermark to {@link #processWatermark1}/{@link #processWatermark2};
- * the base operator combines them into the minimum and calls {@link #processWatermark}, which closes
- * the windows that minimum has passed before forwarding it downstream.
+ * <p>Flink delivers each input's watermark to {@link #processWatermark1}/{@link
+ * #processWatermark2}; the base operator combines them into the minimum and calls {@link
+ * #processWatermark}, which closes the windows that minimum has passed before forwarding it
+ * downstream.
  *
  * <p>A **proctime** window join instead closes windows on the processing-time clock: the upstream
  * proctime TVF assigns each row to the window(s) covering the clock, and this operator fires a
- * processing-time timer at each window end (chaining to the next slide boundary while windows remain
- * open, like the proctime window aggregate). It ignores watermarks in that mode and drains on finish.
+ * processing-time timer at each window end (chaining to the next slide boundary while windows
+ * remain open, like the proctime window aggregate). It ignores watermarks in that mode and drains
+ * on finish.
  */
 public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
@@ -49,6 +51,7 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   private final long windowMillis;
   private final long slideMillis;
   private final boolean cumulative;
+  private String calendarZoneId;
   private final long boundaryOffsetMillis;
 
   private transient long registeredTimer;
@@ -128,6 +131,12 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     this.boundaryOffsetMillis = boundaryOffsetMillis;
   }
 
+  public NativeWindowJoinOperator withCalendarZone(String zoneId) {
+    if (zoneId != null && !java.time.ZoneId.of(zoneId).getRules().isFixedOffset())
+      calendarZoneId = zoneId;
+    return this;
+  }
+
   // A proctime window join closes on processing-time timers, so the deadline must travel in every
   // raw key group; an event-time one writes the frame with no deadline.
   @Override
@@ -137,7 +146,7 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
 
   @Override
   protected long processingTimeTimerDeadlineForSnapshot() {
-    return proctime ? maxOpenEnd : Long.MIN_VALUE;
+    return proctime ? (calendarZoneId == null ? maxOpenEnd : registeredTimer) : Long.MIN_VALUE;
   }
 
   @Override
@@ -269,11 +278,16 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   @Override
   public void open() throws Exception {
     super.open();
-    flinkWindowMetrics =
-        new FlinkWindowJoinMetrics(getMetricGroup(), getProcessingTimeService());
+    if (calendarZoneId != null)
+      Native.setWindowJoinerCalendar(handle, new WindowCalendar(calendarZoneId, proctime));
+    flinkWindowMetrics = new FlinkWindowJoinMetrics(getMetricGroup(), getProcessingTimeService());
     registeredTimer = Long.MIN_VALUE;
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
-    if (proctime && maxOpenEnd != Long.MIN_VALUE) {
+    if (proctime && calendarZoneId != null) {
+      long now = getProcessingTimeService().getCurrentProcessingTime();
+      flush(now);
+      scheduleNextTimer(now);
+    } else if (proctime && maxOpenEnd != Long.MIN_VALUE) {
       long now = getProcessingTimeService().getCurrentProcessingTime();
       if (maxOpenEnd <= now) {
         flush(now);
@@ -301,8 +315,8 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
 
   /**
    * After buffering a proctime batch, close any window the clock has passed and (re)schedule the
-   * timer at the next window-end boundary while windows remain open — the same chained-timer model as
-   * the proctime window aggregate, here driving the two-input join's flush.
+   * timer at the next window-end boundary while windows remain open — the same chained-timer model
+   * as the proctime window aggregate, here driving the two-input join's flush.
    */
   private void onProctimeInput() {
     if (!proctime) {
@@ -323,7 +337,16 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   }
 
   private void scheduleNextTimer(long now) {
-    long boundary = Math.floorDiv(now + 1, slideMillis) * slideMillis + slideMillis - 1;
+    if (calendarZoneId != null) {
+      long boundary = Native.nextWindowJoinerTimerDeadline(handle);
+      if (boundary > now && boundary != registeredTimer) {
+        getProcessingTimeService().registerTimer(boundary, this);
+        registeredTimer = boundary;
+      }
+      return;
+    }
+    long boundary =
+        WindowTimeDomain.gridStart(now + 1, slideMillis, boundaryOffsetMillis) + slideMillis - 1;
     if (boundary <= maxOpenEnd && boundary > registeredTimer) {
       getProcessingTimeService().registerTimer(boundary, this);
       registeredTimer = boundary;
@@ -332,8 +355,8 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
 
   private long latestWindowEnd(long now) {
     return cumulative
-        ? Math.floorDiv(now, windowMillis) * windowMillis + windowMillis - 1
-        : Math.floorDiv(now, slideMillis) * slideMillis + windowMillis - 1;
+        ? WindowTimeDomain.gridStart(now, windowMillis, boundaryOffsetMillis) + windowMillis - 1
+        : WindowTimeDomain.gridStart(now, slideMillis, boundaryOffsetMillis) + windowMillis - 1;
   }
 
   /** Hands a batch to its side of the joiner, which buffers it (no output until a watermark). */
@@ -378,7 +401,9 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
 
   /** Emits and evicts every window whose end the given threshold has passed. */
   private void flush(long threshold) {
-    threshold = WindowTimeDomain.closeThreshold(threshold, boundaryOffsetMillis);
+    threshold =
+        WindowTimeDomain.closeThreshold(
+            threshold, calendarZoneId == null ? boundaryOffsetMillis : 0);
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       if (directRocksDBState()) {

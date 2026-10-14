@@ -16,12 +16,16 @@ import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeWindowJoinOperator;
 
-/** Wraps the native columnar window-join operator into the plan; Arrow batches on both inputs and out. */
+/**
+ * Wraps the native columnar window-join operator into the plan; Arrow batches on both inputs and
+ * out.
+ */
 public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch> {
 
   private static final String TRANSFORMATION = "native-window-join";
 
+  private String calendarZoneId;
   private final int[] leftKeys;
   private final int[] rightKeys;
   private final int leftWindowStart;
@@ -86,6 +90,11 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  public NativeWindowJoinExecNode withCalendarZone(String zoneId) {
+    calendarZoneId = zoneId;
+    return this;
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
@@ -102,23 +111,24 @@ public class NativeWindowJoinExecNode extends ExecNodeBase<ArrowBatch>
             right,
             createTransformationMeta(TRANSFORMATION, config),
             new NativeWindowJoinOperator(
-                leftKeys,
-                rightKeys,
-                leftWindowStart,
-                leftWindowEnd,
-                rightWindowStart,
-                rightWindowEnd,
-                joinType,
-                leftType,
-                rightType,
-                RexExpression.toEncodedPredicate(predicate),
-                proctime,
-                windowMillis,
-                slideMillis,
-                cumulative,
-                keyTimestampPrecisions,
-                maxParallelism,
-                boundaryOffsetMillis),
+                    leftKeys,
+                    rightKeys,
+                    leftWindowStart,
+                    leftWindowEnd,
+                    rightWindowStart,
+                    rightWindowEnd,
+                    joinType,
+                    leftType,
+                    rightType,
+                    RexExpression.toEncodedPredicate(predicate),
+                    proctime,
+                    windowMillis,
+                    slideMillis,
+                    cumulative,
+                    keyTimestampPrecisions,
+                    maxParallelism,
+                    boundaryOffsetMillis)
+                .withCalendarZone(calendarZoneId),
             ArrowBatchTypeInformation.INSTANCE,
             left.getParallelism(),
             false);

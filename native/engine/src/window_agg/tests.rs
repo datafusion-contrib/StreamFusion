@@ -38,45 +38,49 @@ fn timestamp_panes_match_direct_windows_across_boundaries_late_rows_and_restore(
     };
     let types = vec![1009, 1009, 0, 1009];
     let kinds = vec![1, 2, 3, 3];
-    for cumulative in [false, true] {
-        let mut panes =
-            TumblingAggregator::new(10_000, 2000, cumulative, types.clone(), kinds.clone())
-                .with_memory_budget(1024 * 1024)
-                .unwrap();
-        let mut direct =
-            TumblingAggregator::new(10_000, 2000, cumulative, types.clone(), kinds.clone());
-        direct.timestamp_panes = false;
-        for times in [
-            vec![-2001, -2000, -1, 0, 1, 1999, 2000, 7999, 8000, 9999],
-            vec![0, 3000, 8000, 9999, 10_000, 10_001, 15_999, 16_000],
-        ] {
-            let input = batch(times);
-            panes.update(&input).unwrap();
-            assert_eq!(panes.memory.state_bytes, panes.computed_state_bytes());
-            direct.update(&input).unwrap();
-            assert_eq!(panes.flush(3999).unwrap(), direct.flush(3999).unwrap());
-            assert_eq!(panes.late_drops, direct.late_drops);
-            let restore = |operator: &mut TumblingAggregator| {
-                TumblingAggregator::restore(
-                    10_000,
-                    2000,
-                    cumulative,
-                    types.clone(),
-                    kinds.clone(),
-                    &operator.snapshot(),
-                )
-            };
-            panes = restore(&mut panes);
-            panes = panes.with_memory_budget(1024 * 1024).unwrap();
-            direct = restore(&mut direct);
+    for offset in [0, 123, -345, 20_700_123] {
+        for cumulative in [false, true] {
+            let mut panes =
+                TumblingAggregator::new(10_000, 2000, cumulative, types.clone(), kinds.clone())
+                    .with_memory_budget(1024 * 1024)
+                    .unwrap();
+            let mut direct =
+                TumblingAggregator::new(10_000, 2000, cumulative, types.clone(), kinds.clone());
+            panes.set_assignment_offset(offset);
+            direct.set_assignment_offset(offset);
             direct.timestamp_panes = false;
+            for times in [
+                vec![-2001, -2000, -1, 0, 1, 1999, 2000, 7999, 8000, 9999],
+                vec![0, 3000, 8000, 9999, 10_000, 10_001, 15_999, 16_000],
+            ] {
+                let input = batch(times);
+                panes.update(&input).unwrap();
+                assert_eq!(panes.memory.state_bytes, panes.computed_state_bytes());
+                direct.update(&input).unwrap();
+                assert_eq!(panes.flush(3999).unwrap(), direct.flush(3999).unwrap());
+                assert_eq!(panes.late_drops, direct.late_drops);
+                let restore = |operator: &mut TumblingAggregator| {
+                    TumblingAggregator::restore(
+                        10_000,
+                        2000,
+                        cumulative,
+                        types.clone(),
+                        kinds.clone(),
+                        &operator.snapshot(),
+                    )
+                };
+                panes = restore(&mut panes);
+                panes = panes.with_memory_budget(1024 * 1024).unwrap();
+                direct = restore(&mut direct);
+                direct.timestamp_panes = false;
+            }
+            assert_eq!(
+                panes.flush(i64::MAX).unwrap(),
+                direct.flush(i64::MAX).unwrap()
+            );
+            assert_eq!(panes.flush(i64::MAX).unwrap().num_rows(), 0);
+            assert_eq!(panes.memory.state_bytes, 0);
         }
-        assert_eq!(
-            panes.flush(i64::MAX).unwrap(),
-            direct.flush(i64::MAX).unwrap()
-        );
-        assert_eq!(panes.flush(i64::MAX).unwrap().num_rows(), 0);
-        assert_eq!(panes.memory.state_bytes, 0);
     }
 }
 
@@ -254,6 +258,152 @@ fn timestamp_extrema_partials_and_snapshots_keep_fractional_null_state() {
                 assert_eq!(string_max.value(row), "z");
             }
             _ => panic!("unexpected key"),
+        }
+    }
+}
+
+#[test]
+fn local_buffer_readiness_drains_future_slices_without_advancing_lateness() {
+    let batch = RecordBatch::try_from_iter(vec![
+        (
+            "ts",
+            Arc::new(Int64Array::from(vec![100, 2100])) as ArrayRef,
+        ),
+        ("value0", Arc::new(Int64Array::from(vec![1, 1])) as ArrayRef),
+    ])
+    .unwrap();
+    let mut local = TumblingAggregator::new(1000, 1000, false, vec![0], vec![3]);
+    local.update_local(&batch).unwrap();
+    assert!(!local.local_buffer_ready(998));
+    assert!(local.local_buffer_ready(999));
+    assert_eq!(local.current_watermark, i64::MIN);
+    let partials = local.drain_partial();
+    assert_eq!(column_i64(&partials, "slice_end").values(), &[1000, 3000]);
+    assert!(!local.local_buffer_ready(i64::MAX));
+    assert_eq!(local.current_watermark, i64::MIN);
+    local.update_local(&batch).unwrap();
+    assert_eq!(local.drain_partial(), partials);
+}
+
+#[test]
+fn basic_value_partials_keep_extrema_and_distinct_sets_across_checkpoint_restore() {
+    use arrow::array::{BooleanArray, StringArray, Time32MillisecondArray};
+    use streamfusion_bridge::timestamp::{timestamp_array, TimestampValue};
+    let timestamp = |millis, nanos| TimestampValue::new(millis, nanos).unwrap();
+    let columns: Vec<(i64, ArrayRef, Vec<i64>)> = vec![
+        (
+            0,
+            Arc::new(Int64Array::from(vec![None, Some(i64::MAX), Some(1), None])),
+            vec![22],
+        ),
+        (
+            5803,
+            Arc::new(
+                Decimal128Array::from(vec![None, Some(DECIMAL128_MAX - 1), Some(1), Some(-1)])
+                    .with_precision_and_scale(38, 3)
+                    .unwrap(),
+            ),
+            vec![22],
+        ),
+        (
+            3,
+            Arc::new(StringArray::from(vec![
+                Some("z"),
+                Some(""),
+                Some("é😀"),
+                None,
+            ])),
+            vec![1, 2],
+        ),
+        (
+            1009,
+            Arc::new(timestamp_array([
+                Some(timestamp(253_402_300_799_999, 999_999)),
+                Some(timestamp(-62_135_596_800_000, 1)),
+                Some(timestamp(0, 2)),
+                None,
+            ])),
+            vec![1, 2],
+        ),
+        (
+            10,
+            Arc::new(BooleanArray::from(vec![
+                Some(true),
+                Some(false),
+                Some(true),
+                None,
+            ])),
+            vec![7],
+        ),
+        (
+            9,
+            Arc::new(Time32MillisecondArray::from(vec![
+                Some(1),
+                Some(999),
+                Some(1),
+                None,
+            ])),
+            vec![7],
+        ),
+    ];
+    for (code, values, kinds) in columns {
+        let mut fields = vec![
+            ("ts", Arc::new(Int64Array::from(vec![100; 4])) as ArrayRef),
+            ("key0", Arc::new(Int64Array::from(vec![0; 4])) as ArrayRef),
+        ];
+        fields.push(("value0", values.clone()));
+        if kinds.len() == 2 {
+            fields.push(("value1", values));
+        }
+        let batch = RecordBatch::try_from_iter(fields).unwrap();
+        for (size, slide, cumulative) in
+            [(1000, 1000, false), (1000, 500, false), (1000, 500, true)]
+        {
+            let create = || {
+                TumblingAggregator::new(
+                    size,
+                    slide,
+                    cumulative,
+                    vec![code; kinds.len()],
+                    kinds.clone(),
+                )
+            };
+            let mut single = create();
+            let mut local = TumblingAggregator::new(
+                slide,
+                slide,
+                false,
+                vec![code; kinds.len()],
+                kinds.clone(),
+            );
+            let mut global = create();
+            single.update(&batch).unwrap();
+            local.update_local(&batch).unwrap();
+            global.update_partial(&local.drain_partial()).unwrap();
+            global = TumblingAggregator::restore(
+                size,
+                slide,
+                cumulative,
+                vec![code; kinds.len()],
+                kinds.clone(),
+                &global.snapshot(),
+            );
+            let expected = single.flush(1000).unwrap();
+            let actual = global.flush(1000).unwrap();
+            assert_eq!(actual, expected, "value code {code}");
+            assert!(actual.num_rows() > 0);
+            if kinds == [7] {
+                assert_eq!(
+                    actual
+                        .column_by_name("result0")
+                        .unwrap()
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .value(0),
+                    2
+                );
+            }
         }
     }
 }
@@ -1243,6 +1393,94 @@ fn local_late_slices_update_only_unfired_final_windows_after_restore() {
             global.flush(i64::MAX).unwrap().num_rows(),
             0,
             "fully expired partials must be dropped"
+        );
+    }
+}
+
+#[test]
+fn fixed_offset_assignment_retains_epoch_bounds_and_snapshot_grid() {
+    const DAY: i64 = 86_400_000;
+    for offset in [28_800_000, -28_800_000, 20_700_000] {
+        for (size, slide, cumulative) in [
+            (DAY, DAY, false),
+            (DAY, DAY / 4, false),
+            (DAY, DAY / 4, true),
+        ] {
+            for timestamp in [-DAY * 2 + 1000, 1_704_067_200_000 + 1000] {
+                let batch = RecordBatch::try_from_iter(vec![
+                    (
+                        "ts",
+                        Arc::new(Int64Array::from(vec![timestamp])) as ArrayRef,
+                    ),
+                    ("value0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+                ])
+                .unwrap();
+                let mut before = TumblingAggregator::new(size, slide, cumulative, vec![0], vec![3]);
+                before.set_assignment_offset(offset);
+                before.update(&batch).unwrap();
+                let raw = before.snapshot();
+                let mut restored =
+                    TumblingAggregator::restore(size, slide, cumulative, vec![0], vec![3], &raw);
+                assert_eq!(
+                    before.assignment_offset_millis,
+                    restored.assignment_offset_millis
+                );
+                let mut local = Vec::new();
+                windows_for(timestamp + offset, size, slide, cumulative, &mut local);
+                local.sort_by_key(|&(_, end)| end);
+                let close = local.last().unwrap().1 - offset;
+                assert_eq!(before.flush(close).unwrap(), restored.flush(close).unwrap());
+                let mut actual =
+                    TumblingAggregator::restore(size, slide, cumulative, vec![0], vec![3], &raw);
+                let out = actual.flush(close).unwrap();
+                let starts = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+                let ends = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+                assert_eq!(
+                    starts.values().as_ref(),
+                    local
+                        .iter()
+                        .map(|(start, _)| start - offset)
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    ends.values().as_ref(),
+                    local
+                        .iter()
+                        .map(|(_, end)| end - offset)
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn fixed_offset_local_partials_merge_on_the_global_shifted_grid() {
+    const DAY: i64 = 86_400_000;
+    let offset = 20_700_000;
+    let timestamp = -DAY + 1000;
+    let batch = RecordBatch::try_from_iter(vec![
+        (
+            "ts",
+            Arc::new(Int64Array::from(vec![timestamp])) as ArrayRef,
+        ),
+        ("value0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+    ])
+    .unwrap();
+    for cumulative in [false, true] {
+        let mut local = TumblingAggregator::new(DAY / 4, DAY / 4, false, vec![0], vec![3]);
+        local.set_assignment_offset(offset);
+        local.update_local(&batch).unwrap();
+        let partial = local.drain_partial();
+        let mut global = TumblingAggregator::new(DAY, DAY / 4, cumulative, vec![0], vec![3]);
+        global.set_assignment_offset(offset);
+        global.update_partial(&partial).unwrap();
+        let mut direct = TumblingAggregator::new(DAY, DAY / 4, cumulative, vec![0], vec![3]);
+        direct.set_assignment_offset(offset);
+        direct.update(&batch).unwrap();
+        assert_eq!(
+            global.flush(DAY * 2).unwrap(),
+            direct.flush(DAY * 2).unwrap()
         );
     }
 }

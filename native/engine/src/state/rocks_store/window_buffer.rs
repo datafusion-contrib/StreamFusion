@@ -31,6 +31,7 @@ pub(crate) struct RocksWindowBuffer {
     _cache: Option<Cache>,
     max_parallelism: usize,
     converters: (RowConverter, RowConverter),
+    next_exclusive_ends: [Option<i64>; 2],
     next_seq: [u64; 2],
     timer_deadline: i64,
     generation: i64,
@@ -125,6 +126,7 @@ impl RocksWindowBuffer {
             _cache: opened.cache,
             max_parallelism: config.max_parallelism,
             converters: (converter(&left_schema)?, converter(&right_schema)?),
+            next_exclusive_ends: [None, None],
             next_seq: [0, 0],
             timer_deadline: i64::MIN,
             generation: 0,
@@ -179,8 +181,42 @@ impl RocksWindowBuffer {
         watermark: i64,
         schema: &SchemaRef,
     ) -> Result<Option<RecordBatch>, DataFusionError> {
+        self.take_closed_with_calendar(left, watermark, schema, None)
+    }
+
+    pub(crate) fn next_exclusive_end(&self) -> Option<i64> {
+        self.next_exclusive_ends.iter().flatten().min().copied()
+    }
+
+    pub(crate) fn take_closed_with_calendar(
+        &mut self,
+        left: bool,
+        watermark: i64,
+        schema: &SchemaRef,
+        calendar: Option<&crate::window_calendar::WindowCalendar>,
+    ) -> Result<Option<RecordBatch>, DataFusionError> {
         let table = Self::table(left);
         let mut closed: Vec<(u64, Box<[u8]>)> = Vec::new();
+        let deadlines = if let Some(calendar) = calendar {
+            let mut ends = std::collections::BTreeSet::new();
+            for row in self.db.iterator(IteratorMode::Start) {
+                let (key, value) = row.map_err(re)?;
+                if key.len() == KEY_LEN && key[4] == table {
+                    ends.insert(i64::from_le_bytes(
+                        value[..8].try_into().expect("window end"),
+                    ));
+                }
+            }
+            let deadlines = calendar.end_thresholds(ends);
+            self.next_exclusive_ends[table as usize] = deadlines
+                .values()
+                .filter(|&&end| end > watermark)
+                .min()
+                .copied();
+            Some(deadlines)
+        } else {
+            None
+        };
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, value) = row.map_err(re)?;
@@ -188,7 +224,11 @@ impl RocksWindowBuffer {
                 continue;
             }
             let window_end = i64::from_le_bytes(value[..8].try_into().expect("window end"));
-            if window_end <= watermark {
+            if deadlines
+                .as_ref()
+                .map_or(window_end, |ends| ends[&window_end])
+                <= watermark
+            {
                 let seq = u64::from_be_bytes(key[5..].try_into().expect("arrival sequence"));
                 closed.push((seq, value[8..].into()));
                 writes.delete(key)?;

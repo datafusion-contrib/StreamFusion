@@ -65,6 +65,22 @@ streamfusion-benchmark-support.workspace = true
 bytes = "1"
 
 [[bench]]
+name = "fixed_window_calendar"
+harness = false
+
+[[bench]]
+name = "session_calendar"
+harness = false
+
+[[bench]]
+name = "window_tvf_calendar"
+harness = false
+
+[[bench]]
+name = "window_consumers_calendar"
+harness = false
+
+[[bench]]
 name = "operators"
 harness = false
 

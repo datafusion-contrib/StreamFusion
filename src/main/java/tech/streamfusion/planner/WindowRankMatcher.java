@@ -12,10 +12,11 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 /**
  * Recognizes window Top-N — {@code ROW_NUMBER() OVER (PARTITION BY window[, key] ORDER BY …) <= N}
  * over a windowing-TVF input, planned as a {@link StreamPhysicalWindowRank}. The window is attached
- * as {@code window_start}/{@code window_end} columns (a {@link WindowAttachedWindowingStrategy}); the
- * native ranker keeps, per window and partition key, the top N rows by the order key and emits them
- * when a watermark closes the window. Requires {@code ROW_NUMBER}, a constant range starting at 1,
- * and input columns the conversion supports; anything else (RANK/DENSE_RANK, an offset) falls back.
+ * as {@code window_start}/{@code window_end} columns (a {@link WindowAttachedWindowingStrategy});
+ * the native ranker keeps, per window and partition key, the top N rows by the order key and emits
+ * them when a watermark closes the window. Requires {@code ROW_NUMBER}, a constant range starting
+ * at 1, and input columns the conversion supports; anything else (RANK/DENSE_RANK, an offset) falls
+ * back.
  */
 final class WindowRankMatcher {
 
@@ -122,23 +123,24 @@ final class WindowRankMatcher {
   static RelNode substitute(StreamPhysicalWindowRank rank, PlanContext ctx) {
     int[] partitionColumns = WindowRankMatcher.partitionColumns(rank);
     return new StreamPhysicalNativeWindowRank(
-        rank.getCluster(),
-        rank.getTraitSet(),
-        ctx.columnarInput(rank.getInputs().get(0), partitionColumns),
-        rank.getRowType(),
-        WindowRankMatcher.windowStartColumn(rank),
-        WindowRankMatcher.windowEndColumn(rank),
-        partitionColumns,
-        WindowRankMatcher.sortIndices(rank),
-        WindowRankMatcher.sortAscending(rank),
-        WindowRankMatcher.sortNullsFirst(rank),
-        WindowRankMatcher.limit(rank),
-        WindowRankMatcher.outputRankNumber(rank),
-        WindowRankMatcher.isProctime(rank),
-        WindowRankMatcher.windowMillis(rank),
-        WindowRankMatcher.slideMillis(rank),
-        WindowRankMatcher.cumulative(rank),
-        WindowZoneGate.boundaryOffsetMillis(rank, rank.windowing()),
-        false);
+            rank.getCluster(),
+            rank.getTraitSet(),
+            ctx.columnarInput(rank.getInputs().get(0), partitionColumns),
+            rank.getRowType(),
+            WindowRankMatcher.windowStartColumn(rank),
+            WindowRankMatcher.windowEndColumn(rank),
+            partitionColumns,
+            WindowRankMatcher.sortIndices(rank),
+            WindowRankMatcher.sortAscending(rank),
+            WindowRankMatcher.sortNullsFirst(rank),
+            WindowRankMatcher.limit(rank),
+            WindowRankMatcher.outputRankNumber(rank),
+            WindowRankMatcher.isProctime(rank),
+            WindowRankMatcher.windowMillis(rank),
+            WindowRankMatcher.slideMillis(rank),
+            WindowRankMatcher.cumulative(rank),
+            WindowZoneGate.boundaryOffsetMillis(rank, rank.windowing()),
+            false)
+        .withCalendarZone(WindowZoneGate.calendarZoneId(rank, rank.windowing()));
   }
 }

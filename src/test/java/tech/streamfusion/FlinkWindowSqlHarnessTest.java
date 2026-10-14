@@ -182,23 +182,21 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
-  void legacyLtzWindowWithMisalignedSessionZoneFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void legacyLtzWindowWithMisalignedSessionZoneMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithFixedOffsetZone,
         "SELECT k, SUM(`value`) AS s, "
             + "TUMBLE_START(rt, INTERVAL '1' HOUR) AS window_start "
-            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' HOUR)",
-        "session-zone offset to align with the window slide");
+            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' HOUR)");
   }
 
   @Test
-  void legacyLtzWindowWithDstSessionZoneFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void legacyLtzWindowWithDstSessionZoneMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
         "SELECT k, SUM(`value`) AS s, "
             + "TUMBLE_START(rt, INTERVAL '1' SECOND) AS window_start "
-            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)",
-        "fixed offset for the full timestamp range");
+            + "FROM src GROUP BY k, TUMBLE(rt, INTERVAL '1' SECOND)");
   }
 
   @Test
@@ -212,12 +210,11 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
-  void legacyLtzSessionWithDstZoneFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void legacyLtzSessionWithDstZoneMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
         "SELECT k, SUM(`value`) AS s FROM src "
-            + "GROUP BY k, SESSION(rt, INTERVAL '1' SECOND)",
-        "legacy SESSION over TIMESTAMP_LTZ requires a fixed offset for the full timestamp range");
+            + "GROUP BY k, SESSION(rt, INTERVAL '1' SECOND)");
   }
 
   @Test
@@ -230,44 +227,40 @@ class FlinkWindowSqlHarnessTest {
   }
 
   @Test
-  void tvfLtzTumbleWithMisalignedSessionZoneFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void tvfLtzTumbleWithMisalignedSessionZoneMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithFixedOffsetZone,
         "SELECT k, SUM(`value`) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' HOUR)) "
-            + "GROUP BY window_start, window_end, k",
-        "session-zone offset to align with the window slide");
+            + "GROUP BY window_start, window_end, k");
   }
 
   @Test
-  void tvfLtzTumbleWithDstSessionZoneFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void tvfLtzTumbleWithDstSessionZoneMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
         "SELECT k, SUM(`value`) AS s "
             + "FROM TABLE(TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
-            + "GROUP BY window_start, window_end, k",
-        "fixed offset for the full timestamp range");
+            + "GROUP BY window_start, window_end, k");
   }
 
   @Test
-  void tvfLtzSessionWithDstSessionZoneFallsBack() throws Exception {
+  void tvfLtzSessionWithDstSessionZoneMatchesHost() throws Exception {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSessionTableFunction();
-    NativeParity.assertFallbackReasonContains(
+    NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::environmentWithLosAngelesZone,
         "SELECT k, SUM(`value`) AS s, window_start, window_end "
             + "FROM TABLE(SESSION(TABLE src PARTITION BY k, DESCRIPTOR(rt), INTERVAL '1' SECOND)) "
-            + "GROUP BY window_start, window_end, k",
-        "TIMESTAMP_LTZ session windows require a fixed offset for the full timestamp range");
+            + "GROUP BY window_start, window_end, k");
   }
 
   @Test
-  void twoPhaseLtzHopWithMisalignedSessionZoneFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void twoPhaseLtzHopWithMisalignedSessionZoneMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkWindowSqlHarnessTest::twoPhaseEnvironmentWithFixedOffsetZone,
         "SELECT k, SUM(`value`) AS s "
             + "FROM TABLE(HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '1' HOUR, INTERVAL '2' HOUR)) "
-            + "GROUP BY window_start, window_end, k",
-        "session-zone offset to align with the window slide");
+            + "GROUP BY window_start, window_end, k");
   }
 
   @Test

@@ -271,11 +271,10 @@ class FlinkColumnarWindowSqlHarnessTest {
   }
 
   @Test
-  void legacyProctimeWindowWithMisalignedSessionZoneFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void legacyProctimeWindowWithMisalignedSessionZoneMatchesHost() throws Exception {
+    NativeParity.assertParity(
         FlinkColumnarWindowSqlHarnessTest::proctimeKolkataEnvironment,
-        "SELECT k, SUM(v) AS s FROM src GROUP BY k, TUMBLE(pt, INTERVAL '1' HOUR)",
-        "session-zone offset to align with the window slide");
+        "SELECT k, SUM(v) AS s FROM src GROUP BY k, TUMBLE(pt, INTERVAL '1' HOUR)");
   }
 
   @Test

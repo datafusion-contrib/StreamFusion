@@ -56,7 +56,9 @@ final class WindowDeduplicateMatcher {
     return dedup.partitionKeys();
   }
 
-  /** The single order column: the rowtime, ascending for keep-first and descending for keep-last. */
+  /**
+   * The single order column: the rowtime, ascending for keep-first and descending for keep-last.
+   */
   static int[] sortIndices(StreamPhysicalWindowDeduplicate dedup) {
     return new int[] {dedup.orderKey()};
   }
@@ -117,24 +119,25 @@ final class WindowDeduplicateMatcher {
   static RelNode substitute(StreamPhysicalWindowDeduplicate dedup, PlanContext ctx) {
     int[] partitionColumns = WindowDeduplicateMatcher.partitionColumns(dedup);
     return new StreamPhysicalNativeWindowRank(
-        dedup.getCluster(),
-        dedup.getTraitSet(),
-        ctx.columnarInput(dedup.getInputs().get(0), partitionColumns),
-        dedup.getRowType(),
-        WindowDeduplicateMatcher.windowStartColumn(dedup),
-        WindowDeduplicateMatcher.windowEndColumn(dedup),
-        partitionColumns,
-        WindowDeduplicateMatcher.sortIndices(dedup),
-        WindowDeduplicateMatcher.sortAscending(dedup),
-        WindowDeduplicateMatcher.sortNullsFirst(dedup),
-        1,
-        false,
-        WindowDeduplicateMatcher.isProctime(dedup),
-        WindowDeduplicateMatcher.windowMillis(dedup),
-        WindowDeduplicateMatcher.slideMillis(dedup),
-        WindowDeduplicateMatcher.cumulative(dedup),
-        WindowZoneGate.boundaryOffsetMillis(
-            dedup, tech.streamfusion.compat.FlinkCompat.windowDedupWindowing(dedup)),
-        Boolean.TRUE.equals(keepLastRow(dedup)));
+            dedup.getCluster(),
+            dedup.getTraitSet(),
+            ctx.columnarInput(dedup.getInputs().get(0), partitionColumns),
+            dedup.getRowType(),
+            WindowDeduplicateMatcher.windowStartColumn(dedup),
+            WindowDeduplicateMatcher.windowEndColumn(dedup),
+            partitionColumns,
+            WindowDeduplicateMatcher.sortIndices(dedup),
+            WindowDeduplicateMatcher.sortAscending(dedup),
+            WindowDeduplicateMatcher.sortNullsFirst(dedup),
+            1,
+            false,
+            WindowDeduplicateMatcher.isProctime(dedup),
+            WindowDeduplicateMatcher.windowMillis(dedup),
+            WindowDeduplicateMatcher.slideMillis(dedup),
+            WindowDeduplicateMatcher.cumulative(dedup),
+            WindowZoneGate.boundaryOffsetMillis(
+                dedup, tech.streamfusion.compat.FlinkCompat.windowDedupWindowing(dedup)),
+            Boolean.TRUE.equals(keepLastRow(dedup)))
+        .withCalendarZone(WindowZoneGate.calendarZoneId(dedup, windowing(dedup)));
   }
 }

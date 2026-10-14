@@ -14,15 +14,16 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
  * Physical node standing in for a {@link
  * org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowTableFunction} the
  * native operator runs: an event-time TUMBLE/HOP/CUMULATE windowing TVF over a TIMESTAMP or
- * TIMESTAMP_LTZ rowtime. Columnar on its input and output ({@link ColumnarInput} and {@link ColumnarOutput}): it
- * assigns each Arrow row to its window(s) and emits the input columns (fanned out one copy per window
- * for hopping/cumulative) with window_start/window_end/window_time appended. It does no buffering, so
- * watermarks pass straight through; it requires an upstream watermark because its rowtime windowing
- * is what the downstream window join/aggregate triggers on.
+ * TIMESTAMP_LTZ rowtime. Columnar on its input and output ({@link ColumnarInput} and {@link
+ * ColumnarOutput}): it assigns each Arrow row to its window(s) and emits the input columns (fanned
+ * out one copy per window for hopping/cumulative) with window_start/window_end/window_time
+ * appended. It does no buffering, so watermarks pass straight through; it requires an upstream
+ * watermark because its rowtime windowing is what the downstream window join/aggregate triggers on.
  */
 public class StreamPhysicalNativeWindowTableFunction extends StreamPhysicalNativeSingleRel
     implements ColumnarInput, ColumnarOutput {
 
+  private String calendarZoneId;
   private final int timeColumn;
   private final long windowMillis;
   private final long slideMillis;
@@ -50,6 +51,11 @@ public class StreamPhysicalNativeWindowTableFunction extends StreamPhysicalNativ
     this.proctime = proctime;
   }
 
+  public StreamPhysicalNativeWindowTableFunction withCalendarZone(String zoneId) {
+    calendarZoneId = zoneId;
+    return this;
+  }
+
   @Override
   public boolean requireWatermark() {
     return !proctime;
@@ -58,30 +64,32 @@ public class StreamPhysicalNativeWindowTableFunction extends StreamPhysicalNativ
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeWindowTableFunction(
-        getCluster(),
-        traitSet,
-        inputs.get(0),
-        outputRowType,
-        timeColumn,
-        windowMillis,
-        slideMillis,
-        cumulative,
-        proctime,
-        boundaryOffsetMillis);
+            getCluster(),
+            traitSet,
+            inputs.get(0),
+            outputRowType,
+            timeColumn,
+            windowMillis,
+            slideMillis,
+            cumulative,
+            proctime,
+            boundaryOffsetMillis)
+        .withCalendarZone(calendarZoneId);
   }
 
   @Override
   public ExecNode<?> translateToExecNode() {
     return new NativeWindowTableFunctionExecNode(
-        ShortcutUtils.unwrapTableConfig(this),
-        InputProperty.DEFAULT,
-        FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
-        getRelDetailedDescription(),
-        timeColumn,
-        windowMillis,
-        slideMillis,
-        cumulative,
-        proctime,
-        boundaryOffsetMillis);
+            ShortcutUtils.unwrapTableConfig(this),
+            InputProperty.DEFAULT,
+            FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
+            getRelDetailedDescription(),
+            timeColumn,
+            windowMillis,
+            slideMillis,
+            cumulative,
+            proctime,
+            boundaryOffsetMillis)
+        .withCalendarZone(calendarZoneId);
   }
 }

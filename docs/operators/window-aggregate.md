@@ -490,10 +490,13 @@ covered by runtime SQL parity tests. TUMBLE and HOP with an explicit nonzero off
 matching the existing aggregate and CUMULATE restriction.
 
 The TVF emits `window_start`/`window_end` as local wall-clock TIMESTAMP values, while
-`window_time` stays an instant for LTZ input. The fixed session-zone offset participates in
-assignment itself, so projections, filters, joins and ranking observe the same boundary values
-as Flink. Window rank and join translate their clock threshold into this local domain and close
-at `window_end - 1` millisecond, including processing-time timers and restored state.
+`window_time` stays an instant for LTZ input. Fixed offsets, including offsets not aligned with
+the window slide, participate in assignment on the local grid. Regional zones use batched
+released-Flink calendar conversion, including DST gaps, overlaps and historical offsets.
+TVF, single/two-phase aggregates, joins and rank/dedup share the same local bounds. Stateful
+consumers convert each local end to its released-Flink epoch timer deadline and fire at the
+last millisecond, including after restoration. SESSION connectivity is computed in the local
+assignment domain and uses the same deadline conversion.
 
 Assignment reads Flink's millisecond component without changing the original timestamp payload.
 In particular, `1969-12-31 23:59:59.999999999` belongs to the window before the epoch, just like
@@ -539,19 +542,6 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - A legacy group window over retracting or updating input.
 - Legacy proctime `HOP` when the slide does not divide the size. Event-time legacy `HOP` supports
   non-dividing and gapped windows.
-- Fixed-grid windows (TVF **and** legacy, event-time or proctime) over `TIMESTAMP_LTZ` unless the
-  session zone has one fixed offset for the entire timestamp range that is an integral multiple of the window slide
-  (the max size for `CUMULATE`). Flink assigns and fires on a DST-aware local-time grid while the
-  native operators bucket on the epoch grid; the two coincide exactly under that condition. The gate
-  applies uniformly to every consumer of the assignment — the windowing TVF, single- and two-phase
-  window aggregates, window join, and window Top-N/dedup — so a whole window pipeline falls back
-  together rather than mixing host-assigned and native-assigned bounds.
-- `SESSION` windows (TVF and legacy) over `TIMESTAMP_LTZ` when the session zone has any historical
-  or recurring transition; changing offsets can alter gap connectivity and session merges. A fixed offset cancels
-  out of the gap arithmetic, so fixed-offset zones stay native with no alignment requirement.
-- Region zones with only pre-1970 transitions also fall back: their earlier offsets may change
-  assignment and firing for negative epochs. Use a fixed zone such as `GMT+05:30` when fixed-offset
-  semantics are intended; it is not equivalent to `Asia/Kolkata` over the full timestamp range.
 - Legacy processing-time `SESSION`.
 - Key type outside bigint/int/string/boolean/date/timestamp/decimal.
 - A value type/aggregate mismatch.
@@ -1033,3 +1023,18 @@ the sustained-throughput method used for Top-1. Other workloads may differ.
 The 20 native fixtures cover 64/4,096 rows, one/64/all-row keys, NULLs and both
 single-phase updates and local-partial/global unions. Cross-line SQL/recovery checks
 passed 57 cases on 2.2 and 56 plus one existing capability skip on 1.18.
+
+## Calendar window validation
+
+Nonaligned fixed offsets and regional LTZ calendars use the released SDK for local assignment,
+visible window time and timer conversion. The runtime tests compare DST gaps/overlaps, historical
+offsets, negative epochs, shared slices and SESSION connectivity against independent stock
+operators, including heap/RocksDB restore and backend transitions. SQL controls cover TVF,
+single/two-phase aggregation, join, rank and deduplication; completed-checkpoint controls verify
+restored windows still fire and drop late rows correctly.
+
+The release fixture suites contain 1,488 cases. Complete-job comparisons use
+`CalendarWindowBenchmark` with a row source, row blackhole sink, both transposes, Arrow IPC and
+production state. Stock and the previous fallback are separate controls; all warmups and measured
+trials are retained in [the calendar artifact](../benchmarks/results/calendar-windows-2026-10-14.json).
+The matrix is still being collected, so these results are not yet a completed shipping claim.

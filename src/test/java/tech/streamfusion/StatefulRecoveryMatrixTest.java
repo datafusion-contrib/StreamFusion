@@ -538,9 +538,7 @@ class StatefulRecoveryMatrixTest {
               "watermarksAfterOffsets",
               watermarks,
               "expectedFallback",
-              ltz && !zoneName.equals("UTC")
-                  ? "TIMESTAMP_LTZ windows require the session-zone offset"
-                  : ""));
+              ""));
     }
   }
 

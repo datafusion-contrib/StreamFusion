@@ -18,9 +18,9 @@ import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.SmallIntVector;
-import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.TimeMilliVector;
 import org.apache.arrow.vector.TimeStampMilliVector;
+import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.watermark.Watermark;
@@ -56,8 +56,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   protected static final int TIMESTAMP_PRECISION = 3;
 
   /**
-   * Value-type codes matching the native side. Numeric types carry ordinary aggregates; strings,
-   * dates and timestamps also carry COUNT(DISTINCT) values. Timestamps carry MIN/MAX too.
+   * Value-type codes matching the native side. Strings and timestamps carry extrema as well as
+   * counts; dates, BOOLEAN and TIME also carry COUNT(DISTINCT) values.
    */
   protected static final int TYPE_BIGINT = 0;
 
@@ -76,7 +76,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   protected static final int VALUE_BOOLEAN = 10;
 
   // Parameterized type codes pack precision/scale into the code so they thread through the existing
-  // int[] without parallel arrays. Timestamp keys keep their milliseconds and fractional nanos (any Flink
+  // int[] without parallel arrays. Timestamp keys keep their milliseconds and fractional nanos (any
+  // Flink
   // precision); decimal keys/values ride in an Arrow decimal vector of the given precision/scale.
   protected static final int TYPE_TIMESTAMP_BASE = 1000; // + precision (0..9)
   protected static final int TYPE_DECIMAL_BASE = 2000; // + precision * 100 + scale
@@ -121,6 +122,8 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   protected final long windowMillis;
 
   private transient ZoneId zone;
+  private transient long fixedAssignmentOffsetMillis;
+  private transient ZoneId regionalAssignmentZone;
 
   /**
    * Creates a core backed by raw Flink keyed state. The timestamp descriptors describe the logical
@@ -168,7 +171,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
         windowMillis, slideMillis, valueTypes, aggregateKinds, snapshot, memoryBudgetBytes());
   }
 
-  /** Restores the fixed-window native state assigned to this task after a raw keyed-state rescale. */
+  /**
+   * Restores the fixed-window native state assigned to this task after a raw keyed-state rescale.
+   */
   @Override
   protected long restoreRawHandle(byte[][] snapshots) {
     return Native.restoreTumblingAggregatorPartitions(
@@ -274,7 +279,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     return true;
   }
 
-  /** A snapshot must reflect every record seen, so pending input is folded in before it is taken. */
+  /**
+   * A snapshot must reflect every record seen, so pending input is folded in before it is taken.
+   */
   @Override
   protected void beforeSnapshotState() {
     flushPending();
@@ -284,6 +291,42 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   public void open() throws Exception {
     super.open();
     zone = ZoneId.of(timeZoneId);
+    if (zone.getRules().isFixedOffset()) {
+      fixedAssignmentOffsetMillis = WindowTimeDomain.offsetMillis(timeZoneId);
+      if (usesAlignedWindowAssignment()) {
+        Native.setFixedWindowAssignmentOffset(handle, fixedAssignmentOffsetMillis);
+      }
+    } else if (usesAlignedWindowAssignment() && permitsRegionalCalendar()) {
+      regionalAssignmentZone = zone;
+      Native.setFixedWindowCalendar(handle, new WindowCalendar(timeZoneId));
+    }
+  }
+
+  protected boolean usesAlignedWindowAssignment() {
+    return true;
+  }
+
+  protected boolean permitsRegionalCalendar() {
+    return true;
+  }
+
+  protected long assignmentTimestampMillis(long epochMillis) {
+    return regionalAssignmentZone == null
+        ? epochMillis
+        : org.apache.flink.table.runtime.util.TimeWindowUtil.toUtcTimestampMills(
+            epochMillis, regionalAssignmentZone);
+  }
+
+  protected boolean usesLocalWindowBounds() {
+    return regionalAssignmentZone != null;
+  }
+
+  protected final ZoneId windowShiftZone() {
+    return zone;
+  }
+
+  protected final long fixedGridStart(long epochMillis, long gridMillis) {
+    return WindowTimeDomain.gridStart(epochMillis, gridMillis, fixedAssignmentOffsetMillis);
   }
 
   @Override
@@ -306,10 +349,11 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   }
 
   /**
-   * Inverse of the window-boundary local rendering (see {@code fillLocalTimestamps}): an upstream window
-   * operator emits its boundaries as the session-zone wall-clock stored as if UTC, so a window-attached
-   * re-aggregation must undo that shift back to epoch millis before folding — otherwise its own boundary
-   * rendering would double-shift them (the boundaries would then miss an equi-join on the window bounds).
+   * Inverse of the window-boundary local rendering (see {@code fillLocalTimestamps}): an upstream
+   * window operator emits its boundaries as the session-zone wall-clock stored as if UTC, so a
+   * window-attached re-aggregation must undo that shift back to epoch millis before folding —
+   * otherwise its own boundary rendering would double-shift them (the boundaries would then miss an
+   * equi-join on the window bounds).
    */
   protected final long toEpochFromLocal(long localMillis) {
     return Instant.ofEpochMilli(localMillis)
@@ -364,9 +408,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   /**
    * Folds an Arrow batch into the native aggregator, reading the event-time, value, and key columns
-   * positionally — the columnar analog of {@link #updateRaw}. The time column arrives as component-pair
-   * timestamps (how the row→Arrow transpose encodes them) and is reduced to the epoch millis the
-   * native aggregator expects.
+   * positionally — the columnar analog of {@link #updateRaw}. The time column arrives as
+   * component-pair timestamps (how the row→Arrow transpose encodes them) and is reduced to the
+   * epoch millis the native aggregator expects.
    */
   protected final void updateColumnar(
       VectorSchemaRoot in, int timeColumn, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
@@ -384,9 +428,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   }
 
   /**
-   * Proctime variant of {@link #updateColumnar}: every row's window-assignment time is the operator's
-   * current processing time {@code nowMillis} (read once per batch by the caller), not a row column —
-   * matching Flink's processing-time window assigner, which uses the clock rather than a row value.
+   * Proctime variant of {@link #updateColumnar}: every row's window-assignment time is the
+   * operator's current processing time {@code nowMillis} (read once per batch by the caller), not a
+   * row column — matching Flink's processing-time window assigner, which uses the clock rather than
+   * a row value.
    */
   protected final void updateColumnarProctime(
       VectorSchemaRoot in, long nowMillis, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
@@ -394,11 +439,12 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   }
 
   /**
-   * Window-attached variant of {@link #updateColumnar}: the input rows already carry their window as
-   * {@code windowStartColumn}/{@code windowEndColumn} (timestamp components, as the transpose encodes
-   * them) rather than a rowtime to slice — an upstream window aggregate's output re-aggregated per
-   * window (Nexmark q5). Emits an Arrow batch with the canonical {@code window_start}/{@code window_end}
-   * (epoch millis), {@code value{i}}, and {@code key{j}} columns the native window-attached fold reads.
+   * Window-attached variant of {@link #updateColumnar}: the input rows already carry their window
+   * as {@code windowStartColumn}/{@code windowEndColumn} (timestamp components, as the transpose
+   * encodes them) rather than a rowtime to slice — an upstream window aggregate's output
+   * re-aggregated per window (Nexmark q5). Emits an Arrow batch with the canonical {@code
+   * window_start}/{@code window_end} (epoch millis), {@code value{i}}, and {@code key{j}} columns
+   * the native window-attached fold reads.
    */
   protected final void updateColumnarAttached(
       VectorSchemaRoot in,
@@ -433,8 +479,14 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       for (int i = 0; i < rows; i++) {
         // The upstream boundaries are session-zone wall-clock (see toEpochFromLocal); fold on epoch
         // millis so this aggregate's own boundary rendering shifts them exactly once, not twice.
-        windowStart.setSafe(i, toEpochFromLocal(srcStart.getMillis(i)));
-        windowEnd.setSafe(i, toEpochFromLocal(srcEnd.getMillis(i)));
+        windowStart.setSafe(
+            i,
+            usesLocalWindowBounds()
+                ? srcStart.getMillis(i)
+                : toEpochFromLocal(srcStart.getMillis(i)));
+        windowEnd.setSafe(
+            i,
+            usesLocalWindowBounds() ? srcEnd.getMillis(i) : toEpochFromLocal(srcEnd.getMillis(i)));
         for (int a = 0; a < valueColumns.length; a++) {
           if (valueColumns[a] < 0) {
             ((BigIntVector) values[a]).setSafe(i, 1L); // COUNT(*): a non-null constant counts rows
@@ -520,7 +572,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
         }
       }
       for (int i = 0; i < rows; i++) {
-        ts.setSafe(i, proctime ? proctimeMillis : srcTs.getMillis(i));
+        ts.setSafe(i, assignmentTimestampMillis(proctime ? proctimeMillis : srcTs.getMillis(i)));
         if (changes != null) changes.setSafe(i, sourceKinds.get(i));
         for (int a = 0; a < valueColumns.length; a++) {
           if (sharedValues[a]) continue;
@@ -692,7 +744,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     TimestampAccessor.set(vector, row, timestamp);
   }
 
-  /** Copies row {@code i}'s key from a source Arrow vector into the key vector (int widens to int64). */
+  /**
+   * Copies row {@code i}'s key from a source Arrow vector into the key vector (int widens to
+   * int64).
+   */
   private static void setKeyFromVector(FieldVector target, int i, FieldVector source, int keyType) {
     if (source.isNull(i)) {
       target.setNull(i);
@@ -760,7 +815,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     return types;
   }
 
-  /** Creates the Arrow vector carrying a key column, in the key's natural type (int/bigint widen). */
+  /**
+   * Creates the Arrow vector carrying a key column, in the key's natural type (int/bigint widen).
+   */
   protected final FieldVector newKeyVector(String name, int keyType) {
     if (isTimestamp(keyType)) {
       return TimestampAccessor.field(name, true).createVector(allocator);
@@ -780,7 +837,9 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     }
   }
 
-  /** Copies row {@code i}'s key from the input row into the key vector (int keys widen to int64). */
+  /**
+   * Copies row {@code i}'s key from the input row into the key vector (int keys widen to int64).
+   */
   protected static void setKey(FieldVector vector, int i, RowData row, int column, int keyType) {
     if (row.isNullAt(column)) {
       vector.setNull(i);

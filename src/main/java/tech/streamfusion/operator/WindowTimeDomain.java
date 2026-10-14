@@ -15,6 +15,13 @@ final class WindowTimeDomain {
     return rules.getOffset(Instant.EPOCH).getTotalSeconds() * 1000L;
   }
 
+  static long gridStart(long epochMillis, long gridMillis, long offsetMillis) {
+    long shift = Math.floorMod(offsetMillis, gridMillis);
+    return Math.floorDiv(shift == 0 ? epochMillis : Math.addExact(epochMillis, shift), gridMillis)
+            * gridMillis
+        - shift;
+  }
+
   static long closeThreshold(long epochMillis, long offsetMillis) {
     if (epochMillis == Long.MIN_VALUE || epochMillis == Long.MAX_VALUE) {
       return epochMillis;

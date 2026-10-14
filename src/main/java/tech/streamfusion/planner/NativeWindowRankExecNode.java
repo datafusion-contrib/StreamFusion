@@ -27,6 +27,7 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
 
   private static final String TRANSFORMATION = "native-window-rank";
 
+  private String calendarZoneId;
   private final int windowStartColumn;
   private final int windowEndColumn;
   private final int[] partitionColumns;
@@ -87,6 +88,11 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  public NativeWindowRankExecNode withCalendarZone(String zoneId) {
+    calendarZoneId = zoneId;
+    return this;
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
@@ -100,24 +106,25 @@ public class NativeWindowRankExecNode extends ExecNodeBase<ArrowBatch>
             input,
             createTransformationMeta(TRANSFORMATION, config),
             new NativeColumnarWindowRankOperator(
-                windowStartColumn,
-                windowEndColumn,
-                partitionColumns,
-                keyTimestampPrecisions,
-                sortIndices,
-                sortAscending,
-                sortNullsFirst,
-                limit,
-                outputRankNumber,
-                boundaryOffsetMillis,
-                proctime,
-                windowMillis,
-                slideMillis,
-                cumulative,
-                (org.apache.flink.table.types.logical.RowType)
-                    getInputEdges().get(0).getOutputType(),
-                maxParallelism,
-                keepLastOnTie),
+                    windowStartColumn,
+                    windowEndColumn,
+                    partitionColumns,
+                    keyTimestampPrecisions,
+                    sortIndices,
+                    sortAscending,
+                    sortNullsFirst,
+                    limit,
+                    outputRankNumber,
+                    boundaryOffsetMillis,
+                    proctime,
+                    windowMillis,
+                    slideMillis,
+                    cumulative,
+                    (org.apache.flink.table.types.logical.RowType)
+                        getInputEdges().get(0).getOutputType(),
+                    maxParallelism,
+                    keepLastOnTie)
+                .withCalendarZone(calendarZoneId),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

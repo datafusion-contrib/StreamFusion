@@ -9,33 +9,29 @@ import tech.streamfusion.Native;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
- * Columnar single-phase session-window aggregation: the same native session aggregator as {@link
- * NativeSessionWindowAggregateOperator}, but fed Arrow batches directly instead of buffered rows,
- * and emitting Arrow batches ({@code [key?, agg…, window_start, window_end]}). The whole operator
- * is Arrow → Arrow; a rowwise sink is reached through the dedicated {@code ArrowToRowDataOperator}
- * the planner inserts at the island perimeter.
+ * Columnar single-phase session-window aggregation over Arrow batches.
  *
- * <p>Event-time sessions measure the gap in the rowtime column and close on a watermark. A
- * **proctime** session instead times every element at the operator's processing-time clock (Flink's
- * processing-time assigner uses the clock, not a row value) and closes a gap-separated session on a
- * processing-time timer: each batch registers a cleanup timer at {@code now + gap}, the earliest
- * the session could end with no further input. A later element extends the session and registers
- * its own later timer, so when a timer fires only the sessions the clock has truly passed are
- * emitted. Event-time sessions close on watermarks; processing-time sessions close only when their
- * gap elapses. Bounded-input completion does not close an unfinished processing-time session.
+ * <p>Regional LTZ sessions measure connectivity in local time and convert each window end through
+ * Flink's calendar timer contract. Other sessions retain their epoch assignment domain. Event-time
+ * sessions fire on watermarks; processing-time sessions use the operator's clock. Each firing pass
+ * records the earliest remaining deadline, which is rearmed after firing and reconstructed from
+ * restored state. Bounded-input completion does not close an unfinished processing-time session.
  */
 public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindowOperatorCore
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
 
   private final long gapMillis;
+  private final String sessionCalendarZoneId;
   private final boolean proctime;
   private final int timeColumn;
   private final int[] valueColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
-  /** The latest cleanup boundary already scheduled, so each {@code now + gap} timer registers once. */
+  /** The earliest open-session timer currently scheduled. */
   private transient long registeredTimer;
+
+  private transient java.time.ZoneId calendarZone;
 
   @Override
   protected boolean isEventTimeWindow() {
@@ -76,7 +72,8 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
       boolean proctime,
       int[] keyTimestampPrecisions,
       int maxParallelism) {
-    // Sessions have no fixed size or slide; the gap is the only window parameter, carried separately.
+    // Sessions have no fixed size or slide; the gap is the only window parameter, carried
+    // separately.
     super(
         "session aggregate",
         0,
@@ -90,6 +87,7 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
         keyTimestampPrecisions,
         maxParallelism);
     this.gapMillis = gapMillis;
+    this.sessionCalendarZoneId = timeZoneId;
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;
     this.keyColumns = keyColumns;
@@ -100,16 +98,22 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   @Override
   public void open() throws Exception {
     super.open();
-    registeredTimer = Long.MIN_VALUE;
-    if (proctime && restoredProcessingTimeTimerDeadline() != Long.MIN_VALUE) {
-      long deadline = restoredProcessingTimeTimerDeadline();
-      long now = getProcessingTimeService().getCurrentProcessingTime();
-      if (deadline <= now) {
-        emitClosedWindows(now);
-      } else {
-        getProcessingTimeService().registerTimer(deadline, this);
-        registeredTimer = deadline;
+    if (inputTimestampLtz) {
+      var configuredZone = java.time.ZoneId.of(sessionCalendarZoneId);
+      if (!configuredZone.getRules().isFixedOffset()) {
+        calendarZone = configuredZone;
+        Native.setSessionWindowCalendar(
+            handle, new WindowCalendar(sessionCalendarZoneId, proctime));
       }
+    }
+    registeredTimer = Long.MIN_VALUE;
+    if (proctime) {
+      // Reconstruct the earliest remaining deadline, including clipped/rescaled state sources.
+      emitClosedWindows(Long.MIN_VALUE);
+      long now = getProcessingTimeService().getCurrentProcessingTime();
+      long next = Native.sessionAggregatorNextTimerDeadline(handle);
+      if (next != Long.MIN_VALUE && next <= now) emitClosedWindows(now);
+      registerNextTimer();
     }
   }
 
@@ -155,6 +159,24 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   }
 
   @Override
+  protected boolean usesAlignedWindowAssignment() {
+    return false;
+  }
+
+  @Override
+  protected long assignmentTimestampMillis(long epochMillis) {
+    return calendarZone == null
+        ? epochMillis
+        : org.apache.flink.table.runtime.util.TimeWindowUtil.toUtcTimestampMills(
+            epochMillis, calendarZone);
+  }
+
+  @Override
+  protected boolean usesLocalWindowBounds() {
+    return calendarZone != null;
+  }
+
+  @Override
   protected long createHandle() {
     return Native.createSessionAggregator(gapMillis, valueTypes, aggregateKinds, memoryBudgetBytes());
   }
@@ -188,6 +210,7 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
 
   @Override
   protected void flushHandle(long watermark, long arrayAddress, long schemaAddress) {
+    watermark = WindowTimeDomain.closeThreshold(watermark, 0);
     if (directRocksDBState()) {
       Native.flushRocksDBSessionAggregator(handle, watermark, arrayAddress, schemaAddress);
     } else {
@@ -224,14 +247,7 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
         long now = getProcessingTimeService().getCurrentProcessingTime();
         updateColumnarProctime(in, now, valueColumns, keyColumns, keyTypes);
         emitClosedWindows(now); // emit any session the clock has already left behind by a full gap
-        // The session can close no earlier than `now + gap`; a later element pushes it out and
-        // registers a later timer. Processing time only advances, so the latest boundary scheduled
-        // covers every session open as of `now`.
-        long deadline = now + gapMillis;
-        if (deadline > registeredTimer) {
-          getProcessingTimeService().registerTimer(deadline, this);
-          registeredTimer = deadline;
-        }
+        registerNextTimer();
       } else {
         updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
         reportLateRecords(Native.sessionAggregatorLateDrops(handle));
@@ -242,9 +258,16 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
 
   @Override
   public void onProcessingTime(long time) {
-    // Every open session was extended by an element that registered its own `now + gap` timer, so a
-    // flush at the current clock is enough — no re-registration is needed here.
     emitClosedWindows(getProcessingTimeService().getCurrentProcessingTime());
+    registerNextTimer();
+  }
+
+  private void registerNextTimer() {
+    long deadline = Native.sessionAggregatorNextTimerDeadline(handle);
+    if (deadline != Long.MIN_VALUE && deadline != registeredTimer) {
+      getProcessingTimeService().registerTimer(deadline, this);
+    }
+    registeredTimer = deadline;
   }
 
   @Override

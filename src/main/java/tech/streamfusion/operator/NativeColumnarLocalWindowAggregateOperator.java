@@ -29,7 +29,8 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
 
   private final int timeColumn;
   // Window-attached mode (Nexmark q5): the input rows already carry their window in these columns
-  // (an upstream window aggregate's output re-aggregated per window), so there is no rowtime to slice.
+  // (an upstream window aggregate's output re-aggregated per window), so there is no rowtime to
+  // slice.
   // Both are -1 in the ordinary time-column (rowtime) mode.
   private final int windowStartColumn;
   private final int windowEndColumn;
@@ -37,6 +38,8 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
   private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
+  private transient long localWatermark;
+  private transient long nextTriggerWatermark;
 
   public NativeColumnarLocalWindowAggregateOperator(
       long windowMillis,
@@ -105,6 +108,8 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
   @Override
   public void open() throws Exception {
     super.open();
+    localWatermark = 0;
+    nextTriggerWatermark = 0;
     var task = getRuntimeContext();
     setCurrentKey(
         ArrowBatchSubtaskKeySelector.stateKeysForSubtasks(
@@ -155,13 +160,20 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
 
   @Override
   protected void emitClosedWindows(long watermark) {
+    if (watermark <= localWatermark) return;
+    localWatermark = watermark;
+    if (watermark < nextTriggerWatermark) return;
+    boolean ready = Native.localWindowBufferReady(handle, watermark);
+    nextTriggerWatermark =
+        org.apache.flink.table.runtime.util.TimeWindowUtil.getNextTriggerWatermark(
+            watermark,
+            slideMillis,
+            windowShiftZone(),
+            java.util.TimeZone.getTimeZone(windowShiftZone()).useDaylightTime());
+    if (!ready) return;
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.flushPartialTumblingAggregator(
-          handle,
-          WindowTimeDomain.closeThreshold(watermark, 0),
-          array.memoryAddress(),
-          schema.memoryAddress());
+      Native.drainPartialTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
       emitPartial(Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
     }
   }

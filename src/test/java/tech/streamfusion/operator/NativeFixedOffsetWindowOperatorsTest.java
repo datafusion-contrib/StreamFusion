@@ -48,7 +48,7 @@ class NativeFixedOffsetWindowOperatorsTest {
   }
 
   static Stream<Arguments> offsetsAndClocks() {
-    return Stream.of(0L, 28_800_000L, -19_800_000L)
+    return Stream.of(0L, 28_800_000L, -19_800_000L, -28_800_000L, 20_700_000L)
         .flatMap(
             offset ->
                 Stream.of(false, true)
@@ -59,7 +59,7 @@ class NativeFixedOffsetWindowOperatorsTest {
   }
 
   @ParameterizedTest
-  @ValueSource(longs = {0, 28_800_000, -19_800_000})
+  @ValueSource(longs = {0, 28_800_000, -19_800_000, -28_800_000, 20_700_000})
   void proctimeTvfRendersLocalBoundsAndInstantWindowTime(long offset) throws Exception {
     RowType input = RowType.of(new BigIntType(), new LocalZonedTimestampType(3));
     try (var harness =

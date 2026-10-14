@@ -25,6 +25,7 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
 
   private static final String TRANSFORMATION = "native-window-table-function";
 
+  private String calendarZoneId;
   private final int timeColumn;
   private final long windowMillis;
   private final long slideMillis;
@@ -58,6 +59,11 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     this.proctime = proctime;
   }
 
+  public NativeWindowTableFunctionExecNode withCalendarZone(String zoneId) {
+    calendarZoneId = zoneId;
+    return this;
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
@@ -68,7 +74,8 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
         input,
         createTransformationMeta(TRANSFORMATION, config),
         new NativeWindowTableFunctionOperator(
-            timeColumn, windowMillis, slideMillis, cumulative, proctime, boundaryOffsetMillis),
+                timeColumn, windowMillis, slideMillis, cumulative, proctime, boundaryOffsetMillis)
+            .withCalendarZone(calendarZoneId),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

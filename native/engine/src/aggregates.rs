@@ -674,6 +674,19 @@ pub(crate) enum WindowAggregate {
 }
 
 impl WindowAggregate {
+    pub(crate) fn state_requires_restore(&self) -> bool {
+        match self {
+            Self::Count => false,
+            Self::Builtin(aggregate)
+                if !aggregate.is_distinct()
+                    && matches!(aggregate.fun().name(), "sum" | "count" | "min" | "max") =>
+            {
+                false
+            }
+            _ => true,
+        }
+    }
+
     pub(crate) fn timestamp_column<'a>(
         &self,
         values: &'a ArrayRef,

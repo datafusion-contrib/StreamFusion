@@ -12,13 +12,14 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 
 /**
  * Physical node standing in for an event-time INNER window join the native operator runs. Columnar
- * on both inputs and on its output ({@link ColumnarInput} and {@link ColumnarOutput}): each input is
- * shuffled by its equi-join key (a columnar exchange) and the join emits Arrow batches of the matched
- * pairs (left columns then right columns). Requires a watermark — the combined input watermark closes
- * windows and drives state eviction.
+ * on both inputs and on its output ({@link ColumnarInput} and {@link ColumnarOutput}): each input
+ * is shuffled by its equi-join key (a columnar exchange) and the join emits Arrow batches of the
+ * matched pairs (left columns then right columns). Requires a watermark — the combined input
+ * watermark closes windows and drives state eviction.
  */
 public class StreamPhysicalNativeWindowJoin extends StreamPhysicalNativeBiRel {
 
+  private String calendarZoneId;
   private final int[] leftKeys;
   private final int[] rightKeys;
   private final int leftWindowStart;
@@ -68,6 +69,11 @@ public class StreamPhysicalNativeWindowJoin extends StreamPhysicalNativeBiRel {
     this.boundaryOffsetMillis = boundaryOffsetMillis;
   }
 
+  public StreamPhysicalNativeWindowJoin withCalendarZone(String zoneId) {
+    calendarZoneId = zoneId;
+    return this;
+  }
+
   @Override
   public boolean requireWatermark() {
     return !proctime;
@@ -76,49 +82,51 @@ public class StreamPhysicalNativeWindowJoin extends StreamPhysicalNativeBiRel {
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeWindowJoin(
-        getCluster(),
-        traitSet,
-        inputs.get(0),
-        inputs.get(1),
-        outputRowType,
-        leftKeys,
-        rightKeys,
-        leftWindowStart,
-        leftWindowEnd,
-        rightWindowStart,
-        rightWindowEnd,
-        joinType,
-        predicate,
-        proctime,
-        windowMillis,
-        slideMillis,
-        cumulative,
-        boundaryOffsetMillis);
+            getCluster(),
+            traitSet,
+            inputs.get(0),
+            inputs.get(1),
+            outputRowType,
+            leftKeys,
+            rightKeys,
+            leftWindowStart,
+            leftWindowEnd,
+            rightWindowStart,
+            rightWindowEnd,
+            joinType,
+            predicate,
+            proctime,
+            windowMillis,
+            slideMillis,
+            cumulative,
+            boundaryOffsetMillis)
+        .withCalendarZone(calendarZoneId);
   }
 
   @Override
   public ExecNode<?> translateToExecNode() {
     return new NativeWindowJoinExecNode(
-        ShortcutUtils.unwrapTableConfig(this),
-        InputProperty.DEFAULT,
-        InputProperty.DEFAULT,
-        FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
-        getRelDetailedDescription(),
-        leftKeys,
-        rightKeys,
-        leftWindowStart,
-        leftWindowEnd,
-        rightWindowStart,
-        rightWindowEnd,
-        joinType,
-        FlinkTypeFactory$.MODULE$.toLogicalRowType(getLeft().getRowType()),
-        FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
-        predicate,
-        proctime,
-        windowMillis,
-        slideMillis,
-        cumulative,
-        boundaryOffsetMillis,
-        FlinkKeyGroupUtils.timestampPrecisions(getLeft().getRowType(), leftKeys));
+            ShortcutUtils.unwrapTableConfig(this),
+            InputProperty.DEFAULT,
+            InputProperty.DEFAULT,
+            FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
+            getRelDetailedDescription(),
+            leftKeys,
+            rightKeys,
+            leftWindowStart,
+            leftWindowEnd,
+            rightWindowStart,
+            rightWindowEnd,
+            joinType,
+            FlinkTypeFactory$.MODULE$.toLogicalRowType(getLeft().getRowType()),
+            FlinkTypeFactory$.MODULE$.toLogicalRowType(getRight().getRowType()),
+            predicate,
+            proctime,
+            windowMillis,
+            slideMillis,
+            cumulative,
+            boundaryOffsetMillis,
+            FlinkKeyGroupUtils.timestampPrecisions(getLeft().getRowType(), leftKeys))
+        .withCalendarZone(calendarZoneId);
   }
 }

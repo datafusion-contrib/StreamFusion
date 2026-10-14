@@ -3909,6 +3909,8 @@ impl RocksTopNHandle {
 /// deduplication is the `limit = 1` case (keep-first = sort by rowtime ascending, keep-last =
 /// descending). Late rows (whose window already closed) are dropped, matching the host.
 pub(crate) struct WindowRanker {
+    calendar: Option<crate::window_calendar::WindowCalendar>,
+    next_timer_deadline: i64,
     window_start_col: usize,
     window_end_col: usize,
     partition_columns: Vec<usize>,
@@ -3938,6 +3940,13 @@ pub(crate) struct WindowRanker {
 }
 
 impl WindowRanker {
+    pub(crate) fn set_calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.calendar = Some(crate::window_calendar::WindowCalendar::new(callback));
+    }
+    pub(crate) fn next_timer_deadline(&self) -> i64 {
+        self.next_timer_deadline
+    }
+
     pub(crate) fn set_keep_last_on_tie(&mut self, enabled: bool) {
         assert!(!enabled || self.limit == 1);
         self.keep_last_on_tie = enabled;
@@ -3952,6 +3961,8 @@ impl WindowRanker {
         output_rank_number: bool,
     ) -> Self {
         WindowRanker {
+            calendar: None,
+            next_timer_deadline: i64::MIN,
             window_start_col,
             window_end_col,
             partition_columns,
@@ -4046,7 +4057,10 @@ impl WindowRanker {
                 ));
             }
         }
-        self.current_watermark = watermark;
+        // Durable rows were already admitted in their configured time domain. The calendar
+        // callback is installed after handle restoration, so replay must not test local ends
+        // against the saved epoch watermark.
+        self.current_watermark = i64::MIN;
         for bytes in snapshots {
             if bytes.len() < 8 {
                 continue;
@@ -4055,6 +4069,7 @@ impl WindowRanker {
                 self.push(&batch)?;
             }
         }
+        self.current_watermark = watermark;
         self.store
             .as_mut()
             .expect("window-rank rocksdb store")
@@ -4085,19 +4100,42 @@ impl WindowRanker {
         self.schema = Some(data_schema(batch));
         let ws = rt_to_millis(batch.column(self.window_start_col));
         let we = rt_to_millis(batch.column(self.window_end_col));
+        let deadlines = self
+            .calendar
+            .as_ref()
+            .map(|calendar| calendar.end_thresholds(we.values().iter().copied()));
         let partition_arrays: Vec<&ArrayRef> = self
             .partition_columns
             .iter()
             .map(|&i| batch.column(i))
             .collect();
         #[cfg(feature = "rocksdb-state")]
-        self.hydrate_store_groups(batch, &ws, &we, &partition_arrays)?;
+        self.hydrate_store_groups(batch, &ws, &we, &partition_arrays, deadlines.as_ref())?;
         let data_arrays: Vec<&ArrayRef> = (0..arity).map(|i| batch.column(i)).collect();
+        #[cfg(feature = "rocksdb-state")]
+        let compact_timestamps = self.store.is_none();
+        #[cfg(not(feature = "rocksdb-state"))]
+        let compact_timestamps = true;
+        let timestamps = data_arrays
+            .iter()
+            .map(|array| {
+                (compact_timestamps
+                    && streamfusion_bridge::timestamp::is_component_timestamp(array.data_type()))
+                .then(|| {
+                    streamfusion_bridge::timestamp::TimestampColumn::try_new(array.as_ref())
+                        .expect("window rank timestamp")
+                })
+            })
+            .collect::<Vec<_>>();
         let track = self.memory.tracking();
         let mut delta = 0isize;
         for row in 0..batch.num_rows() {
             let window_end = we.value(row);
-            if window_end <= self.current_watermark {
+            if deadlines
+                .as_ref()
+                .map_or(window_end, |values| values[&window_end])
+                <= self.current_watermark
+            {
                 self.late_drops += 1;
                 continue; // late: the window already closed and emitted
             }
@@ -4105,7 +4143,22 @@ impl WindowRanker {
             let key = read_key(&partition_arrays, row);
             let full: JoinRow = data_arrays
                 .iter()
-                .map(|a| ScalarValue::try_from_array(a, row).expect("window-rank row scalar"))
+                .zip(&timestamps)
+                .map(|(array, timestamp)| match timestamp {
+                    Some(column) => ScalarValue::Decimal128(
+                        (!column.is_null(row)).then(|| {
+                            column
+                                .value(row)
+                                .expect("window rank timestamp digits")
+                                .nanos()
+                        }),
+                        38,
+                        0,
+                    ),
+                    None => {
+                        ScalarValue::try_from_array(array, row).expect("window-rank row scalar")
+                    }
+                })
                 .collect();
             if track {
                 delta += (scalar_row_bytes(&full) + GROUP_ENTRY_OVERHEAD) as isize;
@@ -4155,6 +4208,7 @@ impl WindowRanker {
         ws: &Int64Array,
         we: &Int64Array,
         partition_arrays: &[&ArrayRef],
+        deadlines: Option<&BTreeMap<i64, i64>>,
     ) -> Result<(), DataFusionError> {
         if self.store.is_none() {
             return Ok(());
@@ -4180,7 +4234,8 @@ impl WindowRanker {
         let mut db_keys: Vec<Vec<u8>> = Vec::new();
         for row in 0..batch.num_rows() {
             let window_end = we.value(row);
-            if window_end <= self.current_watermark {
+            if deadlines.map_or(window_end, |values| values[&window_end]) <= self.current_watermark
+            {
                 continue;
             }
             let group = (window_end, ws.value(row), read_key(partition_arrays, row));
@@ -4270,14 +4325,26 @@ impl WindowRanker {
         if self.store.is_some() {
             return self.flush_store(watermark);
         }
+        let deadlines = self
+            .calendar
+            .as_ref()
+            .map(|calendar| calendar.end_thresholds(self.groups.keys().map(|(end, _, _)| *end)));
+        self.next_timer_deadline = deadlines
+            .as_ref()
+            .and_then(|values| values.values().filter(|&&end| end > watermark).min())
+            .map_or(i64::MIN, |end| end.saturating_sub(1));
         let mut ready: Vec<(i64, i64, GroupKey)> = self
             .groups
             .keys()
-            .filter(|(we, _, _)| *we <= watermark)
+            .filter(|(we, _, _)| deadlines.as_ref().map_or(*we, |values| values[we]) <= watermark)
             .cloned()
             .collect();
         // Evict in (window_end, window_start) order for a deterministic emission sequence.
-        ready.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+        ready.sort_by(|a, b| {
+            let left = deadlines.as_ref().map_or(a.0, |values| values[&a.0]);
+            let right = deadlines.as_ref().map_or(b.0, |values| values[&b.0]);
+            (left, a.0, a.1).cmp(&(right, b.0, b.1))
+        });
         let mut rows: Vec<JoinRow> = Vec::new();
         let mut ranks: Vec<i64> = Vec::new();
         let track = self.memory.tracking();
@@ -4310,7 +4377,15 @@ impl WindowRanker {
             .store
             .as_mut()
             .expect("window-rank rocksdb store")
-            .take_closed(watermark)?;
+            .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
+        if self.calendar.is_some() {
+            self.next_timer_deadline = self
+                .store
+                .as_ref()
+                .unwrap()
+                .next_exclusive_end()
+                .map_or(i64::MIN, |end| end.saturating_sub(1));
+        }
         let mut rows: Vec<JoinRow> = Vec::new();
         let mut ranks: Vec<i64> = Vec::new();
         for group in fired {
@@ -4330,7 +4405,7 @@ impl WindowRanker {
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let mut columns: Vec<ArrayRef> = (0..fields.len())
             .map(|j| {
-                scalars_to_array(
+                Self::payload_array(
                     rows.iter().map(|r| r[j].clone()).collect(),
                     fields[j].data_type(),
                 )
@@ -4342,6 +4417,34 @@ impl WindowRanker {
         }
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("window-rank output batch")
+    }
+
+    fn payload_array(values: Vec<ScalarValue>, data_type: &DataType) -> ArrayRef {
+        if streamfusion_bridge::timestamp::is_component_timestamp(data_type)
+            && values
+                .iter()
+                .all(|value| matches!(value, ScalarValue::Decimal128(_, 38, 0)))
+        {
+            let array =
+                streamfusion_bridge::timestamp::timestamp_array(values.into_iter().map(|value| {
+                    let ScalarValue::Decimal128(value, _, _) = value else {
+                        unreachable!()
+                    };
+                    value.map(|nanos| {
+                        streamfusion_bridge::timestamp::TimestampValue::from_nanos(nanos)
+                            .expect("window rank timestamp range")
+                    })
+                }));
+            return arrow::array::make_array(
+                array
+                    .to_data()
+                    .into_builder()
+                    .data_type(data_type.clone())
+                    .build()
+                    .expect("window rank timestamp schema"),
+            );
+        }
+        scalars_to_array(values, data_type)
     }
 
     fn snapshot_parts(&self, batch: Option<RecordBatch>) -> Vec<u8> {
@@ -4367,7 +4470,7 @@ impl WindowRanker {
         let fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         let columns: Vec<ArrayRef> = (0..fields.len())
             .map(|j| {
-                scalars_to_array(
+                Self::payload_array(
                     rows.iter().map(|r| r[j].clone()).collect(),
                     fields[j].data_type(),
                 )
@@ -4460,12 +4563,13 @@ impl WindowRanker {
         if bytes.len() < 8 {
             return ranker;
         }
-        ranker.current_watermark = i64::from_le_bytes(bytes[0..8].try_into().expect("watermark"));
-        // Re-inserting through push reproduces each group's sorted, truncated buffer; buffered rows
-        // have window_end > the watermark, so none are dropped as late.
+        let watermark = i64::from_le_bytes(bytes[0..8].try_into().expect("watermark"));
+        // Rebuild durable buffers before applying the saved watermark: regional bounds are local,
+        // and their calendar callback is reapplied by the operator after restoration.
         for batch in read_ipc_if_present(&bytes[8..]) {
             ranker.push(&batch);
         }
+        ranker.current_watermark = watermark;
         ranker
     }
 
@@ -5494,6 +5598,88 @@ mod tests {
     }
 
     #[test]
+    fn window_rank_component_timestamps_keep_full_digits_after_restore() {
+        use super::*;
+        use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
+        let times = [
+            Some(TimestampValue::new(-1, 999_999).unwrap()),
+            Some(TimestampValue::new(253_402_300_799_999, 999_999).unwrap()),
+            Some(TimestampValue::new(253_402_300_799_999, 999_998).unwrap()),
+            None,
+        ];
+        let batch = RecordBatch::try_from_iter(vec![
+            ("value", Arc::new(timestamp_array(times)) as ArrayRef),
+            ("start", Arc::new(Int64Array::from(vec![0; 4])) as ArrayRef),
+            ("end", Arc::new(Int64Array::from(vec![100; 4])) as ArrayRef),
+            (
+                "id",
+                Arc::new(Int64Array::from(vec![1, 2, 3, 4])) as ArrayRef,
+            ),
+        ])
+        .unwrap();
+        for ascending in [false, true] {
+            let sort = vec![SortColumn {
+                index: 0,
+                ascending,
+                nulls_first: false,
+            }];
+            let mut ranker = WindowRanker::new(1, 2, vec![], sort.clone(), 4, true);
+            ranker.push(&batch.slice(0, 2)).unwrap();
+            let snapshots = ranker
+                .raw_snapshot_partitions(128, &[])
+                .into_values()
+                .collect::<Vec<_>>();
+            let mut restored =
+                WindowRanker::restore_partitions(1, 2, vec![], sort, 4, true, &snapshots);
+            restored.push(&batch.slice(2, 2)).unwrap();
+            let output = restored.flush(100).unwrap();
+            let ids = output
+                .column(3)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let expected = if ascending {
+                vec![1, 3, 2, 4]
+            } else {
+                vec![2, 3, 1, 4]
+            };
+            assert_eq!(ids.values().as_ref(), expected.as_slice());
+            let digits = TimestampColumn::try_new(output.column(0).as_ref()).unwrap();
+            for (row, id) in expected.iter().enumerate() {
+                let value = times[*id as usize - 1];
+                assert_eq!(digits.is_null(row), value.is_none());
+                if let Some(value) = value {
+                    assert_eq!(digits.value(row).unwrap(), value);
+                }
+            }
+            assert_eq!(output.schema().field(0), batch.schema().field(0));
+        }
+    }
+
+    #[test]
+    fn window_rank_restore_does_not_recheck_local_bounds_in_epoch_domain() {
+        use super::*;
+        let batch = RecordBatch::try_from_iter(vec![
+            ("id", Arc::new(Int64Array::from(vec![7])) as ArrayRef),
+            ("start", Arc::new(Int64Array::from(vec![0])) as ArrayRef),
+            ("end", Arc::new(Int64Array::from(vec![100])) as ArrayRef),
+        ])
+        .unwrap();
+        let mut ranker = WindowRanker::new(1, 2, vec![], vec![], 1, false);
+        ranker.push(&batch).unwrap();
+        // A negative zone offset leaves local bounds behind the epoch clock while pending.
+        ranker.current_watermark = 200;
+        let snapshots = ranker
+            .raw_snapshot_partitions(128, &[])
+            .into_values()
+            .collect::<Vec<_>>();
+        let restored = WindowRanker::restore_partitions(1, 2, vec![], vec![], 1, false, &snapshots);
+        assert_eq!(restored.current_watermark, 200);
+        assert_eq!(restored.groups.values().flatten().count(), 1);
+        assert_eq!(restored.late_drops, 0);
+    }
+
+    #[test]
     fn restored_signed_zero_keys_use_secondary_order_without_changing_payload() {
         use super::*;
         use arrow::array::Float64Array;
@@ -5615,4 +5801,31 @@ mod tests {
         assert_eq!(kinds.values(), &[3, 0]);
         assert_eq!(ranker.staged_partitions(), 0);
     }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_setWindowRankerCalendar<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    callback: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |env| {
+        let operator = unsafe { &mut *(handle as *mut WindowRanker) };
+        operator.set_calendar(
+            env.new_global_ref(callback)
+                .expect("window calendar reference"),
+        );
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_nextWindowRankerTimerDeadline<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_| {
+        unsafe { &*(handle as *const WindowRanker) }.next_timer_deadline()
+    })
 }

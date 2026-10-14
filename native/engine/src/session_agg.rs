@@ -1,3 +1,4 @@
+use crate::window_calendar::WindowCalendar;
 use crate::*;
 
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
@@ -43,6 +44,8 @@ fn merge_into(
 /// order-independent, matching the host's merging window assigner.
 pub(crate) struct SessionAggregator {
     gap_millis: i64,
+    calendar: Option<WindowCalendar>,
+    next_timer_deadline: i64,
     aggregates: Vec<WindowAggregate>,
     // Keyed by the arrow-row memcomparable key encoding, like the other aggregators (see
     // `TumblingAggregator::key_converter`).
@@ -84,6 +87,8 @@ impl SessionAggregator {
     pub(crate) fn new(gap_millis: i64, value_types: Vec<i64>, kinds: Vec<i64>) -> Self {
         SessionAggregator {
             gap_millis,
+            calendar: None,
+            next_timer_deadline: i64::MIN,
             aggregates: build_aggregates(&kinds, &value_types),
             sessions: HashMap::default(),
             key_converter: None,
@@ -101,6 +106,10 @@ impl SessionAggregator {
             #[cfg(feature = "rocksdb-state")]
             store_field_counts: Vec::new(),
         }
+    }
+
+    pub(crate) fn set_calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.calendar = Some(WindowCalendar::new(callback));
     }
 
     pub(crate) fn with_key_timestamp_precisions(
@@ -222,6 +231,20 @@ impl SessionAggregator {
                 by_key.iter().map(|(key, rows)| (*key, rows[0])).collect();
             self.hydrate_store_keys(batch, &touched)?;
         }
+        let deadlines = self.calendar.as_ref().map(|calendar| {
+            let ends: Vec<i64> = self
+                .sessions
+                .values()
+                .flat_map(|sessions| sessions.values().map(|session| session.end))
+                .chain(
+                    (0..batch.num_rows()).map(|row| ts.value(row).saturating_add(self.gap_millis)),
+                )
+                .collect();
+            ends.iter()
+                .copied()
+                .zip(calendar.exclusive_ends(&ends))
+                .collect::<BTreeMap<_, _>>()
+        });
         let track = self.memory.tracking();
         for (key, rows) in by_key {
             let key = key.owned();
@@ -250,6 +273,7 @@ impl SessionAggregator {
                     .map(|(start, _)| *start)
                     .collect();
                 overlapping.reverse();
+                let merging = !overlapping.is_empty();
                 let mut start = candidate_start;
                 let mut end = candidate_end;
                 for overlap in overlapping {
@@ -257,7 +281,17 @@ impl SessionAggregator {
                     start = start.min(overlap);
                     end = end.max(overlap_end);
                 }
-                if end <= self.current_watermark {
+                let deadline = deadlines.as_ref().map_or(end, |ends| ends[&end]);
+                if deadline <= self.current_watermark {
+                    if merging {
+                        if let Some(calendar) = &self.calendar {
+                            calendar.reject_expired_merge(
+                                start,
+                                end,
+                                self.current_watermark.saturating_sub(1),
+                            );
+                        }
+                    }
                     self.late_drops += 1;
                 } else {
                     logical_sessions.insert(start, end);
@@ -367,13 +401,34 @@ impl SessionAggregator {
         if self.store.is_some() {
             return self.flush_store(watermark);
         }
+        let deadlines = self.calendar.as_ref().map(|calendar| {
+            let ends = self
+                .sessions
+                .values()
+                .flat_map(|sessions| sessions.values().map(|session| session.end))
+                .collect::<Vec<_>>();
+            ends.iter()
+                .copied()
+                .zip(calendar.exclusive_ends(&ends))
+                .collect::<BTreeMap<_, _>>()
+        });
         let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::new();
         let track = self.memory.tracking();
         let mut freed = 0usize;
+        let mut next_end: Option<i64> = None;
         for (key, map) in self.sessions.iter_mut() {
             let closed: Vec<i64> = map
                 .iter()
-                .filter(|(_, s)| s.end <= watermark)
+                .filter(|(_, s)| {
+                    let deadline = deadlines.as_ref().map_or(s.end, |ends| ends[&s.end]);
+                    if deadline > watermark {
+                        next_end =
+                            Some(next_end.map_or(deadline, |previous| previous.min(deadline)));
+                        false
+                    } else {
+                        true
+                    }
+                })
                 .map(|(start, _)| *start)
                 .collect();
             for start in closed {
@@ -402,6 +457,7 @@ impl SessionAggregator {
             self.memory.forget(freed);
             self.memory.account_shrink();
         }
+        self.next_timer_deadline = next_end.map_or(i64::MIN, |end| end.saturating_sub(1));
         rows.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
         Ok(self.emitted_batch(rows))
     }
@@ -416,7 +472,13 @@ impl SessionAggregator {
             .store
             .as_mut()
             .expect("session-aggregate rocksdb store")
-            .take_closed(watermark)?;
+            .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
+        self.next_timer_deadline = self
+            .store
+            .as_ref()
+            .unwrap()
+            .next_exclusive_end()
+            .map_or(i64::MIN, |end| end.saturating_sub(1));
         let converter = self
             .key_converter
             .as_ref()
@@ -712,7 +774,7 @@ impl SessionAggregator {
 
     /// Serializes every open session (one row per (key, session): key, start, end, then each
     /// accumulator's state fields) with Arrow IPC, mirroring the tumbling checkpoint path.
-    fn snapshot(&mut self) -> Vec<u8> {
+    pub(crate) fn snapshot(&mut self) -> Vec<u8> {
         write_ipc(&self.snapshot_batch())
     }
 
@@ -809,7 +871,12 @@ impl SessionAggregator {
         snapshots
     }
 
-    fn restore(gap_millis: i64, value_types: Vec<i64>, kinds: Vec<i64>, bytes: &[u8]) -> Self {
+    pub(crate) fn restore(
+        gap_millis: i64,
+        value_types: Vec<i64>,
+        kinds: Vec<i64>,
+        bytes: &[u8],
+    ) -> Self {
         let mut aggregator = SessionAggregator::new(gap_millis, value_types, kinds);
         if bytes.is_empty() {
             return aggregator;
@@ -954,6 +1021,35 @@ pub extern "system" fn Java_tech_streamfusion_Native_updateSessionAggregator<'lo
         if let Err(e) = result {
             throw_memory_limit(&mut env, &e.to_string());
         }
+    })
+}
+
+/// Attach released-host deadline conversion to a session handle, including direct persistent mode.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_setSessionWindowCalendar<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    callback: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |env| {
+        let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
+        aggregator.set_calendar(
+            env.new_global_ref(callback)
+                .expect("session calendar reference"),
+        );
+    })
+}
+
+/// Cached earliest remaining timer, computed by the production firing pass.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_sessionAggregatorNextTimerDeadline<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        (*(handle as *mut SessionAggregator)).next_timer_deadline
     })
 }
 

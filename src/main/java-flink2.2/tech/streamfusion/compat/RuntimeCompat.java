@@ -13,6 +13,10 @@ public final class RuntimeCompat {
     return true;
   }
 
+  public static boolean windowTvfPreservesRowKinds() {
+    return true;
+  }
+
   public static org.apache.flink.table.data.RowData copyRow(
       org.apache.flink.table.runtime.typeutils.RowDataSerializer serializer,
       org.apache.flink.table.data.RowData row) {

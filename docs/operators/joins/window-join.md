@@ -14,6 +14,9 @@ this shape: **both sides must carry the same time semantics**, either both event
 both proctime windows. An event-time/proctime mismatch between the two sides' windowing isn't
 native.
 
+User equi-keys may be empty: both window bounds still participate in the join key, so rows
+match within the same window and the residual predicate still applies.
+
 An event-time window join closes each window on the watermark, like the windowed aggregate; a
 proctime window join closes it on a processing-time timer instead. Watermarks and bounded-input
 completion do not fire an unfinished processing-time window.
@@ -21,18 +24,17 @@ completion do not fire an unfinished processing-time window.
 ## Falls back to Flink when
 
 - the join type isn't INNER, LEFT, RIGHT, or FULL;
-- there's no equi key;
 - the key columns aren't null-dropping for a non-INNER join;
 - the equi-key type is outside the supported set;
 - the non-equi residual isn't expressible by the native expression engine;
 - the two sides' windowing doesn't share time semantics (one event-time, one proctime);
-- either side's window rides a `TIMESTAMP_LTZ` time attribute in a session zone the
-  [window-assignment zone gate](../window-aggregate.md#matcher-declines) rejects (any historical or recurring
-  transition, or a fixed offset not aligned with the window slide).
+- the two inputs use different assignment calendars, including an LTZ regional calendar on
+  one side and plain TIMESTAMP on the other.
 
 Window start/end payload columns remain local wall-clock values. The join compares its watermark
-or processing-time clock after applying the fixed offset and fires at the window's final
-millisecond. Both inputs must use the same time domain. Late rows are rejected using that same
+or processing-time clock with each end's converted deadline and fires at the window's final
+millisecond. Regional conversion uses released Flink's timer rules; fixed offsets use the
+shifted local grid, including offsets not aligned with the slide. Both inputs must use the same time domain. Late rows are rejected using that same
 threshold, including after recovery. See the [state upgrade contract](../../backends/canonical-state.md#timestamp-layout-upgrade)
 for checkpoints written before the boundary correction.
 
@@ -49,3 +51,7 @@ checks cover this sequence for INNER joins on the stock operator and both raw
 native and direct RocksDB recovery, including partial firing and no refiring
 without new matching rows. This does not establish other join kinds or
 multi-source rescaling through this particular regression.
+
+Regional RocksDB firing first collects distinct local window ends and converts their deadlines.
+A second scan retains only closed rows for output. Pending payloads remain in RocksDB rather than
+being copied into a resident candidate list; fixed-offset firing keeps its existing single scan.

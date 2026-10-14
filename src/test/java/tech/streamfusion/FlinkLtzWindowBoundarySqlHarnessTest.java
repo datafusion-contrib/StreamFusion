@@ -126,11 +126,8 @@ class FlinkLtzWindowBoundarySqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"Asia/Kolkata", "America/Los_Angeles"})
-  void historicalOrRecurringOffsetChangesFallBack(String zone) throws Exception {
-    NativeParity.assertFallbackReasonContains(
-        () -> environment(zone, true),
-        "SELECT * FROM " + tvf("TUMBLE"),
-        "fixed offset for the full timestamp range");
+  void historicalOrRecurringOffsetChangesMatchHost(String zone) throws Exception {
+    parity(zone, true, "SELECT * FROM " + tvf("TUMBLE"), "NativeWindowTableFunction");
   }
 
   @ParameterizedTest

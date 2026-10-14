@@ -18,6 +18,7 @@ const WINDOW_END_SIGN_FLIP: u64 = 1 << 63;
 
 /// The aligned-window watermark, persisted at checkpoint under a reserved key whose leading bytes
 /// can never be a subtask's key group (the snapshot-timer key's convention).
+const SHARED_SLICES_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-shared-slices";
 const WATERMARK_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-window-agg-watermark";
 
 fn biased_window_end(end: i64) -> [u8; 8] {
@@ -50,6 +51,8 @@ pub(crate) struct RocksWindowAggStore {
     key_groups: std::ops::RangeInclusive<i32>,
     state_converter: RowConverter,
     watermark: i64,
+    shared_slices: bool,
+    next_exclusive_end: Option<i64>,
     timer_deadline: i64,
     generation: i64,
     write_batch_size: usize,
@@ -109,6 +112,8 @@ impl RocksWindowAggStore {
                     }
                 } else if key.as_ref() == TIMER_DEADLINE_KEY {
                     store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
+                } else if key.as_ref() == SHARED_SLICES_KEY {
+                    store.shared_slices = value.as_ref() == [1];
                 } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if store.key_groups.contains(&kg) {
@@ -118,6 +123,9 @@ impl RocksWindowAggStore {
             }
         }
         write_timer_deadline(&mut writes, store.timer_deadline)?;
+        if store.shared_slices {
+            writes.put(SHARED_SLICES_KEY, [1])?;
+        }
         writes.finish()?;
         Ok(store)
     }
@@ -135,6 +143,7 @@ impl RocksWindowAggStore {
                 .collect(),
         )
         .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let shared_slices = opened.db.get(SHARED_SLICES_KEY).map_err(re)?.is_some();
         Ok(Self {
             db: opened.db,
             _cache: opened.cache,
@@ -142,6 +151,8 @@ impl RocksWindowAggStore {
             key_groups,
             state_converter,
             watermark: i64::MIN,
+            shared_slices,
+            next_exclusive_end: None,
             timer_deadline: i64::MIN,
             generation: 0,
             write_batch_size: opened.write_batch_size,
@@ -175,8 +186,85 @@ impl RocksWindowAggStore {
         let mut out = Vec::with_capacity(KEY_PREFIX_LEN + key.len());
         out.extend_from_slice(&key_group.to_be_bytes());
         out.extend_from_slice(&biased_window_end(window_end));
+        if self.shared_slices {
+            out.push(0);
+        }
         out.extend_from_slice(key);
         out
+    }
+
+    pub(crate) fn shared_slices(&self) -> bool {
+        self.shared_slices
+    }
+
+    pub(crate) fn set_shared_slices(&mut self, shared: bool) {
+        assert!(
+            !self.shared_slices || shared,
+            "cannot reinterpret shared slice state as independent windows"
+        );
+        self.shared_slices = shared;
+    }
+
+    fn timer_key(&self, key_group: i32, end: i64, key: &[u8]) -> Vec<u8> {
+        assert!(self.shared_slices);
+        let mut encoded = self.db_key(key_group, end, key);
+        encoded[KEY_PREFIX_LEN] = 1;
+        encoded
+    }
+
+    pub(crate) fn put_slice_timer(
+        &mut self,
+        key_group: i32,
+        end: i64,
+        key: &[u8],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        writes.put(self.timer_key(key_group, end, key), [])?;
+        writes.finish()
+    }
+
+    pub(crate) fn delete_slice_timer(
+        &mut self,
+        key_group: i32,
+        end: i64,
+        key: &[u8],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        writes.delete(self.timer_key(key_group, end, key))?;
+        writes.finish()
+    }
+
+    pub(crate) fn delete_slice(
+        &mut self,
+        key_group: i32,
+        end: i64,
+        key: &[u8],
+    ) -> Result<(), DataFusionError> {
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        writes.delete(self.db_key(key_group, end, key))?;
+        writes.finish()
+    }
+
+    pub(crate) fn slice_timers(&self) -> Result<Vec<(i32, i64, Box<[u8]>)>, DataFusionError> {
+        let mut timers = Vec::new();
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = row.map_err(re)?;
+            if key.len() <= KEY_PREFIX_LEN
+                || key.as_ref() == WATERMARK_KEY
+                || key.as_ref() == TIMER_DEADLINE_KEY
+                || key.as_ref() == SHARED_SLICES_KEY
+            {
+                continue;
+            }
+            if key[KEY_PREFIX_LEN] == 1 {
+                timers.push((
+                    i32::from_be_bytes(key[..4].try_into().unwrap()),
+                    window_end_from(&key[4..KEY_PREFIX_LEN]),
+                    key[KEY_PREFIX_LEN + 1..].into(),
+                ));
+            }
+        }
+        Ok(timers)
     }
 
     /// Batched point reads for a bundle's touched groups: one multi-get, one columnar decode.
@@ -235,6 +323,10 @@ impl RocksWindowAggStore {
         writes.finish()
     }
 
+    pub(crate) fn next_exclusive_end(&self) -> Option<i64> {
+        self.next_exclusive_end
+    }
+
     /// Removes and returns every closed (window, key) group (`window_end <= watermark`). Each key
     /// group's scan stops at its first pending window (entries iterate in window-end order within
     /// a key group), and the key-group-major result is re-sorted to window-end order, then group
@@ -243,7 +335,16 @@ impl RocksWindowAggStore {
         &mut self,
         watermark: i64,
     ) -> Result<Vec<StoredWindowGroup>, DataFusionError> {
+        self.take_closed_with_calendar(watermark, None)
+    }
+
+    pub(crate) fn take_closed_with_calendar(
+        &mut self,
+        watermark: i64,
+        calendar: Option<&crate::window_calendar::WindowCalendar>,
+    ) -> Result<Vec<StoredWindowGroup>, DataFusionError> {
         let mut closed: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)> = Vec::new();
+        let mut candidates = Vec::new();
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for key_group in self.key_groups.clone() {
             let prefix = key_group.to_be_bytes();
@@ -256,6 +357,10 @@ impl RocksWindowAggStore {
                     break;
                 }
                 let end = window_end_from(&key[4..KEY_PREFIX_LEN]);
+                if calendar.is_some() {
+                    candidates.push((key, value, end));
+                    continue;
+                }
                 if end > watermark {
                     break;
                 }
@@ -264,8 +369,29 @@ impl RocksWindowAggStore {
                 writes.delete(key)?;
             }
         }
+        let deadlines = calendar
+            .map(|calendar| calendar.end_thresholds(candidates.iter().map(|(_, _, end)| *end)));
+        if let Some(deadlines) = &deadlines {
+            self.next_exclusive_end = deadlines
+                .values()
+                .filter(|&&end| end > watermark)
+                .min()
+                .copied();
+            for (key, value, end) in candidates {
+                if deadlines[&end] > watermark {
+                    continue;
+                }
+                let start = i64::from_le_bytes(value[..8].try_into().expect("window start"));
+                closed.push((end, start, key[KEY_PREFIX_LEN..].into(), value[8..].into()));
+                writes.delete(key)?;
+            }
+        }
         writes.finish()?;
-        closed.sort_unstable_by(|a, b| (a.0, a.2.as_ref()).cmp(&(b.0, b.2.as_ref())));
+        closed.sort_unstable_by(|a, b| {
+            let left = deadlines.as_ref().map_or(a.0, |ends| ends[&a.0]);
+            let right = deadlines.as_ref().map_or(b.0, |ends| ends[&b.0]);
+            (left, a.0, a.2.as_ref()).cmp(&(right, b.0, b.2.as_ref()))
+        });
         self.into_groups(closed)
     }
 
@@ -276,13 +402,18 @@ impl RocksWindowAggStore {
             let (key, value) = row.map_err(re)?;
             if key.as_ref() == WATERMARK_KEY
                 || key.as_ref() == TIMER_DEADLINE_KEY
+                || key.as_ref() == SHARED_SLICES_KEY
                 || key.len() < KEY_PREFIX_LEN
             {
                 continue;
             }
+            if self.shared_slices && key[KEY_PREFIX_LEN] != 0 {
+                continue;
+            }
+            let key_offset = KEY_PREFIX_LEN + usize::from(self.shared_slices);
             let end = window_end_from(&key[4..KEY_PREFIX_LEN]);
             let start = i64::from_le_bytes(value[..8].try_into().expect("window start"));
-            groups.push((end, start, key[KEY_PREFIX_LEN..].into(), value[8..].into()));
+            groups.push((end, start, key[key_offset..].into(), value[8..].into()));
         }
         self.into_groups(groups)
     }
@@ -336,6 +467,9 @@ impl RocksWindowAggStore {
     ) -> Result<RocksCheckpointManifest, DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         writes.put(WATERMARK_KEY, watermark.to_be_bytes())?;
+        if self.shared_slices {
+            writes.put(SHARED_SLICES_KEY, [1])?;
+        }
         write_timer_deadline(&mut writes, timer_deadline)?;
         writes.finish()?;
         self.watermark = watermark;
@@ -467,6 +601,66 @@ mod tests {
             vec![ScalarValue::Int64(Some(20))]
         );
         assert!(fetched[2].is_none());
+    }
+
+    #[test]
+    fn shared_timers_and_slices_have_independent_keyed_namespaces() {
+        let mut store = store("shared-namespaces");
+        store.set_shared_slices(true);
+        put_groups(&mut store, &[(7, -100, -101, 1, 10)]);
+        let key = key_rows(&[1]).pop().unwrap();
+        store.put_slice_timer(7, -100, &key).unwrap();
+        assert_eq!(sums(&store.scan_all().unwrap()), vec![10]);
+        let timers = store.slice_timers().unwrap();
+        assert_eq!(timers.len(), 1);
+        assert_eq!(
+            (timers[0].0, timers[0].1, timers[0].2.as_ref()),
+            (7, -100, key.as_slice())
+        );
+        store.delete_slice(7, -100, &key).unwrap();
+        assert!(store.scan_all().unwrap().is_empty());
+        assert_eq!(store.slice_timers().unwrap().len(), 1);
+        put_groups(&mut store, &[(7, -100, -101, 1, 20)]);
+        store.delete_slice_timer(7, -100, &key).unwrap();
+        assert!(store.slice_timers().unwrap().is_empty());
+        assert_eq!(sums(&store.scan_all().unwrap()), vec![20]);
+    }
+
+    #[test]
+    fn shared_slice_checkpoints_retain_namespace_and_clip_timers_with_keys() {
+        let snapshot = snapshot_dir("shared-clip");
+        let mut store = store("shared-clip");
+        store.set_shared_slices(true);
+        put_groups(&mut store, &[(7, 100, 99, 1, 10), (9, 100, 99, 2, 20)]);
+        let keys = key_rows(&[1, 2]);
+        store.put_slice_timer(7, 100, &keys[0]).unwrap();
+        store.put_slice_timer(9, 101, &keys[1]).unwrap();
+        let manifest = store.checkpoint(50, 99, &snapshot).unwrap();
+        drop(store);
+        for aligned in [false, true] {
+            let restored = RocksWindowAggStore::open_merged(
+                test_config(&format!("shared-reopen-{aligned}")),
+                &[DataType::Int64],
+                if aligned { 0..=127 } else { 9..=9 },
+                &[(snapshot.clone(), manifest.snapshot_id)],
+                aligned,
+            )
+            .unwrap();
+            assert!(restored.shared_slices());
+            assert_eq!(restored.watermark(), 50);
+            assert_eq!(restored.timer_deadline(), 99);
+            assert_eq!(
+                sums(&restored.scan_all().unwrap()),
+                if aligned { vec![10, 20] } else { vec![20] }
+            );
+            assert_eq!(
+                restored.slice_timers().unwrap().len(),
+                if aligned { 2 } else { 1 }
+            );
+            if !aligned {
+                assert_eq!(restored.slice_timers().unwrap()[0].0, 9);
+            }
+        }
     }
 
     // The scan is key-group-major; the fired set must come back window-end-major, then in the

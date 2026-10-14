@@ -22,11 +22,11 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  * and late-row drop live in the native ranker; this layer moves batches across the bridge and owns
  * the handle's checkpointed state.
  *
- * <p>An event-time window rank closes windows on a watermark. A **proctime** window rank closes them
- * on the processing-time clock: the upstream proctime TVF assigns each row to the window covering the
- * clock, and this operator fires a processing-time timer at each window end (chaining to the next
- * slide boundary while windows remain open, like the proctime window aggregate). It ignores
- * watermarks in that mode and drains on finish.
+ * <p>An event-time window rank closes windows on a watermark. A **proctime** window rank closes
+ * them on the processing-time clock: the upstream proctime TVF assigns each row to the window
+ * covering the clock, and this operator fires a processing-time timer at each window end (chaining
+ * to the next slide boundary while windows remain open, like the proctime window aggregate). It
+ * ignores watermarks in that mode and drains on finish.
  */
 public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
@@ -39,6 +39,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   private final int[] sortNullsFirst;
   private final long limit;
   private final boolean outputRankNumber;
+  private String calendarZoneId;
   private final long boundaryOffsetMillis;
   private final boolean proctime;
   private final long windowMillis;
@@ -78,7 +79,9 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
         sortNullsFirst,
         limit,
         outputRankNumber,
-        WindowTimeDomain.offsetMillis(timeZoneId),
+        java.time.ZoneId.of(timeZoneId).getRules().isFixedOffset()
+            ? WindowTimeDomain.offsetMillis(timeZoneId)
+            : 0,
         proctime,
         windowMillis,
         slideMillis,
@@ -86,6 +89,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
         rowType,
         maxParallelism,
         false);
+    withCalendarZone(timeZoneId);
   }
 
   public NativeColumnarWindowRankOperator(
@@ -161,6 +165,12 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     this.keepLastOnTie = keepLastOnTie;
   }
 
+  public NativeColumnarWindowRankOperator withCalendarZone(String zoneId) {
+    if (zoneId != null && !java.time.ZoneId.of(zoneId).getRules().isFixedOffset())
+      calendarZoneId = zoneId;
+    return this;
+  }
+
   // A proctime window rank closes windows on processing-time timers, so the deadline must travel
   // in every raw key group; an event-time one writes the frame with no deadline.
   @Override
@@ -170,7 +180,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
 
   @Override
   protected long processingTimeTimerDeadlineForSnapshot() {
-    return proctime ? maxOpenEnd : Long.MIN_VALUE;
+    return proctime ? (calendarZoneId == null ? maxOpenEnd : registeredTimer) : Long.MIN_VALUE;
   }
 
   // Proctime ranks share the event-time state layout (windows are assigned upstream and buffers
@@ -274,13 +284,19 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   @Override
   public void open() throws Exception {
     super.open();
+    if (calendarZoneId != null)
+      Native.setWindowRankerCalendar(handle, new WindowCalendar(calendarZoneId, proctime));
     // Plan configuration is reapplied after either memory or persistent-state restoration.
     Native.setWindowRankerKeepLastOnTie(handle, keepLastOnTie);
     flinkWindowMetrics =
         new FlinkWindowMetrics(getMetricGroup(), getProcessingTimeService());
     registeredTimer = Long.MIN_VALUE;
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
-    if (proctime && maxOpenEnd != Long.MIN_VALUE) {
+    if (proctime && calendarZoneId != null) {
+      long now = getProcessingTimeService().getCurrentProcessingTime();
+      flush(now);
+      scheduleNextTimer(now);
+    } else if (proctime && maxOpenEnd != Long.MIN_VALUE) {
       long now = getProcessingTimeService().getCurrentProcessingTime();
       if (maxOpenEnd <= now) {
         flush(now);
@@ -339,7 +355,16 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
   }
 
   private void scheduleNextTimer(long now) {
-    long boundary = Math.floorDiv(now + 1, slideMillis) * slideMillis + slideMillis - 1;
+    if (calendarZoneId != null) {
+      long boundary = Native.nextWindowRankerTimerDeadline(handle);
+      if (boundary > now && boundary != registeredTimer) {
+        getProcessingTimeService().registerTimer(boundary, this);
+        registeredTimer = boundary;
+      }
+      return;
+    }
+    long boundary =
+        WindowTimeDomain.gridStart(now + 1, slideMillis, boundaryOffsetMillis) + slideMillis - 1;
     if (boundary <= maxOpenEnd && boundary > registeredTimer) {
       getProcessingTimeService().registerTimer(boundary, this);
       registeredTimer = boundary;
@@ -348,13 +373,15 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
 
   private long latestWindowEnd(long now) {
     return cumulative
-        ? Math.floorDiv(now, windowMillis) * windowMillis + windowMillis - 1
-        : Math.floorDiv(now, slideMillis) * slideMillis + windowMillis - 1;
+        ? WindowTimeDomain.gridStart(now, windowMillis, boundaryOffsetMillis) + windowMillis - 1
+        : WindowTimeDomain.gridStart(now, slideMillis, boundaryOffsetMillis) + windowMillis - 1;
   }
 
   /** Emits and evicts every window whose end the given threshold has passed. */
   private void flush(long threshold) {
-    threshold = WindowTimeDomain.closeThreshold(threshold, boundaryOffsetMillis);
+    threshold =
+        WindowTimeDomain.closeThreshold(
+            threshold, calendarZoneId == null ? boundaryOffsetMillis : 0);
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       if (directRocksDBState()) {

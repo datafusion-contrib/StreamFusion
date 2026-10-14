@@ -54,6 +54,7 @@ pub(crate) struct RocksSessionAggStore {
     key_groups: std::ops::RangeInclusive<i32>,
     state_converter: RowConverter,
     watermark: i64,
+    next_exclusive_end: Option<i64>,
     timer_deadline: i64,
     generation: i64,
     write_batch_size: usize,
@@ -146,6 +147,7 @@ impl RocksSessionAggStore {
             key_groups,
             state_converter,
             watermark: i64::MIN,
+            next_exclusive_end: None,
             timer_deadline: i64::MIN,
             generation: 0,
             write_batch_size: opened.write_batch_size,
@@ -155,6 +157,10 @@ impl RocksSessionAggStore {
     /// The late-data watermark persisted by the checkpoint this store restored from.
     pub(crate) fn watermark(&self) -> i64 {
         self.watermark
+    }
+
+    pub(crate) fn next_exclusive_end(&self) -> Option<i64> {
+        self.next_exclusive_end
     }
 
     /// The processing-time timer deadline persisted by the checkpoint this store restored from.
@@ -266,7 +272,17 @@ impl RocksSessionAggStore {
         &mut self,
         watermark: i64,
     ) -> Result<Vec<StoredSession>, DataFusionError> {
+        self.take_closed_with_calendar(watermark, None)
+    }
+
+    pub(crate) fn take_closed_with_calendar(
+        &mut self,
+        watermark: i64,
+        calendar: Option<&crate::window_calendar::WindowCalendar>,
+    ) -> Result<Vec<StoredSession>, DataFusionError> {
         let mut closed: Vec<(Box<[u8]>, i64, i64, Box<[u8]>)> = Vec::new();
+        let mut candidates = Vec::new();
+        let mut next_end: Option<i64> = None;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for key_group in self.key_groups.clone() {
             let prefix = key_group.to_be_bytes();
@@ -279,7 +295,34 @@ impl RocksSessionAggStore {
                     break;
                 }
                 let end = i64::from_le_bytes(value[..8].try_into().expect("session end"));
+                if calendar.is_some() {
+                    candidates.push((key, value, end));
+                    continue;
+                }
                 if end > watermark {
+                    next_end = Some(next_end.map_or(end, |previous| previous.min(end)));
+                    continue;
+                }
+                let start = session_start_from(&key[key.len() - SESSION_START_LEN..]);
+                closed.push((
+                    key[KEY_GROUP_LEN..key.len() - SESSION_START_LEN].into(),
+                    start,
+                    end,
+                    value[8..].into(),
+                ));
+                writes.delete(key)?;
+            }
+        }
+        if let Some(calendar) = calendar {
+            let ends = candidates
+                .iter()
+                .map(|(_, _, end)| *end)
+                .collect::<Vec<_>>();
+            for ((key, value, end), deadline) in
+                candidates.into_iter().zip(calendar.exclusive_ends(&ends))
+            {
+                if deadline > watermark {
+                    next_end = Some(next_end.map_or(deadline, |previous| previous.min(deadline)));
                     continue;
                 }
                 let start = session_start_from(&key[key.len() - SESSION_START_LEN..]);
@@ -293,6 +336,7 @@ impl RocksSessionAggStore {
             }
         }
         writes.finish()?;
+        self.next_exclusive_end = next_end;
         closed.sort_unstable_by(|a, b| (a.0.as_ref(), a.1).cmp(&(b.0.as_ref(), b.1)));
         self.into_sessions(closed)
     }

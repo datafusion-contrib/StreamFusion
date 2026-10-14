@@ -1,3 +1,4 @@
+use crate::window_calendar::WindowCalendar;
 use crate::*;
 
 /// Buffered rows of one side of a window join, grouped by window then by equi-join key.
@@ -17,6 +18,8 @@ pub(crate) struct WindowJoiner {
     left_wend: usize,
     right_wstart: usize,
     right_wend: usize,
+    calendar: Option<WindowCalendar>,
+    next_timer_deadline: i64,
     predicate: Option<JoinPredicate>,
     join_type: JoinKind,
     // Eager data schemas, seeded at construction so an outer join can type the null-padding for a side
@@ -60,6 +63,8 @@ impl WindowJoiner {
             left_wend,
             right_wstart,
             right_wend,
+            calendar: None,
+            next_timer_deadline: i64::MIN,
             predicate,
             join_type,
             left_data_schema,
@@ -78,6 +83,14 @@ impl WindowJoiner {
             // serves both (the raw snapshot partitioner already relies on this).
             key_timestamp_precisions: vec![-1; key_arity],
         }
+    }
+
+    pub(crate) fn set_calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.calendar = Some(WindowCalendar::new(callback));
+    }
+
+    pub(crate) fn next_timer_deadline(&self) -> i64 {
+        self.next_timer_deadline
     }
 
     pub(crate) fn with_key_timestamp_precisions(
@@ -133,7 +146,12 @@ impl WindowJoiner {
 
     pub(crate) fn push_left(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.left_schema = Some(batch.schema());
-        let (batch, dropped) = Self::filter_late(batch, self.left_wend, self.current_watermark)?;
+        let (batch, dropped) = Self::filter_late(
+            batch,
+            self.left_wend,
+            self.current_watermark,
+            self.calendar.as_ref(),
+        )?;
         self.left_late_drops += dropped as u64;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -145,7 +163,12 @@ impl WindowJoiner {
 
     pub(crate) fn push_right(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
         self.right_schema = Some(batch.schema());
-        let (batch, dropped) = Self::filter_late(batch, self.right_wend, self.current_watermark)?;
+        let (batch, dropped) = Self::filter_late(
+            batch,
+            self.right_wend,
+            self.current_watermark,
+            self.calendar.as_ref(),
+        )?;
         self.right_late_drops += dropped as u64;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -159,12 +182,18 @@ impl WindowJoiner {
         batch: RecordBatch,
         window_end_column: usize,
         watermark: i64,
+        calendar: Option<&WindowCalendar>,
     ) -> Result<(RecordBatch, usize), DataFusionError> {
         let input_rows = batch.num_rows();
         let ends = rt_to_millis(batch.column(window_end_column));
+        let deadlines = calendar.map(|calendar| calendar.end_thresholds(ends.iter().flatten()));
         let live: BooleanArray = ends
             .iter()
-            .map(|end| Some(end.is_some_and(|end| end > watermark)))
+            .map(|end| {
+                Some(end.is_some_and(|end| {
+                    deadlines.as_ref().map_or(end, |values| values[&end]) > watermark
+                }))
+            })
             .collect();
         let batch = filter_record_batch(&batch, &live)?;
         let late_rows = input_rows - batch.num_rows();
@@ -197,8 +226,23 @@ impl WindowJoiner {
     fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         let (left_schema, right_schema) = self.side_schemas();
         let store = self.store.as_mut().expect("window-join rocksdb store");
-        let left = store.take_closed(true, watermark, &left_schema)?;
-        let right = store.take_closed(false, watermark, &right_schema)?;
+        let left = store.take_closed_with_calendar(
+            true,
+            watermark,
+            &left_schema,
+            self.calendar.as_ref(),
+        )?;
+        let right = store.take_closed_with_calendar(
+            false,
+            watermark,
+            &right_schema,
+            self.calendar.as_ref(),
+        )?;
+        if self.calendar.is_some() {
+            self.next_timer_deadline = store
+                .next_exclusive_end()
+                .map_or(i64::MIN, |end| end.saturating_sub(1));
+        }
         self.join_closed(left, right)
     }
 
@@ -287,6 +331,7 @@ impl WindowJoiner {
         schema: &Option<SchemaRef>,
         wend: usize,
         watermark: i64,
+        calendar: Option<&WindowCalendar>,
     ) -> Option<RecordBatch> {
         let schema = schema.as_ref()?;
         if buffered.is_empty() {
@@ -294,8 +339,14 @@ impl WindowJoiner {
         }
         let all = concat_batches(schema, buffered.iter()).expect("concat window-join buffer");
         let ends = rt_to_millis(all.column(wend));
-        let closed_mask: BooleanArray =
-            ends.iter().map(|v| Some(v.unwrap() <= watermark)).collect();
+        let deadlines = calendar.map(|calendar| calendar.end_thresholds(ends.iter().flatten()));
+        let closed_mask: BooleanArray = ends
+            .iter()
+            .map(|v| {
+                let end = v.unwrap();
+                Some(deadlines.as_ref().map_or(end, |values| values[&end]) <= watermark)
+            })
+            .collect();
         let closed = filter_record_batch(&all, &closed_mask).expect("filter closed windows");
         let pending_mask = arrow::compute::not(&closed_mask).expect("negate window mask");
         let pending = filter_record_batch(&all, &pending_mask).expect("filter pending windows");
@@ -323,13 +374,31 @@ impl WindowJoiner {
             &self.left_schema,
             self.left_wend,
             watermark,
+            self.calendar.as_ref(),
         );
         let right = Self::split_closed(
             &mut self.right_buffered,
             &self.right_schema,
             self.right_wend,
             watermark,
+            self.calendar.as_ref(),
         );
+        if let Some(calendar) = &self.calendar {
+            let ends = self
+                .left_buffered
+                .iter()
+                .flat_map(|batch| rt_to_millis(batch.column(self.left_wend)).values().to_vec())
+                .chain(self.right_buffered.iter().flat_map(|batch| {
+                    rt_to_millis(batch.column(self.right_wend))
+                        .values()
+                        .to_vec()
+                }));
+            self.next_timer_deadline = calendar
+                .end_thresholds(ends)
+                .values()
+                .min()
+                .map_or(i64::MIN, |end| end.saturating_sub(1));
+        }
         self.account()
             .expect("closing windows only shrinks the buffers");
         self.join_closed(left, right)
@@ -896,5 +965,32 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowJoinerPartitio
         )
         .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, joiner)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_setWindowJoinerCalendar<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    callback: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |env| {
+        let operator = unsafe { &mut *(handle as *mut WindowJoiner) };
+        operator.set_calendar(
+            env.new_global_ref(callback)
+                .expect("window calendar reference"),
+        );
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_nextWindowJoinerTimerDeadline<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_| {
+        unsafe { &*(handle as *const WindowJoiner) }.next_timer_deadline()
     })
 }

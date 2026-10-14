@@ -1,6 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.arrow.ArrowConversion;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -12,24 +11,25 @@ import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.watermark.Watermark;
-import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.arrow.ArrowConversion;
 
 /**
  * The final-result layer of the window operator core: adds {@link #emitFinal}, which fetches the
- * windows a watermark has closed and emits them as an Arrow batch shaped to the operator's output row
- * type ({@code [key?, agg…, window_start, window_end]}). Window operators that produce final per-window
- * results (single-phase, global, session) extend this; the partial-emitting local operator extends the
- * output-agnostic {@link NativeWindowOperatorCore} directly. Every native operator but a source/sink is
- * Arrow → Arrow, so the final aggregates emit Arrow too; the transpose to {@code RowData}
- * for a rowwise sink is the dedicated {@code ArrowToRowDataOperator}, inserted by the planner at the
- * island perimeter.
+ * windows a watermark has closed and emits them as an Arrow batch shaped to the operator's output
+ * row type ({@code [key?, agg…, window_start, window_end]}). Window operators that produce final
+ * per-window results (single-phase, global, session) extend this; the partial-emitting local
+ * operator extends the output-agnostic {@link NativeWindowOperatorCore} directly. Every native
+ * operator but a source/sink is Arrow → Arrow, so the final aggregates emit Arrow too; the
+ * transpose to {@code RowData} for a rowwise sink is the dedicated {@code ArrowToRowDataOperator},
+ * inserted by the planner at the island perimeter.
  */
 public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCore<ArrowBatch> {
 
 
   private final RowType outputType;
-  private final boolean inputTimestampLtz;
+  protected final boolean inputTimestampLtz;
   private final String sessionTimeZoneId;
   private transient ZoneId sessionZone;
   private transient FlinkWindowMetrics flinkWindowMetrics;
@@ -61,6 +61,11 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
   }
 
   @Override
+  protected boolean permitsRegionalCalendar() {
+    return inputTimestampLtz;
+  }
+
+  @Override
   public void open() throws Exception {
     super.open();
     sessionZone = ZoneId.of(sessionTimeZoneId);
@@ -82,13 +87,13 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
   }
 
   /**
-   * Emits the windows the watermark has closed as one Arrow batch in the output row order
-   * {@code [key?, agg0..aggN-1, window_start, window_end]}. The native flush carries keys in their
-   * natural type (int widened to int64, timestamps as component pairs), the aggregate results already
-   * in their output Arrow type, and the two window bounds as int64 epoch millis; this reshapes them
-   * into the output Arrow schema, narrowing int keys, carrying timestamp-key components through, and
-   * rendering the window bounds as session-local timestamps (matching the host). Nothing is emitted
-   * for an empty flush.
+   * Emits the windows the watermark has closed as one Arrow batch in the output row order {@code
+   * [key?, agg0..aggN-1, window_start, window_end]}. The native flush carries keys in their natural
+   * type (int widened to int64, timestamps as component pairs), the aggregate results already in
+   * their output Arrow type, and the two window bounds as int64 epoch millis; this reshapes them
+   * into the output Arrow schema, narrowing int keys, carrying timestamp-key components through,
+   * and rendering the window bounds as session-local timestamps (matching the host). Nothing is
+   * emitted for an empty flush.
    */
   protected final void emitFinal(long watermark, int[] keyTypes) {
     int keyCount = keyTypes.length;
@@ -118,8 +123,10 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
               copyColumn(flush.getVector("result" + a), out.getVector(keyCount + a), n);
             }
           }
-          // Window properties follow the keys and aggregates. TVF aggregates carry start/end. Legacy
-          // group windows carry none, or start/end plus rowtime/proctime attributes in Flink's order.
+          // Window properties follow the keys and aggregates. TVF aggregates carry start/end.
+          // Legacy
+          // group windows carry none, or start/end plus rowtime/proctime attributes in Flink's
+          // order.
           int base = keyCount + aggregates;
           if (properties == 1) {
             throw new IllegalStateException("window output cannot contain exactly one property");
@@ -159,8 +166,8 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
 
   /**
    * Copies a key column, undoing the native carriage: an int key widened to int64 narrows back to
-   * int32, and timestamp keys retain their component buffers; every other key
-   * type matches and transfers its buffers only for outputs without window properties.
+   * int32, and timestamp keys retain their component buffers; every other key type matches and
+   * transfers its buffers only for outputs without window properties.
    */
   private static void copyKeyColumn(FieldVector source, FieldVector target, int n, boolean transferBuffers) {
     if (target instanceof IntVector) {
@@ -191,7 +198,10 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
     }
   }
 
-  /** Renders int64 epoch-millis window bounds as session-local timestamp components, as the host does. */
+  /**
+   * Renders int64 epoch-millis window bounds as session-local timestamp components, as the host
+   * does.
+   */
   private boolean isLtz(int field) {
     return outputType.getTypeAt(field).getTypeRoot()
         == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
@@ -211,9 +221,16 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
       } else {
         long boundary = source.get(i) + offsetMillis;
         long rendered;
-        if (targetLtz) {
+        if (usesLocalWindowBounds()) {
+          rendered =
+              targetLtz
+                  ? org.apache.flink.table.runtime.util.TimeWindowUtil.toEpochMills(
+                      boundary, sessionZone)
+                  : boundary;
+        } else if (targetLtz) {
           // A window-time property is an instant. LTZ input boundaries already are epoch millis;
-          // plain TIMESTAMP boundaries are local wall-clock and must be interpreted in the session zone.
+          // plain TIMESTAMP boundaries are local wall-clock and must be interpreted in the session
+          // zone.
           rendered =
               inputTimestampLtz
                   ? boundary

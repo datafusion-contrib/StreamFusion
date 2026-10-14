@@ -62,6 +62,7 @@ mod temporal_join;
 mod topn;
 mod updating_join;
 mod window_agg;
+mod window_calendar;
 mod window_join;
 
 pub(crate) use bridge::*;

@@ -1,7 +1,6 @@
 package tech.streamfusion.planner;
 
 import java.time.Duration;
-import java.time.zone.ZoneRules;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.expressions.ValueLiteralExpression;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
@@ -12,7 +11,6 @@ import org.apache.flink.table.planner.plan.logical.TumblingGroupWindow;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupWindowAggregate;
 import org.apache.flink.table.planner.plan.utils.AggregateUtil;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
-import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.runtime.groupwindow.NamedWindowProperty;
 import org.apache.flink.table.runtime.groupwindow.ProctimeAttribute;
 import org.apache.flink.table.runtime.groupwindow.RowtimeAttribute;
@@ -91,11 +89,6 @@ final class GroupWindowAggregateMatcher {
       if (gap(agg) == null) {
         return "legacy group-window: session gap must be a time interval";
       }
-      if (timeType.getTypeRoot() == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE
-          && !sessionZoneFixedOffset(agg)) {
-        return "legacy SESSION over TIMESTAMP_LTZ requires a fixed offset for the full timestamp"
-            + " range";
-      }
       return null;
     }
     Duration size = size(agg);
@@ -111,26 +104,7 @@ final class GroupWindowAggregateMatcher {
     if (proctime && sizeMillis % slideMillis != 0) {
       return "legacy group-window: processing-time HOP requires slide to divide size";
     }
-    if (timeType.getTypeRoot() == LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE
-        && !sessionZoneAlignsWithSlide(agg, slideMillis)) {
-      return "legacy group-window: TIMESTAMP_LTZ requires every session-zone offset to align with"
-          + " the window slide and a fixed offset for the full timestamp range";
-    }
     return null;
-  }
-
-  private static boolean sessionZoneAlignsWithSlide(
-      StreamPhysicalGroupWindowAggregate agg, long slideMillis) {
-    ZoneRules rules = sessionZoneRules(agg);
-    return rules.isFixedOffset() && WindowZoneGate.offsetAligns(rules, slideMillis);
-  }
-
-  private static boolean sessionZoneFixedOffset(StreamPhysicalGroupWindowAggregate agg) {
-    return sessionZoneRules(agg).isFixedOffset();
-  }
-
-  private static ZoneRules sessionZoneRules(StreamPhysicalGroupWindowAggregate agg) {
-    return ShortcutUtils.unwrapTableConfig(agg).getLocalTimeZone().getRules();
   }
 
   private static boolean supportedTimeRoot(LogicalType type) {

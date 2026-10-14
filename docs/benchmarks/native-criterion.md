@@ -2215,3 +2215,13 @@ It measures update and watermark flush, plus local partial drain/global union in
 the two-phase cases. Arrow fixtures and empty operator creation are outside the
 timed boundary. End-to-end comparisons and all raw trials are recorded on the
 [window aggregate page](../operators/window-aggregate.md#booleantime-distinct-performance).
+
+## Calendar window coverage
+
+`fixed_window_calendar`, `session_calendar`, `window_tvf_calendar` and
+`window_consumers_calendar` call the production assignment, shared slices, state buffers and
+released-Flink JVM calendar callback. Fixtures include DST gaps/overlaps, history and negative
+epochs, 64/4096-row batches, narrow/wide keys, NULLs, heap/RocksDB state and recovery where
+applicable. Setup and JVM creation occur outside timing; assignment, callback conversion,
+push/flush and state work remain measured. These native fixtures supplement complete Flink
+jobs with both transposes; they do not establish an end-to-end speedup themselves.

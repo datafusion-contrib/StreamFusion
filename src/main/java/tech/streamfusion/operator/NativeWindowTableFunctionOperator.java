@@ -36,6 +36,8 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
   private final boolean cumulative;
   private final boolean proctime;
   private final long boundaryOffsetMillis;
+  private String calendarZoneId;
+  private transient WindowCalendar calendar;
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
@@ -53,6 +55,28 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
       boolean cumulative,
       boolean proctime,
       long boundaryOffsetMillis) {
+    this(timeColumn, windowMillis, slideMillis, cumulative, proctime, boundaryOffsetMillis, null);
+  }
+
+  public NativeWindowTableFunctionOperator(
+      int timeColumn,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative,
+      boolean proctime,
+      String calendarZoneId) {
+    this(timeColumn, windowMillis, slideMillis, cumulative, proctime, 0, calendarZoneId);
+  }
+
+  private NativeWindowTableFunctionOperator(
+      int timeColumn,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative,
+      boolean proctime,
+      long boundaryOffsetMillis,
+      String calendarZoneId) {
+    this.calendarZoneId = calendarZoneId;
     this.timeColumn = timeColumn;
     this.windowMillis = windowMillis;
     this.slideMillis = slideMillis;
@@ -61,14 +85,19 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
     this.boundaryOffsetMillis = boundaryOffsetMillis;
   }
 
+  public NativeWindowTableFunctionOperator withCalendarZone(String zoneId) {
+    calendarZoneId = zoneId;
+    return this;
+  }
+
   @Override
   public void open() throws Exception {
     super.open();
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
-    numNullRowTimeRecordsDropped =
-        getMetricGroup().counter("numNullRowTimeRecordsDropped");
+    if (calendarZoneId != null) calendar = new WindowCalendar(calendarZoneId, proctime);
+    numNullRowTimeRecordsDropped = getMetricGroup().counter("numNullRowTimeRecordsDropped");
   }
 
   @Override
@@ -89,21 +118,45 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
         ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
       Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
       long now = proctime ? getProcessingTimeService().getCurrentProcessingTime() : 0;
-      Native.assignWindows(
-          inArray.memoryAddress(),
-          inSchema.memoryAddress(),
-          outArray.memoryAddress(),
-          outSchema.memoryAddress(),
-          timeColumn,
-          windowMillis,
-          slideMillis,
-          cumulative,
-          proctime,
-          now,
-          boundaryOffsetMillis);
+      if (calendar != null) {
+        Native.assignCalendarWindows(
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress(),
+            timeColumn,
+            windowMillis,
+            slideMillis,
+            cumulative,
+            proctime,
+            now,
+            calendar);
+      } else {
+        Native.assignWindows(
+            inArray.memoryAddress(),
+            inSchema.memoryAddress(),
+            outArray.memoryAddress(),
+            outSchema.memoryAddress(),
+            timeColumn,
+            windowMillis,
+            slideMillis,
+            cumulative,
+            proctime,
+            now,
+            boundaryOffsetMillis);
+      }
       assigned = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
     } finally {
       in.close(); // the input batch is consumed
+    }
+    if (!tech.streamfusion.compat.RuntimeCompat.windowTvfPreservesRowKinds()) {
+      var kinds = assigned.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
+      if (kinds != null) {
+        var tags = (org.apache.arrow.vector.TinyIntVector) kinds;
+        tags.allocateNew(assigned.getRowCount());
+        for (int row = 0; row < assigned.getRowCount(); row++) tags.setSafe(row, 0);
+        tags.setValueCount(assigned.getRowCount());
+      }
     }
     ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(assigned));
   }
