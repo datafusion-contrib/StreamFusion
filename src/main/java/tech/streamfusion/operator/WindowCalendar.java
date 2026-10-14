@@ -69,11 +69,22 @@ public final class WindowCalendar {
    */
   public long[] epochWindowMillis(long[] local) {
     long[] epochs = new long[local.length];
+    long[] cachedLocal = new long[8];
+    long[] cachedEpoch = new long[8];
+    int cached = 0;
+    int next = 0;
     for (int i = 0; i < local.length; i++) {
-      epochs[i] =
-          i > 0 && local[i] == local[i - 1]
-              ? epochs[i - 1]
-              : TimeWindowUtil.toEpochMills(local[i], zone);
+      int match = 0;
+      while (match < cached && cachedLocal[match] != local[i]) match++;
+      if (match < cached) {
+        epochs[i] = cachedEpoch[match];
+      } else {
+        epochs[i] = TimeWindowUtil.toEpochMills(local[i], zone);
+        cachedLocal[next] = local[i];
+        cachedEpoch[next] = epochs[i];
+        next = (next + 1) % cachedLocal.length;
+        cached = Math.min(cached + 1, cachedLocal.length);
+      }
     }
     return epochs;
   }

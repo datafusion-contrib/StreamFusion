@@ -52,20 +52,31 @@ class FlinkWindowCalendarContractTest {
 
   @Test
   void repeatedWindowTimesPreserveEachReleasedConversion() {
-    long[] local = {
+    long[] values = {
       localMillis("2024-03-10T02:30:00"),
       localMillis("2024-03-10T02:30:00"),
       localMillis("2024-11-03T01:30:00"),
       localMillis("2024-11-03T01:30:00"),
       localMillis("1883-11-18T12:07:02"),
       localMillis("1883-11-18T12:07:02"),
-      localMillis("1969-12-31T23:59:59.999")
+      localMillis("1969-12-31T23:59:59.999"),
+      localMillis("0001-01-01T00:00:00"),
+      localMillis("9999-12-31T23:59:59.999"),
+      localMillis("2024-03-10T03:30:00"),
+      localMillis("2024-11-03T02:30:00"),
+      0,
+      -1
     };
-    long[] expected =
-        java.util.Arrays.stream(local)
-            .map(value -> TimeWindowUtil.toEpochMills(value, LOS_ANGELES))
-            .toArray();
-    org.junit.jupiter.api.Assertions.assertArrayEquals(
-        expected, new WindowCalendar(LOS_ANGELES.getId()).epochWindowMillis(local));
+    long[] local = new long[512];
+    for (int i = 0; i < local.length; i++) local[i] = values[(i / 2 + i % 2 * 3) % values.length];
+    for (String zoneId : new String[] {"America/Los_Angeles", "Asia/Shanghai", "GMT+05:45"}) {
+      ZoneId zone = ZoneId.of(zoneId);
+      long[] expected =
+          java.util.Arrays.stream(local)
+              .map(value -> TimeWindowUtil.toEpochMills(value, zone))
+              .toArray();
+      org.junit.jupiter.api.Assertions.assertArrayEquals(
+          expected, new WindowCalendar(zoneId).epochWindowMillis(local));
+    }
   }
 }

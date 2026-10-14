@@ -1035,8 +1035,21 @@ restored windows still fire and drop late rows correctly. The final regression s
 155 checks on each released Flink line, including SESSION connectivity, processing-time planner
 coverage, mixed built-in/string DISTINCT shared windows, joins, ranks and late-slice controls.
 
-The release fixture suites contain 1,488 cases. Complete-job comparisons use
+The release fixture suites contain 1,496 cases, including persistent timestamp payloads. Complete-job comparisons use
 `CalendarWindowBenchmark` with a row source, row blackhole sink, both transposes, Arrow IPC and
 production state. Stock and the previous fallback are separate controls; all warmups and measured
 trials are retained in [the calendar artifact](../benchmarks/results/calendar-windows-2026-10-14.json).
-The matrix is still being collected, so these results are not yet a completed shipping claim.
+The original 36-profile matrix, SESSION jobs, all nine wide-key profiles and the
+additional persistent consumers are retained by revision. The final regional TVF
+recheck averages about 1.07× stock for TUMBLE, HOP and CUMULATE. Persistent HOP/CUMULATE
+rank uses 200,000 rows and 64 keys; its means are about 20.4×/16.6× stock. The
+100,000-row, 4,096-key regional HOP join averages 1.65× stock, and the million-row
+regional CUMULATE dedup averages 1.18× stock. These comparisons include the rowwise
+source/sink, IPC, JNI and state work. Stock rank/join variability remains visible.
+
+Two persistent aggregate cases remain slower: with one million rows and 64 keys,
+HOP averages 0.690s native versus 0.651s stock, and CUMULATE 0.644s versus 0.590s.
+Improvement over an earlier native revision does not establish acceleration; these
+limits require a maintainer decision before this candidate ships. No trial is
+discarded, including the earlier fallback outlier. The candidate remains under
+review in [PR #341](https://github.com/datafusion-contrib/StreamFusion/pull/341).

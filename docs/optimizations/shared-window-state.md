@@ -77,3 +77,18 @@ The matched HOP job averages 0.690s native versus 0.651s stock, and CUMULATE
 0.644s versus 0.590s stock. The temporary-array change retains a simpler scalar
 merge but does not establish acceleration for these persistent workloads. All
 trials, including the cumulative native 0.740s sample, remain in the artifact.
+
+## Repeated visible window-time conversion
+
+Each calendar callback reuses up to eight distinct local-to-epoch conversions within its
+input batch. HOP and CUMULATE repeat boundaries in alternating order, so adjacent-value
+reuse misses their repeated conversions. The bounded primitive-array cache retains no
+state between calls and invokes released Flink for every cache miss. It preserves gaps,
+overlaps, historical offsets and broad-year values; timer conversion remains independent.
+The preceding adjacent-reuse implementation averages 1.148s native versus 1.241s stock
+for TUMBLE, 3.207s versus 2.982s for HOP, and 2.201s versus 2.137s for CUMULATE
+(two million rows, 64 keys, two warmups and five measured trials). The bounded-cache revision passes 40 callback and mixed-extrema checks on each
+released Flink line and all 288 TVF release fixtures. Its matched five-trial means
+are 1.152s native versus 1.232s stock for TUMBLE, 2.794s versus 2.991s for HOP,
+and 1.974s versus 2.116s for CUMULATE: about 1.07× stock for all three. The earlier
+losses remain in the artifact.
