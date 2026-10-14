@@ -411,3 +411,32 @@ uniform sustained-throughput improvement. q23 remains slower than native Kafka
 on its median, and stateful outliers remain in the results. Delivery is exactly-once
 for Kafka and at-least-once for Fluss. The connector page contains the absolute
 per-query table, baseline sweep, controlled shutdown experiment and profiles.
+
+
+## Historical Nexmark report review (2026-09-08)
+
+The [report submitted in #354](https://github.com/datafusion-contrib/StreamFusion/issues/354)
+records canonical commit `a9c6ebdc462100266c7b70b57a1fbbef1c5c4dbd`, two million events,
+parallelism four, four Kafka partitions, release/mimalloc, one warmup and the best of two
+measurements. Its 23-query columns omit q6 under the existing harness policy. The
+[PDF](https://github.com/user-attachments/files/33435382/Nexmark.Benchmark.pdf) records all
+92 cells, requires each column's stage validation before publishing its geometric mean,
+and carries the existing arithmetic/datetime/regex/case opt-in caveats.
+
+An independent recomputation from the displayed rounded ratios gives geometric means
+1.72017, 1.85400, 3.62848 and 4.10587 for memory off/on and disk off/on, matching the
+printed 1.72, 1.85, 3.63 and 4.11 after rounding. The
+[transcribed ratios and recomputation](benchmarks/results/nexmark-report-review-2026-09-08.json)
+make that arithmetic check reviewable. This verifies the report's summary arithmetic;
+its ratios alone cannot verify raw timing distributions, runtime operator consumption,
+backend assignment, identical inputs/resources or exact semantic parity.
+
+Follow-up measurement should retain every warmup and repetition with durations, input/output
+counts, final validated backend/mode metadata, plans and actual native consumption. Use the
+unchanged queries and both transposes, run repeated stock/native trials in alternating order,
+and report medians and variability alongside any existing harness headline. Repeat the large
+disk gains with matched backend configuration, managed memory, cache settings and checkpoint
+frequency; profile state I/O and allocations. Repeat at a larger sustained workload and on
+current canonical main with the same build/resources. Keep exact-parity results separate from
+explicitly approximate expression variants. These checks require additional evidence beyond
+the historical PDF and do not establish a fresh current-main throughput claim.
