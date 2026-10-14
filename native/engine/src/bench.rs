@@ -892,6 +892,14 @@ impl GroupBy {
         ))
     }
 
+    pub fn sum_retract_partials() -> Self {
+        Self(
+            GroupAggregator::new(vec![0, 0], vec![0, 0], vec![1, 2], vec![0], true)
+                .with_count_columns(vec![2, -1])
+                .with_record_count_column(3),
+        )
+    }
+
     pub fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
         self.0.update(batch, 0).expect("budget exceeded")
     }

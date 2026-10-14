@@ -2032,7 +2032,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     // refreshes the group's TTL. Reads never do.
                     state.last_write_ms = ttl.now();
                 }
-                state.records > 0
+                state.records != 0
             };
 
             // Deleted groups emit their cached preimage, so no surviving extreme needs a reseek.
@@ -2041,10 +2041,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             }
 
             if self.mini_batch {
-                if self.store.get(key).unwrap().records <= 0 {
+                if self.store.get(key).unwrap().records == 0 {
                     self.store.remove(key);
                 }
-            } else if self.store.get(key).unwrap().records > 0 {
+            } else if self.store.get(key).unwrap().records != 0 {
                 let state = self.store.get_mut(key).expect("key present");
                 if single_value {
                     let value = state.aggs[0].emit(&self.result_types[0]);

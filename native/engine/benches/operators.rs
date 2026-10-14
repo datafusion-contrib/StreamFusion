@@ -332,6 +332,50 @@ fn bench_group_by_string_key(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_group_record_counter(c: &mut Criterion) {
+    use streamfusion::bench::GroupBy;
+    let mut group = c.benchmark_group("group_record_counter");
+    for rows in [256usize, 4096] {
+        for cardinality in [1usize, 64] {
+            let sign = |i: usize| [1, -1, -1, 1][(i / cardinality) % 4];
+            let count = |i: usize| if i % 7 == 0 { 0 } else { sign(i) };
+            let batch = RecordBatch::try_new(
+                Arc::new(Schema::new(vec![
+                    Field::new("k", DataType::Int64, false),
+                    Field::new("sum", DataType::Int64, false),
+                    Field::new("count", DataType::Int64, false),
+                    Field::new("count1", DataType::Int64, false),
+                ])),
+                vec![
+                    Arc::new(Int64Array::from_iter_values(
+                        (0..rows).map(|i| (i % cardinality) as i64),
+                    )),
+                    Arc::new(Int64Array::from_iter_values(
+                        (0..rows).map(|i| count(i) * 10),
+                    )),
+                    Arc::new(Int64Array::from_iter_values((0..rows).map(count))),
+                    Arc::new(Int64Array::from_iter_values((0..rows).map(sign))),
+                ],
+            )
+            .unwrap();
+            assert_eq!(
+                GroupBy::sum_retract_partials().update(&batch).num_rows(),
+                rows,
+                "negative count1 partials remain live until exactly zero"
+            );
+            group.throughput(Throughput::Elements(rows as u64));
+            group.bench_function(format!("sum_count/{rows}/{cardinality}"), |b| {
+                b.iter_batched(
+                    GroupBy::sum_retract_partials,
+                    |mut agg| black_box(agg.update(black_box(&batch))),
+                    BatchSize::SmallInput,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 fn bench_group_zero_sum(c: &mut Criterion) {
     use streamfusion::bench::GroupBy;
     let mut group = c.benchmark_group("group_zero_sum");
@@ -1538,6 +1582,7 @@ criterion_group!(
     bench_tumbling_keyed,
     bench_tumbling_string_extrema,
     bench_group_by_string_key,
+    bench_group_record_counter,
     bench_group_zero_sum,
     bench_group_by_logical_bundle,
     bench_local_group_by_logical_bundle,

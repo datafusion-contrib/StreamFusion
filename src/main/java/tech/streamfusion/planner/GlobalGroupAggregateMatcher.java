@@ -18,7 +18,8 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * {@link GroupAggregateMatcher} — so it reuses the same native group-aggregate operator. Its input
  * is the local's {@code [grouping.., partial0..]}; the partials are positional, walked with a
  * per-aggregate offset because AVG spans <em>two</em> partial columns (the widened sum, then the
- * bigint count), and SINGLE_VALUE spans a typed value and an INT count. Other aggregates span one.
+ * bigint count), retracting integer SUM spans its typed sum and bigint non-null count, and
+ * SINGLE_VALUE spans a typed value and an INT count. Other aggregates span one.
  *
  * <p>Each merge folds a partial into the running result: SUM/MIN/MAX merge as themselves, a COUNT
  * merges by <em>summing</em> the partial counts (the global treats COUNT as a SUM over its bigint
@@ -42,10 +43,8 @@ final class GlobalGroupAggregateMatcher {
       return "global group aggregate: an output column type the boundary cannot carry";
     }
     int[] grouping = agg.grouping();
-    // A retracting local input: only COUNT and AVG keep their append-only accumulator layout under
-    // retraction (Flink's SUM/MIN/MAX retract variants add fields the positional walk doesn't
-    // model, and MIN/MAX may even be monotonicity-exempt from retracting — semantics the native
-    // fold would diverge from), and the per-key liveness must come from the count1 partial.
+    // Retracting SUM carries a separate non-null count, like AVG. MIN/MAX retract maps remain
+    // unsupported; every retracting merge derives per-key liveness from the count1 partial.
     boolean needRetraction = agg.needRetraction();
     if (needRetraction && agg.localAggInfoList().getIndexOfCountStar() < 0) {
       return "global group aggregate: a retracting merge without a count1 record counter";
@@ -61,8 +60,10 @@ final class GlobalGroupAggregateMatcher {
           && (call.isDistinct()
               || (kind != WindowAggregateMatcher.KIND_COUNT
                   && kind != WindowAggregateMatcher.KIND_AVG
-                  && kind != GroupAggregateMatcher.KIND_SUM_ZERO))) {
-        return "global group aggregate: a retracting merge admits COUNT, AVG and exact SUM0 only";
+                  && kind != GroupAggregateMatcher.KIND_SUM_ZERO
+                  && kind != WindowAggregateMatcher.KIND_SUM))) {
+        return "global group aggregate: a retracting merge admits COUNT, AVG, exact SUM0 and exact"
+            + " integer SUM only";
       }
       // COUNT/SUM/AVG(DISTINCT x): the merge folds the local bundles' (value, count) view entries into
       // the per-key distinct set — the positional partial (the bundle's count/sum) is carried but
@@ -117,6 +118,21 @@ final class GlobalGroupAggregateMatcher {
           return "global group aggregate: SINGLE_VALUE expects matching string/float/double and INT count"
               + " partials";
         }
+        offset += 2;
+        continue;
+      }
+      if (LocalGroupAggregateMatcher.isRetractingSum(call, needRetraction)) {
+        if (call.getArgList().size() != 1
+            || offset + 1 >= inputType.getFieldCount()
+            || !LocalGroupAggregateMatcher.supportedRetractingSumPartials(
+                agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType(),
+                inputType.getFieldList().get(offset).getType(),
+                inputType.getFieldList().get(offset + 1).getType())
+            || !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                inputType.getFieldList().get(offset).getType(),
+                agg.getRowType().getFieldList().get(grouping.length + i).getType()))
+          return "global group aggregate: retracting SUM requires matching exact integer sum and"
+              + " BIGINT count partials";
         offset += 2;
         continue;
       }
@@ -423,9 +439,9 @@ final class GlobalGroupAggregateMatcher {
     return columns;
   }
 
-  /** Positional width: two fields for AVG/SINGLE_VALUE, one otherwise. */
+  /** Positional width: two fields for AVG/SINGLE_VALUE/retracting SUM, one otherwise. */
   private static int spanOf(StreamPhysicalGlobalGroupAggregate agg, int i) {
-    return LocalGroupAggregateMatcher.partialWidth(agg.aggCalls().apply(i));
+    return LocalGroupAggregateMatcher.partialWidth(agg.aggCalls().apply(i), agg.needRetraction());
   }
 
   static boolean generateUpdateBefore(StreamPhysicalGlobalGroupAggregate agg) {

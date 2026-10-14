@@ -309,12 +309,11 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
   }
 
   @Test
-  void retractingSumTwoPhaseFallsBackToHost() throws Exception {
-    // SUM under retraction declares Flink's two-field (sum, count) retract accumulator, which the
-    // positional walk does not model — the whole query stays on the host.
+  void retractingSumTwoPhaseMatchesHost() throws Exception {
+    // SUM under retraction carries its sum adjustment and non-null contribution count separately.
     Path input = Files.createTempDirectory("twophase-retract-sum-in");
     writeInput(input);
-    NativeParity.assertFallback(
+    NativeParity.assertChangelogParity(
         readEnvironment(input, 2),
         "SELECT u, SUM(mx) AS s FROM"
             + " (SELECT k, u, MAX(v) AS mx FROM t GROUP BY k, u) GROUP BY u");

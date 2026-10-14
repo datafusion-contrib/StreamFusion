@@ -2233,3 +2233,10 @@ epochs, 64/4096-row batches, narrow/wide keys, NULLs, heap/RocksDB state and rec
 applicable. Setup and JVM creation occur outside timing; assignment, callback conversion,
 push/flush and state work remain measured. These native fixtures supplement complete Flink
 jobs with both transposes; they do not establish an end-to-end speedup themselves.
+
+The `operators` suite's `group_record_counter` fixture calls production GROUP BY SUM/COUNT
+merging sum/non-null-count/count1 partials for 256/4,096 rows and 1/64 keys, with
+NULL contributions and repeated accumulate/retract/retract/accumulate deltas. It verifies
+negative record counts remain live until exactly zero, then times update
+and changelog materialization. Input construction and aggregator creation stay outside the
+measurement; this isolates the native boundary and does not replace Flink end-to-end validation.
