@@ -850,6 +850,12 @@ public final class Native {
       long handle, long inArrayAddress, long inSchemaAddress);
 
   /**
+   * Folds assigned window bounds into final state, dropping windows already closed by watermarks.
+   */
+  public static native void updateAttachedFinalWindowAggregator(
+      long handle, long inArrayAddress, long inSchemaAddress);
+
+  /**
    * Emits the windows the watermark has closed as a batch (columns {@code window_start} and {@code
    * total}) and drops them from state.
    */

@@ -2233,3 +2233,27 @@ epochs, 64/4096-row batches, narrow/wide keys, NULLs, heap/RocksDB state and rec
 applicable. Setup and JVM creation occur outside timing; assignment, callback conversion,
 push/flush and state work remain measured. These native fixtures supplement complete Flink
 jobs with both transposes; they do not establish an end-to-end speedup themselves.
+
+
+The `operators` suite's `attached_windows` fixtures call the production final assigned-bound
+window fold and firing path for 256/4096 rows, 1/64 keys, BIGINT and 64-byte STRING keys,
+nullable sums and a previously closed window. The fixture checks late-row counts and remaining
+window groups before timing. Batch construction, initial cutoff and operator creation are outside
+timing; assigned-bound admission, fold and final changelog materialization stay inside it.
+
+
+The `operators` suite's `exact_count_panes` fixtures exercise production ordinary fixed-grid
+HOP COUNT after per-slice pre-aggregation, at 256/4096 rows, 1/64 keys, BIGINT/64-byte STRING
+keys and nullable keys/values. The fixtures check complete group cardinality and total counts
+across all five overlapping windows before timing input fold and final materialization.
+The persistent tumbling suite also includes `read_modify_write`, which prepopulates both
+windows outside timing and then folds the same batch again through production sorted bulk
+reads and writes. Repeated-state values are independently checked at both firing boundaries;
+16/1024/16384 rows, low/unique cardinalities, key widths and NULL combinations retain allocation
+request reporting. The measurement excludes fixture/database setup.
+
+Set `SF_NATIVE_PERSISTENT_WINDOW_ONLY=true` when invoking the `persistent_state` suite to
+register only its existing tumbling-window fixtures, including `read_modify_write`. This avoids
+unrelated suites' untimed fixture validation while retaining the same production code, inputs,
+assertions, allocation reporting and measured boundary. Without the option, every existing
+suite remains registered. Criterion's normal name filter selects cases within this window suite.

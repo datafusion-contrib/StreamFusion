@@ -330,8 +330,11 @@ impl RocksWindowAggStore {
             .state_converter
             .convert_columns(state_columns)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        for ((db_key, start), row) in entries.iter().zip(rows.iter()) {
-            let row = row.data();
+        let mut order: Vec<usize> = (0..entries.len()).collect();
+        order.sort_unstable_by(|&a, &b| entries[a].0.cmp(&entries[b].0));
+        for index in order {
+            let (db_key, start) = &entries[index];
+            let row = rows.row(index).data();
             let mut value = Vec::with_capacity(8 + row.len());
             value.extend_from_slice(&start.to_le_bytes());
             value.extend_from_slice(row);

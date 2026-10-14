@@ -154,6 +154,7 @@ pub(super) fn tumbling(c: &mut Criterion) {
                     };
                     for phase in [
                         "update",
+                        "read_modify_write",
                         "fire",
                         "checkpoint_after_fire",
                         "restore_aligned",
@@ -171,7 +172,9 @@ pub(super) fn tumbling(c: &mut Criterion) {
                                 );
                                 if phase != "update" {
                                     op.update(&initial);
-                                    validate(&op.flush(1000), &first);
+                                    if phase != "read_modify_write" {
+                                        validate(&op.flush(1000), &first);
+                                    }
                                 }
                                 Some(op)
                             };
@@ -221,13 +224,27 @@ pub(super) fn tumbling(c: &mut Criterion) {
                             assert_eq!(op.timer_deadline(), 12345);
                             op.update(&late);
                         }
-                        if phase == "update" {
+                        let double = |rows: &[Output]| {
+                            rows.iter()
+                                .map(|(key, start, end, sum)| {
+                                    (key.clone(), *start, *end, sum.map(|value| value * 2))
+                                })
+                                .collect::<Vec<_>>()
+                        };
+                        if phase == "read_modify_write" {
+                            validate(&op.flush(1000), &double(&first));
+                        } else if phase == "update" {
                             validate(&op.flush(1000), &first);
                         } else {
                             validate(&op.flush(1000), &[]);
                         }
                         if phase != "fire" {
-                            validate(&op.flush(2000), &second);
+                            let expected = if phase == "read_modify_write" {
+                                double(&second)
+                            } else {
+                                second.clone()
+                            };
+                            validate(&op.flush(2000), &expected);
                         }
                         validate(&op.flush(2000), &[]);
                         op.update(&initial); // Every original window is closed, including after restore.

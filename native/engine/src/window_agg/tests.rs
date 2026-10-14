@@ -48,7 +48,7 @@ fn timestamp_panes_match_direct_windows_across_boundaries_late_rows_and_restore(
                 TumblingAggregator::new(10_000, 2000, cumulative, types.clone(), kinds.clone());
             panes.set_assignment_offset(offset);
             direct.set_assignment_offset(offset);
-            direct.timestamp_panes = false;
+            direct.exact_panes = false;
             for times in [
                 vec![-2001, -2000, -1, 0, 1, 1999, 2000, 7999, 8000, 9999],
                 vec![0, 3000, 8000, 9999, 10_000, 10_001, 15_999, 16_000],
@@ -72,7 +72,7 @@ fn timestamp_panes_match_direct_windows_across_boundaries_late_rows_and_restore(
                 panes = restore(&mut panes);
                 panes = panes.with_memory_budget(1024 * 1024).unwrap();
                 direct = restore(&mut direct);
-                direct.timestamp_panes = false;
+                direct.exact_panes = false;
             }
             assert_eq!(
                 panes.flush(i64::MAX).unwrap(),

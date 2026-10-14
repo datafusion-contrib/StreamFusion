@@ -42,12 +42,13 @@ class FlinkWindowLateSliceSqlHarnessTest {
     NativeParity.assertKindedParity(() -> boundaryEnvironment(phase), sql, expected);
   }
 
-  private static TableEnvironment boundaryEnvironment(String phase) {
+  static TableEnvironment boundaryEnvironment(String phase) {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.UTC);
     table.getConfig().set("table.optimizer.agg-phase-strategy", phase);
+    table.getConfig().set("streamfusion.window.attached.single-phase.enabled", "true");
     var source = fromData(env,
         Types.ROW_NAMED(new String[] {"k", "millis", "v", "wm"},
             Types.INT, Types.LONG, Types.LONG, Types.LONG),

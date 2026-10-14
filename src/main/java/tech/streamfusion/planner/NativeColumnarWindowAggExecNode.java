@@ -40,6 +40,8 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
   private final boolean proctime;
   private final boolean timestampLtz;
   private final int[] keyTimestampPrecisions;
+  private final int windowStartColumn;
+  private final int windowEndColumn;
 
   public NativeColumnarWindowAggExecNode(
       ReadableConfig tableConfig,
@@ -58,6 +60,46 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
       boolean proctime,
       boolean timestampLtz,
       int[] keyTimestampPrecisions) {
+    this(
+        tableConfig,
+        inputProperty,
+        outputType,
+        description,
+        cumulative,
+        windowMillis,
+        slideMillis,
+        timeColumn,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        valueTypes,
+        aggregateKinds,
+        proctime,
+        timestampLtz,
+        keyTimestampPrecisions,
+        -1,
+        -1);
+  }
+
+  public NativeColumnarWindowAggExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      boolean cumulative,
+      long windowMillis,
+      long slideMillis,
+      int timeColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      boolean proctime,
+      boolean timestampLtz,
+      int[] keyTimestampPrecisions,
+      int windowStartColumn,
+      int windowEndColumn) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-window-aggregate_1"),
@@ -76,6 +118,8 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
     this.aggregateKinds = aggregateKinds;
     this.proctime = proctime;
     this.timestampLtz = timestampLtz;
+    this.windowStartColumn = windowStartColumn;
+    this.windowEndColumn = windowEndColumn;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
@@ -113,7 +157,9 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
                 outputType,
                 proctime,
                 keyTimestampPrecisions,
-                maxParallelism),
+                maxParallelism,
+                windowStartColumn,
+                windowEndColumn),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

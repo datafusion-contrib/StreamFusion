@@ -549,8 +549,11 @@ enables columnar composition with downstream consumers; it is not a standalone t
   while ordinary COUNT(value) remains numeric.
 - Single-phase string MIN/MAX without `streamfusion.window.string-extrema.single-phase.enabled=true`.
   The flag is experimental and defaults off; local/global string extrema do not require it.
-- Single-phase aggregation over attached window bounds. Attached windows are native through
-  the two-phase local/global path.
+- Attached bounds outside append-only event-time TUMBLE/HOP/CUMULATE, or with FILTER.
+  Admitted attached bounds support opt-in single-phase and existing local/global execution.
+- Single-phase attached bounds without `streamfusion.window.attached.single-phase.enabled=true`.
+  The default-off gate preserves stock execution for profiled HOP/high-cardinality and
+  persistent COUNT cases that remain slower.
 - Windowed DISTINCT other than single-argument COUNT over the types listed above:
   SUM/AVG DISTINCT, FLOAT/DOUBLE and complex values.
   Non-windowed DISTINCT has separate coverage; see [GROUP BY](group-by.md).
@@ -1053,3 +1056,78 @@ Improvement over an earlier native revision does not establish acceleration; the
 limits require a maintainer decision before this candidate ships. No trial is
 discarded, including the earlier fallback outlier. The candidate remains under
 review in [PR #341](https://github.com/datafusion-contrib/StreamFusion/pull/341).
+
+
+### Single-phase aggregation over attached bounds
+
+Append-only event-time results from TUMBLE/HOP/CUMULATE can be re-aggregated natively in
+ONE_PHASE plans over their attached `window_start`/`window_end` with
+`streamfusion.window.attached.single-phase.enabled=true`. The option defaults off: the first
+release comparison found slower high-cardinality HOP and persistent COUNT pipelines. The outer operator folds each
+row into the one window it names, using the existing accumulator, Arrow output and keyed
+checkpoint/store representation. It does not assign another set of overlapping windows or
+reconstruct a start from a slice end. The normal numeric/COUNT(DISTINCT)/timestamp aggregate,
+key-type and single-phase string-extrema admission rules remain in force. FILTER and retracting
+attached input remain stock; attached sessions are outside this fixed-window whitelist.
+
+The final attached operator owns its firing watermark. End-minus-one closes a window;
+subsequent rows naming that closed window are dropped and counted, including after restoring
+memory or native RocksDB state. Local attached partials continue to defer late admission to
+their global merge. The calendar retains session-local bounds for regional LTZ input and
+converts only firing deadlines; fixed offsets retain the existing epoch carriage/rendering.
+A tumbling-shaped state handle avoids re-expanding already assigned HOP/CUMULATE bounds.
+
+SQL tests cover uneven group counts, nullable keys/values, all aggregate NULL behavior,
+resolved types and complete insert changelogs, empty input, multiple Arrow batches and consumed
+rows in both inner and outer native windows. ONE_PHASE runs TUMBLE/HOP/CUMULATE across UTC,
+Shanghai and Los Angeles (including the DST boundary); AUTO TUMBLE/HOP controls retain their
+native path. Controlled source watermarks prove exact-boundary firing and late rows. State
+checks retain open and closed bounds across memory/RocksDB restore and backend migration in
+UTC, GMT+08:00 and Los Angeles, then drain with the final watermark without re-emission.
+
+
+### Assigned-bound ONE_PHASE release measurements
+
+`AttachedWindowOnePhaseBenchmark` executes the issue's COUNT→MAX cascade with a rowwise
+runtime source and rowwise blackhole sink. Actual metrics require both native windows to
+consume rows, and the native plan retains both transposes. The final five-million-row matrix
+uses released Flink 2.2.1/JDK17, release/mimalloc, ONE_PHASE, parallelism 1, 64/4096 keys,
+nullable INT keys, TIMESTAMP(3) rowtime, memory/native RocksDB state, an 8g Java heap and 48g
+task off-heap reservation. Each profile has two warmups and three alternating measured trials.
+Setup/explain are excluded; startup, execution, JNI, conversions, state and completion are included.
+
+| Window / state / keys | Stock median (range), s | Native median (range), s | Stock/native |
+| --- | ---: | ---: | ---: |
+| TUMBLE / memory / 64 | 1.200 (1.171–1.280) | 0.659 (0.632–0.679) | 1.82× |
+| TUMBLE / memory / 4096 | 1.183 (1.171–1.190) | 0.963 (0.955–0.969) | 1.23× |
+| TUMBLE / RocksDB / 64 | 1.014 (1.010–1.028) | 1.321 (1.312–1.322) | 0.77× |
+| TUMBLE / RocksDB / 4096 | 2.951 (2.874–3.119) | 8.125 (8.054–8.141) | 0.36× |
+| HOP / memory / 64 | 1.070 (1.069–1.072) | 0.565 (0.561–0.568) | 1.89× |
+| HOP / memory / 4096 | 1.357 (1.356–1.372) | 1.786 (1.753–1.792) | 0.76× |
+| HOP / RocksDB / 64 | 1.342 (1.249–1.349) | 3.565 (3.556–3.679) | 0.38× |
+| HOP / RocksDB / 4096 | 7.992 (7.473–8.425) | 38.294 (38.112–38.502) | 0.21× |
+
+Previous canonical `74822fd4` executes the same query/data/resources through its explicit
+whole-island fallback with zero native substitutions. Its eight paired stock/enabled medians
+range from 0.94 to 1.01× stock/enabled, remaining near stock. Independent invocation
+times vary and are not a direct before/after ratio. The retained artifact includes all 320
+completed jobs across initial/optimized 1M runs and final/prior 5M runs, including warmups.
+
+The native route therefore remains **default off**. Low-cardinality memory workloads accelerate;
+high-cardinality HOP and persistent COUNT cases retain substantial losses. Enabling the option
+is an explicit experimental choice and does not promise acceleration for those cases. Further
+persistent-window work is linked to [#350](https://github.com/datafusion-contrib/StreamFusion/issues/350);
+its existing calendar/count investigation covers the same read/write machinery, while the
+matrix here also records ordinary UTC windows and higher cardinality.
+
+The initial native-only 20M HOP/4096/Rocks CPU capture has 11,097 samples; 4,338 include bulk
+reads, 2,637 include DB writes, and 9,705 include the inner window push. These are inclusive
+stacks that can overlap. The diagnostic was deliberately stopped after capture and its
+instrumented timings are not comparison results. Exact COUNT panes and sorted bulk state I/O
+subsequently reduce the 1M high-cardinality memory HOP native median from 0.812 to 0.402s;
+that profile still loses its paired stock control. Complete-job measurements retain those
+limits and all initial/revised unfavorable trials. The
+[trial artifact](../benchmarks/results/attached-windows-2026-10-14.json) and
+[CPU capture](../benchmarks/results/attached-windows-2026-10-14-cpu.collapsed.gz) retain the evidence.
+The final release DSO SHA256 is
+`d09c0f6c60b1cc9aaae634af63b154dfbb33c130aeba54cd2550de6f94a7b3db`.

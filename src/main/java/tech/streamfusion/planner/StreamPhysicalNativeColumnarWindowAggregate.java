@@ -31,6 +31,8 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
   private final int[] aggregateKinds;
   private final boolean proctime;
   private final boolean timestampLtz;
+  private final int windowStartColumn;
+  private final int windowEndColumn;
 
   public StreamPhysicalNativeColumnarWindowAggregate(
       RelOptCluster cluster,
@@ -48,6 +50,44 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
       int[] aggregateKinds,
       boolean proctime,
       boolean timestampLtz) {
+    this(
+        cluster,
+        traitSet,
+        input,
+        outputRowType,
+        cumulative,
+        windowMillis,
+        slideMillis,
+        timeColumn,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        valueTypes,
+        aggregateKinds,
+        proctime,
+        timestampLtz,
+        -1,
+        -1);
+  }
+
+  public StreamPhysicalNativeColumnarWindowAggregate(
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      RelDataType outputRowType,
+      boolean cumulative,
+      long windowMillis,
+      long slideMillis,
+      int timeColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      boolean proctime,
+      boolean timestampLtz,
+      int windowStartColumn,
+      int windowEndColumn) {
     super(cluster, traitSet, input, outputRowType);
     this.cumulative = cumulative;
     this.windowMillis = windowMillis;
@@ -60,6 +100,8 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
     this.aggregateKinds = aggregateKinds;
     this.proctime = proctime;
     this.timestampLtz = timestampLtz;
+    this.windowStartColumn = windowStartColumn;
+    this.windowEndColumn = windowEndColumn;
   }
 
   @Override
@@ -84,7 +126,9 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
         valueTypes,
         aggregateKinds,
         proctime,
-        timestampLtz);
+        timestampLtz,
+        windowStartColumn,
+        windowEndColumn);
   }
 
   @Override
@@ -105,6 +149,8 @@ public class StreamPhysicalNativeColumnarWindowAggregate extends StreamPhysicalN
         aggregateKinds,
         proctime,
         timestampLtz,
-        FlinkKeyGroupUtils.timestampPrecisions(getInput().getRowType(), keyColumns));
+        FlinkKeyGroupUtils.timestampPrecisions(getInput().getRowType(), keyColumns),
+        windowStartColumn,
+        windowEndColumn);
   }
 }

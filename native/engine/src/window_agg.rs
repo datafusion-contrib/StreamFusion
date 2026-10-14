@@ -12,7 +12,7 @@ enum WindowResultColumn {
     Timestamps(Vec<Option<TimestampValue>>),
 }
 
-enum TimestampPaneValue {
+enum ExactPaneValue {
     Extreme {
         minimum: bool,
         value: Option<TimestampValue>,
@@ -322,7 +322,7 @@ pub(crate) struct TumblingAggregator {
     shared_slices: bool,
     slice_timers: BTreeMap<i64, BTreeMap<OwnedRow, i32>>,
     aggregates: Vec<WindowAggregate>,
-    timestamp_panes: bool,
+    exact_panes: bool,
     live_count: Option<usize>,
     windows: BTreeMap<i64, AlignedWindow>,
     // Groups are keyed by the arrow-row memcomparable encoding of the key columns, not a
@@ -364,13 +364,10 @@ impl TumblingAggregator {
         value_types: Vec<i64>,
         kinds: Vec<i64>,
     ) -> Self {
-        let timestamp_panes = slide_millis > 0
+        let exact_panes = slide_millis > 0
             && window_millis > slide_millis
             && window_millis % slide_millis == 0
-            && kinds.iter().zip(&value_types).any(|(kind, value_type)| {
-                matches!(*kind, 1 | 2)
-                    && streamfusion_bridge::timestamp::is_timestamp(&value_data_type(*value_type))
-            })
+            && !kinds.is_empty()
             && kinds.iter().zip(&value_types).all(|(kind, value_type)| {
                 *kind == 3
                     || (matches!(*kind, 1 | 2)
@@ -389,7 +386,7 @@ impl TumblingAggregator {
             slide_millis,
             cumulative,
             aggregates,
-            timestamp_panes,
+            exact_panes,
             assignment_offset_millis: 0,
             calendar: None,
             next_timer_deadline: i64::MIN,
@@ -700,8 +697,8 @@ impl TumblingAggregator {
         self.key_types = key_types(&key_arrays);
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
 
-        if self.timestamp_panes && discard_closed_windows {
-            return self.update_timestamp_panes(batch, &keys_encoded, &values);
+        if self.exact_panes && discard_closed_windows {
+            return self.update_exact_panes(batch, &keys_encoded, &values);
         }
 
         // Group the row positions for each (window, key); column selection preserves each
@@ -749,7 +746,7 @@ impl TumblingAggregator {
 
     // Timestamp extrema and counts have exact, order-independent partials. Fold each slice once
     // before the existing global merge fans it out to the still-open overlapping windows.
-    fn update_timestamp_panes(
+    fn update_exact_panes(
         &mut self,
         batch: &RecordBatch,
         keys: &Rows,
@@ -766,7 +763,7 @@ impl TumblingAggregator {
         let mut pane_keys = Vec::new();
         let mut slice_ends = Vec::new();
         let mut pane_rows = Vec::new();
-        let mut panes: Vec<Vec<TimestampPaneValue>> = Vec::new();
+        let mut panes: Vec<Vec<ExactPaneValue>> = Vec::new();
         for row in 0..batch.num_rows() {
             let shifted = times
                 .value(row)
@@ -794,12 +791,12 @@ impl TumblingAggregator {
                         .iter()
                         .map(|aggregate| match aggregate {
                             WindowAggregate::TimestampExtreme { minimum } => {
-                                TimestampPaneValue::Extreme {
+                                ExactPaneValue::Extreme {
                                     minimum: *minimum,
                                     value: None,
                                 }
                             }
-                            _ => TimestampPaneValue::Count(0),
+                            _ => ExactPaneValue::Count(0),
                         })
                         .collect(),
                 );
@@ -807,12 +804,12 @@ impl TumblingAggregator {
             });
             for (i, value) in panes[position].iter_mut().enumerate() {
                 match value {
-                    TimestampPaneValue::Count(count) => {
+                    ExactPaneValue::Count(count) => {
                         if !values[i].is_null(row) {
                             *count += 1;
                         }
                     }
-                    TimestampPaneValue::Extreme { minimum, value } => {
+                    ExactPaneValue::Extreme { minimum, value } => {
                         let column = timestamps[i].as_ref().expect("timestamp pane column");
                         if !column.is_null(row) {
                             let next = column.value(row)?;
@@ -868,13 +865,13 @@ impl TumblingAggregator {
                 let accumulators = window.keys.get_mut(&key).expect("timestamp pane window");
                 for (accumulator, value) in accumulators.iter_mut().zip(pane) {
                     match value {
-                        TimestampPaneValue::Extreme { value, .. } => {
+                        ExactPaneValue::Extreme { value, .. } => {
                             (accumulator.as_mut() as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                                 .expect("timestamp extrema factory")
                                 .merge_value(*value);
                         }
-                        TimestampPaneValue::Count(count) => {
+                        ExactPaneValue::Count(count) => {
                             (accumulator.as_mut() as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                                 .expect("timestamp pane COUNT factory")
@@ -896,6 +893,21 @@ impl TumblingAggregator {
     /// slice: the row folds into exactly the one window it names (dropping rows whose window the
     /// watermark has already closed). `flush_partial` then emits the partials keyed by window end.
     pub(crate) fn update_attached(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        self.update_attached_windows(batch, false)
+    }
+
+    pub(crate) fn update_attached_final(
+        &mut self,
+        batch: &RecordBatch,
+    ) -> Result<(), DataFusionError> {
+        self.update_attached_windows(batch, true)
+    }
+
+    fn update_attached_windows(
+        &mut self,
+        batch: &RecordBatch,
+        discard_closed: bool,
+    ) -> Result<(), DataFusionError> {
         self.snapshot_cache = None;
         let starts = column_i64(batch, "window_start");
         let ends = column_i64(batch, "window_end");
@@ -910,13 +922,24 @@ impl TumblingAggregator {
         self.key_types = key_types(&key_arrays);
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
 
-        // No late-data drop here (unlike `update`): the upstream window aggregate emits each window's
-        // rows exactly at the watermark that closes it, so a re-aggregation over the same window bounds
-        // legitimately receives rows whose end equals the current watermark. They fold into their window
-        // and the immediately-following flush(watermark) emits it — the re-aggregation window closes with
-        // the same watermark as its input.
+        // Local partials defer lateness to their global merge. A final attached consumer owns
+        // its firing watermark, including after restore, and must not recreate closed windows.
+        let deadlines = if discard_closed {
+            self.calendar.as_ref().map(|calendar| {
+                calendar.end_thresholds((0..batch.num_rows()).map(|row| ends.value(row)))
+            })
+        } else {
+            None
+        };
         let mut grouped: ahash::HashMap<(i64, i64, Row<'_>), Vec<u32>> = ahash::HashMap::default();
         for row in 0..batch.num_rows() {
+            let end = ends.value(row);
+            if discard_closed
+                && deadlines.as_ref().map_or(end, |dates| dates[&end]) <= self.current_watermark
+            {
+                self.late_drops += 1;
+                continue;
+            }
             let key = keys_encoded.row(row);
             grouped
                 .entry((starts.value(row), ends.value(row), key))
@@ -2255,6 +2278,27 @@ pub extern "system" fn Java_tech_streamfusion_Native_updateAttachedTumblingAggre
         let result = {
             let batch = import_record_batch(in_array_address, in_schema_address);
             aggregator.update_attached(&batch)
+        };
+        if let Err(e) = result {
+            throw_memory_limit(&mut env, &e.to_string());
+        }
+    })
+}
+
+/// Final attached-bound aggregation preserves the owning operator's late-data cutoff.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_updateAttachedFinalWindowAggregator<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        let result = {
+            let batch = import_record_batch(in_array_address, in_schema_address);
+            aggregator.update_attached_final(&batch)
         };
         if let Err(e) = result {
             throw_memory_limit(&mut env, &e.to_string());

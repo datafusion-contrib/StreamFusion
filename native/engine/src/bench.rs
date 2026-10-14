@@ -205,6 +205,16 @@ impl Tumbling {
         self.0.update(batch).expect("budget exceeded");
     }
 
+    pub fn update_attached_final(&mut self, batch: &RecordBatch) {
+        self.0
+            .update_attached_final(batch)
+            .expect("final assigned window update");
+    }
+
+    pub fn late_drops(&self) -> u64 {
+        self.0.late_drops
+    }
+
     pub fn update_local(&mut self, batch: &RecordBatch) {
         self.0.update_local(batch).expect("local window update");
     }

@@ -445,22 +445,27 @@ fn dedup_recovery(c: &mut Criterion) {
     }
     group.finish();
 }
-criterion_group!(
-    benches,
-    updating_join::updating_join,
-    persistent,
-    dedup,
-    dedup_ttl,
-    dedup_recovery,
-    interval::interval,
-    window_rank::window_rank,
-    window_rank::memory_window_rank,
-    temporal_join::temporal_join,
-    over::over,
-    over::over_fold_recovery,
-    group::group,
-    tumbling::tumbling,
-    session::session,
-    window_join::window_join
-);
+fn register(c: &mut Criterion) {
+    if std::env::var("SF_NATIVE_PERSISTENT_WINDOW_ONLY").as_deref() == Ok("true") {
+        header();
+        tumbling::tumbling(c);
+        return;
+    }
+    updating_join::updating_join(c);
+    persistent(c);
+    dedup(c);
+    dedup_ttl(c);
+    dedup_recovery(c);
+    interval::interval(c);
+    window_rank::window_rank(c);
+    window_rank::memory_window_rank(c);
+    temporal_join::temporal_join(c);
+    over::over(c);
+    over::over_fold_recovery(c);
+    group::group(c);
+    tumbling::tumbling(c);
+    session::session(c);
+    window_join::window_join(c);
+}
+criterion_group!(benches, register);
 criterion_main!(benches);

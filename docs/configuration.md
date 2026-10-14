@@ -89,6 +89,14 @@ against Flink in the complete-job comparison, so stock Flink remains the default
 string aggregates. Two-phase local/global string extrema do not require this option. See
 [Window aggregate](operators/window-aggregate.md#string-minmax) for coverage and measurements.
 
+`streamfusion.window.attached.single-phase.enabled` also defaults to `false`. Set it to `true`
+in table configuration to admit verified append-only event-time TUMBLE/HOP/CUMULATE
+re-aggregation over attached window bounds in ONE_PHASE plans. Default stock execution
+preserves the measured HOP/high-cardinality and persistent COUNT performance limitations;
+the existing AUTO/TWO_PHASE attached route retains its admission. See
+[Window aggregate](operators/window-aggregate.md#single-phase-aggregation-over-attached-bounds)
+for exact coverage and retained performance results.
+
 ## Diagnostics
 
 - **`-Dstreamfusion.logFallbackReasons=true`** — substitution is silent by default; this logs each

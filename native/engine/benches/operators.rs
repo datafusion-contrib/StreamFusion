@@ -197,6 +197,147 @@ fn bench_tumbling(c: &mut Criterion) {
 
 // Tumbling SUM grouped by a key column: this is the path that allocates a grouping key per row,
 // so it measures the keyed hot loop the no-key bench above does not.
+fn bench_exact_count_panes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("exact_count_panes");
+    for rows in [256usize, 4096] {
+        for cardinality in [1usize, 64] {
+            for wide in [false, true] {
+                let key: ArrayRef = if wide {
+                    Arc::new(StringArray::from(
+                        (0..rows)
+                            .map(|i| (i % 11 != 0).then(|| format!("{:064}", i % cardinality)))
+                            .collect::<Vec<_>>(),
+                    ))
+                } else {
+                    Arc::new(Int64Array::from(
+                        (0..rows)
+                            .map(|i| (i % 11 != 0).then_some((i % cardinality) as i64))
+                            .collect::<Vec<_>>(),
+                    ))
+                };
+                let batch = RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("ts", DataType::Int64, false),
+                        Field::new("value0", DataType::Int64, true),
+                        Field::new("key0", key.data_type().clone(), true),
+                    ])),
+                    vec![
+                        Arc::new(Int64Array::from(vec![500; rows])),
+                        Arc::new(Int64Array::from(
+                            (0..rows)
+                                .map(|i| (i % 7 != 0).then_some(1))
+                                .collect::<Vec<_>>(),
+                        )),
+                        key,
+                    ],
+                )
+                .unwrap();
+                let setup = || Tumbling::fixed_calendar(10_000, 2000, false, 0);
+                let mut probe = setup();
+                probe.update(&batch);
+                let out = probe.flush(i64::MAX);
+                assert_eq!(out.num_rows(), (cardinality + 1) * 5);
+                let counts = out
+                    .column_by_name("result0")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                assert_eq!(
+                    counts.values().iter().sum::<i64>(),
+                    (rows - (rows + 6) / 7) as i64 * 5
+                );
+                group.throughput(Throughput::Elements(rows as u64));
+                group.bench_function(
+                    format!(
+                        "count/{rows}/{cardinality}/{}",
+                        if wide { "string64" } else { "i64" }
+                    ),
+                    |b| {
+                        b.iter_batched(
+                            setup,
+                            |mut agg| {
+                                agg.update(black_box(&batch));
+                                black_box(agg.flush(i64::MAX))
+                            },
+                            BatchSize::SmallInput,
+                        );
+                    },
+                );
+            }
+        }
+    }
+    group.finish();
+}
+
+fn bench_attached_windows(c: &mut Criterion) {
+    let mut group = c.benchmark_group("attached_windows");
+    for rows in [256usize, 4096] {
+        for cardinality in [1usize, 64] {
+            for wide in [false, true] {
+                let key: ArrayRef = if wide {
+                    Arc::new(StringArray::from_iter_values(
+                        (0..rows).map(|i| format!("{:064}", i % cardinality)),
+                    ))
+                } else {
+                    Arc::new(Int64Array::from_iter_values(
+                        (0..rows).map(|i| (i % cardinality) as i64),
+                    ))
+                };
+                let start = |i: usize| ((i / cardinality) % 4) as i64 * 1000 - 4000;
+                let batch = RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("window_start", DataType::Int64, false),
+                        Field::new("window_end", DataType::Int64, false),
+                        Field::new("value0", DataType::Int64, true),
+                        Field::new("key0", key.data_type().clone(), false),
+                    ])),
+                    vec![
+                        Arc::new(Int64Array::from_iter_values((0..rows).map(start))),
+                        Arc::new(Int64Array::from_iter_values(
+                            (0..rows).map(|i| start(i) + 5000),
+                        )),
+                        Arc::new(Int64Array::from(
+                            (0..rows)
+                                .map(|i| (i % 7 != 0).then_some(i as i64))
+                                .collect::<Vec<_>>(),
+                        )),
+                        key,
+                    ],
+                )
+                .unwrap();
+                let setup = || {
+                    let mut agg = Tumbling::new(5000, 0, vec![0]);
+                    let _ = agg.flush(1000);
+                    agg
+                };
+                let mut probe = setup();
+                probe.update_attached_final(&batch);
+                assert_eq!(probe.late_drops(), (rows / 4) as u64);
+                assert_eq!(probe.flush(i64::MAX).num_rows(), cardinality * 3);
+                group.throughput(Throughput::Elements(rows as u64));
+                group.bench_function(
+                    format!(
+                        "sum/{rows}/{cardinality}/{}",
+                        if wide { "string64" } else { "i64" }
+                    ),
+                    |b| {
+                        b.iter_batched(
+                            setup,
+                            |mut agg| {
+                                agg.update_attached_final(black_box(&batch));
+                                black_box(agg.flush(i64::MAX))
+                            },
+                            BatchSize::SmallInput,
+                        );
+                    },
+                );
+            }
+        }
+    }
+    group.finish();
+}
+
 fn bench_tumbling_keyed(c: &mut Criterion) {
     let window_millis = 1000;
     let ts: Vec<i64> = (0..ROWS as i64)
@@ -1536,6 +1677,8 @@ criterion_group!(
     bench_calc_projection_before_filter,
     bench_tumbling,
     bench_tumbling_keyed,
+    bench_attached_windows,
+    bench_exact_count_panes,
     bench_tumbling_string_extrema,
     bench_group_by_string_key,
     bench_group_zero_sum,

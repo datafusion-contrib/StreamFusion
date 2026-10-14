@@ -1,0 +1,3310 @@
+{
+  "date": "2026-10-14",
+  "base": "74822fd4109fe6fc54ddfdf336617c9c16eeed17",
+  "sdk": "Released Flink2.2.1, JDK17, Java release11",
+  "boundary": "Runtime rowwise source -> inner COUNT window -> outer attached MAX window -> rowwise blackhole. Both transposes, JNI/state, job startup/execution/completion included; fixture and explain planning excluded. Actual candidate metrics require both windows to consume rows. Prior has zero substitutions and explicit ONE_PHASE fallback.",
+  "config": {
+    "parallelism": 1,
+    "windows": [
+      "TUMBLE(size10s)",
+      "HOP(slide2s,size10s)"
+    ],
+    "keys": [
+      64,
+      4096
+    ],
+    "state": [
+      "memory",
+      "native RocksDB with ordinary stock JVM state on Flink RocksDB"
+    ],
+    "nullable_keys": "every11th",
+    "rowtime": "base2020-01-01 plus floor(i/1024)*10ms; watermark1sbehind",
+    "source_fields": [
+      "INT k",
+      "TIMESTAMP(3) rt"
+    ],
+    "warmups": 2,
+    "measured_trials": 3,
+    "order": "alternating first engine by trial",
+    "build": "Candidate invocations use release+mimalloc; prior uses frozen released DSO but has zero native substitutions/execution",
+    "java_heap": "8g",
+    "task_off_heap": "48g",
+    "phase": "ONE_PHASE",
+    "opt_in": "streamfusion.window.attached.single-phase.enabled=true in final candidate and prior control; initial candidate predates gate"
+  },
+  "invocations": [
+    {
+      "name": "initial_1m",
+      "source_log": "streamfusion-342-performance-candidate-1m.log",
+      "release_dso": "86f030f8a28c358ce1e123984d286c23957342aac065a96b02e3d364d0187d12",
+      "profiles": [
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.500838182,
+            0.380931294,
+            0.388137187
+          ],
+          "enabled_seconds": [
+            0.251864628,
+            0.247929846,
+            0.24329859
+          ],
+          "stock_median": 0.388137187,
+          "enabled_median": 0.247929846,
+          "paired_stock_speedup": 1.5655121529821785
+        },
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            0.405642867,
+            0.285274813,
+            0.354260782
+          ],
+          "enabled_seconds": [
+            0.35087795,
+            0.242994385,
+            0.251246259
+          ],
+          "stock_median": 0.354260782,
+          "enabled_median": 0.251246259,
+          "paired_stock_speedup": 1.4100141566684978
+        },
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.3023959,
+            0.301279141,
+            0.311536709
+          ],
+          "enabled_seconds": [
+            0.322794698,
+            0.320942903,
+            0.33537698
+          ],
+          "stock_median": 0.3023959,
+          "enabled_median": 0.322794698,
+          "paired_stock_speedup": 0.9368056596766035
+        },
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            0.595791051,
+            0.537179432,
+            0.581450154
+          ],
+          "enabled_seconds": [
+            1.77854569,
+            1.76161603,
+            1.825464746
+          ],
+          "stock_median": 0.581450154,
+          "enabled_median": 1.77854569,
+          "paired_stock_speedup": 0.3269244963844589
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.266824778,
+            0.273229295,
+            0.271159488
+          ],
+          "enabled_seconds": [
+            0.216726702,
+            0.211483951,
+            0.226947715
+          ],
+          "stock_median": 0.271159488,
+          "enabled_median": 0.216726702,
+          "paired_stock_speedup": 1.251158650492453
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            0.333927729,
+            0.338931485,
+            0.346922181
+          ],
+          "enabled_seconds": [
+            0.812198335,
+            0.792099118,
+            0.820996075
+          ],
+          "stock_median": 0.338931485,
+          "enabled_median": 0.812198335,
+          "paired_stock_speedup": 0.4173013787328189
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.332424889,
+            0.378316332,
+            0.327477917
+          ],
+          "enabled_seconds": [
+            0.832808261,
+            0.821993882,
+            0.831503777
+          ],
+          "stock_median": 0.332424889,
+          "enabled_median": 0.831503777,
+          "paired_stock_speedup": 0.3997875874952279
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            2.778530507,
+            2.788979105,
+            3.173643725
+          ],
+          "enabled_seconds": [
+            9.312776595,
+            9.43210575,
+            9.553240957
+          ],
+          "stock_median": 2.788979105,
+          "enabled_median": 9.43210575,
+          "paired_stock_speedup": 0.2956899741078497
+        }
+      ],
+      "completed_jobs_including_warmup": [
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.170308393
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.537457388
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.332141361
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.54261584
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.500838182
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.251864628
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.247929846
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.380931294
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.388137187
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.24329859
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.473240592
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.256945513
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.379070789
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.370205844
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.405642867
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.35087795
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.242994385
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.285274813
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.354260782
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.251246259
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.614136698
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.391792585
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.316709507
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.458591926
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.3023959
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.322794698
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.320942903
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.301279141
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.311536709
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.33537698
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.619504301
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.827356003
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.857965685
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.595314165
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.595791051
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.77854569
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.76161603
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.537179432
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.581450154
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.825464746
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.281704686
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.212597607
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.229187603
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.265530695
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.266824778
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.216726702
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.211483951
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.273229295
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.271159488
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.226947715
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.364323422
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.796097794
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.794118392
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.335148146
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.333927729
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.812198335
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.792099118
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.338931485
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.346922181
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.820996075
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.350624174
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.803635484
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.824649452
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.335196777
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.332424889
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.832808261
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.821993882
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.378316332
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.327477917
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.831503777
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.998409176
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 9.188418668
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 9.305869681
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 2.948023814
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 2.778530507
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 9.312776595
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 9.43210575
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 2.788979105
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 3.173643725
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 9.553240957
+        }
+      ]
+    },
+    {
+      "name": "optimized_1m",
+      "source_log": "streamfusion-342-performance-sorted-1m.log",
+      "profiles": [
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.498611457,
+            0.396965689,
+            0.457979197
+          ],
+          "enabled_seconds": [
+            0.316823931,
+            0.298919744,
+            0.235948219
+          ],
+          "stock_median": 0.457979197,
+          "enabled_median": 0.298919744,
+          "paired_stock_speedup": 1.532114242008718
+        },
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            0.372435959,
+            0.2940033,
+            0.289642567
+          ],
+          "enabled_seconds": [
+            0.244178565,
+            0.240555171,
+            0.249652279
+          ],
+          "stock_median": 0.2940033,
+          "enabled_median": 0.244178565,
+          "paired_stock_speedup": 1.2040504046700415
+        },
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.294124449,
+            0.300715329,
+            0.29569362
+          ],
+          "enabled_seconds": [
+            0.328307922,
+            0.319034555,
+            0.313945697
+          ],
+          "stock_median": 0.29569362,
+          "enabled_median": 0.319034555,
+          "paired_stock_speedup": 0.9268388497916785
+        },
+        {
+          "rows": 1000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            0.601931942,
+            0.576287261,
+            0.56521392
+          ],
+          "enabled_seconds": [
+            1.736585928,
+            1.681883062,
+            1.677642861
+          ],
+          "stock_median": 0.576287261,
+          "enabled_median": 1.681883062,
+          "paired_stock_speedup": 0.34264407200504887
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.273319664,
+            0.364241418,
+            0.303108821
+          ],
+          "enabled_seconds": [
+            0.155577588,
+            0.154795163,
+            0.157213188
+          ],
+          "stock_median": 0.303108821,
+          "enabled_median": 0.155577588,
+          "paired_stock_speedup": 1.9482807575085943
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            0.341050977,
+            0.333138313,
+            0.353573226
+          ],
+          "enabled_seconds": [
+            0.401875679,
+            0.404786333,
+            0.400065249
+          ],
+          "stock_median": 0.341050977,
+          "enabled_median": 0.401875679,
+          "paired_stock_speedup": 0.8486479645860828
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            0.305804918,
+            0.312397386,
+            0.329779631
+          ],
+          "enabled_seconds": [
+            0.74730027,
+            0.754828697,
+            0.744734817
+          ],
+          "stock_median": 0.312397386,
+          "enabled_median": 0.74730027,
+          "paired_stock_speedup": 0.41803462214726617
+        },
+        {
+          "rows": 1000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            2.89389927,
+            2.681311019,
+            2.792302443
+          ],
+          "enabled_seconds": [
+            7.8225972,
+            7.854959871,
+            7.90269327
+          ],
+          "stock_median": 2.792302443,
+          "enabled_median": 7.854959871,
+          "paired_stock_speedup": 0.35548271268819576
+        }
+      ],
+      "completed_jobs_including_warmup": [
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.17276162
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.550279639
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.420805531
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.494902727
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.498611457
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.316823931
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.298919744
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.396965689
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.457979197
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.235948219
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.430721984
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.262663771
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.353387869
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.390214055
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.372435959
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.244178565
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.240555171
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.2940033
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.289642567
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.249652279
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.653092596
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.310715912
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.331521037
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.347186532
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.294124449
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.328307922
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.319034555
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.300715329
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.29569362
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.313945697
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.59188075
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.695214147
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.67205029
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.620184117
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.601931942
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.736585928
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.681883062
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.576287261
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.56521392
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.677642861
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.286188188
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.156352842
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.171519755
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.277557391
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.273319664
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.155577588
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.154795163
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.364241418
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.303108821
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.157213188
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.391289086
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.402583917
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.399834539
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 0.34534973
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.341050977
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.401875679
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.404786333
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.333138313
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.353573226
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.400065249
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.320215448
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.747356632
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.747259438
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.31449571
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.305804918
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.74730027
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.754828697
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.312397386
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.329779631
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.744734817
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 2.002957241
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 8.235163846
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 7.846442694
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 2.813170916
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 2.89389927
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 7.8225972
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 7.854959871
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 2.681311019
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 2.792302443
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 7.90269327
+        }
+      ],
+      "release_dso_sha256": null,
+      "source_revision_description": "sorted-bulk-state-and-exact-count-panes"
+    },
+    {
+      "name": "final_5m",
+      "source_log": "streamfusion-342-performance-final-5m.log",
+      "release_dso": "d09c0f6c60b1cc9aaae634af63b154dfbb33c130aeba54cd2550de6f94a7b3db",
+      "profiles": [
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            1.200235952,
+            1.280426926,
+            1.17140778
+          ],
+          "enabled_seconds": [
+            0.678897633,
+            0.658893917,
+            0.632408429
+          ],
+          "stock_median": 1.200235952,
+          "enabled_median": 0.658893917,
+          "paired_stock_speedup": 1.8215920970476953
+        },
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            1.170651805,
+            1.18323803,
+            1.189629997
+          ],
+          "enabled_seconds": [
+            0.968960915,
+            0.963136407,
+            0.954643843
+          ],
+          "stock_median": 1.18323803,
+          "enabled_median": 0.963136407,
+          "paired_stock_speedup": 1.2285259091031329
+        },
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            1.010451956,
+            1.027808523,
+            1.013787481
+          ],
+          "enabled_seconds": [
+            1.311598941,
+            1.321405916,
+            1.322278042
+          ],
+          "stock_median": 1.013787481,
+          "enabled_median": 1.321405916,
+          "paired_stock_speedup": 0.7672036795996908
+        },
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            3.119008095,
+            2.873806136,
+            2.950767091
+          ],
+          "enabled_seconds": [
+            8.141373096,
+            8.054194688,
+            8.12471422
+          ],
+          "stock_median": 2.950767091,
+          "enabled_median": 8.12471422,
+          "paired_stock_speedup": 0.363184108523635
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            1.069013809,
+            1.071937816,
+            1.069826109
+          ],
+          "enabled_seconds": [
+            0.561079796,
+            0.567884221,
+            0.564937223
+          ],
+          "stock_median": 1.069826109,
+          "enabled_median": 0.564937223,
+          "paired_stock_speedup": 1.893707947440383
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            1.35672,
+            1.355785611,
+            1.372357021
+          ],
+          "enabled_seconds": [
+            1.785893844,
+            1.792425632,
+            1.753266907
+          ],
+          "stock_median": 1.35672,
+          "enabled_median": 1.785893844,
+          "paired_stock_speedup": 0.7596868114855319
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": true,
+          "stock_seconds": [
+            1.24922028,
+            1.349019692,
+            1.342068348
+          ],
+          "enabled_seconds": [
+            3.556113038,
+            3.678592619,
+            3.565196983
+          ],
+          "stock_median": 1.342068348,
+          "enabled_median": 3.565196983,
+          "paired_stock_speedup": 0.37643595975184857
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": true,
+          "stock_seconds": [
+            7.472915421,
+            7.992430836,
+            8.425021089
+          ],
+          "enabled_seconds": [
+            38.293851763,
+            38.502418184,
+            38.112118967
+          ],
+          "stock_median": 7.992430836,
+          "enabled_median": 38.293851763,
+          "paired_stock_speedup": 0.20871316067824722
+        }
+      ],
+      "completed_jobs_including_warmup": [
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 2.628081825
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.1923354
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.828059761
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.35856064
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.200235952
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.678897633
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.658893917
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.280426926
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.17140778
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.632408429
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.306099616
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 0.992131193
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.000152918
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.19877597
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.170651805
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 0.968960915
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 0.963136407
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.18323803
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.189629997
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 0.954643843
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.359465588
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.318842705
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.316123327
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.059057215
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.010451956
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.311598941
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.321405916
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.027808523
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.013787481
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.322278042
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 2.905649651
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 8.001685049
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 8.132838715
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 2.903632257
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 3.119008095
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 8.141373096
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 8.054194688
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 2.873806136
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 2.950767091
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 8.12471422
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.161850049
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 0.561566593
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 0.564227326
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.106456488
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.069013809
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 0.561079796
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 0.567884221
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.071937816
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.069826109
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 0.564937223
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.40473935
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.763160179
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.815473563
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.37848352
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.35672
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.785893844
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.792425632
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.355785611
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.372357021
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.753266907
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.312191014
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 3.562471408
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 3.48106807
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.434406729
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.24922028
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 3.556113038
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 3.678592619
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.349019692
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.342068348
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 3.565196983
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 9.460530211
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 38.39668214
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 37.906649823
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 7.542229274
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 7.472915421
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 38.293851763
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 38.502418184
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 7.992430836
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 8.425021089
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 38.112118967
+        }
+      ]
+    },
+    {
+      "name": "prior_5m",
+      "source_log": "streamfusion-342-performance-prior-5m.log",
+      "release_dso": "d3629d72d86923b06aa8d54a0561a88bfe24147eccc36dfba8d7006267722e2f",
+      "profiles": [
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": false,
+          "stock_seconds": [
+            1.132298744,
+            1.171092925,
+            1.113463794
+          ],
+          "enabled_seconds": [
+            1.154146776,
+            1.143165323,
+            1.131459199
+          ],
+          "stock_median": 1.132298744,
+          "enabled_median": 1.143165323,
+          "paired_stock_speedup": 0.9904943066576907
+        },
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": false,
+          "stock_seconds": [
+            1.182185855,
+            1.106873745,
+            1.111191234
+          ],
+          "enabled_seconds": [
+            1.25017355,
+            1.122687432,
+            1.109316307
+          ],
+          "stock_median": 1.111191234,
+          "enabled_median": 1.122687432,
+          "paired_stock_speedup": 0.9897601080475978
+        },
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": false,
+          "stock_seconds": [
+            1.061192053,
+            1.045568683,
+            1.045690498
+          ],
+          "enabled_seconds": [
+            1.060132377,
+            1.076436092,
+            1.060598689
+          ],
+          "stock_median": 1.045690498,
+          "enabled_median": 1.060598689,
+          "paired_stock_speedup": 0.9859436079314254
+        },
+        {
+          "rows": 5000000,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": false,
+          "stock_seconds": [
+            2.973015935,
+            3.041529484,
+            2.77815884
+          ],
+          "enabled_seconds": [
+            2.930775616,
+            2.935051801,
+            2.937939421
+          ],
+          "stock_median": 2.973015935,
+          "enabled_median": 2.935051801,
+          "paired_stock_speedup": 1.012934740704428
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "native_route": false,
+          "stock_seconds": [
+            1.033400956,
+            1.061444976,
+            1.056013412
+          ],
+          "enabled_seconds": [
+            1.060048049,
+            1.043270381,
+            1.042395707
+          ],
+          "stock_median": 1.056013412,
+          "enabled_median": 1.043270381,
+          "paired_stock_speedup": 1.0122145047267475
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "native_route": false,
+          "stock_seconds": [
+            1.349554369,
+            1.392129757,
+            1.331335792
+          ],
+          "enabled_seconds": [
+            1.350614928,
+            1.399025158,
+            1.344823229
+          ],
+          "stock_median": 1.349554369,
+          "enabled_median": 1.350614928,
+          "paired_stock_speedup": 0.9992147584200255
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "native_route": false,
+          "stock_seconds": [
+            1.137877911,
+            1.132038366,
+            1.117684871
+          ],
+          "enabled_seconds": [
+            1.149621731,
+            1.130593781,
+            1.128420964
+          ],
+          "stock_median": 1.132038366,
+          "enabled_median": 1.130593781,
+          "paired_stock_speedup": 1.0012777224006328
+        },
+        {
+          "rows": 5000000,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "native_route": false,
+          "stock_seconds": [
+            9.25462215,
+            7.668989288,
+            8.504030044
+          ],
+          "enabled_seconds": [
+            9.271295757,
+            9.03453614,
+            8.963921492
+          ],
+          "stock_median": 8.504030044,
+          "enabled_median": 9.03453614,
+          "paired_stock_speedup": 0.941280206556349
+        }
+      ],
+      "completed_jobs_including_warmup": [
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 2.267646501
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.358734957
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.304606017
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.233195259
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.132298744
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.154146776
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.143165323
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.171092925
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.113463794
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.131459199
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.393512922
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.213318303
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.208824427
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.196089212
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.182185855
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.25017355
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.122687432
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.106873745
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.111191234
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.109316307
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.398989467
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.152850012
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.050767236
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.063581208
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.061192053
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.060132377
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.076436092
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.045568683
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.045690498
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.060598689
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 2.752235844
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 2.891854624
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 2.884444886
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 2.732793555
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 2.973015935
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 2.930775616
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 2.935051801
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 3.041529484
+        },
+        {
+          "engine": 0,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 2.77815884
+        },
+        {
+          "engine": 1,
+          "window": "TUMBLE",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 2.937939421
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.089044401
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.052801887
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.084521936
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.064168297
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.033400956
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.060048049
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.043270381
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.061444976
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.056013412
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.042395707
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.477760467
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 1.377081368
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.353888204
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 1.366649297
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.349554369
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 1.350614928
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.399025158
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 1.392129757
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.331335792
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": false,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 1.344823229
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.131580385
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 0,
+          "seconds": 1.132718984
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.1282435
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 1,
+          "seconds": 1.128328895
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.137877911
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 2,
+          "seconds": 1.149621731
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.130593781
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 3,
+          "seconds": 1.132038366
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.117684871
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 64,
+          "trial": 4,
+          "seconds": 1.128420964
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 8.571440394
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 0,
+          "seconds": 9.3064414
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 9.065449052
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 1,
+          "seconds": 8.219851754
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 9.25462215
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 2,
+          "seconds": 9.271295757
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 9.03453614
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 3,
+          "seconds": 7.668989288
+        },
+        {
+          "engine": 0,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 8.504030044
+        },
+        {
+          "engine": 1,
+          "window": "HOP",
+          "rocksdb": true,
+          "keys": 4096,
+          "trial": 4,
+          "seconds": 8.963921492
+        }
+      ]
+    }
+  ],
+  "diagnostic": {
+    "scope": "Native-only first20M warmup HOP/4096keys/RocksDB,10secondCPUcapture1ms; diagnostic not performance comparison",
+    "total_samples": 11097,
+    "inclusive_counts": {
+      "Native.pushRocksDBWindowAggregator": 9705,
+      "Native.updateAttachedFinalWindowAggregator": 0,
+      "TumblingAggregator::update_window_batch": 9372,
+      "TumblingAggregator::hydrate_store_groups": 5471,
+      "TumblingAggregator::write_through_store": 3336,
+      "TumblingAggregator::accumulate_grouped": 380,
+      "DBImpl::Write": 2637,
+      "DBImpl::MultiGet": 4338,
+      "ColumnarWindowAggregateOperator": 9873,
+      "NativeWindowOperatorCore.updateColumnar": 9746,
+      "NativeWindowOperatorCore.updateColumnarAttached": 1
+    },
+    "boundary": "Native-only20M HOP/4096/Rocks CPU capture; instrumented completed warmups retained separately, deliberately stopped after capture; not a performance comparison",
+    "completed_instrumented_trials": [
+      {
+        "engine": 1,
+        "window": "HOP",
+        "rocksdb": true,
+        "keys": 4096,
+        "trial": 0,
+        "seconds": 196.990115285
+      },
+      {
+        "engine": 1,
+        "window": "HOP",
+        "rocksdb": true,
+        "keys": 4096,
+        "trial": 1,
+        "seconds": 182.129864977
+      }
+    ]
+  }
+}

@@ -444,8 +444,9 @@ fn open_shared_db(
 }
 
 /// Borrow keys and pin returned blocks through decoding, avoiding the legacy MultiGet binding's
-/// key/value copies. Input order is arbitrary; RocksDB sorts its lookup context and returns
-/// results in the original order. Pins must not escape into the operator's resident state.
+/// key/value copies. Sort the bytewise keys before the batch read, then restore caller order;
+/// RocksDB can skip sorting through its virtual comparator and thread-local lookup context.
+/// Pins must not escape into the operator's resident state.
 fn multi_get_pinned<'db>(
     db: &'db DB,
     keys: &[Vec<u8>],
@@ -453,7 +454,20 @@ fn multi_get_pinned<'db>(
     let cf = db
         .cf_handle("default")
         .expect("registered default column family");
-    db.batched_multi_get_cf(cf, keys, false)
+    if keys.windows(2).all(|pair| pair[0] <= pair[1]) {
+        return db.batched_multi_get_cf(cf, keys, true);
+    }
+    let mut order: Vec<usize> = (0..keys.len()).collect();
+    order.sort_unstable_by(|&a, &b| keys[a].cmp(&keys[b]));
+    let fetched = db.batched_multi_get_cf(cf, order.iter().map(|&i| &keys[i]), true);
+    let mut original_order: Vec<_> = (0..keys.len()).map(|_| None).collect();
+    for (index, value) in order.into_iter().zip(fetched) {
+        original_order[index] = Some(value);
+    }
+    original_order
+        .into_iter()
+        .map(|value| value.expect("every key probed"))
+        .collect()
 }
 
 impl<C: RocksStateCodec> RocksStore<C> {

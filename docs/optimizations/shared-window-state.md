@@ -105,3 +105,30 @@ Further profiling of the exact shipped revision and optimization of the persiste
 path are tracked in [#350](https://github.com/datafusion-contrib/StreamFusion/issues/350),
 outside the accepted original ticket-batch shipping scope. All earlier losses, instrumented
 captures and trial variability remain in the linked artifact.
+
+
+## Exact ordinary COUNT panes and bulk state ordering
+
+Ordinary fixed-grid HOP/CUMULATE COUNT can use the existing exact per-slice pre-aggregation
+previously shared with timestamp extrema. Nullable contributions are counted once per slice/key;
+scalar counts then merge into the still-open overlapping windows. This avoids building repeated
+selection arrays/group vectors for each overlap. The accumulator and checkpoint representation
+remain unchanged. Floating and order-sensitive aggregates retain their existing path.
+
+Persistent batch reads sort bytewise keys before calling RocksDB's already-sorted MultiGet path
+and restore the caller's original order, including misses and duplicates. Already sorted or
+single-key inputs avoid the permutation allocation. Window-state writes also follow bytewise
+key order while indexing each row's original state. Pins remain borrowed only through decode;
+no state/checkpoint format or durability boundary changes.
+
+The attached-window COUNT→MAX comparison improves the 1M/4096-key in-memory HOP native
+median from 0.812 to 0.402s after these changes, but the paired final five-million-row case
+remains slower than stock (1.786 versus 1.357s). Persistent cases still lose substantially.
+The individual optimizations were not independently timed, so this is a combined revision
+result. A 10-second CPU diagnostic attributed 4,338 of 11,097 inclusive samples to MultiGet
+and 2,637 to writes; state I/O remains the bottleneck. The new assigned-bound route is opt-in
+and defaults off. See the [full trial matrix](../benchmarks/results/attached-windows-2026-10-14.json)
+and [window operator page](../operators/window-aggregate.md#assigned-bound-one_phase-release-measurements)
+for the measured scope, variability and retained losses. Native checks cover original-order
+pinned reads with misses, duplicates, empty values, compaction and reopen; release fixtures
+cover exact COUNT panes and repeated persistent read/modify/write with allocation reporting.

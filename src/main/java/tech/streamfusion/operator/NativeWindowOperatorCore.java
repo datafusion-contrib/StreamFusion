@@ -453,6 +453,18 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       int[] valueColumns,
       int[] keyColumns,
       int[] keyTypes) {
+    updateColumnarAttached(
+        in, windowStartColumn, windowEndColumn, valueColumns, keyColumns, keyTypes, false);
+  }
+
+  protected final void updateColumnarAttached(
+      VectorSchemaRoot in,
+      int windowStartColumn,
+      int windowEndColumn,
+      int[] valueColumns,
+      int[] keyColumns,
+      int[] keyTypes,
+      boolean finalPhase) {
     int rows = in.getRowCount();
     BigIntVector windowStart = new BigIntVector("window_start", allocator);
     BigIntVector windowEnd = new BigIntVector("window_end", allocator);
@@ -500,7 +512,13 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       }
       root.setRowCount(rows);
       Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
-      Native.updateAttachedTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
+      if (finalPhase) {
+        Native.updateAttachedFinalWindowAggregator(
+            handle, array.memoryAddress(), schema.memoryAddress());
+      } else {
+        Native.updateAttachedTumblingAggregator(
+            handle, array.memoryAddress(), schema.memoryAddress());
+      }
     }
   }
 

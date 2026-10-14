@@ -34,6 +34,8 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
+  private final int windowStartColumn;
+  private final int windowEndColumn;
 
   /**
    * The latest processing-time boundary already scheduled, so each window-end timer registers once.
@@ -126,6 +128,48 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
       boolean proctime,
       int[] keyTimestampPrecisions,
       int maxParallelism) {
+    this(
+        cumulative,
+        windowMillis,
+        slideMillis,
+        timeColumn,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        keyTypes,
+        valueTypes,
+        aggregateKinds,
+        timeZoneId,
+        timestampLtz,
+        sessionTimeZoneId,
+        outputType,
+        proctime,
+        keyTimestampPrecisions,
+        maxParallelism,
+        -1,
+        -1);
+  }
+
+  public NativeColumnarWindowAggregateOperator(
+      boolean cumulative,
+      long windowMillis,
+      long slideMillis,
+      int timeColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] keyTypes,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      String timeZoneId,
+      boolean timestampLtz,
+      String sessionTimeZoneId,
+      RowType outputType,
+      boolean proctime,
+      int[] keyTimestampPrecisions,
+      int maxParallelism,
+      int windowStartColumn,
+      int windowEndColumn) {
     super(
         "window aggregate",
         windowMillis,
@@ -145,6 +189,8 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     this.keyColumns = keyColumns;
     this.keyTypes = keyTypes;
     this.proctime = proctime;
+    this.windowStartColumn = windowStartColumn;
+    this.windowEndColumn = windowEndColumn;
   }
 
   @Override
@@ -224,7 +270,11 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   public void processElement(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     try (var in = element.getValue().root()) {
-      if (proctime) {
+      if (windowEndColumn >= 0) {
+        updateColumnarAttached(
+            in, windowStartColumn, windowEndColumn, valueColumns, keyColumns, keyTypes, true);
+        reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
+      } else if (proctime) {
         long now = getProcessingTimeService().getCurrentProcessingTime();
         updateColumnarProctime(in, now, valueColumns, keyColumns, keyTypes);
         emitClosedWindows(now); // emit windows the clock has already passed
