@@ -27,6 +27,12 @@ final class DeduplicateMatcher {
   private DeduplicateMatcher() {}
 
   static boolean matches(StreamPhysicalRank rank) {
+    return hasDeduplicationShape(rank)
+        && RowDataArrowConverter.supports(
+            FlinkTypeFactory$.MODULE$.toLogicalRowType(rank.getRowType()));
+  }
+
+  static boolean hasDeduplicationShape(StreamPhysicalRank rank) {
     if (rank.rankType() != RankType.ROW_NUMBER || rank.outputRankNumber()) {
       return false;
     }
@@ -43,8 +49,7 @@ final class DeduplicateMatcher {
     if (!isTimeOrder(rank)) {
       return false; // a non-time order key is a value Top-N, not deduplication
     }
-    return RowDataArrowConverter.supports(
-        FlinkTypeFactory$.MODULE$.toLogicalRowType(rank.getRowType()));
+    return true;
   }
 
   /** Keep-last (descending rowtime) vs keep-first (ascending). Keep-last emits a retract changelog. */

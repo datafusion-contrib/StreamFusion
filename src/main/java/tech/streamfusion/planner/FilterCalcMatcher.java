@@ -23,14 +23,17 @@ final class FilterCalcMatcher {
   private FilterCalcMatcher() {}
 
   static boolean matches(Calc calc) {
-    RexProgram program = calc.getProgram();
-    if (program.getCondition() == null || projection(calc) == null) {
+    if (!hasFilterShape(calc)) {
       return false;
     }
     if (!convertibleRow(calc.getInput().getRowType())) {
       return false;
     }
     return encodedCondition(calc) != null;
+  }
+
+  static boolean hasFilterShape(Calc calc) {
+    return calc.getProgram().getCondition() != null && projection(calc) != null;
   }
 
   /** The condition encoded for the native engine, or null if it contains an unsupported operation. */

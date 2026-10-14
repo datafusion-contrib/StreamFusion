@@ -33,6 +33,7 @@ final class Substitution<T extends RelNode> {
   private final Class<T> shape;
   private final String operatorKey;
   private final Planner<T> planner;
+  private Predicate<T> shapeMatching = node -> true;
   private Predicate<T> matching = node -> true;
   private Predicate<T> owns = node -> true;
   private Function<T, String> reason;
@@ -60,7 +61,16 @@ final class Substitution<T extends RelNode> {
     return new Substitution<>(shape, null, planner);
   }
 
-  /** Narrows the shape to the nodes this entry owns; a node it fails passes to later entries. */
+  /** Structural ownership only: never initialize an optional native probe here. */
+  Substitution<T> shaped(Predicate<T> shapeMatching) {
+    this.shapeMatching = shapeMatching;
+    return this;
+  }
+
+  /**
+   * Optional acceleration admission, after host SQL validation. Do not execute user functions or
+   * construct an admitted replacement here; a declined node passes to later entries.
+   */
   Substitution<T> matching(Predicate<T> matching) {
     this.matching = matching;
     return this;
@@ -104,20 +114,41 @@ final class Substitution<T extends RelNode> {
   }
 
   /**
-   * This entry's outcome for one node: the native replacement, the node itself when the entry owns it
-   * but declined, or null when the node is not its business (or it declined and yields).
+   * This entry's outcome for one node: the native replacement, the node itself when the entry owns
+   * it but declined, or null when the node is not its business (or it declined and yields).
    */
   RelNode apply(RelNode node, PlanContext ctx) {
     if (!shape.isInstance(node)) {
       return null;
     }
     T typed = shape.cast(node);
-    if (!matching.test(typed)) {
+    try {
+      if (!shapeMatching.test(typed)) {
+        return null;
+      }
+    } catch (NoClassDefFoundError
+        | NoSuchMethodError
+        | NoSuchFieldError
+        | AbstractMethodError
+        | UnsatisfiedLinkError failure) {
+      ctx.probeFailed(this, node, NativeProbeFailure.reason(failure));
       return null;
     }
     if (operatorKey != null && !NativeConfig.operatorEnabled(operatorKey)) {
       ctx.decline(disabledReason(operatorKey));
       return node;
+    }
+    try {
+      if (!matching.test(typed)) {
+        return null;
+      }
+    } catch (NoClassDefFoundError
+        | NoSuchMethodError
+        | NoSuchFieldError
+        | AbstractMethodError
+        | UnsatisfiedLinkError failure) {
+      ctx.probeFailed(this, node, NativeProbeFailure.reason(failure));
+      return null;
     }
     if (keyedState && ctx.keyedStateUnsupportedReason() != null) {
       ctx.decline(ctx.keyedStateUnsupportedReason());
@@ -140,11 +171,31 @@ final class Substitution<T extends RelNode> {
   }
 
   /** Why this node fell back, or null when this entry does not explain nodes like it. */
-  String reasonFor(RelNode node) {
-    if (reason == null || !shape.isInstance(node)) {
+  String reasonFor(RelNode node, PlanContext ctx) {
+    String failedProbe = ctx.probeFailure(this, node);
+    if (failedProbe != null) {
+      return failedProbe;
+    }
+    if (!shape.isInstance(node)) {
       return null;
     }
     T typed = shape.cast(node);
-    return owns.test(typed) ? reason.apply(typed) : null;
+    try {
+      if (!shapeMatching.test(typed)) {
+        return null;
+      }
+      if (operatorKey != null && !NativeConfig.operatorEnabled(operatorKey)) {
+        return disabledReason(operatorKey);
+      }
+      return reason != null && owns.test(typed) ? reason.apply(typed) : null;
+    } catch (NoClassDefFoundError
+        | NoSuchMethodError
+        | NoSuchFieldError
+        | AbstractMethodError
+        | UnsatisfiedLinkError failure) {
+      String diagnostic = NativeProbeFailure.reason(failure);
+      ctx.probeFailed(this, node, diagnostic);
+      return diagnostic;
+    }
   }
 }

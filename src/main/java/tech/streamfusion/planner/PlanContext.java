@@ -19,6 +19,17 @@ final class PlanContext {
   private final Set<String> repeatedSources;
   private final Map<RelNode, RelNode> originals = new IdentityHashMap<>();
 
+  private final Map<RelNode, Map<Substitution<?>, String>> probeFailures = new IdentityHashMap<>();
+
+  void probeFailed(Substitution<?> entry, RelNode node, String reason) {
+    probeFailures.computeIfAbsent(node, ignored -> new IdentityHashMap<>()).put(entry, reason);
+  }
+
+  String probeFailure(Substitution<?> entry, RelNode node) {
+    Map<Substitution<?>, String> failures = probeFailures.get(node);
+    return failures == null ? null : failures.get(entry);
+  }
+
   PlanContext(PhysicalPlanScan scan, Set<String> repeatedSources) {
     this.scan = scan;
     this.repeatedSources = repeatedSources;

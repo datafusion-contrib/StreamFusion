@@ -20,6 +20,25 @@ accelerate* — a real gap that could be closed. It is **not** a fallback when F
 the query in streaming (e.g. `RANK`/`DENSE_RANK` Top-N, non-time `ORDER BY`) — matching Flink by
 also not running it is parity, not a gap.
 
+## Optional native probe failures
+
+Native admission predicates and fallback diagnostic probes can decline an otherwise valid
+Flink operator when a class is unavailable (`NoClassDefFoundError`), a method or field signature
+is incompatible (`NoSuchMethodError`, `NoSuchFieldError`, `AbstractMethodError`), or a native
+library/symbol is unavailable (`UnsatisfiedLinkError`). The recorded reason distinguishes
+these failures. A broken entry yields to later entries for the same operator shape. When none
+can replace it, Flink retains the host plan and the ordinary whole-island rule applies.
+
+Diagnostics reuse an admission failure recorded for that node and entry during the current
+plan rewrite; they do not repeat the failed probe. Diagnostic-only failures are contained at
+the same boundary. Disabled operators skip their admission and diagnostic probes. There is
+no process-wide failure cache: another planning attempt can succeed after deployment repair.
+
+This boundary covers optional acceleration probes, not SQL validation, user-function execution,
+or construction of an admitted replacement. Those failures still propagate, as do fatal JVM
+errors and other linkage errors. Falling back preserves host planning; it does not repair or
+certify an incompatible native deployment.
+
 ## Nested values at the Arrow boundary
 
 Reusable row-to-Arrow writers finish and reset nested ARRAY, MAP and ROW children together with

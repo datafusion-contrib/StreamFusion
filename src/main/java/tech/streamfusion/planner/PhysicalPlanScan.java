@@ -88,6 +88,16 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
   private static final List<NativePlannerExtension> EXTENSIONS = loadExtensions();
   private static final List<Substitution<?>> REGISTRY = buildRegistry();
 
+  private final List<Substitution<?>> registry;
+
+  public PhysicalPlanScan() {
+    this(REGISTRY);
+  }
+
+  PhysicalPlanScan(List<Substitution<?>> registry) {
+    this.registry = List.copyOf(registry);
+  }
+
   @Override
   public RelNode optimize(RelNode root, StreamOptimizeContext context) {
     if (completePlan) {
@@ -306,6 +316,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // StreamPhysicalRank, but a rowtime-ordered rank is deduplication, which TopNMatcher declines.
     entries.add(
         Substitution.of(StreamPhysicalRank.class, "deduplicate", DeduplicateMatcher::substitute)
+            .shaped(DeduplicateMatcher::hasDeduplicationShape)
             .keyedState()
             .matching(
                 rank ->
@@ -357,6 +368,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // it matches the host's Calc over a retracting stream row for row.
     entries.add(
         Substitution.of(StreamPhysicalCalc.class, "filter", FilterCalcMatcher::substitute)
+            .shaped(FilterCalcMatcher::hasFilterShape)
             .matching(FilterCalcMatcher::matches)
             .reason(CalcMatcher::unsupportedReason)
             .changelogSafe());
@@ -616,7 +628,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // or its reason (unlike an insert-only candidate's, noted at the end) would be lost.
     if (!(current instanceof StreamPhysicalRel)
         || !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) current)) {
-      noteFallback(current);
+      noteFallback(current, ctx);
       return current;
     }
     RelNode insertOnly = apply(current, ctx, false);
@@ -625,7 +637,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     }
     // A recognized operator shape we reached here is one its matcher declined — record why, so a
     // query that does not accelerate can explain itself (ticket 29) instead of falling back silently.
-    noteFallback(current);
+    noteFallback(current, ctx);
     return current;
   }
 
@@ -634,8 +646,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
    * outcome that settles it — a native replacement, or the node itself where an entry owned it and
    * reported why it declined. Null means no entry claimed it.
    */
-  private static RelNode apply(RelNode current, PlanContext ctx, boolean changelogSafe) {
-    for (Substitution<?> substitution : REGISTRY) {
+  private RelNode apply(RelNode current, PlanContext ctx, boolean changelogSafe) {
+    for (Substitution<?> substitution : registry) {
       if (substitution.isChangelogSafe() != changelogSafe) {
         continue;
       }
@@ -792,9 +804,9 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
    * Records why a candidate node fell back, from the first registry entry that explains its shape.
    * The reason lives on the entry, so a matcher's decline and its explanation cannot drift apart.
    */
-  private void noteFallback(RelNode node) {
-    for (Substitution<?> substitution : REGISTRY) {
-      String reason = substitution.reasonFor(node);
+  private void noteFallback(RelNode node, PlanContext ctx) {
+    for (Substitution<?> substitution : registry) {
+      String reason = substitution.reasonFor(node, ctx);
       if (reason != null) {
         recordFallback(reason);
         return;
