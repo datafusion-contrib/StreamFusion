@@ -1070,6 +1070,9 @@ reconstruct a start from a slice end. The normal numeric/COUNT(DISTINCT)/timesta
 key-type and single-phase string-extrema admission rules remain in force. FILTER and retracting
 attached input remain stock; attached sessions are outside this fixed-window whitelist.
 
+With the option disabled, fallback diagnostics retain the existing "attached-window aggregation
+requires two-phase execution" prefix and explain the single-phase opt-in requirement.
+
 The final attached operator owns its firing watermark. End-minus-one closes a window;
 subsequent rows naming that closed window are dropped and counted, including after restoring
 memory or native RocksDB state. Local attached partials continue to defer late admission to

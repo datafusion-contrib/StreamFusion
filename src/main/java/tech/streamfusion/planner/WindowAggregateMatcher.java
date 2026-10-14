@@ -813,7 +813,8 @@ final class WindowAggregateMatcher {
     if (windowing instanceof WindowAttachedWindowingStrategy) {
       if (node instanceof StreamPhysicalWindowAggregate
           && !ShortcutUtils.unwrapTableConfig(node).get(ATTACHED_SINGLE_PHASE)) {
-        return "single-phase attached windows require "
+        return "attached-window aggregation requires two-phase execution by default;"
+            + " single-phase attached windows require "
             + ATTACHED_SINGLE_PHASE.key()
             + "=true; measured HOP/high-cardinality and persistent COUNT paths remain slower than"
             + " Flink";
