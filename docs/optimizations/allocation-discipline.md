@@ -197,6 +197,10 @@ Reproduce with JDK 17 and `SF_BENCHMARK=true mvn -pl streamfusion-runtime -am te
 compatibility line as a portable rerun command, not a reported measurement here. Complete commands and boundaries for the full flush and stock comparison
 are recorded alongside the raw samples; use identical release libraries and fixtures in both runs.
 
+The shaping fixture owns no native aggregation handle and opts out of window-assignment
+initialization. Its output-ownership and failure-cleanup checks still exercise the production
+emitter, including closing the source buffers before reading the output.
+
 Focused controls retained in the same artifact reran the two-property INT and TIMESTAMP(9)
 cases at 16,384 rows in baseline/candidate/candidate/baseline order, with 100 warmups and 51
 observations per fixture per run. All four runs used JDK 17's default tiered compilation and

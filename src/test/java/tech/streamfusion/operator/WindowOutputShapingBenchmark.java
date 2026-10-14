@@ -43,6 +43,7 @@ class WindowOutputShapingBenchmark {
     }
 
     @Override protected long createHandle() { return 0; }
+    @Override protected boolean usesAlignedWindowAssignment() { return false; }
     @Override protected void closeHandle() {}
     @Override protected long stateBytesHandle() { return 0; }
     @Override protected void flushPending() {}
