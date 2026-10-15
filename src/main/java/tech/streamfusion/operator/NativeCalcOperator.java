@@ -41,6 +41,10 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
   private transient Map<Schema, Long> compiledSchemas;
   private transient long[] boundLongs;
   private transient long watermark;
+  private transient int directRowCalc;
+  private transient int[] directColumns;
+  private transient org.apache.flink.metrics.Counter directRows;
+  private transient org.apache.flink.metrics.Counter aliasedValues;
 
   public NativeCalcOperator(
       int[] kinds,
@@ -78,6 +82,15 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
         udfBinding.bind(
             longs, new FunctionContext(getRuntimeContext()), getProcessingTimeService());
     compiledSchemas = new HashMap<>();
+    directRowCalc = -1;
+    directRows = getMetricGroup().counter("directTemporalRows");
+    aliasedValues = getMetricGroup().counter("directTemporalAliasedValues");
+    directColumns = udfBinding.rowInputColumns();
+    if (Boolean.getBoolean("streamfusion.experimental.directTemporalCalc")
+        && directColumns != null) {
+      int id = udfBinding.rowCalcId();
+      if (NativeUdf.canEvaluateTemporalRowCalc(id)) directRowCalc = id;
+    }
   }
 
   @Override
@@ -105,6 +118,32 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
     // retain the key group used by the downstream keyed operator's Flink state-key context.
     int keyGroup = element.getValue().keyGroup();
     VectorSchemaRoot in = element.getValue().root();
+    if (directRowCalc >= 0 && in.getVector(RowDataArrowConverter.ROW_KIND_COLUMN) == null) {
+      VectorSchemaRoot result;
+      try {
+        result = NativeUdf.evaluateTemporalRowCalc(directRowCalc, in, directColumns);
+        directRows.inc(in.getRowCount());
+        for (int column = 0;
+            column < Math.min(result.getFieldVectors().size(), directColumns.length);
+            column++) {
+          var source = in.getVector(directColumns[column]);
+          var target = result.getVector(column);
+          if (source instanceof org.apache.arrow.vector.complex.StructVector
+              && target instanceof org.apache.arrow.vector.complex.StructVector
+              && tech.streamfusion.arrow.TimestampAccessor.isComponentTimestamp(target.getField())
+              && ((org.apache.arrow.vector.complex.StructVector) source)
+                      .getChild("millis")
+                      .getDataBufferAddress()
+                  == ((org.apache.arrow.vector.complex.StructVector) target)
+                      .getChild("millis")
+                      .getDataBufferAddress()) aliasedValues.inc(in.getRowCount());
+        }
+      } finally {
+        in.close();
+      }
+      ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(result, keyGroup));
+      return;
+    }
     // The input batch's buffers belong to the upstream operator's allocator; the C Data export must
     // use that allocator (buffers associate only within one allocator root). The operator's own
     // allocator owns only the imported result.

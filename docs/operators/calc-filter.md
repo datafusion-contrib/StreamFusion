@@ -405,7 +405,7 @@ native Calc counters are asserted.
 
 The previous correct fallback measured 0.524/0.858/0.478 s, with paired stock controls
 0.511/0.864/0.479 s. These are separate JVMs with control drift; they do not isolate an
-optimization gain. The final opt-in path is slower than stock in all three fixtures.
+optimization gain. The original opt-in callback path is slower than stock in all three fixtures.
 No standalone acceleration or default admission is claimed. The
 [raw results](../benchmarks/results/temporal-udf-2026-10-15.json) retain every warmup and
 measured trial, the previous fallback, initial prototype, and rejected experiments.
@@ -420,6 +420,32 @@ still lost to stock, including a variant that writes timestamp components direct
 Performance admission remains tracked in [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364),
 including further measured conversion work and complete-job measurements inside surrounding
 native operators before any broader admission.
+
+An experimental direct Java Arrow-batch path removes the Rust round trip when the entire Calc
+is already generated JVM code and every argument is a timestamp input column. It requires
+`-Dstreamfusion.experimental.directTemporalCalc=true` in addition to the default-off temporal
+UDF option. Changelog-tagged input and other argument expressions retain the existing callback.
+The task-local function binding carries the verified input-column mapping; runtime code does
+not decode the expression ABI. Predicate evaluation, function lifecycle and row-major call
+order use the same released Flink evaluator.
+
+`-Dstreamfusion.experimental.temporalAliases=true` additionally defers timestamp output writes
+for unconditional, timestamp-only projections of matching width. Every function still runs.
+A byte-equal result column retains the input buffers; the first changed value materializes its
+unchanged prefix and all subsequent values. Preinitialized Arrow fields preserve timestamp
+component metadata through transfers. Other result shapes use the ordinary flat Arrow writer.
+Both experimental switches default off. PR #368 remains draft at the maintainer's request.
+
+In an unprofiled 2M-row repeat with the configuration above, direct batches plus timestamp
+aliasing measured identity **0.651 s versus stock 0.645 s**, text **0.830 versus 0.969 s**, and
+epoch conversion **0.536 versus 0.570 s**. The identity result still misses performance admission;
+these separate JVMs also do not establish an improvement against the previous correct fallback.
+All trials and raw CPU/allocation profiles are retained in the results artifact. CPU profiling
+covers both Java and symbolized Rust frames with async-profiler 4.0, a 2 ms software CPU timer
+and DWARF native unwinding. It identifies Arrow FFI/ownership work in the old Rust path and
+extra Java TimestampData allocation at callback input and row exit in the improved path.
+Profiled job durations are excluded from acceleration claims. See the
+[optimization and profiling details](../optimizations/udf-columnar-upcall.md#experimental-complete-temporal-calc-batches).
 
 A matching `perimeter` benchmark case projects `t, z` directly from the same source, without UDFs.
 Each pair of cases runs in one JVM with the resources and repeated-trial method above:

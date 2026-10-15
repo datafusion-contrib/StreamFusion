@@ -82,3 +82,5 @@ same model for us — operators tagged columnar/rowwise, flowing Arrow between c
 transposing only at the true perimeter — supplying the columnar record type and transition
 insertion ourselves since Flink has no columnar framework of its own. See
 [08](08-columnar-flow-transitions.md) for the mechanism.
+
+- [47 — Complete JVM Calc without a native round trip](47-complete-jvm-calc-without-native-roundtrip.md) — experimental temporal Arrow batches avoid redundant FFI while retaining Flink evaluation and columnar boundaries.

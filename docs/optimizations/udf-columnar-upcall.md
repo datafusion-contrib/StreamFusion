@@ -210,3 +210,80 @@ in the raw data, and no conversion cost is subtracted from expression timings. U
 `-Dscalar.rows=5000000` to reproduce. Both sizes completed without detected competing
 build/test processes. The attempted 20M runs overlapped other builds and were discarded;
 these results make no claim for that size or for other expression shapes.
+
+## Experimental complete temporal Calc batches
+
+The opt-in temporal UDF draft can invoke a complete generated Calc directly against borrowed
+Arrow input columns and return flat Arrow output columns. This avoids exporting Java Arrow
+buffers to Rust merely to import them back into the same JVM for the whole Calc, then performing
+the reverse handoff for the result. The verified input mapping travels with the serialized,
+task-local UDF binding. Changelog-tagged batches and other argument shapes retain the established
+native callback. This is columnar Java execution inside an island, not Rust UDF computation.
+The [coverage page](../operators/calc-filter.md) lists the default-off experimental switches.
+
+For unconditional timestamp-only output with matching width, exact per-row value comparison
+permits sharing an unchanged input column. Functions always execute in the original order;
+this does not infer purity or skip calls. The first different value allocates a destination,
+copies the equal prefix and writes the rest. Arrow transfers target preinitialized fields so
+component metadata survives, and retain buffers before the input closes.
+
+Release+mimalloc, Flink 2.2.1/JDK17, i7-12650H, 2 GiB heap, p1, precision9, 1,024-row batches,
+2M runtime rows, two warmups and five alternating measured pairs, production IPC, row source
+and blackhole sink, and both transposes:
+
+| Projection | Stock median (range), s | Direct batch median (range), s |
+| --- | ---: | ---: |
+| Identity | .645 (.640–.718) | .651 (.640–.736) |
+| Text | .969 (.954–.973) | .830 (.826–.849) |
+| Epoch | .570 (.561–.574) | .536 (.535–.544) |
+
+The counters verify 14M rows consumed directly per case and 28M timestamp values sharing buffers
+in identity, including warmups. Text and epoch improve against their paired controls; identity
+remains about 1% slower. Cross-JVM control drift and the missing final repeat against the previous
+correct fallback prevent broader admission. The temporal option and both experiments stay off by
+default, the PR stays draft, and #364 remains open.
+
+### Java and Rust profiling evidence
+
+Profile both sides before choosing another optimization. Released async-profiler 4.0 captures
+Java CPU and allocations together with symbolized native stacks. Hardware cycle counters were
+unavailable on this WSL host; the supported perf `cpu-clock` software event supplies CPU samples.
+DWARF unwinding uses the production DSO's unwind tables and symbol table. Java runs with
+`-XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints`.
+
+Each profile runs the same 5M-row identity query, two warmups and five paired repetitions. The old
+callback records 7,621 StreamFusion task CPU samples; direct batches record 5,297. Stock controls
+record 5,073 and 5,162 respectively. These include startup and warmup and are diagnostic sample
+counts, not speedup measurements. Deepest observed stages show 1,072 old Calc-dispatch samples
+plus 1,187 callback samples outside generated evaluation. The direct path has 32 dispatch samples,
+112 direct setup/writer samples and 188 alias-loop samples. Generated evaluation remains similar
+(581 versus 593 samples). Rust symbols resolve Arrow import/export, schema/layout construction,
+reference release, allocator and JNI work. Inclusive native frames include Java callbacks and must
+not be interpreted as Rust self time.
+
+Weighted allocation samples estimate 38.9 GB versus 35.4 GB of native-job heap pressure over all
+35M rows per profile; these are sampled estimates, not exact allocated or retained bytes. The
+improved path still reconstructs TimestampData at callback input reads (about 1.49 GB sampled)
+and Arrow exit serialization (about 1.53 GB). Those concrete sites are the next profiling targets;
+sharing output buffers alone does not remove timestamp object reconstruction. Most remaining
+CPU samples belong to Java row-source conversion, field getter dispatch and the row perimeter.
+
+The [raw results](../benchmarks/results/temporal-udf-2026-10-15.json) include hashes, full compressed
+CPU and allocation stacks for both variants, stage counts, leading allocation sites and limitations.
+Profiler startup writes `Profiling started` to the native stream, which produces a Surefire
+channel warning; each profiled test still completes successfully. Profiled times are excluded
+from the table above.
+
+To reproduce, use the official released async-profiler archive and start the benchmark fork with:
+
+```text
+-agentpath:<profiler>/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2000000,cstack=dwarf,threads,alloc=1m,file=<output>.jfr
+```
+
+Compile the fixture first, then run `mvn -o surefire:test@default-test -Pbench -pl streamfusion-runtime`
+with `SF_BENCHMARK=true`, `-Dtest=TemporalUdfBenchmark`, `-Dtemporal.cases=identity`,
+`-Dtemporal.rows=5000000`, `-Dtemporal.warmup=2`, `-Dtemporal.runs=5` and the JVM options through
+`sf.extraJvmArgs`. The direct variant adds both experimental system properties. Convert the JFR
+with `jfrconv --cpu --threads -o collapsed` and `jfrconv --alloc --threads --total -o collapsed`.
+Using the explicit Surefire execution prevents an unrelated empty fork from overwriting a fixed
+recording filename. Run unprofiled measurements separately before making admission decisions.

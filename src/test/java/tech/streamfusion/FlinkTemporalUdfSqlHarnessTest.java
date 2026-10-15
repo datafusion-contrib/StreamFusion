@@ -54,6 +54,34 @@ class FlinkTemporalUdfSqlHarnessTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(ints = {0, 3, 6, 9})
+  void temporalOnlyColumnsKeepOwnershipAndLateChanges(int precision) throws Exception {
+    for (String sql :
+        new String[] {
+          "SELECT ts_identity(t), ltz_identity(z) FROM src",
+          "SELECT ts_text(t) FROM src",
+          "SELECT ltz_epoch(z) FROM src",
+          "SELECT ts_identity(t) FROM src WHERE t IS NOT NULL",
+          "SELECT ts_change(t) FROM src"
+        }) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        NativeParity.assertParity(
+            () -> {
+              var table = environment(precision, "America/Los_Angeles", 1031, metrics);
+              table.createTemporarySystemFunction("ts_change", new ChangingTimestamp(precision));
+              return table;
+            },
+            sql);
+        if (Boolean.getBoolean("streamfusion.experimental.directTemporalCalc"))
+          assertTrue(metrics.counterValue("directTemporalRows") > 0, sql);
+        if (Boolean.getBoolean("streamfusion.experimental.temporalAliases")
+            && sql.contains("ltz_identity"))
+          assertTrue(metrics.counterValue("directTemporalAliasedValues") > 0, sql);
+      }
+    }
+  }
+
   @Test
   void builtinTemporalControlRemainsNative() throws Exception {
     NativeParity.assertParity(
@@ -103,6 +131,20 @@ class FlinkTemporalUdfSqlHarnessTest {
         "temporal sentinel",
         NativeFailureParity.Phase.ROW_EVALUATION,
         NativeFailureParity.Route.NATIVE);
+  }
+
+  @Test
+  void checkedAndErrorFailuresKeepTheOriginalTemporalCause() {
+    for (boolean error : new boolean[] {false, true}) {
+      var comparison = NativeFailureParity.run(() -> {
+        var table = environment(9, "UTC", 32, null);
+        table.createTemporarySystemFunction("temporal_failure", new ExceptionalTimestamp(error));
+        return table;
+      }, "SELECT temporal_failure(t) FROM src");
+      comparison.assertFailure(error ? AssertionError.class : Exception.class,
+          "temporal failure sentinel", NativeFailureParity.Phase.ROW_EVALUATION,
+          NativeFailureParity.Route.NATIVE);
+    }
   }
 
   @Test
@@ -317,6 +359,39 @@ class FlinkTemporalUdfSqlHarnessTest {
     public LocalDateTime eval(LocalDateTime value) {
       checkOpen();
       return LocalDateTime.of(2001, 1, 1, 0, 0).plusSeconds(++sequence);
+    }
+  }
+
+  public static class ChangingTimestamp extends TemporalFunction {
+    private int sequence;
+
+    ChangingTimestamp(int precision) {
+      super(DataTypes.TIMESTAMP(precision), DataTypes.TIMESTAMP(precision));
+    }
+
+    @Override
+    public boolean isDeterministic() {
+      return false;
+    }
+
+    public LocalDateTime eval(LocalDateTime value) {
+      checkOpen();
+      if (++sequence <= 17) return value;
+      if (sequence % 13 == 0) return null;
+      return value == null ? LocalDateTime.of(2001, 1, 1, 0, 0) : value.plusSeconds(1);
+    }
+  }
+
+  public static class ExceptionalTimestamp extends TemporalFunction {
+    private final boolean error;
+    ExceptionalTimestamp(boolean error) {
+      super(DataTypes.TIMESTAMP(9), DataTypes.TIMESTAMP(9));
+      this.error = error;
+    }
+    public LocalDateTime eval(LocalDateTime value) throws Exception {
+      checkOpen();
+      if (error) throw new AssertionError("temporal failure sentinel");
+      throw new Exception("temporal failure sentinel");
     }
   }
 

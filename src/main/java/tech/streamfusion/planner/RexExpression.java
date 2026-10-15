@@ -458,6 +458,23 @@ final class RexExpression {
     return encoder;
   }
 
+  /**
+   * Original input columns for a complete JVM Calc; other expression trees retain native dispatch.
+   */
+  private static int[] rowCalcInputColumns(
+      int[] kinds, int[] payload, int[] childCounts, int[] projectionRoots, int conditionRoot) {
+    if (!isRowCalc(kinds)
+        || kinds.length < 2
+        || conditionRoot >= 0
+        || projectionRoots.length != 1
+        || projectionRoots[0] != 0
+        || childCounts[0] != kinds.length - 1) return null;
+    for (int i = 1; i < kinds.length; i++) {
+      if (kinds[i] != KIND_INPUT_REF || childCounts[i] != 0) return null;
+    }
+    return java.util.Arrays.copyOfRange(payload, 1, kinds.length);
+  }
+
   static boolean isRowCalc(int[] kinds) {
     return kinds.length > 0 && kinds[0] == KIND_ROW_UDF;
   }
@@ -977,7 +994,9 @@ final class RexExpression {
   tech.streamfusion.operator.NativeUdf.Binding udfBinding() {
     return new tech.streamfusion.operator.NativeUdf.Binding(
         udfs.toArray(new tech.streamfusion.operator.NativeUdf.Descriptor[0]),
-        toIntArray(udfIdSlots));
+        toIntArray(udfIdSlots),
+        udfs.size() == 1 ? rowCalcInputColumns(kinds(), payload(), childCounts(),
+            projectionRoots(), conditionRoot()) : null);
   }
 
   /**

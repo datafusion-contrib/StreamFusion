@@ -86,6 +86,25 @@ class TemporalUdfBenchmark {
           if (trial >= warmups) elapsed[engine][trial - warmups] = seconds;
         }
       }
+      if (Boolean.getBoolean("streamfusion.experimental.directTemporalCalc")
+          && !shape.equals("perimeter")) {
+        assertTrue(
+            metrics.counterValue("directTemporalRows") > 0, "direct batch path did not execute");
+        System.out.println(
+            "[temporal-direct-calc] case="
+                + shape
+                + " rows="
+                + metrics.counterValue("directTemporalRows"));
+      }
+      if (Boolean.getBoolean("streamfusion.experimental.temporalAliases")
+          && shape.equals("identity")) {
+        assertTrue(
+            metrics.counterValue("directTemporalAliasedValues") > 0,
+            "timestamps did not share buffers");
+        System.out.println(
+            "[temporal-direct-aliases] values="
+                + metrics.counterValue("directTemporalAliasedValues"));
+      }
       if (expectNative)
         RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
     }

@@ -284,12 +284,27 @@ public final class NativeUdf {
 
     private final Descriptor[] descriptors; // indexed by local index
     private final int[] idSlots; // positions in the longs pool holding a local index
+    private final int[] rowInputColumns;
     private transient int[] runtimeIds;
     private transient List<ScalarFunction> openedFunctions;
 
     public Binding(Descriptor[] descriptors, int[] idSlots) {
+      this(descriptors, idSlots, null);
+    }
+
+    public Binding(Descriptor[] descriptors, int[] idSlots, int[] rowInputColumns) {
       this.descriptors = descriptors;
       this.idSlots = idSlots;
+      this.rowInputColumns = rowInputColumns == null ? null : rowInputColumns.clone();
+    }
+
+    int[] rowInputColumns() {
+      return rowInputColumns == null ? null : rowInputColumns.clone();
+    }
+
+    int rowCalcId() {
+      return rowInputColumns != null && runtimeIds != null && runtimeIds.length == 1
+          ? runtimeIds[0] : -1;
     }
 
     /**
@@ -526,6 +541,124 @@ public final class NativeUdf {
       throw new RuntimeException("UDF invocation failed", cause);
     } catch (ReflectiveOperationException e) {
       throw new RuntimeException("UDF invocation failed", e);
+    }
+  }
+
+  static boolean canEvaluateTemporalRowCalc(int id) {
+    Registered udf = REGISTRY.get(id);
+    return udf != null
+        && udf.generated != null
+        && udf.returnType == TYPE_ROW
+        && udf.argTypes.length > 0
+        && Arrays.stream(udf.argTypes).allMatch(type -> type == TYPE_TIMESTAMP_DATA);
+  }
+
+  static VectorSchemaRoot evaluateTemporalRowCalc(int id, VectorSchemaRoot in, int[] columns) {
+    Registered udf = REGISTRY.get(id);
+    List<FieldVector> inputs = new ArrayList<>(columns.length);
+    for (int column : columns) inputs.add(in.getVector(column));
+    // This root only borrows vectors; its owner remains the consumed input batch.
+    VectorSchemaRoot arguments = new VectorSchemaRoot(inputs);
+    arguments.setRowCount(in.getRowCount());
+    var reader =
+        tech.streamfusion.arrow.ArrowConversion.createArrowReader(
+            arguments,
+            org.apache.flink.table.types.logical.RowType.of(udf.generated.argumentTypes()));
+    var type = udf.generated.rowResultType();
+    if (Boolean.getBoolean("streamfusion.experimental.temporalAliases")
+        && !udf.generated.hasRowFilter()
+        && type.getFieldCount() == columns.length
+        && type.getChildren().stream()
+            .allMatch(
+                t ->
+                    t.getTypeRoot()
+                            == org.apache.flink.table.types.logical.LogicalTypeRoot
+                                .TIMESTAMP_WITHOUT_TIME_ZONE
+                        || t.getTypeRoot()
+                            == org.apache.flink.table.types.logical.LogicalTypeRoot
+                                .TIMESTAMP_WITH_LOCAL_TIME_ZONE)
+        && inputs.stream()
+            .allMatch(
+                v ->
+                    tech.streamfusion.arrow.TimestampAccessor.isComponentTimestamp(v.getField()))) {
+      return evaluateAliasedTimestamps(udf, inputs, reader, type, in.getRowCount());
+    }
+    var out =
+        VectorSchemaRoot.create(
+            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(type), NativeAllocator.SHARED);
+    try {
+      for (FieldVector vector : out.getFieldVectors()) vector.setInitialCapacity(in.getRowCount());
+      var writer = tech.streamfusion.arrow.ArrowConversion.createRowDataArrowWriter(out, type);
+      for (int row = 0; row < in.getRowCount(); row++) {
+        var value = (org.apache.flink.table.data.RowData) udf.generated.evalRow(reader.read(row));
+        if (value != null) writer.write(value);
+      }
+      writer.finish();
+      return out;
+    } catch (Throwable failure) {
+      out.close();
+      if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+      if (failure instanceof Error) throw (Error) failure;
+      throw new RuntimeException("UDF invocation failed", failure);
+    }
+  }
+
+  private static VectorSchemaRoot evaluateAliasedTimestamps(
+      Registered udf,
+      List<FieldVector> inputs,
+      tech.streamfusion.arrow.ArrowReader reader,
+      org.apache.flink.table.types.logical.RowType type,
+      int rows) {
+    var schema = tech.streamfusion.arrow.ArrowConversion.toArrowSchema(type);
+    FieldVector[] outputs = new FieldVector[inputs.size()];
+    var sources =
+        inputs.stream()
+            .map(tech.streamfusion.arrow.TimestampAccessor::new)
+            .toArray(tech.streamfusion.arrow.TimestampAccessor[]::new);
+    var writers = new tech.streamfusion.arrow.TimestampAccessor[inputs.size()];
+    try {
+      for (int row = 0; row < rows; row++) {
+        var value = (org.apache.flink.table.data.RowData) udf.generated.evalRow(reader.read(row));
+        for (int column = 0; column < outputs.length; column++) {
+          var timestamp = value.isNullAt(column) ? null : value.getTimestamp(column, 9);
+          if (outputs[column] == null) {
+            var source = sources[column];
+            boolean same =
+                timestamp == null
+                    ? source.isNull(row)
+                    : !source.isNull(row)
+                        && timestamp.getMillisecond() == source.getMillis(row)
+                        && timestamp.getNanoOfMillisecond() == source.getNanoOfMillisecond(row);
+            if (same) continue;
+            var vector = schema.getFields().get(column).createVector(NativeAllocator.SHARED);
+            outputs[column] = vector;
+            vector.setInitialCapacity(rows);
+            vector.allocateNew();
+            writers[column] = new tech.streamfusion.arrow.TimestampAccessor(vector);
+            for (int prefix = 0; prefix < row; prefix++)
+              vector.copyFromSafe(prefix, prefix, inputs.get(column));
+          }
+          writers[column].set(row, timestamp);
+        }
+      }
+      for (int column = 0; column < outputs.length; column++) {
+        if (outputs[column] == null) {
+          outputs[column] = schema.getFields().get(column).createVector(NativeAllocator.SHARED);
+          var pair = inputs.get(column).makeTransferPair(outputs[column]);
+          pair.splitAndTransfer(0, rows);
+        } else {
+          outputs[column].setValueCount(rows);
+        }
+      }
+      for (FieldVector vector : outputs)
+        if (!tech.streamfusion.arrow.TimestampAccessor.isComponentTimestamp(vector.getField()))
+          throw new IllegalStateException("Aliased timestamp layout lost: " + vector.getField());
+      return new VectorSchemaRoot(schema, Arrays.asList(outputs), rows);
+    } catch (Throwable failure) {
+      for (FieldVector vector : outputs) if (vector != null) vector.close();
+      if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+      if (failure instanceof Error) throw (Error) failure;
+      throw new RuntimeException("UDF invocation failed", failure);
     }
   }
 

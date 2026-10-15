@@ -71,6 +71,7 @@ public final class FlinkExpressionFunction extends ScalarFunction
   private transient ProcessingTimeService processingTimeService;
   private transient Evaluator evaluator;
   private transient GenericRowData input;
+  private boolean rowFilter;
 
   FlinkExpressionFunction(
       RexNode expression,
@@ -112,7 +113,10 @@ public final class FlinkExpressionFunction extends ScalarFunction
         argumentTypes,
         config,
         classLoader);
+    rowFilter = condition != null;
   }
+
+  public boolean hasRowFilter() { return rowFilter; }
 
   private static final class Body {
     private final Context context;
