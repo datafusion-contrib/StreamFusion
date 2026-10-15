@@ -25,9 +25,13 @@ class TemporalUdfBenchmark {
     int warmups = Integer.getInteger("temporal.warmup", 2);
     int runs = Integer.getInteger("temporal.runs", 5);
     boolean expectNative =
-        Boolean.parseBoolean(System.getProperty("temporal.expectNative", "true"));
+        shape.equals("perimeter")
+            || Boolean.parseBoolean(System.getProperty("temporal.expectNative", "true"));
     String sql;
     switch (shape) {
+      case "perimeter":
+        sql = "SELECT t, z FROM src";
+        break;
       case "identity":
         sql = "SELECT ts_identity(t), ltz_identity(z) FROM src";
         break;

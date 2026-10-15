@@ -408,15 +408,39 @@ The previous correct fallback measured 0.524/0.858/0.478 s, with paired stock co
 optimization gain. The final opt-in path is slower than stock in all three fixtures.
 No standalone acceleration or default admission is claimed. The
 [raw results](../benchmarks/results/temporal-udf-2026-10-15.json) retain every warmup and
-measured trial, the previous fallback, initial prototype, and both rejected experiments.
+measured trial, the previous fallback, initial prototype, and rejected experiments.
 
 A 5M-row JFR diagnostic points to general result Arrow writers and perimeter row conversion.
 Removing one outer result-row wrapper and reusing the exit StreamRecord both passed correctness
-checks but failed to improve complete-job time; neither change is retained. See the
+checks but failed to improve complete-job time. Timestamp binary exits, unrolled batch result
+writes, inline Calc evaluation inside that loop and bulk timestamp component validity also failed
+performance admission; none is retained. See the
 [rejected experiments](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/364-temporal-row-output-shortcuts.md).
 Performance admission remains tracked in [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364),
 including a typed batch-output kernel and complete-job measurements inside surrounding native
 operators before any broader admission.
+
+A matching `perimeter` benchmark case projects `t, z` directly from the same source, without UDFs.
+Each pair of cases runs in one JVM with the resources and repeated-trial method above:
+
+| Rows / projection | Stock median, s | Unchanged opt-in median, s |
+| --- | ---: | ---: |
+| 2M / direct temporal columns | 0.569 | 0.628 |
+| 2M / temporal identity UDFs | 0.627 | 0.845 |
+| 5M / direct temporal columns | 1.292 | 1.496 |
+| 5M / temporal identity UDFs | 1.415 | 2.055 |
+
+Both perimeter conversion and callback work remain material. The cases execute sequentially;
+subtracting these medians is a diagnostic, not an exact operator-cost measurement. A separate
+32-second JFR at 2 ms sampling and stack depth 128 records 3,083 native-task and 2,379 stock-task
+execution samples. Timestamp materialization and Arrow writers are prominent on native threads.
+Compiled stacks can end before their callers, and native-method samples include blocked I/O;
+these are profiling clues rather than an additive CPU breakdown. The raw artifact retains the
+sample counts and profiled trials separately from unprofiled performance results.
+A separate JVM compilation log confirms that the generated evaluator already inlines the Arrow
+timestamp getters, temporal converters and identity functions. Surrounding bridge calls sometimes
+remain separate compiled methods. Those decisions alone do not establish an optimization: the
+inline batch experiment still loses in complete jobs.
 
 The focused temporal, shared/binary, lifecycle and decimal-consumer suites pass **90 checks on
 each of Flink 2.2.1 and 1.18.1**. Reproduce the benchmark with:
@@ -427,6 +451,11 @@ SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
   -Dtemporal.rows=2000000 -Dtemporal.warmup=2 -Dtemporal.runs=5 \
   -Dsf.extraJvmArgs=-Xmx2g
 ```
+
+Use `-Dtemporal.cases=perimeter,identity -Dtemporal.rows=5000000` for the matching control.
+For JFR, compile first and run `mvn surefire:test@default-test` with the same profile and test
+properties: the ordinary `test` lifecycle also launches a separate ORC test JVM, which would
+overwrite a shared recording filename after the benchmark completes.
 
 
 ## String ordering

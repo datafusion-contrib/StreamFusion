@@ -31,7 +31,8 @@
   "queries": {
     "identity": "SELECT ts_identity(t), ltz_identity(z) FROM src",
     "text": "SELECT ts_text(t) FROM src",
-    "epoch": "SELECT ltz_epoch(z) FROM src"
+    "epoch": "SELECT ltz_epoch(z) FROM src",
+    "perimeter_control": "SELECT t, z FROM src"
   },
   "runs": {
     "previous_fallback": {
@@ -2479,6 +2480,964 @@
       },
       "validation": "69 focused checks passed on Flink2.2.1/JDK17, including timestamp writer growth8193rows/reset, primitives, sliced temporal input release, empty batches, NULL/kinds/ownership. Primitive writer advances count only after successful append. Not pursued on1.18 because performance failed.",
       "decision": "Reverted. Sequential timestamp writers append both non-null component values directly and fill component validity buffers once at finish, retaining parent NULL bits. All three whole-job cases still lose to stock; previous-candidate control drift prevents establishing isolated gain."
+    },
+    "unchanged_perimeter_control_2000000": {
+      "trials": [
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 1.358407
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 1.00389
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.732859
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.569004
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.564625
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.660366
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.627772
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.568839
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.561567
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.62061
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.631795
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.580593
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.571829
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.620124
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.7369
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 1.007241
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.857832
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.619107
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.629289
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.88971
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.843267
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.612538
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.612941
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.84514
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.838396
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.627363
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.63125
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 2000000,
+          "precision": 9,
+          "seconds": 0.855647
+        }
+      ],
+      "queries": {
+        "perimeter": "SELECT t, z FROM src",
+        "identity": "SELECT ts_identity(t), ltz_identity(z) FROM src"
+      },
+      "medians_seconds": {
+        "perimeter": {
+          "Flink": 0.568839,
+          "StreamFusion": 0.627772
+        },
+        "identity": {
+          "Flink": 0.627363,
+          "StreamFusion": 0.84514
+        }
+      },
+      "method": "Unchanged draft production. Both cases run in one JVM, each case has two warmups/five alternating stock/native pairs. Same source/sink/resources, p9, native Calc and both transposes asserted. Cases are sequential; subtracting medians is diagnostic and does not provide exact isolated operator time."
+    },
+    "unchanged_perimeter_control_5000000": {
+      "trials": [
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.69867
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.926122
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.551682
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.275625
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.283795
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.494811
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.504317
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.305931
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.28209
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.499565
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.495777
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.299793
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.291518
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.488577
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.496014
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.228073
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.062123
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.411691
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.415403
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.076391
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.055161
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.408946
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.409342
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.063461
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.0547
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.416828
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.435164
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.041532
+        }
+      ],
+      "queries": {
+        "perimeter": "SELECT t, z FROM src",
+        "identity": "SELECT ts_identity(t), ltz_identity(z) FROM src"
+      },
+      "medians_seconds": {
+        "perimeter": {
+          "Flink": 1.291518,
+          "StreamFusion": 1.495777
+        },
+        "identity": {
+          "Flink": 1.415403,
+          "StreamFusion": 2.055161
+        }
+      },
+      "method": "Unchanged draft production. Both cases run in one JVM, each case has two warmups/five alternating stock/native pairs. Same source/sink/resources, p9, native Calc and both transposes asserted. Cases are sequential; subtracting medians is diagnostic and does not provide exact isolated operator time."
+    },
+    "rejected_inline_generated_batch": {
+      "trials": [
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.132262
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.074634
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.715012
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.538158
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.553731
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.644543
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.637524
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.541034
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.552116
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.635723
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.619623
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.55152
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.536772
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.626478
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.684793
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.083461
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.8962
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.585262
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.583994
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.892457
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.064462
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.591165
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.591643
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.873556
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.884336
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.583228
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.569688
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.872972
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.978163
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.053774
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.007528
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.94347
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.942475
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.001411
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.99543
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.939471
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.921521
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.005072
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.989624
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.92346
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.93387
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.987078
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.554727
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.658827
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.663389
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.548915
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.55652
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.652057
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.651523
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.548576
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.561
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.645643
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.65828
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.55968
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.561282
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.652822
+        }
+      ],
+      "medians_seconds": {
+        "perimeter": {
+          "Flink": 0.55152,
+          "StreamFusion": 0.635723
+        },
+        "identity": {
+          "Flink": 0.583994,
+          "StreamFusion": 0.884336
+        },
+        "text": {
+          "Flink": 0.93387,
+          "StreamFusion": 0.99543
+        },
+        "epoch": {
+          "Flink": 0.55968,
+          "StreamFusion": 0.652057
+        }
+      },
+      "validation": "90 focused checks passed Flink2.2.1/JDK17; full Calc predicate/shared-order/lifecycle and sliced nullable/empty batches unchanged. Not pursued on1.18 because performance failed.",
+      "decision": "Reverted. Embeds released Flink Calc process code, per-record code and locals directly inside generated batch loop, rather than calling eval once per row as the earlier unrolled experiment did. Keeps immediate row-major unrolled child writes. No temporal UDF case beats matched stock."
     }
   },
   "limitations": [
@@ -2573,6 +3532,1002 @@
       "RowWriter.doWrite": 23,
       "NativeUdf.invoke": 6
     },
-    "interpretation": "General row-to-Arrow result writing and perimeter row conversion remain material; removing one wrapper or reusing one StreamRecord did not improve complete-job time."
+    "interpretation": "General row-to-Arrow result writing and perimeter row conversion remain material; removing one wrapper or reusing one StreamRecord did not improve complete-job time.",
+    "detailed": {
+      "recording": "streamfusion-364-detailed-valid.jfr",
+      "sha256": "b740bfe29a5e249b26705039334f8888a99e9da3c9f47f44acfd8a3149ff4b6f",
+      "duration_seconds": 32,
+      "sampling_period_ms": 2,
+      "stack_depth": 128,
+      "rows": 5000000,
+      "case": "identity",
+      "warmups": 2,
+      "runs": 5,
+      "execution_sample_events": 5790,
+      "native_method_events": 14472,
+      "allocation_sample_events": 9137,
+      "production_commit": "aa29ead1",
+      "production_change_since_original": "none",
+      "sampling": {
+        "jdk.ExecutionSample": {
+          "totals_by_task_thread": {
+            "other": 328,
+            "Flink": 2379,
+            "StreamFusion": 3083
+          },
+          "leaf_by_engine": {
+            "Flink": [
+              [
+                "org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator",
+                772
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/RowDataSerializer.copyRowData",
+                286
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toInternal",
+                259
+              ],
+              [
+                "java/time/LocalDate.ofEpochDay",
+                177
+              ],
+              [
+                "org/apache/flink/table/data/RowData.lambda$createFieldGetter$25774257$1",
+                159
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromLocalDateTime",
+                109
+              ],
+              [
+                "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3109+0x000077faecd9b498/718826224.accept",
+                109
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toExternal",
+                73
+              ],
+              [
+                "org/apache/flink/streaming/api/operators/SourceOperator.emitNext",
+                69
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy",
+                49
+              ],
+              [
+                "java/lang/Integer.valueOf",
+                48
+              ],
+              [
+                "java/time/Instant.create",
+                38
+              ],
+              [
+                "org/apache/flink/table/data/GenericRowData.isNullAt",
+                38
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/ExternalSerializer.copy",
+                30
+              ],
+              [
+                "org/apache/flink/streaming/runtime/streamrecord/StreamRecord.copy",
+                29
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromInstant",
+                25
+              ],
+              [
+                "org/apache/flink/streaming/runtime/operators/sink/SinkWriterOperator.processElement",
+                25
+              ],
+              [
+                "org/apache/flink/table/data/GenericRowData.getTimestamp",
+                20
+              ],
+              [
+                "org/apache/flink/table/data/BoxedWrapperRowData.isNullAt",
+                13
+              ],
+              [
+                "org/apache/flink/table/data/RowData.lambda$createFieldGetter$39385f9c$1",
+                11
+              ],
+              [
+                "org/apache/flink/api/common/typeutils/base/IntSerializer.copy",
+                9
+              ],
+              [
+                "org/apache/flink/api/connector/source/lib/util/IteratorSourceReaderBase.pollNext",
+                6
+              ],
+              [
+                "org/apache/flink/types/Row.of",
+                4
+              ],
+              [
+                "org/apache/flink/table/data/BoxedWrapperRowData.getTimestamp",
+                3
+              ],
+              [
+                "org/apache/flink/streaming/runtime/tasks/mailbox/MailboxProcessor.hasMail",
+                2
+              ]
+            ],
+            "StreamFusion": [
+              [
+                "org/apache/flink/table/data/TimestampData.fromEpochMillis",
+                493
+              ],
+              [
+                "org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator",
+                394
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toInternal",
+                231
+              ],
+              [
+                "tech/streamfusion/arrow/writers/RowWriter.doWrite",
+                230
+              ],
+              [
+                "tech/streamfusion/arrow/ArrowWriter.write",
+                223
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/RowDataSerializer.copyRowData",
+                172
+              ],
+              [
+                "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt",
+                165
+              ],
+              [
+                "java/time/LocalDate.ofEpochDay",
+                146
+              ],
+              [
+                "org/apache/flink/table/data/RowData.lambda$createFieldGetter$25774257$1",
+                119
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromLocalDateTime",
+                91
+              ],
+              [
+                "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3109+0x000077faecd9b498/718826224.accept",
+                84
+              ],
+              [
+                "org/apache/flink/streaming/api/operators/SourceOperator.emitNext",
+                76
+              ],
+              [
+                "tech/streamfusion/arrow/writers/RowWriter$RowWriterForRow.readRow",
+                68
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toExternal",
+                63
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy",
+                44
+              ],
+              [
+                "java/time/Instant.create",
+                41
+              ],
+              [
+                "org/apache/flink/table/data/BoxedWrapperRowData.getTimestamp",
+                38
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/ExternalSerializer.copy",
+                25
+              ],
+              [
+                "tech/streamfusion/operator/PrunedRowData.clear",
+                25
+              ],
+              [
+                "org/apache/arrow/vector/complex/AbstractStructVector.getChildren",
+                24
+              ],
+              [
+                "org/apache/flink/table/data/GenericRowData.isNullAt",
+                23
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromInstant",
+                22
+              ],
+              [
+                "tech/streamfusion/operator/NativeUdf.invokeUdf",
+                21
+              ],
+              [
+                "org/apache/arrow/memory/LowCostIdentityHashMap.getModuloHash",
+                17
+              ],
+              [
+                "org/apache/flink/table/data/GenericRowData.getTimestamp",
+                16
+              ]
+            ]
+          },
+          "first_StreamFusion_frame": [
+            [
+              "tech/streamfusion/arrow/TimestampAccessor.getTimestamp",
+              493
+            ],
+            [
+              "tech/streamfusion/arrow/writers/RowWriter.doWrite",
+              230
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowWriter.write",
+              223
+            ],
+            [
+              "tech/streamfusion/arrow/writers/RowWriter$RowWriterForRow.readRow",
+              68
+            ],
+            [
+              "tech/streamfusion/operator/ArrowToRowDataOperator.processElement",
+              53
+            ],
+            [
+              "tech/streamfusion/arrow/writers/TimestampWriter$TimestampWriterForRow.readTimestamp",
+              38
+            ],
+            [
+              "tech/streamfusion/operator/NativeUdf.invokeUdf",
+              38
+            ],
+            [
+              "tech/streamfusion/operator/PrunedRowData.clear",
+              25
+            ],
+            [
+              "tech/streamfusion/planner/FlinkExpressionFunction.evalRow",
+              8
+            ],
+            [
+              "tech/streamfusion/arrow/writers/ArrowFieldWriter.finish",
+              8
+            ],
+            [
+              "tech/streamfusion/operator/NativeCalcOperator.processElement",
+              7
+            ],
+            [
+              "tech/streamfusion/operator/RowDataToArrowOperator.processElement",
+              5
+            ],
+            [
+              "tech/streamfusion/arrow/TimestampAccessor.isTimestamp",
+              4
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowConversion.toArrowField",
+              4
+            ],
+            [
+              "tech/streamfusion/arrow/TimestampAccessor.<init>",
+              3
+            ],
+            [
+              "tech/streamfusion/operator/RowDataToArrowOperator.flush",
+              3
+            ],
+            [
+              "tech/streamfusion/operator/NativeUdf.resultRoot",
+              3
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowConversion.toArrowSchema",
+              3
+            ],
+            [
+              "tech/streamfusion/operator/SynchronousArrowInput$InputSerializer.copy",
+              3
+            ],
+            [
+              "tech/streamfusion/FlinkTemporalUdfSqlHarnessTest.lambda$environment$8a24a1a0$1",
+              3
+            ]
+          ]
+        },
+        "jdk.ObjectAllocationSample": {
+          "totals_by_task_thread": {
+            "other": 616862536,
+            "Flink": 33303063720,
+            "StreamFusion": 38576096496
+          },
+          "leaf_by_engine": {
+            "Flink": [
+              [
+                "org/apache/flink/streaming/runtime/streamrecord/StreamRecord.copy",
+                5238066560
+              ],
+              [
+                "java/time/LocalTime.create",
+                4790609016
+              ],
+              [
+                "java/time/LocalDateTime.of",
+                4458105672
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromLocalDateTime",
+                3745864064
+              ],
+              [
+                "java/time/Instant.create",
+                2290405912
+              ],
+              [
+                "org/apache/flink/table/data/GenericRowData.<init>",
+                1981322696
+              ],
+              [
+                "java/lang/Integer.valueOf",
+                1918264064
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy",
+                1860084776
+              ],
+              [
+                "java/time/LocalDate.ofEpochDay",
+                1785726464
+              ],
+              [
+                "org/apache/flink/types/Row.of",
+                1393978352
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromInstant",
+                1061614712
+              ],
+              [
+                "java/lang/Long.valueOf",
+                880130192
+              ],
+              [
+                "org/apache/flink/types/Row.<init>",
+                704367216
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toInternal",
+                629770504
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toExternal",
+                523407320
+              ],
+              [
+                "org/apache/flink/types/RowUtils.createRowWithNamedPositions",
+                24090344
+              ],
+              [
+                "jdk/internal/org/objectweb/asm/ClassWriter.visitMethod",
+                7455880
+              ],
+              [
+                "java/util/regex/Matcher.<init>",
+                4193064
+              ],
+              [
+                "org/codehaus/janino/UnitCompiler.reclassifyName",
+                1379696
+              ],
+              [
+                "java/lang/AbstractStringBuilder.<init>",
+                894056
+              ],
+              [
+                "java/util/Arrays.copyOf",
+                803024
+              ],
+              [
+                "java/util/Arrays.copyOfRange",
+                506760
+              ],
+              [
+                "java/util/jar/JarFile.getVersionedEntry",
+                323664
+              ],
+              [
+                "java/lang/StringLatin1.newString",
+                156144
+              ],
+              [
+                "java/util/zip/InflaterInputStream.<init>",
+                131504
+              ]
+            ],
+            "StreamFusion": [
+              [
+                "org/apache/flink/streaming/runtime/streamrecord/StreamRecord.copy",
+                4484147568
+              ],
+              [
+                "org/apache/flink/table/data/GenericRowData.<init>",
+                3635265960
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromEpochMillis",
+                3323684864
+              ],
+              [
+                "java/time/Instant.create",
+                2669511560
+              ],
+              [
+                "java/lang/Integer.valueOf",
+                2546376832
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromInstant",
+                2299577096
+              ],
+              [
+                "org/apache/flink/table/runtime/typeutils/RowDataSerializer.copy",
+                1986977040
+              ],
+              [
+                "org/apache/flink/table/data/TimestampData.fromLocalDateTime",
+                1803182144
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toInternal",
+                1595573392
+              ],
+              [
+                "org/apache/flink/types/RowUtils.createRowWithNamedPositions",
+                1384811328
+              ],
+              [
+                "java/time/LocalDate.ofEpochDay",
+                1249574816
+              ],
+              [
+                "java/time/LocalTime.create",
+                1215389008
+              ],
+              [
+                "java/time/LocalDateTime.of",
+                1202921040
+              ],
+              [
+                "org/apache/flink/types/Row.<init>",
+                1120248472
+              ],
+              [
+                "java/lang/Long.valueOf",
+                1099389048
+              ],
+              [
+                "org/apache/flink/table/data/conversion/RowRowConverter.toExternal",
+                1069695848
+              ],
+              [
+                "org/apache/flink/types/Row.of",
+                709794088
+              ],
+              [
+                "org/apache/arrow/vector/util/IntObjectHashMap.<init>",
+                594293712
+              ],
+              [
+                "java/util/ArrayList.grow",
+                442287616
+              ],
+              [
+                "org/apache/arrow/vector/util/MapWithOrdinalImpl.<init>",
+                419316128
+              ],
+              [
+                "java/util/Arrays.copyOfRange",
+                391966360
+              ],
+              [
+                "java/util/Collections.unmodifiableList",
+                364936152
+              ],
+              [
+                "java/util/Arrays.copyOf",
+                345788584
+              ],
+              [
+                "org/apache/arrow/util/Collections2.immutableMapCopy",
+                173316008
+              ],
+              [
+                "java/util/ArrayList.<init>",
+                171245936
+              ]
+            ]
+          },
+          "first_StreamFusion_frame": [
+            [
+              "tech/streamfusion/arrow/TimestampAccessor.getTimestamp",
+              3323684864
+            ],
+            [
+              "tech/streamfusion/FlinkTemporalUdfSqlHarnessTest.lambda$environment$8a24a1a0$1",
+              2870989112
+            ],
+            [
+              "tech/streamfusion/planner/FlinkExpressionFunction.evalRow",
+              1346127936
+            ],
+            [
+              "tech/streamfusion/operator/ArrowToRowDataOperator.processElement",
+              760449144
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowConversion.createArrowReader",
+              336132552
+            ],
+            [
+              "tech/streamfusion/operator/NativeUdf.invokeUdf",
+              91645240
+            ],
+            [
+              "tech/streamfusion/operator/NativeUdf.resultRoot",
+              34036120
+            ],
+            [
+              "tech/streamfusion/operator/NativeCalcOperator.processElement",
+              32469536
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowConversion.createColumnVector",
+              21984376
+            ],
+            [
+              "tech/streamfusion/arrow/writers/TimestampWriter.<init>",
+              16234688
+            ],
+            [
+              "tech/streamfusion/arrow/writers/ArrowFieldWriter.finish",
+              15711088
+            ],
+            [
+              "tech/streamfusion/operator/ArrowBatch.<init>",
+              12568824
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowConversion.toArrowField",
+              12042432
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowConversion.createRowDataArrowWriter",
+              10436120
+            ],
+            [
+              "tech/streamfusion/arrow/StringCacheColumns.readers",
+              8902944
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowConversion.toArrowSchema",
+              6725584
+            ],
+            [
+              "tech/streamfusion/arrow/TimestampAccessor.isTimestamp",
+              5237032
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowReader.<init>",
+              2618488
+            ]
+          ]
+        }
+      },
+      "trials": [
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.008463
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.758397
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.342613
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.574635
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.571606
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.336606
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.296759
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.537065
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.509951
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.292069
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.242967
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.502536
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 1.509861
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 5000000,
+          "precision": 9,
+          "seconds": 2.26129
+        }
+      ],
+      "limitations": "Includes warmup, code generation and all jobs. Classify task threads by NativeCalcExecNode versus Calc in the physical chain name. Stack samples often end at compiled frames, even without a truncation flag; 94 execution stacks report truncation. Samples are diagnostic, not exact/additive operator time. NativeMethod samples include blocked network/file threads and must not be treated as native CPU percentages. Allocation weights estimate sampled allocation, not exact bytes or retained memory. Profiling timings are not acceleration claims. An earlier recording overwritten by the separate ORC test JVM lasted one second and is excluded."
+    },
+    "jit": {
+      "log": "streamfusion-364-jit.xml",
+      "sha256": "a769ea4feb2e9270556304ddec493f7f2bb4b31e4d7eff7c16e7499743290d64",
+      "rows": 5000000,
+      "case": "identity",
+      "warmups": 2,
+      "runs": 5,
+      "jvm_options": [
+        "-XX:+UnlockDiagnosticVMOptions",
+        "-XX:+LogCompilation"
+      ],
+      "selected_C2_tasks": 16,
+      "evaluator_C2_tasks": 7,
+      "evaluator_example": {
+        "method": "FlinkExpressionEvaluator$10 eval (Lorg/apache/flink/table/data/RowData;)Ljava/lang/Object;",
+        "compile_id": "9980",
+        "osr": null,
+        "failures": [],
+        "selected_successes": [
+          {
+            "caller": "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.isNullAt",
+            "target": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.isNullAt",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.isNullAt",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.isNull",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "FlinkExpressionEvaluator$10.eval",
+            "target": "org.apache.flink.table.data.columnar.ColumnarRowData.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.columnar.ColumnarRowData.getTimestamp",
+            "target": "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.getTimestamp",
+            "target": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.getTimestamp",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.getMillis",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.getNanoOfMillisecond",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "target": "org.apache.flink.table.data.TimestampData.fromEpochMillis",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.TimestampData.fromEpochMillis",
+            "target": "org.apache.flink.table.data.TimestampData.<init>",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.isNullAt",
+            "target": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.isNullAt",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.isNullAt",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.isNull",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "FlinkExpressionEvaluator$10.eval",
+            "target": "org.apache.flink.table.data.columnar.ColumnarRowData.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.columnar.ColumnarRowData.getTimestamp",
+            "target": "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.getTimestamp",
+            "target": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector.getTimestamp",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.getMillis",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "target": "tech.streamfusion.arrow.TimestampAccessor.getNanoOfMillisecond",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "tech.streamfusion.arrow.TimestampAccessor.getTimestamp",
+            "target": "org.apache.flink.table.data.TimestampData.fromEpochMillis",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.TimestampData.fromEpochMillis",
+            "target": "org.apache.flink.table.data.TimestampData.<init>",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "FlinkExpressionEvaluator$10.eval",
+            "target": "org.apache.flink.table.data.conversion.TimestampLocalDateTimeConverter.toExternal",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.TimestampLocalDateTimeConverter.toExternal",
+            "target": "org.apache.flink.table.data.TimestampData.toLocalDateTime",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "FlinkExpressionEvaluator$10.eval",
+            "target": "tech.streamfusion.FlinkTemporalUdfSqlHarnessTest$TimestampIdentity.eval",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.DataStructureConverter.toInternalOrNull",
+            "target": "org.apache.flink.table.data.conversion.TimestampLocalDateTimeConverter.toInternal",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.TimestampLocalDateTimeConverter.toInternal",
+            "target": "org.apache.flink.table.data.conversion.TimestampLocalDateTimeConverter.toInternal",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.TimestampLocalDateTimeConverter.toInternal",
+            "target": "org.apache.flink.table.data.TimestampData.fromLocalDateTime",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.TimestampData.fromLocalDateTime",
+            "target": "org.apache.flink.table.data.TimestampData.<init>",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "FlinkExpressionEvaluator$10.eval",
+            "target": "org.apache.flink.table.data.conversion.LocalZonedTimestampInstantConverter.toExternal",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.LocalZonedTimestampInstantConverter.toExternal",
+            "target": "org.apache.flink.table.data.TimestampData.toInstant",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "FlinkExpressionEvaluator$10.eval",
+            "target": "tech.streamfusion.FlinkTemporalUdfSqlHarnessTest$LtzIdentity.eval",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.DataStructureConverter.toInternalOrNull",
+            "target": "org.apache.flink.table.data.conversion.LocalZonedTimestampInstantConverter.toInternal",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.LocalZonedTimestampInstantConverter.toInternal",
+            "target": "org.apache.flink.table.data.conversion.LocalZonedTimestampInstantConverter.toInternal",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.conversion.LocalZonedTimestampInstantConverter.toInternal",
+            "target": "org.apache.flink.table.data.TimestampData.fromInstant",
+            "reason": "inline (hot)"
+          },
+          {
+            "caller": "org.apache.flink.table.data.TimestampData.fromInstant",
+            "target": "org.apache.flink.table.data.TimestampData.<init>",
+            "reason": "inline (hot)"
+          }
+        ]
+      },
+      "bridge_failures": [
+        {
+          "compile_id": "8987",
+          "method": "tech.streamfusion.operator.NativeUdf invokeUdf (IJJJJ)V",
+          "failures": [
+            {
+              "caller": "tech.streamfusion.operator.NativeUdf.invokeUdf",
+              "target": "tech.streamfusion.planner.FlinkExpressionFunction.evalRow",
+              "reason": "already compiled into a big method",
+              "path": [
+                "tech.streamfusion.operator.NativeUdf.invokeUdf"
+              ]
+            },
+            {
+              "caller": "tech.streamfusion.operator.NativeUdf.invokeUdf",
+              "target": "tech.streamfusion.arrow.ArrowWriter.write",
+              "reason": "already compiled into a big method",
+              "path": [
+                "tech.streamfusion.operator.NativeUdf.invokeUdf"
+              ]
+            }
+          ]
+        },
+        {
+          "compile_id": "9010",
+          "method": "tech.streamfusion.operator.NativeUdf invokeUdf (IJJJJ)V",
+          "failures": [
+            {
+              "caller": "tech.streamfusion.operator.NativeUdf.invokeUdf",
+              "target": "tech.streamfusion.planner.FlinkExpressionFunction.evalRow",
+              "reason": "already compiled into a big method",
+              "path": [
+                "tech.streamfusion.operator.NativeUdf.invokeUdf"
+              ]
+            },
+            {
+              "caller": "tech.streamfusion.operator.NativeUdf.invokeUdf",
+              "target": "tech.streamfusion.arrow.ArrowWriter.write",
+              "reason": "already compiled into a big method",
+              "path": [
+                "tech.streamfusion.operator.NativeUdf.invokeUdf"
+              ]
+            }
+          ]
+        },
+        {
+          "compile_id": "9977",
+          "method": "tech.streamfusion.planner.FlinkExpressionFunction evalRow (Lorg/apache/flink/table/data/RowData;)Ljava/lang/Object;",
+          "failures": [
+            {
+              "caller": "tech.streamfusion.planner.FlinkExpressionFunction.evalRow",
+              "target": "FlinkExpressionEvaluator$10.eval",
+              "reason": "already compiled into a big method",
+              "path": [
+                "tech.streamfusion.planner.FlinkExpressionFunction.evalRow"
+              ]
+            }
+          ]
+        },
+        {
+          "compile_id": "11212",
+          "method": "tech.streamfusion.planner.FlinkExpressionFunction evalRow (Lorg/apache/flink/table/data/RowData;)Ljava/lang/Object;",
+          "failures": [
+            {
+              "caller": "tech.streamfusion.planner.FlinkExpressionFunction.evalRow",
+              "target": "tech.streamfusion.planner.FlinkExpressionFunction$Evaluator.eval",
+              "reason": "virtual call",
+              "path": [
+                "tech.streamfusion.planner.FlinkExpressionFunction.evalRow"
+              ]
+            }
+          ]
+        }
+      ],
+      "interpretation": "The generated evaluator already inlines ColumnarRowData/VectorizedColumnBatch/ArrowTimestampColumnVector/TimestampAccessor getters, temporal converters and identity functions. Replacing those getters just to remove dispatch has no established benefit. The surrounding bridge sometimes cannot inline the already-large evaluator and writer; one later evalRow compilation retains a virtual evaluator call. The inline-batch experiment still loses end to end, so these compiler decisions do not demonstrate a speedup opportunity by themselves. This is compiler-shape evidence, not timing attribution."
+    }
   }
 }

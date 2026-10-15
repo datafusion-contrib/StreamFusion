@@ -1,6 +1,6 @@
 # Temporal callback row-output shortcuts
 
-Five local experiments for [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364)
+Six local experiments for [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364)
 were rejected after release end-to-end measurements on 2026-10-15. This rejects only these
 shortcuts; temporal scalar conversion and its performance work remain open.
 
@@ -37,13 +37,20 @@ additive timing or exact allocation/copy breakdown.
    identity/text/epoch medians were 0.841686/0.949466/0.627721 s versus stock
    0.581088/0.932850/0.524120 s. All still lose to stock. Reverted.
 
+6. Embedding Flink's Calc process code, per-record code and locals directly in the generated
+   batch loop removes the remaining per-row evaluator call from experiment 4. It passed
+   all 90 focused checks on Flink 2.2.1. Native identity/text/epoch medians were
+   0.884336/0.995430/0.652057 s versus stock 0.583994/0.933870/0.559680 s.
+   No UDF case beats stock; the same-run projection-only control is retained too. Reverted.
+
 All runs use release+mimalloc, Flink 2.2.1/JDK 17, precision 9, parallelism one, 2 GiB heap,
 2M runtime rows, two warmups and five alternating trials, both transposes and the row sink.
 Stock controls drift across JVMs, so these numbers do not isolate costs. Retain every sample
 in [the raw artifact](../../docs/benchmarks/results/temporal-udf-2026-10-15.json).
 
 Removing wrappers, reusing the exit record, adding a timestamp binary projection and
-unrolling the batch result writes and batching component validity have not established
+unrolling the batch result writes, embedding Calc evaluation in that loop and batching
+component validity have not established
 whole-job acceleration. Further
 experiments must address measured conversion or state-layout costs while preserving Flink's
 predicate, shared-call and mutable-result ordering, then compare the complete query with
