@@ -74,7 +74,9 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
     dictionaries = NativeAllocator.DICTIONARIES;
     // Register any UDFs this Calc references into this JVM's registry (empty on a task manager) and
     // patch their ids into the encoded pool before compiling — so distributed tasks resolve them.
-    boundLongs = udfBinding.bind(longs, new FunctionContext(getRuntimeContext()));
+    boundLongs =
+        udfBinding.bind(
+            longs, new FunctionContext(getRuntimeContext()), getProcessingTimeService());
     compiledSchemas = new HashMap<>();
   }
 

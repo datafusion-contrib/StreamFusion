@@ -2257,3 +2257,10 @@ register only its existing tumbling-window fixtures, including `read_modify_writ
 unrelated suites' untimed fixture validation while retaining the same production code, inputs,
 assertions, allocation reporting and measured boundary. Without the option, every existing
 suite remains registered. Criterion's normal name filter selects cases within this window suite.
+
+The `operators` suite's `group_record_counter` fixture calls production GROUP BY SUM/COUNT
+merging sum/non-null-count/count1 partials for 256/4,096 rows and 1/64 keys, with
+NULL contributions and repeated accumulate/retract/retract/accumulate deltas. It verifies
+negative record counts remain live until exactly zero, then times update
+and changelog materialization. Input construction and aggregator creation stay outside the
+measurement; this isolates the native boundary and does not replace Flink end-to-end validation.

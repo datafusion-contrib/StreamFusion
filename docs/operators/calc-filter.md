@@ -54,7 +54,8 @@ even when `f(2)` also fails. The same rule applies between filters and projectio
 generated evaluator preserves predicate-before-projection order, untaken branches, NULLs and
 empty filtered results. It still receives and returns Arrow batches, and retains the existing
 bridge type and string-representation restrictions; a program that cannot be generated safely
-falls back. Unsupported functions and shared stateful-UDF gates are checked before this choice.
+falls back. Unsupported functions and UDF signature/conversion gates are checked before this choice.
+Shared non-deterministic scalar calls use complete-row evaluation directly, as described below.
 In particular, a complete-row evaluator cannot emit the arbitrary binary-backed STRING from
 `FROM_BASE64`. Projecting that string alongside another potentially failing evaluation retains
 fallback (`binary-backed STRING requires a final scalar projection`); a single such projection
@@ -72,6 +73,41 @@ run Flink's generated SQL-pattern evaluator through the batch JVM bridge. Patter
 Unicode, NULLs and invalid-escape failures are Flink's own. AND/OR consumers fuse with these
 expressions so invalid patterns are not evaluated on rows that Flink short-circuits; filtered-out
 batches do not evaluate projections. Existing two-argument LIKE keeps its current native path.
+
+## Generated processing time
+
+Generated scalar expressions and complete-row Calc evaluators bind processing time to the owning
+Calc or Filter task's live `ProcessingTimeService` during operator open. Flink's generated
+`PROCTIME_MATERIALIZE` access therefore works inside CASE/COALESCE selections and predicates,
+including complete-row evaluation selected to preserve filter/projection failure order.
+Simple TIMESTAMP_LTZ COALESCE selections over input columns, NULLs and processing-time clocks
+with widening precision casts use the existing native CASE path at precisions above three.
+No UDF or other nondeterministic/fallible expression enters this path. More complex expressions
+retain Flink generation and its call-order safeguards; complete-row generation still applies
+when multiple failure sites require it. A lower Calc containing only input references and a lazy
+PROCTIME indicator can fuse into this consumer; filters, other computations and remapped input
+coordinates keep their existing boundaries.
+
+The clock is read when the generated expression executes; no timestamp or running service is
+stored in the serialized plan. Close releases the evaluator's clock reference, and a restored or
+reopened binding uses its new task's service. Pure expressions still work in local unit contexts;
+evaluating generated processing time without a bound runtime clock reports an error.
+
+Controlled-clock tests cover CASE at TIMESTAMP_LTZ precision 0/3/6/9, preserving non-NULL input
+fractions and using Flink's declared casts for materialized clock values. Native Calc and Filter
+operator tests cover successive clocks, empty/all-filtered batches and INSERT/UPDATE/DELETE
+row kinds. Independent SQL jobs on both released Flink lines compare types and stable input
+branches, check clock values against each job's execution interval, and require actual native
+consumption across multiple Arrow batches. Precision-6/9 COALESCE and precision-3/6/9 CASE cover native selection and
+complete-row generated execution forced by multiple fallible projections in UTC, Asia/Shanghai and America/Los_Angeles.
+
+Released Flink 2.2.1 rejects the direct precision-3 COALESCE form combining a nullable timestamp
+and materialized PROCTIME with a generated argument-nullability mismatch. Its valid CASE form
+and precision-9 COALESCE are used for the SQL comparisons; this runtime binding does not alter
+host SQL validation or repair that separate host code-generation error.
+
+Release comparisons and the remaining 4.1% sustained-filter limitation are recorded in
+[the optimization ledger](../optimizations/identity-expression-passthroughs.md#processing-time-indicators).
 
 ## COALESCE
 
@@ -215,7 +251,7 @@ job parameters, combined functions and code-generation splitting. Alias admissio
 of the [coverage backlog](https://github.com/datafusion-contrib/StreamFusion/issues/110).
 
 Flink 1.18's deprecated `registerFunction` scalar wrapper is admitted alongside the modern
-function definition. Both use the same signature, specialization and shared-stateful-call gates,
+function definition. Both use the same signature and specialization gates,
 and preserve the registered instance's constructor state, job parameters and open/close lifecycle.
 Legacy wrapper subclasses that specialize functions during code generation stay on Flink.
 
@@ -296,16 +332,38 @@ Shared binary SQL regressions compare ordered raw changelogs against released Fl
 executed native Calc metrics, including nested calls, conditional evaluation, distinct instances,
 NULL/empty buffers, zero-argument stateful calls and multi-batch inputs.
 
-Non-deterministic scalar UDF instances shared by multiple independently evaluated expression
-nodes fall back with a per-row invocation-order diagnostic. This covers separate projections,
-predicate/projection sharing, nested calls and CASE branches: column-at-a-time evaluation can
-otherwise change a function's state before another call observes it. The identity is Flink's
-function identifier, as used by generated expressions. Repeated calls contained in one complete
-generated expression, including a complete Calc fused for multiple binary calls, remain native
-because that callback preserves row order. Single calls,
-independent instances and deterministic scalar functions retain native admission. Builtin random
-and clock functions are unaffected. Tests compare values and filtered rows across native batches
-and retain lifecycle checks on both native and fallback paths.
+With `streamfusion.calc.sharedStatefulUdf.enabled=true`, non-deterministic scalar function
+identifiers used at multiple call sites select Flink's generated evaluator for the complete Calc:
+its predicate and projections execute together in row order. This option defaults to **false**
+because the new standalone projections are slower than stock Flink; without it, shapes previously
+gated for shared scalar calls keep their host fallback. Existing complete-row binary and other
+already admitted generated expressions keep their existing admission.
+This covers INT, BIGINT and STRING results, nested calls, CASE/COALESCE branches and repeated
+calls that Flink reuses. The existing column-at-a-time shared-call guard remains in place;
+shared functions are admitted through the complete-row path rather than bypassing that guard.
+One registered function instance has one open/close lifecycle, and separate instances stay
+separate. The same specialization, signature, result conversion and nested-type restrictions
+apply before generation; unsupported forms still fall back.
+
+Single calls, independent instances and deterministic scalar functions retain their existing
+admission. Binary buffer aliasing remains governed by the complete-row binary rules above.
+Runtime tests compare ordered values, types, every changelog tag and invocation counts, including
+nullable inputs/results, nested and conditional calls, all-filtered and empty inputs, exceptions,
+5,003-row sources and balanced task lifecycle. Native operator metrics establish actual consumption.
+
+Release end-to-end measurements retain both transposes and a rowwise blackhole sink. At five
+million rows, paired medians for two shared calls were 0.457/0.843 s stock/native for INT,
+0.453/0.833 s for BIGINT, and 1.064/1.558 s for STRING. Native throughput is about 0.54× stock
+for the integers and 0.68× for strings. One-million-row comparisons also retain the previous
+fallback; all completed trials are in the [raw results](../benchmarks/results/shared-stateful-scalar-2026-10-14.json).
+A diagnostic CPU profile records 972 JVM-callback, 2,433 entry-transpose and 673 exit-transpose
+samples among 6,769 total samples. These inclusive stack counts overlap; they identify boundary
+and callback work, not an additive cost breakdown. The row evaluator already reuses its input
+row and batches JNI calls; further primitive Arrow conversion work is tracked in
+[#248](https://github.com/datafusion-contrib/StreamFusion/issues/248). No default acceleration or
+standalone speedup is claimed. The opt-in supports composition with surrounding native operators,
+whose performance must be measured for the complete query.
+
 
 ## String ordering
 

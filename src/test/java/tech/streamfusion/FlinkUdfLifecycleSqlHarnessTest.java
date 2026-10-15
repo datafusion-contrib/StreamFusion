@@ -61,20 +61,21 @@ class FlinkUdfLifecycleSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {
-    "SELECT MY_ADD(a), MY_ADD(b) FROM inputs",
-    "SELECT MY_ADD(MY_ADD(a)), MY_ADD(b) FROM inputs",
-    "SELECT MY_ADD(a), MY_ADD(b) FROM inputs WHERE MY_ADD(a) > 10"
-  })
+  @ValueSource(
+      strings = {
+        "SELECT MY_ADD(a), MY_ADD(b) FROM inputs",
+        "SELECT MY_ADD(MY_ADD(a)), MY_ADD(b) FROM inputs",
+        "SELECT MY_ADD(a), MY_ADD(b) FROM inputs WHERE MY_ADD(a) > 10"
+      })
   void sharedNondeterministicFunctionsRetainHostLifecycleAndOrder(String sql) throws Exception {
-    NativeParity.assertFallbackReasonContains(FlinkUdfLifecycleSqlHarnessTest::environment, sql,
-        "shared stateful scalar UDF");
+    NativeParity.assertOrderedKindedParity(FlinkUdfLifecycleSqlHarnessTest::environment, sql);
   }
 
   private static TableEnvironment environment() {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
+    table.getConfig().set("streamfusion.calc.sharedStatefulUdf.enabled", "true");
     table.createTemporarySystemFunction("MY_ADD", new LifecycleAdd(10));
     table.createTemporarySystemFunction("OTHER_ADD", new LifecycleAdd(100));
     Row[] rows = new Row[5003];

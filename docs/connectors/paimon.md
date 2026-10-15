@@ -1255,6 +1255,29 @@ this durable snapshot state. A passing randomized run does not establish absence
 StreamFusion remains on released Paimon 1.0.0; fixing the split-commit recovery requires a
 verified upstream release, not a planner workaround or a forked dependency.
 
+An implementation is now submitted for canonical upstream review in
+[apache/paimon#10568](https://github.com/apache/paimon/pull/10568). It preserves separate APPEND
+and COMPACT snapshots and resumes required compaction when only APPEND is durable. This retains
+incremental delta-query results and the existing file-retention protocol. It also handles
+competing compaction refresh, checkpointed pending input, and reader cleanup exposed by failure
+injection. The revised local normal Maven core selection passed 394 tests, with one opt-in
+performance test skipped, including 45 recovery cases and unchanged incremental scanners.
+The unchanged global compaction-writer check also passed on both upstream Flink profiles.
+This is not a released fix or a claim that the complete upstream CI matrix has passed.
+StreamFusion continues to use its canonical released dependencies, and #318 remains open until
+a verified release can be adopted.
+
+Released 1.0 code confirms that the normal Flink sink uses the same recovery commit filter:
+it recognizes a checkpoint identifier from the already published APPEND snapshot and can omit
+its unfinished COMPACT half. The full-compaction streaming scanner reads COMPACT snapshots,
+which is why moving changelog files into an APPEND message is not a transparent workaround.
+Pure released-SDK probes of message rewriting found that APPEND-only commits omit streaming
+changelogs and competing compactions can leave duplicate active rows. COMPACT-only commits
+passed the single-writer data/changelog/lost-ack cases but rejected a competing writer's stale
+file deletion. Recovery and concurrent-writer protocols still need implementation; neither
+message rewrite is used in StreamFusion.
+
+
 The same incomplete commit also has a deterministic full-compaction and lookup changelog reproducer,
 without deletion vectors: commit `10`, consume the initial stream snapshot, then write `20`
 and inject a manifest-read failure after APPEND and before COMPACT. After recovery a fresh

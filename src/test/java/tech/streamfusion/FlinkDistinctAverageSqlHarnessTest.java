@@ -106,7 +106,7 @@ class FlinkDistinctAverageSqlHarnessTest {
     NativeParity.assertFallbackReasonContains(
         () -> twoPhaseEnvironment(true),
         "SELECT k, AVG(DISTINCT b) FROM src GROUP BY k",
-        "retracting merge admits COUNT, AVG and exact SUM0 only");
+        "retracting merge admits COUNT, AVG, exact SUM0 and exact integer SUM only");
   }
 
   private static TableEnvironment twoPhaseEnvironment(boolean retract) {

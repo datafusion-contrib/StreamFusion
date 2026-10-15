@@ -56,8 +56,8 @@ partials of an insert-only two-phase plan. SUM wraps on overflow at 8 or 16 bits
 than widening to BIGINT. Single-phase retractions subtract at the same width; MIN/MAX
 retain duplicate multiplicities until the last occurrence is removed. NULL inputs are
 ignored and all-NULL groups return NULL. FILTER and integer SUM(DISTINCT) preserve these
-rules across batches and checkpoint restore. Retracting two-phase SUM/MIN/MAX retain
-the general fallback described below.
+rules across batches and checkpoint restore. Retracting two-phase exact integer SUM carries a separate non-null count. Retracting
+two-phase MIN/MAX and non-integer SUM retain the general fallback described below.
 
 FLOAT SUM/MIN/MAX preserve FLOAT input, partial and result widths; FLOAT SUM rounds at
 that width after every addition. Floating SUM starts from its first non-NULL input, preserving
@@ -228,7 +228,7 @@ the cast back to a narrow integer or float result — is byte-identical to the s
 
 Insert-only two-phase `MIN`/`MAX` also admit DATE, TIME, BOOLEAN, `TIMESTAMP` and
 `TIMESTAMP_LTZ`. Both halves carry the complete typed value and timestamp components; a partial must retain the input's logical type and precision.
-Two-phase retracting extrema retain the COUNT/AVG/SUM0 gate described below.
+Two-phase retracting extrema retain the COUNT/AVG/SUM0/exact integer SUM gate described below.
 
 Decimal `SUM`/`MIN`/`MAX`/`AVG` carry through the split too: `SUM`'s partial is the i128 running
 sum as `DECIMAL(38, s)` (a bundle overflow emits NULL and latches the merged `AVG` NULL, skipped
@@ -291,10 +291,19 @@ same final output as Flink's shared bitmask view, since a filtered distinct is a
 distinct over the filtered row subset.
 
 **A retracting local input** (the aggregate consumes another aggregate's changelog — Nexmark q4's
-shape) is native for `COUNT`, `AVG` and exact `SUM0` — their accumulators are layout-invariant under
+shape) is native for `COUNT`, `AVG`, exact `SUM0` and ordinary integer `SUM`.
+SUM_RETRACT uses a separate `(sum, BIGINT count)` partial pair; the other admitted layouts are invariant under
 retraction. The local subtracts `-U`/`-D` rows, and the appended (or reused) `count1` `COUNT(*)`
 partial drives per-key liveness in the global (`-D` and state drop when the merged count reaches
 zero, Flink's `RecordCounter` semantics).
+
+Ordinary retracting SUM initially admits TINYINT, SMALLINT, INT and BIGINT with matching declared
+sum partial/result widths and a BIGINT non-null contribution count. Its local sum adjustment
+survives a zero-net-count bundle; the global adds the adjustment and updates the non-null count
+separately. A zero non-null count emits NULL, while the separate count1 field controls group
+liveness. Numeric zero is not an empty group. The record counter removes a group only at exactly
+zero, matching Flink even when duplicate retractions make it negative. DECIMAL and floating
+SUM_RETRACT remain on the host until their partial/overflow/order contracts are implemented.
 
 AVG's local sum remains an accumulator even when the bundle's net count is zero: replacing `10`
 with `20` emits a sum adjustment of `10` and a count adjustment of `0`. The global merge applies
@@ -311,8 +320,8 @@ Still falling back, specific to the two-phase split: the opt-in `distinct-agg.sp
 incremental chain (a deliberate non-goal — see [Unsupported operators](unsupported.md)),
 `MIN`/`MAX` with a retained physical `DISTINCT` flag, floating `SUM(DISTINCT)` and
 `AVG(DISTINCT)`, and — under a
-retracting input — any aggregate other than `COUNT`/`AVG`/exact `SUM0` (Flink's `SUM`/`MIN`/`MAX` retract
-variants declare extra accumulator fields, and a monotonicity-exempt `MIN`/`MAX` ignores
+retracting input — any aggregate other than `COUNT`/`AVG`/exact `SUM0`/ordinary exact integer `SUM`
+(non-integer SUM and MIN/MAX retract variants retain unverified layouts, and a monotonicity-exempt `MIN`/`MAX` ignores
 retractions in ways the native fold would not) plus `DISTINCT` (its view value switches to
 per-filter live counts under retraction).
 
@@ -398,7 +407,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
   `MIN`/`MAX` with a retained physical `DISTINCT` flag (Flink normally removes it).
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
-- A retracting input with any aggregate other than plain COUNT/AVG/exact SUM0.
+- A retracting input with any aggregate other than plain COUNT/AVG/exact SUM0/exact integer SUM.
 
 **Global group aggregate (two-phase merge) only:**
 
@@ -408,7 +417,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 - An AVG whose partial pair isn't `(bigint, bigint)` for an integer average, `(double, bigint)` for
   float/double, or `(decimal(38, s), bigint)` for decimal.
 - A distinct merge outside the local half's `COUNT`/`SUM(DISTINCT)` scope.
-- A retracting merge with any aggregate other than plain COUNT/AVG/exact SUM0 (those merge natively, the
+- A retracting merge with any aggregate other than plain COUNT/AVG/exact SUM0/exact integer SUM (those merge natively, the
   `count1` partial driving per-key liveness).
 - An unsupported grouping-key or output column type.
 
@@ -756,3 +765,43 @@ release+mimalloc measured 200,000 rows/keys with one-eighth NULLs: median **0.37
 and 0.327 s for native (1.144x)**. Flink trials ranged from 0.370–0.483 s; native trials ranged
 from 0.293–0.444 s. The ranges overlap, so this short workload establishes coverage with a
 modestly faster observed median, not a general speedup. The unsupported baseline uses Flink.
+
+### Retracting SUM partial validation and release comparison
+
+The four-width SQL matrix checks complete ordered changelogs at logical bundle sizes 1/2/4,
+including mixed SUM/COUNT/AVG/FILTER, NULL keys/values, zero, negative record counts,
+zero-count sum adjustments, deletion/recreation, and signed overflow. A 2,688-row single-key
+case spans multiple Arrow batches with deterministic count-trigger cadence; independent keys
+can alter the global count-trigger cadence when local bundles enumerate keys in a different order.
+DECIMAL/FLOAT/DOUBLE SUM_RETRACT execute through explicit stock fallback. Operator tests cover
+memory/RocksDB recovery, backend migration, key-group rescaling and TTL refresh/expiry.
+
+`RetractingSumPartialsBenchmark` runs the updating MAX→SUM/COUNT/AVG/FILTER cascade from a
+rowwise runtime source to a rowwise blackhole sink. Candidate plans retain both transposes;
+metrics require both native local and both native global aggregations to consume rows.
+The released Flink 2.2.1/JDK17 comparison uses parallelism 1, 128 inner/16 outer keys,
+nullable INT/BIGINT, logical bundles of 512, memory/native RocksDB state, two warmups and
+three alternating measured trials per engine, an 8g Java heap and 48g task off-heap reservation.
+Planning/setup are excluded; job startup,
+JNI, conversions, state and completion are included. Final five-million-row timings use
+the production release build with mimalloc:
+
+| Type / state | Stock median (range), s | Native median (range), s | Stock/native |
+| --- | ---: | ---: | ---: |
+| INT / memory | 1.735 (1.683–1.743) | 1.195 (1.183–1.196) | 1.45× |
+| BIGINT / memory | 1.605 (1.578–1.607) | 1.101 (1.093–1.107) | 1.46× |
+| INT / RocksDB | 1.814 (1.731–1.819) | 1.508 (1.506–1.568) | 1.20× |
+| BIGINT / RocksDB | 1.892 (1.844–1.951) | 1.576 (1.559–1.688) | 1.20× |
+
+Previous canonical `74822fd4` takes the explicit whole-island SUM_RETRACT fallback: its
+paired enabled/stock measurements remain near parity (0.98–1.04× stock/native).
+The final candidate is 1.20–1.46× its paired stock control. Independent invocation times
+vary and must not be used as a direct before/after ratio. These numbers cover the stated
+cardinality/type/query matrix, not every aggregate workload.
+[All completed trials](../benchmarks/results/retracting-sum-partials-2026-10-14.json)
+include warmups, prior fallback, initial one-million-row startup-sensitive runs, repeated
+non-mimalloc release trials, and the final production build. The final release DSO SHA256 is
+`205e4c00922126ec59d85ea505baed6c94e2cf0b9aa94e1eb572d12f2767a10a`.
+Criterion's `group_record_counter/sum_count` fixtures separately exercise the production
+partial merge at 256/4096 rows and 1/64 keys, including NULL contribution counts and negative
+record counters; that native boundary does not stand in for the complete Flink comparison.

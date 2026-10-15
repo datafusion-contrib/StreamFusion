@@ -63,9 +63,12 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
-    // Register any UDFs the condition references into this JVM's registry and patch their ids before
+    // Register any UDFs the condition references into this JVM's registry and patch their ids
+    // before
     // compiling — so a task manager (empty registry) resolves them, not just the planner JVM.
-    long[] boundLongs = udfBinding.bind(longs, new FunctionContext(getRuntimeContext()));
+    long[] boundLongs =
+        udfBinding.bind(
+            longs, new FunctionContext(getRuntimeContext()), getProcessingTimeService());
     predicate =
         Native.createFilterExpression(kinds, payload, childCounts, boundLongs, doubles, strings);
   }

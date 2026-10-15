@@ -23,12 +23,13 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * gates each local fold and the merged partials are already filtered.
  *
  * <p>The native local emits each aggregate's partial in its running type: {@code SUM/MIN/MAX} keep
- * the value's own type (Flink's SUM partial does not widen — verified against the planner), COUNT is
- * bigint, and an AVG contributes <em>two</em> partial columns — the widened running sum (bigint for
- * integer inputs, double for double, Flink's {@code AvgAggFunction}) and the bigint non-null count.
- * Partials are positional, so the accessors below expand an AVG into its two native states (a
- * widened-sum state plus a COUNT over the same column) and the type checks walk the output row with
- * a per-aggregate offset. The global reads each partial by its declared (Flink) type, so every
+ * the value's own type (Flink's SUM partial does not widen — verified against the planner), COUNT
+ * is bigint, and an AVG contributes <em>two</em> partial columns — the widened running sum (bigint
+ * for integer inputs, double for double, Flink's {@code AvgAggFunction}) and the bigint non-null
+ * count. Retracting integer SUM also carries a bigint non-null count beside its typed sum. Partials
+ * are positional, so the accessors below expand an AVG into its two native states (a widened-sum
+ * state plus a COUNT over the same column) and the type checks walk the output row with a
+ * per-aggregate offset. The global reads each partial by its declared (Flink) type, so every
  * declared partial column must equal what the native side emits — anything else falls back cleanly
  * rather than mismatching at the boundary.
  */
@@ -43,9 +44,26 @@ final class LocalGroupAggregateMatcher {
         : WindowAggregateMatcher.aggregateKind(kind);
   }
 
-  static int partialWidth(AggregateCall call) {
+  static int partialWidth(AggregateCall call, boolean retracting) {
     int kind = aggregateKind(call.getAggregation().getKind());
-    return kind == 14 || kind == WindowAggregateMatcher.KIND_AVG ? 2 : 1;
+    return kind == 14
+            || kind == WindowAggregateMatcher.KIND_AVG
+            || isRetractingSum(call, retracting)
+        ? 2
+        : 1;
+  }
+
+  static boolean isRetractingSum(AggregateCall call, boolean retracting) {
+    return retracting
+        && !call.isDistinct()
+        && aggregateKind(call.getAggregation().getKind()) == WindowAggregateMatcher.KIND_SUM;
+  }
+
+  static boolean supportedRetractingSumPartials(
+      RelDataType value, RelDataType sum, RelDataType count) {
+    return GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+        && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, sum)
+        && count.getSqlTypeName() == SqlTypeName.BIGINT;
   }
 
   static boolean supportedSinglePartials(
@@ -69,10 +87,10 @@ final class LocalGroupAggregateMatcher {
     RelDataType outputType = agg.getRowType(); // [grouping.., partial0..]
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     // A retracting input (the aggregate consumes another aggregate's changelog, Nexmark q4's
-    // shape): the local folds -U/-D rows by subtracting, which only COUNT and AVG do with the
-    // same accumulator layout as their append-only forms — Flink's retract variants of
-    // SUM/MIN/MAX declare extra accumulator fields (a live count, a value map) the positional
-    // walk doesn't model, and a distinct view's map value switches to per-filter counts.
+    // shape): the local folds -U/-D rows by subtracting. COUNT, AVG and exact SUM0 use their
+    // append-only layouts, while Flink's retract variants of
+    // MIN/MAX declare value maps the positional walk does not model. SUM_RETRACT carries a
+    // separate non-null count; a distinct view's map value switches to per-filter counts.
     boolean needRetraction = needRetraction(agg);
     int offset = grouping.length;
     for (int i = 0; i < aggCalls.size(); i++) {
@@ -85,7 +103,8 @@ final class LocalGroupAggregateMatcher {
           && (call.isDistinct()
               || (retractKind != WindowAggregateMatcher.KIND_COUNT
                   && retractKind != WindowAggregateMatcher.KIND_AVG
-                  && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO))) {
+                  && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
+                  && retractKind != WindowAggregateMatcher.KIND_SUM))) {
         return false;
       }
       // A FILTER is a boolean input column (the planner materializes `IS TRUE(p)` in the Calc
@@ -146,6 +165,16 @@ final class LocalGroupAggregateMatcher {
         if (call.getArgList().size() != 1
             || offset + 1 >= outputType.getFieldCount()
             || !supportedSinglePartials(
+                inputType.getFieldList().get(call.getArgList().get(0)).getType(),
+                outputType.getFieldList().get(offset).getType(),
+                outputType.getFieldList().get(offset + 1).getType())) return false;
+        offset += 2;
+        continue;
+      }
+      if (isRetractingSum(call, needRetraction)) {
+        if (call.getArgList().size() != 1
+            || offset + 1 >= outputType.getFieldCount()
+            || !supportedRetractingSumPartials(
                 inputType.getFieldList().get(call.getArgList().get(0)).getType(),
                 outputType.getFieldList().get(offset).getType(),
                 outputType.getFieldList().get(offset + 1).getType())) return false;
@@ -328,7 +357,7 @@ final class LocalGroupAggregateMatcher {
         seen.add(distinctViewKey(call));
         sources.add(position);
       }
-      position += partialWidth(call);
+      position += partialWidth(call, needRetraction(agg));
     }
     return toArray(sources);
   }
@@ -420,6 +449,10 @@ final class LocalGroupAggregateMatcher {
       } else if (kind == 14) {
         kinds.add(14);
         kinds.add(21); // SINGLE_VALUE count is INT and includes NULL inputs.
+      } else if (isRetractingSum(call, needRetraction(agg))) {
+        // A zero net contribution count must not erase the bundle's sum adjustment.
+        kinds.add(GroupAggregateMatcher.KIND_SUM_ZERO);
+        kinds.add(WindowAggregateMatcher.KIND_COUNT);
       } else if (kind == WindowAggregateMatcher.KIND_AVG) {
         kinds.add(WindowAggregateMatcher.KIND_AVG_PARTIAL_SUM);
         kinds.add(WindowAggregateMatcher.KIND_COUNT);
@@ -440,7 +473,7 @@ final class LocalGroupAggregateMatcher {
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       columns.add(call.filterArg);
-      if (partialWidth(call) == 2) {
+      if (partialWidth(call, needRetraction(agg)) == 2) {
         columns.add(call.filterArg);
       }
     }
@@ -458,7 +491,7 @@ final class LocalGroupAggregateMatcher {
       AggregateCall call = aggCalls.apply(i);
       int column = call.getArgList().isEmpty() ? -1 : call.getArgList().get(0);
       columns.add(column);
-      if (partialWidth(call) == 2) {
+      if (partialWidth(call, needRetraction(agg)) == 2) {
         columns.add(column);
       }
     }
@@ -489,6 +522,11 @@ final class LocalGroupAggregateMatcher {
                 inputType.getFieldList().get(call.getArgList().get(0)).getType());
         codes.add(code);
         codes.add(code); // Both local states read the original value; kind 21 emits INT.
+      } else if (isRetractingSum(call, needRetraction(agg))) {
+        codes.add(
+            WindowAggregateMatcher.typeCode(
+                inputType.getFieldList().get(call.getArgList().get(0)).getType()));
+        codes.add(0);
       } else if (kind == WindowAggregateMatcher.KIND_AVG) {
         RelDataType valueRel = inputType.getFieldList().get(call.getArgList().get(0)).getType();
         // The widened sum: a packed decimal code (the native partial reports DECIMAL(38, s)),

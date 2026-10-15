@@ -54,6 +54,7 @@ final class CalcMatcher {
   }
 
   static RelNode substitute(Calc calc, PlanContext ctx) {
+    calc = mergeProcessingTimeProjection(calc);
     RelNode input = calc.getInputs().get(0);
     RexExpression encoded = CalcMatcher.encode(calc);
     ctx.functionExecution("NativeCalc", encoded);
@@ -116,7 +117,41 @@ final class CalcMatcher {
       }
     }
     return new StreamPhysicalNativeCalc(
-        calc.getCluster(), calc.getTraitSet(), input, calc.getRowType(), encoded, calc.getProgram());
+        calc.getCluster(),
+        calc.getTraitSet(),
+        input,
+        calc.getRowType(),
+        encoded,
+        calc.getProgram());
+  }
+
+  private static Calc mergeProcessingTimeProjection(Calc calc) {
+    if (!(calc.getInput() instanceof StreamPhysicalNativeCalc)) return calc;
+    var lower = (StreamPhysicalNativeCalc) calc.getInput();
+    var program = lower.sourceProgram();
+    if (program == null
+        || program.getCondition() != null
+        || !program.getInputRowType().equals(lower.getInput().getRowType())) return calc;
+    boolean clock = false;
+    for (RexLocalRef ref : program.getProjectList()) {
+      var expression = program.expandLocalRef(ref);
+      if (expression instanceof RexInputRef) continue;
+      if (!(expression instanceof org.apache.calcite.rex.RexCall)) return calc;
+      var call = (org.apache.calcite.rex.RexCall) expression;
+      if (call.getOperator()
+              != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.PROCTIME
+          || !call.getOperands().isEmpty()) return calc;
+      clock = true;
+    }
+    if (!clock) return calc;
+    // A processing-time indicator carries no stored value in Flink. Materialize it in the
+    // consuming Calc instead of building and forwarding an unused timestamp column/batch.
+    var merged =
+        org.apache.calcite.rex.RexProgramBuilder.mergePrograms(
+            calc.getProgram(), program, calc.getCluster().getRexBuilder());
+    var candidate = calc.copy(calc.getTraitSet(), lower.getInput(), merged);
+    var encoded = RexExpression.encodeCalc(candidate);
+    return encoded != null && outputTypeMismatch(candidate, encoded) == null ? candidate : calc;
   }
 
   /**

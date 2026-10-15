@@ -62,6 +62,12 @@ public final class NativeUdf {
     List<ScalarFunction> functions();
   }
 
+  /** Runtime clocks belong to the operator attempt, never to the serialized expression plan. */
+  public interface ProcessingTimeAware {
+    void processingTimeService(
+        org.apache.flink.streaming.runtime.tasks.ProcessingTimeService service);
+  }
+
   /** A complete generated Calc returns one row after all of its call sites have run. */
   public interface RowResult {
     org.apache.flink.table.types.logical.RowType rowResultType();
@@ -287,11 +293,18 @@ public final class NativeUdf {
     }
 
     /**
-     * Registers the carried UDFs on this JVM and returns {@code longs} with each id slot patched from
-     * its local index to the task-local runtime id (a copy, leaving the encoded array pristine so a
-     * re-open rebinds correctly). Returns {@code longs} unchanged when there are no UDFs.
+     * Registers the carried UDFs on this JVM and returns {@code longs} with each id slot patched
+     * from its local index to the task-local runtime id (a copy, leaving the encoded array pristine
+     * so a re-open rebinds correctly). Returns {@code longs} unchanged when there are no UDFs.
      */
     public long[] bind(long[] longs, FunctionContext context) {
+      return bind(longs, context, null);
+    }
+
+    public long[] bind(
+        long[] longs,
+        FunctionContext context,
+        org.apache.flink.streaming.runtime.tasks.ProcessingTimeService processingTimeService) {
       if (descriptors.length == 0) {
         return longs;
       }
@@ -305,7 +318,7 @@ public final class NativeUdf {
       try {
         for (int i = 0; i < descriptors.length; i++) {
           ScalarFunction function = descriptors[i].function;
-          openFunction(function, context, opened);
+          openFunction(function, context, processingTimeService, opened);
           runtimeIds[i] = descriptors[i].registerLocally();
         }
         if (idSlots.length == 0) {
@@ -326,17 +339,23 @@ public final class NativeUdf {
       }
     }
 
-    private void openFunction(ScalarFunction function, FunctionContext context,
+    private void openFunction(
+        ScalarFunction function,
+        FunctionContext context,
+        org.apache.flink.streaming.runtime.tasks.ProcessingTimeService processingTimeService,
         IdentityHashMap<ScalarFunction, Boolean> opened) {
       if (function == null || opened.put(function, Boolean.TRUE) != null) return;
       if (function instanceof FunctionDependencies) {
         FunctionDependencies dependencies = ((FunctionDependencies) function);
 
         for (ScalarFunction dependency : dependencies.functions()) {
-          openFunction(dependency, context, opened);
+          openFunction(dependency, context, processingTimeService, opened);
         }
       }
       try {
+        if (function instanceof ProcessingTimeAware) {
+          ((ProcessingTimeAware) function).processingTimeService(processingTimeService);
+        }
         function.open(context);
       } catch (Exception e) {
         throw new IllegalStateException("failed to open UDF " + function.getClass().getName(), e);

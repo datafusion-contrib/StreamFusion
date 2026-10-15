@@ -479,6 +479,10 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
+    if (NativeConfig.sharedStatefulUdfEnabled() && hasSharedStatefulUdf(program)) {
+      jvmExecutionReason = "shared stateful scalar UDF requires Flink's row-major evaluation";
+      return emitRowCalc(calc);
+    }
     if (binaryUdfCallCount(program) > 1) {
       jvmExecutionReason = "multiple binary UDF calls require whole-Calc JVM evaluation";
       return emitRowCalc(calc);
@@ -544,6 +548,27 @@ final class RexExpression {
                 && !(((RexCall) node).getOperands().get(1) instanceof RexLiteral)
             || ((RexCall) node)
                 .getOperands().stream().anyMatch(RexExpression::containsRuntimeCharset));
+  }
+
+  private static boolean hasSharedStatefulUdf(RexProgram program) {
+    java.util.Set<String> functions = new java.util.HashSet<>();
+    boolean[] shared = {false};
+    var visitor =
+        new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitCall(RexCall call) {
+            var function = tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator());
+            if (function != null
+                && !function.isDeterministic()
+                && !functions.add(function.functionIdentifier())) shared[0] = true;
+            return super.visitCall(call);
+          }
+        };
+    if (program.getCondition() != null)
+      program.expandLocalRef(program.getCondition()).accept(visitor);
+    for (RexLocalRef project : program.getProjectList())
+      program.expandLocalRef(project).accept(visitor);
+    return shared[0];
   }
 
   private static int binaryUdfCallCount(RexProgram program) {
@@ -1316,7 +1341,7 @@ final class RexExpression {
       return emitItem(call);
     }
     if ("COALESCE".equals(functionName)) {
-      if (!RexUtil.isDeterministic(call)
+      if ((!RexUtil.isDeterministic(call) && !isNativeClockSelection(call))
           || containsScalarUdf(call)
           || requiresRowShortCircuit(call)) {
         return emitHostExpression(call, true);
@@ -2475,6 +2500,40 @@ final class RexExpression {
       default:
         return -1;
     }
+  }
+
+  private static boolean isNativeClockSelection(RexCall call) {
+    // Flink's materialized clock has millisecond precision. Its direct precision-3 COALESCE
+    // code generation has an argument-nullability mismatch on the supported 2.2 line.
+    return call.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && call.getType().getPrecision() > 3
+        && call.getOperands().stream().allMatch(RexExpression::isClockSelectionOperand);
+  }
+
+  private static boolean isClockSelectionOperand(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
+      return false;
+    }
+    if (node instanceof RexInputRef) {
+      return true;
+    }
+    if (!(node instanceof RexCall)) {
+      return node instanceof RexLiteral && RexLiteral.isNullLiteral(node);
+    }
+    RexCall call = (RexCall) node;
+    if (call.getOperator()
+        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.PROCTIME) {
+      return call.getOperands().isEmpty();
+    }
+    if (call.getOperator()
+        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable
+            .PROCTIME_MATERIALIZE) {
+      return call.getOperands().size() == 1 && isClockSelectionOperand(call.getOperands().get(0));
+    }
+    return call.getKind() == SqlKind.CAST
+        && call.getOperands().size() == 1
+        && call.getType().getPrecision() >= call.getOperands().get(0).getType().getPrecision()
+        && isClockSelectionOperand(call.getOperands().get(0));
   }
 
   /**

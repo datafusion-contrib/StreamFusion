@@ -1,0 +1,1852 @@
+{
+  "boundary": "Whole bounded Flink SQL cascade, runtime rowwise source, both production transposes, keyed state, rowwise blackhole sink. Fixture and plan creation excluded; executeSql/await included. Actual candidate consumes rows in two local and two global native group aggregations. Prior enables planner but has zero substitutions and explicit SUM_RETRACT fallback.",
+  "date": "2026-10-14",
+  "sdk": "Released Apache Flink2.2.1, JDK17, Java release11",
+  "base": "74822fd4109fe6fc54ddfdf336617c9c16eeed17",
+  "config": {
+    "parallelism": 1,
+    "keys": 128,
+    "outer_keys": 16,
+    "mini_batch_size": 512,
+    "mini_batch_allow_latency": "1h",
+    "warmup_per_engine": 2,
+    "measured_trials_per_engine": 3,
+    "maximum_java_heap": "8g",
+    "order": "alternating engine first by trial",
+    "source": "fromSequence; INT/BIGINT value=i-rows/2, NULL every seventh row",
+    "query": "SELECT u,SUM(mx),COUNT(mx),AVG(mx),SUM(mx) FILTER(WHERE mx>0) FROM(SELECT k,u,MAX(v) mx FROM src GROUP BY k,u) GROUP BY u",
+    "task_off_heap_reservation": "48g"
+  },
+  "invocations": [
+    {
+      "name": "candidate_1m_exploratory",
+      "source_log": "streamfusion-348-performance-candidate-1m.log",
+      "release_dso_sha256": "636e94f911015f22f51cd2c2045bcbf3f32a417a87b22ad6a325328b46af1c51",
+      "mimalloc": false,
+      "profiles": [
+        {
+          "rows": 1000000,
+          "type": "INT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            0.558714542,
+            0.543557666,
+            0.488383109
+          ],
+          "enabled_seconds": [
+            0.459320018,
+            0.451155888,
+            0.399885998
+          ],
+          "stock_median_seconds": 0.543557666,
+          "enabled_median_seconds": 0.451155888,
+          "paired_stock_speedup": 1.2048111982082788
+        },
+        {
+          "rows": 1000000,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            0.457060797,
+            0.477451511,
+            0.468566122
+          ],
+          "enabled_seconds": [
+            0.388671196,
+            0.303973619,
+            0.302871773
+          ],
+          "stock_median_seconds": 0.468566122,
+          "enabled_median_seconds": 0.303973619,
+          "paired_stock_speedup": 1.5414696957633025
+        },
+        {
+          "rows": 1000000,
+          "type": "INT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            0.489799043,
+            0.490504034,
+            0.497021634
+          ],
+          "enabled_seconds": [
+            0.381647724,
+            0.395682664,
+            0.382556494
+          ],
+          "stock_median_seconds": 0.490504034,
+          "enabled_median_seconds": 0.382556494,
+          "paired_stock_speedup": 1.2821741146550762
+        },
+        {
+          "rows": 1000000,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            0.491043855,
+            0.490497263,
+            0.501030132
+          ],
+          "enabled_seconds": [
+            0.468883015,
+            0.421314998,
+            0.397314404
+          ],
+          "stock_median_seconds": 0.491043855,
+          "enabled_median_seconds": 0.421314998,
+          "paired_stock_speedup": 1.1655029071621135
+        }
+      ],
+      "all_completed_trials_including_warmup": [
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.4141573
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 0.773423232
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 0.478242689
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 0.69836455
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 0.558714542
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 0.459320018
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 0.451155888
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 0.543557666
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 0.488383109
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 0.399885998
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 0.49114734
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 0.396814681
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 0.391771098
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 0.495281568
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 0.457060797
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 0.388671196
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 0.303973619
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 0.477451511
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 0.468566122
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 0.302871773
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 0.741158559
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 0.476384136
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 0.389356351
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 0.477558646
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 0.489799043
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 0.381647724
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 0.395682664
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 0.490504034
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 0.497021634
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 0.382556494
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 0.487264575
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 0.399835558
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 0.396007013
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 0.488731296
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 0.491043855
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 0.468883015
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 0.421314998
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 0.490497263
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 0.501030132
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 0.397314404
+        }
+      ]
+    },
+    {
+      "name": "candidate_5m_exploratory",
+      "source_log": "streamfusion-348-performance-candidate-5m.log",
+      "release_dso_sha256": "636e94f911015f22f51cd2c2045bcbf3f32a417a87b22ad6a325328b46af1c51",
+      "mimalloc": false,
+      "profiles": [
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            1.637856749,
+            1.716436249,
+            1.600113776
+          ],
+          "enabled_seconds": [
+            1.351370538,
+            1.337311246,
+            1.316289124
+          ],
+          "stock_median_seconds": 1.637856749,
+          "enabled_median_seconds": 1.337311246,
+          "paired_stock_speedup": 1.2247386342550806
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            1.580767984,
+            1.564065941,
+            1.559141502
+          ],
+          "enabled_seconds": [
+            1.242967638,
+            1.233771619,
+            1.231687698
+          ],
+          "stock_median_seconds": 1.564065941,
+          "enabled_median_seconds": 1.233771619,
+          "paired_stock_speedup": 1.2677110714118314
+        },
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            1.619325398,
+            1.644729922,
+            1.584126262
+          ],
+          "enabled_seconds": [
+            1.518299323,
+            1.522244905,
+            1.511564308
+          ],
+          "stock_median_seconds": 1.619325398,
+          "enabled_median_seconds": 1.518299323,
+          "paired_stock_speedup": 1.0665389712486884
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            1.615415483,
+            1.628433957,
+            1.629073393
+          ],
+          "enabled_seconds": [
+            1.542897663,
+            1.551071055,
+            1.565581393
+          ],
+          "stock_median_seconds": 1.628433957,
+          "enabled_median_seconds": 1.551071055,
+          "paired_stock_speedup": 1.0498770844511698
+        }
+      ],
+      "all_completed_trials_including_warmup": [
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 2.536821541
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.938093376
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.485088853
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.796979512
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.637856749
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.351370538
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.337311246
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.716436249
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.600113776
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.316289124
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.632103235
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.328074461
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.247222356
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.612011316
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.580767984
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.242967638
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.233771619
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.564065941
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.559141502
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.231687698
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.758811428
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.498716045
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.526340628
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.56716326
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.619325398
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.518299323
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.522244905
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.644729922
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.584126262
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.511564308
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.624941582
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.537026702
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.548356264
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.603608857
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.615415483
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.542897663
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.551071055
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.628433957
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.629073393
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.565581393
+        }
+      ]
+    },
+    {
+      "name": "candidate_5m_formatted_repeat",
+      "source_log": "streamfusion-348-performance-production-5m.log",
+      "release_dso_sha256": "636e94f911015f22f51cd2c2045bcbf3f32a417a87b22ad6a325328b46af1c51",
+      "mimalloc": false,
+      "profiles": [
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            1.603153953,
+            1.604195503,
+            1.574807529
+          ],
+          "enabled_seconds": [
+            1.319105224,
+            1.30852745,
+            1.336347909
+          ],
+          "stock_median_seconds": 1.603153953,
+          "enabled_median_seconds": 1.319105224,
+          "paired_stock_speedup": 1.2153343977659814
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            1.564636165,
+            1.554594956,
+            1.566057573
+          ],
+          "enabled_seconds": [
+            1.243806563,
+            1.239685075,
+            1.242249072
+          ],
+          "stock_median_seconds": 1.564636165,
+          "enabled_median_seconds": 1.242249072,
+          "paired_stock_speedup": 1.2595188841485407
+        },
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            1.606453441,
+            1.613616823,
+            1.574949685
+          ],
+          "enabled_seconds": [
+            1.55899199,
+            1.538243211,
+            1.532459999
+          ],
+          "stock_median_seconds": 1.606453441,
+          "enabled_median_seconds": 1.538243211,
+          "paired_stock_speedup": 1.044342942333324
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            1.627957671,
+            1.62121221,
+            1.619819289
+          ],
+          "enabled_seconds": [
+            1.580579643,
+            1.572588277,
+            1.569818921
+          ],
+          "stock_median_seconds": 1.62121221,
+          "enabled_median_seconds": 1.572588277,
+          "paired_stock_speedup": 1.0309196842626598
+        }
+      ],
+      "all_completed_trials_including_warmup": [
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 2.518380455
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.942479825
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.497410892
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.812656276
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.603153953
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.319105224
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.30852745
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.604195503
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.574807529
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.336347909
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.617162753
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.259680374
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.362648507
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.564477904
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.564636165
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.243806563
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.239685075
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.554594956
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.566057573
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.242249072
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.786529597
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.540035167
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.527843704
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.586610788
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.606453441
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.55899199
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.538243211
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.613616823
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.574949685
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.532459999
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.611185218
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.563652301
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.561270225
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.62017369
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.627957671
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.580579643
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.572588277
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.62121221
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.619819289
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.569818921
+        }
+      ]
+    },
+    {
+      "name": "prior_5m",
+      "source_log": "streamfusion-348-performance-prior-5m.log",
+      "release_dso_sha256": "d3629d72d86923b06aa8d54a0561a88bfe24147eccc36dfba8d7006267722e2f",
+      "mimalloc": false,
+      "profiles": [
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": false,
+          "native_route": false,
+          "stock_seconds": [
+            1.577437225,
+            1.547648786,
+            1.542162112
+          ],
+          "enabled_seconds": [
+            1.549997434,
+            1.532365139,
+            1.543216585
+          ],
+          "stock_median_seconds": 1.547648786,
+          "enabled_median_seconds": 1.543216585,
+          "paired_stock_speedup": 1.0028720537629527
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "native_route": false,
+          "stock_seconds": [
+            1.517863842,
+            1.503100029,
+            1.517042462
+          ],
+          "enabled_seconds": [
+            1.509201999,
+            1.525539081,
+            1.527746746
+          ],
+          "stock_median_seconds": 1.517042462,
+          "enabled_median_seconds": 1.525539081,
+          "paired_stock_speedup": 0.9944304153818003
+        },
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": true,
+          "native_route": false,
+          "stock_seconds": [
+            1.510695288,
+            1.51260194,
+            1.531681442
+          ],
+          "enabled_seconds": [
+            1.576279498,
+            1.536102584,
+            1.544417051
+          ],
+          "stock_median_seconds": 1.51260194,
+          "enabled_median_seconds": 1.544417051,
+          "paired_stock_speedup": 0.979399922463042
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "native_route": false,
+          "stock_seconds": [
+            1.544581476,
+            1.586297181,
+            1.585937404
+          ],
+          "enabled_seconds": [
+            1.520157324,
+            1.521393061,
+            1.548434589
+          ],
+          "stock_median_seconds": 1.585937404,
+          "enabled_median_seconds": 1.521393061,
+          "paired_stock_speedup": 1.0424245020268303
+        }
+      ],
+      "all_completed_trials_including_warmup": [
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 2.647061611
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.729520406
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.752367115
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.627617199
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.577437225
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.549997434
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.532365139
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.547648786
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.542162112
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.543216585
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.623151452
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.538205173
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.552014374
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.539843728
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.517863842
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.509201999
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.525539081
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.503100029
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.517042462
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.527746746
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.754985579
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.604187401
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.649183083
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.687611671
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.510695288
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.576279498
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.536102584
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.51260194
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.531681442
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.544417051
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.576043365
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.581943921
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.558802296
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.528347501
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.544581476
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.520157324
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.521393061
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.586297181
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.585937404
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.548434589
+        }
+      ]
+    },
+    {
+      "name": "candidate_5m_production",
+      "source_log": "streamfusion-348-performance-mimalloc-5m.log",
+      "release_dso_sha256": "205e4c00922126ec59d85ea505baed6c94e2cf0b9aa94e1eb572d12f2767a10a",
+      "mimalloc": true,
+      "profiles": [
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            1.682610925,
+            1.735071667,
+            1.743306719
+          ],
+          "enabled_seconds": [
+            1.196386885,
+            1.195187209,
+            1.182951741
+          ],
+          "stock_median_seconds": 1.735071667,
+          "enabled_median_seconds": 1.195187209,
+          "paired_stock_speedup": 1.4517153914755458
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "native_route": true,
+          "stock_seconds": [
+            1.605009818,
+            1.606744031,
+            1.577948782
+          ],
+          "enabled_seconds": [
+            1.093298517,
+            1.101367749,
+            1.10719964
+          ],
+          "stock_median_seconds": 1.605009818,
+          "enabled_median_seconds": 1.101367749,
+          "paired_stock_speedup": 1.4572878309332082
+        },
+        {
+          "rows": 5000000,
+          "type": "INT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            1.819180863,
+            1.81418573,
+            1.73102651
+          ],
+          "enabled_seconds": [
+            1.506443753,
+            1.507866654,
+            1.568321338
+          ],
+          "stock_median_seconds": 1.81418573,
+          "enabled_median_seconds": 1.507866654,
+          "paired_stock_speedup": 1.2031473241930317
+        },
+        {
+          "rows": 5000000,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "native_route": true,
+          "stock_seconds": [
+            1.844061666,
+            1.892363545,
+            1.950625122
+          ],
+          "enabled_seconds": [
+            1.575855595,
+            1.55893973,
+            1.688282626
+          ],
+          "stock_median_seconds": 1.892363545,
+          "enabled_median_seconds": 1.575855595,
+          "paired_stock_speedup": 1.2008483207498464
+        }
+      ],
+      "all_completed_trials_including_warmup": [
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 2.495556716
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.821103446
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.352752605
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.747476224
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.682610925
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.196386885
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.195187209
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.735071667
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.743306719
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.182951741
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.668271749
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 0,
+          "seconds": 1.130508561
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.115481955
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 1,
+          "seconds": 1.61757813
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.605009818
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 2,
+          "seconds": 1.093298517
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.101367749
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 3,
+          "seconds": 1.606744031
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.577948782
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": false,
+          "trial": 4,
+          "seconds": 1.10719964
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 2.098621402
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.670083197
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.550423734
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.858878573
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.819180863
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.506443753
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.507866654
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.81418573
+        },
+        {
+          "engine": 0,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.73102651
+        },
+        {
+          "engine": 1,
+          "type": "INT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.568321338
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.806731128
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 0,
+          "seconds": 1.545698458
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.520818833
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 1,
+          "seconds": 1.848644549
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.844061666
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 2,
+          "seconds": 1.575855595
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.55893973
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 3,
+          "seconds": 1.892363545
+        },
+        {
+          "engine": 0,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.950625122
+        },
+        {
+          "engine": 1,
+          "type": "BIGINT",
+          "rocksdb": true,
+          "trial": 4,
+          "seconds": 1.688282626
+        }
+      ]
+    }
+  ]
+}

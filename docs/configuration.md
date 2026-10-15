@@ -15,6 +15,11 @@ serialized operator configuration rather than process-global state before a stab
   two-phase global half, `windowRank` also covers window deduplication. All default on.
   Optional connector operators only activate once the matching connector extension and format JAR
   are installed; otherwise the plan falls back to Flink's own path.
+- **`streamfusion.calc.sharedStatefulUdf.enabled`** (default false) — opt into complete-row
+  native Calc evaluation for previously gated shared non-deterministic scalar calls. This preserves
+  Flink invocation order but standalone INT/BIGINT/STRING projections lose to stock in release
+  measurements. Existing admitted binary/generated shapes are unaffected. See
+  [Calc/filter](operators/calc-filter.md) for the scope and results.
 - **`-Dstreamfusion.fluss.enabled=false`** — disable the optional Fluss extension’s source/sink
   substitutions. This JVM property defaults to true when `streamfusion-fluss` is installed;
   only the verified combinations in [Fluss](connectors/fluss.md) accelerate.
