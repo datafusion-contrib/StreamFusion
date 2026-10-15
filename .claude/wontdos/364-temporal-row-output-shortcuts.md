@@ -1,6 +1,6 @@
 # Temporal callback row-output shortcuts
 
-Six local experiments for [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364)
+Seven local experiments for [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364)
 were rejected after release end-to-end measurements on 2026-10-15. This rejects only these
 shortcuts; temporal scalar conversion and its performance work remain open.
 
@@ -43,6 +43,17 @@ additive timing or exact allocation/copy breakdown.
    0.884336/0.995430/0.652057 s versus stock 0.583994/0.933870/0.559680 s.
    No UDF case beats stock; the same-run projection-only control is retained too. Reverted.
 
+7. A typed batch kernel follows Comet's direct Arrow result pattern, using the released
+   Flink expression generator and the same expressions as ordinary row evaluation. It
+   evaluates unconditional projections and writes TIMESTAMP/LTZ, BIGINT and character
+   results directly, without publishing values into the reusable result row or invoking
+   field writers. The first variant passed all 90 focused checks, but native
+   identity/text/epoch medians were 0.860441/1.045273/0.660315 s versus stock
+   0.617549/0.967403/0.563940 s. Replacing the timestamp accessor with direct component
+   stores passed 31 temporal/ownership checks and an explicit typed-path assertion;
+   identity still took 0.835652 s versus stock 0.598743 s. Text/epoch kernel code was
+   unchanged by the second variant. Both variants were reverted.
+
 All runs use release+mimalloc, Flink 2.2.1/JDK 17, precision 9, parallelism one, 2 GiB heap,
 2M runtime rows, two warmups and five alternating trials, both transposes and the row sink.
 Stock controls drift across JVMs, so these numbers do not isolate costs. Retain every sample
@@ -50,7 +61,7 @@ in [the raw artifact](../../docs/benchmarks/results/temporal-udf-2026-10-15.json
 
 Removing wrappers, reusing the exit record, adding a timestamp binary projection and
 unrolling the batch result writes, embedding Calc evaluation in that loop and batching
-component validity have not established
+component validity, or generating direct typed output have not established
 whole-job acceleration. Further
 experiments must address measured conversion or state-layout costs while preserving Flink's
 predicate, shared-call and mutable-result ordering, then compare the complete query with

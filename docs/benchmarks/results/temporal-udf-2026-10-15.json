@@ -3438,6 +3438,636 @@
       },
       "validation": "90 focused checks passed Flink2.2.1/JDK17; full Calc predicate/shared-order/lifecycle and sliced nullable/empty batches unchanged. Not pursued on1.18 because performance failed.",
       "decision": "Reverted. Embeds released Flink Calc process code, per-record code and locals directly inside generated batch loop, rather than calling eval once per row as the earlier unrolled experiment did. Keeps immediate row-major unrolled child writes. No temporal UDF case beats matched stock."
+    },
+    "rejected_typed_output_accessor": {
+      "trials": [
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.102795
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.088298
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.737812
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.629026
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.577523
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.654877
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.662622
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.559043
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.573627
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.644261
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.634288
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.565881
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.569924
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.651378
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.706796
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.017123
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.925729
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.623879
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.641215
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.886623
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.861254
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.612075
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.617549
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.854996
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.855754
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.622625
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.605445
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.860441
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.011077
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.086914
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.04435
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.978576
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.957329
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.045273
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.048112
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.97859
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.971034
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.04745
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 1.030932
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.961001
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.967403
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 1.029491
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.573664
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.668669
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.651043
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.570468
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.556071
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.660315
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.654849
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.569459
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.558032
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.666162
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.657812
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.56394
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.586128
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.662963
+        }
+      ],
+      "medians_seconds": {
+        "epoch": {
+          "Flink": 0.56394,
+          "StreamFusion": 0.660315
+        },
+        "identity": {
+          "Flink": 0.617549,
+          "StreamFusion": 0.860441
+        },
+        "perimeter": {
+          "Flink": 0.569924,
+          "StreamFusion": 0.651378
+        },
+        "text": {
+          "Flink": 0.967403,
+          "StreamFusion": 1.045273
+        }
+      },
+      "validation": "90 focused checks passed Flink2.2.1/JDK17. First variant has full temporal/shared/binary/decimal/lifecycle suite. Second changes only timestamp output stores and reruns temporal/ownership suite with explicit typed-path admission assertion. Not pursued on1.18 because performance failed.",
+      "method": "Unconditional projections with TIMESTAMP/LTZ/BIGINT/CHAR/VARCHAR results use the released ExprCodeGenerator and identical GeneratedExpressions to generate ordinary eval plus a batch kernel. The batch evaluates projections then writes typed Arrow results directly, without publishing to the reusable result row or using field writers. Other shapes retain existing evaluator. First variant uses TimestampAccessor.set; second writes full-range millis/nano components and parent validity directly. Same source, both transposes, p1, IPC, 2GiB heap, two warmups/five alternating pairs.",
+      "decision": "Reverted. No measured UDF case beats matched stock. The direct-component variant does not change text/epoch generated kernels, whose first-variant unfavorable results remain retained."
+    },
+    "rejected_typed_output_components": {
+      "trials": [
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.097589
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.002443
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.771762
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.562593
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.548147
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.638797
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.632631
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.551991
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.555644
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.613366
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.617901
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.554622
+        },
+        {
+          "case": "perimeter",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.549059
+        },
+        {
+          "case": "perimeter",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.611868
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.697354
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.0178
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.922536
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.584543
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.596322
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.914433
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.828246
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.600586
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.598963
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.835652
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.832304
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.590815
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.598743
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.844652
+        }
+      ],
+      "medians_seconds": {
+        "identity": {
+          "Flink": 0.598743,
+          "StreamFusion": 0.835652
+        },
+        "perimeter": {
+          "Flink": 0.551991,
+          "StreamFusion": 0.617901
+        }
+      },
+      "validation": "31 focused checks passed Flink2.2.1/JDK17. First variant has full temporal/shared/binary/decimal/lifecycle suite. Second changes only timestamp output stores and reruns temporal/ownership suite with explicit typed-path admission assertion. Not pursued on1.18 because performance failed.",
+      "method": "Unconditional projections with TIMESTAMP/LTZ/BIGINT/CHAR/VARCHAR results use the released ExprCodeGenerator and identical GeneratedExpressions to generate ordinary eval plus a batch kernel. The batch evaluates projections then writes typed Arrow results directly, without publishing to the reusable result row or using field writers. Other shapes retain existing evaluator. First variant uses TimestampAccessor.set; second writes full-range millis/nano components and parent validity directly. Same source, both transposes, p1, IPC, 2GiB heap, two warmups/five alternating pairs.",
+      "decision": "Reverted. No measured UDF case beats matched stock. The direct-component variant does not change text/epoch generated kernels, whose first-variant unfavorable results remain retained."
     }
   },
   "limitations": [
