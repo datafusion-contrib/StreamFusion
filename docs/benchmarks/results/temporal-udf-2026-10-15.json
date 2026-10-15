@@ -1743,6 +1743,742 @@
           }
         }
       }
+    },
+    "rejected_timestamp_binary_exit": {
+      "trials": [
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.23419
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.417069
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.990293
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.584592
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.537307
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.921941
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.891859
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.516175
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.517914
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.86841
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.824463
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.522638
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.521488
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.8283
+        }
+      ],
+      "medians_seconds": {
+        "Flink": 0.521488,
+        "StreamFusion": 0.86841
+      },
+      "validation": "50 focused checks pass Flink 2.2.1/JDK17; includes precision0/3/6/9, full range, NULL, allRowKinds, retained rows across two closed batches, reuse on/off. Not pursued on1.18 because performance failed.",
+      "decision": "Reverted. Identity native median0.868410s versus stock0.521488s. Historical original native0.875320s/stock0.622846s has control drift; no established gain."
+    },
+    "rejected_generated_batch_loop": {
+      "trials": [
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.143661
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.283786
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.005038
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.680494
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.605072
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.945958
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.930478
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.603833
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.605787
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.85704
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.934243
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.614593
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.627387
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.856953
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.003675
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.09834
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.966981
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.96309
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.955762
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.966846
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.959275
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.953454
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.965722
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.975124
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.956405
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.956217
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.961054
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.970694
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.552714
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.653828
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.634026
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.554864
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.549
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.641172
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.644274
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.549004
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.556209
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.633381
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.6385
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.585899
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.547968
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.635032
+        }
+      ],
+      "medians_seconds": {
+        "identity": {
+          "Flink": 0.605787,
+          "StreamFusion": 0.930478
+        },
+        "text": {
+          "Flink": 0.956217,
+          "StreamFusion": 0.966846
+        },
+        "epoch": {
+          "Flink": 0.549004,
+          "StreamFusion": 0.6385
+        }
+      },
+      "validation": "90 focused checks passed on Flink2.2.1/JDK17, including sliced temporal input release, empty batches, filtered failures, shared-call/lifecycle/decimal/binary regressions. Not pursued on1.18 because performance failed.",
+      "decision": "Reverted. Unrolled generated batch output calls remove the outer row writer and give each child its own virtual write call site, retaining Flink Calc code generation and immediate row-major result writing. None beats paired stock. Control drift prevents attributing modest text/epoch changes to the experiment."
+    },
+    "rejected_bulk_component_validity": {
+      "trials": [
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.155517
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.369612
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.958781
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.649956
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.593077
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.916143
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.841686
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.578968
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.581088
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.83314
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.843948
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.59645
+        },
+        {
+          "case": "identity",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.568432
+        },
+        {
+          "case": "identity",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.831354
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.010499
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.016699
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.953618
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.930435
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.924008
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.94433
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.955574
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.933674
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.922178
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.94751
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.953591
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.93285
+        },
+        {
+          "case": "text",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.939711
+        },
+        {
+          "case": "text",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.949466
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.517246
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.65013
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.62326
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.516958
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.51142
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.623905
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.633461
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.52412
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.525808
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.627721
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.626286
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "seconds": 0.516847
+        },
+        {
+          "case": "epoch",
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.526899
+        },
+        {
+          "case": "epoch",
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "seconds": 0.632979
+        }
+      ],
+      "medians_seconds": {
+        "identity": {
+          "Flink": 0.581088,
+          "StreamFusion": 0.841686
+        },
+        "text": {
+          "Flink": 0.93285,
+          "StreamFusion": 0.949466
+        },
+        "epoch": {
+          "Flink": 0.52412,
+          "StreamFusion": 0.627721
+        }
+      },
+      "validation": "69 focused checks passed on Flink2.2.1/JDK17, including timestamp writer growth8193rows/reset, primitives, sliced temporal input release, empty batches, NULL/kinds/ownership. Primitive writer advances count only after successful append. Not pursued on1.18 because performance failed.",
+      "decision": "Reverted. Sequential timestamp writers append both non-null component values directly and fill component validity buffers once at finish, retaining parent NULL bits. All three whole-job cases still lose to stock; previous-candidate control drift prevents establishing isolated gain."
     }
   },
   "limitations": [
