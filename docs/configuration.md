@@ -20,6 +20,11 @@ serialized operator configuration rather than process-global state before a stab
   Flink invocation order but standalone INT/BIGINT/STRING projections lose to stock in release
   measurements. Existing admitted binary/generated shapes are unaffected. See
   [Calc/filter](operators/calc-filter.md) for the scope and results.
+- **`streamfusion.calc.temporalUdf.enabled`** (default false) — opt into complete-row generated
+  Calc evaluation for scalar UDFs using `LocalDateTime` TIMESTAMP and `Instant` TIMESTAMP_LTZ
+  arguments/results. Standalone row-source projections remain slower than stock Flink in release
+  measurements. The default preserves host execution; builtin temporal functions retain their
+  existing admission. See [temporal UDF coverage](operators/calc-filter.md#temporal-scalar-functions).
 - **`-Dstreamfusion.fluss.enabled=false`** — disable the optional Fluss extension’s source/sink
   substitutions. This JVM property defaults to true when `streamfusion-fluss` is installed;
   only the verified combinations in [Fluss](connectors/fluss.md) accelerate.

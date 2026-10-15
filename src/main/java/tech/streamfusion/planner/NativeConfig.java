@@ -84,6 +84,11 @@ public final class NativeConfig {
     return booleanValue("streamfusion.calc.sharedStatefulUdf.enabled", false);
   }
 
+  /** Temporal scalar conversion is opt-in while row-source standalone jobs lose to Flink. */
+  public static boolean temporalUdfEnabled() {
+    return booleanValue("streamfusion.calc.temporalUdf.enabled", false);
+  }
+
   /** Diagnostic escape hatch for comparing the legacy synchronous memory-checkpoint path. */
   public static boolean asyncMemorySnapshotsEnabled() {
     return booleanValue("streamfusion.state.asyncMemorySnapshots.enabled", true);

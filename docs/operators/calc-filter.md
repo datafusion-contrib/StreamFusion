@@ -259,8 +259,9 @@ Java `ScalarFunction` calls use the existing columnar JVM bridge: Arrow argument
 the function once per batch and an Arrow result column returns to the native island. Supported
 external Java types are `String`, boxed/primitive numeric and boolean values, `BigDecimal` for
 `DECIMAL(p,s)`, and `byte[]` for `VARBINARY`/`BYTES`. Overload resolution must be unambiguous.
-Fixed-size `BINARY`, temporal UDF signatures, collections, and alternate Java conversion classes
-outside these mappings retain their existing fallback.
+Fixed-size `BINARY`, DATE/TIME UDF signatures, collections, and alternate Java conversion classes
+outside these mappings retain their existing fallback. TIMESTAMP/TIMESTAMP_LTZ signatures have
+the opt-in path described below.
 
 Functions implementing Flink's `SpecializedFunction` also fall back. Their implementation must
 be created with the resolved call types and Flink's code-generation context; invoking the
@@ -300,8 +301,8 @@ inputs and outputs supported by the scalar bridge: primitive numeric/boolean, ch
 BINARY/VARBINARY, DECIMAL, date/time/timestamp and interval values. Fixed BINARY result
 projections use this row path to retain their declared Arrow width. Collection and nested ROW inputs
 or outputs still fall back, as do unsupported UDF signatures and specialized functions. Temporal
-columns and builtin expressions are supported here; temporal **user-function signatures** retain
-the restriction above. The path preserves columnar operator boundaries and avoids a separate
+columns and builtin expressions are supported here; temporal **user-function signatures** require
+the separate opt-in below. The path preserves columnar operator boundaries and avoids a separate
 host Calc between native operators; it does not turn Java UDFs into Rust kernels.
 
 The release/mimalloc diagnostic for `SELECT id, shared(id), shared(id + 1)` measured
@@ -363,6 +364,69 @@ row and batches JNI calls; further primitive Arrow conversion work is tracked in
 [#248](https://github.com/datafusion-contrib/StreamFusion/issues/248). No default acceleration or
 standalone speedup is claimed. The opt-in supports composition with surrounding native operators,
 whose performance must be measured for the complete query.
+
+
+### Temporal scalar functions
+
+`streamfusion.calc.temporalUdf.enabled=true` admits verified scalar signatures using
+`LocalDateTime` for TIMESTAMP and `Instant` for TIMESTAMP_LTZ arguments/results. Precision
+0/3/6/9 is preserved through the existing full-range millisecond/nanosecond Arrow representation.
+The complete Calc uses Flink's generated code and released external/internal converters, including
+its predicate and sibling projections. This retains calendar fields for TIMESTAMP, absolute time
+for LTZ, declared result types, NULL callbacks, shared function order and one task lifecycle.
+Results remain Arrow columns for downstream native operators, including GROUP BY.
+
+The option defaults to **false** because standalone row-source projections lose to stock Flink.
+The diagnostic is `temporal scalar UDFs await whole-job performance admission`. Builtin temporal
+expressions retain their current native coverage. Specialized functions, unsupported conversion
+classes (including alternate timestamp result classes), fixed BINARY signatures and nested UDF
+types retain their own gates. Other expression contexts keep their existing admission rules.
+
+The runtime suite covers UTC, America/Los_Angeles and Asia/Shanghai; negative epochs, year 1/9999,
+DST-adjacent values, all four precisions, NULL/empty/fully filtered input, selected failures,
+shared call-site order, lifecycle and grouping consumers. Native Calc input/output counters are
+asserted. Direct C Data tests cover sliced nullable timestamp vectors and output ownership after
+input release. See the [measured limits](#temporal-scalar-conversion)
+and the open [admission work](https://github.com/datafusion-contrib/StreamFusion/issues/364).
+
+#### Temporal scalar conversion
+
+Release+mimalloc on Flink 2.2.1/JDK 17, Core i7-12650H, 2 GiB heap, parallelism one,
+2M runtime rows and 1,024-row batches, precision 9/UTC, two warmups and five alternating
+stock/native pairs. The source cycles through eight precomputed temporal values (one NULL).
+Complete jobs retain both transposes, production IPC and the rowwise blackhole sink; plans and
+native Calc counters are asserted.
+
+| Projection | Stock median (range), s | Opt-in median (range), s |
+| --- | ---: | ---: |
+| TIMESTAMP and LTZ identity | 0.623 (0.607–0.641) | 0.875 (0.856–1.001) |
+| TIMESTAMP to text | 0.964 (0.960–0.974) | 0.994 (0.987–1.079) |
+| LTZ to epoch milliseconds | 0.562 (0.553–0.600) | 0.671 (0.660–0.673) |
+
+The previous correct fallback measured 0.524/0.858/0.478 s, with paired stock controls
+0.511/0.864/0.479 s. These are separate JVMs with control drift; they do not isolate an
+optimization gain. The final opt-in path is slower than stock in all three fixtures.
+No standalone acceleration or default admission is claimed. The
+[raw results](../benchmarks/results/temporal-udf-2026-10-15.json) retain every warmup and
+measured trial, the previous fallback, initial prototype, and both rejected experiments.
+
+A 5M-row JFR diagnostic points to general result Arrow writers and perimeter row conversion.
+Removing one outer result-row wrapper and reusing the exit StreamRecord both passed correctness
+checks but failed to improve complete-job time; neither change is retained. See the
+[rejected experiments](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/364-temporal-row-output-shortcuts.md).
+Performance admission remains tracked in [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364),
+including a typed batch-output kernel and complete-job measurements inside surrounding native
+operators before any broader admission.
+
+The focused temporal, shared/binary, lifecycle and decimal-consumer suites pass **90 checks on
+each of Flink 2.2.1 and 1.18.1**. Reproduce the benchmark with:
+
+```sh
+SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
+  -Dtest=TemporalUdfBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dtemporal.rows=2000000 -Dtemporal.warmup=2 -Dtemporal.runs=5 \
+  -Dsf.extraJvmArgs=-Xmx2g
+```
 
 
 ## String ordering
