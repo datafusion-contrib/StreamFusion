@@ -18,60 +18,80 @@ class FlinkFixedBinarySqlHarnessTest {
     if (Boolean.getBoolean("streamfusion.experimental.nestedScalarUdfs"))
       BuiltinFunctionParity.assertParity(() -> strings(legacy), sql);
     else
-      NativeParity.assertFallbackReasonContains(() -> strings(legacy), sql,
-          "row-fused UDF output type");
+      NativeParity.assertFallbackReasonContains(
+          () -> strings(legacy), sql, "row-fused UDF output type");
   }
 
   @Test
   void fixedResultsCrossNativeOperatorBoundariesButLegacyVariableBytesFallBack() throws Exception {
-    String sql = "SELECT TRY_CAST(s AS BINARY(4)), COUNT(*) FROM src GROUP BY TRY_CAST(s AS BINARY(4))";
+    String sql =
+        "SELECT TRY_CAST(s AS BINARY(4)), COUNT(*) FROM src GROUP BY TRY_CAST(s AS BINARY(4))";
     BuiltinFunctionParity.assertParity(() -> strings(false), sql);
-    NativeParity.assertFallbackReasonContains(() -> strings(true), sql, "legacy binary variable bytes");
+    NativeParity.assertFallbackReasonContains(
+        () -> strings(true), sql, "legacy binary variable bytes");
   }
 
   @Test
   void singleResultAndLiteralKeepTheirDeclaredWidth() throws Exception {
-    BuiltinFunctionParity.assertParity(() -> strings(false), "SELECT TRY_CAST(s AS BINARY(4)) FROM src");
-    BuiltinFunctionParity.assertParity(this::binary, "SELECT X'00FF', CAST(NULL AS BINARY(2)) FROM src WHERE n = 2");
+    BuiltinFunctionParity.assertParity(
+        () -> strings(false), "SELECT TRY_CAST(s AS BINARY(4)) FROM src");
+    BuiltinFunctionParity.assertParity(
+        this::binary, "SELECT X'00FF', CAST(NULL AS BINARY(2)) FROM src WHERE n = 2");
   }
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void stringCastsRetainWidthsUtf8BytesAndLegacyBehavior(boolean legacy) throws Exception {
-    BuiltinFunctionParity.assertParity(() -> strings(legacy),
+    BuiltinFunctionParity.assertParity(
+        () -> strings(legacy),
         "SELECT id, TRY_CAST('123' AS BINARY(4)), CAST(NULL AS BINARY(4)), "
             + "TRY_CAST('é中' AS BINARY(1)) FROM src WHERE id >= 0");
     for (String cast : List.of("CAST", "TRY_CAST")) {
-      BuiltinFunctionParity.assertParity(() -> strings(legacy),
-          "SELECT id, " + cast + "(s AS BINARY(1)), " + cast + "(s AS BINARY(4)), "
-              + cast + "(s AS BINARY(16)), " + cast + "(s AS VARBINARY(4)) FROM src");
-      BuiltinFunctionParity.assertParity(() -> strings(legacy),
-          "SELECT TO_BASE64(" + cast + "(s AS BINARY(4))), "
-              + cast + "(s AS BINARY(4)) IS NULL FROM src WHERE id >= 0");
+      BuiltinFunctionParity.assertParity(
+          () -> strings(legacy),
+          "SELECT id, "
+              + cast
+              + "(s AS BINARY(1)), "
+              + cast
+              + "(s AS BINARY(4)), "
+              + cast
+              + "(s AS BINARY(16)), "
+              + cast
+              + "(s AS VARBINARY(4)) FROM src");
+      BuiltinFunctionParity.assertParity(
+          () -> strings(legacy),
+          "SELECT TO_BASE64("
+              + cast
+              + "(s AS BINARY(4))), "
+              + cast
+              + "(s AS BINARY(4)) IS NULL FROM src WHERE id >= 0");
     }
   }
 
   @Test
   void fixedBinaryArgumentsResultsAndTypedLiteralsRetainRawBytes() throws Exception {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
-    NativeParity.assertFallback(this::binary,
+    FlinkEltSqlHarnessTest.assertBinaryParity(
+        this::binary,
         "SELECT ELT(n,b,p), ELT(1,p,b), ELT(n,b,X'00FF'), "
             + "TO_BASE64(ELT(n,b,p)), STARTSWITH(b,p), ENDSWITH(b,X'00FF') FROM src");
-    NativeParity.assertFallback(this::binary,
-        "SELECT ELT(n,b,p), ELT(n,b,CAST(NULL AS BINARY(2))) FROM src WHERE n = 2");
-    NativeParity.assertFallback(this::binary,
+    FlinkEltSqlHarnessTest.assertBinaryParity(
+        this::binary, "SELECT ELT(n,b,p), ELT(n,b,CAST(NULL AS BINARY(2))) FROM src WHERE n = 2");
+    FlinkEltSqlHarnessTest.assertBinaryParity(
+        this::binary,
         "SELECT ELT(n,b,CAST(X'00' AS BINARY(2))), "
             + "ELT(n,b,CAST(X'FF0080' AS BINARY(2))), "
             + "ELT(n,b,TRY_CAST('é中' AS BINARY(2))), "
             + "ELT(n,b,CAST(NULL AS BINARY(1))) FROM src");
-    NativeParity.assertFallback(this::binary,
-        "SELECT ELT(n,b,p) FROM src WHERE n = 99");
+    FlinkEltSqlHarnessTest.assertBinaryParity(
+        this::binary, "SELECT ELT(n,b,p) FROM src WHERE n = 99");
   }
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void binaryWidthCastsPreserveBytesAndNulls(boolean legacy) throws Exception {
-    BuiltinFunctionParity.assertParity(() -> configured(binary(), legacy),
+    BuiltinFunctionParity.assertParity(
+        () -> configured(binary(), legacy),
         "SELECT CAST(b AS BINARY(1)), CAST(b AS BINARY(4)), "
             + "TRY_CAST(b AS BINARY(4)), CAST(b AS VARBINARY(1)), "
             + "TRY_CAST(b AS VARBINARY(4)), TO_BASE64(b), TO_BASE64(X'00FF') FROM src");
@@ -88,11 +108,11 @@ class FlinkFixedBinarySqlHarnessTest {
     }
     java.util.function.Supplier<TableEnvironment> source =
         () -> BuiltinFunctionParity.environment(ROW(FIELD("b", BINARY(width))), rows);
-    String sql = "SELECT CAST(b AS BYTES), TRY_CAST(b AS BYTES), "
-        + "TO_BASE64(CAST(b AS BYTES)) FROM src";
+    String sql =
+        "SELECT CAST(b AS BYTES), TRY_CAST(b AS BYTES), " + "TO_BASE64(CAST(b AS BYTES)) FROM src";
     TableEnvironment table = source.get();
-    table.executeSql("CREATE TABLE sink (a BYTES, b BYTES, c STRING) "
-        + "WITH ('connector' = 'blackhole')");
+    table.executeSql(
+        "CREATE TABLE sink (a BYTES, b BYTES, c STRING) " + "WITH ('connector' = 'blackhole')");
     String plan = tech.streamfusion.planner.NativePlanner.explain(table, "INSERT INTO sink " + sql);
     org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeCalc"), plan);
     org.junit.jupiter.api.Assertions.assertTrue(plan.contains("RowDataToArrow"), plan);
@@ -115,41 +135,62 @@ class FlinkFixedBinarySqlHarnessTest {
       rows.add(Row.of(i % 7 == 0 ? null : value, i % 4));
     }
     String literal = TextTimeBenchmarkInputs.fixedBinaryLiteral(width);
-    NativeParity.assertFallback(
-        () -> BuiltinFunctionParity.environment(
-            ROW(FIELD("b", BINARY(width)), FIELD("n", INT())), rows),
-        "SELECT ELT(n,b," + literal + "), ELT(n,b,CAST(NULL AS BINARY(" + width + "))), "
-            + "ELT(1,b," + literal + "), ELT(2," + literal + ",b), "
-            + "ELT(1,b,CAST(NULL AS BINARY(" + width + "))) FROM src");
+    FlinkEltSqlHarnessTest.assertBinaryParity(
+        () ->
+            BuiltinFunctionParity.environment(
+                ROW(FIELD("b", BINARY(width)), FIELD("n", INT())), rows),
+        "SELECT ELT(n,b,"
+            + literal
+            + "), ELT(n,b,CAST(NULL AS BINARY("
+            + width
+            + "))), "
+            + "ELT(1,b,"
+            + literal
+            + "), ELT(2,"
+            + literal
+            + ",b), "
+            + "ELT(1,b,CAST(NULL AS BINARY("
+            + width
+            + "))) FROM src");
   }
 
   @Test
   void binarySelectionPreservesFailingIndexEvaluation() {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
     NativeFailureParity.run(this::binary, "SELECT ELT(1 / (n - n), b, p) FROM src")
-        .assertFailure(ArithmeticException.class, "zero", NativeFailureParity.Phase.ROW_EVALUATION,
-            NativeFailureParity.Route.FALLBACK);
+        .assertFailure(
+            ArithmeticException.class,
+            "zero",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            Boolean.getBoolean("streamfusion.experimental.binaryElt")
+                ? NativeFailureParity.Route.NATIVE
+                : NativeFailureParity.Route.FALLBACK);
   }
 
   @Test
   void conversionDoesNotCatchInputFailures() {
-    NativeFailureParity.run(() -> strings(false),
-        "SELECT TRY_CAST(CAST(1 / (id - id) AS STRING) AS BINARY(4)) FROM src")
-        .assertFailure(ArithmeticException.class, "zero", NativeFailureParity.Phase.ROW_EVALUATION,
+    NativeFailureParity.run(
+            () -> strings(false),
+            "SELECT TRY_CAST(CAST(1 / (id - id) AS STRING) AS BINARY(4)) FROM src")
+        .assertFailure(
+            ArithmeticException.class,
+            "zero",
+            NativeFailureParity.Phase.ROW_EVALUATION,
             NativeFailureParity.Route.NATIVE);
   }
 
   @Test
   void unselectedInputFailuresAreSkipped() throws Exception {
     String failing = "TRY_CAST(CAST(1 / (id - id) AS STRING) AS BINARY(4))";
-    BuiltinFunctionParity.assertParity(() -> strings(false),
+    BuiltinFunctionParity.assertParity(
+        () -> strings(false),
         "SELECT CASE WHEN id >= 0 THEN TRY_CAST(s AS BINARY(4)) ELSE " + failing + " END FROM src");
-    BuiltinFunctionParity.assertParity(() -> strings(false),
-        "SELECT " + failing + " FROM src WHERE id < 0");
+    BuiltinFunctionParity.assertParity(
+        () -> strings(false), "SELECT " + failing + " FROM src WHERE id < 0");
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false})
+  @ValueSource(booleans = {false, true})
   void fixedBinaryExpressionsComposeWithGroupedCounts(boolean selection) throws Exception {
     if (selection) tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("ELT");
     java.util.function.Supplier<TableEnvironment> source =
@@ -162,6 +203,10 @@ class FlinkFixedBinarySqlHarnessTest {
         };
     String key = selection ? "ELT(n,b,p)" : "TRY_CAST(s AS BINARY(4))";
     String sql = "SELECT " + key + ", COUNT(*) FROM src GROUP BY " + key;
+    if (selection && !Boolean.getBoolean("streamfusion.experimental.binaryElt")) {
+      FlinkEltSqlHarnessTest.assertBinaryParity(source, sql);
+      return;
+    }
     NativeParity.assertParity(source, sql);
     String plan = tech.streamfusion.planner.NativePlanner.explain(source.get(), sql);
     org.junit.jupiter.api.Assertions.assertTrue(
@@ -170,12 +215,15 @@ class FlinkFixedBinarySqlHarnessTest {
   }
 
   private TableEnvironment binary() {
-    List<Row> samples = List.of(
-        Row.of(new byte[] {0, (byte) 255}, new byte[] {(byte) 128, 0}, 1),
-        Row.of(new byte[] {0, (byte) 255}, new byte[] {0, (byte) 255}, 2),
-        Row.of(null, new byte[] {0, 0}, 0), Row.of(new byte[] {1, 2}, null, -1),
-        Row.of(new byte[] {1, 2}, null, 2), Row.of(null, null, null),
-        Row.of(new byte[] {(byte) 255, (byte) 128}, new byte[] {1, 2}, 3));
+    List<Row> samples =
+        List.of(
+            Row.of(new byte[] {0, (byte) 255}, new byte[] {(byte) 128, 0}, 1),
+            Row.of(new byte[] {0, (byte) 255}, new byte[] {0, (byte) 255}, 2),
+            Row.of(null, new byte[] {0, 0}, 0),
+            Row.of(new byte[] {1, 2}, null, -1),
+            Row.of(new byte[] {1, 2}, null, 2),
+            Row.of(null, null, null),
+            Row.of(new byte[] {(byte) 255, (byte) 128}, new byte[] {1, 2}, 3));
     List<Row> rows = new ArrayList<>();
     for (int i = 0; i < 5003; i++) rows.add(Row.copy(samples.get(i % samples.size())));
     return BuiltinFunctionParity.environment(
@@ -186,13 +234,16 @@ class FlinkFixedBinarySqlHarnessTest {
     String[] values = {"", "1", "123", "1234", "12345678901234567", "é中😀", "a\u0000b", null};
     List<Row> rows = new ArrayList<>();
     for (int i = 0; i < values.length; i++) rows.add(Row.of(i, values[i]));
-    return configured(BuiltinFunctionParity.environment(
-        ROW(FIELD("id", INT()), FIELD("s", STRING())), rows), legacy);
+    return configured(
+        BuiltinFunctionParity.environment(ROW(FIELD("id", INT()), FIELD("s", STRING())), rows),
+        legacy);
   }
 
   private static TableEnvironment configured(TableEnvironment table, boolean legacy) {
-    table.getConfig().getConfiguration().setString(
-        "table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
+    table
+        .getConfig()
+        .getConfiguration()
+        .setString("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
     return table;
   }
 }

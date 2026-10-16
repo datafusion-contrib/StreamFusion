@@ -46,3 +46,11 @@ Flink converters still normalize callback inputs/results; the experiment changes
 SQL types nor evaluation order. The key-byte/hash oracle compares the resulting nested ROW/ARRAY
 values directly with released Flink serialization, including NULL payloads and all inner kinds.
 Nested binary recovery and whole-job performance admission remain pending in #235/#237.
+
+
+The binary-ELT opt-in independently enables the same length-delimited BINARY transport.
+This preserves released Flink raw-byte extents at existing native selection boundaries,
+while the logical SQL width and nested-scalar admission flag remain independent. Comet's
+`getBinary` reads the actual vector extent into an owned result; the existing released
+Arrow readers and writers retain that ownership pattern. No new JNI/memory handoff or
+Rust selection kernel is introduced. The maintainer accepted deferred throughput work.

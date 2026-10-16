@@ -2329,3 +2329,10 @@ snapshot/restored-state destruction stay outside timing. Checkpoints return byte
 and state rather than Arrow arrays, so their Arrow output-buffer reports are empty.
 All 56 fixtures pass; 32 JSON update and eight checkpoint timing estimates are retained
 in the [JSON measurement artifact](results/json-aggregates-2026-10-15.json).
+
+
+The experimental binary-ELT planner admission reuses the existing production
+`binary_expressions` suite (`elt_arguments`, `elt_all_scalar`, and `elt_singular`),
+including variable-width results and scalar/array selection. Its Java eligibility and
+length-delimited boundary changes add no Rust operational path. Existing kernel timings
+are not a complete-job speed claim for the new opt-in transport.

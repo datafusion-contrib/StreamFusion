@@ -121,3 +121,19 @@ for exact coverage and retained performance results.
 
 See [Benchmarks](benchmarks.md) for how to reproduce the throughput numbers, and
 [Optimizations](optimizations/index.md) for how these flags map to specific performance techniques.
+
+
+## Experimental binary selection
+
+The JVM system property `streamfusion.experimental.binaryElt` defaults to `false`. Set it
+to `true` consistently in planner and task JVMs to admit verified INTEGER-indexed binary
+`ELT` expressions. This also transports SQL `BINARY(n)` values through length-delimited
+Arrow Binary vectors, preserving raw payload lengths without changing their SQL types.
+The nested-scalar option independently selects the same transport when enabled.
+
+Ordinary safe selection uses the existing Rust kernel; expressions requiring released
+Flink evaluation retain that generated path. Unsupported index overloads retain fallback.
+Legacy variable-length cast guards and nested scalar admission rules are unchanged.
+This option is accepted correctness groundwork with deferred performance work. The
+[recorded binary measurements](operators/calc-filter.md#binary-casts-and-fixed-width-generated-expressions)
+include slower standalone results and do not measure the new opt-in transport.

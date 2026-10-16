@@ -28,7 +28,7 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import tech.streamfusion.compat.FlinkTestContexts;
 
 @EnabledIfSystemProperty(named = "streamfusion.experimental.nestedScalarUdfs", matches = "true")
@@ -36,9 +36,10 @@ class FlinkNestedScalarRemoteDeploymentTest {
   @TempDir Path temporary;
 
   @ParameterizedTest
-  @ValueSource(ints = {1, 3})
+  @CsvSource({"1,false", "3,false", "1,true", "3,true"})
   @SuppressWarnings("unchecked")
-  void callbacksAndNestedKindsExecuteInAnotherJvm(int parallelism) throws Exception {
+  void callbacksAndNestedKindsExecuteInAnotherJvm(int parallelism, boolean binary)
+      throws Exception {
     var command = new ArrayList<String>();
     command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
     for (String argument : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
@@ -52,6 +53,8 @@ class FlinkNestedScalarRemoteDeploymentTest {
             "-Darrow.enable_null_check_for_get=false",
             "-Dstreamfusion.exchange.zeroCopyLocal=false",
             "-Dstreamfusion.experimental.nestedScalarUdfs=true",
+            "-Dstreamfusion.experimental.binaryElt="
+                + Boolean.getBoolean("streamfusion.experimental.binaryElt"),
             "-Djava.library.path=" + System.getProperty("java.library.path"),
             "-cp",
             System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")),
@@ -70,7 +73,7 @@ class FlinkNestedScalarRemoteDeploymentTest {
       FlinkTestContexts.clearForRemoteSubmission();
       var runs =
           NativeFailureParity.run(
-              () -> environment(port, parallelism),
+              () -> environment(port, parallelism, binary),
               "SELECT id, nested_identity(r), nested_reuse(r) FROM src");
       runs.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(5003, runs.host().rows().size());
@@ -83,12 +86,20 @@ class FlinkNestedScalarRemoteDeploymentTest {
         assertEquals(server.pid(), proof.get("pid"));
         assertNotEquals(ProcessHandle.current().pid(), proof.get("pid"));
         assertEquals(true, proof.get("nestedFlag"));
+        assertEquals(
+            Boolean.getBoolean("streamfusion.experimental.binaryElt"), proof.get("binaryEltFlag"));
         var operators = (List<Map<String, Object>>) proof.get("operators");
         RecoveryExecutionMetrics.assertConsumed(operators, "NativeCalc");
+        assertEquals(
+            5003,
+            operators.stream()
+                .filter(operator -> ((String) operator.get("operator")).startsWith("NativeCalc"))
+                .mapToLong(operator -> ((Number) operator.get("recordsIn")).longValue())
+                .sum());
         System.out.printf(
-            "[nested-remote-proof] plannerPid=%d taskPid=%s parallelism=%d rows=5003"
+            "[nested-remote-proof] plannerPid=%d taskPid=%s parallelism=%d binary=%s rows=5003"
                 + " operators=%s%n",
-            ProcessHandle.current().pid(), proof.get("pid"), parallelism, operators);
+            ProcessHandle.current().pid(), proof.get("pid"), parallelism, binary, operators);
       }
     } finally {
       Files.writeString(temporary.resolve("stop"), "stop");
@@ -105,7 +116,7 @@ class FlinkNestedScalarRemoteDeploymentTest {
     }
   }
 
-  private static TableEnvironment environment(int port, int parallelism) {
+  private static TableEnvironment environment(int port, int parallelism, boolean binary) {
     var config = new Configuration();
     config.setString("restart-strategy.type", "none");
     var env = StreamExecutionEnvironment.createRemoteEnvironment("127.0.0.1", port, config);
@@ -113,6 +124,22 @@ class FlinkNestedScalarRemoteDeploymentTest {
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("streamfusion.transpose.batchRows", "7");
+    if (binary) {
+      var type =
+          org.apache.flink.table.api.DataTypes.ROW(
+              org.apache.flink.table.api.DataTypes.FIELD(
+                  "id", org.apache.flink.table.api.DataTypes.INT()),
+              org.apache.flink.table.api.DataTypes.FIELD("r", NestedBinaryFixtures.type()));
+      table.createTemporaryView(
+          "src",
+          env.fromSequence(0, 5002)
+              .map(i -> Row.of(i.intValue(), NestedBinaryFixtures.value(i)))
+              .returns(org.apache.flink.table.runtime.typeutils.ExternalTypeInfo.<Row>of(type)),
+          org.apache.flink.table.api.Schema.newBuilder().fromRowDataType(type).build());
+      NestedBinaryFixtures.register(table);
+      return table;
+    }
+
     var nestedType =
         Types.ROW_NAMED(
             new String[] {"value", "tags"}, Types.LONG, Types.OBJECT_ARRAY(Types.STRING));
@@ -183,6 +210,8 @@ class FlinkNestedScalarRemoteDeploymentTest {
                 ProcessHandle.current().pid(),
                 "nestedFlag",
                 Boolean.getBoolean("streamfusion.experimental.nestedScalarUdfs"),
+                "binaryEltFlag",
+                Boolean.getBoolean("streamfusion.experimental.binaryElt"),
                 "operators",
                 operators));
       }

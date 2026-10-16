@@ -1,0 +1,93 @@
+{
+  "source_revision": "e0d1538a",
+  "flink22": {
+    "optin_sql_pass": 33,
+    "recovery_and_remote_pass": 12,
+    "default_pass": 26,
+    "default_optin_skips": 4
+  },
+  "flink118": {
+    "pass": 26,
+    "released_elt_unavailable_skips": 19,
+    "recovery_pass": 8,
+    "remote_pass": 4
+  },
+  "new_binary_cases_across_both_lines": {
+    "recovery": 8,
+    "remote": 4
+  },
+  "recovery": {
+    "backends": [
+      "hashmap",
+      "native RocksDB"
+    ],
+    "parallelism": [
+      1,
+      3
+    ],
+    "rows": 48,
+    "completed_failure_offsets": [
+      12,
+      32
+    ],
+    "object_reuse": true,
+    "batch_rows": 5
+  },
+  "remote": {
+    "planner_and_worker_different_pids": true,
+    "parallelism": [
+      1,
+      3
+    ],
+    "rows": 5003,
+    "native_input_rows_exact": 5003,
+    "batch_rows": 7,
+    "child_exit": 0,
+    "native_resource_cleanup_asserted": true
+  },
+  "native_sha256": "acf7e95b8a2170af17817b75c9f7a5938237d93a0197f1321550a18ddf4af140",
+  "limitations": [
+    "Correctness only; durations are excluded from performance evidence.",
+    "Local tests pin the existing nested-candidate release payload. Required CI rebuilds current production native code and runs the expanded opt-in selection.",
+    "The opt-in SQL33 and recovery12 selections are separate on2.2; the118 combined selection is45 tests with19 released-function skips.",
+    "Default-disabled parameterized methods count as4 JUnit method skips rather than7 expanded cases.",
+    "Checkpoint recovery and separate-JVM deployment are separate contracts; combined remote process failure plus recovery and flag mismatch remain unverified."
+  ],
+  "payloads": [
+    {
+      "path": "binary-selection-recovery-2026-10-16-compile22.log.gz",
+      "sha256": "49335c709a7d27de8b8f0295db446843f1b7001cc03df6c646104f2fe115ef81",
+      "uncompressed_sha256": "57ec28b3b17dec6f9bf44ca8d48ed04d31814178b7870fb562db0c13dab7add6"
+    },
+    {
+      "path": "binary-selection-recovery-2026-10-16-sql22.log.gz",
+      "sha256": "b4c2a5041f7ac7087b2be1afd2c4aac49002bcea167c915917c02c6fe4e5d3c1",
+      "uncompressed_sha256": "80a80d2b3dde23fbbbc6a9348b34597826e88a6a9c6ac1a9df4b06970c2d0224"
+    },
+    {
+      "path": "binary-selection-recovery-2026-10-16-recovery-compile22.log.gz",
+      "sha256": "534258645df188584333105f296bfb896730b7a05edf34d2f7f37f8862c36cb8",
+      "uncompressed_sha256": "31cc6fb8f479a266b3c1a094b4fed3c665245a8291239e531ef2440d2edc2c57"
+    },
+    {
+      "path": "binary-selection-recovery-2026-10-16-recovery22.log.gz",
+      "sha256": "fd48c558343624aa0f2c0c64bd589d4109474f77c6c584a3959d5c5a544fbd3a",
+      "uncompressed_sha256": "9d7c5328240d032f3e7d23a29348d5feea70068369e2f5a5f8d0c81aec41d294"
+    },
+    {
+      "path": "binary-selection-recovery-2026-10-16-compile118.log.gz",
+      "sha256": "4f2869bc42a075eb0354e67e29366e471d0d5cb8bf0da0e876cf93f54884a328",
+      "uncompressed_sha256": "f134ce535a57616ceefd01cea1f916280b0924f7fecceaf2943c3b487a1b2ed6"
+    },
+    {
+      "path": "binary-selection-recovery-2026-10-16-sql-recovery118.log.gz",
+      "sha256": "e0a846043154afc62ebdd6ed5dabc03fac1596be8c6a38a07f03cb2be48bd309",
+      "uncompressed_sha256": "43a038a3d3827e12fc52ca2fef209245b230dd634b8d7462e192f99bdf880169"
+    },
+    {
+      "path": "binary-selection-recovery-2026-10-16-default22.log.gz",
+      "sha256": "a2c533ec281c120c71012e8e3da628f8265ebfca9e101dffec4d14a07aca8e3e",
+      "uncompressed_sha256": "48ea4590cc7a3353c8d6b28edb6dc91f4d26b3ad97382b9b84cb50de8f376bb5"
+    }
+  ]
+}

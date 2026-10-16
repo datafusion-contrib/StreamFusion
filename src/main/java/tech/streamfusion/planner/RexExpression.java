@@ -1372,7 +1372,14 @@ final class RexExpression {
     }
     if ("ELT".equals(call.getOperator().getName())
         && SqlTypeFamily.BINARY.contains(call.getType())) {
-      return reject("binary ELT awaits whole-job performance admission");
+      if (!Boolean.getBoolean("streamfusion.experimental.binaryElt"))
+        return reject("binary ELT awaits whole-job performance admission");
+      if (call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.INTEGER
+          && call.getOperands().stream().noneMatch(this::requiresRowShortCircuit)) {
+        add(KIND_BINARY_ELT, 0, call.getOperands().size());
+        for (RexNode operand : call.getOperands()) if (!emit(operand)) return false;
+        return true;
+      }
     }
     if (isExactDoubleTruncate(call)) return emitExactDoubleTruncate(call);
     if (needsTemporalFunction(call) || needsExactPower(call) || needsExactScalarFunction(call)) {

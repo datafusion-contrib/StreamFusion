@@ -69,8 +69,8 @@ the transport preserves those actual bytes and the resolved SQL type without pad
 truncation. This applies at the input, nested ROW/ARRAY fields and extracted scalar results.
 Native fixed-size binary vectors are still readable as bytes. The disabled flag retains the
 existing fixed-size mapping and nested admission restrictions. Legacy variable-width casts
-still fall back across the previously restricted native boundaries; binary ELT performance
-admission remains pending in #235.
+still fall back across the previously restricted native boundaries. Binary ELT has its own
+default-off option, described below; measured performance remains deferred.
 
 [Nested BINARY validation](../benchmarks/results/nested-fixed-binary-coverage-2026-10-16.json)
 retains initial 65-case selections on both lines (six compatibility skips on 1.18), followed
@@ -79,8 +79,9 @@ oversized payloads through 4,097 bytes, all nested kinds, mutable ROW/array outp
 fields, scalar consumers, grouping, exact released BinaryRow bytes/hashes and nullable arrays.
 Default selections pass 23 cases with two skips on 2.2 and 18 with seven skips on 1.18.
 Thirty selected native Criterion smokes exercise sliced nullable nested binary handoffs and
-key hashing. These are correctness checks. Nested BINARY recovery and representative stock/
-actual-previous-runtime speed comparisons remain pending. The maintainer accepted shipping
+key hashing. These are correctness checks. The original nested BINARY selection did not establish recovery or performance. The
+follow-up below adds recovery/deployment fixtures; representative stock/actual-previous-runtime
+speed comparisons remain deferred. The maintainer accepted shipping
 this correctness-tested, default-off extension on October 16 with performance work deferred;
 these pending contracts are not claimed as verified.
 
@@ -2268,3 +2269,37 @@ The maintainer accepted shipping the verified broader SQL/JSON MAP/MULTISET boun
 on October 16 while deferring performance improvements. Historical MAP whole-job results
 remain slower than stock Flink; see the [recorded measurements](../benchmarks/scalar-functions.md#map-sqljson-batch-boundaries-2026-09-19).
 This acceptance does not widen nullable-key, fixed-BINARY or non-Calc admission.
+
+
+### Experimental binary ELT and raw payload boundaries
+
+`-Dstreamfusion.experimental.binaryElt=true` in both planner and task JVMs admits
+verified INTEGER-indexed binary `ELT` arguments/results. It defaults off. Safe selections
+use the existing native binary kernel with a length-delimited result. Expressions requiring
+released Flink evaluation keep the generated path, including conditional/failing operands.
+The unverified BIGINT-index overload remains on Flink. No Rust production kernel changes.
+
+The flag uses Arrow Binary for SQL BINARY(n), because released Flink can carry raw bytes
+whose length differs from the declaration. SQL types remain BINARY(n). Existing fixed-width
+Arrow results remain readable through this transport. NULL/bounds semantics, selected raw
+bytes, literal selection, grouping, object reuse and batch boundaries are covered by
+`FlinkVariableBinaryEltSqlHarnessTest` and the existing binary SQL selections. The default
+mode retains its existing stock fallback. The maintainer accepted shipping the tested path
+on October16 with performance work deferred; historical slower standalone measurements
+above remain visible and do not establish speed for this transport.
+
+Nested BINARY checkpoint and separate-JVM checks extend the parent fixtures with raw lengths
+0–4097, NULL rows/fields/array elements, all nested RowKinds and mutable callback outputs.
+They use memory/nativeRocksDB at parallelism1/3 with repeated completed-checkpoint failures,
+and separate planner/worker JVMs with5003 runtime rows. Current validation results are
+recorded with this extension; performance is a separate deferred contract.
+
+[The extension evidence](../benchmarks/results/binary-selection-recovery-2026-10-16.json)
+records33 focused binary SQL and12 recovery/remote passes on Flink2.2. Its default mode
+passes26 checks with4 opt-in method skips. Flink1.18 passes26 with19 expected ELT catalog
+availability skips, including all8 recovery and4 remote cases. Across both lines this adds
+8 binary recovery and4 binary remote cases alongside the parent STRING cases. All native
+worker input counts equal5003, and children exit cleanly. These local correctness checks
+use a pinned existing release payload; required CI rebuilds current native code. No duration
+is throughput evidence. Combined remote process failure/recovery and inconsistent flags
+remain unverified.

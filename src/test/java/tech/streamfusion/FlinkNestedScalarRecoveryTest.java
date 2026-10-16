@@ -18,29 +18,40 @@ import org.junit.jupiter.params.provider.CsvSource;
 class FlinkNestedScalarRecoveryTest {
   @ParameterizedTest
   @CsvSource({
-    "hashmap,1",
-    "hashmap,3",
-    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,1",
-    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,3"
+    "hashmap,1,false",
+    "hashmap,3,false",
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,1,false",
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,3,false",
+    "hashmap,1,true",
+    "hashmap,3,true",
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,1,true",
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,3,true"
   })
-  void nestedValuesAndMutableCallbacksSurviveRepeatedTaskRecovery(String backend, int parallelism) {
+  void nestedValuesAndMutableCallbacksSurviveRepeatedTaskRecovery(
+      String backend, int parallelism, boolean binary) {
     var type =
         ROW(
             FIELD("id", INT()),
-            FIELD("r", ROW(FIELD("value", BIGINT()), FIELD("tags", ARRAY(STRING())))));
+            FIELD(
+                "r",
+                binary
+                    ? NestedBinaryFixtures.type()
+                    : ROW(FIELD("value", BIGINT()), FIELD("tags", ARRAY(STRING())))));
     var rows = new ArrayList<Row>();
     for (int i = 0; i < 48; i++) {
       Row nested =
-          i % 11 == 0
-              ? null
-              : Row.ofKind(
-                  RowKind.values()[i % 4],
-                  i % 5 == 0 ? null : (long) i,
-                  i % 7 == 0
-                      ? null
-                      : new String[] {
-                        i == 17 ? "é中😀".repeat(4096) : "value-" + i, null, "tail-" + i
-                      });
+          binary
+              ? NestedBinaryFixtures.value(i)
+              : i % 11 == 0
+                  ? null
+                  : Row.ofKind(
+                      RowKind.values()[i % 4],
+                      i % 5 == 0 ? null : (long) i,
+                      i % 7 == 0
+                          ? null
+                          : new String[] {
+                            i == 17 ? "é中😀".repeat(4096) : "value-" + i, null, "tail-" + i
+                          });
       rows.add(Row.of(i, nested));
     }
     try (var recovery =
@@ -58,10 +69,13 @@ class FlinkNestedScalarRecoveryTest {
           table -> {
             recovery.executionEnvironment().getConfig().enableObjectReuse();
             table.getConfig().set("streamfusion.transpose.batchRows", "5");
-            table.createTemporarySystemFunction(
-                "nested_identity", new NestedScalarBenchmark.Identity());
-            table.createTemporarySystemFunction(
-                "nested_reuse", new FlinkNestedScalarSqlHarnessTest.Reusable());
+            if (binary) NestedBinaryFixtures.register(table);
+            else {
+              table.createTemporarySystemFunction(
+                  "nested_identity", new NestedScalarBenchmark.Identity());
+              table.createTemporarySystemFunction(
+                  "nested_reuse", new FlinkNestedScalarSqlHarnessTest.Reusable());
+            }
             return table;
           };
       var runs =
@@ -76,8 +90,8 @@ class FlinkNestedScalarRecoveryTest {
       recovery.verifyRepeatedRecovery();
       RecoveryExecutionMetrics.assertConsumed(recovery.nativeExecution(), "NativeCalc");
       System.out.printf(
-          "[nested-recovery-proof] backend=%s parallelism=%d observations=%s%n",
-          backend, parallelism, recovery.observations());
+          "[nested-recovery-proof] backend=%s parallelism=%d binary=%s observations=%s%n",
+          backend, parallelism, binary, recovery.observations());
     }
   }
 }

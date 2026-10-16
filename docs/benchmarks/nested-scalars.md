@@ -99,3 +99,12 @@ worker PIDs and native consumed-row counts, and require clean native resources b
 exit. The [cross-JVM evidence](results/nested-scalar-remote-2026-10-16.json) retains these
 observations. It covers one-host remote submission; process-failure recovery and inconsistent
 planner/task flags are outside this fixture.
+
+
+The [nested BINARY follow-up](results/binary-selection-recovery-2026-10-16.json) extends
+the same recovery/deployment fixtures on both released lines. Eight new binary recovery
+cases retain exact offsets12/32,48 stock results and cleanup; four new binary deployment
+cases retain distinct planner/worker PIDs,exact5003 native input rows and clean child exits.
+Raw lengths0–4097,NULLs,all nested kinds and reused results are included. This establishes
+those contracts separately; combined remote failure/recovery and mismatched flags remain
+unverified. Further performance work is deferred by the maintainer.
