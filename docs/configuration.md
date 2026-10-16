@@ -121,3 +121,19 @@ for exact coverage and retained performance results.
 
 See [Benchmarks](benchmarks.md) for how to reproduce the throughput numbers, and
 [Optimizations](optimizations/index.md) for how these flags map to specific performance techniques.
+
+
+## Experimental generated collection expressions
+
+`-Dstreamfusion.experimental.collectionExpressions=true` enables a builtins-only fallback
+inside the existing columnar Calc operator. It defaults off and must agree in planner/task
+JVMs. When the ordinary native expression encoder declines a verified collection builtin
+or container cast, released Flink code evaluates the complete condition/projection program
+over the imported Arrow batch. Existing successful native encodings keep their current path.
+
+The option extends the generated boundary to nullable MAP keys and MULTISET elements,
+retaining the existing fixed-BINARY restrictions. Nested ROW values use the existing tagged
+RowKind transport. Programs containing user scalar functions retain their existing admission
+rules. See [collection coverage](operators/calc-filter.md#experimental-generated-collection-expressions)
+for verified functions and remaining scope. ARRAY_AGG and COLLECT are separate stateful work.
+The maintainer accepted deferred performance work; the option makes no throughput claim.

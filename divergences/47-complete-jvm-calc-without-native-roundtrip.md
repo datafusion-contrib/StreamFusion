@@ -21,3 +21,10 @@ The path remains explicitly experimental and default off: two standalone workloa
 stock controls, but identity still trails by about 1% and the prior-correct-fallback repeat is
 outstanding. See docs/operators/calc-filter.md and docs/optimizations/udf-columnar-upcall.md.
 PR #368 remains draft and issue #364 remains open.
+
+
+The experimental collection option reuses the released whole-Calc evaluator inside the
+existing Arrow batch bridge for builtins the normal encoder declines. This keeps released
+NULL/ordering/cast/error behavior together and avoids implementing a separate collection
+semantics layer. The native operator boundary and existing RowKind transport remain the
+same. The option defaults off; the maintainer accepted deferred performance work.

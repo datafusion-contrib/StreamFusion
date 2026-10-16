@@ -182,7 +182,9 @@ public final class ArrowConversion {
       for (RowType.RowField field : rowType.getFields()) {
         children.add(toArrowField(field.getName(), field.getType()));
       }
-      if (rowKind && Boolean.getBoolean("streamfusion.experimental.nestedScalarUdfs"))
+      if (rowKind
+          && (Boolean.getBoolean("streamfusion.experimental.nestedScalarUdfs")
+              || Boolean.getBoolean("streamfusion.experimental.collectionExpressions")))
         children.add(NestedRowKinds.field(children));
     } else if (logicalType instanceof MapType || logicalType instanceof MultisetType) {
       // A MAP, or a MULTISET carried as MAP<element, count> (mapKeyValue resolves which).

@@ -532,6 +532,10 @@ class FlinkDynamicCollectionSqlHarnessTest {
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static TableEnvironment typedMaps(String kind, boolean nullStoredKey) {
+    return typedMaps(kind, nullStoredKey, false);
+  }
+
+  static TableEnvironment typedMaps(String kind, boolean nullStoredKey, boolean useLogicalTypeSerializer) {
     KeySpec spec = keySpec(kind);
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
@@ -542,15 +546,20 @@ class FlinkDynamicCollectionSqlHarnessTest {
     map.put(spec.present(), new BigDecimal("12345678901234567890.123456789"));
     Map<Object, BigDecimal> nullable = new LinkedHashMap<>();
     nullable.put(spec.present(), null);
+    var type = DataTypes.ROW(
+        DataTypes.FIELD("id", DataTypes.INT()),
+        DataTypes.FIELD("m", DataTypes.MAP(
+            nullStoredKey ? spec.type() : spec.type().notNull(), DataTypes.DECIMAL(38, 9))),
+        DataTypes.FIELD("lookup_key", spec.type()));
+    TypeInformation<Row> sourceType = useLogicalTypeSerializer
+        ? org.apache.flink.table.runtime.typeutils.ExternalTypeInfo.<Row>of(type)
+        : Types.ROW_NAMED(new String[] {"id", "m", "lookup_key"}, Types.INT,
+            Types.MAP((TypeInformation)spec.info(), Types.BIG_DEC), spec.info());
     table.createTemporaryView(
         "src",
         fromData(
             env,
-            Types.ROW_NAMED(
-                new String[] {"id", "m", "lookup_key"},
-                Types.INT,
-                Types.MAP((TypeInformation) spec.info(), Types.BIG_DEC),
-                spec.info()),
+            sourceType,
             Row.of(0, map, spec.present()),
             Row.of(1, map, spec.missing()),
             Row.of(2, map, null),

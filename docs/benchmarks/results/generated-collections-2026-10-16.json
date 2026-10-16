@@ -1,0 +1,56 @@
+{
+  "flink_line": "2.2.1",
+  "jdk": 17,
+  "java_release": 11,
+  "checks": {
+    "primary_pass": 83,
+    "nullable_multiset_pass": 2,
+    "failures": 0,
+    "errors": 0
+  },
+  "configuration": {
+    "collectionExpressions": true,
+    "test_heap": "2GiB",
+    "transpose_batch_rows": 3,
+    "object_reuse_modes": [
+      false,
+      true
+    ]
+  },
+  "scope": [
+    "Scalar collection builtins and container casts",
+    "Nullable typed MAP key/value/entry projections over12 key families",
+    "Floating NaN/signed-zero and DECIMAL arrays",
+    "Unicode/predicates/runtime sources",
+    "Released error classes/phases and unevaluated filtered-out failures"
+  ],
+  "remaining": [
+    "Flink1.18 validation",
+    "ARRAY_AGG and COLLECT stateful support",
+    "Further performance/default admission"
+  ],
+  "native_sha256": "acf7e95b8a2170af17817b75c9f7a5938237d93a0197f1321550a18ddf4af140",
+  "limitations": [
+    "Local tests pin the prior nested-candidate release payload; required CI rebuilds current production native code.",
+    "No test duration establishes throughput.",
+    "The first expanded fixture used Java MapSerializer, which rejects NULL primitive keys during setup. Logical-type ExternalTypeInfo serialization fixes the fixture without changing the original control inputs.",
+    "Programs containing user scalar functions retain existing admission."
+  ],
+  "payloads": [
+    {
+      "path": "generated-collections-2026-10-16-compile22.log.gz",
+      "sha256": "9aed972fc2c309c79e37c147b860700687ee2c920f17b96b13f90d74d384b002",
+      "uncompressed_sha256": "a60d2027a7a90a3ffd019c5d30b6953002f1dd64fdb009f797da4bea7f226539"
+    },
+    {
+      "path": "generated-collections-2026-10-16-checks22.log.gz",
+      "sha256": "35653294812d6821b2117a1a65ca4d1667f5e74f242e167e9f1bb11697f80e69",
+      "uncompressed_sha256": "317961305335d3eb4a2e3a235ef09593c7b94c2c367c061fdb9422394030baf5"
+    },
+    {
+      "path": "generated-collections-2026-10-16-multiset22.log.gz",
+      "sha256": "2b172c9f9f5e98070ded96ed50553d68f396fa7e7d3688065245a0a2218de522",
+      "uncompressed_sha256": "e13a7a57004b63119e41e79d70635740958338127ff37cbd189e60fcf600fd8b"
+    }
+  ]
+}

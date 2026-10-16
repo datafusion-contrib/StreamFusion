@@ -2268,3 +2268,35 @@ The maintainer accepted shipping the verified broader SQL/JSON MAP/MULTISET boun
 on October 16 while deferring performance improvements. Historical MAP whole-job results
 remain slower than stock Flink; see the [recorded measurements](../benchmarks/scalar-functions.md#map-sqljson-batch-boundaries-2026-09-19).
 This acceptance does not widen nullable-key, fixed-BINARY or non-Calc admission.
+
+
+### Experimental generated collection expressions
+
+`-Dstreamfusion.experimental.collectionExpressions=true` reuses released Flink whole-Calc
+generation for collection expressions the ordinary encoder declines, preserving the existing
+Arrow input/output boundary. It defaults off and must agree in planner/task JVMs. Successful
+native encodings, including existing integer ARRAY_DISTINCT, keep their current execution.
+
+The verified scalar families include ARRAY_APPEND, ARRAY_CONTAINS, ARRAY_POSITION,
+ARRAY_PREPEND, ARRAY_REMOVE, ARRAY_REVERSE, ARRAY_UNION, ARRAY_CONCAT, ARRAY_MIN/ARRAY_MAX,
+ARRAY_JOIN, ARRAY_SLICE, ARRAY_SORT, ARRAY_EXCEPT, ARRAY_INTERSECT, STRING ARRAY_DISTINCT,
+ELEMENT, MAP construction, MAP_KEYS, MAP_VALUES, MAP_ENTRIES, MAP_FROM_ARRAYS, MAP_UNION,
+dynamic/empty-separator SPLIT, and container CAST/TRY_CAST. Missing released-host functions
+retain the host planning behavior. User scalar-function programs retain existing rules;
+fixed-BINARY leaves retain their existing restriction. ARRAY_AGG/COLLECT remain separate
+stateful gaps in [#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
+The generated boundary admits nullable MAP keys/MULTISET elements with supported leaves.
+Nested ROW payloads use the established kind sidecar. Runtime-source checks cover NULL/empty
+containers/elements, duplicates, dynamic indices, filtered batches, predicates, supplementary/
+unpaired Unicode, numeric narrowing/widening, DECIMAL and floating NaN/signed-zero values,
+plus typed MAP key/value/entry projections. Failing ELEMENT, mismatched MAP_FROM_ARRAYS and
+ARRAY casts preserve released exception classes/phases; filtered-out errors stay unevaluated.
+
+[Initial evidence](../benchmarks/results/generated-collections-2026-10-16.json) records
+83 Flink2.2 focused passes plus2 nullable-MULTISET checks. The nullable-key source uses released
+ExternalTypeInfo serialization because the ordinary Java MapSerializer rejects NULL primitive
+keys before SQL planning; those setup failures do not establish native query coverage.
+Flink1.18 validation is pending. Local checks use the pinned existing nested release payload;
+required CI rebuilds native production. The maintainer accepted shipping correctness groundwork
+with performance work deferred. No new complete-job speed claim is made.

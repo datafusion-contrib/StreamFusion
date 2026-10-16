@@ -416,7 +416,8 @@ final class RexExpression {
     }
     if (!supported
         && (containsSqlJson(calc.getProgram())
-            || containsCollectionStringFunction(calc.getProgram()))) {
+            || containsCollectionStringFunction(calc.getProgram())
+            || containsGeneratedCollectionFunction(calc.getProgram()))) {
       // A failed native attempt may have populated pools and UDF bindings. Generate the complete
       // Calc in a fresh encoder so short-circuiting and row evaluation order stay with Flink.
       String nativeReason = encoder.reasonOrDefault();
@@ -703,17 +704,20 @@ final class RexExpression {
       case MAP:
         nested =
             SqlTypeFamily.CHARACTER.contains(type.getKeyType())
-                && SqlTypeFamily.CHARACTER.contains(type.getValueType())
-                || !type.getKeyType().isNullable()
+                    && SqlTypeFamily.CHARACTER.contains(type.getValueType())
+                || (!type.getKeyType().isNullable()
+                        || Boolean.getBoolean("streamfusion.experimental.collectionExpressions"))
                     && type.getKeyType().getSqlTypeName() != SqlTypeName.BINARY
                     && type.getValueType().getSqlTypeName() != SqlTypeName.BINARY
                     && rowCalcTypeCode(type.getKeyType()) >= 0
                     && rowCalcTypeCode(type.getValueType()) >= 0;
         break;
       case MULTISET:
-        nested = !type.getComponentType().isNullable()
-            && type.getComponentType().getSqlTypeName() != SqlTypeName.BINARY
-            && rowCalcTypeCode(type.getComponentType()) >= 0;
+        nested =
+            (!type.getComponentType().isNullable()
+                    || Boolean.getBoolean("streamfusion.experimental.collectionExpressions"))
+                && type.getComponentType().getSqlTypeName() != SqlTypeName.BINARY
+                && rowCalcTypeCode(type.getComponentType()) >= 0;
         break;
       case ROW:
         nested =
@@ -791,6 +795,68 @@ final class RexExpression {
                 .contains(((RexCall) node).getOperator().getName())
             || ((RexCall) node)
                 .getOperands().stream().anyMatch(RexExpression::containsCollectionStringFunction));
+  }
+
+  private static final Set<String> GENERATED_COLLECTIONS =
+      Set.of(
+          "ARRAY_APPEND",
+          "ARRAY_CONTAINS",
+          "ARRAY_POSITION",
+          "ARRAY_PREPEND",
+          "ARRAY_REMOVE",
+          "ARRAY_REVERSE",
+          "ARRAY_UNION",
+          "ARRAY_CONCAT",
+          "ARRAY_MAX",
+          "ARRAY_MIN",
+          "ARRAY_JOIN",
+          "ARRAY_SLICE",
+          "ARRAY_SORT",
+          "ARRAY_EXCEPT",
+          "ARRAY_INTERSECT",
+          "ARRAY_DISTINCT",
+          "ELEMENT",
+          "MAP",
+          "MAP_KEYS",
+          "MAP_VALUES",
+          "MAP_ENTRIES",
+          "MAP_FROM_ARRAYS",
+          "MAP_UNION",
+          "SPLIT");
+
+  private static boolean containsGeneratedCollectionFunction(RexProgram program) {
+    if (!Boolean.getBoolean("streamfusion.experimental.collectionExpressions")) return false;
+    boolean[] userFunction = {false};
+    var visitor =
+        new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitCall(RexCall call) {
+            if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null)
+              userFunction[0] = true;
+            return super.visitCall(call);
+          }
+        };
+    for (RexNode node : program.getExprList()) node.accept(visitor);
+    if (userFunction[0]) return false;
+    return program.getCondition() != null
+            && containsGeneratedCollectionFunction(program.expandLocalRef(program.getCondition()))
+        || program.getProjectList().stream()
+            .anyMatch(
+                project -> containsGeneratedCollectionFunction(program.expandLocalRef(project)));
+  }
+
+  private static boolean containsGeneratedCollectionFunction(RexNode node) {
+    if (node instanceof RexFieldAccess)
+      return containsGeneratedCollectionFunction(((RexFieldAccess) node).getReferenceExpr());
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    boolean containerCast =
+        (call.getKind() == SqlKind.CAST || "TRY_CAST".equals(call.getOperator().getName()))
+            && Set.of(SqlTypeName.ARRAY, SqlTypeName.MAP, SqlTypeName.MULTISET)
+                .contains(call.getType().getSqlTypeName());
+    return containerCast
+        || GENERATED_COLLECTIONS.contains(call.getOperator().getName())
+        || call.getOperands().stream().anyMatch(RexExpression::containsGeneratedCollectionFunction);
   }
 
   private boolean emitRowCalc(Calc calc) {

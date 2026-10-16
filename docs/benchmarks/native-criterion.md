@@ -2329,3 +2329,9 @@ snapshot/restored-state destruction stay outside timing. Checkpoints return byte
 and state rather than Arrow arrays, so their Arrow output-buffer reports are empty.
 All 56 fixtures pass; 32 JSON update and eight checkpoint timing estimates are retained
 in the [JSON measurement artifact](results/json-aggregates-2026-10-15.json).
+
+
+Generated collection-expression admission reuses the existing JVM batch bridge and nested
+array/map/ROW handoff paths. It adds Java expression generation and eligibility, while the
+production Rust operations and their Criterion fixtures remain unchanged. Correctness test
+durations for that opt-in route are excluded from throughput claims.
