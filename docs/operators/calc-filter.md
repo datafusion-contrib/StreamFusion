@@ -543,7 +543,9 @@ for unconditional, timestamp-only projections of matching width. Every function 
 A byte-equal result column retains the input buffers; the first changed value materializes its
 unchanged prefix and all subsequent values. Preinitialized Arrow fields preserve timestamp
 component metadata through transfers. Other result shapes use the ordinary flat Arrow writer.
-Both experimental switches default off. PR #368 remains draft at the maintainer's request.
+Both experimental switches default off. The maintainer accepted shipping this tested
+implementation on October 16 despite the measured regressions, with further performance
+work deferred; PR #368 has merged.
 
 In an unprofiled 2M-row repeat with the configuration above, direct batches plus timestamp
 aliasing measured identity **0.651 s versus stock 0.645 s**, text **0.830 versus 0.969 s**, and
