@@ -136,13 +136,19 @@ class FlinkTemporalUdfSqlHarnessTest {
   @Test
   void checkedAndErrorFailuresKeepTheOriginalTemporalCause() {
     for (boolean error : new boolean[] {false, true}) {
-      var comparison = NativeFailureParity.run(() -> {
-        var table = environment(9, "UTC", 32, null);
-        table.createTemporarySystemFunction("temporal_failure", new ExceptionalTimestamp(error));
-        return table;
-      }, "SELECT temporal_failure(t) FROM src");
-      comparison.assertFailure(error ? AssertionError.class : Exception.class,
-          "temporal failure sentinel", NativeFailureParity.Phase.ROW_EVALUATION,
+      var comparison =
+          NativeFailureParity.run(
+              () -> {
+                var table = environment(9, "UTC", 32, null);
+                table.createTemporarySystemFunction(
+                    "temporal_failure", new ExceptionalTimestamp(error));
+                return table;
+              },
+              "SELECT temporal_failure(t) FROM src");
+      comparison.assertFailure(
+          error ? AssertionError.class : Exception.class,
+          "temporal failure sentinel",
+          NativeFailureParity.Phase.ROW_EVALUATION,
           NativeFailureParity.Route.NATIVE);
     }
   }
@@ -211,16 +217,28 @@ class FlinkTemporalUdfSqlHarnessTest {
             DataTypes.FIELD("id", DataTypes.INT().notNull()),
             DataTypes.FIELD("t", DataTypes.TIMESTAMP(precision)),
             DataTypes.FIELD("z", DataTypes.TIMESTAMP_LTZ(precision)));
+    int cardinality = Integer.getInteger("temporal.cardinality", 8);
+    if (cardinality < 1)
+      throw new IllegalArgumentException("temporal.cardinality must be positive");
     LocalDateTime[] values =
-        java.util.stream.IntStream.range(0, 8)
-            .mapToObj(index -> timestamp(index, precision))
+        java.util.stream.IntStream.range(0, cardinality)
+            .mapToObj(
+                index -> {
+                  if (cardinality == 8) return timestamp(index, precision);
+                  if (index % 8 == 7) return null;
+                  int unit = (int) Math.pow(10, 9 - precision);
+                  int nano = (int) ((long) index * 123457 % 1_000_000_000);
+                  return LocalDateTime.of(2026, 1, 1, 0, 0)
+                      .plusSeconds(index)
+                      .withNano(nano / unit * unit);
+                })
             .toArray(LocalDateTime[]::new);
     var source =
         env.fromSequence(0, Math.max(0, count - 1))
             .filter(i -> i < count)
             .map(
                 i -> {
-                  LocalDateTime value = values[(int) (i % 8)];
+                  LocalDateTime value = values[(int) (i % values.length)];
                   return Row.of(
                       i.intValue(),
                       value,
@@ -384,10 +402,12 @@ class FlinkTemporalUdfSqlHarnessTest {
 
   public static class ExceptionalTimestamp extends TemporalFunction {
     private final boolean error;
+
     ExceptionalTimestamp(boolean error) {
       super(DataTypes.TIMESTAMP(9), DataTypes.TIMESTAMP(9));
       this.error = error;
     }
+
     public LocalDateTime eval(LocalDateTime value) throws Exception {
       checkOpen();
       if (error) throw new AssertionError("temporal failure sentinel");

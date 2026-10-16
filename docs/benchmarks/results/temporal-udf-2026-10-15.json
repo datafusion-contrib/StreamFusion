@@ -6329,5 +6329,675 @@
       "production_native_library_sha256": "24cef157092f0564f6f6c70a1d0f3d92169dd4a4c6b6fffede564cc566e96e0c",
       "finding": "Old native-stage samples resolve mostly Arrow FFI import/export, layouts, ownership and allocator/JNI work. Direct JVM Arrow evaluation removes that handoff. Remaining excess TimestampData allocations originate about equally in generated callback input reads and Arrow exit serialization; target these measured sites before further optimization."
     }
+  },
+  "rejected_profile_guided_timestamp_reuse": {
+    "date": "2026-10-15",
+    "candidate_base": "42bccae82ac3d9135e751b3950b3117b1314de49",
+    "status": "Both prototypes reverted; PR368 remains draft and #364 remains open.",
+    "methodology": {
+      "flink": "2.2.1",
+      "jdk": 17,
+      "mode": "release + mimalloc",
+      "heap": "2 GiB",
+      "parallelism": 1,
+      "rows": 2000000,
+      "warmups_per_engine": 1,
+      "alternating_measured_pairs": 3,
+      "precision": 9,
+      "batch_rows": 1024,
+      "transport": "production IPC; row source, both transposes and row sink included",
+      "direct_temporal_calc": true,
+      "temporal_aliases": true,
+      "cardinalities": [
+        8,
+        16384
+      ],
+      "high_cardinality_fixture": "Precomputed 2026 timestamps with index seconds and precision-aligned fractional nanoseconds; every eighth value NULL. Default eight-value full-range corpus unchanged."
+    },
+    "series": {
+      "bounded_cache": [
+        {
+          "label": "identity-cardinality8-cache",
+          "shape": "identity",
+          "cardinality": 8,
+          "stock_median_seconds": 0.605785,
+          "native_median_seconds": 0.763365,
+          "stock_trials_seconds": [
+            0.62362131,
+            0.6016757,
+            0.60578523
+          ],
+          "native_trials_seconds": [
+            0.808151459,
+            0.763364706,
+            0.678284298
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.098607",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.038554",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.808151",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.623621",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.601676",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.763365",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.678284",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.605785",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.605785s StreamFusion=0.763365s stock_trials=[0.62362131, 0.6016757, 0.60578523] sf_trials=[0.808151459, 0.763364706, 0.678284298]"
+          ]
+        },
+        {
+          "label": "identity-cardinality8-previous-prototype",
+          "shape": "identity",
+          "cardinality": 8,
+          "stock_median_seconds": 0.660813,
+          "native_median_seconds": 0.738794,
+          "stock_trials_seconds": [
+            0.674677148,
+            0.660813372,
+            0.606003577
+          ],
+          "native_trials_seconds": [
+            0.742509747,
+            0.738793935,
+            0.701484726
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.117503",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.944137",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.742510",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.674677",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.660813",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.738794",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.701485",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.606004",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.660813s StreamFusion=0.738794s stock_trials=[0.674677148, 0.660813372, 0.606003577] sf_trials=[0.742509747, 0.738793935, 0.701484726]"
+          ]
+        },
+        {
+          "label": "text-cardinality8-cache",
+          "shape": "text",
+          "cardinality": 8,
+          "stock_median_seconds": 1.027566,
+          "native_median_seconds": 0.941279,
+          "stock_trials_seconds": [
+            1.028970558,
+            1.027565591,
+            0.941309289
+          ],
+          "native_trials_seconds": [
+            0.972605001,
+            0.941278976,
+            0.853953945
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=text engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.549192",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.162617",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.972605",
+            "[temporal-udf-trial] case=text engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=1.028971",
+            "[temporal-udf-trial] case=text engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=1.027566",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.941279",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.853954",
+            "[temporal-udf-trial] case=text engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.941309",
+            "[temporal-direct-calc] case=text rows=8000000",
+            "[temporal-udf] case=text rows=2000000 precision=9 native_expected=true Flink=1.027566s StreamFusion=0.941279s stock_trials=[1.028970558, 1.027565591, 0.941309289] sf_trials=[0.972605001, 0.941278976, 0.853953945]"
+          ]
+        },
+        {
+          "label": "text-cardinality8-previous-prototype",
+          "shape": "text",
+          "cardinality": 8,
+          "stock_median_seconds": 0.957047,
+          "native_median_seconds": 0.924963,
+          "stock_trials_seconds": [
+            0.986729433,
+            0.929497277,
+            0.957046524
+          ],
+          "native_trials_seconds": [
+            0.951222056,
+            0.924962721,
+            0.83554108
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=text engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.568639",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.166326",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.951222",
+            "[temporal-udf-trial] case=text engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.986729",
+            "[temporal-udf-trial] case=text engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.929497",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.924963",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.835541",
+            "[temporal-udf-trial] case=text engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.957047",
+            "[temporal-direct-calc] case=text rows=8000000",
+            "[temporal-udf] case=text rows=2000000 precision=9 native_expected=true Flink=0.957047s StreamFusion=0.924963s stock_trials=[0.986729433, 0.929497277, 0.957046524] sf_trials=[0.951222056, 0.924962721, 0.83554108]"
+          ]
+        },
+        {
+          "label": "epoch-cardinality8-cache",
+          "shape": "epoch",
+          "cardinality": 8,
+          "stock_median_seconds": 0.546247,
+          "native_median_seconds": 0.536131,
+          "stock_trials_seconds": [
+            0.609164795,
+            0.546247349,
+            0.484016805
+          ],
+          "native_trials_seconds": [
+            0.700512043,
+            0.536131207,
+            0.52480399
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=epoch engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.063764",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.847418",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.700512",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.609165",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.546247",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.536131",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.524804",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.484017",
+            "[temporal-direct-calc] case=epoch rows=8000000",
+            "[temporal-udf] case=epoch rows=2000000 precision=9 native_expected=true Flink=0.546247s StreamFusion=0.536131s stock_trials=[0.609164795, 0.546247349, 0.484016805] sf_trials=[0.700512043, 0.536131207, 0.52480399]"
+          ]
+        },
+        {
+          "label": "epoch-cardinality8-previous-prototype",
+          "shape": "epoch",
+          "cardinality": 8,
+          "stock_median_seconds": 0.57177,
+          "native_median_seconds": 0.610082,
+          "stock_trials_seconds": [
+            0.576061861,
+            0.571770054,
+            0.478788373
+          ],
+          "native_trials_seconds": [
+            0.692197953,
+            0.610081502,
+            0.522115915
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=epoch engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.081587",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.883843",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.692198",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.576062",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.571770",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.610082",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.522116",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.478788",
+            "[temporal-direct-calc] case=epoch rows=8000000",
+            "[temporal-udf] case=epoch rows=2000000 precision=9 native_expected=true Flink=0.571770s StreamFusion=0.610082s stock_trials=[0.576061861, 0.571770054, 0.478788373] sf_trials=[0.692197953, 0.610081502, 0.522115915]"
+          ]
+        },
+        {
+          "label": "identity-cardinality16384-cache",
+          "shape": "identity",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.697006,
+          "native_median_seconds": 0.774556,
+          "stock_trials_seconds": [
+            0.698494238,
+            0.697005792,
+            0.630076847
+          ],
+          "native_trials_seconds": [
+            0.852922641,
+            0.774555717,
+            0.747449334
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.156952",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.099174",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.852923",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.698494",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.697006",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.774556",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.747449",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.630077",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.697006s StreamFusion=0.774556s stock_trials=[0.698494238, 0.697005792, 0.630076847] sf_trials=[0.852922641, 0.774555717, 0.747449334]"
+          ]
+        },
+        {
+          "label": "identity-cardinality16384-previous-prototype",
+          "shape": "identity",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.669543,
+          "native_median_seconds": 0.773079,
+          "stock_trials_seconds": [
+            0.672744342,
+            0.669542765,
+            0.582287654
+          ],
+          "native_trials_seconds": [
+            0.802458501,
+            0.773078718,
+            0.739318779
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.155828",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.031412",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.802459",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.672744",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.669543",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.773079",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.739319",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.582288",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.669543s StreamFusion=0.773079s stock_trials=[0.672744342, 0.669542765, 0.582287654] sf_trials=[0.802458501, 0.773078718, 0.739318779]"
+          ]
+        },
+        {
+          "label": "text-cardinality16384-cache",
+          "shape": "text",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.974043,
+          "native_median_seconds": 0.93919,
+          "stock_trials_seconds": [
+            0.97404258,
+            0.991308341,
+            0.96534582
+          ],
+          "native_trials_seconds": [
+            0.93918992,
+            0.947498351,
+            0.878506819
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=text engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.549674",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.157953",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.939190",
+            "[temporal-udf-trial] case=text engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.974043",
+            "[temporal-udf-trial] case=text engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.991308",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.947498",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.878507",
+            "[temporal-udf-trial] case=text engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.965346",
+            "[temporal-direct-calc] case=text rows=8000000",
+            "[temporal-udf] case=text rows=2000000 precision=9 native_expected=true Flink=0.974043s StreamFusion=0.939190s stock_trials=[0.97404258, 0.991308341, 0.96534582] sf_trials=[0.93918992, 0.947498351, 0.878506819]"
+          ]
+        },
+        {
+          "label": "text-cardinality16384-previous-prototype",
+          "shape": "text",
+          "cardinality": 16384,
+          "stock_median_seconds": 1.009053,
+          "native_median_seconds": 0.925503,
+          "stock_trials_seconds": [
+            1.009052848,
+            1.010332373,
+            1.005169929
+          ],
+          "native_trials_seconds": [
+            0.967370326,
+            0.925502992,
+            0.904555175
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=text engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.536119",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.264335",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.967370",
+            "[temporal-udf-trial] case=text engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=1.009053",
+            "[temporal-udf-trial] case=text engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=1.010332",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.925503",
+            "[temporal-udf-trial] case=text engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.904555",
+            "[temporal-udf-trial] case=text engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=1.005170",
+            "[temporal-direct-calc] case=text rows=8000000",
+            "[temporal-udf] case=text rows=2000000 precision=9 native_expected=true Flink=1.009053s StreamFusion=0.925503s stock_trials=[1.009052848, 1.010332373, 1.005169929] sf_trials=[0.967370326, 0.925502992, 0.904555175]"
+          ]
+        },
+        {
+          "label": "epoch-cardinality16384-cache",
+          "shape": "epoch",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.574034,
+          "native_median_seconds": 0.629471,
+          "stock_trials_seconds": [
+            0.574034089,
+            0.576622779,
+            0.556769666
+          ],
+          "native_trials_seconds": [
+            0.715329592,
+            0.629470715,
+            0.602089189
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=epoch engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.120278",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.889303",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.715330",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.574034",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.576623",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.629471",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.602089",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.556770",
+            "[temporal-direct-calc] case=epoch rows=8000000",
+            "[temporal-udf] case=epoch rows=2000000 precision=9 native_expected=true Flink=0.574034s StreamFusion=0.629471s stock_trials=[0.574034089, 0.576622779, 0.556769666] sf_trials=[0.715329592, 0.629470715, 0.602089189]"
+          ]
+        },
+        {
+          "label": "epoch-cardinality16384-previous-prototype",
+          "shape": "epoch",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.552477,
+          "native_median_seconds": 0.632592,
+          "stock_trials_seconds": [
+            0.57862476,
+            0.552477,
+            0.465959421
+          ],
+          "native_trials_seconds": [
+            0.748419544,
+            0.632592406,
+            0.580904705
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=epoch engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.094627",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.855303",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.748420",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.578625",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.552477",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.632592",
+            "[temporal-udf-trial] case=epoch engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.580905",
+            "[temporal-udf-trial] case=epoch engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.465959",
+            "[temporal-direct-calc] case=epoch rows=8000000",
+            "[temporal-udf] case=epoch rows=2000000 precision=9 native_expected=true Flink=0.552477s StreamFusion=0.632592s stock_trials=[0.57862476, 0.552477, 0.465959421] sf_trials=[0.748419544, 0.632592406, 0.580904705]"
+          ]
+        }
+      ],
+      "batch_hints_vector_reader": [
+        {
+          "label": "identity-cardinality8-hints",
+          "shape": "identity",
+          "cardinality": 8,
+          "stock_median_seconds": 0.68635,
+          "native_median_seconds": 0.759858,
+          "stock_trials_seconds": [
+            0.686350026,
+            0.698478941,
+            0.649306479
+          ],
+          "native_trials_seconds": [
+            0.799205952,
+            0.759858396,
+            0.672113015
+          ],
+          "raw_trial_lines": [],
+          "limitation": "Original raw log overwritten by later reader experiment; measured arrays retained from original progress log. Warmups unavailable."
+        },
+        {
+          "label": "identity-cardinality8-previous-prototype",
+          "shape": "identity",
+          "cardinality": 8,
+          "stock_median_seconds": 0.68876,
+          "native_median_seconds": 0.719305,
+          "stock_trials_seconds": [
+            0.72314587,
+            0.688759962,
+            0.621421838
+          ],
+          "native_trials_seconds": [
+            0.762788697,
+            0.673756149,
+            0.719304642
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.113528",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.986969",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.775211",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.679958",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.689762",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.739957",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.721387",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.603695",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.679958s StreamFusion=0.739957s stock_trials=[0.679957801, 0.689761951, 0.603695148] sf_trials=[0.775211419, 0.739957177, 0.721387392]"
+          ]
+        },
+        {
+          "label": "identity-cardinality16384-hints",
+          "shape": "identity",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.674313,
+          "native_median_seconds": 0.730736,
+          "stock_trials_seconds": [
+            0.686528375,
+            0.673784296,
+            0.674312961
+          ],
+          "native_trials_seconds": [
+            0.848778848,
+            0.729293116,
+            0.730736166
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.188441",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.966925",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.763467",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.607419",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.579638",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.693079",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.672776",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.527447",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-hints] inputs=16000000 outputs=16000000 exit=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.579638s StreamFusion=0.693079s stock_trials=[0.60741905, 0.579638404, 0.527446784] sf_trials=[0.763467064, 0.693078506, 0.672776406]"
+          ]
+        },
+        {
+          "label": "identity-cardinality16384-previous-prototype",
+          "shape": "identity",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.680106,
+          "native_median_seconds": 0.745084,
+          "stock_trials_seconds": [
+            0.712113148,
+            0.680076453,
+            0.680105802
+          ],
+          "native_trials_seconds": [
+            0.755986861,
+            0.745083945,
+            0.729918077
+          ],
+          "raw_trial_lines": []
+        }
+      ],
+      "batch_hints_row_reader": [
+        {
+          "label": "identity-cardinality8-hints",
+          "shape": "identity",
+          "cardinality": 8,
+          "stock_median_seconds": 0.554832,
+          "native_median_seconds": 0.673085,
+          "stock_trials_seconds": [
+            0.569171756,
+            0.554831916,
+            0.492708174
+          ],
+          "native_trials_seconds": [
+            0.716986822,
+            0.673085481,
+            0.64807851
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.105103",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.947440",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.716987",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.569172",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.554832",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.673085",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.648079",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.492708",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-hints] inputs=16000000 outputs=16000000 exit=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.554832s StreamFusion=0.673085s stock_trials=[0.569171756, 0.554831916, 0.492708174] sf_trials=[0.716986822, 0.673085481, 0.64807851]"
+          ]
+        },
+        {
+          "label": "identity-cardinality8-previous-prototype",
+          "shape": "identity",
+          "cardinality": 8,
+          "stock_median_seconds": 0.679958,
+          "native_median_seconds": 0.739957,
+          "stock_trials_seconds": [
+            0.679957801,
+            0.689761951,
+            0.603695148
+          ],
+          "native_trials_seconds": [
+            0.775211419,
+            0.739957177,
+            0.721387392
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.113528",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.986969",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.775211",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.679958",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.689762",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.739957",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.721387",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.603695",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.679958s StreamFusion=0.739957s stock_trials=[0.679957801, 0.689761951, 0.603695148] sf_trials=[0.775211419, 0.739957177, 0.721387392]"
+          ]
+        },
+        {
+          "label": "identity-cardinality16384-hints",
+          "shape": "identity",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.579638,
+          "native_median_seconds": 0.693079,
+          "stock_trials_seconds": [
+            0.60741905,
+            0.579638404,
+            0.527446784
+          ],
+          "native_trials_seconds": [
+            0.763467064,
+            0.693078506,
+            0.672776406
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.188441",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=0.966925",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.763467",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.607419",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.579638",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.693079",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.672776",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.527447",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-hints] inputs=16000000 outputs=16000000 exit=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.579638s StreamFusion=0.693079s stock_trials=[0.60741905, 0.579638404, 0.527446784] sf_trials=[0.763467064, 0.693078506, 0.672776406]"
+          ]
+        },
+        {
+          "label": "identity-cardinality16384-previous-prototype",
+          "shape": "identity",
+          "cardinality": 16384,
+          "stock_median_seconds": 0.685465,
+          "native_median_seconds": 0.753388,
+          "stock_trials_seconds": [
+            0.686718209,
+            0.68546516,
+            0.601919569
+          ],
+          "native_trials_seconds": [
+            0.820697737,
+            0.753387871,
+            0.738314028
+          ],
+          "raw_trial_lines": [
+            "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 seconds=1.173452",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 seconds=1.010763",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=false rows=2000000 precision=9 seconds=0.820698",
+            "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=false rows=2000000 precision=9 seconds=0.686718",
+            "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 seconds=0.685465",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 seconds=0.753388",
+            "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 seconds=0.738314",
+            "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 seconds=0.601920",
+            "[temporal-direct-calc] case=identity rows=8000000",
+            "[temporal-direct-aliases] values=16000000",
+            "[temporal-udf] case=identity rows=2000000 precision=9 native_expected=true Flink=0.685465s StreamFusion=0.753388s stock_trials=[0.686718209, 0.68546516, 0.601919569] sf_trials=[0.820697737, 0.753387871, 0.738314028]"
+          ]
+        }
+      ]
+    },
+    "profiles": {
+      "cache": {
+        "cpu": {
+          "artifact": "temporal-udf-cache-cpu-2026-10-15.collapsed.gz",
+          "sha256": "b581060307ad629de8e883d8f039c0f94029e54bf50e047d6199b7acb769523b",
+          "timestamp_accessor_inclusive_weight": 178,
+          "unit": "CPU samples"
+        },
+        "alloc": {
+          "artifact": "temporal-udf-cache-alloc-2026-10-15.collapsed.gz",
+          "sha256": "2f312c37f041fe598413f28303733fc081bd3ab6aa663a522c28673a0cf08257",
+          "timestamp_accessor_inclusive_weight": 15728640,
+          "unit": "sampled Java allocation bytes"
+        },
+        "profiled_trial_lines": [
+          "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=5000000 precision=9 seconds=1.931753",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=5000000 precision=9 seconds=2.014670",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=true rows=5000000 precision=9 seconds=1.723731",
+          "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=true rows=5000000 precision=9 seconds=1.598500",
+          "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=5000000 precision=9 seconds=1.568811",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=5000000 precision=9 seconds=1.641636",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=5000000 precision=9 seconds=1.706433",
+          "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=5000000 precision=9 seconds=1.536652",
+          "[temporal-udf-trial] case=identity engine=Flink trial=4 warmup=false rows=5000000 precision=9 seconds=1.505041",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=4 warmup=false rows=5000000 precision=9 seconds=1.650394",
+          "[temporal-direct-calc] case=identity rows=25000000",
+          "[temporal-direct-aliases] values=50000000",
+          "[temporal-udf] case=identity rows=5000000 precision=9 native_expected=true Flink=1.536652s StreamFusion=1.650394s stock_trials=[1.568811106, 1.536652261, 1.505040845] sf_trials=[1.641636043, 1.706432586, 1.650394336]"
+        ]
+      },
+      "hints": {
+        "cpu": {
+          "artifact": "temporal-udf-hints-cpu-2026-10-15.collapsed.gz",
+          "sha256": "2cf4de480a58063b78a262b58598031b8a9df776b5108d15d35a831cab8cc954",
+          "timestamp_accessor_inclusive_weight": 0,
+          "unit": "CPU samples"
+        },
+        "alloc": {
+          "artifact": "temporal-udf-hints-alloc-2026-10-15.collapsed.gz",
+          "sha256": "b3407859a2684bd02d66909e8568b0b233bf1f5d62984f6cb445a1503ac8cf2a",
+          "timestamp_accessor_inclusive_weight": 0,
+          "unit": "sampled Java allocation bytes"
+        },
+        "profiled_trial_lines": [
+          "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=5000000 precision=9 seconds=2.026535",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=5000000 precision=9 seconds=2.062378",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=true rows=5000000 precision=9 seconds=1.747054",
+          "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=true rows=5000000 precision=9 seconds=1.570726",
+          "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=5000000 precision=9 seconds=1.558086",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=5000000 precision=9 seconds=1.728769",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=5000000 precision=9 seconds=1.678666",
+          "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=5000000 precision=9 seconds=1.460546",
+          "[temporal-udf-trial] case=identity engine=Flink trial=4 warmup=false rows=5000000 precision=9 seconds=1.499368",
+          "[temporal-udf-trial] case=identity engine=StreamFusion trial=4 warmup=false rows=5000000 precision=9 seconds=1.691732",
+          "[temporal-direct-calc] case=identity rows=25000000",
+          "[temporal-direct-aliases] values=50000000",
+          "[temporal-hints] inputs=50000000 outputs=50000000 exit=50000000",
+          "[temporal-udf] case=identity rows=5000000 precision=9 native_expected=true Flink=1.499368s StreamFusion=1.691732s stock_trials=[1.558086277, 1.460546348, 1.499368251] sf_trials=[1.728769242, 1.678666296, 1.691732181]"
+        ]
+      }
+    },
+    "profiling_methodology": "Separate 5M-row identity executions, two warmups/three pairs, async-profiler4 cpu-clock at2ms and Java alloc1m with DWARF native stacks. Profiled timings excluded from admission. Inclusive CPU stacks overlap; sampled Java allocation is neither Rust allocation nor peak heap.",
+    "bounded_cache": "64-entry adaptive immutable TimestampData cache. Three new cache checks plus 28 focused temporal checks passed before rejection. Allocation fell but identity remained slower than paired stock at both cardinalities.",
+    "batch_hints": "Retain already-read immutable TimestampData beside a local ArrowBatch; pass borrowed input/output hints through direct Calc and exit reader without suppressing function calls. The vector-reader variant removes TimestampAccessor allocation. A reusable-row reader variant also failed stock admission. Focused temporal, exact-type and failure-release checks passed; explicit runtime hint counters prove the path executed.",
+    "decision": "No identity case beats paired stock. Stock controls drift substantially between separate JVMs and three pairs are diagnostic only; do not attribute exact gains/regressions between variants. Lower allocations do not establish throughput. Both implementations removed; retain cardinality fixture and evidence only."
   }
 }

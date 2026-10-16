@@ -447,6 +447,15 @@ extra Java TimestampData allocation at callback input and row exit in the improv
 Profiled job durations are excluded from acceleration claims. See the
 [optimization and profiling details](../optimizations/udf-columnar-upcall.md#experimental-complete-temporal-calc-batches).
 
+Two further profile-guided timestamp reuse experiments were rejected. A bounded value cache
+reduced sampled timestamp accessor allocations to about 15.7 MB, and local Arrow-batch value
+hints eliminated them in a separate 5M-row profile. Both still lost to paired stock on identity
+at cardinalities eight and 16,384; a reusable row-reader variant also lost. These allocation
+results cover 25M rows per engine and are sampled Java bytes, not Rust heap or peak memory.
+Neither implementation is retained. The raw artifact records all measured arrays, available
+warmups, missing-log limitations and compressed CPU/allocation stacks. Three-pair diagnostics
+and drifting stock controls do not establish an improvement between variants.
+
 A matching `perimeter` benchmark case projects `t, z` directly from the same source, without UDFs.
 Each pair of cases runs in one JVM with the resources and repeated-trial method above:
 
@@ -478,6 +487,10 @@ SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
   -Dtemporal.rows=2000000 -Dtemporal.warmup=2 -Dtemporal.runs=5 \
   -Dsf.extraJvmArgs=-Xmx2g
 ```
+
+`-Dtemporal.cardinality=16384` selects a precomputed runtime corpus with distinct seconds and
+precision-aligned fractional nanoseconds, every eighth value NULL. The default cardinality of
+eight retains the full-range calendar, negative-epoch and timezone boundary corpus above.
 
 Use `-Dtemporal.cases=perimeter,identity -Dtemporal.rows=5000000` for the matching control.
 For JFR, compile first and run `mvn surefire:test@default-test` with the same profile and test
