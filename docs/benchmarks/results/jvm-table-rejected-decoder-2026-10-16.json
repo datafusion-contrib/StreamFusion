@@ -1,0 +1,1514 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+  "admitted": false,
+  "configuration": {
+    "java": "17",
+    "build": "release with mimalloc",
+    "rows": 500000,
+    "keys": 16384,
+    "width": 256,
+    "text_cardinality": 1,
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "warmup_pairs": 2,
+    "measured_pairs": 3,
+    "native_input_rows_per_recording": 2500000,
+    "production_ipc": true,
+    "both_transposes": true,
+    "profiler": "async-profiler 4.0 cpu-clock 2ms DWARF, Java allocations 1MiB"
+  },
+  "limitations": [
+    "ALL profile timings excluded: external Java work observed. No throughput or causal CPU speedup claim.",
+    "Java allocation samples estimate allocation volume, not copied bytes, retained heap or Rust allocations.",
+    "Whole-process profiles include both engines, startup, setup, JIT and warmup. Inclusive stack totals overlap.",
+    "Separate numeric-group recordings demonstrate symbolized Rust aggregate/control execution; those Rust costs cannot be assigned to the wide split-only path."
+  ],
+  "decision": "Reject JDK String constructor in external conversion: correctness passes but allocation samples increase.",
+  "profiles": [
+    {
+      "label": "wide-table-118-split-baseline",
+      "flink_line": "1.18.1",
+      "shape": "split",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": true,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 96.45999999999981,
+      "external_observations": 47,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-118-split-baseline-cpu.collapsed.gz",
+          "sha256": "be7036037d2cd990b530a1b3cf646517a3599cf18198c03a57a8d0ac750e2aeb",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 18337,
+            "table_function": 1651,
+            "StringStringConverter.toExternal": 420,
+            "decodeUTF8Strict": 381,
+            "ArrowToRowDataOperator": 251,
+            "RowDataSerializer.copy": 205,
+            "VarCharWriter.doWrite": 503,
+            "String.getBytes": 424
+          },
+          "leading_table_function_leaves": [
+            [
+              "org/apache/flink/table/data/binary/StringUtf8Utils.decodeUTF8Strict_[j]",
+              381
+            ],
+            [
+              "java/lang/String.encodeUTF8_[i]",
+              370
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              74
+            ],
+            [
+              "jlong_disjoint_arraycopy",
+              55
+            ],
+            [
+              "org/apache/arrow/vector/BaseFixedWidthVector.isSet_[i]",
+              33
+            ],
+            [
+              "itable stub",
+              33
+            ],
+            [
+              "java/lang/StringLatin1.indexOf_[i]",
+              27
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$6_[i]",
+              27
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowWriter.write_[i]",
+              15
+            ],
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              15
+            ],
+            [
+              "tech/streamfusion/PortableSqlFixtures$Split.eval_[j]",
+              14
+            ],
+            [
+              "org/apache/flink/table/data/utils/JoinedRowData.replace_[i]",
+              13
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion_bridge::bridge::read_strings",
+              1
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-118-split-baseline-alloc.collapsed.gz",
+          "sha256": "9498395d36794da0ce894b8554896e59428cb9ed20e7b6b6416b1c97952197b7",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 35392681240,
+            "table_function": 10623123456,
+            "ArrowToRowDataOperator": 2296381440,
+            "RowDataSerializer.copy": 2135949312,
+            "String.getBytes": 3542089728,
+            "VarCharWriter.doWrite": 3546284032,
+            "StringStringConverter.toExternal": 1249902592
+          },
+          "leading_table_function_leaves": [
+            [
+              "byte[]_[i]",
+              8304721920
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              433061888
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              344981504
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              261095424
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              200278016
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              171966464
+            ],
+            [
+              "java.lang.String_[i]",
+              165675008
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              149946368
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              148897792
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              122683392
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              102760448
+            ],
+            [
+              "java.lang.Integer_[i]",
+              68157440
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-split-baseline.log.gz",
+          "sha256": "5c05a74454d375ba84532ee57ab3178b0d98e6dc3d00393bc04261a0cbf10fbd"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-split-baseline-gc.log.gz",
+          "sha256": "c52c20de6e1e8ce3b6d89880abc7df35f0e2a553849629bea6b309d720d1392f"
+        }
+      ]
+    },
+    {
+      "label": "wide-table-118-numeric-group-baseline",
+      "flink_line": "1.18.1",
+      "shape": "numeric-group",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": true,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 35.880000000000365,
+      "external_observations": 41,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-baseline-cpu.collapsed.gz",
+          "sha256": "e17922d226be96b18f59da86a6442a2a82f91fd9e3d9d49a6c5b40d18a38ed94",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 22384,
+            "table_function": 350
+          },
+          "leading_table_function_leaves": [
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              17
+            ],
+            [
+              "itable stub",
+              16
+            ],
+            [
+              "org/apache/flink/table/data/utils/JoinedRowData.replace_[i]",
+              14
+            ],
+            [
+              "tech/streamfusion/TableFunctionBenchmark$NumericRows.eval_[j]",
+              12
+            ],
+            [
+              "org/apache/flink/table/data/columnar/ColumnarRowData.getArity_[j]",
+              12
+            ],
+            [
+              "tech/streamfusion/operator/NativeColumnarTableFunctionOperator.processElement_[j]",
+              10
+            ],
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              10
+            ],
+            [
+              "org/apache/flink/table/data/conversion/RowRowConverter.toInternal_[i]",
+              8
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowWriter.write_[i]",
+              7
+            ],
+            [
+              "org/apache/flink/table/data/utils/JoinedRowData.isNullAt_[i]",
+              7
+            ],
+            [
+              "org/apache/flink/table/data/utils/ProjectedRowData.isNullAt_[i]",
+              6
+            ],
+            [
+              "Copy::fill_to_memory_atomic",
+              5
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              742
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              158
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              95
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              40
+            ],
+            [
+              "streamfusion_bridge::bridge::import_record_batch",
+              15
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              15
+            ],
+            [
+              "streamfusion::group_agg::group_agg_state_bytes",
+              14
+            ],
+            [
+              "streamfusion::group_agg::GroupAggState::accumulate",
+              13
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              10
+            ],
+            [
+              "streamfusion::aggregates::ValueColumn::at",
+              9
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::fold",
+              9
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::emit",
+              7
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-baseline-alloc.collapsed.gz",
+          "sha256": "e6f4f02de9fbe3eebdd71e83c39d524b264dfd97bb1293e10946dc56bca8aded",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 11432965240,
+            "table_function": 718274560
+          },
+          "leading_table_function_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              213909504
+            ],
+            [
+              "java.lang.Long_[i]",
+              148897792
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              124780544
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              102760448
+            ],
+            [
+              "byte[]_[i]",
+              61865984
+            ],
+            [
+              "java.lang.Integer_[i]",
+              38797312
+            ],
+            [
+              "org.apache.arrow.memory.ArrowBuf_[i]",
+              3145728
+            ],
+            [
+              "org.apache.arrow.vector.ipc.message.ArrowBuffer_[i]",
+              2097152
+            ],
+            [
+              "org.apache.arrow.memory.BufferLedger_[i]",
+              2097152
+            ],
+            [
+              "java.util.HashMap$Node[]_[i]",
+              2097152
+            ],
+            [
+              "java.util.HashMap_[i]",
+              1048576
+            ],
+            [
+              "java.nio.DirectByteBuffer_[i]",
+              1048576
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-baseline.log.gz",
+          "sha256": "5377d7d1f9ca9912f6996e7f372cc76a206f9fdf7bf20131829f184440ef168b"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-baseline-gc.log.gz",
+          "sha256": "bc56e6f5f1a164a3d98503328fb9b7fe5201ee5fee1a909a05cf4761a5d9053d"
+        }
+      ]
+    },
+    {
+      "label": "wide-table-118-split-jdk-decoder",
+      "flink_line": "1.18.1",
+      "shape": "split",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": false,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/arrow/JdkStringConverter.java": "a5e11e5e7689e41b4059786b868d05178d2faed11eff8e72e34db1be0c84084f",
+        "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "b577d796807f3bb9b7d65c85bbea69fabf84db1043ba328396f57abfba5c433a",
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 42.699999999999946,
+      "external_observations": 41,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-118-split-jdk-decoder-cpu.collapsed.gz",
+          "sha256": "6e10c279659eef1d65f988da52f58303e30bada95e387dc52b2e131585a8227a",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 15766,
+            "table_function": 2114,
+            "JdkStringConverter.toExternal": 891,
+            "ArrowToRowDataOperator": 246,
+            "RowDataSerializer.copy": 212,
+            "String.getBytes": 235,
+            "VarCharWriter.doWrite": 325
+          },
+          "leading_table_function_leaves": [
+            [
+              "java/lang/String.<init>_[j]",
+              840
+            ],
+            [
+              "org/apache/arrow/memory/util/MemoryUtil.getInt_[i]",
+              222
+            ],
+            [
+              "java/lang/String.encodeUTF8_[i]",
+              166
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              81
+            ],
+            [
+              "jlong_disjoint_arraycopy",
+              75
+            ],
+            [
+              "tech/streamfusion/PortableSqlFixtures$Split.eval_[j]",
+              30
+            ],
+            [
+              "vframe::sender",
+              24
+            ],
+            [
+              "itable stub",
+              22
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$6_[i]",
+              22
+            ],
+            [
+              "java/lang/StringLatin1.indexOf_[i]",
+              21
+            ],
+            [
+              "org/apache/arrow/vector/BaseFixedWidthVector.isSet_[i]",
+              20
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              16
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::calc::infer_calc_output_schema::{{closure}}",
+              1
+            ],
+            [
+              "streamfusion::expr::try_compile_expr",
+              1
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-118-split-jdk-decoder-alloc.collapsed.gz",
+          "sha256": "4e993ea01cc285f4dd33ea1db3d16c40b0104678247dba88abf4601b62d89647",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 36537383648,
+            "table_function": 11621367808,
+            "String.getBytes": 3509583872,
+            "VarCharWriter.doWrite": 3521118208,
+            "ArrowToRowDataOperator": 2307915776,
+            "RowDataSerializer.copy": 2143289344,
+            "JdkStringConverter.toExternal": 2304770048
+          },
+          "leading_table_function_leaves": [
+            [
+              "byte[]_[i]",
+              9365880832
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              459276288
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              332398592
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              255852544
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              217055232
+            ],
+            [
+              "java.lang.String_[i]",
+              163577856
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              158334976
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              158334976
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              140509184
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              105906176
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              80740352
+            ],
+            [
+              "java.lang.Integer_[i]",
+              55574528
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-split-jdk-decoder.log.gz",
+          "sha256": "fb14eb9154a3225d67c9e767318cbb87ab080c33dbf565cea05df1d14504ef72"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-split-jdk-decoder-gc.log.gz",
+          "sha256": "92de8e3561c3954a880d0df3a4ebdd8236434f6955ad60172fc084cb68857654"
+        }
+      ]
+    },
+    {
+      "label": "wide-table-118-numeric-group-jdk-decoder",
+      "flink_line": "1.18.1",
+      "shape": "numeric-group",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": false,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/arrow/JdkStringConverter.java": "a5e11e5e7689e41b4059786b868d05178d2faed11eff8e72e34db1be0c84084f",
+        "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "b577d796807f3bb9b7d65c85bbea69fabf84db1043ba328396f57abfba5c433a",
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 35.870000000000026,
+      "external_observations": 34,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-jdk-decoder-cpu.collapsed.gz",
+          "sha256": "b04ddef1e84bfdd3b946c3cecd5202db1673142720629fd10ef66065a48a5c59",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 18151,
+            "table_function": 312
+          },
+          "leading_table_function_leaves": [
+            [
+              "tech/streamfusion/TableFunctionBenchmark$NumericRows.eval_[j]",
+              24
+            ],
+            [
+              "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+              13
+            ],
+            [
+              "itable stub",
+              9
+            ],
+            [
+              "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.getInt_[i]",
+              8
+            ],
+            [
+              "org/apache/flink/table/data/conversion/RowRowConverter.toInternal_[i]",
+              7
+            ],
+            [
+              "org/apache/flink/table/runtime/util/StreamRecordCollector.collect_[j]",
+              7
+            ],
+            [
+              "clear_page_erms_[k]",
+              7
+            ],
+            [
+              "tech/streamfusion/operator/NativeColumnarTableFunctionOperator.processElement_[j]",
+              6
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowWriter.write_[j]",
+              6
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              6
+            ],
+            [
+              "g1_post_barrier_slow",
+              5
+            ],
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              5
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              551
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              116
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              82
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              30
+            ],
+            [
+              "streamfusion_bridge::bridge::import_record_batch",
+              15
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              11
+            ],
+            [
+              "streamfusion::group_agg::group_agg_state_bytes",
+              9
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              8
+            ],
+            [
+              "streamfusion::group_agg::GroupAggState::accumulate",
+              7
+            ],
+            [
+              "streamfusion_bridge::bridge::export_record_batch",
+              6
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::fold",
+              5
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::emit",
+              4
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-jdk-decoder-alloc.collapsed.gz",
+          "sha256": "4130fbe86b61c3ea84a0cc46fa11cbd17c75db4a70dba4499ddd6072670cc97d",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 11503222384,
+            "table_function": 745537536
+          },
+          "leading_table_function_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              197132288
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              155189248
+            ],
+            [
+              "java.lang.Long_[i]",
+              150994944
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              83886080
+            ],
+            [
+              "byte[]_[i]",
+              76546048
+            ],
+            [
+              "java.lang.Integer_[i]",
+              46137344
+            ],
+            [
+              "java.util.ArrayList_[i]",
+              5242880
+            ],
+            [
+              "org.apache.arrow.memory.ArrowBuf_[i]",
+              3145728
+            ],
+            [
+              "java.nio.HeapByteBuffer_[i]",
+              3145728
+            ],
+            [
+              "java.nio.DirectByteBuffer_[i]",
+              2097152
+            ],
+            [
+              "org.apache.arrow.vector.TinyIntVector_[i]",
+              2097152
+            ],
+            [
+              "org.apache.arrow.vector.ipc.message.ArrowBuffer_[i]",
+              2097152
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-jdk-decoder.log.gz",
+          "sha256": "0f0e974a47b0d379b7cdaf6e10db6c4bdd59756410c8a43727a5bca63dc58a9b"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-118-numeric-group-jdk-decoder-gc.log.gz",
+          "sha256": "03c05fd5fba27298877f524c3450519d7128ff02a5a602668091a7adb0746876"
+        }
+      ]
+    },
+    {
+      "label": "wide-table-22-split-baseline",
+      "flink_line": "2.2.1",
+      "shape": "split",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": true,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 76.10999999999993,
+      "external_observations": 60,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-22-split-baseline-cpu.collapsed.gz",
+          "sha256": "e66295a822f1d939796ef2a349cef50b75e52324fdcc6ca3c778a74e9b247037",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 18179,
+            "table_function": 1562,
+            "StringStringConverter.toExternal": 362,
+            "decodeUTF8Strict": 318,
+            "VarCharWriter.doWrite": 499,
+            "String.getBytes": 298,
+            "ArrowToRowDataOperator": 271,
+            "RowDataSerializer.copy": 234
+          },
+          "leading_table_function_leaves": [
+            [
+              "org/apache/flink/table/data/binary/StringUtf8Utils.decodeUTF8Strict_[j]",
+              317
+            ],
+            [
+              "java/lang/String.encodeUTF8_[i]",
+              246
+            ],
+            [
+              "org/apache/arrow/memory/util/MemoryUtil.getByte_[i]",
+              98
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              86
+            ],
+            [
+              "jlong_disjoint_arraycopy",
+              41
+            ],
+            [
+              "sun/misc/Unsafe.getInt_[i]",
+              32
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$6_[i]",
+              32
+            ],
+            [
+              "itable stub",
+              30
+            ],
+            [
+              "org/apache/arrow/vector/BaseFixedWidthVector.isSet_[i]",
+              30
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              25
+            ],
+            [
+              "vframe::sender",
+              17
+            ],
+            [
+              "java/lang/StringLatin1.indexOf_[i]",
+              17
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::calc::infer_calc_output_schema::{{closure}}",
+              1
+            ],
+            [
+              "streamfusion::expr::try_compile_expr",
+              1
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-22-split-baseline-alloc.collapsed.gz",
+          "sha256": "b81480880403a94728c02ba725e0c6f5364df0ae07c8e82972ed8b5aa45f9a3a",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 35943099584,
+            "table_function": 10682892288,
+            "ArrowToRowDataOperator": 2276458496,
+            "RowDataSerializer.copy": 2114977792,
+            "StringStringConverter.toExternal": 1221591040,
+            "VarCharWriter.doWrite": 3599761408,
+            "String.getBytes": 3598712832
+          },
+          "leading_table_function_leaves": [
+            [
+              "byte[]_[i]",
+              8344567808
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              446693376
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              369098752
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              250609664
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              207618048
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              171966464
+            ],
+            [
+              "java.lang.String_[i]",
+              161480704
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              156237824
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              145752064
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              132120576
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              95420416
+            ],
+            [
+              "java.util.ArrayList_[i]",
+              70254592
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-split-baseline.log.gz",
+          "sha256": "f073ebd01cd96978dfa7f65a9e9c6d7b715e5a0b2b1f69d1053f3c3d89c2c5ad"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-split-baseline-gc.log.gz",
+          "sha256": "d9a2d156f9e4273a922432ceae623959cfdcf77e1499c8ec4cd41e3e2c20d4bb"
+        }
+      ]
+    },
+    {
+      "label": "wide-table-22-numeric-group-baseline",
+      "flink_line": "2.2.1",
+      "shape": "numeric-group",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": true,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 1.8700000000000543,
+      "external_observations": 12,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-baseline-cpu.collapsed.gz",
+          "sha256": "978b42231148cab17eb8ae1712277a2b7c54e83bdc6f15f35652ade535e9b2d1",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 21135,
+            "table_function": 267
+          },
+          "leading_table_function_leaves": [
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              14
+            ],
+            [
+              "tech/streamfusion/TableFunctionBenchmark$NumericRows.eval_[j]",
+              14
+            ],
+            [
+              "ColumnarJvmTableFunction$11.processElement_[j]",
+              13
+            ],
+            [
+              "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+              12
+            ],
+            [
+              "itable stub",
+              9
+            ],
+            [
+              "tech/streamfusion/operator/NativeColumnarTableFunctionOperator.processElement_[j]",
+              7
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              7
+            ],
+            [
+              "ColumnarJvmTableFunction$11$TableFunctionCollector$2.collect_[j]",
+              6
+            ],
+            [
+              "ColumnarJvmTableFunction$11$TableFunctionResultConverterCollector$9.collect_[j]",
+              5
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.setField_[i]",
+              4
+            ],
+            [
+              "tech/streamfusion/operator/NativeColumnarTableFunctionOperator$1.collect_[j]",
+              4
+            ],
+            [
+              "org/apache/flink/table/data/columnar/ColumnarRowData.getArity_[j]",
+              4
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              596
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              116
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              103
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              39
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              17
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              13
+            ],
+            [
+              "streamfusion::group_agg::group_agg_state_bytes",
+              11
+            ],
+            [
+              "streamfusion_bridge::bridge::export_record_batch",
+              8
+            ],
+            [
+              "streamfusion_bridge::bridge::import_record_batch",
+              7
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::emit",
+              7
+            ],
+            [
+              "streamfusion::group_agg::GroupAggState::accumulate",
+              5
+            ],
+            [
+              "streamfusion::group_agg::GroupAggState::emit",
+              5
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-baseline-alloc.collapsed.gz",
+          "sha256": "c779dabd90920e3395ed8949a5706268b92a0a264c9db68b85060ebf181f9def",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 11262290224,
+            "table_function": 741343232
+          },
+          "leading_table_function_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              188743680
+            ],
+            [
+              "java.lang.Long_[i]",
+              175112192
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              139460608
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              95420416
+            ],
+            [
+              "byte[]_[i]",
+              73400320
+            ],
+            [
+              "java.lang.Integer_[i]",
+              36700160
+            ],
+            [
+              "org.apache.arrow.memory.ArrowBuf_[i]",
+              6291456
+            ],
+            [
+              "java.nio.HeapByteBuffer_[i]",
+              3145728
+            ],
+            [
+              "java.nio.DirectByteBuffer_[i]",
+              3145728
+            ],
+            [
+              "java.util.ArrayList$Itr_[i]",
+              3145728
+            ],
+            [
+              "java.util.ArrayList_[i]",
+              2097152
+            ],
+            [
+              "int[]_[i]",
+              2097152
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-baseline.log.gz",
+          "sha256": "ff189ee2fd7a44ace3b93a4d2e455e170679047c4726cc7938173774849fa625"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-baseline-gc.log.gz",
+          "sha256": "9fca2c16197d6151a9a65e2b97f6caf8d83ea6b7b041906b064ea1befa99b415"
+        }
+      ]
+    },
+    {
+      "label": "wide-table-22-split-jdk-decoder",
+      "flink_line": "2.2.1",
+      "shape": "split",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": false,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/arrow/JdkStringConverter.java": "a5e11e5e7689e41b4059786b868d05178d2faed11eff8e72e34db1be0c84084f",
+        "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "b577d796807f3bb9b7d65c85bbea69fabf84db1043ba328396f57abfba5c433a",
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 37.17999999999998,
+      "external_observations": 44,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-22-split-jdk-decoder-cpu.collapsed.gz",
+          "sha256": "704a2eb0b96411098c5b28f46dee5afb2216c0b5a593ae739bf3c4f88253cf31",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 15881,
+            "table_function": 1958,
+            "ArrowToRowDataOperator": 248,
+            "RowDataSerializer.copy": 212,
+            "JdkStringConverter.toExternal": 814,
+            "VarCharWriter.doWrite": 336,
+            "String.getBytes": 256
+          },
+          "leading_table_function_leaves": [
+            [
+              "java/lang/String.<init>_[j]",
+              756
+            ],
+            [
+              "java/lang/String.encodeUTF8_[i]",
+              197
+            ],
+            [
+              "org/apache/arrow/memory/util/MemoryUtil.getInt_[i]",
+              177
+            ],
+            [
+              "jlong_disjoint_arraycopy",
+              71
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              70
+            ],
+            [
+              "itable stub",
+              31
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$6_[i]",
+              24
+            ],
+            [
+              "java/lang/StringLatin1.indexOf_[i]",
+              23
+            ],
+            [
+              "org/apache/arrow/vector/BaseFixedWidthVector.isSet_[i]",
+              22
+            ],
+            [
+              "tech/streamfusion/PortableSqlFixtures$Split.eval_[j]",
+              21
+            ],
+            [
+              "vframe::sender",
+              20
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              16
+            ]
+          ],
+          "leading_rust_frames": []
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-22-split-jdk-decoder-alloc.collapsed.gz",
+          "sha256": "e39b3721bebd8845395acd8d85528196527d887216edc60dd8ddfede8d77f9fb",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 36391941456,
+            "table_function": 11769217024,
+            "String.getBytes": 3465543680,
+            "VarCharWriter.doWrite": 3467640832,
+            "JdkStringConverter.toExternal": 2382364672,
+            "ArrowToRowDataOperator": 2354053120,
+            "RowDataSerializer.copy": 2203058176
+          },
+          "leading_table_function_leaves": [
+            [
+              "byte[]_[i]",
+              9466544128
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              435159040
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              371195904
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              276824064
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              203423744
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              162529280
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              150994944
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              150994944
+            ],
+            [
+              "java.lang.String_[i]",
+              136314880
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              135266304
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              97517568
+            ],
+            [
+              "java.lang.Integer_[i]",
+              60817408
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-split-jdk-decoder.log.gz",
+          "sha256": "c03f990dc2b00dc6835791d4140b327f59cf7eb4c57084ee159c71240e4ee2de"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-split-jdk-decoder-gc.log.gz",
+          "sha256": "0d7315108f59d86c17b08d7802e22e03231fabdca1f2201b43cde10078376463"
+        }
+      ]
+    },
+    {
+      "label": "wide-table-22-numeric-group-jdk-decoder",
+      "flink_line": "2.2.1",
+      "shape": "numeric-group",
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "production_clean": false,
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/arrow/JdkStringConverter.java": "a5e11e5e7689e41b4059786b868d05178d2faed11eff8e72e34db1be0c84084f",
+        "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "b577d796807f3bb9b7d65c85bbea69fabf84db1043ba328396f57abfba5c433a",
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ed8093270c144fc8603c0a63710c99c2fb6ab74a5ac2202eec57c2eb81947627",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853"
+      },
+      "timing_excluded": true,
+      "external_cpu_seconds": 26.870000000000033,
+      "external_observations": 37,
+      "stacks": {
+        "cpu": {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-jdk-decoder-cpu.collapsed.gz",
+          "sha256": "7ff49a34ad398d403b2c6755fd5457468226cddc65c9789f56b28cda9d0a51f6",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 17575,
+            "table_function": 364
+          },
+          "leading_table_function_leaves": [
+            [
+              "tech/streamfusion/TableFunctionBenchmark$NumericRows.eval_[j]",
+              18
+            ],
+            [
+              "itable stub",
+              14
+            ],
+            [
+              "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+              12
+            ],
+            [
+              "org/apache/flink/table/data/columnar/ColumnarRowData.getArity_[j]",
+              9
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              8
+            ],
+            [
+              "tech/streamfusion/arrow/ArrowWriter.write_[j]",
+              8
+            ],
+            [
+              "tech/streamfusion/operator/NativeColumnarTableFunctionOperator.processElement_[j]",
+              7
+            ],
+            [
+              "org/apache/flink/table/data/conversion/RowRowConverter.toInternal_[j]",
+              7
+            ],
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              7
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              7
+            ],
+            [
+              "ColumnarJvmTableFunction$11.processElement_[j]",
+              6
+            ],
+            [
+              "org/apache/arrow/memory/ArrowBuf.addr_[i]",
+              6
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              595
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              118
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              72
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              37
+            ],
+            [
+              "streamfusion_bridge::bridge::import_record_batch",
+              16
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              16
+            ],
+            [
+              "streamfusion::group_agg::group_agg_state_bytes",
+              14
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              11
+            ],
+            [
+              "streamfusion::group_agg::GroupAggState::accumulate",
+              7
+            ],
+            [
+              "streamfusion_bridge::bridge::export_record_batch",
+              5
+            ],
+            [
+              "streamfusion::aggregates::ValueColumn::at",
+              4
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::fold",
+              4
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-jdk-decoder-alloc.collapsed.gz",
+          "sha256": "f6153af32804150eee0b0df7dde675ff1bc0061ddcd4d5a185532f31f267bc27",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 11577889440,
+            "table_function": 784334848
+          },
+          "leading_table_function_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              219152384
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              162529280
+            ],
+            [
+              "java.lang.Long_[i]",
+              154140672
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              121634816
+            ],
+            [
+              "byte[]_[i]",
+              53477376
+            ],
+            [
+              "java.lang.Integer_[i]",
+              44040192
+            ],
+            [
+              "java.util.ArrayList_[i]",
+              4194304
+            ],
+            [
+              "org.apache.arrow.memory.ArrowBuf_[i]",
+              3145728
+            ],
+            [
+              "java.util.HashMap$Node[]_[i]",
+              3145728
+            ],
+            [
+              "java.util.ArrayList$Itr_[i]",
+              2097152
+            ],
+            [
+              "org.apache.arrow.vector.ipc.message.ArrowRecordBatch_[i]",
+              2097152
+            ],
+            [
+              "int[]_[i]",
+              2097152
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "logs": [
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-jdk-decoder.log.gz",
+          "sha256": "b77a8185820a9b898cb725a8b6d1f8b68894f5b1821143f5946a402612e9a363"
+        },
+        {
+          "file": "jvm-table-decoder-2026-10-16-22-numeric-group-jdk-decoder-gc.log.gz",
+          "sha256": "b749348062f3caa8b270dc8c2ea5d6343b1f2e8bbddcdb3f4c60fba1ba280166"
+        }
+      ]
+    }
+  ],
+  "source_overrides": [
+    {
+      "file": "jvm-table-rejected-decoder-2026-10-16-JdkStringConverter.java.gz",
+      "sha256": "a485b9c90374c0b7d49441c3c67f72086405065ce51a083f6c826c196d3b78c8"
+    },
+    {
+      "file": "jvm-table-rejected-decoder-2026-10-16-JdkStringConverterTest.java.gz",
+      "sha256": "1ff019d6360dc8d2129678a0551628879454718a97ae9be06cd193ec935b44cf"
+    },
+    {
+      "file": "jvm-table-rejected-decoder-2026-10-16-NativeTableFunctionExecNode.java.gz",
+      "sha256": "f1a74ba6849cb6ba92298c627a9a4307442031cddb3776851edc02a95dd4d0ca"
+    }
+  ]
+}

@@ -1,0 +1,3363 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "run_id": 38887761648,
+  "source_revision": "fcc979012d9b1fdd0ddf5238d55830c6dc9c08e6",
+  "measured_merge": "846cbb7c5cd8c14fb4cfe32b9329dd3f1b13ef70",
+  "admitted": false,
+  "configuration": {
+    "java": 17,
+    "build": "release+mimalloc",
+    "rows": 2000000,
+    "grouped_table_rows": 500000,
+    "warmup_pairs": 2,
+    "pairs": 5,
+    "heap": "2 GiB",
+    "parallelism": 1,
+    "production_ipc": true,
+    "both_transposes": true,
+    "borrowed_string_exit": true,
+    "jvm_accumulator_cache_entries": 65536
+  },
+  "limitations": [
+    "Whole-input/output timings retain both transposes, source/sink, production conversion, JNI and state costs. EXPLAIN and per-job cluster setup precede timing.",
+    "Each previous-runtime JVM retains its own stock controls; drift/range overlap prevents assigning every difference solely to encoding reuse.",
+    "The measured merge also includes three singleton-shuffle Java changes absent from the previous native revision; all native/build inputs match. Matched local writer-only profiles separately isolate the allocation change.",
+    "Eight mixed aggregate JFR recordings are diagnostic only; their timings are excluded.",
+    "Wide distinct text remains slower than stock on2.2. Several1.18 aggregate cases regress. Keep the broader draft/default-off experiments.",
+    "The next hit-sensitive cache extension is not measured by this run.",
+    "Full collapsed CPU/allocation stacks are checked in; raw JFRs remain in the original local recordings and CI artifacts, with their hashes recorded here."
+  ],
+  "lines": [
+    {
+      "flink_line": "2.2.1",
+      "native_sha256": "7d438f4de470445a9f5f4b748c6a3cccf713ee2d8eee5b49b7ac9f4ef226ef54",
+      "native_payload_cache_hit": "true",
+      "native_source_fingerprint": "2a5c6af6bc8cd9374b3c1b57cfb7a267b8e095573ee58d0f47e7b97c7812580d",
+      "previous_native_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "previous_fallback_revision": "b965b8bf0c97450f6971f20db0fe6abc6bbac8ae",
+      "tables": [
+        {
+          "label": "basic",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              2.349222095,
+              2.372855177,
+              2.328827001,
+              2.323575847,
+              2.248657021
+            ],
+            "median_seconds": 2.328827001,
+            "range_seconds": [
+              2.248657021,
+              2.372855177
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.824959383,
+              1.689368476,
+              1.71323506,
+              1.69947823,
+              1.640810172
+            ],
+            "median_seconds": 1.69947823,
+            "range_seconds": [
+              1.640810172,
+              1.824959383
+            ]
+          },
+          "stock_over_candidate": 1.3703188189706907,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                2.408708128,
+                2.297425987,
+                2.34525604,
+                2.364309951,
+                2.380085114
+              ],
+              "median_seconds": 2.364309951,
+              "range_seconds": [
+                2.297425987,
+                2.408708128
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.995145711,
+                1.880587833,
+                1.901802217,
+                1.881107746,
+                1.862307735
+              ],
+              "median_seconds": 1.881107746,
+              "range_seconds": [
+                1.862307735,
+                1.995145711
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                2.337410604,
+                2.357276719,
+                2.394736623,
+                2.280460242,
+                2.383227703
+              ],
+              "median_seconds": 2.357276719,
+              "range_seconds": [
+                2.280460242,
+                2.394736623
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                2.408948283,
+                2.366694131,
+                2.262701211,
+                2.44055889,
+                2.425984807
+              ],
+              "median_seconds": 2.408948283,
+              "range_seconds": [
+                2.262701211,
+                2.44055889
+              ]
+            }
+          }
+        },
+        {
+          "label": "basic",
+          "shape": "numeric",
+          "stock": {
+            "seconds": [
+              1.502054591,
+              1.367411297,
+              1.41226566,
+              1.439501241,
+              1.385238807
+            ],
+            "median_seconds": 1.41226566,
+            "range_seconds": [
+              1.367411297,
+              1.502054591
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              0.960486677,
+              0.876451663,
+              0.889734485,
+              0.87425205,
+              0.882527326
+            ],
+            "median_seconds": 0.882527326,
+            "range_seconds": [
+              0.87425205,
+              0.960486677
+            ]
+          },
+          "stock_over_candidate": 1.6002514804850363,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                1.389387366,
+                1.468040636,
+                1.427440425,
+                1.396275233,
+                1.431295975
+              ],
+              "median_seconds": 1.427440425,
+              "range_seconds": [
+                1.389387366,
+                1.468040636
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                0.894013191,
+                0.871412231,
+                1.02815283,
+                0.89973925,
+                0.850585545
+              ],
+              "median_seconds": 0.894013191,
+              "range_seconds": [
+                0.850585545,
+                1.02815283
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.467738637,
+                1.443273412,
+                1.366366775,
+                1.41005674,
+                1.34922364
+              ],
+              "median_seconds": 1.41005674,
+              "range_seconds": [
+                1.34922364,
+                1.467738637
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.418891624,
+                1.385615616,
+                1.421160745,
+                1.512920769,
+                1.379772555
+              ],
+              "median_seconds": 1.418891624,
+              "range_seconds": [
+                1.379772555,
+                1.512920769
+              ]
+            }
+          }
+        },
+        {
+          "label": "distinct",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              2.574610063,
+              2.582928072,
+              2.570321804,
+              2.642740884,
+              2.518063905
+            ],
+            "median_seconds": 2.574610063,
+            "range_seconds": [
+              2.518063905,
+              2.642740884
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              2.172141192,
+              2.102420775,
+              2.058709083,
+              2.062609662,
+              2.004900336
+            ],
+            "median_seconds": 2.062609662,
+            "range_seconds": [
+              2.004900336,
+              2.172141192
+            ]
+          },
+          "stock_over_candidate": 1.2482294204437798,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                2.583923328,
+                2.575270892,
+                2.545729728,
+                2.587316958,
+                2.457083023
+              ],
+              "median_seconds": 2.575270892,
+              "range_seconds": [
+                2.457083023,
+                2.587316958
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                2.091017467,
+                2.048500182,
+                2.046539679,
+                2.056547762,
+                2.04460906
+              ],
+              "median_seconds": 2.048500182,
+              "range_seconds": [
+                2.04460906,
+                2.091017467
+              ]
+            }
+          },
+          "previous_fallback": null
+        },
+        {
+          "label": "grouped",
+          "shape": "group",
+          "stock": {
+            "seconds": [
+              4.552197089,
+              3.3088125,
+              3.186150213,
+              3.931311782,
+              3.576179292
+            ],
+            "median_seconds": 3.576179292,
+            "range_seconds": [
+              3.186150213,
+              4.552197089
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.444632286,
+              1.245564351,
+              1.21154545,
+              1.469218212,
+              1.307566802
+            ],
+            "median_seconds": 1.307566802,
+            "range_seconds": [
+              1.21154545,
+              1.469218212
+            ]
+          },
+          "stock_over_candidate": 2.734987831237398,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                4.542309553,
+                3.215616213,
+                3.302831172,
+                3.245071508,
+                3.323701954
+              ],
+              "median_seconds": 3.302831172,
+              "range_seconds": [
+                3.215616213,
+                4.542309553
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.445091117,
+                1.291006839,
+                1.692732804,
+                1.70820247,
+                1.359965534
+              ],
+              "median_seconds": 1.445091117,
+              "range_seconds": [
+                1.291006839,
+                1.70820247
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                3.292917805,
+                3.403658566,
+                3.592098203,
+                3.558001207,
+                3.400752373
+              ],
+              "median_seconds": 3.403658566,
+              "range_seconds": [
+                3.292917805,
+                3.592098203
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                3.907585469,
+                3.56956117,
+                3.541172842,
+                3.744628946,
+                3.533271335
+              ],
+              "median_seconds": 3.56956117,
+              "range_seconds": [
+                3.533271335,
+                3.907585469
+              ]
+            }
+          }
+        },
+        {
+          "label": "wide-distinct",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              4.683675663,
+              4.592235224,
+              4.563960263,
+              4.558106961,
+              4.484359911
+            ],
+            "median_seconds": 4.563960263,
+            "range_seconds": [
+              4.484359911,
+              4.683675663
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              4.889018558,
+              4.832334087,
+              4.775786772,
+              4.770834364,
+              4.722821343
+            ],
+            "median_seconds": 4.775786772,
+            "range_seconds": [
+              4.722821343,
+              4.889018558
+            ]
+          },
+          "stock_over_candidate": 0.9556457356425712,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                4.582874163,
+                4.624879753,
+                4.619976843,
+                4.531330117,
+                4.570061168
+              ],
+              "median_seconds": 4.582874163,
+              "range_seconds": [
+                4.531330117,
+                4.624879753
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                4.923361438,
+                4.882708294,
+                4.890231285,
+                4.817881265,
+                4.833185748
+              ],
+              "median_seconds": 4.882708294,
+              "range_seconds": [
+                4.817881265,
+                4.923361438
+              ]
+            }
+          },
+          "previous_fallback": null
+        },
+        {
+          "label": "wide",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              4.819263012,
+              4.797831234,
+              4.802151872,
+              4.73104261,
+              4.901094467
+            ],
+            "median_seconds": 4.802151872,
+            "range_seconds": [
+              4.73104261,
+              4.901094467
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              2.851345528,
+              2.880913213,
+              2.810265134,
+              2.815662291,
+              2.817150809
+            ],
+            "median_seconds": 2.817150809,
+            "range_seconds": [
+              2.810265134,
+              2.880913213
+            ]
+          },
+          "stock_over_candidate": 1.7046129929070473,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                4.85560912,
+                4.843334636,
+                4.863117539,
+                4.805269553,
+                4.72471424
+              ],
+              "median_seconds": 4.843334636,
+              "range_seconds": [
+                4.72471424,
+                4.863117539
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                4.749681215,
+                4.659909789,
+                4.721537286,
+                4.662755615,
+                4.570835021
+              ],
+              "median_seconds": 4.662755615,
+              "range_seconds": [
+                4.570835021,
+                4.749681215
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                4.456430845,
+                4.439311735,
+                4.431796469,
+                4.339367966,
+                4.452001901
+              ],
+              "median_seconds": 4.439311735,
+              "range_seconds": [
+                4.339367966,
+                4.456430845
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                4.462693396,
+                4.549286707,
+                4.438016292,
+                4.391856798,
+                4.321006798
+              ],
+              "median_seconds": 4.438016292,
+              "range_seconds": [
+                4.321006798,
+                4.549286707
+              ]
+            }
+          }
+        }
+      ],
+      "aggregates": [
+        {
+          "label": "int-low",
+          "key_type": "int",
+          "keys": 16,
+          "stock": {
+            "seconds": [
+              1.093041588,
+              1.197502604,
+              0.954142259,
+              1.086746523,
+              0.950570959
+            ],
+            "median_seconds": 1.086746523,
+            "range_seconds": [
+              0.950570959,
+              1.197502604
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              0.952691119,
+              0.874383695,
+              0.938719631,
+              0.876569507,
+              0.724732306
+            ],
+            "median_seconds": 0.876569507,
+            "range_seconds": [
+              0.724732306,
+              0.952691119
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.290436437,
+                1.094401902,
+                1.022306155,
+                1.091073992,
+                1.134245831
+              ],
+              "median_seconds": 1.094401902,
+              "range_seconds": [
+                1.022306155,
+                1.290436437
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.006548668,
+                0.99211612,
+                0.984790943,
+                0.950985625,
+                1.027164401
+              ],
+              "median_seconds": 0.99211612,
+              "range_seconds": [
+                0.950985625,
+                1.027164401
+              ]
+            }
+          }
+        },
+        {
+          "label": "int-medium",
+          "key_type": "int",
+          "keys": 65536,
+          "stock": {
+            "seconds": [
+              1.409484995,
+              1.365425179,
+              1.321792672,
+              1.276884606,
+              1.313191035
+            ],
+            "median_seconds": 1.321792672,
+            "range_seconds": [
+              1.276884606,
+              1.409484995
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.07983661,
+              0.948534835,
+              1.050696224,
+              0.976192541,
+              0.896937352
+            ],
+            "median_seconds": 0.976192541,
+            "range_seconds": [
+              0.896937352,
+              1.07983661
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.52838086,
+                1.314376357,
+                1.337001753,
+                1.292156936,
+                1.253552835
+              ],
+              "median_seconds": 1.314376357,
+              "range_seconds": [
+                1.253552835,
+                1.52838086
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.266444135,
+                1.327647733,
+                1.316732942,
+                1.269487612,
+                1.36208776
+              ],
+              "median_seconds": 1.316732942,
+              "range_seconds": [
+                1.266444135,
+                1.36208776
+              ]
+            }
+          }
+        },
+        {
+          "label": "int-distinct",
+          "key_type": "int",
+          "keys": 2000000,
+          "stock": {
+            "seconds": [
+              4.690722191,
+              2.659816872,
+              4.158008952,
+              3.588540811,
+              2.964659975
+            ],
+            "median_seconds": 3.588540811,
+            "range_seconds": [
+              2.659816872,
+              4.690722191
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              2.965409499,
+              4.89069831,
+              2.54897895,
+              2.943074693,
+              2.587045102
+            ],
+            "median_seconds": 2.943074693,
+            "range_seconds": [
+              2.54897895,
+              4.89069831
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                4.191334881,
+                3.450769513,
+                2.708558809,
+                3.350605811,
+                2.700175282
+              ],
+              "median_seconds": 3.350605811,
+              "range_seconds": [
+                2.700175282,
+                4.191334881
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                2.71782185,
+                3.543927642,
+                2.846992074,
+                2.614753656,
+                2.502731
+              ],
+              "median_seconds": 2.71782185,
+              "range_seconds": [
+                2.502731,
+                3.543927642
+              ]
+            }
+          }
+        },
+        {
+          "label": "bigint-low",
+          "key_type": "bigint",
+          "keys": 16,
+          "stock": {
+            "seconds": [
+              0.993121847,
+              0.96869139,
+              0.989809591,
+              1.180599146,
+              0.947127118
+            ],
+            "median_seconds": 0.989809591,
+            "range_seconds": [
+              0.947127118,
+              1.180599146
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.073436737,
+              0.921878449,
+              0.849242755,
+              0.792682113,
+              0.838605601
+            ],
+            "median_seconds": 0.849242755,
+            "range_seconds": [
+              0.792682113,
+              1.073436737
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.252490181,
+                0.989581419,
+                1.111361981,
+                0.970458864,
+                0.983441501
+              ],
+              "median_seconds": 0.989581419,
+              "range_seconds": [
+                0.970458864,
+                1.252490181
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.05930805,
+                1.036058727,
+                1.005024996,
+                1.017255354,
+                1.021940621
+              ],
+              "median_seconds": 1.021940621,
+              "range_seconds": [
+                1.005024996,
+                1.05930805
+              ]
+            }
+          }
+        },
+        {
+          "label": "bigint-medium",
+          "key_type": "bigint",
+          "keys": 65536,
+          "stock": {
+            "seconds": [
+              1.47366843,
+              1.294364361,
+              1.264016621,
+              1.269947804,
+              1.301350535
+            ],
+            "median_seconds": 1.294364361,
+            "range_seconds": [
+              1.264016621,
+              1.47366843
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.079387273,
+              1.012828332,
+              0.959976798,
+              1.112399323,
+              0.764811383
+            ],
+            "median_seconds": 1.012828332,
+            "range_seconds": [
+              0.764811383,
+              1.112399323
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.581621878,
+                1.446779133,
+                1.442242746,
+                1.379797304,
+                1.272301414
+              ],
+              "median_seconds": 1.442242746,
+              "range_seconds": [
+                1.272301414,
+                1.581621878
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.490533102,
+                1.490999862,
+                1.383130052,
+                1.376976676,
+                1.327206725
+              ],
+              "median_seconds": 1.383130052,
+              "range_seconds": [
+                1.327206725,
+                1.490999862
+              ]
+            }
+          }
+        },
+        {
+          "label": "bigint-distinct",
+          "key_type": "bigint",
+          "keys": 2000000,
+          "stock": {
+            "seconds": [
+              4.270479771,
+              3.403263017,
+              3.038000733,
+              2.560065956,
+              3.414495748
+            ],
+            "median_seconds": 3.403263017,
+            "range_seconds": [
+              2.560065956,
+              4.270479771
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              2.700026925,
+              3.677199133,
+              2.946299157,
+              2.675572448,
+              2.883218461
+            ],
+            "median_seconds": 2.883218461,
+            "range_seconds": [
+              2.675572448,
+              3.677199133
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                2.81023738,
+                2.915603647,
+                2.521070421,
+                2.850443155,
+                3.130834466
+              ],
+              "median_seconds": 2.850443155,
+              "range_seconds": [
+                2.521070421,
+                3.130834466
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                4.247390592,
+                2.793235484,
+                3.391930421,
+                2.792579715,
+                3.794657516
+              ],
+              "median_seconds": 3.391930421,
+              "range_seconds": [
+                2.792579715,
+                4.247390592
+              ]
+            }
+          }
+        },
+        {
+          "label": "string-low",
+          "key_type": "string",
+          "keys": 16,
+          "stock": {
+            "seconds": [
+              1.570842494,
+              1.365383959,
+              1.389366363,
+              1.522434589,
+              1.287815747
+            ],
+            "median_seconds": 1.389366363,
+            "range_seconds": [
+              1.287815747,
+              1.570842494
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.204298457,
+              1.293163116,
+              1.237375722,
+              1.087236335,
+              1.145585979
+            ],
+            "median_seconds": 1.204298457,
+            "range_seconds": [
+              1.087236335,
+              1.293163116
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.283788825,
+                1.308478901,
+                1.199828919,
+                1.411274303,
+                1.293544908
+              ],
+              "median_seconds": 1.293544908,
+              "range_seconds": [
+                1.199828919,
+                1.411274303
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.300262231,
+                1.274006273,
+                1.168806361,
+                1.285598122,
+                1.331975821
+              ],
+              "median_seconds": 1.285598122,
+              "range_seconds": [
+                1.168806361,
+                1.331975821
+              ]
+            }
+          }
+        },
+        {
+          "label": "string-medium",
+          "key_type": "string",
+          "keys": 65536,
+          "stock": {
+            "seconds": [
+              1.778604498,
+              1.62763136,
+              1.700705772,
+              1.640876265,
+              1.601934833
+            ],
+            "median_seconds": 1.640876265,
+            "range_seconds": [
+              1.601934833,
+              1.778604498
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.714190834,
+              1.635756132,
+              1.625517575,
+              1.579552673,
+              1.437044539
+            ],
+            "median_seconds": 1.625517575,
+            "range_seconds": [
+              1.437044539,
+              1.714190834
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                2.00117235,
+                1.707051533,
+                1.679335041,
+                1.637618216,
+                1.769192953
+              ],
+              "median_seconds": 1.707051533,
+              "range_seconds": [
+                1.637618216,
+                2.00117235
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.765417696,
+                1.706662078,
+                1.56541219,
+                1.650136653,
+                1.665633137
+              ],
+              "median_seconds": 1.665633137,
+              "range_seconds": [
+                1.56541219,
+                1.765417696
+              ]
+            }
+          }
+        },
+        {
+          "label": "string-distinct",
+          "key_type": "string",
+          "keys": 2000000,
+          "stock": {
+            "seconds": [
+              5.224703551,
+              3.249733821,
+              3.327222146,
+              3.178364018,
+              3.435262431
+            ],
+            "median_seconds": 3.327222146,
+            "range_seconds": [
+              3.178364018,
+              5.224703551
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              3.950301896,
+              3.29335025,
+              3.31255603,
+              3.282481748,
+              3.127101357
+            ],
+            "median_seconds": 3.29335025,
+            "range_seconds": [
+              3.127101357,
+              3.950301896
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                3.533209778,
+                4.783758011,
+                3.659578232,
+                3.101601448,
+                4.02382064
+              ],
+              "median_seconds": 3.659578232,
+              "range_seconds": [
+                3.101601448,
+                4.783758011
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                3.19330847,
+                3.269383278,
+                3.117493906,
+                3.202338892,
+                3.263526027
+              ],
+              "median_seconds": 3.202338892,
+              "range_seconds": [
+                3.117493906,
+                3.269383278
+              ]
+            }
+          }
+        }
+      ],
+      "profiles": [
+        {
+          "label": "profile-int-medium",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-int-medium-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-int-medium-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        },
+        {
+          "label": "profile-int-distinct",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-int-distinct-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-int-distinct-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        },
+        {
+          "label": "profile-string-medium",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-string-medium-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-string-medium-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        },
+        {
+          "label": "profile-string-distinct",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-string-distinct-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-string-distinct-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        }
+      ],
+      "artifacts": [
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-distinct-command.json.gz",
+          "sha256": "d1e6cd13d90764ade87c10a7dbff65004adb163ee63179a85f6689ab050a0964"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-distinct-gc.log.gz",
+          "sha256": "b783ff6403f8f194ba7c14680f414beccb1803c2e334eae15fecd30557508457"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-distinct.log.gz",
+          "sha256": "d90e0392ae6a7ddd3c58859ce2fc2009af7dad6c0393ee54dbd711ee20dd38a2"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-low-command.json.gz",
+          "sha256": "5c656c04711cbd5e3d338093d463b03ea71b6c0bec304c8ba96d8a4ab79800bb"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-low-gc.log.gz",
+          "sha256": "8c598c66f00866d6439a33c4683c71f0817ee55e9b1802ee73435288a0c8769b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-low.log.gz",
+          "sha256": "c842634955ed4412e73038b1a79c4d8f29e5762a880134c713f7bc2e134c2ff8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-medium-command.json.gz",
+          "sha256": "be70e9c36d23f84f05253d8b45a2d24a2659cad89292875e6d75f2dc7f36e958"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-medium-gc.log.gz",
+          "sha256": "833942a9bb0b5ccbd4de1dfdc3b848f706427206dadd728af55b1d1784e9b3fd"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-bigint-medium.log.gz",
+          "sha256": "09217bf0dd2abc211660092cd0c9103cddcd0a11496382ee5803691f9b5d0695"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-distinct-command.json.gz",
+          "sha256": "6c365dd720b21a8f4f529333fc29bf020b4597e8fc58fd09d575d4241e176e07"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-distinct-gc.log.gz",
+          "sha256": "3bdde6ec744803008671b05a8d667123dd16aee059bd08ac92dae6abb5e7fa95"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-distinct.log.gz",
+          "sha256": "7e4d3a813190d397fd7ba23fb94f8c28a7d377430d55d8be0d4fbae27fdfa020"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-low-command.json.gz",
+          "sha256": "5d521c7eaf658f8a595a1d5f2d3a5dbf03ed09d8650538215d556642915e1fc4"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-low-gc.log.gz",
+          "sha256": "3a265889becd8c283b7a3809bbf800ed7b46b048adbf839db8d13117758338d6"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-low.log.gz",
+          "sha256": "1958f5c606481ded0d59581957ecb90fa833370ffaac4cecc8ba571e00a03fef"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-medium-command.json.gz",
+          "sha256": "9df4ffbb63b606eb6df9220fca160074658667f648ac28375a308676a700f585"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-medium-gc.log.gz",
+          "sha256": "cd94bc4338c91323f4d77d7d33f1057020de69fd9f8596d9a8f2648412bbab5e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-int-medium.log.gz",
+          "sha256": "e195b257adf4db5ef5d79859a34bcebccc479f89fd7f1de6509d7977ff503c3a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-build-command.json.gz",
+          "sha256": "849ff269cde3ac7a1ce1c979476d6a92b7fc6e686d0f57e0f06daacaf00df680"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-build.log.gz",
+          "sha256": "aac585036c3f1875230d9b4368147da512b45f6b0cdaad81ba251009d175aa35"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-results.json.gz",
+          "sha256": "d8270b460dd39481365013efb956180f9a01f973b3761025404031c67096e4b5"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-basic-command.json.gz",
+          "sha256": "48686029ddd4a955b9b7433a19afee00a6b04098cab42705257a428ddafcf3e4"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-basic-gc.log.gz",
+          "sha256": "506544eed40c522e4ea641f016e8fe32f2a2d393d653a288674989936ae4ea5b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-basic.log.gz",
+          "sha256": "ead12b6d716ec3d286ba945b8dc40eefbb4570aa78885e979533b3950340ccfb"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-distinct-command.json.gz",
+          "sha256": "a836a4bc6a0f63919beac6403a76485b3753a7f0054f08fac1f35ee6c82b3473"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-distinct-gc.log.gz",
+          "sha256": "83510f9f276cc1a7b30ea48504f6cc31f16f46aa162dfaeb65d592686d4ce9c4"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-distinct.log.gz",
+          "sha256": "fdb81cf85ec567573163604a8a08bf5edcc94b696036db6388d09875826ce134"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-grouped-command.json.gz",
+          "sha256": "2bb767f18b907d4a12a38f4c230e12a5da27e12d165e1bc02c38e9d8876bac9d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-grouped-gc.log.gz",
+          "sha256": "8a3cdd671c1bf0a1f6ac35d53068f5f95bed1aba4c4e41015ba62a78d445695f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-grouped.log.gz",
+          "sha256": "ac03720224c5b34c8b2cea86b3f4882341269fa994e5cb643552143228555642"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-wide-command.json.gz",
+          "sha256": "8518f50fbc0de01725fa83c9a3975adf54db854bc290f60ef144a08e316499c3"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-wide-distinct-command.json.gz",
+          "sha256": "bd0e5367eefa0186ef51a981f2bf41e02225c761ac21c567c1a3ff1dd8f520ec"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-wide-distinct-gc.log.gz",
+          "sha256": "a31cc499f8ce0532e575dc63353d972ae04c8b7e7440a583f1ec4e33738d21fc"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-wide-distinct.log.gz",
+          "sha256": "aca7260b4fc77ca93dcebff85a4d28538e8c249cf9d813cdf0ea1cb5e5424f47"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-wide-gc.log.gz",
+          "sha256": "7ad86c8970e687e40a4a9552f398ce8cc26834f8d9b8f8a07cfb1c5c2dd43d61"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-native-tables-table-wide.log.gz",
+          "sha256": "17e7b6f0e051f5df017ecd3f9b211c1e74cd055c3421d78e558bc8b8894891e3"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-16-command.json.gz",
+          "sha256": "b5a6ed3eca152ea3170b3623f19c569ab35079aa0b7c5d48bac5e9882149998c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-16-gc.log.gz",
+          "sha256": "59cc5b950077345b173519cb1476740812dfbb56b33df5e5a63d3d6e00393d68"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-16.log.gz",
+          "sha256": "b31bfee606407e6edbf06cbce0e951bafcead0598c70b27395c0eeba98812558"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-2000000-command.json.gz",
+          "sha256": "35db7c67fbf79def7648c2b1ea9006bf8eeed5e1c514fec6bbc81c75df42da66"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-2000000-gc.log.gz",
+          "sha256": "9f248cf30425463926ea099ae8a18e212714ab38a439c406e0b4a1f28a077e6d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-2000000.log.gz",
+          "sha256": "72bfa8206ac709e5fe785c6ab24be557af7c0a75f96a8ee2c0d1811bc8c4a3a7"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-65536-command.json.gz",
+          "sha256": "824032b25e7ecaeea54d689c9c3c3efaf6cb9a0901bb16e7f7f01a26df617a0c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-65536-gc.log.gz",
+          "sha256": "c3640db2bfdbc3dc051a6447f2af7558be46ebc277dc89b617929c46431f94a6"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-bigint-65536.log.gz",
+          "sha256": "0ecfbd21555d41e944749832565cec01b1ed4947d670802ed8330804b3e45cad"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-build-command.json.gz",
+          "sha256": "c177d3d32502cecfdb40c130951965a152972cd906097015bfe602919f2314e6"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-build.log.gz",
+          "sha256": "daa5c63ada2cce92cb0200469b58be30aaa8eb8a74c8a5fde94b82a44d6a71ba"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-16-command.json.gz",
+          "sha256": "18d2293fcc1200db3943e6191890d0694c82cc82032fc6bff6d442d00429cd42"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-16-gc.log.gz",
+          "sha256": "7d97266bd62d86b9f25d5a71e3e91ae356c7087cf1b700f11a57b804980a08ff"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-16.log.gz",
+          "sha256": "6b06819a5387065f2d166f5c410d1a03de6c87b3a08d95beaf3c895e207f847a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-2000000-command.json.gz",
+          "sha256": "4e84719c638f6fa209c40bd6dcfc2530fb71d9c644b42027e126eeb4f430daec"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-2000000-gc.log.gz",
+          "sha256": "92ee7e3a777717a1a7124322e123b16a7405680ab4d918fc938f80796b2a56cf"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-2000000.log.gz",
+          "sha256": "35b49098f0c2c9b680aa0985720d70130fc1d6c706cbc26cda784507271dc225"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-65536-command.json.gz",
+          "sha256": "ba390a58e5010af18a05621dbdb5384045a7e41f3814189f7a4610c402b8d5b9"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-65536-gc.log.gz",
+          "sha256": "85d54df95feab67fb131d0a21a03e42c903207ef339e63d0c80a7568c6ce827b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-int-65536.log.gz",
+          "sha256": "2501992d42efd3c6d05a8332f851fbe1741e5749239dea660373e7b3c3402bb1"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-results.json.gz",
+          "sha256": "d9fc1094f95ac0c576e9bb351eaf0b720ed845eb67190ed73fbd79e6000a3b30"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-16-command.json.gz",
+          "sha256": "67e342e2767c3bba2dd9d58e6711b048df532ada96ea83b4f8a03d12b05a2e91"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-16-gc.log.gz",
+          "sha256": "e2d72238e15deaafc5590ab0a7cd81780b7a81b76700e0b7e00536fa5b9b2780"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-16.log.gz",
+          "sha256": "d7fe2bab6b3585de59f7a241d2fe4dba0beb31f7cf40232a9bb4685a6d59288c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-2000000-command.json.gz",
+          "sha256": "b05ae8c5e67fbfb59e5aeea7b18626cd372281e4bb8d7c15d354982cddec196a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-2000000-gc.log.gz",
+          "sha256": "05270d55204797a488a023be689fb5b9b3a5e9019b993fba504231ba990fa770"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-2000000.log.gz",
+          "sha256": "7fef4ced0e21c15e4d5ba9fc0d8d023d83954c943119157cebcca294dca3c9ec"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-65536-command.json.gz",
+          "sha256": "d3f9f5281d7a3f9e1744a2e003c3b6d94b198411f833d0cf7f6cee06a35b7bd3"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-65536-gc.log.gz",
+          "sha256": "0afc7304e5a9fdc7cdcf01db529240e76e6d54fdad77d0af5fb6ff9bbd6f9cfb"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-string-65536.log.gz",
+          "sha256": "861bcbddc99c7e7756599b313a3dc2f510ec69aef7b715e6ad35f435ac53e55e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-basic-command.json.gz",
+          "sha256": "a11867ecf8668d4e8d5109bf4f30c91d55d52145f5df4f2146c7f1a2fce384ea"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-basic-gc.log.gz",
+          "sha256": "32c707ffaacb487f7bf7cdc7c0b88d1ee3ec6da56b1bdb6c846db3b57c8551b0"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-basic.log.gz",
+          "sha256": "3a61ad8fb1f71a25176e4d7e07a55638d84f9d8dcbc315ab0939019422cb1836"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-grouped-command.json.gz",
+          "sha256": "30d1719233ef610172b390c8578cc984e9dd60056096d50f29864e1c87273b6e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-grouped-gc.log.gz",
+          "sha256": "4287be869a8af13102083bdccaa559c5b1a7e4cbdf6a0d29f34ca252e9f90c30"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-grouped.log.gz",
+          "sha256": "206a03a19efb76d34a7442cc4e009b3fd305a56572a9ba00dc622d1e26fda29d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-wide-command.json.gz",
+          "sha256": "15f36776ab0df6d2bd9192b495874ccfd4bd5c58f9f4e4616c783519e0773026"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-wide-gc.log.gz",
+          "sha256": "4cf3ab87bdedea8615cf5e84216fff050e7fd95ff9cb69ae35d87ed0060ac4fd"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-previous-runtime-table-wide.log.gz",
+          "sha256": "4c056ae6f6c06b7d94f82e3d5de3adffdeb8de2774eff7c39e17012ab10446c8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-distinct-alloc.collapsed.gz",
+          "sha256": "2c379f51c35514339a11858a25ad14cf6c5485bfeda8365cfed7176d1c57444f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-distinct-command.json.gz",
+          "sha256": "7ba9dbe6376757c337e5a7a317bccaa9efa2b14dfbaabfd7a5403174b8e11b8f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-distinct-cpu.collapsed.gz",
+          "sha256": "e46890360b7b35058984e7d85e71b7bbd8b22653805b9f08396139c68a9e55df"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-distinct-gc.log.gz",
+          "sha256": "17cc9155ec566ae71569f501b5d5003e31c4ad013f681ae2a411fbac403368ef"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-distinct.log.gz",
+          "sha256": "47b0830f3d3325adead94158e29c4dea3971281960e2c92bfb962c5c9c2ebee0"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-medium-alloc.collapsed.gz",
+          "sha256": "8f99b358da76f890331d3eca72502d325b9e86342db1924d0c2ef544dbf31531"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-medium-command.json.gz",
+          "sha256": "4a8740043f2eb8a07a4a27c0a0c10a8dc80cadca95dff8e76385ae130c76988b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-medium-cpu.collapsed.gz",
+          "sha256": "ee051e09e3a62e286358611150d5cf386c518858273650a17af4a73772846029"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-medium-gc.log.gz",
+          "sha256": "4912b563978c5b17e75f9da3401cea875bf06c8d4cf37656152b2dae481159fc"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-int-medium.log.gz",
+          "sha256": "2ce319a5172a3456f63bca578a7533e42c1400392b52bd329d6fe15ffc90e17a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-distinct-alloc.collapsed.gz",
+          "sha256": "dd56c1d767e25d25e072a0d693138147b9426df42b148c426df9110a687d6ff6"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-distinct-command.json.gz",
+          "sha256": "22cd9623452ecd756b5cadde2b0b8c103a834cd3cc0386b66a3430915a0ea10b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-distinct-cpu.collapsed.gz",
+          "sha256": "0abb60aab5d62715aa1f0b4489b027954b420ab276e4c9cea7ec0eabcd2a5d71"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-distinct-gc.log.gz",
+          "sha256": "d79815b4ba2b67df21da067a1adbb7ef6b5536b97139aa9ec6435185ecd93d34"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-distinct.log.gz",
+          "sha256": "541e2d4ef0a577b46ae867c989239fb88c9590ec41c374aa88a5111bff4c8eab"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-medium-alloc.collapsed.gz",
+          "sha256": "79289d2cbd687076bfbdf84c2296ee0c21a96cca069170091301aa9ed9ce7771"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-medium-command.json.gz",
+          "sha256": "1aa3064a152c111498ae6cd9455cfbe19886eb493a2018676071149b77a66479"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-medium-cpu.collapsed.gz",
+          "sha256": "6e831ea332081b2c8d5a41f642187594f25e09dcc6b908e6afb5513945356226"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-medium-gc.log.gz",
+          "sha256": "15a9b5526f5d096142c0901ad6fa0c17aecb896f233d2088daebcc6d240ad6ab"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-profile-string-medium.log.gz",
+          "sha256": "312645a37318eb41e5602b1d2b048470943fdfa5efef9a033455fcbb96cd65ef"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-results.json.gz",
+          "sha256": "f5998cdec96d9444986be9fb32e200b548c0eaa200d48b0a4c1e07719d11991e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-distinct-command.json.gz",
+          "sha256": "d283c9ce9a853d5f2753969621cd81bbeff4bda3f6ded260de8ed87d30d1c5fe"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-distinct-gc.log.gz",
+          "sha256": "35156628f390ad55a629e99e8b9545ad4de0b3f3227ebf601d4828fa0150cf89"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-distinct.log.gz",
+          "sha256": "71699a590607c5842224d1969f114ebf5a2977d7b6661e94529c41ffebbb83aa"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-low-command.json.gz",
+          "sha256": "1c727f8e847096ee47379be0c1796a8dbd74b99eb588aed0708beaeff22c6c0c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-low-gc.log.gz",
+          "sha256": "a832d77192e5aabbd4efc8cd81411988d25e74832123c488a737af502a770dcc"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-low.log.gz",
+          "sha256": "7a02a31af009e4653f685ef6761b071376f666f51e56b36ca9b8dcb133819c0d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-medium-command.json.gz",
+          "sha256": "f3255a92c6dd20b3687605897f1ed4d0de3fd16cb738d9d13be5ca46c24b9818"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-medium-gc.log.gz",
+          "sha256": "edabc66f1f332f5e785029c398d0393bb5c6157ec55a868c160e05560fa9ff0a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-string-medium.log.gz",
+          "sha256": "102193c740740c6336c72107a87795712bfcd31912f5beddd56ac52ae978c963"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-basic-gc.log.gz",
+          "sha256": "cac40874e12c134d6b1059e83fd7b0ef8c14a728279894376a35731c8838bb8f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-basic.log.gz",
+          "sha256": "ab3d52f4fa315dbaf0c1dea2e2f3941c581fde56dbe1fb23013c03f0f0c20fad"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-distinct-gc.log.gz",
+          "sha256": "1d1a3bd7f9a8d361e132d0f006a383530db24126b25d9b6c9f389d1c466eb338"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-distinct.log.gz",
+          "sha256": "f2a633710ea47172d49c4c42f5f5916e8f6a8e25d7f5019f20e9d8dfa4db547b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-grouped-gc.log.gz",
+          "sha256": "e1f4a0b2fca9c229b9401c9bd4c9384ca171e8c835d619e4c0bd60566dc1696f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-grouped.log.gz",
+          "sha256": "abdf5ac6623ba4258347a7fcccdc1fa6ecda2beaec086e1d7ec4a61a5ad6fe7a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-wide-distinct-gc.log.gz",
+          "sha256": "8c37d2afe3e9756a50aa7ad7b4e5a9c54868577fc19f7759ac15b35008a02147"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-wide-distinct.log.gz",
+          "sha256": "1c0ee11160d427c3648a0fc93369a71574bc67cf43bfb64e35f72abe9a0970fb"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-wide-gc.log.gz",
+          "sha256": "796f762ffd6605dbb406b752d458a062358f7ec67200dfd49786fc3aeae046c2"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-table-functions-v2-wide.log.gz",
+          "sha256": "3726b3970f3fa2846c35b09dfcb093e16d50c5143b879488e91fcf51dd590b78"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.FlinkJvmAggregateSqlHarnessTest.txt.gz",
+          "sha256": "b4ecd241d1ba39524c2d334fbb22906e89f904bf5da090438ddfd8adecaa29ac"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.FlinkTableFunctionSqlHarnessTest.txt.gz",
+          "sha256": "7f893ef4330c3195c1922186c72ba447e8be5419799ff59388689c1bd2f6e7c4"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.JvmAggregateBenchmark.txt.gz",
+          "sha256": "a14bde989ed0440ab0a06c401e289740c5443788fcfd91d64f6198aa1b782ff1"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.StatefulSqlRescaleTest.txt.gz",
+          "sha256": "949a010fb4bdfa848a1c486015f830fe748d31b71824dcf956e975e7395881d0"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.TableFunctionBenchmark.txt.gz",
+          "sha256": "0e7301980a8b899c2e54a5a8332574199de42cf22dbd822fee71541c53473bde"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.arrow.ArrowWriterResetTest.txt.gz",
+          "sha256": "02148c3e43cb59c178dfcbf2534f5a0f933a31331f5e4e8906605922970e2215"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.arrow.IntArrayWriterOwnershipTest.txt.gz",
+          "sha256": "1da514ac82b9c492cf3980f1bee1a8991f0838aa70489816396edaa17e310140"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.arrow.Utf8WriterReuseTest.txt.gz",
+          "sha256": "8f5dd25e9afe7d70b1e07c7f5f02593554cdc7e550d86e6827a88cc560f50764"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.operator.JvmStringKeyProbeTest.txt.gz",
+          "sha256": "6128bb74d7ea2197cb9d4503cdd2ca57a03e132bb4638beaceb7ddcc17da27d7"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.operator.StringExitOwnershipTest.txt.gz",
+          "sha256": "f3efaa37b5d338b3e0e66f6ac3790a7c5946987fda18c7d887f680f083296881"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-22-correctness-tech.streamfusion.operator.TransposeOperatorsTest.txt.gz",
+          "sha256": "5996e819458ac345d648b72d7280c804dc7dad21a6d0270eaf85c5ad0965f453"
+        }
+      ],
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-22-profile-int-distinct.jfr",
+          "raw_sha256": "c16484d3e0871ae72b0e903f5c61d67d3576fe6c294db1c021d6c7eacb7536f1",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        },
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-22-profile-int-medium.jfr",
+          "raw_sha256": "52934eebdf4d421668e24429cf8837e9376316b3b2237af417ad7a60dc939246",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        },
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-22-profile-string-distinct.jfr",
+          "raw_sha256": "95458f1713eb426a1669212594dd61ee09f791aedb1716fa6e108c546d6bd5d5",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        },
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-22-profile-string-medium.jfr",
+          "raw_sha256": "a18e6bfb0949eaa30d0460fdcc902ddc0c6600ff5c82a583029d1a68c5d7a4f2",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "1.18.1",
+      "native_sha256": "0df1c76cac8785c3e9aa267f9adcc979d967eb8b148c62ab5d32dfcb175e3f04",
+      "native_payload_cache_hit": "",
+      "native_source_fingerprint": "30d65833dadc352635eb1d021f6e27261e529f1a52e8556ae9c2667af06233b1",
+      "previous_native_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "previous_fallback_revision": "b965b8bf0c97450f6971f20db0fe6abc6bbac8ae",
+      "tables": [
+        {
+          "label": "basic",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              2.420162908,
+              2.429085888,
+              2.319418807,
+              2.288994776,
+              2.385831121
+            ],
+            "median_seconds": 2.385831121,
+            "range_seconds": [
+              2.288994776,
+              2.429085888
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.724690678,
+              1.731824137,
+              1.723754641,
+              1.716017185,
+              1.708970515
+            ],
+            "median_seconds": 1.723754641,
+            "range_seconds": [
+              1.708970515,
+              1.731824137
+            ]
+          },
+          "stock_over_candidate": 1.384089744707466,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                2.397602187,
+                2.294231429,
+                2.347579021,
+                2.388028046,
+                2.23822776
+              ],
+              "median_seconds": 2.347579021,
+              "range_seconds": [
+                2.23822776,
+                2.397602187
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.922659414,
+                1.870385655,
+                1.85298266,
+                1.816037113,
+                1.68586382
+              ],
+              "median_seconds": 1.85298266,
+              "range_seconds": [
+                1.68586382,
+                1.922659414
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                2.579283205,
+                2.702082701,
+                2.58172919,
+                2.680188407,
+                2.497463524
+              ],
+              "median_seconds": 2.58172919,
+              "range_seconds": [
+                2.497463524,
+                2.702082701
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                2.609852567,
+                2.680781159,
+                2.53697846,
+                2.80906127,
+                2.529407253
+              ],
+              "median_seconds": 2.609852567,
+              "range_seconds": [
+                2.529407253,
+                2.80906127
+              ]
+            }
+          }
+        },
+        {
+          "label": "basic",
+          "shape": "numeric",
+          "stock": {
+            "seconds": [
+              1.460079076,
+              1.42259534,
+              1.368760943,
+              1.361313672,
+              1.411528008
+            ],
+            "median_seconds": 1.411528008,
+            "range_seconds": [
+              1.361313672,
+              1.460079076
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              0.91959303,
+              0.897774614,
+              0.903954334,
+              1.062465619,
+              0.919957982
+            ],
+            "median_seconds": 0.91959303,
+            "range_seconds": [
+              0.897774614,
+              1.062465619
+            ]
+          },
+          "stock_over_candidate": 1.5349485717611406,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                1.359124374,
+                1.399992668,
+                1.348861002,
+                1.36086607,
+                1.342201333
+              ],
+              "median_seconds": 1.359124374,
+              "range_seconds": [
+                1.342201333,
+                1.399992668
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.199812894,
+                0.899137692,
+                0.924755831,
+                0.930436008,
+                0.949665958
+              ],
+              "median_seconds": 0.930436008,
+              "range_seconds": [
+                0.899137692,
+                1.199812894
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.378184569,
+                1.312800975,
+                1.34745678,
+                1.30504357,
+                1.433658146
+              ],
+              "median_seconds": 1.34745678,
+              "range_seconds": [
+                1.30504357,
+                1.433658146
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.300707343,
+                1.38695986,
+                1.317685405,
+                1.374360208,
+                1.302195152
+              ],
+              "median_seconds": 1.317685405,
+              "range_seconds": [
+                1.300707343,
+                1.38695986
+              ]
+            }
+          }
+        },
+        {
+          "label": "distinct",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              2.497980796,
+              2.453985112,
+              2.424780797,
+              2.450234819,
+              2.458983796
+            ],
+            "median_seconds": 2.453985112,
+            "range_seconds": [
+              2.424780797,
+              2.497980796
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              2.180178399,
+              2.147887635,
+              2.093289422,
+              2.186301233,
+              2.078476028
+            ],
+            "median_seconds": 2.147887635,
+            "range_seconds": [
+              2.078476028,
+              2.186301233
+            ]
+          },
+          "stock_over_candidate": 1.1425109358665309,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                2.501131447,
+                2.515360162,
+                2.464289698,
+                2.50943078,
+                2.419917328
+              ],
+              "median_seconds": 2.501131447,
+              "range_seconds": [
+                2.419917328,
+                2.515360162
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                2.188116672,
+                2.158483115,
+                2.153636267,
+                2.184569067,
+                2.067937438
+              ],
+              "median_seconds": 2.158483115,
+              "range_seconds": [
+                2.067937438,
+                2.188116672
+              ]
+            }
+          },
+          "previous_fallback": null
+        },
+        {
+          "label": "grouped",
+          "shape": "group",
+          "stock": {
+            "seconds": [
+              4.598804072,
+              4.208795839,
+              3.882736767,
+              3.878569415,
+              4.102524535
+            ],
+            "median_seconds": 4.102524535,
+            "range_seconds": [
+              3.878569415,
+              4.598804072
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.60373792,
+              1.379982612,
+              1.749919502,
+              1.442977675,
+              1.815306727
+            ],
+            "median_seconds": 1.60373792,
+            "range_seconds": [
+              1.379982612,
+              1.815306727
+            ]
+          },
+          "stock_over_candidate": 2.5581015974231,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                4.421184693,
+                3.60464051,
+                3.718090098,
+                3.922237497,
+                3.993252123
+              ],
+              "median_seconds": 3.922237497,
+              "range_seconds": [
+                3.60464051,
+                4.421184693
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.636769641,
+                1.650272649,
+                1.372409531,
+                1.929406893,
+                1.397338949
+              ],
+              "median_seconds": 1.636769641,
+              "range_seconds": [
+                1.372409531,
+                1.929406893
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                4.417209722,
+                4.197643017,
+                3.724138836,
+                3.928224857,
+                4.217791278
+              ],
+              "median_seconds": 4.197643017,
+              "range_seconds": [
+                3.724138836,
+                4.417209722
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                3.779427799,
+                3.754028704,
+                3.86745026,
+                4.129634615,
+                3.978671298
+              ],
+              "median_seconds": 3.86745026,
+              "range_seconds": [
+                3.754028704,
+                4.129634615
+              ]
+            }
+          }
+        },
+        {
+          "label": "wide-distinct",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              5.235793158,
+              5.185944695,
+              5.136610712,
+              5.332806693,
+              5.175652438
+            ],
+            "median_seconds": 5.185944695,
+            "range_seconds": [
+              5.136610712,
+              5.332806693
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              5.206808321,
+              5.202583006,
+              5.092771578,
+              5.157833591,
+              5.008960125
+            ],
+            "median_seconds": 5.157833591,
+            "range_seconds": [
+              5.008960125,
+              5.206808321
+            ]
+          },
+          "stock_over_candidate": 1.005450176610787,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                5.109008697,
+                5.202406524,
+                5.15091094,
+                5.142320248,
+                5.041032937
+              ],
+              "median_seconds": 5.142320248,
+              "range_seconds": [
+                5.041032937,
+                5.202406524
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                5.974756433,
+                5.914992161,
+                5.826652256,
+                5.775233719,
+                5.761351177
+              ],
+              "median_seconds": 5.826652256,
+              "range_seconds": [
+                5.761351177,
+                5.974756433
+              ]
+            }
+          },
+          "previous_fallback": null
+        },
+        {
+          "label": "wide",
+          "shape": "split",
+          "stock": {
+            "seconds": [
+              4.9113265,
+              4.980164519,
+              4.909331448,
+              5.036846123,
+              4.863852741
+            ],
+            "median_seconds": 4.9113265,
+            "range_seconds": [
+              4.863852741,
+              5.036846123
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              3.012454934,
+              2.960103647,
+              2.919333096,
+              2.941185807,
+              2.919426419
+            ],
+            "median_seconds": 2.941185807,
+            "range_seconds": [
+              2.919333096,
+              3.012454934
+            ]
+          },
+          "stock_over_candidate": 1.6698457092751775,
+          "previous_native": {
+            "own_stock": {
+              "seconds": [
+                5.134259017,
+                4.971107071,
+                4.979445424,
+                4.858577456,
+                4.85183989
+              ],
+              "median_seconds": 4.971107071,
+              "range_seconds": [
+                4.85183989,
+                5.134259017
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                4.812393216,
+                4.793812303,
+                4.88074539,
+                4.846233011,
+                4.849985466
+              ],
+              "median_seconds": 4.846233011,
+              "range_seconds": [
+                4.793812303,
+                4.88074539
+              ]
+            }
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                4.904333407,
+                4.953106803,
+                4.931411184,
+                4.828203721,
+                4.946208199
+              ],
+              "median_seconds": 4.931411184,
+              "range_seconds": [
+                4.828203721,
+                4.953106803
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                4.99476807,
+                4.943281251,
+                4.96293637,
+                4.933875302,
+                4.890084193
+              ],
+              "median_seconds": 4.943281251,
+              "range_seconds": [
+                4.890084193,
+                4.99476807
+              ]
+            }
+          }
+        }
+      ],
+      "aggregates": [
+        {
+          "label": "int-low",
+          "key_type": "int",
+          "keys": 16,
+          "stock": {
+            "seconds": [
+              1.109747848,
+              0.993316047,
+              1.052796438,
+              0.968633799,
+              1.011059431
+            ],
+            "median_seconds": 1.011059431,
+            "range_seconds": [
+              0.968633799,
+              1.109747848
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.084081237,
+              1.141539029,
+              0.937378847,
+              0.863203501,
+              0.695667606
+            ],
+            "median_seconds": 0.937378847,
+            "range_seconds": [
+              0.695667606,
+              1.141539029
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.074601302,
+                0.956144284,
+                0.923969616,
+                0.921967867,
+                0.936728046
+              ],
+              "median_seconds": 0.936728046,
+              "range_seconds": [
+                0.921967867,
+                1.074601302
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                0.909480611,
+                1.046061146,
+                0.923837481,
+                1.000320002,
+                0.933105466
+              ],
+              "median_seconds": 0.933105466,
+              "range_seconds": [
+                0.909480611,
+                1.046061146
+              ]
+            }
+          }
+        },
+        {
+          "label": "int-medium",
+          "key_type": "int",
+          "keys": 65536,
+          "stock": {
+            "seconds": [
+              1.649137317,
+              1.702874026,
+              1.647519732,
+              1.517595124,
+              1.479143662
+            ],
+            "median_seconds": 1.647519732,
+            "range_seconds": [
+              1.479143662,
+              1.702874026
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.293858222,
+              1.404380969,
+              1.041373385,
+              1.047587496,
+              0.896839443
+            ],
+            "median_seconds": 1.047587496,
+            "range_seconds": [
+              0.896839443,
+              1.404380969
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.688333305,
+                1.636063609,
+                1.573506335,
+                1.625644305,
+                1.584686833
+              ],
+              "median_seconds": 1.625644305,
+              "range_seconds": [
+                1.573506335,
+                1.688333305
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.651441009,
+                1.669533398,
+                1.608902251,
+                1.483620359,
+                1.545686647
+              ],
+              "median_seconds": 1.608902251,
+              "range_seconds": [
+                1.483620359,
+                1.669533398
+              ]
+            }
+          }
+        },
+        {
+          "label": "int-distinct",
+          "key_type": "int",
+          "keys": 2000000,
+          "stock": {
+            "seconds": [
+              3.11077266,
+              3.435277171,
+              2.758643422,
+              2.550917629,
+              3.602840752
+            ],
+            "median_seconds": 3.11077266,
+            "range_seconds": [
+              2.550917629,
+              3.602840752
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              3.49213354,
+              3.376337822,
+              3.23574973,
+              3.033536017,
+              3.032568548
+            ],
+            "median_seconds": 3.23574973,
+            "range_seconds": [
+              3.032568548,
+              3.49213354
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                4.897539275,
+                4.06782081,
+                3.25956447,
+                3.98990787,
+                2.887151083
+              ],
+              "median_seconds": 3.98990787,
+              "range_seconds": [
+                2.887151083,
+                4.897539275
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                3.023140303,
+                3.757402339,
+                2.886459762,
+                3.741122101,
+                3.758142902
+              ],
+              "median_seconds": 3.741122101,
+              "range_seconds": [
+                2.886459762,
+                3.758142902
+              ]
+            }
+          }
+        },
+        {
+          "label": "bigint-low",
+          "key_type": "bigint",
+          "keys": 16,
+          "stock": {
+            "seconds": [
+              1.088999351,
+              1.118890326,
+              0.949741187,
+              0.915761313,
+              0.909148452
+            ],
+            "median_seconds": 0.949741187,
+            "range_seconds": [
+              0.909148452,
+              1.118890326
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.088212368,
+              1.063892902,
+              0.882055413,
+              0.912751352,
+              0.704345831
+            ],
+            "median_seconds": 0.912751352,
+            "range_seconds": [
+              0.704345831,
+              1.088212368
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                0.925294004,
+                0.925080757,
+                0.983848851,
+                0.958173935,
+                0.972933335
+              ],
+              "median_seconds": 0.958173935,
+              "range_seconds": [
+                0.925080757,
+                0.983848851
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                0.959331422,
+                1.063963758,
+                0.927985547,
+                0.92629799,
+                1.002440022
+              ],
+              "median_seconds": 0.959331422,
+              "range_seconds": [
+                0.92629799,
+                1.063963758
+              ]
+            }
+          }
+        },
+        {
+          "label": "bigint-medium",
+          "key_type": "bigint",
+          "keys": 65536,
+          "stock": {
+            "seconds": [
+              1.60995344,
+              1.786567403,
+              1.63364446,
+              1.647355032,
+              1.518301506
+            ],
+            "median_seconds": 1.63364446,
+            "range_seconds": [
+              1.518301506,
+              1.786567403
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.163434843,
+              1.186579003,
+              1.004469372,
+              1.062440625,
+              0.898733575
+            ],
+            "median_seconds": 1.062440625,
+            "range_seconds": [
+              0.898733575,
+              1.186579003
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                2.045571407,
+                1.746621049,
+                1.73398658,
+                1.658073725,
+                1.674491906
+              ],
+              "median_seconds": 1.73398658,
+              "range_seconds": [
+                1.658073725,
+                2.045571407
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.812309804,
+                1.8941876,
+                1.744957395,
+                1.709389334,
+                1.702493021
+              ],
+              "median_seconds": 1.744957395,
+              "range_seconds": [
+                1.702493021,
+                1.8941876
+              ]
+            }
+          }
+        },
+        {
+          "label": "bigint-distinct",
+          "key_type": "bigint",
+          "keys": 2000000,
+          "stock": {
+            "seconds": [
+              4.478761554,
+              2.914240347,
+              3.696917495,
+              3.160285985,
+              3.004340103
+            ],
+            "median_seconds": 3.160285985,
+            "range_seconds": [
+              2.914240347,
+              4.478761554
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              3.138576732,
+              5.513420083,
+              3.958589787,
+              2.964537929,
+              3.434022685
+            ],
+            "median_seconds": 3.434022685,
+            "range_seconds": [
+              2.964537929,
+              5.513420083
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                3.043712388,
+                2.924534071,
+                3.756332455,
+                2.824533195,
+                4.403346833
+              ],
+              "median_seconds": 3.043712388,
+              "range_seconds": [
+                2.824533195,
+                4.403346833
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                3.781279144,
+                3.815822196,
+                3.92074367,
+                3.16109806,
+                3.045625497
+              ],
+              "median_seconds": 3.781279144,
+              "range_seconds": [
+                3.045625497,
+                3.92074367
+              ]
+            }
+          }
+        },
+        {
+          "label": "string-low",
+          "key_type": "string",
+          "keys": 16,
+          "stock": {
+            "seconds": [
+              1.326210321,
+              1.309764828,
+              1.239297968,
+              1.174068544,
+              1.288484817
+            ],
+            "median_seconds": 1.288484817,
+            "range_seconds": [
+              1.174068544,
+              1.326210321
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              1.453866268,
+              1.553227914,
+              1.410531012,
+              1.318805176,
+              1.178855718
+            ],
+            "median_seconds": 1.410531012,
+            "range_seconds": [
+              1.178855718,
+              1.553227914
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                1.291931628,
+                1.35544165,
+                1.293903123,
+                1.316099151,
+                1.698822858
+              ],
+              "median_seconds": 1.316099151,
+              "range_seconds": [
+                1.291931628,
+                1.698822858
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                1.332732154,
+                1.329800455,
+                1.214154168,
+                1.262176129,
+                1.179174194
+              ],
+              "median_seconds": 1.262176129,
+              "range_seconds": [
+                1.179174194,
+                1.332732154
+              ]
+            }
+          }
+        },
+        {
+          "label": "string-medium",
+          "key_type": "string",
+          "keys": 65536,
+          "stock": {
+            "seconds": [
+              1.964715423,
+              1.85304334,
+              1.878626494,
+              1.911672649,
+              1.897789845
+            ],
+            "median_seconds": 1.897789845,
+            "range_seconds": [
+              1.85304334,
+              1.964715423
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              2.112277944,
+              2.167506369,
+              2.142061375,
+              2.26616474,
+              1.94390518
+            ],
+            "median_seconds": 2.142061375,
+            "range_seconds": [
+              1.94390518,
+              2.26616474
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                2.316920396,
+                1.994678349,
+                1.977179868,
+                1.986607634,
+                1.979484867
+              ],
+              "median_seconds": 1.986607634,
+              "range_seconds": [
+                1.977179868,
+                2.316920396
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                2.044943625,
+                2.017337026,
+                2.033556002,
+                2.026579997,
+                2.250061134
+              ],
+              "median_seconds": 2.033556002,
+              "range_seconds": [
+                2.017337026,
+                2.250061134
+              ]
+            }
+          }
+        },
+        {
+          "label": "string-distinct",
+          "key_type": "string",
+          "keys": 2000000,
+          "stock": {
+            "seconds": [
+              5.529881393,
+              3.601914791,
+              3.710764136,
+              3.802809742,
+              3.562559765
+            ],
+            "median_seconds": 3.710764136,
+            "range_seconds": [
+              3.562559765,
+              5.529881393
+            ]
+          },
+          "candidate": {
+            "seconds": [
+              4.413269722,
+              3.927007878,
+              3.740099451,
+              3.754443308,
+              3.667051331
+            ],
+            "median_seconds": 3.754443308,
+            "range_seconds": [
+              3.667051331,
+              4.413269722
+            ]
+          },
+          "previous_fallback": {
+            "own_stock": {
+              "seconds": [
+                5.720884362,
+                3.682928019,
+                5.62187364,
+                3.664200655,
+                3.86476513
+              ],
+              "median_seconds": 3.86476513,
+              "range_seconds": [
+                3.664200655,
+                5.720884362
+              ]
+            },
+            "runtime": {
+              "seconds": [
+                3.195816692,
+                6.236545763,
+                3.419846204,
+                5.902714288,
+                3.353334957
+              ],
+              "median_seconds": 3.419846204,
+              "range_seconds": [
+                3.195816692,
+                6.236545763
+              ]
+            }
+          }
+        }
+      ],
+      "profiles": [
+        {
+          "label": "profile-int-medium",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-int-medium-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-int-medium-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        },
+        {
+          "label": "profile-int-distinct",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-int-distinct-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-int-distinct-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        },
+        {
+          "label": "profile-string-medium",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-string-medium-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-string-medium-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        },
+        {
+          "label": "profile-string-distinct",
+          "timing_excluded": true,
+          "stacks": {
+            "cpu": {
+              "path": "profile-string-distinct-cpu.collapsed",
+              "units": "samples"
+            },
+            "alloc": {
+              "path": "profile-string-distinct-alloc.collapsed",
+              "units": "sampled Java allocation bytes"
+            }
+          }
+        }
+      ],
+      "artifacts": [
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-distinct-command.json.gz",
+          "sha256": "67cef9db33af7b5c6dbf48180d5364cbd9fdbc7a588a522560d28f256dadfcaf"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-distinct-gc.log.gz",
+          "sha256": "dc7821f6a63306f77ff29ac6e94a4e2142ac0e787a5330015709caf6d842ea65"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-distinct.log.gz",
+          "sha256": "b8c35b49f2b81f7d353fd951bf9e5cd3cde8a4720e3e8492895ced81eaa1fe12"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-low-command.json.gz",
+          "sha256": "08f6b579f41573c57a0158c44515a2c5a6e8a0cc97e9731820e3be9079e55ed1"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-low-gc.log.gz",
+          "sha256": "45f976a5dd8fb76564dcf2bdfc7455ab8504a62cbc8c792f8d1d7d9d303da2f3"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-low.log.gz",
+          "sha256": "edc74651921bbf33c63f936f324ec66984ae15f499a8d1bbf30ef52634975fff"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-medium-command.json.gz",
+          "sha256": "b3f6bc1985883b7bf4a8ab7bcd3787ee2ec2e3323e47f1886b5231846782584d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-medium-gc.log.gz",
+          "sha256": "089a86472d0e47f63f75d83414a4c90788ba022925edb0443a9016efe4f1eed7"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-bigint-medium.log.gz",
+          "sha256": "f90506d0b8c569a36382e40d5fccee8daeb9c7ba3e22ff232c7f86be2bc78d08"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-distinct-command.json.gz",
+          "sha256": "95ac9f0990d25e9e8157e9ffffea55cdacf29a1e86fe7a52b110bb4110e45264"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-distinct-gc.log.gz",
+          "sha256": "3b232c1b2fcb30e9587b0a73bdd7516f1eca09d1f99cfa9adea15442248f3dbd"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-distinct.log.gz",
+          "sha256": "d893fadf3bd8a1f889eebb242c85b3a7ae35f1cd9fef37f781be961f85e57e62"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-low-command.json.gz",
+          "sha256": "3dc7b895f127d6c5ab0283f225942374cff1fb5f178d52cab6c8f7e585757f42"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-low-gc.log.gz",
+          "sha256": "0d3a7bc150eef3c5ae5659e24896236224df8546c947c154dd66913def950756"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-low.log.gz",
+          "sha256": "99c77cdb8f8d7ed42b4c75ba4a25e55a32a6053b6e1a553d2f509e44120ab718"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-medium-command.json.gz",
+          "sha256": "28e777507c8df630c369409a8d7f6e51a767c2b748547c74e0746bf8d31303f6"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-medium-gc.log.gz",
+          "sha256": "05cb261de4d1340476f2298ecbf6d145f0cf66e40df82f99d271d9f220493102"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-int-medium.log.gz",
+          "sha256": "14693ff2c4919bc4d68bb737e93f2acae847395ddb9e76f376d73dff1d3daf4c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-build-command.json.gz",
+          "sha256": "b586c90a14e2fdd71b804e7754692f56c9cb461bd870547fbe6f6b4f1ca3e3c0"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-build.log.gz",
+          "sha256": "93e227bdab33e9ed8ecf149e705c904ab28c6b0f30657c51f626148dfc9f57e1"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-results.json.gz",
+          "sha256": "1285a7a395baf0f4b8837a4df870c8e90536144d25d57b945b0e99273b7d1f01"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-basic-command.json.gz",
+          "sha256": "ac4e7d2089e12d9aef7ac2f7273d23d41e68e815a679fb48a751ed4baf59a891"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-basic-gc.log.gz",
+          "sha256": "e6172de2e9d9d401c74777fee48505d3936104a2e214fa900e8052841044294e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-basic.log.gz",
+          "sha256": "436dfe6f6818232c58667df77c4de3232ce7a2164978231cb8a6faf904c77281"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-distinct-command.json.gz",
+          "sha256": "c12056998a8afc9bd485926f540f40b98991b6e46238259ddcd00f676670f08c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-distinct-gc.log.gz",
+          "sha256": "36fd31a9822c42784110412501d50d3b9c424b4e7d3bf81fc978677679547be0"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-distinct.log.gz",
+          "sha256": "bc26dbf4d950cdbf76b854a5bd7125e4ceefd0f713d085d29cd27477940ba8e2"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-grouped-command.json.gz",
+          "sha256": "a052ffda32c940422b8ec4a4d89b45209d9577f55cf9a67defaeb3dd446049a6"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-grouped-gc.log.gz",
+          "sha256": "4d7a35d71d5e130e7d4560c5ba45ca682586c2022dcc25fd3719d6470dd728ba"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-grouped.log.gz",
+          "sha256": "7481fb8319f856ec4d5c85ca82dfd39459bf6ddcf43e06b6b2c7e8520ce0c4d8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-wide-command.json.gz",
+          "sha256": "d5854f8616129c7326a8a692481b0e452668f4164ce2cfe36c1157ff34adda3d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-wide-distinct-command.json.gz",
+          "sha256": "2ff2cffa389cd595eeac4b414ff467b986ca27c1b13f1c98720f2bbee6d4abd2"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-wide-distinct-gc.log.gz",
+          "sha256": "96ecb3c7da97fd3260e37b2461952966a723e018a2324795d5ab3f2e866ce362"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-wide-distinct.log.gz",
+          "sha256": "cbd6cb093aa462f896594cca856a9fa9104e66479e58e77f57b9bb56e8e7bcdc"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-wide-gc.log.gz",
+          "sha256": "322255c6d5f9aa13be31e6d008700e2a8fafe04c44788b910e48509bd82b6417"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-native-tables-table-wide.log.gz",
+          "sha256": "3709043b68c1be4f51d8d67e4e0f19a8d2672e5db03df8197ff0615d223eae4f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-16-command.json.gz",
+          "sha256": "728840222eed733690e31fa99a8f66f4594dd28b5d1f706a4058eaa3a7a3f4f3"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-16-gc.log.gz",
+          "sha256": "ab2f32992ce298578141d53664fafc44372a09acac8e1a862ef44a3e44eff4ab"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-16.log.gz",
+          "sha256": "28fcc20f59a92e738cd70a0f44721826c4cda6036dc607614f3015f4e068210a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-2000000-command.json.gz",
+          "sha256": "8354418867c0571be14ac4424c38b129c654fd13ac01db48693ce5086a1e8508"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-2000000-gc.log.gz",
+          "sha256": "528635ed4d6e468a73077d14a21641efc5c43427c331c990da2e589462102a57"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-2000000.log.gz",
+          "sha256": "37e776ab2c51839f6bf4cbbe8fb1cf056e6c7b30a4fd5b44414c997188745317"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-65536-command.json.gz",
+          "sha256": "8d911a607866db3a236064000583bdc47bfc0a40776ff4326b2d68d5a95370c8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-65536-gc.log.gz",
+          "sha256": "d1c9c859ebbfd1a5a6311488e6fed89888880b95e9be879e13bdab3722a53d30"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-bigint-65536.log.gz",
+          "sha256": "33de5d13354f8d66acbcb2d6e16c82b4f5feb51cbf176019c8a017590d120f04"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-build-command.json.gz",
+          "sha256": "e9896da6e720a2c6387bee66e7c21017176d5f8989d98ac9ec3c51e3a015fd6f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-build.log.gz",
+          "sha256": "d6662b4e1db43e4cb67670a46d96774cea929fb267496d22585edc39556502b8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-16-command.json.gz",
+          "sha256": "9d0e5874bb6eade79aa725f061bb79de7418017d9cc20afe786835f0c4b7f44a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-16-gc.log.gz",
+          "sha256": "0d9ff3808ea020c8acf91737271c58c8055a73f260d95144f54972a49dfe9081"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-16.log.gz",
+          "sha256": "7824fbb9fb622f18765dbfb04ac68186c5b703faa477a350dd50d2055386514f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-2000000-command.json.gz",
+          "sha256": "829d6e4db3cd91eb4957b598dfe51c6743e71750b060e53b98c7715cfbb265f9"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-2000000-gc.log.gz",
+          "sha256": "ccea3267d72d4628aff6af53243c46c524e35f56bfacbd3e5996df4c62e11649"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-2000000.log.gz",
+          "sha256": "a28fc330087cb540bdcf4fac2739d39fa1c8467fe0b53ed093c677afe4fc69f2"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-65536-command.json.gz",
+          "sha256": "e9cf419ed91f607a91033887a366675224c877a1974e241dcbb41b9d269d8a81"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-65536-gc.log.gz",
+          "sha256": "38540d4fc69800d31171df632b5f12fe99acb721d440bf3148564f014588750c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-int-65536.log.gz",
+          "sha256": "801360084f97a41ce106875a89fa6fda7844adecfe1a1fd3b3b9059dec91a396"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-results.json.gz",
+          "sha256": "4abc39a714d486374810a8801988b08eedfd9f2c59a2c23bfe5bac0b780ea2eb"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-16-command.json.gz",
+          "sha256": "7a700fdbad94c3ca45a8dadb6bc3a1e76cb1ed48d00b379aea9e97781c0963ca"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-16-gc.log.gz",
+          "sha256": "93635d66d441717f5afd9f62fba6c8420ef4f4cd5d8c1764c77c68840b18e5ac"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-16.log.gz",
+          "sha256": "08d2e80ebe2fbbe1b890f0d169d4799d63e8d8529badf3bf6fcc0a88110a2b21"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-2000000-command.json.gz",
+          "sha256": "88c5177c188b9cb89abeadcce5db204fac62f3d4bae83fd4e198b964eea9f78d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-2000000-gc.log.gz",
+          "sha256": "c9acb858a6bd326f2a67e089525327c19b69062c914357091d640ccfe9fe9466"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-2000000.log.gz",
+          "sha256": "638b8ebae411ba1551f1cf6ed3b455a50b0a878842fe9a0747c57bca6e97fd48"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-65536-command.json.gz",
+          "sha256": "053256cb18b11e443839b3d2ece9bd495868f9f911aa74b941abd9b06e28668b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-65536-gc.log.gz",
+          "sha256": "943fd2cdd2f973f804c6538e60197968eeafc8fd48650c6923ab18162a790d72"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-string-65536.log.gz",
+          "sha256": "5ac8b86c9c58c78c76b87dca1e04eb4ca5f1e333d68f77096281a5937c445c68"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-basic-command.json.gz",
+          "sha256": "3d4770dc57bc76654309128a72d614cc3be6d3f296f00149ea98027c53b6779d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-basic-gc.log.gz",
+          "sha256": "26f6988a366c1a043371d2ab23cd2c0cbc1cbf5563e91c1febd29230e6f4c288"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-basic.log.gz",
+          "sha256": "d0119f0c60af067925e778ba2ce36902c37fbf0c7e545884f3b156727a42853c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-grouped-command.json.gz",
+          "sha256": "0523c3a1b43fa785d97688775ba9cef58174dd6bfa0e55c1f6e8c4a2b470c6db"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-grouped-gc.log.gz",
+          "sha256": "d0e708b1c3719d3d49345b443b1ce1ccaef0aa6056ac7bcf510813aee61fab04"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-grouped.log.gz",
+          "sha256": "eb275446ea63303ebc2d96c91b763acd2985c7496751f7d76fdfe32e1e2ba9d1"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-wide-command.json.gz",
+          "sha256": "0281b249cb177b4bdcecf952abf4d52327a584c09f3f8b3de59a1c18edba1ff6"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-wide-gc.log.gz",
+          "sha256": "ad87212fc9be4f6a2baef9eb5b30cdf68f250f9195ce485c60527f610916832a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-previous-runtime-table-wide.log.gz",
+          "sha256": "a898f7795a3ea0f4ee7e7c48ab7bac660714b16d4917b81c93c3b5a2efa39507"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-distinct-alloc.collapsed.gz",
+          "sha256": "f1b1da61b7ba9a76f6a7abd57ffcfc3b3b735748b50a16b1e6114e1b1665f329"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-distinct-command.json.gz",
+          "sha256": "3585d8bc6f3e31499c0c852934dc8763005e1bf4af3f04cc74b7e474525ebe7d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-distinct-cpu.collapsed.gz",
+          "sha256": "b3455169077d75501787c26b57e4952cbb0ba247a539d6d4ae3603fbb9f2543a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-distinct-gc.log.gz",
+          "sha256": "3e4679ca846d8c120a98cd44db9eb1a57b8f24e9f536f1db229a82d02c5f3b22"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-distinct.log.gz",
+          "sha256": "440614dbe0d6ade15c673a1a553f20c4dd84f0f1b7877cb03428618a3b64090b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-medium-alloc.collapsed.gz",
+          "sha256": "de82901dafcaa4675f657367431fed51856312955b1c28a26bbd86b69ad23a9f"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-medium-command.json.gz",
+          "sha256": "0897e2bc3fb491bac65b68fe6130f1143e5c5a9e6c2abc0327cd01b3237b46d5"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-medium-cpu.collapsed.gz",
+          "sha256": "a7db92755e546740a621788b154bfa65dee38305edeaa83325bafc0f35df4f9c"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-medium-gc.log.gz",
+          "sha256": "776a66646c4c43172a8d7e69ddbd06872497938f3a13ac1e6c940158f3d70d9d"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-int-medium.log.gz",
+          "sha256": "366bddb972a12f14bf43324bc6558b5a13556a0d95ee4cee3e7d1816c855a9d3"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-distinct-alloc.collapsed.gz",
+          "sha256": "854c920f2b5a20723129ef1b319b875bb267621bbba98e4211f6762d2801c771"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-distinct-command.json.gz",
+          "sha256": "3cb5b8b97dcfcd4597aaceb4759c4cb3e49b4cdb2a5afa5d15fec17a62d3f4d7"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-distinct-cpu.collapsed.gz",
+          "sha256": "be8a67da2e21191b928b85df84eb2ebb860357af36202632b23969f1b8a94952"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-distinct-gc.log.gz",
+          "sha256": "453867bb7bcc2987b3f9cb540411f62c619ffd0c8c376a37749e7db70db3cfdf"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-distinct.log.gz",
+          "sha256": "649348507591d04fb87b9bebb999b0dc16ef5aaf586fd9fd00eb94b032bf056b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-medium-alloc.collapsed.gz",
+          "sha256": "214988f1cacf9e612de0584e48bedece367d98a53f5e7e0bd66323037bfdeeff"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-medium-command.json.gz",
+          "sha256": "8214793b70fb1f73c558fd928af8d6f532b60a9e0479da9cdd8047d0315f99d3"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-medium-cpu.collapsed.gz",
+          "sha256": "8a362aa5328fc13995b3e196406a589427dc14825172227580551ecdc3d3dc0e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-medium-gc.log.gz",
+          "sha256": "03b1d5c0f0073b3af62cfe89ca41660f72ad93663033ffc6266071bd77baffeb"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-profile-string-medium.log.gz",
+          "sha256": "6d6aa21dd040e8e0585c9f12c629c99578f309e6129201c06e3467e4a78936d2"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-results.json.gz",
+          "sha256": "5e754a772df7f52beec2d6b40b52065ced2c03818109029527d9dddbbbf42518"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-distinct-command.json.gz",
+          "sha256": "2e821daee68e7b449ef54a7868aabd1eb9775a7b190f1aaa829f66c79668e961"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-distinct-gc.log.gz",
+          "sha256": "ff49dc54345ca5a1c7b3a6ec0b9a0296db1fb0ac9d9d63e2ecc0c90b37cffe26"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-distinct.log.gz",
+          "sha256": "97eba43c6acd444b3d4855f7117f9d86967cbf1a300cc97a1241309f30f26850"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-low-command.json.gz",
+          "sha256": "b997264e90dab9a588872683e708f79db9fe2fe907887266a57d736acc3bc2ec"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-low-gc.log.gz",
+          "sha256": "cb62047934c811e26f9a841614332976e87f53c8bb1d69aea14fb2f051659e87"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-low.log.gz",
+          "sha256": "c1a734f44b19fc4f964fe38608dd5e04fcefc2b94155107427f33638ebcd10c9"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-medium-command.json.gz",
+          "sha256": "cd3758894c210dbf253dd26af2b2b2d3d921bfada00f5c022bad2355e2277c9e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-medium-gc.log.gz",
+          "sha256": "b71a17dac11db1b08423e7fb014259cba30bbebdb3f525a75f94ae3153824044"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-string-medium.log.gz",
+          "sha256": "c3988cfd4d8b40f8587f54d14526b648ed46cd783062446de9912917437d49c4"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-basic-gc.log.gz",
+          "sha256": "f1d8d20be2816147267bccef0429e5a5b381373fa57c9441d4edfea39692cfc4"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-basic.log.gz",
+          "sha256": "46c3850ec006ca772a3658e7262799ddf32b949629f18bc9efdc1231a99a9bd1"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-distinct-gc.log.gz",
+          "sha256": "2c0b3bcec776a87b3e735d1539b9e953cd82fca2a4d15ffbbb3397aec8be8c6a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-distinct.log.gz",
+          "sha256": "f7b6d17c17004596dca921fdf52cc703e4711c880793f7acf8238abfad25074b"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-grouped-gc.log.gz",
+          "sha256": "0ca80f013a157f2c2c44b4bb31b21efdc13191ef19801bae43aa20fba7636103"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-grouped.log.gz",
+          "sha256": "8fbcea0f7d74e0a22020ef09578c4612f9cf24738be2a29931b1e6cc5c5589cd"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-wide-distinct-gc.log.gz",
+          "sha256": "3259a44902f5c57cca3cb65950ab05c5219cd051a744bf237ff749d35c6c3c0a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-wide-distinct.log.gz",
+          "sha256": "ac00be675df4b52a271cd217bf30aa21047936fa5cb2e6bf478dba1154d821f4"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-wide-gc.log.gz",
+          "sha256": "432c89cc1d32f8b1317e9a3d973753deeb5694e97ad2565dce9ba6049dbae6a8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-table-functions-v2-wide.log.gz",
+          "sha256": "f519654c99d63c9fc77380dfffc89786b974929084a15fc3be7e3eb2b049ba7e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.FlinkJvmAggregateSqlHarnessTest.txt.gz",
+          "sha256": "91492bcceac73fb77ab697995df1d146c3549f38a1e712be5002bcd51597e2b8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.FlinkTableFunctionSqlHarnessTest.txt.gz",
+          "sha256": "6650444a286d7f12935c3373d83503c20cc01f051573fde3b7e191c178cfa10e"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.JvmAggregateBenchmark.txt.gz",
+          "sha256": "d3e77cbc09fbcd4d9ce3faaa72ade1454c7a75d2c63ab946be87da5d8851b777"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.StatefulSqlRescaleTest.txt.gz",
+          "sha256": "840b786b3d887bbba5d7c5cb7da3269414a6e1b70c3c3ec33b90ad21a618fb68"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.TableFunctionBenchmark.txt.gz",
+          "sha256": "4d4a160fc66f6dc6677a89009f9a25d2db3b462c00fc7863c8cdd173ebdddb1a"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.arrow.ArrowWriterResetTest.txt.gz",
+          "sha256": "3d989b17efcdb48a073a6e03507b187a446884b20b6b0401678036fc2d9fb920"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.arrow.IntArrayWriterOwnershipTest.txt.gz",
+          "sha256": "6d503c06602733a96e18679afe592c05bdf88e1f16504ff428f40f5f8d2d1fbc"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.arrow.Utf8WriterReuseTest.txt.gz",
+          "sha256": "94443859d0034bbde087f277898e2ced7bd9ef42347f6066777bd9e5024781f8"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.operator.JvmStringKeyProbeTest.txt.gz",
+          "sha256": "3604b739bd4c7afd4308513098a2109b1637c25a472dac34e9815dd4eb945002"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.operator.StringExitOwnershipTest.txt.gz",
+          "sha256": "7b80ef6b90c237b547a7a6ecd257f8787ecedce5f2d77971ec1ab72c7fac3cb1"
+        },
+        {
+          "file": "jvm-encoding-isolated-2026-10-16-118-correctness-tech.streamfusion.operator.TransposeOperatorsTest.txt.gz",
+          "sha256": "ebc6031907e3575f07a799ab5efba8f6339411b939924cd7d69a8880db814864"
+        }
+      ],
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-118-profile-int-distinct.jfr",
+          "raw_sha256": "7c4729372e7a247de1ef203d7a20e53725a5c5f6fdc4b9e6809c3e2f2b369f23",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        },
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-118-profile-int-medium.jfr",
+          "raw_sha256": "af114c64ac9f278f883d62844b088dd97b9d1fba2acd5a7864d9f41242081a53",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        },
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-118-profile-string-distinct.jfr",
+          "raw_sha256": "0c2bba0113035e222fb6263b9640c164f67c6a0889f96ed60e49928b1baef056",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        },
+        {
+          "recording": "jvm-encoding-isolated-2026-10-16-118-profile-string-medium.jfr",
+          "raw_sha256": "92bb790847f8a7ca1727504dbbdc144f949875e7e9835d2251f3c7502e8550c3",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    }
+  ]
+}

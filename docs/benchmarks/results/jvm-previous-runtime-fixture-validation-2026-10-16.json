@@ -1,0 +1,462 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "runs": [
+    {
+      "runtime_revision": "b965b8bf0c97450f6971f20db0fe6abc6bbac8ae",
+      "fixture_revision": "b5a3c83571f20c111ce279cb4408a4bcb43a3f51",
+      "flink_line": "2.2",
+      "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)\n",
+      "fixture_sha256": {
+        "src/test/java/tech/streamfusion/JvmAggregateBenchmark.java": "91ad9081d63a2c057a00d52ffa7b66d2a7f1e19abbf6024638b5889c47b0bc26",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853",
+        "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java": "a03f7908bf51cc7e66741e3a21cba0b82cd25d35c09c1fffeab97dfceafd4c51"
+      },
+      "fixture_worktree_dirty": true,
+      "reused_identical_native_inputs": true,
+      "smoke": true,
+      "configuration": {
+        "fixture_method": "symmetric-preflight-v2",
+        "cluster_lifetime": "per job",
+        "heap": "2 GiB",
+        "parallelism": 1,
+        "production_ipc": true,
+        "previous_runtime": "whole-query fallback, zero native operators",
+        "rows": 2000,
+        "warmup_pairs": 1,
+        "pairs": 1
+      },
+      "measurements": [
+        {
+          "label": "build",
+          "exit_code": 0
+        },
+        {
+          "label": "int-16",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000,
+              "keys": 16,
+              "stock_seconds": [
+                0.216356469
+              ],
+              "previous_seconds": [
+                0.19694907
+              ],
+              "stock_median_seconds": 0.216356469,
+              "previous_median_seconds": 0.19694907,
+              "stock_range_seconds": [
+                0.216356469,
+                0.216356469
+              ],
+              "previous_range_seconds": [
+                0.19694907,
+                0.19694907
+              ],
+              "stock_over_previous": 1.0985401911265689,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-16",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000,
+              "keys": 16,
+              "stock_seconds": [
+                0.233236384
+              ],
+              "previous_seconds": [
+                0.21576101
+              ],
+              "stock_median_seconds": 0.233236384,
+              "previous_median_seconds": 0.21576101,
+              "stock_range_seconds": [
+                0.233236384,
+                0.233236384
+              ],
+              "previous_range_seconds": [
+                0.21576101,
+                0.21576101
+              ],
+              "stock_over_previous": 1.0809941240078547,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-16",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000,
+              "keys": 16,
+              "stock_seconds": [
+                0.211881069
+              ],
+              "previous_seconds": [
+                0.197287434
+              ],
+              "stock_median_seconds": 0.211881069,
+              "previous_median_seconds": 0.197287434,
+              "stock_range_seconds": [
+                0.211881069,
+                0.211881069
+              ],
+              "previous_range_seconds": [
+                0.197287434,
+                0.197287434
+              ],
+              "stock_over_previous": 1.073971437025229,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "table-basic",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "split",
+              "rows": 2000,
+              "width": 16,
+              "keys": 65536,
+              "stock_seconds": [
+                0.202013322
+              ],
+              "previous_seconds": [
+                0.196925438
+              ]
+            },
+            {
+              "shape": "numeric",
+              "rows": 2000,
+              "width": 16,
+              "keys": 65536,
+              "stock_seconds": [
+                0.148449574
+              ],
+              "previous_seconds": [
+                0.157642012
+              ]
+            }
+          ]
+        },
+        {
+          "label": "table-wide",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "split",
+              "rows": 2000,
+              "width": 256,
+              "keys": 65536,
+              "stock_seconds": [
+                0.192139028
+              ],
+              "previous_seconds": [
+                0.195641209
+              ]
+            }
+          ]
+        },
+        {
+          "label": "table-grouped",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "group",
+              "rows": 2000,
+              "width": 16,
+              "keys": 65536,
+              "stock_seconds": [
+                0.261216983
+              ],
+              "previous_seconds": [
+                0.359943151
+              ]
+            }
+          ]
+        }
+      ],
+      "admitted": false,
+      "native_sha256": "d55c5bfa509c460a84c76c9bc2b62a4a46575cec32ff4d905847a1e66c4bd786",
+      "post_smoke_runtime_source_unchanged": true,
+      "all_smoke_times_excluded": true,
+      "logs": [
+        {
+          "file": "jvm-previous-smoke-22-int-16.log-2026-10-16.gz",
+          "sha256": "330e18e0fd3a304f0459f900389c161bddf629699dd917ed3fb17e6b8359fcc2"
+        },
+        {
+          "file": "jvm-previous-smoke-22-string-16.log-2026-10-16.gz",
+          "sha256": "4a358aeaf593f92c0e83d3725ecc5c6bc6376514c2b5a8159e3f91bf169087c8"
+        },
+        {
+          "file": "jvm-previous-smoke-22-build.log-2026-10-16.gz",
+          "sha256": "b1cfcc8b58b3dd719669c19a621d2a8e3c70b571a299aa42ac21b3884f2e2e3f"
+        },
+        {
+          "file": "jvm-previous-smoke-22-bigint-16.log-2026-10-16.gz",
+          "sha256": "11b1399602ffaed90464bfec78f3a7cf056f64432dd7666d52aad575fcfe80ad"
+        },
+        {
+          "file": "jvm-previous-smoke-22-table-grouped.log-2026-10-16.gz",
+          "sha256": "0ec2db04748ac999e3882c7562a417ce893cc19962d20f5140acbf865e1b4100"
+        },
+        {
+          "file": "jvm-previous-smoke-22-table-wide.log-2026-10-16.gz",
+          "sha256": "a4d4263aac484dc2a01be965723aa4559e26aaf9f4b52dcc11cf508ac53858d0"
+        },
+        {
+          "file": "jvm-previous-smoke-22-table-basic.log-2026-10-16.gz",
+          "sha256": "3cda02b8b5b010ee8604f1e882e4464866b0c60bd7ca12f07a654d7570449fb0"
+        }
+      ]
+    },
+    {
+      "runtime_revision": "b965b8bf0c97450f6971f20db0fe6abc6bbac8ae",
+      "fixture_revision": "b5a3c83571f20c111ce279cb4408a4bcb43a3f51",
+      "flink_line": "1.18",
+      "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)\n",
+      "fixture_sha256": {
+        "src/test/java/tech/streamfusion/JvmAggregateBenchmark.java": "91ad9081d63a2c057a00d52ffa7b66d2a7f1e19abbf6024638b5889c47b0bc26",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "8f2293c3d7e9efb89f5228cab031915062471f2490f82ce6deca58657b78f853",
+        "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java": "a03f7908bf51cc7e66741e3a21cba0b82cd25d35c09c1fffeab97dfceafd4c51"
+      },
+      "fixture_worktree_dirty": true,
+      "reused_identical_native_inputs": true,
+      "smoke": true,
+      "configuration": {
+        "fixture_method": "symmetric-preflight-v2",
+        "cluster_lifetime": "per job",
+        "heap": "2 GiB",
+        "parallelism": 1,
+        "production_ipc": true,
+        "previous_runtime": "whole-query fallback, zero native operators",
+        "rows": 2000,
+        "warmup_pairs": 1,
+        "pairs": 1
+      },
+      "measurements": [
+        {
+          "label": "build",
+          "exit_code": 0
+        },
+        {
+          "label": "int-16",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000,
+              "keys": 16,
+              "stock_seconds": [
+                0.212197476
+              ],
+              "previous_seconds": [
+                0.258585922
+              ],
+              "stock_median_seconds": 0.212197476,
+              "previous_median_seconds": 0.258585922,
+              "stock_range_seconds": [
+                0.212197476,
+                0.212197476
+              ],
+              "previous_range_seconds": [
+                0.258585922,
+                0.258585922
+              ],
+              "stock_over_previous": 0.8206072254776499,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-16",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000,
+              "keys": 16,
+              "stock_seconds": [
+                0.202706732
+              ],
+              "previous_seconds": [
+                0.208043988
+              ],
+              "stock_median_seconds": 0.202706732,
+              "previous_median_seconds": 0.208043988,
+              "stock_range_seconds": [
+                0.202706732,
+                0.202706732
+              ],
+              "previous_range_seconds": [
+                0.208043988,
+                0.208043988
+              ],
+              "stock_over_previous": 0.9743455408093792,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-16",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000,
+              "keys": 16,
+              "stock_seconds": [
+                0.166458097
+              ],
+              "previous_seconds": [
+                0.185875882
+              ],
+              "stock_median_seconds": 0.166458097,
+              "previous_median_seconds": 0.185875882,
+              "stock_range_seconds": [
+                0.166458097,
+                0.166458097
+              ],
+              "previous_range_seconds": [
+                0.185875882,
+                0.185875882
+              ],
+              "stock_over_previous": 0.8955335959078328,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "table-basic",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "split",
+              "rows": 2000,
+              "width": 16,
+              "keys": 65536,
+              "stock_seconds": [
+                0.165945271
+              ],
+              "previous_seconds": [
+                0.175834272
+              ]
+            },
+            {
+              "shape": "numeric",
+              "rows": 2000,
+              "width": 16,
+              "keys": 65536,
+              "stock_seconds": [
+                0.15907846
+              ],
+              "previous_seconds": [
+                0.149784218
+              ]
+            }
+          ]
+        },
+        {
+          "label": "table-wide",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "split",
+              "rows": 2000,
+              "width": 256,
+              "keys": 65536,
+              "stock_seconds": [
+                0.168525197
+              ],
+              "previous_seconds": [
+                0.161614519
+              ]
+            }
+          ]
+        },
+        {
+          "label": "table-grouped",
+          "exit_code": 0,
+          "results": [
+            {
+              "shape": "group",
+              "rows": 2000,
+              "width": 16,
+              "keys": 65536,
+              "stock_seconds": [
+                0.327854815
+              ],
+              "previous_seconds": [
+                0.239742806
+              ]
+            }
+          ]
+        }
+      ],
+      "admitted": false,
+      "native_sha256": "d55c5bfa509c460a84c76c9bc2b62a4a46575cec32ff4d905847a1e66c4bd786",
+      "post_smoke_runtime_source_unchanged": true,
+      "all_smoke_times_excluded": true,
+      "logs": [
+        {
+          "file": "jvm-previous-smoke-118-int-16.log-2026-10-16.gz",
+          "sha256": "fd5b28f5d8255fbab790c0027184efb22eb4024e47e4c08b0220cc86767477f6"
+        },
+        {
+          "file": "jvm-previous-smoke-118-string-16.log-2026-10-16.gz",
+          "sha256": "7b1fb6b02cc2099a1822d4af8f194b9c2156f4d2921a108bb7e76481ce7c5796"
+        },
+        {
+          "file": "jvm-previous-smoke-118-build.log-2026-10-16.gz",
+          "sha256": "9421cba997081c0acad61e5687e1dc4421f683a47c3006b7eadf7d22ed13f054"
+        },
+        {
+          "file": "jvm-previous-smoke-118-bigint-16.log-2026-10-16.gz",
+          "sha256": "9ccbca046f1558be8d87c40ceaee39099a4afd79a3eff24899f1a62f2f6d2990"
+        },
+        {
+          "file": "jvm-previous-smoke-118-table-grouped.log-2026-10-16.gz",
+          "sha256": "4c570fda51a41b75434a8a35f742c77d0962f51fd923abac023355859eb22ee9"
+        },
+        {
+          "file": "jvm-previous-smoke-118-table-wide.log-2026-10-16.gz",
+          "sha256": "b6c874070aa8fd660528428c2c224f88941a470d8e01791e1c99d86e6016badc"
+        },
+        {
+          "file": "jvm-previous-smoke-118-table-basic.log-2026-10-16.gz",
+          "sha256": "58d27ce477fc69132b8d8d5586d1755f7e227293f398b8bd90a5727b176ee254"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "These are 2000-row fixture checks, with one warmup and one pair. All timings are excluded from performance claims.",
+    "The runtime is the actual previous revision; only three test fixtures were copied. Production source cleanliness was verified after each completed smoke.",
+    "The current runner additionally checks root Cargo/toolchain inputs and production source cleanliness after build. Those same git diff checks were verified against both completed worktrees.",
+    "An initial attempt used the system JDK25 and failed before query execution. The runner now requires JDK17 before creating worktrees; both recorded successful smokes use JDK17.",
+    "Current fixture hashes record uncommitted test assertion changes at the time of local validation; full-size CI records the eventual exact checkout."
+  ],
+  "admitted": false
+}

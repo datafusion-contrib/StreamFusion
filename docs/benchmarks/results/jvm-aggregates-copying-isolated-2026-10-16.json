@@ -1,0 +1,2711 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "workflow_run": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/38854638683",
+  "branch_head": "dd53a0316130e280b4b0b7605e8ddb404f76d15d",
+  "actual_merge_checkout": "2b0a88180fc332b3119bbee0b2c0d860736006ee",
+  "source_equivalence": "Verified empty diff between recorded branch head and merge checkout for src/main, the full native tree, root/core/runtime poms, runner and query fixture",
+  "variant": "STRING owned-key cache with copying probes, before borrowed probe and primitive STRING hash index",
+  "admitted": false,
+  "limitations": [
+    "GitHub-hosted Ubuntu runner, four logical CPUs per job; no other own build/test during measurements. Shared physical-host interference is not measured.",
+    "Two warmups and five alternating complete-job pairs. All ranges and negative results retained. Broad distinct-key variability prevents a blanket admission.",
+    "No separate previous-fallback revision comparison in this run.",
+    "Whole-process profiles include both UDAF and builtin SUM controls, warmups, cluster setup and JIT. Inclusive counts overlap; downstream output copying is included under the aggregate ingest call.",
+    "Sampled allocations are estimates, not copied bytes, peak memory or Rust heap totals. All profile timings excluded.",
+    "Results precede the STRING cache experiment; they do not validate its throughput.",
+    "Historical diagnostic evidence only. Corrected symmetric-preflight comparisons are required."
+  ],
+  "runs": [
+    {
+      "source_commit": "2b0a88180fc332b3119bbee0b2c0d860736006ee",
+      "flink_line": "2.2",
+      "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "native_sha256": "738c9ad47f5ed3956d03249be2b3f1eccfa38871e4907b4806e21dfb25a46720",
+      "cpu_count": 4,
+      "processor": "x86_64",
+      "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment Temurin-17.0.20.1+1 (build 17.0.20.1+1)\nOpenJDK 64-Bit Server VM Temurin-17.0.20.1+1 (build 17.0.20.1+1, mixed mode, sharing)\n",
+      "configuration": {
+        "rows": 2000000,
+        "capacity": 65536,
+        "warmup_pairs": 2,
+        "pairs": 5,
+        "heap": "2 GiB",
+        "parallelism": 1,
+        "production_ipc": true,
+        "both_transposes": true,
+        "cluster_lifetime": "per job",
+        "boundary": "complete executeSql(insert).await; cluster boot/config outside clock"
+      },
+      "measurements": [
+        {
+          "label": "int-low",
+          "exit_code": 0,
+          "elapsed_seconds": 29.285269498825073,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.319715004,
+                1.065006018,
+                1.085118061,
+                0.979730001,
+                1.0196558
+              ],
+              "native_seconds": [
+                1.076795674,
+                0.894687882,
+                0.907392978,
+                0.921001043,
+                0.747781528
+              ],
+              "stock_median_seconds": 1.065006018,
+              "native_median_seconds": 0.907392978,
+              "stock_range_seconds": [
+                0.979730001,
+                1.319715004
+              ],
+              "native_range_seconds": [
+                0.747781528,
+                1.076795674
+              ],
+              "stock_over_native": 1.1736987653876247,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 33.35885787010193,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.527532973,
+                1.532932172,
+                1.387567648,
+                1.429132048,
+                1.447036494
+              ],
+              "native_seconds": [
+                1.18138959,
+                1.159425647,
+                0.969475486,
+                1.043163157,
+                0.857249216
+              ],
+              "stock_median_seconds": 1.447036494,
+              "native_median_seconds": 1.043163157,
+              "stock_range_seconds": [
+                1.387567648,
+                1.532932172
+              ],
+              "native_range_seconds": [
+                0.857249216,
+                1.18138959
+              ],
+              "stock_over_native": 1.3871621944178767,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 62.103381633758545,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                3.120793807,
+                4.877819249,
+                2.684319018,
+                4.724506956,
+                2.638166876
+              ],
+              "native_seconds": [
+                3.03815205,
+                2.590936334,
+                3.496445216,
+                2.286885089,
+                3.347471561
+              ],
+              "stock_median_seconds": 3.120793807,
+              "native_median_seconds": 3.03815205,
+              "stock_range_seconds": [
+                2.638166876,
+                4.877819249
+              ],
+              "native_range_seconds": [
+                2.286885089,
+                3.496445216
+              ],
+              "stock_over_native": 1.027201323580892,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-low",
+          "exit_code": 0,
+          "elapsed_seconds": 29.470389366149902,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.310406117,
+                1.016201621,
+                0.943378059,
+                1.000013363,
+                1.020437467
+              ],
+              "native_seconds": [
+                1.091483,
+                0.934368425,
+                0.788964825,
+                0.93236207,
+                0.890500991
+              ],
+              "stock_median_seconds": 1.016201621,
+              "native_median_seconds": 0.93236207,
+              "stock_range_seconds": [
+                0.943378059,
+                1.310406117
+              ],
+              "native_range_seconds": [
+                0.788964825,
+                1.091483
+              ],
+              "stock_over_native": 1.0899216663758104,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 32.99425935745239,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.597462476,
+                1.464539231,
+                1.481198894,
+                1.62333796,
+                1.464610263
+              ],
+              "native_seconds": [
+                1.145309763,
+                0.938493408,
+                0.948553536,
+                1.117892143,
+                0.933475798
+              ],
+              "stock_median_seconds": 1.481198894,
+              "native_median_seconds": 0.948553536,
+              "stock_range_seconds": [
+                1.464539231,
+                1.62333796
+              ],
+              "native_range_seconds": [
+                0.933475798,
+                1.145309763
+              ],
+              "stock_over_native": 1.5615343128086763,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 61.97734546661377,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                3.108041809,
+                2.847227137,
+                4.799499187,
+                2.53285821,
+                3.518089451
+              ],
+              "native_seconds": [
+                2.975372322,
+                5.182154579,
+                2.603236536,
+                4.312726075,
+                2.223641059
+              ],
+              "stock_median_seconds": 3.108041809,
+              "native_median_seconds": 2.975372322,
+              "stock_range_seconds": [
+                2.53285821,
+                4.799499187
+              ],
+              "native_range_seconds": [
+                2.223641059,
+                5.182154579
+              ],
+              "stock_over_native": 1.0445892051959471,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-low",
+          "exit_code": 0,
+          "elapsed_seconds": 32.76652550697327,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.393237272,
+                1.204596752,
+                1.305746849,
+                1.229473246,
+                1.187995828
+              ],
+              "native_seconds": [
+                1.383979208,
+                1.340297048,
+                1.240268646,
+                1.182991582,
+                1.314639417
+              ],
+              "stock_median_seconds": 1.229473246,
+              "native_median_seconds": 1.314639417,
+              "stock_range_seconds": [
+                1.187995828,
+                1.393237272
+              ],
+              "native_range_seconds": [
+                1.182991582,
+                1.383979208
+              ],
+              "stock_over_native": 0.9352170869831754,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 41.97611975669861,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.937190996,
+                1.777714248,
+                1.911037491,
+                1.697513681,
+                1.792542586
+              ],
+              "native_seconds": [
+                1.911242758,
+                2.168657681,
+                1.877814108,
+                1.695915412,
+                2.038639714
+              ],
+              "stock_median_seconds": 1.792542586,
+              "native_median_seconds": 1.911242758,
+              "stock_range_seconds": [
+                1.697513681,
+                1.937190996
+              ],
+              "native_range_seconds": [
+                1.695915412,
+                2.168657681
+              ],
+              "stock_over_native": 0.9378937230746069,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 65.40542507171631,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                3.625720351,
+                5.224970525,
+                3.270240623,
+                3.352650323,
+                3.344059915
+              ],
+              "native_seconds": [
+                3.674596073,
+                3.420220156,
+                3.98069311,
+                3.471190772,
+                3.406656226
+              ],
+              "stock_median_seconds": 3.352650323,
+              "native_median_seconds": 3.471190772,
+              "stock_range_seconds": [
+                3.270240623,
+                5.224970525
+              ],
+              "native_range_seconds": [
+                3.406656226,
+                3.98069311
+              ],
+              "stock_over_native": 0.9658502062300367,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "label": "profile-int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 30.814096927642822,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.924201577,
+                0.801239562,
+                0.765394862
+              ],
+              "native_seconds": [
+                0.783290319,
+                0.698615006,
+                0.717600295
+              ],
+              "stock_median_seconds": 0.801239562,
+              "native_median_seconds": 0.717600295,
+              "stock_range_seconds": [
+                0.765394862,
+                0.924201577
+              ],
+              "native_range_seconds": [
+                0.698615006,
+                0.783290319
+              ],
+              "stock_over_native": 1.1165541145715387,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.657907511,
+                0.666995926,
+                0.6149242
+              ],
+              "native_seconds": [
+                0.551912322,
+                0.594274749,
+                0.615156695
+              ],
+              "stock_median_seconds": 0.657907511,
+              "native_median_seconds": 0.594274749,
+              "stock_range_seconds": [
+                0.6149242,
+                0.666995926
+              ],
+              "native_range_seconds": [
+                0.551912322,
+                0.615156695
+              ],
+              "stock_over_native": 1.1070763348216903,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 43.62650156021118,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.519628738,
+                1.279630724,
+                1.741851313
+              ],
+              "native_seconds": [
+                1.963206425,
+                1.812677006,
+                1.402881151
+              ],
+              "stock_median_seconds": 1.519628738,
+              "native_median_seconds": 1.812677006,
+              "stock_range_seconds": [
+                1.279630724,
+                1.741851313
+              ],
+              "native_range_seconds": [
+                1.402881151,
+                1.963206425
+              ],
+              "stock_over_native": 0.8383339850232535,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.25509655,
+                0.902168229,
+                1.328865811
+              ],
+              "native_seconds": [
+                1.262633164,
+                0.959449753,
+                1.043526797
+              ],
+              "stock_median_seconds": 1.25509655,
+              "native_median_seconds": 1.043526797,
+              "stock_range_seconds": [
+                0.902168229,
+                1.328865811
+              ],
+              "native_range_seconds": [
+                0.959449753,
+                1.262633164
+              ],
+              "stock_over_native": 1.2027449161902068,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 36.09874439239502,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                1.19853809,
+                1.10984484,
+                1.140851157
+              ],
+              "native_seconds": [
+                1.107032211,
+                1.19432823,
+                1.068413124
+              ],
+              "stock_median_seconds": 1.140851157,
+              "native_median_seconds": 1.107032211,
+              "stock_range_seconds": [
+                1.10984484,
+                1.19853809
+              ],
+              "native_range_seconds": [
+                1.068413124,
+                1.19432823
+              ],
+              "stock_over_native": 1.0305491978137211,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.826186561,
+                0.804750822,
+                0.886152555
+              ],
+              "native_seconds": [
+                0.781515482,
+                0.702049062,
+                0.690797598
+              ],
+              "stock_median_seconds": 0.826186561,
+              "native_median_seconds": 0.702049062,
+              "stock_range_seconds": [
+                0.804750822,
+                0.886152555
+              ],
+              "native_range_seconds": [
+                0.690797598,
+                0.781515482
+              ],
+              "stock_over_native": 1.176821686288358,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 48.0962028503418,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                2.056555289,
+                1.791483013,
+                1.582177528
+              ],
+              "native_seconds": [
+                1.689336481,
+                1.994169718,
+                1.707837322
+              ],
+              "stock_median_seconds": 1.791483013,
+              "native_median_seconds": 1.707837322,
+              "stock_range_seconds": [
+                1.582177528,
+                2.056555289
+              ],
+              "native_range_seconds": [
+                1.689336481,
+                1.994169718
+              ],
+              "stock_over_native": 1.0489775518560778,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.366532227,
+                1.11331427,
+                1.550373841
+              ],
+              "native_seconds": [
+                1.453355383,
+                1.12532835,
+                1.283914836
+              ],
+              "stock_median_seconds": 1.366532227,
+              "native_median_seconds": 1.283914836,
+              "stock_range_seconds": [
+                1.11331427,
+                1.550373841
+              ],
+              "native_range_seconds": [
+                1.12532835,
+                1.453355383
+              ],
+              "stock_over_native": 1.0643480304794921,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "admitted": false,
+      "github_artifact_id": 12028150097,
+      "github_job_id": 116823253827,
+      "profile_stacks": [
+        {
+          "label": "profile-int-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-int-medium-cpu-2026-10-16.collapsed.gz",
+              "sha256": "ce7f9b2a2ad1976535be4f9fd2e3d0e50cf2586c2d729fb2fb380f319a633c51",
+              "units": "samples",
+              "whole_process_total": 33920,
+              "inclusive_jvm_aggregate_total": 1394,
+              "inclusive_methods": {
+                "JvmAccumulatorCache": 193,
+                "HeapValueState.update": 9,
+                "RowDataSerializer.copy": 88,
+                "BinaryRowDataKeySelector.getKey": 11
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  59
+                ],
+                [
+                  "itable stub",
+                  53
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/utils/GroupAggHelper.processElement_[j]",
+                  43
+                ],
+                [
+                  "tech/streamfusion/operator/ArrowToRowDataOperator.processElement_[j]",
+                  35
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  34
+                ],
+                [
+                  "tech$streamfusion$PortableSqlFixtures$SumState$2$Converter.toInternal_[i]",
+                  34
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction$SyncStateGroupAggHelper.updateAccumulatorsState_[i]",
+                  31
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$6_[i]",
+                  29
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  27
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+                  25
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  936
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  149
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  68
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  52
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  31
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  17
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::accumulate",
+                  15
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  13
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  12
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  12
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  11
+                ],
+                [
+                  "streamfusion::aggregates::RunningAgg::fold",
+                  10
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-int-medium-alloc-2026-10-16.collapsed.gz",
+              "sha256": "dc21e21ac4456a86bbfc4d5d8192386e380cc004fc3b948943eba99be3586deb",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 20781797512,
+              "inclusive_jvm_aggregate_total": 2596274176,
+              "inclusive_methods": {
+                "BinaryRowDataKeySelector.getKey": 29360128,
+                "JvmAccumulatorCache": 38797312,
+                "RowDataSerializer.copy": 759169024
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "java.lang.Long_[i]",
+                  538968064
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  465567744
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  450887680
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  273678336
+                ],
+                [
+                  "byte[]_[i]",
+                  195035136
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  179306496
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  155189248
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  144703488
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  101711872
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  73400320
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-int-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-int-distinct-cpu-2026-10-16.collapsed.gz",
+              "sha256": "cd10ef446cd3308dc12acc941e90e4ca4185b18d1365c6b490288cca7bde4644",
+              "units": "samples",
+              "whole_process_total": 56462,
+              "inclusive_jvm_aggregate_total": 2463,
+              "inclusive_methods": {
+                "JvmAccumulatorCache": 1280,
+                "BinaryRowDataKeySelector.getKey": 140,
+                "HeapValueState.update": 401,
+                "RowDataSerializer.copy": 86
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  560
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+                  212
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  83
+                ],
+                [
+                  "itable stub",
+                  51
+                ],
+                [
+                  "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+                  49
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  45
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$6_[i]",
+                  45
+                ],
+                [
+                  "org/apache/flink/util/MathUtils.bitMix_[i]",
+                  40
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  36
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.addNewStateMapEntry_[i]",
+                  35
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1494
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  498
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  351
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  351
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  188
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  175
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  173
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  77
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  48
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  41
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::new",
+                  20
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  18
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-int-distinct-alloc-2026-10-16.collapsed.gz",
+              "sha256": "d616ed041c84c113812333c309372c20f23371e632bd33f5360ce1a943f41ec8",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 23726192000,
+              "inclusive_jvm_aggregate_total": 4202692656,
+              "inclusive_methods": {
+                "BinaryRowDataKeySelector.getKey": 793772032,
+                "JvmAccumulatorCache": 1072693296,
+                "RowDataSerializer.copy": 821035008,
+                "HeapValueState.update": 265289728
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "java.lang.Object[]_[i]",
+                  807403520
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  703594496
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  534773760
+                ],
+                [
+                  "byte[]_[i]",
+                  367001600
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  309329920
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  307232768
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  304087040
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  247463936
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+                  184549376
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  173015040
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-string-medium-cpu-2026-10-16.collapsed.gz",
+              "sha256": "0344ea39f501bcf2d3e8df3c59f0851d6531db5921a19682f6aadfc14f938a0e",
+              "units": "samples",
+              "whole_process_total": 40849,
+              "inclusive_jvm_aggregate_total": 2441,
+              "inclusive_methods": {
+                "RowDataSerializer.copy": 335,
+                "JvmAccumulatorCache": 904,
+                "ColumnarRowData.getString": 178,
+                "HeapValueState.update": 1,
+                "BinaryRowDataKeySelector.getKey": 18
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "java/util/HashMap.getNode_[i]",
+                  293
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  112
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  92
+                ],
+                [
+                  "tech$streamfusion$PortableSqlFixtures$SumState$2$Converter.toInternal_[i]",
+                  79
+                ],
+                [
+                  "org/apache/flink/table/data/binary/BinarySegmentUtils.inFirstSegment_[i]",
+                  62
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  59
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  55
+                ],
+                [
+                  "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.update_[i]",
+                  54
+                ],
+                [
+                  "org/apache/flink/core/memory/MemorySegment.equalTo_[i]",
+                  50
+                ],
+                [
+                  "jdk/internal/misc/Unsafe.copyMemory_[i]",
+                  49
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1109
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  139
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  67
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  56
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  40
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  28
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  26
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  13
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  13
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  12
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::accumulate",
+                  12
+                ],
+                [
+                  "streamfusion::aggregates::ValueColumn::at",
+                  8
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-string-medium-alloc-2026-10-16.collapsed.gz",
+              "sha256": "6781c47f804527fc167942c7bfd4b9e02c89637e5d3eb22a0c08b0631192989d",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 32557802536,
+              "inclusive_jvm_aggregate_total": 4926210048,
+              "inclusive_methods": {
+                "JvmAccumulatorCache": 988807168,
+                "ColumnarRowData.getString": 1784676352,
+                "RowDataSerializer.copy": 1917845504,
+                "BinaryRowDataKeySelector.getKey": 58720256
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  790626304
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  642777088
+                ],
+                [
+                  "byte[]_[i]",
+                  584056832
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  576716800
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  553648128
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  460324864
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  443547648
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  308281344
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  211812352
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  165675008
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-string-distinct-cpu-2026-10-16.collapsed.gz",
+              "sha256": "1ec869069ea3b941a99b89bf330c90f3b228ccf3cba1a33a1fa54f5325adfbbd",
+              "units": "samples",
+              "whole_process_total": 63468,
+              "inclusive_jvm_aggregate_total": 3032,
+              "inclusive_methods": {
+                "JvmAccumulatorCache": 1608,
+                "HeapValueState.update": 429,
+                "RowDataSerializer.copy": 312,
+                "BinaryRowDataKeySelector.getKey": 313,
+                "ColumnarRowData.getString": 159
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  574
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+                  204
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  106
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  84
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  75
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+                  74
+                ],
+                [
+                  "jbyte_disjoint_arraycopy",
+                  59
+                ],
+                [
+                  "itable stub",
+                  52
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  48
+                ],
+                [
+                  "ColumnarJvmAggsHandler$10.accumulate_[j]",
+                  45
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1697
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  580
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  345
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  345
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  181
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  175
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  168
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  85
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  80
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  45
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  39
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  23
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink22-profile-string-distinct-alloc-2026-10-16.collapsed.gz",
+              "sha256": "07c72d474c77e011ba93da660087a9fa2ad00ad771fc596c67c5f9f82b3b4a67",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 36201611104,
+              "inclusive_jvm_aggregate_total": 6911164416,
+              "inclusive_methods": {
+                "RowDataSerializer.copy": 2178940928,
+                "ColumnarRowData.getString": 1882193920,
+                "JvmAccumulatorCache": 2228224000,
+                "BinaryRowDataKeySelector.getKey": 1823473664,
+                "HeapValueState.update": 305135616
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  1188036608
+                ],
+                [
+                  "byte[]_[i]",
+                  946864128
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  862978048
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  834666496
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  499122176
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  482344960
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  429916160
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  427819008
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  303038464
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  282066944
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        }
+      ],
+      "raw_case_logs": [
+        "jvm-aggregate-copying-isolated-flink22-bigint-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-bigint-low-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-bigint-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-int-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-int-low-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-int-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-profile-int-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-profile-int-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-profile-string-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-profile-string-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-string-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-string-low-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink22-string-medium-2026-10-16.log.gz"
+      ]
+    },
+    {
+      "source_commit": "2b0a88180fc332b3119bbee0b2c0d860736006ee",
+      "flink_line": "1.18",
+      "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "native_sha256": "ad49d4cf679fef12db263caba1597b014c0f56e20e35e20763088cf2b381141c",
+      "cpu_count": 4,
+      "processor": "x86_64",
+      "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment Temurin-17.0.20.1+1 (build 17.0.20.1+1)\nOpenJDK 64-Bit Server VM Temurin-17.0.20.1+1 (build 17.0.20.1+1, mixed mode, sharing)\n",
+      "configuration": {
+        "rows": 2000000,
+        "capacity": 65536,
+        "warmup_pairs": 2,
+        "pairs": 5,
+        "heap": "2 GiB",
+        "parallelism": 1,
+        "production_ipc": true,
+        "both_transposes": true,
+        "cluster_lifetime": "per job",
+        "boundary": "complete executeSql(insert).await; cluster boot/config outside clock"
+      },
+      "measurements": [
+        {
+          "label": "int-low",
+          "exit_code": 0,
+          "elapsed_seconds": 28.42770791053772,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.144208968,
+                1.141252276,
+                1.005742269,
+                0.951760457,
+                0.907344697
+              ],
+              "native_seconds": [
+                1.088457877,
+                0.97043734,
+                0.96001158,
+                0.835488909,
+                0.741559158
+              ],
+              "stock_median_seconds": 1.005742269,
+              "native_median_seconds": 0.96001158,
+              "stock_range_seconds": [
+                0.907344697,
+                1.144208968
+              ],
+              "native_range_seconds": [
+                0.741559158,
+                1.088457877
+              ],
+              "stock_over_native": 1.0476355597710603,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 33.875009059906006,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.723594935,
+                1.502755483,
+                1.590438244,
+                1.504506132,
+                1.455800917
+              ],
+              "native_seconds": [
+                1.253032607,
+                1.163534785,
+                0.944320732,
+                0.973010794,
+                0.92545929
+              ],
+              "stock_median_seconds": 1.504506132,
+              "native_median_seconds": 0.973010794,
+              "stock_range_seconds": [
+                1.455800917,
+                1.723594935
+              ],
+              "native_range_seconds": [
+                0.92545929,
+                1.253032607
+              ],
+              "stock_over_native": 1.5462378642430559,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 62.85646343231201,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                3.064204237,
+                3.213794757,
+                3.94539447,
+                3.194598792,
+                2.890987453
+              ],
+              "native_seconds": [
+                4.834693068,
+                3.060878313,
+                3.193745963,
+                2.934260339,
+                2.521815706
+              ],
+              "stock_median_seconds": 3.194598792,
+              "native_median_seconds": 3.060878313,
+              "stock_range_seconds": [
+                2.890987453,
+                3.94539447
+              ],
+              "native_range_seconds": [
+                2.521815706,
+                4.834693068
+              ],
+              "stock_over_native": 1.043686963454924,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-low",
+          "exit_code": 0,
+          "elapsed_seconds": 27.722679615020752,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.182043545,
+                1.060142433,
+                1.028456094,
+                0.934942734,
+                0.870492041
+              ],
+              "native_seconds": [
+                0.953516911,
+                0.913072624,
+                0.830108394,
+                0.964865654,
+                0.726262422
+              ],
+              "stock_median_seconds": 1.028456094,
+              "native_median_seconds": 0.913072624,
+              "stock_range_seconds": [
+                0.870492041,
+                1.182043545
+              ],
+              "native_range_seconds": [
+                0.726262422,
+                0.964865654
+              ],
+              "stock_over_native": 1.1263683380348506,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 32.92054796218872,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.624078289,
+                1.528813398,
+                1.473099373,
+                1.416409049,
+                1.376188098
+              ],
+              "native_seconds": [
+                1.125124652,
+                1.10904903,
+                1.062674418,
+                1.00740672,
+                0.860939899
+              ],
+              "stock_median_seconds": 1.473099373,
+              "native_median_seconds": 1.062674418,
+              "stock_range_seconds": [
+                1.376188098,
+                1.624078289
+              ],
+              "native_range_seconds": [
+                0.860939899,
+                1.125124652
+              ],
+              "stock_over_native": 1.3862189096190325,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 59.08479905128479,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                3.667268619,
+                2.630665688,
+                3.464242748,
+                2.831699857,
+                2.698666797
+              ],
+              "native_seconds": [
+                3.162736949,
+                3.108132241,
+                3.966690624,
+                2.955941445,
+                3.085683095
+              ],
+              "stock_median_seconds": 2.831699857,
+              "native_median_seconds": 3.108132241,
+              "stock_range_seconds": [
+                2.630665688,
+                3.667268619
+              ],
+              "native_range_seconds": [
+                2.955941445,
+                3.966690624
+              ],
+              "stock_over_native": 0.9110615757098348,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-low",
+          "exit_code": 0,
+          "elapsed_seconds": 33.17008352279663,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.375425696,
+                1.344181329,
+                1.169237915,
+                1.213295708,
+                1.274333436
+              ],
+              "native_seconds": [
+                1.523473065,
+                1.557016173,
+                1.234134889,
+                1.121439161,
+                1.08895626
+              ],
+              "stock_median_seconds": 1.274333436,
+              "native_median_seconds": 1.234134889,
+              "stock_range_seconds": [
+                1.169237915,
+                1.375425696
+              ],
+              "native_range_seconds": [
+                1.08895626,
+                1.557016173
+              ],
+              "stock_over_native": 1.0325722474571417,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 42.01893401145935,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.885642887,
+                1.855650606,
+                1.88147315,
+                1.873831635,
+                1.850093113
+              ],
+              "native_seconds": [
+                2.271036501,
+                1.83253683,
+                1.725312829,
+                1.724696682,
+                1.656642285
+              ],
+              "stock_median_seconds": 1.873831635,
+              "native_median_seconds": 1.725312829,
+              "stock_range_seconds": [
+                1.850093113,
+                1.885642887
+              ],
+              "native_range_seconds": [
+                1.656642285,
+                2.271036501
+              ],
+              "stock_over_native": 1.0860822475226608,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 64.80289912223816,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                3.616873317,
+                3.569357661,
+                3.384292597,
+                2.982201854,
+                3.514752874
+              ],
+              "native_seconds": [
+                3.773340427,
+                3.745454993,
+                3.490828933,
+                3.386605915,
+                3.162172489
+              ],
+              "stock_median_seconds": 3.514752874,
+              "native_median_seconds": 3.490828933,
+              "stock_range_seconds": [
+                2.982201854,
+                3.616873317
+              ],
+              "native_range_seconds": [
+                3.162172489,
+                3.773340427
+              ],
+              "stock_over_native": 1.0068533696320203,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "label": "profile-int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 31.843965768814087,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.938662574,
+                1.001770162,
+                0.969308404
+              ],
+              "native_seconds": [
+                0.768382756,
+                0.808709159,
+                0.683317423
+              ],
+              "stock_median_seconds": 0.969308404,
+              "native_median_seconds": 0.768382756,
+              "stock_range_seconds": [
+                0.938662574,
+                1.001770162
+              ],
+              "native_range_seconds": [
+                0.683317423,
+                0.808709159
+              ],
+              "stock_over_native": 1.261491615254312,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.705491957,
+                0.71021241,
+                0.75771191
+              ],
+              "native_seconds": [
+                0.742842867,
+                0.592214176,
+                0.559368422
+              ],
+              "stock_median_seconds": 0.71021241,
+              "native_median_seconds": 0.592214176,
+              "stock_range_seconds": [
+                0.705491957,
+                0.75771191
+              ],
+              "native_range_seconds": [
+                0.559368422,
+                0.742842867
+              ],
+              "stock_over_native": 1.1992492560664403,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 43.024425983428955,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.295311461,
+                1.411767925,
+                1.547645809
+              ],
+              "native_seconds": [
+                1.741676822,
+                1.934606624,
+                1.291824012
+              ],
+              "stock_median_seconds": 1.411767925,
+              "native_median_seconds": 1.741676822,
+              "stock_range_seconds": [
+                1.295311461,
+                1.547645809
+              ],
+              "native_range_seconds": [
+                1.291824012,
+                1.934606624
+              ],
+              "stock_over_native": 0.8105797282063159,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.032704401,
+                0.799652494,
+                1.644606807
+              ],
+              "native_seconds": [
+                1.387815961,
+                0.93633555,
+                1.018595527
+              ],
+              "stock_median_seconds": 1.032704401,
+              "native_median_seconds": 1.018595527,
+              "stock_range_seconds": [
+                0.799652494,
+                1.644606807
+              ],
+              "native_range_seconds": [
+                0.93633555,
+                1.387815961
+              ],
+              "stock_over_native": 1.0138513017444264,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 34.8445463180542,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                1.154638622,
+                1.049415884,
+                1.03889238
+              ],
+              "native_seconds": [
+                1.133150556,
+                1.108282019,
+                1.055867663
+              ],
+              "stock_median_seconds": 1.049415884,
+              "native_median_seconds": 1.108282019,
+              "stock_range_seconds": [
+                1.03889238,
+                1.154638622
+              ],
+              "native_range_seconds": [
+                1.055867663,
+                1.133150556
+              ],
+              "stock_over_native": 0.946885238602793,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.883521408,
+                0.872309047,
+                0.857182723
+              ],
+              "native_seconds": [
+                0.728312518,
+                0.70013153,
+                0.625603386
+              ],
+              "stock_median_seconds": 0.872309047,
+              "native_median_seconds": 0.70013153,
+              "stock_range_seconds": [
+                0.857182723,
+                0.883521408
+              ],
+              "native_range_seconds": [
+                0.625603386,
+                0.728312518
+              ],
+              "stock_over_native": 1.2459216727462625,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 48.08311176300049,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.634135202,
+                1.443921206,
+                1.896820451
+              ],
+              "native_seconds": [
+                2.254183311,
+                2.071171296,
+                2.188741352
+              ],
+              "stock_median_seconds": 1.634135202,
+              "native_median_seconds": 2.188741352,
+              "stock_range_seconds": [
+                1.443921206,
+                1.896820451
+              ],
+              "native_range_seconds": [
+                2.071171296,
+                2.254183311
+              ],
+              "stock_over_native": 0.7466095527947059,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.646041793,
+                1.06415863,
+                1.604514584
+              ],
+              "native_seconds": [
+                1.577861365,
+                1.101384731,
+                1.14947092
+              ],
+              "stock_median_seconds": 1.604514584,
+              "native_median_seconds": 1.14947092,
+              "stock_range_seconds": [
+                1.06415863,
+                1.646041793
+              ],
+              "native_range_seconds": [
+                1.101384731,
+                1.577861365
+              ],
+              "stock_over_native": 1.3958722713924767,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "admitted": false,
+      "github_artifact_id": 12027852710,
+      "github_job_id": 116823254055,
+      "profile_stacks": [
+        {
+          "label": "profile-int-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-int-medium-cpu-2026-10-16.collapsed.gz",
+              "sha256": "b00807e2660c6df7c0dd956ecf49b02d799183a97fc86e1b454717165a3f5068",
+              "units": "samples",
+              "whole_process_total": 33266,
+              "inclusive_jvm_aggregate_total": 1371,
+              "inclusive_methods": {
+                "RowDataSerializer.copy": 67,
+                "JvmAccumulatorCache": 184,
+                "HeapValueState.update": 2,
+                "BinaryRowDataKeySelector.getKey": 6
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  127
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  71
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+                  57
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  49
+                ],
+                [
+                  "itable stub",
+                  42
+                ],
+                [
+                  "tech/streamfusion/operator/ArrowToRowDataOperator.processElement_[j]",
+                  36
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  34
+                ],
+                [
+                  "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+                  33
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  27
+                ],
+                [
+                  "org/apache/flink/runtime/state/AbstractKeyedStateBackend.setCurrentKey_[i]",
+                  23
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1024
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  151
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  70
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  45
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  27
+                ],
+                [
+                  "streamfusion::aggregates::ValueColumn::at",
+                  17
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  12
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  12
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  12
+                ],
+                [
+                  "streamfusion::group_agg::emit_running",
+                  11
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  8
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  6
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-int-medium-alloc-2026-10-16.collapsed.gz",
+              "sha256": "ef8c16ca250d8c4d67ae255c1451e028ca82ffa30e70a173a18a33d7b0e07bcc",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 20754808432,
+              "inclusive_jvm_aggregate_total": 2664431616,
+              "inclusive_methods": {
+                "RowDataSerializer.copy": 775946240,
+                "BinaryRowDataKeySelector.getKey": 26214400,
+                "JvmAccumulatorCache": 33554432
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "java.lang.Long_[i]",
+                  545259520
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  514850816
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  465567744
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  293601280
+                ],
+                [
+                  "byte[]_[i]",
+                  180355072
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  175112192
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  148897792
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  141557760
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  114294784
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  65011712
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-int-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-int-distinct-cpu-2026-10-16.collapsed.gz",
+              "sha256": "51c7dab4612df149387606ba13f80585f9081844c4777ad359ec1f390905af4a",
+              "units": "samples",
+              "whole_process_total": 54759,
+              "inclusive_jvm_aggregate_total": 2348,
+              "inclusive_methods": {
+                "JvmAccumulatorCache": 1256,
+                "BinaryRowDataKeySelector.getKey": 153,
+                "RowDataSerializer.copy": 78,
+                "HeapValueState.update": 378
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  426
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+                  364
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  90
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  53
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  46
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  42
+                ],
+                [
+                  "itable stub",
+                  41
+                ],
+                [
+                  "org/apache/flink/util/MathUtils.bitMix_[i]",
+                  40
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  38
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.addNewStateMapEntry_[i]",
+                  33
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1504
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  482
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  410
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  410
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  208
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  199
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  170
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  71
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  50
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  34
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  14
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::new",
+                  11
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-int-distinct-alloc-2026-10-16.collapsed.gz",
+              "sha256": "102e69254a743bfb234ef7ed13f2dc04ec2d4359f40cc2b3ea90f07f528baf50",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 23267406232,
+              "inclusive_jvm_aggregate_total": 4159701008,
+              "inclusive_methods": {
+                "HeapValueState.update": 254803968,
+                "JvmAccumulatorCache": 1078984720,
+                "RowDataSerializer.copy": 845152256,
+                "BinaryRowDataKeySelector.getKey": 809500672
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  729808896
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  676331520
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  557842432
+                ],
+                [
+                  "byte[]_[i]",
+                  352321536
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  349175808
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  335544320
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  293601280
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  250609664
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+                  179306496
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  178257920
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-string-medium-cpu-2026-10-16.collapsed.gz",
+              "sha256": "af499c2aa7583ca84369d422256971a1d3acffc091880ca27b10cdb3de4f4ff2",
+              "units": "samples",
+              "whole_process_total": 38184,
+              "inclusive_jvm_aggregate_total": 2225,
+              "inclusive_methods": {
+                "JvmAccumulatorCache": 877,
+                "ColumnarRowData.getString": 181,
+                "RowDataSerializer.copy": 268,
+                "BinaryRowDataKeySelector.getKey": 24,
+                "HeapValueState.update": 6
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "java/util/HashMap.getNode_[i]",
+                  311
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  161
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  159
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  74
+                ],
+                [
+                  "jdk/internal/misc/Unsafe.copyMemory_[i]",
+                  61
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  56
+                ],
+                [
+                  "org/apache/flink/core/memory/MemorySegment.equalTo_[i]",
+                  52
+                ],
+                [
+                  "org/apache/flink/table/data/binary/BinarySegmentUtils.inFirstSegment_[i]",
+                  42
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+                  37
+                ],
+                [
+                  "org/apache/flink/core/memory/MemorySegment.getLong_[i]",
+                  33
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1154
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  168
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  71
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  40
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  40
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  23
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  22
+                ],
+                [
+                  "streamfusion::group_agg::emit_running",
+                  15
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  14
+                ],
+                [
+                  "streamfusion::aggregates::ValueColumn::at",
+                  13
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::accumulate",
+                  12
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  12
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-string-medium-alloc-2026-10-16.collapsed.gz",
+              "sha256": "b27be71a25ed164a8e2b67b7f0b7341909f387335bff0faae87cec13c0712d53",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 32598926456,
+              "inclusive_jvm_aggregate_total": 4928307200,
+              "inclusive_methods": {
+                "BinaryRowDataKeySelector.getKey": 45088768,
+                "JvmAccumulatorCache": 997195776,
+                "ColumnarRowData.getString": 1778384896,
+                "RowDataSerializer.copy": 1982857216
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  756023296
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  632291328
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  589299712
+                ],
+                [
+                  "byte[]_[i]",
+                  555745280
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  555745280
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  443547648
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  443547648
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  354418688
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  247463936
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  158334976
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-string-distinct-cpu-2026-10-16.collapsed.gz",
+              "sha256": "497d20b23e30e09e00f7723dd762505584bcdc65cf1abd4e4fbce9635405d2d7",
+              "units": "samples",
+              "whole_process_total": 61343,
+              "inclusive_jvm_aggregate_total": 3159,
+              "inclusive_methods": {
+                "JvmAccumulatorCache": 1747,
+                "HeapValueState.update": 440,
+                "RowDataSerializer.copy": 330,
+                "BinaryRowDataKeySelector.getKey": 327,
+                "ColumnarRowData.getString": 156
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  479
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[i]",
+                  453
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  117
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  76
+                ],
+                [
+                  "jbyte_disjoint_arraycopy",
+                  67
+                ],
+                [
+                  "itable stub",
+                  61
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+                  60
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  56
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  45
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  39
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1754
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  613
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  373
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  373
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  202
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  193
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  178
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  77
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  73
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  35
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  30
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  27
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-aggregate-copying-isolated-flink118-profile-string-distinct-alloc-2026-10-16.collapsed.gz",
+              "sha256": "6219580d1701dff8a7cf53d339bf1cf2f2585ea07528c694b770023a336ee63a",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 36287822560,
+              "inclusive_jvm_aggregate_total": 6941573120,
+              "inclusive_methods": {
+                "BinaryRowDataKeySelector.getKey": 1865416704,
+                "JvmAccumulatorCache": 2260729856,
+                "ColumnarRowData.getString": 1910505472,
+                "RowDataSerializer.copy": 2213543936,
+                "HeapValueState.update": 304087040
+              },
+              "leading_jvm_aggregate_leaves": [
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  1118830592
+                ],
+                [
+                  "byte[]_[i]",
+                  903872512
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  843055104
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  783286272
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  524288000
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  521142272
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  501219328
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  459276288
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  310378496
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  296747008
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        }
+      ],
+      "raw_case_logs": [
+        "jvm-aggregate-copying-isolated-flink118-bigint-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-bigint-low-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-bigint-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-int-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-int-low-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-int-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-profile-int-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-profile-int-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-profile-string-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-profile-string-medium-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-string-distinct-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-string-low-2026-10-16.log.gz",
+        "jvm-aggregate-copying-isolated-flink118-string-medium-2026-10-16.log.gz"
+      ]
+    }
+  ],
+  "fixture_method": "v1: only native explains before the clock; stock preflight is asymmetric",
+  "admission": "Historical diagnostic evidence only. Corrected symmetric-preflight comparisons are required."
+}

@@ -1,0 +1,296 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "performance_admitted": false,
+  "correctness": [
+    {
+      "suite": "utf8-cache-parity22",
+      "passed": 41,
+      "skipped": 0,
+      "log": {
+        "file": "jvm-table-encoding-validation-2026-10-16-utf8-cache-parity22.log.gz",
+        "sha256": "fb652f7278e4bbb434c4878e340520a54fa07273f5e9e8d8d56f4a58efbea5a6"
+      }
+    },
+    {
+      "suite": "utf8-cache-parity118",
+      "passed": 41,
+      "skipped": 0,
+      "log": {
+        "file": "jvm-table-encoding-validation-2026-10-16-utf8-cache-parity118.log.gz",
+        "sha256": "79321350f9a0730c811314a33fa0f2883b572fe141ac00690534102913c92820"
+      }
+    },
+    {
+      "suite": "utf8-cache-default22",
+      "passed": 73,
+      "skipped": 0,
+      "log": {
+        "file": "jvm-table-encoding-validation-2026-10-16-utf8-cache-default22.log.gz",
+        "sha256": "49a11e7d25abaf3e4e99999698e03ea836e022ca20f7376a70dff051dc2336f7"
+      }
+    },
+    {
+      "suite": "utf8-cache-default118",
+      "passed": 71,
+      "skipped": 2,
+      "log": {
+        "file": "jvm-table-encoding-validation-2026-10-16-utf8-cache-default118.log.gz",
+        "sha256": "5b10b6960a3871032b8e26e4677358027eb53e2d6f375195782b1472e5def12e"
+      }
+    }
+  ],
+  "previous_runtime_smokes": [
+    {
+      "suite": "encoding-prior22-smoke",
+      "expected_logical_cases": 6,
+      "artifacts": [
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-build-command.json.gz",
+          "sha256": "70b0ecde8e169f5a795bdc74ea36fa7a7dfa24d230a319e00b307f912010da4e"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-build.log.gz",
+          "sha256": "68e857140970f885235eb6a862e6bcca6df3f42e6b84280c28eb769f0e2f5872"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-results.json.gz",
+          "sha256": "5fb3334f43fb593f7ca079a60e69d84a64c3e6a2867a1c8edb0acca234597552"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-basic-command.json.gz",
+          "sha256": "7f3c660881a44f74e3a5f23d5be745d7bfa08c1e7ebab2ea96a14e33caddb608"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-basic-gc.log.gz",
+          "sha256": "921b03ef35d4d342ebf8b16ef528f1a82401f0b5a508495de6b7e39ed45b756a"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-basic.log.gz",
+          "sha256": "ef6b160d6bcd06bc79236805f035b1106ceb47b0724b4dec779fde800a2bdf64"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-distinct-command.json.gz",
+          "sha256": "add3571d01a3cc15961a8a5c867e6f1cc254801060a85e854418166758e6b56b"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-distinct-gc.log.gz",
+          "sha256": "1611b3304cd53d8dc2bc728089829254aa2f268689b737aeb3a4915366ae827c"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-distinct.log.gz",
+          "sha256": "c2dd5a49f3925fff980d29abcf9df9efe6ca857ef4706a5263070d81edc6c0b6"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-grouped-command.json.gz",
+          "sha256": "24f951d566d81d91655919fb45f9436f5c0d22b656f65a4d6539efa415b4b134"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-grouped-gc.log.gz",
+          "sha256": "a0341cb6bf669b117aca1094bf6dcd0d895ff72c5dfe29a2253d7010250e8cae"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-grouped.log.gz",
+          "sha256": "b01f96edf81e850d25f161dc719785da730f707ca4caae30f79a3bd9bb89eb5c"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-wide-command.json.gz",
+          "sha256": "7e17e65183c61a94543a9b9ce038c1dc202f92678eb15a2ccbd46ef663488ecd"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-wide-distinct-command.json.gz",
+          "sha256": "94810732e65dbfbb012cef399d2efbaf482d5f2053e59d5c8b4a7ace705ed463"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-wide-distinct-gc.log.gz",
+          "sha256": "706d80b585a64b4ac8663cc83eb6404e58d789c0269bf2624ca20278a585a62a"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-wide-distinct.log.gz",
+          "sha256": "4a70850f50f7feac85e19eb773074313935d27a8fd3652eafbcecb540b4d6329"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-wide-gc.log.gz",
+          "sha256": "6d826014f34741acc1335114f33566f22ab832be98065423c8092d28a7d99182"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior22-smoke-table-wide.log.gz",
+          "sha256": "cc1b3f05c3b58a50c046ae38992955d8ce3a38db43ad8df6dbdef5dd5e198fda"
+        }
+      ]
+    },
+    {
+      "suite": "encoding-prior118-smoke",
+      "expected_logical_cases": 6,
+      "artifacts": [
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-build-command.json.gz",
+          "sha256": "d254ce866f53dd22675c127bcce5df04e83b9a4886e3077e4e8fc4ec1f3adbd7"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-build.log.gz",
+          "sha256": "106b7aeecf806509723bac92bd0994a145fedbf8505cab0435d7cd2392722526"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-results.json.gz",
+          "sha256": "f1c8a26fa10841fbe043cab90d7f525d6f09d576e01f9671b397ba071ed57076"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-basic-command.json.gz",
+          "sha256": "8e8593751bf6d203559cb94221017e56b846d5a8e658985a664b998b53b01cc0"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-basic-gc.log.gz",
+          "sha256": "3dd8ea7a942af1f50dc98db7f47da21cf42abe3f40c5c51fe41becac31e0346e"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-basic.log.gz",
+          "sha256": "6d2925a300da4136c3ee542ca0229894c2a89bab6cac85fcfc0ebfc7d95c5b3d"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-distinct-command.json.gz",
+          "sha256": "8947f4ca1b3c86800c4d74eefd2f3f05840878ac831070cb92217e288d470101"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-distinct-gc.log.gz",
+          "sha256": "8e1d86953106070f6bfdbdf320b79d7ae2ace1ded8a986b4bc2c93705410b995"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-distinct.log.gz",
+          "sha256": "e90f4aa2f8e3c66ad2ef802b31f6ecfb3248869576642d015272ca87c2a502de"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-grouped-command.json.gz",
+          "sha256": "4ee43457d3f935cefae1ce571912302c2e23aa2d77631b7d51bd741024b87c04"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-grouped-gc.log.gz",
+          "sha256": "959d03a00de8fb4a1965ae1f52760386f2282fdc40a670bfa4e31edb03c92aa4"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-grouped.log.gz",
+          "sha256": "4a3a2ca99663c449e9f9be75f31d71a1b9547bccedf767638777d86f5bcf64c5"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-wide-command.json.gz",
+          "sha256": "e0205e122c36340a00f4e1ce81bc080d1cf037797758cdaf7c22807e5fda9d1d"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-wide-distinct-command.json.gz",
+          "sha256": "4becf169ebecdfff63be166bc5fbcf1b094c7590f5c9984d9289d6869d1f38cc"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-wide-distinct-gc.log.gz",
+          "sha256": "8f6d92047e75334fc6f831c711d7761efe4bedb39aeecb6f5f973dbdf3db1f24"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-wide-distinct.log.gz",
+          "sha256": "a7b9638a2bb2781fad0ea981677a70b6e695a94de8fe1e7182b215fab0707218"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-wide-gc.log.gz",
+          "sha256": "bcfcc4e6b4bdd434d34bbc46538d1b6873f4f3ed5362827974cb7870fd9147ae"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-prior118-smoke-table-wide.log.gz",
+          "sha256": "4afc06a3ce469549bf49299eb2c4f81ee8e01e0c4783c749a52ed8da304432bc"
+        }
+      ]
+    },
+    {
+      "suite": "encoding-fallback22-smoke",
+      "expected_logical_cases": 7,
+      "artifacts": [
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-bigint-16-command.json.gz",
+          "sha256": "364e5376003b9a42240b06fc38a04dc0988ba84397cdc8d21e83457512b15c6d"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-bigint-16-gc.log.gz",
+          "sha256": "3c65b7e388a0bacb47221bab76191ab9d921634f500c6450e73334f3af905f61"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-bigint-16.log.gz",
+          "sha256": "65e75cdd3e5fda83fc1d8b87b326f3ac7a366cc0c27a79bbb9926f0d799b296e"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-build-command.json.gz",
+          "sha256": "477b96419cd563fe8bddfafdf434af8341b142bb49100b1438eb5a733546a17d"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-build.log.gz",
+          "sha256": "5d6e467a2b0f2481ea54c5723ec68ea8861db7cfbbdef17bec43f5bf59e72dd3"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-int-16-command.json.gz",
+          "sha256": "b65862ec6673b3ab7e11e0a3ab2fe971236f629b2dc07116a60e8f37c510d493"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-int-16-gc.log.gz",
+          "sha256": "9e7afbecf31c0049d37b5590b9c290aa2c6306141fcab68d4ce07c9465e5d632"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-int-16.log.gz",
+          "sha256": "0a1dd75195012e62cc308cf10de9ecb7b11a83b5cee9b3ac7b2bf50373a43fe3"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-results.json.gz",
+          "sha256": "23d8c689882a192db4a9f5aeda51ffcae1803fe0830310349dc3432cbafa922a"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-string-16-command.json.gz",
+          "sha256": "0b7796ff0cbe86041b1123227b4c70471b3804c33975b67f4b7a4e42eb1331ec"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-string-16-gc.log.gz",
+          "sha256": "bd20f6b2ff9a8e5c656398c6a44e65b835cad99af8a1f8081e13f880ca5bd74b"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-string-16.log.gz",
+          "sha256": "8fea9264db23f6b672b497ca862cf702cc682c6b6c9c61d08a6e3ed2e3e14dfe"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-basic-command.json.gz",
+          "sha256": "cccd550614bafc9bdf7e8de95d58249e14887e75d0f8379212a4ae65a4c85f7e"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-basic-gc.log.gz",
+          "sha256": "10c6c93be8dd6256f3f8e2de15a509429049f2a84b40e5cf2046a8dc00b03d4f"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-basic.log.gz",
+          "sha256": "db74a70845a842943a67fc6cdc042aeb7349258f07691d69a52333da0812a09f"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-grouped-command.json.gz",
+          "sha256": "3c40e39d1d2616d6b53813f72fb9847b992227c078a0e31962be61d3d81dbc24"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-grouped-gc.log.gz",
+          "sha256": "eadc17f50c692350804109ade078d9ed9c9e11979f1aea0d12d5141baf54be5b"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-grouped.log.gz",
+          "sha256": "0df61b34e104663a79b0c34066d50a5c5f7bfc10c9ca9a8510e5dc360b996ebe"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-wide-command.json.gz",
+          "sha256": "dc41029653ce7c643d22f58ceaf33778d5b8b31e3de595045a24996126aa3583"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-wide-gc.log.gz",
+          "sha256": "97d9d7f76fd5af1dbe676e3cd80bbb16c8b3e6e33575b33008b54fbdc79d93e9"
+        },
+        {
+          "file": "jvm-table-encoding-validation-2026-10-16-encoding-fallback22-smoke-table-wide.log.gz",
+          "sha256": "31b4d2ea38d4ff11dbda9cbfbee86a75be08517702590cb0a2fbbe1d8c7e6ede"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Smoke durations are excluded from performance evidence.",
+    "Local fixtures were uncommitted at launch; source hashes and clean previous production trees are recorded in raw results.",
+    "Whole-job speed remains pending isolated release CI."
+  ]
+}

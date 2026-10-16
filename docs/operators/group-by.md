@@ -509,6 +509,238 @@ different types are each read independently (e.g. `SUM(a), SUM(b)` over columns 
 types both accelerate). `COUNT(*)` reads a synthesized non-null column so it counts every row,
 including alongside value aggregates.
 
+## JVM aggregate investigation
+
+Performance admission now requires symmetric stock/native preflight. Earlier v1 measurements
+below explained only native before timing and remain historical diagnostics. The corrected
+[method and first complete-job trials](../benchmarks/jvm-aggregates.md#symmetric-preflight-correction)
+retain the distinct-key regression and require further comparisons.
+
+JVM aggregate functions still fall back by default under [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
+The diagnostic system property `streamfusion.experimental.jvmGroupAggregates=true` admits
+released Flink bridging aggregate functions in the synchronous single-phase plan when every
+input and output field is VARCHAR, INT or BIGINT. It retains Flink's generated function,
+accumulate/retract logic, managed accumulator/DataView state and lifecycle inside an
+Arrow-batch input/output operator. It preserves each emitted changelog row; input coalescing
+does not reduce user function invocations or intermediate results. The operator disable switch
+`streamfusion.operator.jvmGroupAggregate.enabled=false` retains whole-island fallback.
+
+The opt-in harness passes 44 checks on each released Flink line with JDK 17, at both
+65,536-entry and three-entry capacities. Coverage includes the original STRING-key append/CDC
+fixtures, numeric boundary/NULL keys at parallelism one and three, nonleading grouping-field
+selection confirmed in the optimized plan, all RowKinds and delete/reinsert, and mixed
+ListView/UDAF/COUNT aggregation. Twelve memory/native-RocksDB repeated-recovery scenarios per
+line assert two forced restores, consumed native work and released native memory. Thirteen further
+checks cover STRING-key NULL/empty/long Unicode ownership, all RowKinds, delete/reinsert,
+ListViews, parallelism one/three and repeated recovery with both backends. The STRING cases
+also use distinct keys with the same released Flink hash, including deletion, reinsertion,
+recovery and cache overflow. Lifecycle
+failures and excluded-mode fallback are checked; the released host's processing-time mini-batch
+control compares known final results and schema because intermediate batches may differ.
+A further two mixed-UDAF/ListView checkpoint-rescale scenarios per line and capacity pass
+through parallelisms 1 → 3 → 2 with 128 key groups. They verify restored source offsets,
+stable operator identities, consumed native work, checkpoint ownership ranges and final
+materialized values against uninterrupted stock Flink. Existing builtin rescale controls
+also pass. [Checkpoint rescale evidence](../benchmarks/results/jvm-aggregate-rescale-2026-10-16.json)
+retains all stages, key-group ranges, source offsets, native work and cleanup observations.
+
+Actual canonical savepoints also restore through 1 → 3 → 2 in eight scenarios: each supported
+Flink line, both backends and both cache capacities. The fixture triggers
+`JobClient.triggerSavepoint(..., CANONICAL)` and restores the returned savepoint path,
+retaining the mixed UDAF/COUNT/managed-ListView workload. It verifies the same values, schemas,
+source offsets, stable operator identities, complete key-group ownership, consumed native work
+and cleanup. Both lines also pass the existing checkpoint controls through the shared harness.
+[Savepoint evidence](../benchmarks/results/jvm-aggregate-savepoint-2026-10-16.json)
+records every stage. Cross-version migration, stock/native state-layout migration, broader
+accumulator types and two-phase merge/reset remain pending.
+
+Mini-batching, positive idle retention or state-TTL hints, asynchronous state, specialized
+functions, DISTINCT, approximate aggregates, FILTER and ordered calls are excluded from this
+prototype. Two-phase merge/reset, OVER functions, nested scalar results and broader table
+function types remain separate work in #237. This experiment does not claim those contracts.
+
+`streamfusion.experimental.jvmAccumulatorCacheEntries` defaults to zero. A positive value
+stages accumulators for a single INT, BIGINT or VARCHAR grouping key in an entry-bounded heap cache.
+NULL has a separate entry, and full-width primitive keys preserve minimum/maximum values.
+Updates flush to Flink managed state at capacity, before watermarks, completion and checkpoint
+snapshots. Snapshot boundaries invalidate borrowed accumulator views before subsequent
+mutation; restore starts with an empty cache. Flushing restores the operator's previous key
+context and ignores an empty cache on idle subtasks. Other key shapes use managed state directly.
+Cache hits also reuse their immutable, owned Flink BinaryRow key: the input grouping field
+probes a primitive numeric map or STRING hash index before key construction. STRING probes borrow a mutable
+Flink binary-string view over the current Arrow buffer for lookup only; the view is local to
+one ingest call and never enters the map. Buffers too large for a Java NIO view retain the
+released copying reader. Retained StringData keys refer only to owned BinaryRow
+storage, never to the closing Arrow batch. A STRING hit passes
+the selected entry to the state read without constructing a second string view. Misses use
+the released selector's owned copy. A separate borrowed-string reader supplies key projection
+even after cache bypass or with caching disabled, avoiding a temporary input-string copy before
+that owned key is created. User aggregate callbacks still receive the ordinary reader, whose
+string ownership is unchanged.
+The key field comes from the optimized input projection, rather than the original source schema.
+If an additional key arrives after the cache fills without any hit, pending rows first flush
+to managed state and the cache is bypassed for the rest of that task attempt. Reads, writes
+and clears then delegate directly; a restored attempt starts with an empty cache and evaluates
+reuse again. A working set that fits the capacity stays cached. Cold-prefix tests revisit and
+retract old groups after the switch, including ListView state and repeated recovery.
+STRING hashes index the existing primitive map, with full binary-string equality along each
+collision chain. Cache capacity counts every distinct key, not hash buckets; flushing and
+removal visit all colliding entries. The bound counts entries, not accumulator bytes, and is
+not a task memory budget.
+
+The investigation has mixed Java/symbolized Rust CPU and sampled Java allocation profiles.
+An initial BinaryRow-keyed write-through cache was rejected: its key comparisons outweighed
+saved heap-state reads (1.395 s versus stock 1.084 s at 2M rows/65,536 keys). Primitive-key
+lookups reduced that cost, after which managed-state writes and rehashing dominated.
+
+Final release measurements use JDK17, Flink2.2.1, the unchanged release/mimalloc native library,
+p=1, 2 GiB heap, production IPC, row source/blackhole sink and both 1,024-row transposes.
+Each complete job owns and closes its metrics cluster; cluster boot/config is outside timing,
+while planning/submission, source, sink, conversions, functions and state remain timed.
+Each row below has two warmup pairs and five alternating measured pairs, with 2M input rows
+and every eighth value NULL. All completed trials are retained.
+
+| Candidate / keys | Stock median (range), s | Native median (range), s |
+|---|---:|---:|
+| Key reuse / 65,536 | 1.086 (0.936–1.114) | 0.672 (0.549–0.822) |
+| Key reuse / 16 | 0.576 (0.544–0.577) | 0.505 (0.401–0.518) |
+| Before key reuse / 2M distinct | 1.767 (1.744–1.832) | 2.165 (2.093–2.237) |
+
+The clean distinct-key regression remains unresolved. The key-reuse distinct-key repeat
+observed another build and is diagnostic only. Earlier per-pair metrics ownership retained
+both completed jobs through the comparison; its distinct-key run had three full GC pauses.
+Per-job ownership had none, but the regression remained. Initial unmonitored dispersed trials
+also remain in the artifact and do not establish performance admission.
+
+Matching hot-key profiles (1M rows/32,768 keys, two warmups/three pairs) sample key-selector
+Java allocations at 849 MB before reuse and 25 MB after. Total allocations under the JVM
+aggregate operator fall from 3.63 GB to 2.74 GB. Both profiles also contain a native builtin-SUM
+Rust control. The baseline records 3.28 external CPU seconds; the candidate records none.
+These are sampled allocation estimates, not peak memory, copied bytes or Rust heap totals;
+profile timings are excluded from speed claims. The key-reuse release medians also span
+separate JVMs with stock drift, so they do not isolate an exact percentage effect of key reuse.
+See the [probe technique](../optimizations/borrowed-key-probes.md#experimental-jvm-aggregate-keys).
+
+[All diagnostic trials and profiles](../benchmarks/results/jvm-aggregates-investigation-2026-10-15.json)
+retain the variability, GC observations and interference records. There is no default admission:
+Broader key/accumulator contracts and representative preceding-fallback comparisons remain
+outstanding. The isolated results below now cover both Flink lines. An additional cold-key bypass run measured
+1.770 s native versus 1.769 s stock but overlapped another build, so it is diagnostic only.
+[Isolated release diagnostics](../benchmarks/jvm-aggregates.md) build and finish correctness
+checks before measuring typed key/cardinality cases and collecting Java/Rust profiles on
+separate GitHub runners. Stock Flink remains the default.
+
+### Isolated typed-key results (2026-10-16)
+
+The first isolated run completed all nine cases and four Java/Rust profiles on each Flink
+line. It measures the numeric-cache/cold-bypass implementation before the STRING-cache
+experiment. On the four-CPU GitHub hosts, medium numeric keys win on both lines; STRING
+low/medium keys regress, and distinct-key ranges are broad. All medians below are seconds
+for the same 2M-row complete-job boundary described above.
+
+| Key / cardinality | Stock 2.2 | Native 2.2 | Stock 1.18 | Native 1.18 |
+| --- | ---: | ---: | ---: | ---: |
+| INT / 16 | 1.028 | 0.889 | 1.015 | 0.890 |
+| INT / 65536 | 1.306 | 1.006 | 1.386 | 0.997 |
+| INT / 2000000 | 3.022 | 3.188 | 2.740 | 2.911 |
+| BIGINT / 16 | 0.980 | 0.910 | 0.980 | 0.834 |
+| BIGINT / 65536 | 1.371 | 1.004 | 1.386 | 1.000 |
+| BIGINT / 2000000 | 3.759 | 2.974 | 3.336 | 2.836 |
+| STRING / 16 | 1.238 | 1.421 | 1.248 | 1.299 |
+| STRING / 65536 | 1.693 | 1.970 | 1.746 | 1.932 |
+| STRING / 2000000 | 3.574 | 3.660 | 3.311 | 3.610 |
+
+[All trials, ranges, logs and compressed Java/Rust stacks](../benchmarks/results/jvm-aggregates-isolated-2026-10-16.json)
+are retained, including every regression. For example, the 2.2 INT-distinct stock range is
+2.731–4.081 s and native is 2.619–4.533 s; a median alone does not establish a stable effect.
+Medium STRING profiles attribute 1.87 GB (2.2) and 1.81 GB (1.18) of sampled allocations
+under JVM aggregate ingest to the released key selector. Inclusive totals overlap downstream
+copying; they are sampled bytes, not copied-byte counts. Rust CPU stacks are retained from
+the builtin-SUM control, while the UDAF itself executes released generated Java.
+
+These profiles motivated the experimental STRING owned-key cache described above. Its
+39-case semantic suite passes both lines at both capacities; the full 46-case rescale/recovery
+selection also passes at capacity three. A subsequent local run of its copying probes still
+regresses: 16-key native/stock medians are .715/.717 s, 65,536-key 1.405/1.284 s, and 2M distinct
+2.082/1.988 s. The medium-key CPU profile shifts the lookup hotspot to the cache, and sampled
+allocations still include temporary input-string wrappers. These are separate-host results
+from the isolated baseline, not a matched causal comparison. [All trials and mixed stacks](../benchmarks/results/jvm-aggregate-copying-string-probe-2026-10-16.json)
+retain the negative results.
+
+The next experiment borrows an Arrow UTF-8 view only for lookup, following Comet's view/ownership
+pattern. All 49 combined checks pass on both Flink lines at both cache capacities: the
+39-case SQL harness, seven checkpoint/savepoint-rescale controls and three new slice/NULL/
+empty-buffer/owned-copy checks. The final NIO-size fallback guard also compiles on both lines
+and passes both three-case view checks. [Validation](../benchmarks/results/jvm-aggregate-borrowed-string-validation-2026-10-16.json)
+records the source hashes and counts.
+
+Matched local profiles retain the same 1M-row, 32,768-key UDAF plus builtin Rust control and
+five native UDAF jobs. Inclusive aggregate-ingest allocation samples fall from 4.999 to 4.031 GB
+(19%); cache-path samples fall from 1.060 to .086 GB (92%). CPU samples still concentrate in
+map lookup. The first unprofiled repeat observed 34.53 external CPU seconds, so its
+1.515/1.432 s native/stock medians are diagnostic only; remaining cases were deferred.
+[Complete stacks and diagnostic trials](../benchmarks/results/jvm-aggregate-borrowed-string-probe-2026-10-16.json)
+retain that limitation. This allocation reduction does not establish whole-job admission.
+The feature and cache remain default off; #237 stays open for the remaining contracts.
+The maintainer accepted shipping this implementation on October 16 with the measured
+performance limitations retained and further optimization deferred.
+
+The next cache experiment removes `HashMap` node lookup, the remaining hotspot in the clean
+borrowed-probe CPU profile. It indexes STRING hashes in the primitive map and verifies full
+string equality within each collision chain. Both Flink lines pass all 54 combined checks at
+both capacities, including a verified hash-collision pair, fitting three-key sets, overflow
+by a fourth distinct key, deletions/reinsertions and repeated memory/RocksDB restores.
+[Validation and source hashes](../benchmarks/results/jvm-aggregate-string-hash-index-validation-2026-10-16.json)
+record the matrix. A separate process-scoped Java/Rust diagnostic profile records external work and excludes
+all timing claims. It confirms primitive-map lookup in place of map nodes; primitive lookup
+and string equality remain hot. [Stacks and limits](../benchmarks/results/jvm-aggregate-string-hash-index-profile-2026-10-16.json)
+are retained. The change has no throughput admission yet. The borrowed-probe predecessor has its own
+isolated run so later revisions preserve that comparison.
+
+The [completed symmetric-preflight matrix](../benchmarks/results/jvm-aggregates-symmetric-isolated-2026-10-16.json)
+retains 18 aggregate cases and eight Java/Rust profiles across both Flink lines. Medium numeric
+keys improve; STRING and distinct-key results remain mixed, with regressions and broad ranges
+retained. It does not establish default admission or complete #237.
+
+The next default-off [borrowed STRING exit experiment](../optimizations/zero-copy-exit-transpose.md#experimental-borrowed-string-exit)
+shares the batch-scoped UTF-8 view helper used by cache probes, retaining owned cache keys and
+mandatory output copies. Matched profiles reduce inclusive aggregate allocation samples by
+22%, while the latest local distinct-key job remains 7.6% slower than stock. Normal-capacity
+validation passes 73 combined cases on each Flink line; the small-capacity JSON/JVM selection
+passes 108 on 2.2 and 106 with two compatibility skips on 1.18. All trials, profiles and test
+logs are [retained](../benchmarks/results/jvm-aggregate-borrowed-string-exit-2026-10-16.json).
+The aggregate implementation and cache remain default off.
+
+The subsequent [owned-key projection investigation](../optimizations/borrowed-key-probes.md#borrow-before-projecting-an-owned-jvm-key)
+avoids a temporary STRING copy on misses and after bypass, while callback inputs remain owned.
+Its normal-capacity selection passes 74 checks per line; small-capacity aggregate/JSON checks
+plus the separate nested suite pass 109 on 2.2 and 107 with two compatibility skips on 1.18.
+Matched allocation profiles improve, but external work prevents timing claims; isolated
+performance admission remains pending.
+
+The [completed exit-only isolated matrix](../benchmarks/results/jvm-aggregates-string-exit-isolated-2026-10-16.json)
+retains 18 aggregate cases on both lines, before the key-projection follow-up. Low and medium
+cardinality medians improve, while distinct STRING keys remain slower than stock on both
+lines and distinct INT regresses on 2.2. All ranges, negative results and mixed profiles are
+preserved. It validates the exit-only revision, not the later key-projection candidate.
+
+The [completed key-projection matrix](../benchmarks/results/jvm-aggregates-key-projection-isolated-2026-10-16.json)
+now includes both Flink lines and actual historical fallback runtime `b965b8bf`. Most medians
+improve, but medium STRING and distinct BIGINT still regress on 1.18. Distinct STRING on 2.2
+beats its current stock control but remains slightly slower than the previous-runtime median.
+Separate-JVM control drift and all ranges are retained. Both native-library caches hit and all
+historical runtime queries verify zero native operators. This completes that measurement gap,
+not performance admission or the remaining merge/reset/OVER/type contracts in #237.
+
+The [encoding follow-up matrix](../benchmarks/results/jvm-encoding-isolated-2026-10-16.json)
+retains a further 18 aggregate cases plus both historical-runtime controls and eight mixed
+profiles. STRING remains slower on 1.18: low/medium stock/native medians are 1.288/1.411 and
+1.898/2.142 s; distinct INT and BIGINT are 3.111/3.236 and 3.160/3.434 s. Repeated wide table
+output improves separately, while distinct wide text on 2.2 remains slower than stock. The
+next writer change resets its bounded miss counter on a hit; its allocation evidence and
+whole-job gate are documented with the [encoding technique](../optimizations/string-copy-reduction.md#repeated-lazy-string-encodings).
+These results do not admit grouped UDAFs by default or finish #237.
+
 ## Still falls back
 
 Both the single-phase gate and, for the two-phase plan, **both halves independently** must clear
@@ -518,7 +750,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 **Single-phase / either two-phase half in common:**
 
 - LISTAGG and JSON aggregates with DISTINCT, explicit ordering or positive state TTL.
-- A UDAF (no native path for arbitrary user aggregation logic).
+- A UDAF under normal settings; the default-off investigation below is not admitted acceleration.
 - `AVG`/`SUM`/`MIN`/`MAX` over a value type outside [Type support](#type-support)'s ✓ set.
 - `AVG(DISTINCT)` over FLOAT/DOUBLE, DISTINCT SINGLE_VALUE, and DISTINCT FIRST_VALUE/LAST_VALUE
   over types other than STRING/VARCHAR.

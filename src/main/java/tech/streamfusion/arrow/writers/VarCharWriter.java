@@ -32,6 +32,11 @@ import java.nio.charset.StandardCharsets;
 /** {@link ArrowFieldWriter} for VarChar. */
 @Internal
 public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
+    private static final int MAX_CACHED_CHARACTERS = 1024;
+    private static final int MAX_ENCODING_MISSES = 8;
+    private String previousString;
+    private byte[] previousEncoding;
+    private int encodingMisses;
 
     public static VarCharWriter<RowData> forRow(VarCharVector varCharVector) {
         return new VarCharWriterForRow(varCharVector);
@@ -73,7 +78,7 @@ public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
             // it) and was ~9% of a string-heavy rowwise-fed job in the q20 profile.
             if (binary.getBinarySection() == null) {
                 vector.setSafe(
-                        getCount(), binary.getJavaObject().getBytes(StandardCharsets.UTF_8));
+                        getCount(), encode(binary.getJavaObject()));
                 return;
             }
             MemorySegment[] segments = binary.getSegments();
@@ -87,6 +92,25 @@ public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
             }
         }
         vector.setSafe(getCount(), value.toBytes());
+    }
+
+    private byte[] encode(String value) {
+        if (encodingMisses < MAX_ENCODING_MISSES && value.length() <= MAX_CACHED_CHARACTERS) {
+            if (value.equals(previousString)) {
+                encodingMisses = 0;
+                return previousEncoding;
+            }
+            byte[] encoded = value.getBytes(StandardCharsets.UTF_8);
+            if (++encodingMisses < MAX_ENCODING_MISSES) {
+                previousString = value;
+                previousEncoding = encoded;
+            } else {
+                previousString = null;
+                previousEncoding = null;
+            }
+            return encoded;
+        }
+        return value.getBytes(StandardCharsets.UTF_8);
     }
 
     // ------------------------------------------------------------------------------------------

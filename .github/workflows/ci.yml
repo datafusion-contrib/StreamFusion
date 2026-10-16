@@ -146,6 +146,17 @@ jobs:
       - name: Run Java test suite
         run: mvn -B -ntp ${{ matrix.profile }} test
 
+      - name: Verify opt-in JVM boundaries on the freshly built native library
+        if: matrix.jdk == '17'
+        run: >-
+          mvn -B -ntp ${{ matrix.profile }} -pl streamfusion-runtime
+          -Dnative.build.skip=true
+          -Dnative.resource.directory="$GITHUB_WORKSPACE/native/target/debug"
+          -Dtest=FlinkJvmAggregateSqlHarnessTest,FlinkNestedScalarSqlHarnessTest,FlinkNestedFixedBinarySqlHarnessTest,FlinkTemporalUdfSqlHarnessTest,FlinkBinaryRowHashParityTest,FlinkMapJsonJvmSqlHarnessTest,FlinkJsonJvmSqlHarnessTest,NativeParityValueTest,TransposeOperatorsTest,Utf8WriterReuseTest
+          -Dsf.testForks=1
+          "-Dsf.extraJvmArgs=-Djava.library.path=$GITHUB_WORKSPACE/native/target/debug -Dstreamfusion.experimental.nestedScalarUdfs=true -Dstreamfusion.experimental.temporalScalarUdfs=true -Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Dstreamfusion.experimental.borrowedStringExit=true"
+          surefire:test@default-test
+
       - name: Check deployed Java 11 bytecode including embedded payloads
         run: |
           mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true

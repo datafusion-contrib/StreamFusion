@@ -1441,3 +1441,44 @@ projection remains. The
 [scoped rejection](https://github.com/datafusion-contrib/StreamFusion/blob/feat/recovered-goal-followups/.claude/wontdos/binary-generated-segment-projection.md)
 records validation and architecture. Wider inputs did not prove the hypothesized
 encoding advantage, and no issue is closed from this experiment.
+
+## MAP SQL/JSON batch boundaries (2026-09-19)
+
+The generated Calc bridge also carries MAP values whose keys are declared non-null, and
+MULTISET values whose elements are declared non-null. This extends coverage through the same
+borrowed-input/owned-output lifetime; it adds no per-row JNI calls and no native JSON parser.
+
+The existing scalar benchmark measured 2M rows on M1 Max/JDK 17, release + mimalloc,
+parallelism one, 264-byte ASCII payloads and a NULL outer map every seventh row. Each non-null
+map contains three string keys and one NULL value. Both transposes and the rowwise blackhole
+sink remain in the timed path. There were two warmups and five interleaved measured trials;
+medians below include all conversion and callback work.
+
+| Case | Flink (s) | Native pipeline (s) | Flink / native |
+|---|---:|---:|---:|
+| MAP identity control | 1.318 | 2.379 | 0.554x |
+| `JSON_STRING(m)` | 2.727 | 4.179 | 0.652x |
+| `ROW(m, JSON_QUERY(s, '$.items[*]'))` | 2.611 | 5.599 | 0.466x |
+
+These isolated projections are slower than Flink. The purpose is to keep supported MAP-bearing
+JSON Calcs inside a larger native pipeline; this measurement does not establish a speedup for
+that composition. Existing measured native JSON fast paths remain in use. Nullable keys still
+fall back because Arrow's map representation cannot preserve them safely.
+
+[All measured trials](sql-json-map-2026-09-19.csv) are retained. Reproduce with the existing
+`ScalarFunctionBenchmark#individualFunctions` under `-Pbench`, `SF_BENCHMARK=true`,
+`-Dscalar.functions=JSON_STRING_MAP,JSON_QUERY_MAP_RESULT -Dscalar.nullEvery=7`.
+
+A second benchmark put the same JSON map serialization inside a filter followed by grouped
+COUNT over 4,096 keys, retaining both transposes and the rowwise blackhole sink. It used the
+same 2M rows, payload sizes, NULL rate, warmups and interleaving. Flink took **3.365s** and
+the native pipeline **4.774s** (**0.705x**). Thus this measured composition is also slower;
+there is no demonstrated speedup for the MAP extension. The implementation is small because
+it reuses the generated host evaluator, but performance needs further work before recommending
+it as an optimization. [Composition trials](sql-json-map-composition-2026-09-19.csv) are retained;
+reproduce with `JsonMapCompositionBenchmark` under `-Pbench` and `SF_BENCHMARK=true`.
+
+
+The maintainer accepted shipping the verified MAP/MULTISET boundary extension on
+October 16 with the measured regressions above retained and performance work deferred.
+The historical measurements are not a claim of improvement against current main.

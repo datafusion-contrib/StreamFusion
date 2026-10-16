@@ -241,7 +241,8 @@ The counters verify 14M rows consumed directly per case and 28M timestamp values
 in identity, including warmups. Text and epoch improve against their paired controls; identity
 remains about 1% slower. Cross-JVM control drift and the missing final repeat against the previous
 correct fallback prevent broader admission. The temporal option and both experiments stay off by
-default, the PR stays draft, and #364 remains open.
+default. The maintainer accepted shipping this implementation on October 16; #368 has merged
+and [#389](https://github.com/datafusion-contrib/StreamFusion/issues/389) tracks deferred performance/default admission.
 
 ### Java and Rust profiling evidence
 
@@ -315,7 +316,9 @@ activity was observed. Median elapsed seconds are:
 are retained. Text conversion wins at both cardinalities, but identity and epoch still
 regress. These measurements supersede earlier figures for the current fixture; they
 are not a repeat against the previous fallback or the second supported Flink line.
-The temporal PR remains draft and all temporal experiments remain off by default.
+The temporal PR has merged after explicit maintainer acceptance of the performance
+tradeoff. All temporal experiments remain off by default; further performance/default
+admission work is tracked in [#389](https://github.com/datafusion-contrib/StreamFusion/issues/389).
 
 
 The same corrected fixture has separate CPU/allocation profiles for identity, epoch

@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "production_revision": "f155582e63812dc79c541f382612e24e5a071b82",
+  "sources_sha256": {
+    "src/test/java/tech/streamfusion/FlinkNestedScalarRemoteDeploymentTest.java": "5b492843e42fe2290734a2dbc0930df543c560d6efba8dc3a026575b047b27a8",
+    "src/test/java-flink1.18/tech/streamfusion/compat/FlinkTestContexts.java": "fcbf9f88959526a62fe47cbe292af5452d5733bc1f353b991f75ac3161cf9b1d",
+    "src/test/java-flink2.2/tech/streamfusion/compat/FlinkTestContexts.java": "b0edeea89e6b4ce41abecb27cb93d14bd266f27ddd7059051776dc1109ec74a9"
+  },
+  "native_sha256": "acf7e95b8a2170af17817b75c9f7a5938237d93a0197f1321550a18ddf4af140",
+  "configuration": {
+    "java": 17,
+    "parallelism": [
+      1,
+      3
+    ],
+    "rows": 5003,
+    "transpose_batch_rows": 7,
+    "object_reuse": true,
+    "nestedScalarUdfs_flag_in_planner_and_task_jvms": true,
+    "zeroCopyLocal": false
+  },
+  "checks": [
+    "Planner and task JVMs have distinct process IDs",
+    "Stock/native complete result multiset and resolved schema parity",
+    "Every native result executes in the task JVM; native consumed rows total5003",
+    "Identity nested RowKinds and mutable Row/array results across multiple batches",
+    "NULL rows, fields, arrays and elements plus Unicode",
+    "Child JVM exits successfully only after native handle, Arrow allocation and task reservation cleanup checks"
+  ],
+  "limitations": [
+    "One-host remote submission with one TaskManager JVM; not separate TaskManager JVMs for every subtask.",
+    "Recovery uses the separate eight-case checkpoint fixture; this remote execution fixture does not combine process termination with checkpoint recovery.",
+    "Both processes explicitly enable the flag; inconsistent planner/task flags are not admitted by this evidence.",
+    "No performance claim; 1.18 uses matching copied candidate Java sources and the pinned candidate library."
+  ],
+  "suites": [
+    {
+      "flink_line": "2.2.1",
+      "passed": 2,
+      "skipped": 0,
+      "proof": [
+        "[nested-remote-proof] plannerPid=2187443 taskPid=2187680 parallelism=1 rows=5003 operators=[{subtask=0, operator=NativeCalcExecNode[11], recordsIn=5003}]",
+        "[nested-remote-proof] plannerPid=2187443 taskPid=2188756 parallelism=3 rows=5003 operators=[{subtask=2, operator=NativeCalcExecNode[24], recordsIn=1667}, {subtask=0, operator=NativeCalcExecNode[24], recordsIn=1668}, {subtask=1, operator=NativeCalcExecNode[24], recordsIn=1668}]"
+      ],
+      "artifacts": [
+        {
+          "file": "nested-scalar-remote-2026-10-16-22.log.gz",
+          "sha256": "f6391562703cb72cbfb5cd9b0503483c4d793f669c5d7b9886cfbd871dac367e"
+        },
+        {
+          "file": "nested-scalar-remote-2026-10-16-22-compile.log.gz",
+          "sha256": "a2e17aaa9c6dacd564a2acf912447f9b68d75ef80e39ba284a34a32c00bece85"
+        },
+        {
+          "file": "nested-scalar-remote-2026-10-16-22-report.txt.gz",
+          "sha256": "ec085a6c6f3ee3a6b2041e9df281bc01fea3d1d51d6c8985ed16d46ec2cdeeeb"
+        }
+      ]
+    },
+    {
+      "flink_line": "1.18.1",
+      "passed": 2,
+      "skipped": 0,
+      "proof": [
+        "[nested-remote-proof] plannerPid=2187491 taskPid=2187766 parallelism=1 rows=5003 operators=[{subtask=0, operator=NativeCalcExecNode[11], recordsIn=5003}]",
+        "[nested-remote-proof] plannerPid=2187491 taskPid=2188822 parallelism=3 rows=5003 operators=[{subtask=0, operator=NativeCalcExecNode[24], recordsIn=1667}, {subtask=2, operator=NativeCalcExecNode[24], recordsIn=1668}, {subtask=1, operator=NativeCalcExecNode[24], recordsIn=1668}]"
+      ],
+      "artifacts": [
+        {
+          "file": "nested-scalar-remote-2026-10-16-118.log.gz",
+          "sha256": "060376bf98077def14a08f5d0728cc2f99af814acac6c8c51212295894a59f79"
+        },
+        {
+          "file": "nested-scalar-remote-2026-10-16-118-compile.log.gz",
+          "sha256": "7994ec4fcc358af335088c605199dcc6881cab860f9741b04d1d48f9c9559f0d"
+        },
+        {
+          "file": "nested-scalar-remote-2026-10-16-118-report.txt.gz",
+          "sha256": "edbd07ab5a8f23293fc2191989afa9a2040e96a057f058daaba35e449dfee81f"
+        }
+      ]
+    }
+  ]
+}

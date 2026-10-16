@@ -2,7 +2,6 @@ package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
-import tech.streamfusion.operator.RowDataArrowConverter;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -23,8 +22,8 @@ import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.data.binary.BinaryRowData;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
-import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.BinaryType;
 import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.DateType;
@@ -43,8 +42,102 @@ import org.apache.flink.table.types.logical.VarBinaryType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.table.types.logical.YearMonthIntervalType;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.operator.RowDataArrowConverter;
 
 class FlinkBinaryRowHashParityTest {
+
+  @Test
+  @org.junit.jupiter.api.condition.EnabledIfSystemProperty(
+      named = "streamfusion.experimental.nestedScalarUdfs",
+      matches = "true")
+  void nestedFixedBinaryUsesExactRuntimeBytesAndHashes() {
+    RowType child = RowType.of(new BinaryType(4));
+    RowType type = RowType.of(child, new ArrayType(new BinaryType(4)));
+    List<RowData> rows = new ArrayList<>();
+    for (int width : new int[] {0, 1, 4, 8, 4097}) {
+      byte[] bytes = new byte[width];
+      for (int i = 0; i < width; i++) bytes[i] = (byte) (128 + i * 73);
+      for (org.apache.flink.types.RowKind kind : org.apache.flink.types.RowKind.values()) {
+        GenericRowData nested = GenericRowData.of((Object) bytes);
+        nested.setRowKind(kind);
+        rows.add(
+            GenericRowData.of(
+                nested, new GenericArrayData(new Object[] {bytes, null, new byte[0]})));
+      }
+    }
+    GenericRowData nullPayload = GenericRowData.of((Object) null);
+    nullPayload.setRowKind(org.apache.flink.types.RowKind.DELETE);
+    rows.add(GenericRowData.of(nullPayload, new GenericArrayData(new Object[] {null})));
+    rows.add(GenericRowData.of(null, new GenericArrayData(new Object[0])));
+    rows.add(GenericRowData.of(null, null));
+    int[] descriptors = {-1, -1, -1, -1};
+    RowDataSerializer serializer = new RowDataSerializer(type);
+    assertArrayEquals(
+        rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray(),
+        nativeHashes(rows, type, new int[] {0, 1}, descriptors));
+    try (BufferAllocator allocator = new RootAllocator();
+        VectorSchemaRoot root = RowDataArrowConverter.write(rows, type, allocator);
+        CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
+        ArrowArray array = ArrowArray.allocateNew(allocator);
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+      Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
+      byte[][] actual =
+          Native.flinkBinaryRows(
+              array.memoryAddress(),
+              schema.memoryAddress(),
+              new int[] {0, 1},
+              descriptors,
+              java.util.stream.IntStream.range(0, rows.size()).toArray());
+      for (int i = 0; i < rows.size(); i++) {
+        BinaryRowData binary = serializer.toBinaryRow(rows.get(i));
+        byte[] expected = new byte[binary.getSizeInBytes()];
+        binary.getSegments()[0].get(binary.getOffset(), expected, 0, expected.length);
+        assertArrayEquals(expected, actual[i], "row=" + i);
+      }
+    }
+  }
+
+  @Test
+  @org.junit.jupiter.api.condition.EnabledIfSystemProperty(
+      named = "streamfusion.experimental.nestedScalarUdfs",
+      matches = "true")
+  void nestedRowKindsMatchReleasedBinaryBytesAndHashes() {
+    RowType child = RowType.of(new BigIntType(), new TimestampType(9));
+    RowType type = RowType.of(child, new ArrayType(child));
+    List<RowData> rows = new ArrayList<>();
+    for (org.apache.flink.types.RowKind kind : org.apache.flink.types.RowKind.values()) {
+      GenericRowData nested = GenericRowData.of(7L, TimestampData.fromEpochMillis(-1, 123456));
+      nested.setRowKind(kind);
+      rows.add(GenericRowData.of(nested, new GenericArrayData(new Object[] {nested, null})));
+    }
+    rows.add(GenericRowData.of(null, new GenericArrayData(new Object[0])));
+    rows.add(GenericRowData.of(null, null));
+    int[] descriptors = {-1, -1, 9, -1, -1, -1, 9};
+    RowDataSerializer serializer = new RowDataSerializer(type);
+    assertArrayEquals(
+        rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray(),
+        nativeHashes(rows, type, new int[] {0, 1}, descriptors));
+    try (BufferAllocator allocator = new RootAllocator();
+        VectorSchemaRoot root = RowDataArrowConverter.write(rows, type, allocator);
+        CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
+        ArrowArray array = ArrowArray.allocateNew(allocator);
+        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
+      Data.exportVectorSchemaRoot(allocator, root, dictionaries, array, schema);
+      byte[][] actual =
+          Native.flinkBinaryRows(
+              array.memoryAddress(),
+              schema.memoryAddress(),
+              new int[] {0, 1},
+              descriptors,
+              new int[] {0, 1, 2, 3, 4, 5});
+      for (int i = 0; i < rows.size(); i++) {
+        BinaryRowData binary = serializer.toBinaryRow(rows.get(i));
+        byte[] expected = new byte[binary.getSizeInBytes()];
+        binary.getSegments()[0].get(binary.getOffset(), expected, 0, expected.length);
+        assertArrayEquals(expected, actual[i], "nested kind row " + i);
+      }
+    }
+  }
 
   private static final RowType KEY_SCHEMA =
       RowType.of(
@@ -96,7 +189,8 @@ class FlinkBinaryRowHashParityTest {
     values.setField(6, new byte[] {0, -1, 7});
     values.setField(7, new byte[] {9, 8, 7, 6, 5, 4, 3, 2});
     values.setField(8, DecimalData.fromBigDecimal(new BigDecimal("-12345.67"), 10, 2));
-    values.setField(9, DecimalData.fromBigDecimal(new BigDecimal("1234567890123456789012345.67890"), 30, 5));
+    values.setField(
+        9, DecimalData.fromBigDecimal(new BigDecimal("1234567890123456789012345.67890"), 30, 5));
     values.setField(10, -18_000);
     values.setField(11, 86_399_123);
     values.setField(12, TimestampData.fromEpochMillis(-1_234));
@@ -127,7 +221,8 @@ class FlinkBinaryRowHashParityTest {
           Native.flinkBinaryRowHashes(
               array.memoryAddress(), schema.memoryAddress(), keyColumns, timestampPrecisions);
       RowDataSerializer serializer = new RowDataSerializer(KEY_SCHEMA);
-      int[] expected = rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray();
+      int[] expected =
+          rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray();
       assertArrayEquals(expected, actual);
     }
   }
@@ -194,7 +289,9 @@ class FlinkBinaryRowHashParityTest {
             StringData.fromString("nest"),
             new GenericArrayData(
                 new TimestampData[] {
-                  TimestampData.fromEpochMillis(-1, 999_999), null, TimestampData.fromEpochMillis(7, 42)
+                  TimestampData.fromEpochMillis(-1, 999_999),
+                  null,
+                  TimestampData.fromEpochMillis(7, 42)
                 }));
     GenericRowData values =
         GenericRowData.of(
@@ -208,23 +305,24 @@ class FlinkBinaryRowHashParityTest {
     // Pre-order logical type stream: ARRAY<int>, MAP<string, ARRAY<int>>, ROW<string,
     // ARRAY<timestamp(9)>>, MULTISET<string> (Arrow MAP<string, int>).
     int[] typeDescriptors = {-1, -1, -1, -1, -1, -1, -1, -1, -1, 9, -1, -1, -1};
-    int[][] perFieldDescriptors = {
-      {-1, -1}, {-1, -1, -1, -1}, {-1, -1, -1, 9}, {-1, -1, -1}
+    int[][] perFieldDescriptors = {{-1, -1}, {-1, -1, -1, -1}, {-1, -1, -1, 9}, {-1, -1, -1}};
+    Object[] fieldValues = {
+      values.getField(0), values.getField(1), values.getField(2), values.getField(3)
     };
-    Object[] fieldValues = {values.getField(0), values.getField(1), values.getField(2), values.getField(3)};
 
     int[] actual = nativeHashes(rows, schema, keyColumns, typeDescriptors);
     RowDataSerializer serializer = new RowDataSerializer(schema);
-    int[] expected = rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray();
+    int[] expected =
+        rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray();
     for (int field = 0; field < keyColumns.length; field++) {
       GenericRowData projected = new GenericRowData(1);
       projected.setField(0, fieldValues[field]);
       GenericRowData projectedNull = new GenericRowData(1);
-      int[] actualField =
-          nativeHashes(rows, schema, new int[] {field}, perFieldDescriptors[field]);
+      int[] actualField = nativeHashes(rows, schema, new int[] {field}, perFieldDescriptors[field]);
       RowDataSerializer fieldSerializer = new RowDataSerializer(schema.getTypeAt(field));
       int[] expectedField = {
-        fieldSerializer.toBinaryRow(projected).hashCode(), fieldSerializer.toBinaryRow(projectedNull).hashCode()
+        fieldSerializer.toBinaryRow(projected).hashCode(),
+        fieldSerializer.toBinaryRow(projectedNull).hashCode()
       };
       assertArrayEquals(expectedField, actualField, "nested field " + field);
     }
@@ -233,8 +331,7 @@ class FlinkBinaryRowHashParityTest {
 
   @Test
   void nativeHashMatchesFlinksBinaryRowForDeepCompositeKeys() {
-    ArrayType nestedStrings =
-        new ArrayType(new ArrayType(new VarCharType(VarCharType.MAX_LENGTH)));
+    ArrayType nestedStrings = new ArrayType(new ArrayType(new VarCharType(VarCharType.MAX_LENGTH)));
     RowType mapValue =
         RowType.of(
             new LogicalType[] {
@@ -243,8 +340,7 @@ class FlinkBinaryRowHashParityTest {
             new String[] {"amount", "times", "tag"});
     MapType binaryToRow = new MapType(new VarBinaryType(VarBinaryType.MAX_LENGTH), mapValue);
     MapType stringToDecimals =
-        new MapType(
-            new VarCharType(VarCharType.MAX_LENGTH), new ArrayType(new DecimalType(28, 3)));
+        new MapType(new VarCharType(VarCharType.MAX_LENGTH), new ArrayType(new DecimalType(28, 3)));
     RowType schema =
         RowType.of(
             new LogicalType[] {
@@ -277,16 +373,17 @@ class FlinkBinaryRowHashParityTest {
     decimalMap.put(
         StringData.fromString("short"),
         new GenericArrayData(
-            new DecimalData[] {
-              DecimalData.fromBigDecimal(new BigDecimal("1.001"), 28, 3), null
-            }));
+            new DecimalData[] {DecimalData.fromBigDecimal(new BigDecimal("1.001"), 28, 3), null}));
     decimalMap.put(
-        StringData.fromString("a-key-longer-than-seven-bytes"), new GenericArrayData(new DecimalData[] {}));
+        StringData.fromString("a-key-longer-than-seven-bytes"),
+        new GenericArrayData(new DecimalData[] {}));
 
     GenericArrayData blue = new GenericArrayData(new StringData[] {StringData.fromString("blue")});
     GenericArrayData red =
         new GenericArrayData(
-            new StringData[] {StringData.fromString("red"), StringData.fromString("a long element")});
+            new StringData[] {
+              StringData.fromString("red"), StringData.fromString("a long element")
+            });
     LinkedHashMap<GenericArrayData, Integer> multiset = new LinkedHashMap<>();
     multiset.put(red, 3);
     multiset.put(blue, 1);
@@ -296,7 +393,9 @@ class FlinkBinaryRowHashParityTest {
             new GenericArrayData(
                 new GenericArrayData[] {
                   new GenericArrayData(
-                      new StringData[] {StringData.fromString("tiny"), null, StringData.fromString("long-string")}),
+                      new StringData[] {
+                        StringData.fromString("tiny"), null, StringData.fromString("long-string")
+                      }),
                   new GenericArrayData(new StringData[] {})
                 }),
             new GenericMapData(binaryMap),
@@ -304,10 +403,9 @@ class FlinkBinaryRowHashParityTest {
                 new GenericArrayData(
                     new GenericArrayData[] {
                       new GenericArrayData(
-                          new TimestampData[] {
-                            TimestampData.fromEpochMillis(-1, 999_999), null
-                          }),
-                      new GenericArrayData(new TimestampData[] {TimestampData.fromEpochMillis(1, 1)})
+                          new TimestampData[] {TimestampData.fromEpochMillis(-1, 999_999), null}),
+                      new GenericArrayData(
+                          new TimestampData[] {TimestampData.fromEpochMillis(1, 1)})
                     }),
                 new GenericMapData(decimalMap)),
             new GenericMapData(multiset));
@@ -330,20 +428,18 @@ class FlinkBinaryRowHashParityTest {
       Object[] fieldValues) {
     int[] actual = nativeHashes(rows, schema, keyColumns, typeDescriptors);
     RowDataSerializer serializer = new RowDataSerializer(schema);
-    int[] expected = rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray();
+    int[] expected =
+        rows.stream().mapToInt(row -> serializer.toBinaryRow(row).hashCode()).toArray();
     for (int field = 0; field < keyColumns.length; field++) {
       GenericRowData projected = new GenericRowData(1);
       projected.setField(0, fieldValues[field]);
       GenericRowData projectedNull = new GenericRowData(1);
       int[] actualField =
-          nativeHashes(
-              rows,
-              schema,
-              new int[] {field},
-              typeDescriptors(schema.getTypeAt(field)));
+          nativeHashes(rows, schema, new int[] {field}, typeDescriptors(schema.getTypeAt(field)));
       RowDataSerializer fieldSerializer = new RowDataSerializer(schema.getTypeAt(field));
       int[] expectedField = {
-        fieldSerializer.toBinaryRow(projected).hashCode(), fieldSerializer.toBinaryRow(projectedNull).hashCode()
+        fieldSerializer.toBinaryRow(projected).hashCode(),
+        fieldSerializer.toBinaryRow(projectedNull).hashCode()
       };
       assertArrayEquals(expectedField, actualField, "nested field " + field);
     }

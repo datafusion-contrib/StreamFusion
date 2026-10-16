@@ -1,0 +1,2236 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_commit": "23d16dce7039bd2e1ffba589247944919e74a446",
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+    "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+    "src/main/java/tech/streamfusion/operator/JvmAccumulatorCache.java": "7de790a994b864795afd9ce8daed1e163bc8110f3990f86c87b72ef3ec73a524",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarJvmGroupOperator.java": "ccf91e36edf20164cc9c613982d9121985a686faab4956ee50efcf737dcd27ab",
+    "src/test/java/tech/streamfusion/operator/JvmStringKeyProbeTest.java": "75779dffe7ea8c52f0ad7df5673eafa2bbd77632c805ef7f6265ed936525c846"
+  },
+  "baseline_source_sha256": {
+    "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c0b3fe8d1ce3fc919d88c526eb602f67191d1a5b68dd11245a26a2d6c9c7b1ee",
+    "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "7521bc9e3ffc259205649af16946bd866a6dff432cc0c28dd7091629fac9a7d0",
+    "src/main/java/tech/streamfusion/operator/JvmAccumulatorCache.java": "0383e8d56eda258f4f2dd26fe1b8f6ba0cb8cefcce1e8f225a0f12f17abf3635",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarJvmGroupOperator.java": "8f0495152671077db8afbe1cbb6970e9db912b469872f66b613c931af8d7dae7"
+  },
+  "variant": "single VARCHAR grouping key borrows only for probing and owned key projection; ordinary user-function input reader unchanged",
+  "configuration": {
+    "flink": "2.2.1",
+    "jdk": "17",
+    "host": "Core i7-12650H / Linux",
+    "heap": "2 GiB",
+    "parallelism": 1,
+    "native_library": "unchanged release+mimalloc 232-json-fixed",
+    "rows": 1000000,
+    "keys": 1000000,
+    "key_prefix_chars": 16,
+    "warmup_pairs": 2,
+    "measured_pairs": 3,
+    "native_udaf_rows": 5000000,
+    "shapes": [
+      "JVM UDAF",
+      "Rust builtin SUM control"
+    ],
+    "production_ipc": true,
+    "both_transposes": true,
+    "batch_rows": 1024,
+    "cluster_lifetime": "per job",
+    "fixture_method": "symmetric-preflight-v2",
+    "cache_entries": 65536,
+    "borrowed_string_exit": true,
+    "cpu_event": "cpu-clock",
+    "cpu_interval": "2 ms",
+    "native_unwinding": "DWARF",
+    "java_allocation_interval": "1 MB"
+  },
+  "baseline_method": "Four changed production files were compiled from immutable 23d16dce source into an isolated output, temporarily loaded for the baseline, then all candidate class bytes were restored before its recording. Same released dependency classpath, JDK, unchanged benchmark fixture and flags. Source files were never replaced.",
+  "profiles": [
+    {
+      "label": "string-exit-distinct-diagnostic",
+      "variant": "initial diagnostic on 23d16dce",
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [
+          {
+            "time_ms": 1792134515220,
+            "pid": 971917,
+            "delta_cpu_s": 1.6400000000000001,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 2.74,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134515727,
+            "pid": 971917,
+            "delta_cpu_s": 2.8099999999999996,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 5.55,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134516236,
+            "pid": 971917,
+            "delta_cpu_s": 3.5599999999999996,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 9.11,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134516746,
+            "pid": 971917,
+            "delta_cpu_s": 1.4600000000000009,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 10.57,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134517256,
+            "pid": 971917,
+            "delta_cpu_s": 0.7199999999999989,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 11.29,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134517768,
+            "pid": 971917,
+            "delta_cpu_s": 1.6000000000000014,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 12.89,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134518276,
+            "pid": 971917,
+            "delta_cpu_s": 0.7899999999999991,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 13.68,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134518785,
+            "pid": 971917,
+            "delta_cpu_s": 1.0999999999999996,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 14.78,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134519294,
+            "pid": 971917,
+            "delta_cpu_s": 2.200000000000001,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 16.98,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134519802,
+            "pid": 971917,
+            "delta_cpu_s": 0.6799999999999997,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 17.66,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134520312,
+            "pid": 971917,
+            "delta_cpu_s": 1.9100000000000001,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 19.57,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134520823,
+            "pid": 971917,
+            "delta_cpu_s": 0.5399999999999991,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 20.11,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134521330,
+            "pid": 971917,
+            "delta_cpu_s": 0.5300000000000011,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 20.64,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134521837,
+            "pid": 971917,
+            "delta_cpu_s": 0.509999999999998,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 21.15,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134522343,
+            "pid": 971917,
+            "delta_cpu_s": 0.5,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 21.65,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134522850,
+            "pid": 971917,
+            "delta_cpu_s": 0.5100000000000016,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 22.16,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134523356,
+            "pid": 971917,
+            "delta_cpu_s": 0.5,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 22.66,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          }
+        ],
+        "timing_excluded": true
+      },
+      "external_cpu_seconds": 21.56,
+      "stacks": {
+        "cpu": {
+          "file": "string-exit-distinct-diagnostic-cpu-2026-10-16.collapsed.gz",
+          "sha256": "5425c84a78fd5a2e4a04315fab4a654f45267603e600fe331a1ede89eafff026",
+          "units": "CPU samples",
+          "whole_process_total": 47344,
+          "inclusive_aggregate_ingest": 2000,
+          "inclusive_aggregate_methods": {
+            "HeapValueState.value": 768,
+            "JvmAccumulatorCache": 1324,
+            "CopyOnWriteStateMap.incrementalRehash": 581,
+            "BinaryRowDataKeySelector.getKey": 168,
+            "ColumnarRowData.getString": 38,
+            "ArrowToRowDataOperator": 177,
+            "HeapValueState.update": 299
+          },
+          "aggregate_leaves": [
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+              576
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+              257
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+              41
+            ],
+            [
+              "org/apache/flink/util/MathUtils.bitMix_[i]",
+              40
+            ],
+            [
+              "clear_page_erms_[k]",
+              39
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              37
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+              34
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.put_[j]",
+              34
+            ],
+            [
+              "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+              32
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+              31
+            ],
+            [
+              "java/lang/Integer.rotateLeft_[i]",
+              30
+            ],
+            [
+              "ColumnarJvmAggsHandler$10.setAccumulators_[j]",
+              27
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.fmix_[i]",
+              24
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.isRehashing_[i]",
+              24
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              23
+            ]
+          ],
+          "rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              1339
+            ],
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::create",
+              514
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              299
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+              265
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+              265
+            ],
+            [
+              "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+              168
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+              156
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::emit",
+              123
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              90
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              23
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              20
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              20
+            ],
+            [
+              "streamfusion::group_agg::emit_running",
+              18
+            ],
+            [
+              "<streamfusion::memory::FlinkTaskOffHeapPool as datafusion_execution::memory_pool::MemoryPool>::try_grow",
+              11
+            ],
+            [
+              "streamfusion::flink_key::BinaryRowWriter::write_variable",
+              10
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "string-exit-distinct-diagnostic-alloc-2026-10-16.collapsed.gz",
+          "sha256": "291069e0d6aeb9750e6a4d72760d1b2a4d1a8c9bf0dc6661c819d6c6f429d202",
+          "units": "sampled Java allocation bytes",
+          "whole_process_total": 34619309216,
+          "inclusive_aggregate_ingest": 6098518064,
+          "inclusive_aggregate_methods": {
+            "HeapValueState.update": 304087040,
+            "JvmAccumulatorCache": 2203058224,
+            "ArrowToRowDataOperator": 1451229184,
+            "BinaryRowDataKeySelector.getKey": 1853882368,
+            "ColumnarRowData.getString": 954204160
+          },
+          "aggregate_leaves": [
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              880803840
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              854589440
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              852492288
+            ],
+            [
+              "byte[]_[i]",
+              691011584
+            ],
+            [
+              "java.lang.Long_[i]",
+              429916160
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              405798912
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              397410304
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              361758720
+            ],
+            [
+              "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+              341835776
+            ],
+            [
+              "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+              238026752
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              233832448
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              176160768
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+              138412032
+            ],
+            [
+              "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry[]_[i]",
+              66060288
+            ],
+            [
+              "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+              9437184
+            ]
+          ],
+          "rust_frames": []
+        }
+      },
+      "raw_log": {
+        "file": "string-exit-distinct-diagnostic-2026-10-16.log.gz",
+        "sha256": "1784337d8c5d41a3c813551bc4beaed94e34c2ba347ba5da479fd45ae0bc1815"
+      }
+    },
+    {
+      "label": "key-projection-before-distinct",
+      "variant": "matched baseline 23d16dce",
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [
+          {
+            "time_ms": 1792134946257,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.2,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134946763,
+            "pid": 1029464,
+            "delta_cpu_s": 0.05000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.25,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134947271,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.26,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134947776,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.28,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134948285,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.29,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134948792,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.32,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134949305,
+            "pid": 1029464,
+            "delta_cpu_s": 0.010000000000019327,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.33,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134949816,
+            "pid": 1029464,
+            "delta_cpu_s": 0.01999999999998181,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.35,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134950322,
+            "pid": 1029464,
+            "delta_cpu_s": 0.05000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.4,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134950829,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.46,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134950829,
+            "pid": 1029464,
+            "delta_cpu_s": 0.47999999999998977,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 180.88,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134951337,
+            "pid": 1029464,
+            "delta_cpu_s": 0.15000000000000568,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.03,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134951847,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.04,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134952354,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.07,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134952874,
+            "pid": 1029464,
+            "delta_cpu_s": 0.010000000000019327,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.08,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134953380,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.11,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134954398,
+            "pid": 1029464,
+            "delta_cpu_s": 0.07999999999998408,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.19,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134954907,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.21,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134955417,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.24,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134955926,
+            "pid": 1029464,
+            "delta_cpu_s": 0.01999999999998181,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.26,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134956432,
+            "pid": 1029464,
+            "delta_cpu_s": 0.0700000000000216,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.33,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134956941,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.34,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134957455,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.38,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134957964,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.4,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134958474,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.43,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134958985,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.44,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134959496,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.48,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134960006,
+            "pid": 1029464,
+            "delta_cpu_s": 0.010000000000019327,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.49,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134960514,
+            "pid": 1029464,
+            "delta_cpu_s": 0.10999999999998522,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 181.6,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134961020,
+            "pid": 1029464,
+            "delta_cpu_s": 0.6599999999999966,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.26,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134961527,
+            "pid": 1029464,
+            "delta_cpu_s": 0.010000000000019327,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.27,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134962034,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.47,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134962034,
+            "pid": 1029464,
+            "delta_cpu_s": 0.09000000000000341,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.36,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134962584,
+            "pid": 1029464,
+            "delta_cpu_s": 0.01999999999998181,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.38,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134963093,
+            "pid": 1029464,
+            "delta_cpu_s": 0.05000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.43,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134963601,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.46,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134964110,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.49,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134964616,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.52,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134965121,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.53,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134965636,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.56,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134966142,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.59,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134966649,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.48,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134966649,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.62,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134967160,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.63,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134967669,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.67,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134968175,
+            "pid": 1029464,
+            "delta_cpu_s": 0.010000000000019327,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.68,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134968682,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.72,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134969188,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.73,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134969695,
+            "pid": 1029464,
+            "delta_cpu_s": 0.040000000000020464,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.77,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134970201,
+            "pid": 1029464,
+            "delta_cpu_s": 0.060000000000002274,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 182.83,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134970708,
+            "pid": 1029464,
+            "delta_cpu_s": 0.28999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.12,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134971213,
+            "pid": 1029464,
+            "delta_cpu_s": 0.5799999999999841,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.7,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134971722,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.72,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134972227,
+            "pid": 1029464,
+            "delta_cpu_s": 0.06999999999999318,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.79,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134972733,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.81,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134973239,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.84,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134974252,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.88,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134974759,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.91,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134975286,
+            "pid": 1026173,
+            "delta_cpu_s": 0.010000000000005116,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.49,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134975286,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.93,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134975797,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.97,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134976305,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 183.98,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134976820,
+            "pid": 1029464,
+            "delta_cpu_s": 0.040000000000020464,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.02,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134977327,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.03,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134977834,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.05,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134978343,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.09,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          }
+        ],
+        "timing_excluded": true
+      },
+      "external_cpu_seconds": 3.940000000000005,
+      "stacks": {
+        "cpu": {
+          "file": "key-projection-before-distinct-cpu-2026-10-16.collapsed.gz",
+          "sha256": "41f60ce3dd5593014a27b6d5359743c3dbb3cc3529affbf1c1bfb82de41ac93d",
+          "units": "CPU samples",
+          "whole_process_total": 46429,
+          "inclusive_aggregate_ingest": 2254,
+          "inclusive_aggregate_methods": {
+            "HeapValueState.update": 304,
+            "JvmAccumulatorCache": 1390,
+            "HeapValueState.value": 805,
+            "BinaryRowDataKeySelector.getKey": 192,
+            "CopyOnWriteStateMap.incrementalRehash": 634,
+            "ArrowToRowDataOperator": 232,
+            "ColumnarRowData.getString": 50
+          },
+          "aggregate_leaves": [
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+              629
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+              268
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              50
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.isRehashing_[i]",
+              39
+            ],
+            [
+              "org/apache/flink/util/MathUtils.bitMix_[i]",
+              38
+            ],
+            [
+              "clear_page_erms_[k]",
+              34
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+              31
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+              28
+            ],
+            [
+              "org/apache/flink/table/runtime/operators/aggregate/utils/GroupAggHelper.processElement_[j]",
+              27
+            ],
+            [
+              "tech$streamfusion$PortableSqlFixtures$SumState$3$Converter.toInternal_[i]",
+              23
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.put_[i]",
+              23
+            ],
+            [
+              "java/lang/Integer.rotateLeft_[i]",
+              22
+            ],
+            [
+              "itable stub",
+              20
+            ],
+            [
+              "ColumnarJvmAggsHandler$10.setAccumulators_[j]",
+              20
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.addNewStateMapEntry_[i]",
+              18
+            ]
+          ],
+          "rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              1660
+            ],
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::create",
+              699
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              326
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+              278
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+              278
+            ],
+            [
+              "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+              171
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+              164
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              145
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::emit",
+              112
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              27
+            ],
+            [
+              "streamfusion::group_agg::emit_running",
+              20
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              20
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              15
+            ],
+            [
+              "streamfusion::flink_key::BinaryRowWriter::write_variable",
+              9
+            ],
+            [
+              "streamfusion::group_agg::GroupAggState::emit",
+              6
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "key-projection-before-distinct-alloc-2026-10-16.collapsed.gz",
+          "sha256": "28b1cb849678fee7b97a30d66eed5df57a8bf85c978f7be80a0ef47fbb56f3fb",
+          "units": "sampled Java allocation bytes",
+          "whole_process_total": 34525986704,
+          "inclusive_aggregate_ingest": 6030360624,
+          "inclusive_aggregate_methods": {
+            "JvmAccumulatorCache": 2204106800,
+            "ArrowToRowDataOperator": 1429209088,
+            "HeapValueState.update": 275775488,
+            "BinaryRowDataKeySelector.getKey": 1879048192,
+            "ColumnarRowData.getString": 953155584
+          },
+          "aggregate_leaves": [
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              889192448
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              881852416
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              873463808
+            ],
+            [
+              "byte[]_[i]",
+              659554304
+            ],
+            [
+              "java.lang.Long_[i]",
+              426770432
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              394264576
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              376438784
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              365953024
+            ],
+            [
+              "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+              282066944
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              228589568
+            ],
+            [
+              "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+              212860928
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+              171966464
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              162529280
+            ],
+            [
+              "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry[]_[i]",
+              62914560
+            ],
+            [
+              "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+              13631488
+            ]
+          ],
+          "rust_frames": []
+        }
+      },
+      "raw_log": {
+        "file": "key-projection-before-distinct-2026-10-16.log.gz",
+        "sha256": "10b7e12731d2c5bda27149dbdf3c20f7e4dad517b8a1e3880ae3229cf5f1075e"
+      }
+    },
+    {
+      "label": "key-projection-after-distinct",
+      "variant": "candidate borrowed key projection",
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [
+          {
+            "time_ms": 1792134978910,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.12,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134979416,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.13,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134979925,
+            "pid": 1029464,
+            "delta_cpu_s": 0.05000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.18,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134980431,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.21,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134980940,
+            "pid": 1029464,
+            "delta_cpu_s": 0.46999999999999886,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.68,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134981447,
+            "pid": 1029464,
+            "delta_cpu_s": 0.09000000000000341,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.77,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134981953,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.78,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134982463,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.82,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134983479,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.5,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134983479,
+            "pid": 1029464,
+            "delta_cpu_s": 0.05000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.87,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134983986,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.88,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134984492,
+            "pid": 1029464,
+            "delta_cpu_s": 0.03999999999999204,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.92,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134985508,
+            "pid": 1029464,
+            "delta_cpu_s": 0.040000000000020464,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 184.96,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134986522,
+            "pid": 1029464,
+            "delta_cpu_s": 0.04999999999998295,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.01,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134987029,
+            "pid": 1029464,
+            "delta_cpu_s": 0.020000000000010232,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.03,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134987568,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.06,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134988077,
+            "pid": 1029464,
+            "delta_cpu_s": 0.030000000000001137,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.09,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134988585,
+            "pid": 1029464,
+            "delta_cpu_s": 0.009999999999990905,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.1,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134989094,
+            "pid": 1029464,
+            "delta_cpu_s": 0.06999999999999318,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.17,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134989607,
+            "pid": 1029464,
+            "delta_cpu_s": 0.010000000000019327,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.18,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134990121,
+            "pid": 1029464,
+            "delta_cpu_s": 0.13999999999998636,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.32,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134990639,
+            "pid": 1029464,
+            "delta_cpu_s": 0.25,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 185.57,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134991152,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.51,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134991152,
+            "pid": 1029464,
+            "delta_cpu_s": 2.170000000000016,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 187.74,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134991664,
+            "pid": 1029464,
+            "delta_cpu_s": 0.7699999999999818,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 188.51,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134992172,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1899999999999977,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 189.7,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134992681,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1899999999999977,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 190.89,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134993194,
+            "pid": 1026173,
+            "delta_cpu_s": 0.010000000000005116,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.52,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134993194,
+            "pid": 1029464,
+            "delta_cpu_s": 1.8000000000000114,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 192.69,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134993701,
+            "pid": 1029464,
+            "delta_cpu_s": 1.6100000000000136,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 194.3,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134994207,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1599999999999966,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 195.46,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134994717,
+            "pid": 1029464,
+            "delta_cpu_s": 1.2800000000000011,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 196.74,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134995224,
+            "pid": 1029464,
+            "delta_cpu_s": 1.299999999999983,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 198.04,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134995733,
+            "pid": 1029464,
+            "delta_cpu_s": 1.240000000000009,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 199.28,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134996243,
+            "pid": 1029464,
+            "delta_cpu_s": 0.8799999999999955,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 200.16,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134996753,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9000000000000057,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 201.06,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134997259,
+            "pid": 1029464,
+            "delta_cpu_s": 0.7199999999999989,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 201.78,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134997767,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0300000000000011,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 202.81,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134998278,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.53,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792134998278,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9199999999999875,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 203.73,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134998786,
+            "pid": 1029464,
+            "delta_cpu_s": 1.25,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 204.98,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134999294,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1400000000000148,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 206.12,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792134999803,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0999999999999943,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 207.22,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135000323,
+            "pid": 1029464,
+            "delta_cpu_s": 0.8199999999999932,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 208.04,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135000831,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9300000000000068,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 208.97,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135001340,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9000000000000057,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 209.87,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135001848,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0199999999999818,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 210.89,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135002358,
+            "pid": 1029464,
+            "delta_cpu_s": 0.8800000000000239,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 211.77,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135002871,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1099999999999852,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 212.88,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135003378,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9300000000000068,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 213.81,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135003887,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1800000000000068,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 214.99,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135004394,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1599999999999966,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 216.15,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135004904,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0699999999999932,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 217.22,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135005412,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.54,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792135005412,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9499999999999886,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 218.17,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135005927,
+            "pid": 1029464,
+            "delta_cpu_s": 0.7400000000000091,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 218.91,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135006436,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9099999999999966,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 219.82,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135006943,
+            "pid": 1029464,
+            "delta_cpu_s": 0.7800000000000011,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 220.6,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135007451,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1599999999999966,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 221.76,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135007957,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0300000000000011,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 222.79,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135008466,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0300000000000011,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 223.82,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135008975,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0300000000000011,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 224.85,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135009483,
+            "pid": 1029464,
+            "delta_cpu_s": 1.0600000000000023,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 225.91,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135009991,
+            "pid": 1029464,
+            "delta_cpu_s": 0.6500000000000057,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 226.56,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135010508,
+            "pid": 1029464,
+            "delta_cpu_s": 1.009999999999991,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 227.57,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135011016,
+            "pid": 1029464,
+            "delta_cpu_s": 0.8600000000000136,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 228.43,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135011533,
+            "pid": 1026173,
+            "delta_cpu_s": 0.00999999999999801,
+            "name": "java",
+            "parent": 4740,
+            "cpu_s": 60.55,
+            "cwd": "<workspace>/.codex/iceberg-373"
+          },
+          {
+            "time_ms": 1792135011533,
+            "pid": 1029464,
+            "delta_cpu_s": 0.6999999999999886,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 229.13,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135012042,
+            "pid": 1029464,
+            "delta_cpu_s": 0.8199999999999932,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 229.95,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135012554,
+            "pid": 1029464,
+            "delta_cpu_s": 0.7300000000000182,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 230.68,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135013063,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1599999999999966,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 231.84,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135013573,
+            "pid": 1029464,
+            "delta_cpu_s": 1.1099999999999852,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 232.95,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135014080,
+            "pid": 1029464,
+            "delta_cpu_s": 0.8500000000000227,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 233.8,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          },
+          {
+            "time_ms": 1792135014586,
+            "pid": 1029464,
+            "delta_cpu_s": 0.9399999999999977,
+            "name": "java",
+            "parent": 1029463,
+            "cpu_s": 234.74,
+            "cwd": "<workspace>/.codex/iceberg-373/streamfusion-iceberg"
+          }
+        ],
+        "timing_excluded": true
+      },
+      "external_cpu_seconds": 50.71,
+      "stacks": {
+        "cpu": {
+          "file": "key-projection-after-distinct-cpu-2026-10-16.collapsed.gz",
+          "sha256": "2d680688beba092f2c182d1c63bd15719a7939ccc302fbd751a92c4cbce2faa3",
+          "units": "CPU samples",
+          "whole_process_total": 51514,
+          "inclusive_aggregate_ingest": 2368,
+          "inclusive_aggregate_methods": {
+            "JvmAccumulatorCache": 1460,
+            "CopyOnWriteStateMap.incrementalRehash": 681,
+            "HeapValueState.value": 902,
+            "ArrowToRowDataOperator": 268,
+            "BinaryRowDataKeySelector.getKey": 147,
+            "HeapValueState.update": 317
+          },
+          "aggregate_leaves": [
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+              674
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+              270
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+              68
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              61
+            ],
+            [
+              "clear_page_erms_[k]",
+              47
+            ],
+            [
+              "org/apache/flink/util/MathUtils.bitMix_[i]",
+              47
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.put_[j]",
+              38
+            ],
+            [
+              "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.isRehashing_[i]",
+              37
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+              35
+            ],
+            [
+              "java/lang/Integer.rotateLeft_[i]",
+              34
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+              31
+            ],
+            [
+              "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+              29
+            ],
+            [
+              "jbyte_disjoint_arraycopy",
+              27
+            ],
+            [
+              "do_user_addr_fault_[k]",
+              24
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.fmix_[i]",
+              24
+            ]
+          ],
+          "rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              1665
+            ],
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::create",
+              673
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              285
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+              278
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+              278
+            ],
+            [
+              "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+              175
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+              169
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              130
+            ],
+            [
+              "streamfusion::aggregates::RunningAgg::emit",
+              98
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              35
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              27
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              23
+            ],
+            [
+              "streamfusion::flink_key::BinaryRowWriter::write_variable",
+              18
+            ],
+            [
+              "streamfusion::group_agg::emit_running",
+              17
+            ],
+            [
+              "<streamfusion::memory::FlinkTaskOffHeapPool as datafusion_execution::memory_pool::MemoryPool>::try_grow",
+              10
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "key-projection-after-distinct-alloc-2026-10-16.collapsed.gz",
+          "sha256": "f94299f6202a2f85fd971bb833248839dd3a97b3ddc8bd921161ed5c2d06c6ad",
+          "units": "sampled Java allocation bytes",
+          "whole_process_total": 33905240416,
+          "inclusive_aggregate_ingest": 5078253616,
+          "inclusive_aggregate_methods": {
+            "HeapValueState.update": 293601280,
+            "JvmAccumulatorCache": 1306525744,
+            "ArrowToRowDataOperator": 1419771904,
+            "BinaryRowDataKeySelector.getKey": 965738496
+          },
+          "aggregate_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              866123776
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              816840704
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              571473920
+            ],
+            [
+              "byte[]_[i]",
+              497025024
+            ],
+            [
+              "java.lang.Long_[i]",
+              436207616
+            ],
+            [
+              "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+              330301440
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              247463936
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              238026752
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              227540992
+            ],
+            [
+              "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+              211812352
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              182452224
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              179306496
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+              154140672
+            ],
+            [
+              "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry[]_[i]",
+              81788928
+            ],
+            [
+              "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+              8388608
+            ]
+          ],
+          "rust_frames": []
+        }
+      },
+      "raw_log": {
+        "file": "key-projection-after-distinct-2026-10-16.log.gz",
+        "sha256": "5b0104c1aced40d3ab60a0482a635b092d61e433c24aafb2d6a671f9634fce62"
+      }
+    }
+  ],
+  "validation": [
+    {
+      "label": "key-projection-65536-22",
+      "tests": 74,
+      "passed": 74,
+      "skipped": 0,
+      "raw_log": {
+        "file": "key-projection-65536-22-2026-10-16.log.gz",
+        "sha256": "ec63c2671f754e40c6f1ced8d088de6a81447d4f3f156c7ab4b9b3f54acc42e9"
+      }
+    },
+    {
+      "label": "key-projection-65536-118",
+      "tests": 74,
+      "passed": 74,
+      "skipped": 0,
+      "raw_log": {
+        "file": "key-projection-65536-118-2026-10-16.log.gz",
+        "sha256": "cae19bfae0c91aa308e5a234af933ad34b31f0bf17917080a3c88ac627848a9d"
+      }
+    },
+    {
+      "label": "key-projection-3-22",
+      "tests": 94,
+      "passed": 94,
+      "skipped": 0,
+      "raw_log": {
+        "file": "key-projection-3-22-2026-10-16.log.gz",
+        "sha256": "4cbd60cdd1081e2eb58d1f414e695048e1c8097bf0d11eb28103ab5f301da162"
+      }
+    },
+    {
+      "label": "key-projection-3-118",
+      "tests": 94,
+      "passed": 92,
+      "skipped": 2,
+      "raw_log": {
+        "file": "key-projection-3-118-2026-10-16.log.gz",
+        "sha256": "133541cd5d307235ed6e94d7b62cea81fab066146d7bbe3017f6a81db07b721b"
+      }
+    },
+    {
+      "label": "key-projection-nested-22",
+      "tests": 15,
+      "passed": 15,
+      "skipped": 0,
+      "raw_log": {
+        "file": "key-projection-nested-22-2026-10-16.log.gz",
+        "sha256": "c86d03c33d94a79dd4f88bad314b87c16fa0b6b6c578aff29729b3633aa9356a"
+      }
+    },
+    {
+      "label": "key-projection-nested-118",
+      "tests": 15,
+      "passed": 15,
+      "skipped": 0,
+      "raw_log": {
+        "file": "key-projection-nested-118-2026-10-16.log.gz",
+        "sha256": "d395f5ee59dd8fcd9c12ee037379100cf3d8f9e5b2b7d7da746ad4b1e62f4f34"
+      }
+    }
+  ],
+  "release_api_evidence": "javap on both released Flink classpaths confirms BinaryRowDataKeySelector.getKey returns projection.apply(value).copy(); runtime ownership test covers nonleading/NULL/empty/long Unicode keys after input mutation and batch closure",
+  "admitted": false,
+  "limitations": [
+    "All profile timings excluded; external Java/Rust activity was observed in all three recordings. No CPU speedup or whole-job throughput claim.",
+    "Allocation samples estimate volume; inclusive methods overlap and counts are not copied bytes, peak memory or Rust heap totals.",
+    "The matched baseline observed 3.94 external CPU seconds and candidate 50.71. CPU counts cannot isolate the candidate contribution.",
+    "Whole-process profiles include stock/candidate UDAF and builtin controls, setup, warmups and JIT. Aggregate-ingest counts isolate native UDAF stacks, including synchronous downstream output.",
+    "No new clean unprofiled candidate comparison is available on the shared host. Isolated CI must establish speed versus stock and previous behavior before default admission.",
+    "The aggregate prototype and cache remain default off; #237 and PR374 remain open/draft."
+  ]
+}

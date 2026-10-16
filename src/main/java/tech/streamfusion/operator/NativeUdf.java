@@ -40,19 +40,21 @@ import tech.streamfusion.planner.FlinkExpressionFunction;
 
 /**
  * The JVM half of native UDF support (the StreamFusion analog of datafusion-comet's {@code
- * CometScalaUDF}/{@code CometUdfBridge}). A Flink {@link ScalarFunction} the native expression engine
- * cannot implement itself is registered here at plan time and invoked from native code per batch: the
- * {@code JvmUdf} native expression node exports its argument columns over the Arrow C Data Interface and
- * upcalls {@link #invokeUdf}, which runs the actual {@code eval} over the whole batch (columnar in and
- * out, one JNI crossing per batch — no per-row boundary) and hands the result column back. Because it
- * runs the same JVM {@code eval} Flink would, the result is byte-identical by construction.
+ * CometScalaUDF}/{@code CometUdfBridge}). A Flink {@link ScalarFunction} the native expression
+ * engine cannot implement itself is registered here at plan time and invoked from native code per
+ * batch: the {@code JvmUdf} native expression node exports its argument columns over the Arrow C
+ * Data Interface and upcalls {@link #invokeUdf}, which runs the actual {@code eval} over the whole
+ * batch (columnar in and out, one JNI crossing per batch — no per-row boundary) and hands the
+ * result column back. Because it runs the same JVM {@code eval} Flink would, the result is
+ * byte-identical by construction.
  *
  * <p>The registry is process-global but populated at operator {@code open()}, not at plan time: the
- * planner encodes a {@link Descriptor} per UDF (the {@code Serializable} {@link ScalarFunction} or a
- * builtin's class + method) into the operator's {@link Binding}, and {@code open()} registers it into
- * <em>this</em> JVM's registry, obtaining a task-local id that patches the encoded call. This works on a
- * distributed task manager (a different JVM from the planner) as well as the local/benchmark path, and
- * {@code close()} unregisters, so the registry doesn't leak across a task's lifetime.
+ * planner encodes a {@link Descriptor} per UDF (the {@code Serializable} {@link ScalarFunction} or
+ * a builtin's class + method) into the operator's {@link Binding}, and {@code open()} registers it
+ * into <em>this</em> JVM's registry, obtaining a task-local id that patches the encoded call. This
+ * works on a distributed task manager (a different JVM from the planner) as well as the
+ * local/benchmark path, and {@code close()} unregisters, so the registry doesn't leak across a
+ * task's lifetime.
  */
 public final class NativeUdf {
   private NativeUdf() {}
@@ -78,7 +80,8 @@ public final class NativeUdf {
   }
 
   // Native value-type codes for a UDF argument or result column (mirrored by the JVM encoder in
-  // RexExpression). Kept independent of the aggregate value codes — this is the UDF marshalling ABI.
+  // RexExpression). Kept independent of the aggregate value codes — this is the UDF marshalling
+  // ABI.
   public static final int TYPE_STRING = 0;
   public static final int TYPE_LONG = 1;
   public static final int TYPE_INT = 2;
@@ -96,7 +99,7 @@ public final class NativeUdf {
   public static final int TYPE_INTERVAL_MILLIS = 13;
   public static final int TYPE_BINARY = 14;
   public static final int TYPE_ROW = 15;
-  // Internal ARRAY/ROW views borrowed only while the imported argument batch remains open.
+  // Internal nested views borrowed only while the imported argument batch remains open.
   public static final int TYPE_INTERNAL = 16;
 
   // DECIMAL(p, s) argument/result values, marshalled as BigDecimal. The precision and scale ride in
@@ -139,8 +142,7 @@ public final class NativeUdf {
       this.varArgComponent = eval.isVarArgs() ? params[params.length - 1].getComponentType() : null;
       this.argAsStringData = new boolean[argTypes.length];
       for (int a = 0; a < argTypes.length; a++) {
-        Class<?> parameter =
-            a < fixedArity ? params[a] : varArgComponent;
+        Class<?> parameter = a < fixedArity ? params[a] : varArgComponent;
         argAsStringData[a] = BinaryStringData.class.isAssignableFrom(parameter);
       }
     }
@@ -150,7 +152,9 @@ public final class NativeUdf {
   private static final AtomicInteger NEXT_ID = new AtomicInteger();
   private static final ThreadLocal<Throwable> UPCALL_FAILURE = new ThreadLocal<>();
 
-  /** Restores the exception thrown by Flink's function after the native frame reports its JNI error. */
+  /**
+   * Restores the exception thrown by Flink's function after the native frame reports its JNI error.
+   */
   static RuntimeException propagateUpcallFailure(RuntimeException nativeFailure) {
     Throwable failure = UPCALL_FAILURE.get();
     UPCALL_FAILURE.remove();
@@ -165,8 +169,8 @@ public final class NativeUdf {
 
   /**
    * Registers a scalar function for native invocation and returns its id (baked into the encoded
-   * expression). {@code argTypes}/{@code returnType} are the {@code TYPE_*} codes of the operands and
-   * result; {@code eval} is the resolved {@code eval} method for that arity.
+   * expression). {@code argTypes}/{@code returnType} are the {@code TYPE_*} codes of the operands
+   * and result; {@code eval} is the resolved {@code eval} method for that arity.
    */
   public static int register(ScalarFunction function, Method eval, int[] argTypes, int returnType) {
     eval.setAccessible(true);
@@ -178,9 +182,9 @@ public final class NativeUdf {
   /**
    * Registers a builtin scalar function backed by a {@code static} method (no receiver) for native
    * invocation. Used to route a SQL builtin whose native semantics can't be guaranteed to match the
-   * host — e.g. {@code REGEXP_EXTRACT}, whose Rust {@code regex} result may differ from Java's {@code
-   * java.util.regex} — through the host's own implementation, keeping it byte-identical while the rest
-   * of the expression stays native.
+   * host — e.g. {@code REGEXP_EXTRACT}, whose Rust {@code regex} result may differ from Java's
+   * {@code java.util.regex} — through the host's own implementation, keeping it byte-identical
+   * while the rest of the expression stays native.
    */
   public static int registerBuiltin(Method staticMethod, int[] argTypes, int returnType) {
     staticMethod.setAccessible(true);
@@ -205,9 +209,9 @@ public final class NativeUdf {
    * A serializable description of a UDF to register, carried into the operator so a task manager (a
    * different JVM from the planner) can populate its own registry at {@code open()} — the fix for
    * distributed execution (the plan-time registry only exists in the planner JVM). Holds the Flink
-   * {@link ScalarFunction} (which is {@code Serializable}) or, for a builtin, its declaring class; the
-   * {@code eval}/static method is re-resolved from the (serializable) name + parameter types on the
-   * task, since {@link Method} itself is not serializable.
+   * {@link ScalarFunction} (which is {@code Serializable}) or, for a builtin, its declaring class;
+   * the {@code eval}/static method is re-resolved from the (serializable) name + parameter types on
+   * the task, since {@link Method} itself is not serializable.
    */
   public static final class Descriptor implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -270,12 +274,12 @@ public final class NativeUdf {
   }
 
   /**
-   * The UDF registrations an encoded expression needs, carried alongside its {@code longs} pool from
-   * the planner into the operator. At operator {@code open()} {@link #bind} registers each descriptor
-   * into this JVM's registry (obtaining task-local ids) and rewrites the id slots of the encoded
-   * {@code longs} — which the planner filled with a descriptor's <em>local index</em> — to those ids,
-   * so the compiled {@code JvmUdf} nodes call the right registration on this task. {@link #unbind} at
-   * {@code close()} frees them.
+   * The UDF registrations an encoded expression needs, carried alongside its {@code longs} pool
+   * from the planner into the operator. At operator {@code open()} {@link #bind} registers each
+   * descriptor into this JVM's registry (obtaining task-local ids) and rewrites the id slots of the
+   * encoded {@code longs} — which the planner filled with a descriptor's <em>local index</em> — to
+   * those ids, so the compiled {@code JvmUdf} nodes call the right registration on this task.
+   * {@link #unbind} at {@code close()} frees them.
    */
   public static final class Binding implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -419,12 +423,17 @@ public final class NativeUdf {
   }
 
   /**
-   * Invoked from native code (via JNI) once per batch: imports the argument columns from the Rust-owned
-   * C Data pointers, runs {@code eval} row by row, and exports the single result column to the output
-   * pointers. Called on the task thread that drove the native evaluation, so it is JVM-attached already.
+   * Invoked from native code (via JNI) once per batch: imports the argument columns from the
+   * Rust-owned C Data pointers, runs {@code eval} row by row, and exports the single result column
+   * to the output pointers. Called on the task thread that drove the native evaluation, so it is
+   * JVM-attached already.
    */
   public static void invokeUdf(
-      int id, long inArrayAddress, long inSchemaAddress, long outArrayAddress, long outSchemaAddress) {
+      int id,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress) {
     Registered udf = REGISTRY.get(id);
     if (udf == null) {
       throw new IllegalStateException("no registered UDF for id " + id);
@@ -458,10 +467,12 @@ public final class NativeUdf {
         // String arguments retain Java-backed StringData comparison and identity semantics.
         // Other generated arguments borrow the imported batch until evaluation completes.
         tech.streamfusion.arrow.ArrowReader generatedReader =
-            udf.generated == null || Arrays.stream(udf.argTypes).anyMatch(type -> type == TYPE_STRING)
+            udf.generated == null
+                    || Arrays.stream(udf.argTypes).anyMatch(type -> type == TYPE_STRING)
                 ? null
                 : tech.streamfusion.arrow.ArrowConversion.createArrowReader(
-                    in, org.apache.flink.table.types.logical.RowType.of(udf.generated.argumentTypes()));
+                    in,
+                    org.apache.flink.table.types.logical.RowType.of(udf.generated.argumentTypes()));
         Object[][] columns = generatedReader == null ? new Object[arity][] : null;
         tech.streamfusion.arrow.ArrowReader argumentReader = null;
         org.apache.flink.table.types.logical.LogicalType[] argumentTypes = null;
@@ -498,9 +509,10 @@ public final class NativeUdf {
           Object value;
           if (udf.generated != null) {
             try {
-              value = generatedReader == null
-                  ? udf.generated.evalColumns(columns, row)
-                  : udf.generated.evalRow(generatedReader.read(row));
+              value =
+                  generatedReader == null
+                      ? udf.generated.evalColumns(columns, row)
+                      : udf.generated.evalRow(generatedReader.read(row));
             } catch (Throwable failure) {
               // Use the same exception handover as reflective calls, including checked failures.
               throw new InvocationTargetException(failure);
@@ -665,19 +677,18 @@ public final class NativeUdf {
   private static VectorSchemaRoot resultRoot(Registered udf, int rows) {
     int returnType = udf.returnType;
     if (returnType == TYPE_ROW) {
-      var rowType =
-          org.apache.flink.table.types.logical.RowType.of(
-              ((RowResult) udf.function).rowResultType().copy(true));
       var root =
           VectorSchemaRoot.create(
-              tech.streamfusion.arrow.ArrowConversion.toArrowSchema(rowType),
+              tech.streamfusion.arrow.ArrowConversion.toArrowRowResultSchema(
+                  ((RowResult) udf.function).rowResultType()),
               NativeAllocator.SHARED);
       root.getVector(0).setInitialCapacity(rows);
       return root;
     }
-    Field field = returnType == TYPE_TIMESTAMP_DATA
-        ? tech.streamfusion.arrow.TimestampAccessor.field("result", true)
-        : new Field("result", FieldType.nullable(arrowType(returnType)), null);
+    Field field =
+        returnType == TYPE_TIMESTAMP_DATA
+            ? tech.streamfusion.arrow.TimestampAccessor.field("result", true)
+            : new Field("result", FieldType.nullable(arrowType(returnType)), null);
     VectorSchemaRoot root =
         VectorSchemaRoot.create(new Schema(List.of(field)), NativeAllocator.SHARED);
     root.getFieldVectors().get(0).setInitialCapacity(rows);
@@ -708,14 +719,17 @@ public final class NativeUdf {
       case TYPE_BYTE:
         return new ArrowType.Int(8, true);
       case TYPE_DOUBLE:
-        return new ArrowType.FloatingPoint(org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE);
+        return new ArrowType.FloatingPoint(
+            org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE);
       case TYPE_FLOAT:
-        return new ArrowType.FloatingPoint(org.apache.arrow.vector.types.FloatingPointPrecision.SINGLE);
+        return new ArrowType.FloatingPoint(
+            org.apache.arrow.vector.types.FloatingPointPrecision.SINGLE);
       case TYPE_BOOLEAN:
         return ArrowType.Bool.INSTANCE;
       default:
         if (code >= DECIMAL_BASE) {
-          return new ArrowType.Decimal((code - DECIMAL_BASE) / 100, (code - DECIMAL_BASE) % 100, 128);
+          return new ArrowType.Decimal(
+              (code - DECIMAL_BASE) / 100, (code - DECIMAL_BASE) % 100, 128);
         }
         throw new IllegalArgumentException("unsupported UDF type code " + code);
     }
@@ -915,7 +929,8 @@ public final class NativeUdf {
 
   private static void writeValue(FieldVector vector, int code, int row, Object value) {
     if (code == TYPE_TIMESTAMP_DATA) {
-      tech.streamfusion.arrow.TimestampAccessor.set(vector, row, (org.apache.flink.table.data.TimestampData) value);
+      tech.streamfusion.arrow.TimestampAccessor.set(
+          vector, row, (org.apache.flink.table.data.TimestampData) value);
       return;
     }
     if (value == null) {

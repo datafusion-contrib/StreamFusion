@@ -1,0 +1,115 @@
+name: Nested scalar release diagnostics
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/nested-scalars.yml'
+      - 'bin/bench-nested-scalars.py'
+      - 'src/test/java/tech/streamfusion/NestedScalarBenchmark.java'
+      - 'src/test/java/tech/streamfusion/FlinkNestedScalarSqlHarnessTest.java'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nested-scalar-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-diagnostics:
+    name: Nested scalar diagnostics (Flink ${{ matrix.line }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - line: '2.2'
+            profile: bench
+          - line: '1.18'
+            profile: bench,flink-1.18
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Fingerprint release inputs
+        id: native-inputs
+        env:
+          SF_NATIVE_INPUT_HASH: ${{ hashFiles('native/**', '.cargo/**', 'rust-toolchain*', 'pom.xml', 'streamfusion-core/pom.xml', 'streamfusion-runtime/pom.xml') }}
+          SF_NATIVE_PROFILE: ${{ matrix.profile }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, subprocess
+          source = os.environ['SF_NATIVE_INPUT_HASH']
+          assert len(source) == 64, 'native source fingerprint is absent'
+          digest = hashlib.sha256(source.encode())
+          digest.update(subprocess.check_output(['rustc', '-Vv']))
+          for name in ['SF_NATIVE_PROFILE', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS',
+                       'CARGO_BUILD_TARGET', 'CC', 'CXX', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS']:
+              digest.update((name + '=' + os.environ.get(name, '') + '\n').encode())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('fingerprint=' + digest.hexdigest() + '\n')
+          PY
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: native
+          key: criterion-release
+          cache-workspace-crates: true
+          save-if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      - uses: actions/cache/restore@v4
+        id: native-payload
+        with:
+          path: native/target/release/libstreamfusion.so
+          key: nested-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+      - name: Build the candidate release before measurements
+        run: >-
+          mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime -am
+          -DskipTests -Dnative.build.skip=${{ steps.native-payload.outputs.cache-hit == 'true' }} install
+      - name: Save the candidate payload before the historical build
+        if: steps.native-payload.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native/target/release/libstreamfusion.so
+          key: nested-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+      - name: Verify nested callback parity before measurements
+        run: >-
+          mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime
+          -Dnative.build.skip=true -Dtest=FlinkNestedScalarSqlHarnessTest
+          -Dsf.testForks=1
+          '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false'
+          "-Dsf.extraJvmArgs=-Djava.library.path=$GITHUB_WORKSPACE/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true"
+          surefire:test@default-test
+      - name: Install the released mixed Java and Rust profiler
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/async-profiler/async-profiler/releases/download/v4.0/async-profiler-4.0-linux-x64.tar.gz \
+            --output "$RUNNER_TEMP/async-profiler.tar.gz"
+          echo "ba32bd69cc2906f6251cd5aa8ae72c3abc12267ba858d38733f7751cc4d3e05b  $RUNNER_TEMP/async-profiler.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/async-profiler.tar.gz" -C "$RUNNER_TEMP"
+          sudo sysctl kernel.perf_event_paranoid=1
+      - name: Build the actual previous runtime then measure and profile both
+        run: >-
+          python3 bin/bench-nested-scalars.py --flink-line '${{ matrix.line }}'
+          --previous-worktree "$RUNNER_TEMP/streamfusion-previous-nested"
+          --native-directory "$GITHUB_WORKSPACE/native/target/release"
+          --output native/target/nested-scalar-diagnostics
+          --profiler-agent "$RUNNER_TEMP/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so"
+      - name: Retain all trials, GC logs, mixed profiles and correctness reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nested-scalar-diagnostics-${{ matrix.line }}-${{ github.sha }}
+          path: |
+            native/target/nested-scalar-diagnostics/
+            !native/target/nested-scalar-diagnostics/candidate-native/
+            streamfusion-runtime/target/surefire-reports/
+          retention-days: 14

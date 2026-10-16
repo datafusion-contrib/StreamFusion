@@ -1,0 +1,2549 @@
+{
+  "scope": "externalized checkpoint rescale, not savepoint compatibility",
+  "query": "SELECT k, test_aggregate(CAST(amount AS BIGINT)), COUNT(text_value), view_aggregate(CAST(amount AS BIGINT)) FROM recovery_input GROUP BY k",
+  "final_result": "128 groups, each k|0|2|[0], equal to uninterrupted released stock Flink",
+  "records": [
+    {
+      "flink": "2.2.1",
+      "cache_entries": 65536,
+      "scenario": "jvm-memory",
+      "passed": true,
+      "backend": "hashmap",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "sourceOffset": 256,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$3*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[7], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[6])\n   +- NativeCalc(reuseBarrier=[5])\n      +- RowDataToArrow(reuseBarrier=[4])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "restoredOffsets": [],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                256
+              ],
+              "restoredSourceOffset": -1,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": []
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 1,
+          "nativeExecution": [
+            {
+              "jobId": "fddd663acb0ef060e289358c4cf0855a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[17]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "fddd663acb0ef060e289358c4cf0855a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[18]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "fddd663acb0ef060e289358c4cf0855a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 384,
+              "operator": "NativeJvmGroupExecNode[19]",
+              "recordsIn": 256
+            }
+          ]
+        },
+        {
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "sourceOffset": 512,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$5*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[22], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[21])\n   +- NativeCalc(reuseBarrier=[20])\n      +- RowDataToArrow(reuseBarrier=[19])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "restoredOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                512
+              ],
+              "restoredSourceOffset": 256,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": []
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 3,
+          "nativeExecution": [
+            {
+              "jobId": "f745bb793ff6f31bed569ffe9bc5cb3a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 172,
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsIn": 86
+            },
+            {
+              "jobId": "f745bb793ff6f31bed569ffe9bc5cb3a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[29]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "f745bb793ff6f31bed569ffe9bc5cb3a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[30]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "f745bb793ff6f31bed569ffe9bc5cb3a",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 180,
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsIn": 90
+            },
+            {
+              "jobId": "f745bb793ff6f31bed569ffe9bc5cb3a",
+              "attempt": "0",
+              "subtask": "2",
+              "recordsOut": 160,
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsIn": 80
+            }
+          ]
+        },
+        {
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "sourceOffset": 768,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$7*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[37], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[36])\n   +- NativeCalc(reuseBarrier=[35])\n      +- RowDataToArrow(reuseBarrier=[34])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "restoredOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                768
+              ],
+              "restoredSourceOffset": 512,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": []
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 2,
+          "nativeExecution": [
+            {
+              "jobId": "53e01cd2522b8d0c0edec106b7ae457e",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[41]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "53e01cd2522b8d0c0edec106b7ae457e",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[42]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "53e01cd2522b8d0c0edec106b7ae457e",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 264,
+              "operator": "NativeJvmGroupExecNode[43]",
+              "recordsIn": 132
+            },
+            {
+              "jobId": "53e01cd2522b8d0c0edec106b7ae457e",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 248,
+              "operator": "NativeJvmGroupExecNode[43]",
+              "recordsIn": 124
+            }
+          ]
+        }
+      ],
+      "reference": {
+        "cleanup": {
+          "liveNativeHandles": "",
+          "arrowAllocatedBytes": 0,
+          "taskReservedBytes": 0
+        },
+        "keyGroupRanges": [],
+        "sourceOffset": 768,
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$1*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n",
+        "recovery": [
+          {
+            "restoredOffsets": [],
+            "failedAfterCheckpoint": false,
+            "completedOffsets": [
+              768
+            ],
+            "restoredSourceOffset": -1,
+            "activeSources": 0,
+            "injectedOffsets": [],
+            "completedCheckpoints": 2,
+            "emittedWatermarks": []
+          }
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "8b0a69db9a80cd7c175fe5a99497b8f7",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ],
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "parallelism": 1,
+        "nativeExecution": []
+      },
+      "materializedResultsEqual": true
+    },
+    {
+      "flink": "2.2.1",
+      "cache_entries": 65536,
+      "scenario": "jvm-rocksdb",
+      "passed": true,
+      "backend": "tech.streamfusion.state.RocksDBNativeStateBackendFactory",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "sourceOffset": 256,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$11*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[52], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[51])\n   +- NativeCalc(reuseBarrier=[50])\n      +- RowDataToArrow(reuseBarrier=[49])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "restoredOffsets": [],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                256
+              ],
+              "restoredSourceOffset": -1,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": []
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 1,
+          "nativeExecution": [
+            {
+              "jobId": "f45dc22fa039da55182b8f1dab20c4c0",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[62]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "f45dc22fa039da55182b8f1dab20c4c0",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[63]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "f45dc22fa039da55182b8f1dab20c4c0",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 384,
+              "operator": "NativeJvmGroupExecNode[64]",
+              "recordsIn": 256
+            }
+          ]
+        },
+        {
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "sourceOffset": 512,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$13*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[67], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[66])\n   +- NativeCalc(reuseBarrier=[65])\n      +- RowDataToArrow(reuseBarrier=[64])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "restoredOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                512
+              ],
+              "restoredSourceOffset": 256,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": []
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 3,
+          "nativeExecution": [
+            {
+              "jobId": "6f4c7070fdbae840420da39e13678b3d",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 172,
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsIn": 86
+            },
+            {
+              "jobId": "6f4c7070fdbae840420da39e13678b3d",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[74]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "6f4c7070fdbae840420da39e13678b3d",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[75]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "6f4c7070fdbae840420da39e13678b3d",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 180,
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsIn": 90
+            },
+            {
+              "jobId": "6f4c7070fdbae840420da39e13678b3d",
+              "attempt": "0",
+              "subtask": "2",
+              "recordsOut": 160,
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsIn": 80
+            }
+          ]
+        },
+        {
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "sourceOffset": 768,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$15*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[82], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[81])\n   +- NativeCalc(reuseBarrier=[80])\n      +- RowDataToArrow(reuseBarrier=[79])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "restoredOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                768
+              ],
+              "restoredSourceOffset": 512,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": []
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 2,
+          "nativeExecution": [
+            {
+              "jobId": "7a34ca7ebf5a7fad4b355c3ffcb36f5c",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[86]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "7a34ca7ebf5a7fad4b355c3ffcb36f5c",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[87]",
+              "recordsIn": 256
+            },
+            {
+              "jobId": "7a34ca7ebf5a7fad4b355c3ffcb36f5c",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 264,
+              "operator": "NativeJvmGroupExecNode[88]",
+              "recordsIn": 132
+            },
+            {
+              "jobId": "7a34ca7ebf5a7fad4b355c3ffcb36f5c",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 248,
+              "operator": "NativeJvmGroupExecNode[88]",
+              "recordsIn": 124
+            }
+          ]
+        }
+      ],
+      "reference": {
+        "cleanup": {
+          "liveNativeHandles": "",
+          "arrowAllocatedBytes": 0,
+          "taskReservedBytes": 0
+        },
+        "keyGroupRanges": [],
+        "sourceOffset": 768,
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$9*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n",
+        "recovery": [
+          {
+            "restoredOffsets": [],
+            "failedAfterCheckpoint": false,
+            "completedOffsets": [
+              768
+            ],
+            "restoredSourceOffset": -1,
+            "activeSources": 0,
+            "injectedOffsets": [],
+            "completedCheckpoints": 1,
+            "emittedWatermarks": []
+          }
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "8b0a69db9a80cd7c175fe5a99497b8f7",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ],
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "parallelism": 1,
+        "nativeExecution": []
+      },
+      "materializedResultsEqual": true
+    },
+    {
+      "flink": "1.18.1",
+      "cache_entries": 65536,
+      "scenario": "jvm-memory",
+      "passed": true,
+      "backend": "hashmap",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "jobId": "7c48ea86eb0910ca67e5700b11c17822",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[107]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "7c48ea86eb0910ca67e5700b11c17822",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[108]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "7c48ea86eb0910ca67e5700b11c17822",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 384,
+              "operator": "NativeJvmGroupExecNode[109]"
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "sourceOffset": 256,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$19*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[97], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[96])\n   +- NativeCalc(reuseBarrier=[95])\n      +- RowDataToArrow(reuseBarrier=[94])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$19*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$19*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "restoredOffsets": [],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                256
+              ],
+              "restoredSourceOffset": -1,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 1
+        },
+        {
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "jobId": "d51f26a1ec935e998fd89521cfc10597",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[119]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "d51f26a1ec935e998fd89521cfc10597",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[120]"
+            },
+            {
+              "recordsIn": 80,
+              "jobId": "d51f26a1ec935e998fd89521cfc10597",
+              "attempt": "0",
+              "subtask": "2",
+              "recordsOut": 160,
+              "operator": "NativeJvmGroupExecNode[121]"
+            },
+            {
+              "recordsIn": 86,
+              "jobId": "d51f26a1ec935e998fd89521cfc10597",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 172,
+              "operator": "NativeJvmGroupExecNode[121]"
+            },
+            {
+              "recordsIn": 90,
+              "jobId": "d51f26a1ec935e998fd89521cfc10597",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 180,
+              "operator": "NativeJvmGroupExecNode[121]"
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "sourceOffset": 512,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$21*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[112], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[111])\n   +- NativeCalc(reuseBarrier=[110])\n      +- RowDataToArrow(reuseBarrier=[109])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$21*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$21*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                512
+              ],
+              "restoredSourceOffset": 256,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 3
+        },
+        {
+          "nativeExecution": [
+            {
+              "recordsIn": 124,
+              "jobId": "e9fc0a8c97ad9e17005b3c0ddd59dd69",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 248,
+              "operator": "NativeJvmGroupExecNode[133]"
+            },
+            {
+              "recordsIn": 132,
+              "jobId": "e9fc0a8c97ad9e17005b3c0ddd59dd69",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 264,
+              "operator": "NativeJvmGroupExecNode[133]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "e9fc0a8c97ad9e17005b3c0ddd59dd69",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[131]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "e9fc0a8c97ad9e17005b3c0ddd59dd69",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[132]"
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "sourceOffset": 768,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$23*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[127], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[126])\n   +- NativeCalc(reuseBarrier=[125])\n      +- RowDataToArrow(reuseBarrier=[124])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$23*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$23*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                768
+              ],
+              "restoredSourceOffset": 512,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 2
+        }
+      ],
+      "reference": {
+        "nativeExecution": [],
+        "cleanup": {
+          "liveNativeHandles": "",
+          "arrowAllocatedBytes": 0,
+          "taskReservedBytes": 0
+        },
+        "keyGroupRanges": [],
+        "sourceOffset": 768,
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$17*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$17*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$17*]], fields=[k, amount, text_value])\n",
+        "recovery": [
+          {
+            "emittedWatermarks": [],
+            "restoredOffsets": [],
+            "failedAfterCheckpoint": false,
+            "completedOffsets": [
+              768
+            ],
+            "restoredSourceOffset": -1,
+            "activeSources": 0,
+            "injectedOffsets": [],
+            "completedCheckpoints": 1
+          }
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ],
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "parallelism": 1
+      },
+      "materializedResultsEqual": true
+    },
+    {
+      "flink": "1.18.1",
+      "cache_entries": 65536,
+      "scenario": "jvm-rocksdb",
+      "passed": true,
+      "backend": "tech.streamfusion.state.RocksDBNativeStateBackendFactory",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "jobId": "a8e336728fdbae23b6a8c0b21836bbdf",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[152]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "a8e336728fdbae23b6a8c0b21836bbdf",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[153]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "a8e336728fdbae23b6a8c0b21836bbdf",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 384,
+              "operator": "NativeJvmGroupExecNode[154]"
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "sourceOffset": 256,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$27*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[142], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[141])\n   +- NativeCalc(reuseBarrier=[140])\n      +- RowDataToArrow(reuseBarrier=[139])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$27*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$27*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "restoredOffsets": [],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                256
+              ],
+              "restoredSourceOffset": -1,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 1
+        },
+        {
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "jobId": "5e735c9b0aba8f66eb5d8e1180a2e9ea",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[164]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "5e735c9b0aba8f66eb5d8e1180a2e9ea",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[165]"
+            },
+            {
+              "recordsIn": 80,
+              "jobId": "5e735c9b0aba8f66eb5d8e1180a2e9ea",
+              "attempt": "0",
+              "subtask": "2",
+              "recordsOut": 160,
+              "operator": "NativeJvmGroupExecNode[166]"
+            },
+            {
+              "recordsIn": 86,
+              "jobId": "5e735c9b0aba8f66eb5d8e1180a2e9ea",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 172,
+              "operator": "NativeJvmGroupExecNode[166]"
+            },
+            {
+              "recordsIn": 90,
+              "jobId": "5e735c9b0aba8f66eb5d8e1180a2e9ea",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 180,
+              "operator": "NativeJvmGroupExecNode[166]"
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "sourceOffset": 512,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$29*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[157], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[156])\n   +- NativeCalc(reuseBarrier=[155])\n      +- RowDataToArrow(reuseBarrier=[154])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$29*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$29*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                512
+              ],
+              "restoredSourceOffset": 256,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 3
+        },
+        {
+          "nativeExecution": [
+            {
+              "recordsIn": 124,
+              "jobId": "89091d2bc50cbb3751305e2af68e592a",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 248,
+              "operator": "NativeJvmGroupExecNode[178]"
+            },
+            {
+              "recordsIn": 132,
+              "jobId": "89091d2bc50cbb3751305e2af68e592a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 264,
+              "operator": "NativeJvmGroupExecNode[178]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "89091d2bc50cbb3751305e2af68e592a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeCalcExecNode[176]"
+            },
+            {
+              "recordsIn": 256,
+              "jobId": "89091d2bc50cbb3751305e2af68e592a",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256,
+              "operator": "NativeColumnarExchangeExecNode[177]"
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "sourceOffset": 768,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$31*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[172], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[171])\n   +- NativeCalc(reuseBarrier=[170])\n      +- RowDataToArrow(reuseBarrier=[169])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$31*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$31*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                768
+              ],
+              "restoredSourceOffset": 512,
+              "activeSources": 0,
+              "injectedOffsets": [],
+              "completedCheckpoints": 1
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 2
+        }
+      ],
+      "reference": {
+        "nativeExecution": [],
+        "cleanup": {
+          "liveNativeHandles": "",
+          "arrowAllocatedBytes": 0,
+          "taskReservedBytes": 0
+        },
+        "keyGroupRanges": [],
+        "sourceOffset": 768,
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$25*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$25*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$25*]], fields=[k, amount, text_value])\n",
+        "recovery": [
+          {
+            "emittedWatermarks": [],
+            "restoredOffsets": [],
+            "failedAfterCheckpoint": false,
+            "completedOffsets": [
+              768
+            ],
+            "restoredSourceOffset": -1,
+            "activeSources": 0,
+            "injectedOffsets": [],
+            "completedCheckpoints": 2
+          }
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ],
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "parallelism": 1
+      },
+      "materializedResultsEqual": true
+    },
+    {
+      "flink": "2.2.1",
+      "cache_entries": 3,
+      "scenario": "jvm-memory",
+      "passed": true,
+      "backend": "hashmap",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 1,
+          "nativeExecution": [
+            {
+              "operator": "NativeCalcExecNode[17]",
+              "recordsIn": 256,
+              "jobId": "494c9aaa97ae18e6f5a75cba4a1a7c1e",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeColumnarExchangeExecNode[18]",
+              "recordsIn": 256,
+              "jobId": "494c9aaa97ae18e6f5a75cba4a1a7c1e",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[19]",
+              "recordsIn": 256,
+              "jobId": "494c9aaa97ae18e6f5a75cba4a1a7c1e",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 384
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "sourceOffset": 256,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$3*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[7], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[6])\n   +- NativeCalc(reuseBarrier=[5])\n      +- RowDataToArrow(reuseBarrier=[4])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": [],
+              "restoredOffsets": [],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                256
+              ],
+              "restoredSourceOffset": -1,
+              "activeSources": 0
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ]
+        },
+        {
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 3,
+          "nativeExecution": [
+            {
+              "operator": "NativeCalcExecNode[29]",
+              "recordsIn": 256,
+              "jobId": "05aa8448b9f70e52a2f019b3bb14ad6f",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeColumnarExchangeExecNode[30]",
+              "recordsIn": 256,
+              "jobId": "05aa8448b9f70e52a2f019b3bb14ad6f",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsIn": 80,
+              "jobId": "05aa8448b9f70e52a2f019b3bb14ad6f",
+              "attempt": "0",
+              "subtask": "2",
+              "recordsOut": 160
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsIn": 86,
+              "jobId": "05aa8448b9f70e52a2f019b3bb14ad6f",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 172
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsIn": 90,
+              "jobId": "05aa8448b9f70e52a2f019b3bb14ad6f",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 180
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "sourceOffset": 512,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$5*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[22], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[21])\n   +- NativeCalc(reuseBarrier=[20])\n      +- RowDataToArrow(reuseBarrier=[19])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                512
+              ],
+              "restoredSourceOffset": 256,
+              "activeSources": 0
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ]
+        },
+        {
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 2,
+          "nativeExecution": [
+            {
+              "operator": "NativeCalcExecNode[41]",
+              "recordsIn": 256,
+              "jobId": "a3c0cf22403ecdf4ab3496d80c3766b2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeColumnarExchangeExecNode[42]",
+              "recordsIn": 256,
+              "jobId": "a3c0cf22403ecdf4ab3496d80c3766b2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[43]",
+              "recordsIn": 124,
+              "jobId": "a3c0cf22403ecdf4ab3496d80c3766b2",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 248
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[43]",
+              "recordsIn": 132,
+              "jobId": "a3c0cf22403ecdf4ab3496d80c3766b2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 264
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "sourceOffset": 768,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$7*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[37], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[36])\n   +- NativeCalc(reuseBarrier=[35])\n      +- RowDataToArrow(reuseBarrier=[34])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                768
+              ],
+              "restoredSourceOffset": 512,
+              "activeSources": 0
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ]
+        }
+      ],
+      "reference": {
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "parallelism": 1,
+        "nativeExecution": [],
+        "cleanup": {
+          "liveNativeHandles": "",
+          "arrowAllocatedBytes": 0,
+          "taskReservedBytes": 0
+        },
+        "keyGroupRanges": [],
+        "sourceOffset": 768,
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$1*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n",
+        "recovery": [
+          {
+            "injectedOffsets": [],
+            "completedCheckpoints": 2,
+            "emittedWatermarks": [],
+            "restoredOffsets": [],
+            "failedAfterCheckpoint": false,
+            "completedOffsets": [
+              768
+            ],
+            "restoredSourceOffset": -1,
+            "activeSources": 0
+          }
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "8b0a69db9a80cd7c175fe5a99497b8f7",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ]
+      },
+      "materializedResultsEqual": true
+    },
+    {
+      "flink": "2.2.1",
+      "cache_entries": 3,
+      "scenario": "jvm-rocksdb",
+      "passed": true,
+      "backend": "tech.streamfusion.state.RocksDBNativeStateBackendFactory",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 1,
+          "nativeExecution": [
+            {
+              "operator": "NativeCalcExecNode[62]",
+              "recordsIn": 256,
+              "jobId": "7d5f705390395def3234adc6651655f2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeColumnarExchangeExecNode[63]",
+              "recordsIn": 256,
+              "jobId": "7d5f705390395def3234adc6651655f2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[64]",
+              "recordsIn": 256,
+              "jobId": "7d5f705390395def3234adc6651655f2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 384
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "sourceOffset": 256,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$11*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[52], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[51])\n   +- NativeCalc(reuseBarrier=[50])\n      +- RowDataToArrow(reuseBarrier=[49])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": [],
+              "restoredOffsets": [],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                256
+              ],
+              "restoredSourceOffset": -1,
+              "activeSources": 0
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ]
+        },
+        {
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 3,
+          "nativeExecution": [
+            {
+              "operator": "NativeCalcExecNode[74]",
+              "recordsIn": 256,
+              "jobId": "0d9e4d793133b330629eb0e43801bc88",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeColumnarExchangeExecNode[75]",
+              "recordsIn": 256,
+              "jobId": "0d9e4d793133b330629eb0e43801bc88",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsIn": 80,
+              "jobId": "0d9e4d793133b330629eb0e43801bc88",
+              "attempt": "0",
+              "subtask": "2",
+              "recordsOut": 160
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsIn": 86,
+              "jobId": "0d9e4d793133b330629eb0e43801bc88",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 172
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsIn": 90,
+              "jobId": "0d9e4d793133b330629eb0e43801bc88",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 180
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "sourceOffset": 512,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$13*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[67], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[66])\n   +- NativeCalc(reuseBarrier=[65])\n      +- RowDataToArrow(reuseBarrier=[64])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                512
+              ],
+              "restoredSourceOffset": 256,
+              "activeSources": 0
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ]
+        },
+        {
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "parallelism": 2,
+          "nativeExecution": [
+            {
+              "operator": "NativeCalcExecNode[86]",
+              "recordsIn": 256,
+              "jobId": "48da5d37df4f355b5cc972e8310f99aa",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeColumnarExchangeExecNode[87]",
+              "recordsIn": 256,
+              "jobId": "48da5d37df4f355b5cc972e8310f99aa",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 256
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[88]",
+              "recordsIn": 124,
+              "jobId": "48da5d37df4f355b5cc972e8310f99aa",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 248
+            },
+            {
+              "operator": "NativeJvmGroupExecNode[88]",
+              "recordsIn": 132,
+              "jobId": "48da5d37df4f355b5cc972e8310f99aa",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 264
+            }
+          ],
+          "cleanup": {
+            "liveNativeHandles": "",
+            "arrowAllocatedBytes": 0,
+            "taskReservedBytes": 0
+          },
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "sourceOffset": 768,
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$15*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[82], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[81])\n   +- NativeCalc(reuseBarrier=[80])\n      +- RowDataToArrow(reuseBarrier=[79])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n",
+          "recovery": [
+            {
+              "injectedOffsets": [],
+              "completedCheckpoints": 1,
+              "emittedWatermarks": [],
+              "restoredOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "completedOffsets": [
+                768
+              ],
+              "restoredSourceOffset": 512,
+              "activeSources": 0
+            }
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "8b0a69db9a80cd7c175fe5a99497b8f7",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ]
+        }
+      ],
+      "reference": {
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "parallelism": 1,
+        "nativeExecution": [],
+        "cleanup": {
+          "liveNativeHandles": "",
+          "arrowAllocatedBytes": 0,
+          "taskReservedBytes": 0
+        },
+        "keyGroupRanges": [],
+        "sourceOffset": 768,
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$9*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n",
+        "recovery": [
+          {
+            "injectedOffsets": [],
+            "completedCheckpoints": 1,
+            "emittedWatermarks": [],
+            "restoredOffsets": [],
+            "failedAfterCheckpoint": false,
+            "completedOffsets": [
+              768
+            ],
+            "restoredSourceOffset": -1,
+            "activeSources": 0
+          }
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "8b0a69db9a80cd7c175fe5a99497b8f7",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ]
+      },
+      "materializedResultsEqual": true
+    },
+    {
+      "flink": "1.18.1",
+      "cache_entries": 3,
+      "scenario": "jvm-memory",
+      "passed": true,
+      "backend": "hashmap",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "parallelism": 1,
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "completedCheckpoints": 1,
+              "injectedOffsets": [],
+              "activeSources": 0,
+              "restoredSourceOffset": -1,
+              "completedOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "restoredOffsets": []
+            }
+          ],
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$3*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[7], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[6])\n   +- NativeCalc(reuseBarrier=[5])\n      +- RowDataToArrow(reuseBarrier=[4])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n",
+          "sourceOffset": 256,
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "cleanup": {
+            "taskReservedBytes": 0,
+            "arrowAllocatedBytes": 0,
+            "liveNativeHandles": ""
+          },
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "operator": "NativeCalcExecNode[17]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "25a5eb59846ddaeae3bf8f561c3091ee"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeColumnarExchangeExecNode[18]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "25a5eb59846ddaeae3bf8f561c3091ee"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeJvmGroupExecNode[19]",
+              "recordsOut": 384,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "25a5eb59846ddaeae3bf8f561c3091ee"
+            }
+          ]
+        },
+        {
+          "parallelism": 3,
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "completedCheckpoints": 1,
+              "injectedOffsets": [],
+              "activeSources": 0,
+              "restoredSourceOffset": 256,
+              "completedOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "restoredOffsets": [
+                256
+              ]
+            }
+          ],
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$5*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[22], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[21])\n   +- NativeCalc(reuseBarrier=[20])\n      +- RowDataToArrow(reuseBarrier=[19])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n",
+          "sourceOffset": 512,
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "cleanup": {
+            "taskReservedBytes": 0,
+            "arrowAllocatedBytes": 0,
+            "liveNativeHandles": ""
+          },
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "operator": "NativeCalcExecNode[29]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "39c015714c431aee90794c7ce677267c"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeColumnarExchangeExecNode[30]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "39c015714c431aee90794c7ce677267c"
+            },
+            {
+              "recordsIn": 80,
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsOut": 160,
+              "subtask": "2",
+              "attempt": "0",
+              "jobId": "39c015714c431aee90794c7ce677267c"
+            },
+            {
+              "recordsIn": 86,
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsOut": 172,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "39c015714c431aee90794c7ce677267c"
+            },
+            {
+              "recordsIn": 90,
+              "operator": "NativeJvmGroupExecNode[31]",
+              "recordsOut": 180,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "39c015714c431aee90794c7ce677267c"
+            }
+          ]
+        },
+        {
+          "parallelism": 2,
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "completedCheckpoints": 1,
+              "injectedOffsets": [],
+              "activeSources": 0,
+              "restoredSourceOffset": 512,
+              "completedOffsets": [
+                768
+              ],
+              "failedAfterCheckpoint": false,
+              "restoredOffsets": [
+                512
+              ]
+            }
+          ],
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$7*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[37], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[36])\n   +- NativeCalc(reuseBarrier=[35])\n      +- RowDataToArrow(reuseBarrier=[34])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n",
+          "sourceOffset": 768,
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "cleanup": {
+            "taskReservedBytes": 0,
+            "arrowAllocatedBytes": 0,
+            "liveNativeHandles": ""
+          },
+          "nativeExecution": [
+            {
+              "recordsIn": 124,
+              "operator": "NativeJvmGroupExecNode[43]",
+              "recordsOut": 248,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "2996961b133761cd628ee65d80a543e9"
+            },
+            {
+              "recordsIn": 132,
+              "operator": "NativeJvmGroupExecNode[43]",
+              "recordsOut": 264,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "2996961b133761cd628ee65d80a543e9"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeCalcExecNode[41]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "2996961b133761cd628ee65d80a543e9"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeColumnarExchangeExecNode[42]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "2996961b133761cd628ee65d80a543e9"
+            }
+          ]
+        }
+      ],
+      "reference": {
+        "parallelism": 1,
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ],
+        "recovery": [
+          {
+            "emittedWatermarks": [],
+            "completedCheckpoints": 3,
+            "injectedOffsets": [],
+            "activeSources": 0,
+            "restoredSourceOffset": -1,
+            "completedOffsets": [
+              768
+            ],
+            "failedAfterCheckpoint": false,
+            "restoredOffsets": []
+          }
+        ],
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$1*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n",
+        "sourceOffset": 768,
+        "keyGroupRanges": [],
+        "cleanup": {
+          "taskReservedBytes": 0,
+          "arrowAllocatedBytes": 0,
+          "liveNativeHandles": ""
+        },
+        "nativeExecution": []
+      },
+      "materializedResultsEqual": true
+    },
+    {
+      "flink": "1.18.1",
+      "cache_entries": 3,
+      "scenario": "jvm-rocksdb",
+      "passed": true,
+      "backend": "tech.streamfusion.state.RocksDBNativeStateBackendFactory",
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "maxParallelism": 128,
+      "sourceOffsets": [
+        256,
+        512,
+        768
+      ],
+      "physicalBatchRows": 5,
+      "logicalMiniBatchRows": 0,
+      "jvmAggregate": true,
+      "stages": [
+        {
+          "parallelism": 1,
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "completedCheckpoints": 2,
+              "injectedOffsets": [],
+              "activeSources": 0,
+              "restoredSourceOffset": -1,
+              "completedOffsets": [
+                256
+              ],
+              "failedAfterCheckpoint": false,
+              "restoredOffsets": []
+            }
+          ],
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$11*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[52], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[51])\n   +- NativeCalc(reuseBarrier=[50])\n      +- RowDataToArrow(reuseBarrier=[49])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n",
+          "sourceOffset": 256,
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
+          ],
+          "cleanup": {
+            "taskReservedBytes": 0,
+            "arrowAllocatedBytes": 0,
+            "liveNativeHandles": ""
+          },
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "operator": "NativeCalcExecNode[62]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "b58ef46ca853c12343862abed31fd967"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeColumnarExchangeExecNode[63]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "b58ef46ca853c12343862abed31fd967"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeJvmGroupExecNode[64]",
+              "recordsOut": 384,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "b58ef46ca853c12343862abed31fd967"
+            }
+          ]
+        },
+        {
+          "parallelism": 3,
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "completedCheckpoints": 1,
+              "injectedOffsets": [],
+              "activeSources": 0,
+              "restoredSourceOffset": 256,
+              "completedOffsets": [
+                512
+              ],
+              "failedAfterCheckpoint": false,
+              "restoredOffsets": [
+                256
+              ]
+            }
+          ],
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$13*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[67], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[66])\n   +- NativeCalc(reuseBarrier=[65])\n      +- RowDataToArrow(reuseBarrier=[64])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n",
+          "sourceOffset": 512,
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
+            "1:KeyGroupRange{startKeyGroup=43, endKeyGroup=85}",
+            "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
+          ],
+          "cleanup": {
+            "taskReservedBytes": 0,
+            "arrowAllocatedBytes": 0,
+            "liveNativeHandles": ""
+          },
+          "nativeExecution": [
+            {
+              "recordsIn": 256,
+              "operator": "NativeCalcExecNode[74]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "b655915450bee9eacc0e5f20d5e0c57c"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeColumnarExchangeExecNode[75]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "b655915450bee9eacc0e5f20d5e0c57c"
+            },
+            {
+              "recordsIn": 80,
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsOut": 160,
+              "subtask": "2",
+              "attempt": "0",
+              "jobId": "b655915450bee9eacc0e5f20d5e0c57c"
+            },
+            {
+              "recordsIn": 86,
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsOut": 172,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "b655915450bee9eacc0e5f20d5e0c57c"
+            },
+            {
+              "recordsIn": 90,
+              "operator": "NativeJvmGroupExecNode[76]",
+              "recordsOut": 180,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "b655915450bee9eacc0e5f20d5e0c57c"
+            }
+          ]
+        },
+        {
+          "parallelism": 2,
+          "resultTypes": [
+            "INT",
+            "BIGINT",
+            "BIGINT NOT NULL",
+            "STRING"
+          ],
+          "operatorIds": [
+            "0403ba69102a90da681b603426a6e359",
+            "2df6bcf16ca1ead8143caabf3c4abea7",
+            "35b43dec7af5415d38a0c373a76113e4",
+            "5304c55d7bbbfb0c161c9e99b2dd5ca6",
+            "56f6c511ab7359265972080589f6c030",
+            "760cc6ccc5aa99e89aecb4236b455c7d",
+            "94687e86073bf88ab5b9b35bfb69735d",
+            "9fea37e097c206ec4e1bcf462cd3dba7",
+            "af2cb18c721a2da0e9269cf788dccb7a",
+            "de570308e342ce7e6524be2652d3332c",
+            "eb57dfe95b2ead7b01dba0bfd1873c8e"
+          ],
+          "recovery": [
+            {
+              "emittedWatermarks": [],
+              "completedCheckpoints": 2,
+              "injectedOffsets": [],
+              "activeSources": 0,
+              "restoredSourceOffset": 512,
+              "completedOffsets": [
+                768
+              ],
+              "failedAfterCheckpoint": false,
+              "restoredOffsets": [
+                512
+              ]
+            }
+          ],
+          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$15*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[82], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[81])\n   +- NativeCalc(reuseBarrier=[80])\n      +- RowDataToArrow(reuseBarrier=[79])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n",
+          "sourceOffset": 768,
+          "keyGroupRanges": [
+            "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
+            "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
+          ],
+          "cleanup": {
+            "taskReservedBytes": 0,
+            "arrowAllocatedBytes": 0,
+            "liveNativeHandles": ""
+          },
+          "nativeExecution": [
+            {
+              "recordsIn": 124,
+              "operator": "NativeJvmGroupExecNode[88]",
+              "recordsOut": 248,
+              "subtask": "1",
+              "attempt": "0",
+              "jobId": "05cbb11ea0c6c92258b8642c50bf2b77"
+            },
+            {
+              "recordsIn": 132,
+              "operator": "NativeJvmGroupExecNode[88]",
+              "recordsOut": 264,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "05cbb11ea0c6c92258b8642c50bf2b77"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeCalcExecNode[86]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "05cbb11ea0c6c92258b8642c50bf2b77"
+            },
+            {
+              "recordsIn": 256,
+              "operator": "NativeColumnarExchangeExecNode[87]",
+              "recordsOut": 256,
+              "subtask": "0",
+              "attempt": "0",
+              "jobId": "05cbb11ea0c6c92258b8642c50bf2b77"
+            }
+          ]
+        }
+      ],
+      "reference": {
+        "parallelism": 1,
+        "resultTypes": [
+          "INT",
+          "BIGINT",
+          "BIGINT NOT NULL",
+          "STRING"
+        ],
+        "operatorIds": [
+          "35b43dec7af5415d38a0c373a76113e4",
+          "56f6c511ab7359265972080589f6c030",
+          "94687e86073bf88ab5b9b35bfb69735d",
+          "98b1bfc2044735c69e02ce8158b688fb",
+          "9fea37e097c206ec4e1bcf462cd3dba7",
+          "af2cb18c721a2da0e9269cf788dccb7a",
+          "de570308e342ce7e6524be2652d3332c",
+          "eb57dfe95b2ead7b01dba0bfd1873c8e"
+        ],
+        "recovery": [
+          {
+            "emittedWatermarks": [],
+            "completedCheckpoints": 1,
+            "injectedOffsets": [],
+            "activeSources": 0,
+            "restoredSourceOffset": -1,
+            "completedOffsets": [
+              768
+            ],
+            "failedAfterCheckpoint": false,
+            "restoredOffsets": []
+          }
+        ],
+        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$9*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n",
+        "sourceOffset": 768,
+        "keyGroupRanges": [],
+        "cleanup": {
+          "taskReservedBytes": 0,
+          "arrowAllocatedBytes": 0,
+          "liveNativeHandles": ""
+        },
+        "nativeExecution": []
+      },
+      "materializedResultsEqual": true
+    }
+  ],
+  "builtin_controls": [
+    {
+      "flink": "1.18.1",
+      "scenario": "memory",
+      "passed": true
+    },
+    {
+      "flink": "1.18.1",
+      "scenario": "rocksdb",
+      "passed": true
+    },
+    {
+      "flink": "2.2.1",
+      "scenario": "memory",
+      "passed": true
+    },
+    {
+      "flink": "2.2.1",
+      "scenario": "rocksdb",
+      "passed": true
+    }
+  ]
+}

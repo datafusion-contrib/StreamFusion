@@ -39,6 +39,102 @@ fallback.
   functions below can instead use Flink generation for its complete program,
   subject to the host code generator and the verified batch bridge types.
 
+## Experimental nested Java scalar results
+
+`streamfusion.experimental.nestedScalarUdfs=true` investigates synchronous external Java `Row`
+arguments and results, using Flink's complete generated Calc evaluator through the existing batch
+bridge. It defaults to false. Computed ROW-valued programs and filters use whole-Calc generation,
+including SQL ROW constructors and comparisons, so physical metadata never becomes a logical SQL
+field. Pure input-reference projections keep the existing native path. Recursive
+ROW/ARRAY values use the existing verified primitive bridge types; string-to-string MAP fields
+are supported. Nested fixed BINARY uses the experimental transport described below. Custom type inference, specialization and internal Java
+conversion classes retain whole-query fallback. Only external `Row` signatures enter the new gate.
+
+Flink's released converters own external callback inputs and normalize mutable results before the
+next invocation. This retains named-row field mapping, reusable ROW/array results, NULLs, Java
+string conversion and callback failures. No generic-array conversion shortcut is enabled: a
+profiled experiment reduced allocations but changed Unicode ARRAY_SORT results.
+
+A tagged nullable Int8 Arrow child carries each SQL ROW's `RowKind` outside its logical ordinals.
+Missing/NULL metadata reads as INSERT; nested non-INSERT kinds remain visible to Java callbacks.
+Key encoding writes the kind into Flink's BinaryRow header without consuming another logical type
+descriptor. UNNEST excludes it from SQL columns, and sort keys normalize only its comparison value
+while retaining actual kinds in output payloads. The generated Calc's outer projection container
+has no extra kind child. Configure the flag consistently in planner and task JVMs; this changes
+the physical struct schema. See the [transport decision](https://github.com/datafusion-contrib/StreamFusion/blob/fix/237-nested-scalar-results/divergences/nested-row-kind-transport.md).
+
+Under the same default-off flag, BINARY values use length-delimited Arrow binary storage.
+Released Flink callbacks can return bytes shorter or longer than their declared `BINARY(n)`;
+the transport preserves those actual bytes and the resolved SQL type without padding or
+truncation. This applies at the input, nested ROW/ARRAY fields and extracted scalar results.
+Native fixed-size binary vectors are still readable as bytes. The disabled flag retains the
+existing fixed-size mapping and nested admission restrictions. Legacy variable-width casts
+still fall back across the previously restricted native boundaries; binary ELT performance
+admission remains pending in #235.
+
+[Nested BINARY validation](../benchmarks/results/nested-fixed-binary-coverage-2026-10-16.json)
+retains initial 65-case selections on both lines (six compatibility skips on 1.18), followed
+by 16 passes per line with expanded NULL-field cases. Tests cover runtime lengths 0/1/4 and
+oversized payloads through 4,097 bytes, all nested kinds, mutable ROW/array outputs, extracted
+fields, scalar consumers, grouping, exact released BinaryRow bytes/hashes and nullable arrays.
+Default selections pass 23 cases with two skips on 2.2 and 18 with seven skips on 1.18.
+Thirty selected native Criterion smokes exercise sliced nullable nested binary handoffs and
+key hashing. These are correctness checks. Nested BINARY recovery and representative stock/
+actual-previous-runtime speed comparisons remain pending. The maintainer accepted shipping
+this correctness-tested, default-off extension on October 16 with performance work deferred;
+these pending contracts are not claimed as verified.
+
+The experiment has no throughput admission. [Java CPU/allocation and symbolized Rust profiles](../benchmarks/results/nested-scalar-rejected-array-conversion-2026-10-16.json)
+identify conversion work; their timings include observed external activity and are excluded from
+performance claims. Unprofiled stock/previous-runtime comparisons remain required before enabling
+this gate by default. The correctness and cross-JVM checks below do not establish acceleration.
+#237 stays open.
+
+[Release validation evidence](../benchmarks/results/nested-scalar-coverage-2026-10-16.json)
+retains 71 opt-in checks on Flink 2.2.1 and 68 passes with three compatibility skips on 1.18.1.
+Default-off regressions pass 105 checks with one opt-in-only skip on 2.2.1 and 100 with six skips
+on 1.18.1. The native fixtures cover production handoffs, key bytes/hash descriptors, ordering and
+inner/left ARRAY-of-ROW UNNEST; their smoke execution does not establish throughput.
+
+Eight additional [checkpoint/recovery checks](../benchmarks/results/nested-scalar-recovery-2026-10-16.json)
+pass on the two released lines. Memory and native RocksDB deployments at parallelism one
+and three enable object reuse and fail twice, only after source checkpoints at offsets
+12 and 32 complete. Recovered native identity and mutable-transform callbacks match the
+uninterrupted stock result multiset and resolved schema, including nested RowKinds, NULLs
+and long Unicode values. Native consumed-row counters and exact source restore offsets
+are asserted. This verifies task recovery with a consistently configured JVM flag.
+
+Four [separate-JVM deployment checks](../benchmarks/results/nested-scalar-remote-2026-10-16.json)
+also pass across both released lines at parallelism one and three. The SQL planner submits
+stock/native jobs over REST to a child JVM containing a TaskManager. That JVM records all
+5,003 native input rows, with a PID distinct from the planner's; complete results and schemas
+match stock, including nested kinds and mutable callback outputs across batches. Both JVMs
+explicitly enable the flag. Child shutdown verifies native-handle, Arrow-allocation and task
+reservation cleanup. This checks callback registration and metadata across JVMs on one host;
+it does not combine remote process termination with checkpoint recovery or validate differing
+planner/task flags. The maintainer accepted shipping this default-off implementation on
+October 16 despite its measured whole-job regressions, with optimization deferred.
+
+Reproduce the complete-job benchmark from a clean released build (add `-Pflink-1.18` for that
+compatibility line). Every shape uses two warmup pairs and five measured pairs by default;
+EXPLAIN and per-job cluster setup precede the clock, while both transposes and production IPC
+remain inside execution. The benchmark includes nested identity/transform cases and a primitive
+Rust calculation control; it checks consumed native rows and zero native work in stock plans.
+
+The [matched runtime comparison](../benchmarks/nested-scalars.md) additionally builds the
+immutable previous StreamFusion runtime, retains its own stock controls and compares narrow
+and wide nested values. Separate Java/native CPU and Java allocation profiles cover both
+runtimes; profile durations are excluded. The completed release matrix records regressions; it is not a claim of acceleration.
+
+```bash
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am \
+  -Dtest=NestedScalarBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dnative.resource.directory="${PWD}/native/target/release" \
+  '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false' \
+  "-Dsf.extraJvmArgs=-Djava.library.path=${PWD}/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true" \
+  test
+```
+
 ## Failure order across rows
 
 After the usual expression admission checks, a Calc with multiple potentially failing
@@ -333,7 +429,8 @@ This complete-row path executes on the JVM, including sibling expressions. It ad
 inputs and outputs supported by the scalar bridge: primitive numeric/boolean, character,
 BINARY/VARBINARY, DECIMAL, date/time/timestamp and interval values. Fixed BINARY result
 projections use this row path to retain their declared Arrow width. Collection and nested ROW inputs
-or outputs still fall back, as do unsupported UDF signatures and specialized functions. Temporal
+or outputs retain fallback by default; the nested scalar option above extends its verified
+ROW/ARRAY boundary. Unsupported UDF signatures and specialized functions still fall back. Temporal
 columns and builtin expressions are supported here; temporal **user-function signatures** require
 the separate opt-in below. The path preserves columnar operator boundaries and avoids a separate
 host Calc between native operators; it does not turn Java UDFs into Rust kernels.
@@ -450,7 +547,8 @@ writes, inline Calc evaluation inside that loop and bulk timestamp component val
 performance admission. A direct typed-output kernel likewise passed correctness checks but
 still lost to stock, including a variant that writes timestamp components directly. None is retained. See the
 [rejected experiments](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/364-temporal-row-output-shortcuts.md).
-Performance admission remains tracked in [#364](https://github.com/datafusion-contrib/StreamFusion/issues/364),
+Implementation coverage shipped in [#368](https://github.com/datafusion-contrib/StreamFusion/pull/368);
+performance and default admission remain tracked in [#389](https://github.com/datafusion-contrib/StreamFusion/issues/389),
 including further measured conversion work and complete-job measurements inside surrounding
 native operators before any broader admission.
 
@@ -467,7 +565,9 @@ for unconditional, timestamp-only projections of matching width. Every function 
 A byte-equal result column retains the input buffers; the first changed value materializes its
 unchanged prefix and all subsequent values. Preinitialized Arrow fields preserve timestamp
 component metadata through transfers. Other result shapes use the ordinary flat Arrow writer.
-Both experimental switches default off. PR #368 remains draft at the maintainer's request.
+Both experimental switches default off. The maintainer accepted shipping this tested
+implementation on October 16 despite the measured regressions, with further performance
+work deferred; PR #368 has merged.
 
 In an unprofiled 2M-row repeat with the configuration above, direct batches plus timestamp
 aliasing measured identity **0.651 s versus stock 0.645 s**, text **0.830 versus 0.969 s**, and
@@ -1468,12 +1568,15 @@ iteration happens inside that callback. Rejected rows and changelog tags share a
 before Arrow validates nonnullable result fields.
 
 Referenced inputs and projected outputs can carry character, binary, boolean, numeric/decimal,
-date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW values with
-those leaves. Nested arguments use Flink internal views over the imported Arrow batch; generated
+date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW/MAP/MULTISET
+values with those leaves. The broader MAP/MULTISET boundary requires non-null keys/elements,
+matching the Arrow map key representation, with the existing character MAP exception below. Nullable map values, outer containers and nested array/row values
+remain supported. Nested arguments use Flink internal views over the imported Arrow batch; generated
 results are copied into owned Arrow output vectors before that batch closes. The callback still
 crosses JNI once per batch, including multi-column results and filtering.
-MAPs with character keys and character values are also admitted, including inside ARRAY/ROW.
-Other MAP and MULTISET boundary types remain explicit fallback.
+The existing character-key/character-value MAP boundary remains admitted. Other MAP
+keys and MULTISET elements must be declared non-null; nullable forms retain fallback,
+including inside ARRAY/ROW. Nested fixed BINARY leaves retain their existing restriction.
 Constructing containers internally is allowed when the resulting boundary types are
 admitted. Unsupported host code generation
 and UDF signatures retain explicit fallback. Flink 2.2.1 rejects dynamic JSON_EXISTS paths;
@@ -2159,3 +2262,9 @@ Eleven DOUBLE TRUNCATE runtime checks and nine Boolean/string ARRAY_DISTINCT che
 both released lines. These are historical correctness results. Binary ELT and STRING ARRAY_DISTINCT remain
 on stock execution pending performance admission; fixed binary casts, Boolean ARRAY_DISTINCT,
 and the bounded DOUBLE TRUNCATE helper remain admitted.
+
+
+The maintainer accepted shipping the verified broader SQL/JSON MAP/MULTISET boundary
+on October 16 while deferring performance improvements. Historical MAP whole-job results
+remain slower than stock Flink; see the [recorded measurements](../benchmarks/scalar-functions.md#map-sqljson-batch-boundaries-2026-09-19).
+This acceptance does not widen nullable-key, fixed-BINARY or non-Calc admission.

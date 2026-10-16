@@ -1,0 +1,132 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "admitted": false,
+  "boundary": "Default-off nested external Java Row scalar arguments/results; released generated Flink conversion; Arrow ownership/key/UNNEST/order transport.",
+  "base_revision": "b170a474d5658330ed7e92e9b8bcc54117c8d287",
+  "source_worktree_clean": false,
+  "native_build": "cargo build --locked -p streamfusion --release --features mimalloc",
+  "native_sha256": "acf7e95b8a2170af17817b75c9f7a5938237d93a0197f1321550a18ddf4af140",
+  "limitations": [
+    "No throughput admission or speed claim from correctness/fixture smoke timings.",
+    "Planner and task flags must agree; separate-JVM deployment and recovery contracts remain pending.",
+    "Profiles retained separately precede final native codec changes and exclude all timings.",
+    "Full unprofiled representative stock and immutable previous-runtime comparisons remain required."
+  ],
+  "source_sha256": {
+    "native/bridge/benches/handoffs.rs": "a7b962bb5c1b4f5bd70619275f6808d95eec1e2ec843973f7e733fbdb65693fa",
+    "native/bridge/src/changelog.rs": "83d0d347c583c0d4fc7e032f1b199d269e7fe8e934021122e80283f1795272dc",
+    "native/bridge/src/ordering.rs": "9e416da818faa7b9bebb9ffec6a763de32d9bd372c464ca3f078fe12c74e42cf",
+    "native/engine/benches/keys_and_checkpoints.rs": "c98d96c0c1ea0f1ed9fedff9827f584b769116e3a14348372478a7cb6fbf38ea",
+    "native/engine/src/flatten.rs": "9c5246d8a51de69983b5d8d5f44bc9693dffbcae658ff24939bc81694ec2f186",
+    "native/engine/src/flink_key.rs": "f219705d18f3f402011b5bd9d9e603ca92104d719788ef89072e1d4bdf73c9a5",
+    "native/engine/src/topn.rs": "9a62036543df0cec7cdbc3207f8a134916f41046bce1da893c705f8bac37dab6",
+    "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "b88876290a0f29f0dfe3911debce45aae1f11672acbdb03096545a204cc1c5a2",
+    "src/main/java/tech/streamfusion/arrow/vectors/ArrowRowColumnVector.java": "a95451619f24606c660e19dab55f5a2df8ac2189ee62660f36ce036482af5312",
+    "src/main/java/tech/streamfusion/arrow/writers/RowWriter.java": "82e30eadda9ea00482ab1085eb822c1e445d8f3621d20db0c9c2318b4d616ebb",
+    "src/main/java/tech/streamfusion/operator/NativeUdf.java": "1b72a47ee6d7596ca89a50769f07c2c33bdeee713783539dbdcfac02177155b1",
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "b2cf838e31ae2a4dcd75077bf4e1330ef3d38c128cbbdbc56152993318c0857e",
+    "src/test/java/tech/streamfusion/FlinkBinaryRowHashParityTest.java": "97705e6c238f5e08f46a08970e74e539acee554a1fc1aedb5d1c868d778e4f60",
+    "src/main/java/tech/streamfusion/arrow/NestedRowKinds.java": "680ebb3db33e8f13a8480f6ced592bd923f042f9d1daa60b7ec720c3cd128674",
+    "src/test/java/tech/streamfusion/FlinkNestedScalarSqlHarnessTest.java": "eaa84284664534f8fa97cd865724483af52bc72fd466a49a22c34b88ae8fa4f5",
+    "src/test/java/tech/streamfusion/NestedScalarBenchmark.java": "f059207199461f77623fd12eef1de3765e25092db027f86635d809dc5381583d"
+  },
+  "validations": [
+    {
+      "flink_line": "2.2.1",
+      "nested_flag": true,
+      "checks": 71,
+      "passed": 71,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "flink_line": "2.2.1",
+      "nested_flag": false,
+      "checks": 106,
+      "passed": 105,
+      "skipped": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "flink_line": "1.18.1",
+      "nested_flag": true,
+      "checks": 71,
+      "passed": 68,
+      "skipped": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "flink_line": "1.18.1",
+      "nested_flag": false,
+      "checks": 106,
+      "passed": 100,
+      "skipped": 6,
+      "failures": 0,
+      "errors": 0
+    }
+  ],
+  "criterion_smokes": [
+    {
+      "package": "streamfusion-bridge",
+      "suite": "handoffs",
+      "fixture_successes": 12,
+      "timing_admission": false,
+      "boundary": "production ownership handoff",
+      "allocation_interpretation": "Allocation requests and shared Arrow buffers; neither equals copied bytes."
+    },
+    {
+      "package": "streamfusion",
+      "suite": "keys_and_checkpoints",
+      "fixture_successes": 24,
+      "timing_admission": false,
+      "boundary": "production BinaryRow hashes, metadata-neutral ordering and inner/left ARRAY-of-ROW UNNEST",
+      "allocation_interpretation": "Allocation requests and shared Arrow buffers; neither equals copied bytes."
+    }
+  ],
+  "files": [
+    {
+      "file": "nested-scalar-coverage-2026-10-16-optin-flink22.log.gz",
+      "sha256": "ca2cc4c6edfaf4b55b8079f90c0d03f9ad1046adc0f223d5435daf11a79a119e"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-default-flink22.log.gz",
+      "sha256": "0e8276182f6e6b6dced166ccf6990a71c9a0f91b0ab2c8d18642da339495ecb4"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-optin-flink118.log.gz",
+      "sha256": "467ee3a7acf2d6ed1f9e929757699bc274a4273898c88648796906a41138c276"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-default-flink118.log.gz",
+      "sha256": "d242aab5feb921f43b73da0a27ea0ec549409f7afc63ac93e8ddfc76e5404a0e"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-handoffs-streamfusion-bridge-handoffs.log.gz",
+      "sha256": "9e8ceabe9e894c73ff07b4feb4438090dfe74ae77d19a928b1bf6fc393cfcfd5"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-handoffs-allocations.csv.gz",
+      "sha256": "d8a02820169f049a62f56fde5fd02ac3eaf0ded96a7b120752b8106f1c3f7dee"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-handoffs-metadata.json.gz",
+      "sha256": "55ec117973470eb3b5e1ae92f789147d9311d39719059dcb886fc43c59e773fb"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-keys_and_checkpoints-streamfusion-keys_and_checkpoints.log.gz",
+      "sha256": "3a724bdfa0771d390e872d6d6e022785678b08af3dfbe83cf6f9eb3bb403a108"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-keys_and_checkpoints-allocations.csv.gz",
+      "sha256": "6739ed01d11449b818dc4cea3603e846157c93b101e614b88ac05ea6ef672912"
+    },
+    {
+      "file": "nested-scalar-coverage-2026-10-16-keys_and_checkpoints-metadata.json.gz",
+      "sha256": "08f4ffd2e78e1271823a262101615828491d591df434b6768aa2b32df9cc171c"
+    }
+  ]
+}

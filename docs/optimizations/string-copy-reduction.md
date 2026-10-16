@@ -20,6 +20,53 @@ near-memcpy speed for ASCII. A 2026-07-12 profile had this char loop at ~9% of q
 **Measured:** with the batched BinaryRow keys above, the string-heavy stateless q22 gained +25%
 native throughput (1.23x → 1.53x) on the 2M-event generator rung.
 
+## Repeated lazy-string encodings
+
+The candidate in draft #374 keeps the previous short immutable Java String and its owned UTF-8
+encoding inside each VarChar writer. Equal consecutive values reuse those bytes before Arrow's
+ordinary `setSafe` copies them into the output buffer. It retains no mutable StringData or Arrow
+view and does not reuse output cells. Values above 1,024 UTF-16 code units use ordinary encoding;
+after eight consecutive eligible misses the writer releases its cached value and bypasses lookup
+for its lifetime. A hit resets the miss counter, keeping reuse useful when changing rows each emit
+equal adjacent values.
+This bounds retained heap and limits lookup work on distinct text. Binary-backed StringData keeps
+its existing direct segment-copy path. NULLs, surrogate conversion and original UTF-16 sidecars
+retain the existing representation.
+
+[Matched profiles](../benchmarks/results/jvm-table-repeated-encoding-profiles-2026-10-16.json)
+use the identical current fixture with immutable previous production runtime `5cbd6ec2` and the
+candidate on each released Flink line. With 500k rows, width 256, two warmups, three pairs, 2 GiB,
+production IPC and both transposes, inclusive table-function Java allocation samples decrease
+10.794→7.162 GB on 1.18 and 10.633→7.231 GB on 2.2 (34%/32%). Full Java/Rust stacks and every raw
+trial remain retained. The split-only path has almost no sampled Rust execution; separate numeric
+aggregate controls contain substantial symbolized Rust work. Java encoding is the measured target.
+
+These are allocation estimates, not copied bytes or native allocation volume. Inclusive stacks
+overlap. External work was observed, so **all profile timings are excluded**.
+
+The [completed isolated matrix](../benchmarks/results/jvm-encoding-isolated-2026-10-16.json)
+measures the preceding eight-total-miss policy with 2M rows, two warmups, five alternating pairs,
+2 GiB, production IPC, both transposes and the borrowed exit enabled. Repeated width-256 text takes
+2.817 s native versus 4.802 s stock on 2.2 (1.70×), and 2.941 versus 4.911 s on 1.18 (1.67×).
+Actual previous-native medians are 4.663 and 4.846 s, with each runtime retaining its own stock
+controls. Wide row-distinct text still regresses on 2.2: 4.776 s native versus 4.564 stock.
+The source merge also contains singleton-shuffle changes; the artifact records source, library,
+all trials/ranges and both historical runtime controls without assigning every change to encoding.
+
+[Cold-text profiles](../benchmarks/results/jvm-encoding-adaptive-profiles-2026-10-16.json)
+identify persistent UTF-8 encoding allocation after that policy permanently bypasses on changing
+rows. Resetting the miss counter on a hit keeps the one-entry cache useful for duplicate results
+within each row. Sampled encoding allocation falls 3.633→1.831 GB on 1.18 and 3.663→1.795 GB on 2.2;
+inclusive table-function allocation falls 10.758→9.280 GB and 11.054→9.009 GB (14%/18%). Eight full
+Java/Rust recordings and 82 passing focused correctness checks are retained. These are allocation
+estimates with all timings excluded. Whole-job validation of the new reset rule remains pending;
+the feature stays in draft.
+
+A JDK-decoder substitution passed parity but increased allocation samples on both lines and was
+removed. Its [full rejection evidence](../benchmarks/results/jvm-table-rejected-decoder-2026-10-16.json)
+includes the original source, released-converter oracles, mixed Java/Rust profiles and limitations.
+This encoding cache retains Flink's decoder.
+
 ## Lookup join: collect straight into the Arrow builders
 
 The sync lookup join stopped defensively copying every looked-up row (`RowDataSerializer.copy`,

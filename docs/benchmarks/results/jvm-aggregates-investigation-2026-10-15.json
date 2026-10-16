@@ -1,0 +1,2590 @@
+{
+  "status": "default-off investigation; no admission or speed claim",
+  "source_base": "c3c6042209f6dd777c384c94de8381a35f610b4d",
+  "configuration": {
+    "flink": "2.2.1",
+    "jdk": 17,
+    "native": "release, mimalloc, existing #232 native library; no changed Rust source",
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "ipc": true,
+    "rows": 2000000,
+    "keys": 65536,
+    "every_eighth_value_null": true,
+    "row_source": true,
+    "row_blackhole_sink": true,
+    "both_transposes": true,
+    "batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_alternating_pairs": 5,
+    "boundary": "executeSql(insert).await includes planning/submission, row source/sink, conversions, function and keyed state; metrics-cluster boot/config outside timing. Original experiments use a per-pair cluster; final measurements use per-job ownership as recorded in each measurement."
+  },
+  "experiments": [
+    {
+      "label": "uncached",
+      "stock_seconds": [
+        1.126322134,
+        1.132233172,
+        1.153742023,
+        1.0079261,
+        1.008001101
+      ],
+      "native_seconds": [
+        1.157628788,
+        1.147236361,
+        1.284233761,
+        0.961404905,
+        1.011594865
+      ],
+      "stock_median_s": 1.126322134,
+      "native_median_s": 1.147236361,
+      "stock_range_s": [
+        1.0079261,
+        1.153742023
+      ],
+      "native_range_s": [
+        0.961404905,
+        1.284233761
+      ],
+      "admitted": false,
+      "limitation": "Diagnostic unmonitored trials; no external-process or GC record. All trials retained. Separate-JVM stock drift prevents attribution across experiments."
+    },
+    {
+      "label": "binary-key-write-through-rejected",
+      "stock_seconds": [
+        1.138904144,
+        1.084294349,
+        1.064063376,
+        1.096872565,
+        1.047127842
+      ],
+      "native_seconds": [
+        1.43048976,
+        1.3926076,
+        1.43879129,
+        1.395229332,
+        1.375391504
+      ],
+      "stock_median_s": 1.084294349,
+      "native_median_s": 1.395229332,
+      "stock_range_s": [
+        1.047127842,
+        1.138904144
+      ],
+      "native_range_s": [
+        1.375391504,
+        1.43879129
+      ],
+      "admitted": false,
+      "limitation": "Diagnostic unmonitored trials; no external-process or GC record. All trials retained. Separate-JVM stock drift prevents attribution across experiments."
+    },
+    {
+      "label": "primitive-write-through",
+      "stock_seconds": [
+        1.173568056,
+        1.255279712,
+        2.278591434,
+        1.103067651,
+        2.123162848
+      ],
+      "native_seconds": [
+        1.194593381,
+        1.226585943,
+        1.041404874,
+        0.958876193,
+        0.958366391
+      ],
+      "stock_median_s": 1.255279712,
+      "native_median_s": 1.041404874,
+      "stock_range_s": [
+        1.103067651,
+        2.278591434
+      ],
+      "native_range_s": [
+        0.958366391,
+        1.226585943
+      ],
+      "admitted": false,
+      "limitation": "Diagnostic unmonitored trials; no external-process or GC record. All trials retained. Separate-JVM stock drift prevents attribution across experiments."
+    },
+    {
+      "label": "primitive-write-back",
+      "stock_seconds": [
+        1.367520026,
+        1.481604942,
+        1.27242523,
+        1.048229743,
+        1.051001572
+      ],
+      "native_seconds": [
+        0.846467557,
+        0.971969087,
+        7.201070375,
+        1.920332004,
+        0.582729462
+      ],
+      "stock_median_s": 1.27242523,
+      "native_median_s": 0.971969087,
+      "stock_range_s": [
+        1.048229743,
+        1.481604942
+      ],
+      "native_range_s": [
+        0.582729462,
+        7.201070375
+      ],
+      "admitted": false,
+      "limitation": "Diagnostic unmonitored trials; no external-process or GC record. All trials retained. Separate-JVM stock drift prevents attribution across experiments."
+    }
+  ],
+  "profiles": {
+    "method": "async-profiler 4.0, cpu-clock 2ms, DWARF native stacks, sampled Java allocations 1m; CPU and allocation profiles from the same process",
+    "limitations": "Profile timings excluded. Inclusive counts are not speedups. Sampled Java allocation bytes are estimates, not peak memory, copied bytes or Rust heap totals. Baseline hot profile records 3.28 external CPU seconds; candidate hot profile has no observed external activity. The native-stdout Surefire diagnostic in the hot profile is the profiler startup message; both profiling jobs finish BUILD SUCCESS.",
+    "records": [
+      {
+        "label": "baseline",
+        "files": [
+          "jvm-aggregates-2026-10-15-baseline-cpu.collapsed.gz",
+          "jvm-aggregates-2026-10-15-baseline-alloc.collapsed.gz"
+        ],
+        "inclusive_cpu_samples": {
+          "group_operator_samples": 0,
+          "heap_state_read_samples": 0,
+          "heap_state_write_samples": 0,
+          "cache_read_samples": 0,
+          "rust_samples": 259
+        },
+        "timing_excluded": true,
+        "workload": {
+          "rows": 500000,
+          "keys": 16384,
+          "warmup_pairs": 2,
+          "pairs": 3,
+          "cases": [
+            "udaf",
+            "builtin"
+          ]
+        }
+      },
+      {
+        "label": "prototype",
+        "files": [
+          "jvm-aggregates-2026-10-15-prototype-cpu.collapsed.gz",
+          "jvm-aggregates-2026-10-15-prototype-alloc.collapsed.gz"
+        ],
+        "inclusive_cpu_samples": {
+          "group_operator_samples": 1381,
+          "heap_state_read_samples": 474,
+          "heap_state_write_samples": 85,
+          "cache_read_samples": 0,
+          "rust_samples": 586
+        },
+        "timing_excluded": true,
+        "workload": {
+          "rows": 1000000,
+          "keys": 32768,
+          "warmup_pairs": 2,
+          "pairs": 3,
+          "cases": [
+            "udaf",
+            "builtin"
+          ]
+        }
+      },
+      {
+        "label": "write-through",
+        "files": [
+          "jvm-aggregates-2026-10-15-write-through-cpu.collapsed.gz",
+          "jvm-aggregates-2026-10-15-write-through-alloc.collapsed.gz"
+        ],
+        "inclusive_cpu_samples": {
+          "group_operator_samples": 1782,
+          "heap_state_read_samples": 5,
+          "heap_state_write_samples": 254,
+          "cache_read_samples": 627,
+          "rust_samples": 10
+        },
+        "timing_excluded": true,
+        "workload": {
+          "rows": 1000000,
+          "keys": 32768,
+          "warmup_pairs": 2,
+          "pairs": 3,
+          "cases": [
+            "udaf"
+          ]
+        }
+      },
+      {
+        "label": "primitive-cache",
+        "files": [
+          "jvm-aggregates-2026-10-15-primitive-cache-cpu.collapsed.gz",
+          "jvm-aggregates-2026-10-15-primitive-cache-alloc.collapsed.gz"
+        ],
+        "inclusive_cpu_samples": {
+          "group_operator_samples": 1421,
+          "heap_state_read_samples": 9,
+          "heap_state_write_samples": 487,
+          "cache_read_samples": 62,
+          "rust_samples": 10
+        },
+        "timing_excluded": true,
+        "workload": {
+          "rows": 1000000,
+          "keys": 32768,
+          "warmup_pairs": 2,
+          "pairs": 3,
+          "cases": [
+            "udaf"
+          ]
+        }
+      },
+      {
+        "label": "write-back-high-cardinality",
+        "files": [
+          "jvm-aggregates-2026-10-15-write-back-high-cardinality-cpu.collapsed.gz",
+          "jvm-aggregates-2026-10-15-write-back-high-cardinality-alloc.collapsed.gz"
+        ],
+        "timing_excluded": true,
+        "workload": {
+          "rows": 1000000,
+          "keys": 1000000,
+          "warmup_pairs": 2,
+          "pairs": 3,
+          "cases": [
+            "udaf",
+            "builtin"
+          ],
+          "resource_lifetime": "per-pair metrics cluster"
+        },
+        "sampled_java_allocation_under_udaf_bytes": 4478468144,
+        "sampled_java_key_selector_allocation_under_udaf_bytes": 816840704,
+        "inclusive_rust_cpu_samples": 1863,
+        "external_activity_records": null,
+        "external_cpu_s": null
+      },
+      {
+        "label": "write-back-hot",
+        "files": [
+          "jvm-aggregates-2026-10-15-write-back-hot-cpu.collapsed.gz",
+          "jvm-aggregates-2026-10-15-write-back-hot-alloc.collapsed.gz"
+        ],
+        "timing_excluded": true,
+        "workload": {
+          "rows": 1000000,
+          "keys": 32768,
+          "warmup_pairs": 2,
+          "pairs": 3,
+          "cases": [
+            "udaf",
+            "builtin"
+          ],
+          "resource_lifetime": "per-job metrics cluster"
+        },
+        "sampled_java_allocation_under_udaf_bytes": 3633315840,
+        "sampled_java_key_selector_allocation_under_udaf_bytes": 849346560,
+        "inclusive_rust_cpu_samples": 616,
+        "external_activity_records": 8,
+        "external_cpu_s": 3.28
+      },
+      {
+        "label": "key-reuse-hot",
+        "files": [
+          "jvm-aggregates-2026-10-15-key-reuse-hot-cpu.collapsed.gz",
+          "jvm-aggregates-2026-10-15-key-reuse-hot-alloc.collapsed.gz"
+        ],
+        "timing_excluded": true,
+        "workload": {
+          "rows": 1000000,
+          "keys": 32768,
+          "warmup_pairs": 2,
+          "pairs": 3,
+          "cases": [
+            "udaf",
+            "builtin"
+          ],
+          "resource_lifetime": "per-job metrics cluster"
+        },
+        "sampled_java_allocation_under_udaf_bytes": 2740977664,
+        "sampled_java_key_selector_allocation_under_udaf_bytes": 25165824,
+        "inclusive_rust_cpu_samples": 584,
+        "external_activity_records": 0,
+        "external_cpu_s": 0
+      }
+    ],
+    "allocation_comparison": {
+      "baseline": "write-back-hot",
+      "candidate": "key-reuse-hot",
+      "native_input_rows_per_profile": 5000000,
+      "key_selector_sampled_bytes_before": 849346560,
+      "key_selector_sampled_bytes_after": 25165824,
+      "total_udaf_sampled_java_bytes_before": 3633315840,
+      "total_udaf_sampled_java_bytes_after": 2740977664,
+      "key_selector_reduction_fraction": 0.9703703703703703,
+      "total_reduction_fraction": 0.2455988455988456
+    }
+  },
+  "pending": [
+    "Flink 1.18 release measurements, STRING/composite/global and representative width coverage against actual previous fallback",
+    "resolve clean high-cardinality regression; do not admit default coverage based on hot-key wins",
+    "merge/reset, broader accumulator and savepoint-rescaling contracts",
+    "default admission review"
+  ],
+  "correctness": {
+    "flink_2_2_1": {
+      "focused_passed_at_capacity_65536": 31,
+      "focused_passed_at_capacity_3": 31,
+      "failed": 0,
+      "skipped": 0
+    },
+    "flink_1_18_1": {
+      "focused_passed_at_capacity_65536": 31,
+      "focused_passed_at_capacity_3": 31,
+      "failed": 0,
+      "skipped": 0
+    },
+    "scope": [
+      "original STRING-key append/CDC fixtures",
+      "single INT/BIGINT keys at parallelism 1 and 3, NULL/min/max/high bits, delete/reinsert and UPDATE_BEFORE/AFTER",
+      "nonleading BIGINT grouping field verified in optimized plan with projected aggregate arguments at parallelism 3",
+      "mixed managed ListView/UDAF/COUNT append and CDC at parallelism 3",
+      "eight memory/native-RocksDB append/retract recovery scenarios per line, with two forced restores, consumed native rows and memory release",
+      "open/evaluation/close failure cause parity",
+      "TTL, mini-batch, operator-disable, DISTINCT and FILTER fallback; processing-time mini-batch control checks known materialized results/schema rather than intermediate timing",
+      "cold prefix followed by old-key reuse/retraction with mixed ListView/UDAF/COUNT, positive bypass counters at small capacity",
+      "four additional memory/native-RocksDB cold-prefix recovery scenarios per line at each capacity, each forcing two restores and checking native work/memory release"
+    ],
+    "default_mode_before_dataview_extension": {
+      "portable_passed_per_line": 38,
+      "opt_in_harness_containers_skipped_per_line": 6,
+      "failed": 0,
+      "flink": [
+        "2.2.1",
+        "1.18.1"
+      ],
+      "note": "The default-off gate preserves original UDAF fallback routes and explanations. Opt-in success counts come from the separate focused runs above."
+    },
+    "execution_note": "31-case suites pass on both released Flink lines at both capacities. The nonleading-key case permits a recorded bypass when its working set exceeds the small capacity; normal-capacity coverage retains key reuse. Typed STRING/BIGINT benchmark fixtures also execute with positive native consumption and stock-control exclusion; their 2,000-row smoke timings are not performance claims.",
+    "rescale": {
+      "artifact": "jvm-aggregate-rescale-2026-10-16.json",
+      "scenarios": 8,
+      "flink": [
+        "2.2.1",
+        "1.18.1"
+      ],
+      "cache_entries": [
+        65536,
+        3
+      ],
+      "backends": [
+        "hashmap",
+        "native RocksDB"
+      ],
+      "parallelisms": [
+        1,
+        3,
+        2
+      ],
+      "max_parallelism": 128,
+      "source_offsets": [
+        256,
+        512,
+        768
+      ],
+      "passed": true,
+      "scope": "externalized checkpoints; savepoint compatibility and merge/reset remain unproven"
+    }
+  },
+  "monitored_release": [
+    {
+      "label": "write-back-monitored",
+      "source": "a38d5fe597a0826f93ed35c7c420d531ef4b0216 production",
+      "resource_lifetime": "per-pair metrics cluster",
+      "rows": 2000000,
+      "keys": 65536,
+      "stock_seconds": [
+        1.119764936,
+        1.095030156,
+        1.083384171,
+        1.000870337,
+        1.056520411
+      ],
+      "native_seconds": [
+        0.741170786,
+        0.744677913,
+        0.706435228,
+        0.739944677,
+        0.609316859
+      ],
+      "stock_median_s": 1.083384171,
+      "native_median_s": 0.739944677,
+      "stock_range_s": [
+        1.000870337,
+        1.119764936
+      ],
+      "native_range_s": [
+        0.609316859,
+        0.744677913
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121012502,
+          "seconds": 3.047958,
+          "gc_pause_ms": 82.33,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121015663,
+          "seconds": 1.272331,
+          "gc_pause_ms": 37.614,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121017163,
+          "seconds": 0.876761,
+          "gc_pause_ms": 36.822,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121018054,
+          "seconds": 1.263195,
+          "gc_pause_ms": 39.325,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121019410,
+          "seconds": 1.119765,
+          "gc_pause_ms": 42.305,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121020570,
+          "seconds": 0.741171,
+          "gc_pause_ms": 37.518,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121021447,
+          "seconds": 0.744678,
+          "gc_pause_ms": 37.199,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121022203,
+          "seconds": 1.09503,
+          "gc_pause_ms": 46.318999999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121023390,
+          "seconds": 1.083384,
+          "gc_pause_ms": 44.31399999999999,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121024519,
+          "seconds": 0.706435,
+          "gc_pause_ms": 35.833999999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121025352,
+          "seconds": 0.739945,
+          "gc_pause_ms": 76.991,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121026100,
+          "seconds": 1.00087,
+          "gc_pause_ms": 46.647999999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121027181,
+          "seconds": 1.05652,
+          "gc_pause_ms": 42.635999999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121028267,
+          "seconds": 0.609317,
+          "gc_pause_ms": 34.251,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 690.1340000000002,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "uncached-monitored",
+      "source": "a38d5fe597a0826f93ed35c7c420d531ef4b0216 production",
+      "resource_lifetime": "per-pair metrics cluster",
+      "rows": 2000000,
+      "keys": 65536,
+      "stock_seconds": [
+        1.137014454,
+        1.107444863,
+        1.105149862,
+        0.984704001,
+        0.99251735
+      ],
+      "native_seconds": [
+        1.181109322,
+        1.22104253,
+        1.208442993,
+        1.157539288,
+        1.118723583
+      ],
+      "stock_median_s": 1.105149862,
+      "native_median_s": 1.181109322,
+      "stock_range_s": [
+        0.984704001,
+        1.137014454
+      ],
+      "native_range_s": [
+        1.118723583,
+        1.22104253
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121033814,
+          "seconds": 3.04974,
+          "gc_pause_ms": 85.454,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121036974,
+          "seconds": 1.719354,
+          "gc_pause_ms": 41.554,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121038916,
+          "seconds": 1.30219,
+          "gc_pause_ms": 46.133,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121040232,
+          "seconds": 1.401192,
+          "gc_pause_ms": 47.391,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121041729,
+          "seconds": 1.137014,
+          "gc_pause_ms": 47.59,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121042904,
+          "seconds": 1.181109,
+          "gc_pause_ms": 43.455000000000005,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121044219,
+          "seconds": 1.221043,
+          "gc_pause_ms": 48.305,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121045449,
+          "seconds": 1.107445,
+          "gc_pause_ms": 48.434999999999995,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121046649,
+          "seconds": 1.10515,
+          "gc_pause_ms": 48.221,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121047801,
+          "seconds": 1.208443,
+          "gc_pause_ms": 89.289,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121049123,
+          "seconds": 1.157539,
+          "gc_pause_ms": 33.408,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121050289,
+          "seconds": 0.984704,
+          "gc_pause_ms": 39.328,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121051360,
+          "seconds": 0.992517,
+          "gc_pause_ms": 51.181000000000004,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121052383,
+          "seconds": 1.118724,
+          "gc_pause_ms": 39.67,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 750.1459999999995,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "write-back-high-cardinality",
+      "source": "a38d5fe597a0826f93ed35c7c420d531ef4b0216 production",
+      "resource_lifetime": "per-pair metrics cluster",
+      "rows": 2000000,
+      "keys": 2000000,
+      "stock_seconds": [
+        2.577336044,
+        1.882377635,
+        2.888128618,
+        1.949294752,
+        1.965470014
+      ],
+      "native_seconds": [
+        2.312599693,
+        2.389039048,
+        2.271751177,
+        2.309339756,
+        2.24996878
+      ],
+      "stock_median_s": 1.965470014,
+      "native_median_s": 2.309339756,
+      "stock_range_s": [
+        1.882377635,
+        2.888128618
+      ],
+      "native_range_s": [
+        2.24996878,
+        2.389039048
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121058829,
+          "seconds": 4.178888,
+          "gc_pause_ms": 266.054,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121063174,
+          "seconds": 2.900994,
+          "gc_pause_ms": 277.21399999999994,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121066288,
+          "seconds": 2.908514,
+          "gc_pause_ms": 390.0310000000001,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121069212,
+          "seconds": 2.133108,
+          "gc_pause_ms": 331.92100000000005,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121071516,
+          "seconds": 2.577336,
+          "gc_pause_ms": 967.432,
+          "full_gc_pauses": 1
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121074139,
+          "seconds": 2.3126,
+          "gc_pause_ms": 320.767,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121076583,
+          "seconds": 2.389039,
+          "gc_pause_ms": 423.56300000000005,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121078985,
+          "seconds": 1.882378,
+          "gc_pause_ms": 359.317,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121080946,
+          "seconds": 2.888129,
+          "gc_pause_ms": 1348.3919999999998,
+          "full_gc_pauses": 1
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121083880,
+          "seconds": 2.271751,
+          "gc_pause_ms": 323.30199999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121086276,
+          "seconds": 2.30934,
+          "gc_pause_ms": 491.131,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121088597,
+          "seconds": 1.949295,
+          "gc_pause_ms": 376.481,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121090633,
+          "seconds": 1.96547,
+          "gc_pause_ms": 540.134,
+          "full_gc_pauses": 1
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121092634,
+          "seconds": 2.249969,
+          "gc_pause_ms": 335.95,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 6840.544000000001,
+      "full_gc_pauses_all_trials": 3
+    },
+    {
+      "label": "write-back-low-cardinality",
+      "source": "a38d5fe597a0826f93ed35c7c420d531ef4b0216 production",
+      "resource_lifetime": "per-pair metrics cluster",
+      "rows": 2000000,
+      "keys": 16,
+      "stock_seconds": [
+        0.623299041,
+        0.556824072,
+        0.549592021,
+        0.549368512,
+        0.540084479
+      ],
+      "native_seconds": [
+        0.545266341,
+        0.54952408,
+        0.564811733,
+        0.502256982,
+        0.437713807
+      ],
+      "stock_median_s": 0.549592021,
+      "native_median_s": 0.545266341,
+      "stock_range_s": [
+        0.540084479,
+        0.623299041
+      ],
+      "native_range_s": [
+        0.437713807,
+        0.564811733
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121100202,
+          "seconds": 2.352905,
+          "gc_pause_ms": 62.185,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121102673,
+          "seconds": 1.041058,
+          "gc_pause_ms": 18.288,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121103952,
+          "seconds": 0.686207,
+          "gc_pause_ms": 19.758,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121104652,
+          "seconds": 0.910929,
+          "gc_pause_ms": 21.787,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121105689,
+          "seconds": 0.623299,
+          "gc_pause_ms": 16.769000000000002,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121106359,
+          "seconds": 0.545266,
+          "gc_pause_ms": 15.871,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121107022,
+          "seconds": 0.549524,
+          "gc_pause_ms": 16.916,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121107583,
+          "seconds": 0.556824,
+          "gc_pause_ms": 16.682,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121108222,
+          "seconds": 0.549592,
+          "gc_pause_ms": 17.291999999999998,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121108821,
+          "seconds": 0.564812,
+          "gc_pause_ms": 15.461000000000002,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121109492,
+          "seconds": 0.502257,
+          "gc_pause_ms": 15.663,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121110004,
+          "seconds": 0.549369,
+          "gc_pause_ms": 18.176,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121110623,
+          "seconds": 0.540084,
+          "gc_pause_ms": 16.413,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121111194,
+          "seconds": 0.437714,
+          "gc_pause_ms": 16.784999999999997,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 329.46200000000005,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "per-job-high-cardinality",
+      "source": "a38d5fe597a0826f93ed35c7c420d531ef4b0216 production",
+      "resource_lifetime": "per-job metrics cluster",
+      "rows": 2000000,
+      "keys": 2000000,
+      "stock_seconds": [
+        1.779139474,
+        1.832022472,
+        1.767251818,
+        1.758477723,
+        1.744498481
+      ],
+      "native_seconds": [
+        2.236721149,
+        2.226840037,
+        2.120050565,
+        2.165407937,
+        2.092907132
+      ],
+      "stock_median_s": 1.767251818,
+      "native_median_s": 2.165407937,
+      "stock_range_s": [
+        1.744498481,
+        1.832022472
+      ],
+      "native_range_s": [
+        2.092907132,
+        2.236721149
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121637055,
+          "seconds": 3.607907,
+          "gc_pause_ms": 271.04299999999995,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121640952,
+          "seconds": 2.953687,
+          "gc_pause_ms": 288.536,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121644056,
+          "seconds": 2.54135,
+          "gc_pause_ms": 391.9770000000001,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121646672,
+          "seconds": 1.889471,
+          "gc_pause_ms": 388.95699999999994,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121648656,
+          "seconds": 1.779139,
+          "gc_pause_ms": 341.563,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121650548,
+          "seconds": 2.236721,
+          "gc_pause_ms": 373.155,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121652897,
+          "seconds": 2.22684,
+          "gc_pause_ms": 390.26300000000003,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121655202,
+          "seconds": 1.832022,
+          "gc_pause_ms": 351.231,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121657143,
+          "seconds": 1.767252,
+          "gc_pause_ms": 378.325,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121659008,
+          "seconds": 2.120051,
+          "gc_pause_ms": 350.981,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121661279,
+          "seconds": 2.165408,
+          "gc_pause_ms": 342.47400000000005,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121663585,
+          "seconds": 1.758478,
+          "gc_pause_ms": 349.77700000000004,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121665442,
+          "seconds": 1.744498,
+          "gc_pause_ms": 376.04,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121667273,
+          "seconds": 2.092907,
+          "gc_pause_ms": 369.62700000000007,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 5187.502000000001,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "per-job-65k",
+      "source": "a38d5fe597a0826f93ed35c7c420d531ef4b0216 production",
+      "resource_lifetime": "per-job metrics cluster",
+      "rows": 2000000,
+      "keys": 65536,
+      "stock_seconds": [
+        1.099046426,
+        1.045658856,
+        1.051570709,
+        0.990626153,
+        0.935389976
+      ],
+      "native_seconds": [
+        0.738269918,
+        0.702941624,
+        0.834995089,
+        0.604012325,
+        0.517214704
+      ],
+      "stock_median_s": 1.045658856,
+      "native_median_s": 0.702941624,
+      "stock_range_s": [
+        0.935389976,
+        1.099046426
+      ],
+      "native_range_s": [
+        0.517214704,
+        0.834995089
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121674961,
+          "seconds": 3.015838,
+          "gc_pause_ms": 87.37100000000001,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121678245,
+          "seconds": 1.25721,
+          "gc_pause_ms": 37.686,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121679705,
+          "seconds": 0.850525,
+          "gc_pause_ms": 34.664,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121680678,
+          "seconds": 1.113221,
+          "gc_pause_ms": 48.312999999999995,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121681899,
+          "seconds": 1.099046,
+          "gc_pause_ms": 35.394999999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121683106,
+          "seconds": 0.73827,
+          "gc_pause_ms": 31.805999999999997,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121683988,
+          "seconds": 0.702942,
+          "gc_pause_ms": 36.744,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121684794,
+          "seconds": 1.045659,
+          "gc_pause_ms": 41.43,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121685939,
+          "seconds": 1.051571,
+          "gc_pause_ms": 44.056000000000004,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121687110,
+          "seconds": 0.834995,
+          "gc_pause_ms": 81.12100000000001,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121688044,
+          "seconds": 0.604012,
+          "gc_pause_ms": 38.661,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121688712,
+          "seconds": 0.990626,
+          "gc_pause_ms": 31.198,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121689762,
+          "seconds": 0.93539,
+          "gc_pause_ms": 26.866,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121690784,
+          "seconds": 0.517215,
+          "gc_pause_ms": 22.59,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 644.5539999999997,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "per-job-16",
+      "source": "a38d5fe597a0826f93ed35c7c420d531ef4b0216 production",
+      "resource_lifetime": "per-job metrics cluster",
+      "rows": 2000000,
+      "keys": 16,
+      "stock_seconds": [
+        0.613073634,
+        0.537073006,
+        0.528268166,
+        0.516184563,
+        0.521474367
+      ],
+      "native_seconds": [
+        0.538932776,
+        0.550246935,
+        0.518669748,
+        0.498917093,
+        0.434967499
+      ],
+      "stock_median_s": 0.528268166,
+      "native_median_s": 0.518669748,
+      "stock_range_s": [
+        0.516184563,
+        0.613073634
+      ],
+      "native_range_s": [
+        0.434967499,
+        0.550246935
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121696220,
+          "seconds": 2.342688,
+          "gc_pause_ms": 58.205,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121698843,
+          "seconds": 1.033439,
+          "gc_pause_ms": 22.018,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121700097,
+          "seconds": 0.747138,
+          "gc_pause_ms": 15.998999999999999,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121700931,
+          "seconds": 0.871933,
+          "gc_pause_ms": 18.98,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121701891,
+          "seconds": 0.613074,
+          "gc_pause_ms": 17.278,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121702617,
+          "seconds": 0.538933,
+          "gc_pause_ms": 16.712,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121703295,
+          "seconds": 0.550247,
+          "gc_pause_ms": 16.118000000000002,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121703926,
+          "seconds": 0.537073,
+          "gc_pause_ms": 17.288,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121704538,
+          "seconds": 0.528268,
+          "gc_pause_ms": 16.68,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121705165,
+          "seconds": 0.51867,
+          "gc_pause_ms": 16.273,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121705795,
+          "seconds": 0.498917,
+          "gc_pause_ms": 16.938,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121706363,
+          "seconds": 0.516185,
+          "gc_pause_ms": 17.137999999999998,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121706952,
+          "seconds": 0.521474,
+          "gc_pause_ms": 16.21,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121707561,
+          "seconds": 0.434967,
+          "gc_pause_ms": 16.568,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 324.11399999999986,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "key-reuse-65k",
+      "source": "this artifact commit",
+      "resource_lifetime": "per-job metrics cluster",
+      "rows": 2000000,
+      "keys": 65536,
+      "stock_seconds": [
+        1.088849002,
+        1.085571036,
+        1.114454658,
+        0.993310826,
+        0.936044814
+      ],
+      "native_seconds": [
+        0.688974276,
+        0.67156032,
+        0.822248901,
+        0.607720389,
+        0.548927369
+      ],
+      "stock_median_s": 1.085571036,
+      "native_median_s": 0.67156032,
+      "stock_range_s": [
+        0.936044814,
+        1.114454658
+      ],
+      "native_range_s": [
+        0.548927369,
+        0.822248901
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121873706,
+          "seconds": 3.062191,
+          "gc_pause_ms": 77.85399999999998,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121877040,
+          "seconds": 1.241642,
+          "gc_pause_ms": 30.638,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121878488,
+          "seconds": 0.839986,
+          "gc_pause_ms": 34.501999999999995,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121879443,
+          "seconds": 1.348465,
+          "gc_pause_ms": 37.759,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121880887,
+          "seconds": 1.088849,
+          "gc_pause_ms": 39.58500000000001,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121882089,
+          "seconds": 0.688974,
+          "gc_pause_ms": 30.610999999999997,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121882922,
+          "seconds": 0.67156,
+          "gc_pause_ms": 32.645,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121883689,
+          "seconds": 1.085571,
+          "gc_pause_ms": 44.936,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121884856,
+          "seconds": 1.114455,
+          "gc_pause_ms": 47.065,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121886080,
+          "seconds": 0.822249,
+          "gc_pause_ms": 81.90400000000001,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121887011,
+          "seconds": 0.60772,
+          "gc_pause_ms": 25.161,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121887692,
+          "seconds": 0.993311,
+          "gc_pause_ms": 34.635,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121888764,
+          "seconds": 0.936045,
+          "gc_pause_ms": 30.387,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121889783,
+          "seconds": 0.548927,
+          "gc_pause_ms": 23.836,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 635.8649999999999,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "key-reuse-16",
+      "source": "this artifact commit",
+      "resource_lifetime": "per-job metrics cluster",
+      "rows": 2000000,
+      "keys": 16,
+      "stock_seconds": [
+        0.57552014,
+        0.561449224,
+        0.577282051,
+        0.576776207,
+        0.544177489
+      ],
+      "native_seconds": [
+        0.517613262,
+        0.516342693,
+        0.504504672,
+        0.48822551,
+        0.400577959
+      ],
+      "stock_median_s": 0.57552014,
+      "native_median_s": 0.504504672,
+      "stock_range_s": [
+        0.544177489,
+        0.577282051
+      ],
+      "native_range_s": [
+        0.400577959,
+        0.517613262
+      ],
+      "external_activity_records": 0,
+      "external_cpu_s": 0,
+      "performance_claim_eligible": true,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121895316,
+          "seconds": 2.375436,
+          "gc_pause_ms": 55.842999999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121897984,
+          "seconds": 1.115336,
+          "gc_pause_ms": 21.559,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121899287,
+          "seconds": 0.664457,
+          "gc_pause_ms": 15.883,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121900046,
+          "seconds": 0.77467,
+          "gc_pause_ms": 21.556,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121900928,
+          "seconds": 0.57552,
+          "gc_pause_ms": 19.648,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121901605,
+          "seconds": 0.517613,
+          "gc_pause_ms": 13.042,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121902258,
+          "seconds": 0.516343,
+          "gc_pause_ms": 12.59,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121902856,
+          "seconds": 0.561449,
+          "gc_pause_ms": 16.9,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121903501,
+          "seconds": 0.577282,
+          "gc_pause_ms": 16.569,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121904195,
+          "seconds": 0.504505,
+          "gc_pause_ms": 12.905999999999999,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121904811,
+          "seconds": 0.488226,
+          "gc_pause_ms": 13.633,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121905369,
+          "seconds": 0.576776,
+          "gc_pause_ms": 16.529,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121906032,
+          "seconds": 0.544177,
+          "gc_pause_ms": 16.039,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121906661,
+          "seconds": 0.400578,
+          "gc_pause_ms": 12.685,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 304.25400000000013,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "key-reuse-high-cardinality",
+      "source": "this artifact commit",
+      "resource_lifetime": "per-job metrics cluster",
+      "rows": 2000000,
+      "keys": 2000000,
+      "stock_seconds": [
+        1.800100508,
+        2.130879532,
+        2.055300861,
+        2.00366081,
+        1.846688524
+      ],
+      "native_seconds": [
+        2.538305456,
+        2.559216546,
+        2.331465956,
+        2.419393173,
+        2.336217396
+      ],
+      "stock_median_s": 2.00366081,
+      "native_median_s": 2.419393173,
+      "stock_range_s": [
+        1.800100508,
+        2.130879532
+      ],
+      "native_range_s": [
+        2.331465956,
+        2.559216546
+      ],
+      "external_activity_records": 54,
+      "external_cpu_s": 30.54999999999999,
+      "performance_claim_eligible": false,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121912030,
+          "seconds": 3.754121,
+          "gc_pause_ms": 263.95799999999997,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792121916044,
+          "seconds": 3.081712,
+          "gc_pause_ms": 350.31200000000007,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121919258,
+          "seconds": 2.725015,
+          "gc_pause_ms": 285.034,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792121922081,
+          "seconds": 2.247153,
+          "gc_pause_ms": 430.266,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121924423,
+          "seconds": 1.800101,
+          "gc_pause_ms": 327.199,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792121926435,
+          "seconds": 2.538305,
+          "gc_pause_ms": 354.956,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121929168,
+          "seconds": 2.559217,
+          "gc_pause_ms": 432.34900000000005,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792121931804,
+          "seconds": 2.13088,
+          "gc_pause_ms": 397.254,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121934025,
+          "seconds": 2.055301,
+          "gc_pause_ms": 388.37499999999994,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792121936213,
+          "seconds": 2.331466,
+          "gc_pause_ms": 368.41499999999996,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121938648,
+          "seconds": 2.419393,
+          "gc_pause_ms": 406.446,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792121941147,
+          "seconds": 2.003661,
+          "gc_pause_ms": 405.84899999999993,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121943234,
+          "seconds": 1.846689,
+          "gc_pause_ms": 387.625,
+          "full_gc_pauses": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792121945191,
+          "seconds": 2.336217,
+          "gc_pause_ms": 365.33099999999996,
+          "full_gc_pauses": 0
+        }
+      ],
+      "gc_pause_ms_all_trials": 5346.261999999999,
+      "full_gc_pauses_all_trials": 0
+    },
+    {
+      "label": "b4-cold-cache",
+      "flink": "2.2.1",
+      "source": "b4c119e99aaedfaa84e2471115956a3b4c9d5639",
+      "date": "2026-10-16",
+      "rows": 2000000,
+      "keys": 2000000,
+      "resource_lifetime": "per-job metrics cluster",
+      "stock_seconds": [
+        1.993058963,
+        1.895568563,
+        1.74080368,
+        1.796307095,
+        1.911892542
+      ],
+      "native_seconds": [
+        2.328212588,
+        2.264326062,
+        2.175489173,
+        2.091606641,
+        2.170994998
+      ],
+      "stock_median_s": 1.895568563,
+      "native_median_s": 2.175489173,
+      "stock_range_s": [
+        1.74080368,
+        1.993058963
+      ],
+      "native_range_s": [
+        2.091606641,
+        2.328212588
+      ],
+      "external_activity_records": 34,
+      "external_cpu_s": 16.06,
+      "performance_claim_eligible": false,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792123116998,
+          "seconds": 4.01567,
+          "conservative_external_activity_records": 9
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792123121318,
+          "seconds": 3.002908,
+          "conservative_external_activity_records": 8
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792123124489,
+          "seconds": 2.513762,
+          "conservative_external_activity_records": 7
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792123127092,
+          "seconds": 2.069557,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792123129258,
+          "seconds": 1.993059,
+          "conservative_external_activity_records": 6
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792123131405,
+          "seconds": 2.328213,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792123133850,
+          "seconds": 2.264326,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792123136210,
+          "seconds": 1.895569,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792123138188,
+          "seconds": 1.740804,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792123140032,
+          "seconds": 2.175489,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792123142308,
+          "seconds": 2.091607,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792123144461,
+          "seconds": 1.796307,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792123146341,
+          "seconds": 1.911893,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792123148348,
+          "seconds": 2.170995,
+          "conservative_external_activity_records": 0
+        }
+      ],
+      "cache_metrics": [],
+      "limitation": "Other repository build/test activity overlapped this run. Retain as diagnostic only; no speed admission."
+    },
+    {
+      "label": "adaptive-cold-22",
+      "flink": "2.2.1",
+      "source": "cold-fill bypass candidate in this artifact commit",
+      "date": "2026-10-16",
+      "rows": 2000000,
+      "keys": 2000000,
+      "resource_lifetime": "per-job metrics cluster",
+      "stock_seconds": [
+        1.769052881,
+        1.82977789,
+        1.657628775,
+        1.696422048,
+        1.782523665
+      ],
+      "native_seconds": [
+        1.770289482,
+        1.808359927,
+        1.771691681,
+        1.658886848,
+        1.64489481
+      ],
+      "stock_median_s": 1.769052881,
+      "native_median_s": 1.770289482,
+      "stock_range_s": [
+        1.657628775,
+        1.82977789
+      ],
+      "native_range_s": [
+        1.64489481,
+        1.808359927
+      ],
+      "external_activity_records": 60,
+      "external_cpu_s": 42.06,
+      "performance_claim_eligible": false,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792123626542,
+          "seconds": 4.284198,
+          "conservative_external_activity_records": 10
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792123631215,
+          "seconds": 2.736176,
+          "conservative_external_activity_records": 7
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792123634085,
+          "seconds": 1.9396,
+          "conservative_external_activity_records": 6
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792123636118,
+          "seconds": 1.82536,
+          "conservative_external_activity_records": 6
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792123638008,
+          "seconds": 1.769053,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792123639884,
+          "seconds": 1.770289,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792123641859,
+          "seconds": 1.80836,
+          "conservative_external_activity_records": 6
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792123643758,
+          "seconds": 1.829778,
+          "conservative_external_activity_records": 6
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792123645658,
+          "seconds": 1.657629,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792123647517,
+          "seconds": 1.771692,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792123649392,
+          "seconds": 1.658887,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792123651169,
+          "seconds": 1.696422,
+          "conservative_external_activity_records": 5
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792123652935,
+          "seconds": 1.782524,
+          "conservative_external_activity_records": 6
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792123654813,
+          "seconds": 1.644895,
+          "conservative_external_activity_records": 5
+        }
+      ],
+      "cache_metrics": [
+        {
+          "hits": 0,
+          "bypasses": 1
+        },
+        {
+          "hits": 0,
+          "bypasses": 1
+        },
+        {
+          "hits": 0,
+          "bypasses": 1
+        },
+        {
+          "hits": 0,
+          "bypasses": 1
+        },
+        {
+          "hits": 0,
+          "bypasses": 1
+        },
+        {
+          "hits": 0,
+          "bypasses": 1
+        },
+        {
+          "hits": 0,
+          "bypasses": 1
+        }
+      ],
+      "limitation": "Other repository build/test activity overlapped this run. Retain as diagnostic only; no speed admission."
+    },
+    {
+      "label": "adaptive-v2-hot-118",
+      "flink": "1.18.1",
+      "source": "cold-fill bypass candidate in this artifact commit",
+      "date": "2026-10-16",
+      "rows": 2000000,
+      "keys": 65536,
+      "resource_lifetime": "per-job metrics cluster",
+      "stock_seconds": [
+        1.055748518,
+        0.990927617,
+        1.022128572,
+        1.103962466,
+        1.214269368
+      ],
+      "native_seconds": [
+        0.698811325,
+        0.69479411,
+        0.57932014,
+        0.497447408,
+        0.498971404
+      ],
+      "stock_median_s": 1.055748518,
+      "native_median_s": 0.57932014,
+      "stock_range_s": [
+        0.990927617,
+        1.214269368
+      ],
+      "native_range_s": [
+        0.497447408,
+        0.698811325
+      ],
+      "external_activity_records": 5,
+      "external_cpu_s": 8.15,
+      "performance_claim_eligible": false,
+      "admitted": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792123822004,
+          "seconds": 2.937519,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "start_ms": 1792123825203,
+          "seconds": 1.194554,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792123826566,
+          "seconds": 0.842339,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "start_ms": 1792123827525,
+          "seconds": 1.166958,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792123828815,
+          "seconds": 1.055749,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "start_ms": 1792123830005,
+          "seconds": 0.698811,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792123830853,
+          "seconds": 0.694794,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "start_ms": 1792123831663,
+          "seconds": 0.990928,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792123832755,
+          "seconds": 1.022129,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "start_ms": 1792123833896,
+          "seconds": 0.57932,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792123834599,
+          "seconds": 0.497447,
+          "conservative_external_activity_records": 0
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "start_ms": 1792123835151,
+          "seconds": 1.103962,
+          "conservative_external_activity_records": 1
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792123836337,
+          "seconds": 1.214269,
+          "conservative_external_activity_records": 4
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "start_ms": 1792123837661,
+          "seconds": 0.498971,
+          "conservative_external_activity_records": 3
+        }
+      ],
+      "cache_metrics": [
+        {
+          "hits": 1934464,
+          "bypasses": 0
+        },
+        {
+          "hits": 1934464,
+          "bypasses": 0
+        },
+        {
+          "hits": 1934464,
+          "bypasses": 0
+        },
+        {
+          "hits": 1934464,
+          "bypasses": 0
+        },
+        {
+          "hits": 1934464,
+          "bypasses": 0
+        },
+        {
+          "hits": 1934464,
+          "bypasses": 0
+        },
+        {
+          "hits": 1934464,
+          "bypasses": 0
+        }
+      ],
+      "limitation": "Other repository build/test activity overlapped this run. Retain as diagnostic only; no speed admission."
+    }
+  ],
+  "isolated_diagnostics": {
+    "workflow": ".github/workflows/jvm-aggregates.yml",
+    "runner": "bin/bench-jvm-aggregates.py",
+    "state": "both hosted jobs building release modules; no timing results yet",
+    "flink": [
+      "2.2.1",
+      "1.18.1"
+    ],
+    "keys": [
+      "INT",
+      "BIGINT",
+      "STRING"
+    ],
+    "cardinalities": [
+      16,
+      65536,
+      2000000
+    ],
+    "build_correctness_measurement": "sequential on one hosted runner per Flink line",
+    "profiles": "separate INT/STRING medium/distinct runs with mixed Java/Rust CPU and sampled Java allocations; timings excluded",
+    "live_run": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/38850873034",
+    "source_commit": "45d331deb39394f0ffab980535f4f02315a5708f"
+  }
+}

@@ -26,6 +26,56 @@ object-reuse-enabled consumers and is not a claim about the current implementati
 Current end-to-end measurements and the isolated entry/exit steps are recorded in the
 [row-major transpose ledger](row-major-transpose.md#end-to-end-ownership-copy-measurements).
 
+## Experimental borrowed STRING exit
+
+`streamfusion.experimental.borrowedStringExit=true` removes an intermediate UTF-8 byte-array
+copy for top-level CHAR/VARCHAR fields at the exit transpose. It defaults to false. A mutable
+Flink binary-string view points at the current Arrow value, following Comet's borrowed UTF-8
+view pattern. The existing downstream copy or synchronous serialization still establishes
+ownership before the batch closes. Object-reuse-enabled outputs still receive an owned row;
+this change does not remove that mandatory copy. Generic Arrow input readers retain their
+existing string ownership, and explicit UTF-16 cache columns preserve Java string values.
+Unsupported vectors or buffers exceeding the Java NIO size limit retain the copying reader.
+The same reader supplies the JVM aggregate's synchronous key projection, whose released
+selector returns an owned key; aggregate callback inputs retain the ordinary reader.
+
+[Matched Java/Rust profiles and complete-job trials](../benchmarks/results/jvm-aggregate-borrowed-string-exit-2026-10-16.json)
+retain both enabled and disabled recordings on identical source, queries and resources.
+Over 5M native UDAF rows, inclusive aggregate-ingest sampled allocations decrease from
+4.150 GB to 3.236 GB (22%). CPU samples in that method are nearly unchanged (1,283 versus
+1,273); allocation savings do not establish a throughput gain. The profiles also retain
+symbolized Rust builtin-SUM control stacks. Allocation samples are estimates, not copied
+bytes, peak memory or native heap totals, and all profiled timings are excluded.
+
+Separate unprofiled Flink 2.2.1 release jobs use 2M STRING-key rows, 2 GiB heap, parallelism one,
+production IPC, both 1,024-row transposes, symmetric preflight, two warmups and five pairs:
+
+| Distinct keys | Stock median (range), s | Experimental native median (range), s |
+| --- | ---: | ---: |
+| 16 | .801 (.732–.812) | .647 (.565–.693) |
+| 65,536 | 1.310 (1.154–1.489) | 1.187 (1.118–1.329) |
+| 2M | 2.008 (1.869–2.068) | 2.160 (2.041–2.203) |
+
+The medium and distinct-key ranges overlap; distinct keys still regress by 7.6%. Earlier
+disabled-flag jobs use separate JVMs and exhibit control drift, so these comparisons do not
+isolate the exit change's contribution. Candidate performance on Flink 1.18 remains pending.
+This remains a default-off experiment, not admitted acceleration.
+
+The subsequent [isolated two-line matrix](../benchmarks/results/jvm-aggregates-string-exit-isolated-2026-10-16.json)
+completed with this exit flag enabled, before borrowed key projection. Low/medium STRING
+medians improve versus stock on both lines, but distinct keys still regress: 3.607 s native
+versus 3.450 s stock on 2.2, and 2.774 versus 2.717 s on 1.18. Wide table-function output has
+overlapping stock/native ranges on both lines. The full artifact retains unfavorable typed-key
+results and mixed Java/Rust profiles; success does not establish admission. Control drift
+between runs limits attributing changes to this technique alone.
+
+Validation includes 73 aggregate, checkpoint/savepoint rescale, transpose and ownership cases
+on each Flink line at the normal cache capacity. At capacity three, adding JSON/JVM and nested
+JSON boundaries passes 108 cases on 2.2 and 106 with two compatibility skips on 1.18. Four
+exit ownership cases cover object reuse and UTF-16 caches on/off, NULL/empty/Unicode/NUL strings,
+unpaired surrogates with caches, all RowKinds, buffer growth and retained rows after batch
+closure. Both released-line reactor test compilations pass.
+
 
 ## Generated projection for primitive and binary outputs
 

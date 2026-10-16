@@ -29,34 +29,43 @@ import org.apache.flink.util.Preconditions;
 @Internal
 public final class ArrowReader {
 
-    /**
-     * An array of vectors which are responsible for the deserialization of each column of the rows.
-     */
-    private final ColumnVector[] columnVectors;
+  /**
+   * An array of vectors which are responsible for the deserialization of each column of the rows.
+   */
+  private final ColumnVector[] columnVectors;
 
-    /** Reusable row used to hold the deserialized result. */
-    private final ColumnarRowData reuseRow;
-    private final StringCacheRowData cachedRow;
+  /** Reusable row used to hold the deserialized result. */
+  private final ColumnarRowData reuseRow;
 
-    public ArrowReader(ColumnVector[] columnVectors) {
-        this(columnVectors, null);
-    }
+  private final StringCacheRowData cachedRow;
 
-    ArrowReader(ColumnVector[] columnVectors, org.apache.arrow.vector.complex.ListVector[] caches) {
-        this.cachedRow = caches == null ? null : new StringCacheRowData(caches);
-        this.columnVectors = Preconditions.checkNotNull(columnVectors);
-        this.reuseRow = new ColumnarRowData();
-        this.reuseRow.setVectorizedColumnBatch(new VectorizedColumnBatch(columnVectors));
-    }
+  public ArrowReader(ColumnVector[] columnVectors) {
+    this(columnVectors, null);
+  }
 
-    /** Gets the column vectors. */
-    public ColumnVector[] getColumnVectors() {
-        return columnVectors;
-    }
+  ArrowReader(ColumnVector[] columnVectors, org.apache.arrow.vector.complex.ListVector[] caches) {
+    this(columnVectors, caches, null);
+  }
 
-    /** Read the specified row from underlying Arrow format data. */
-    public RowData read(int rowId) {
-        reuseRow.setRowId(rowId);
-        return cachedRow == null ? reuseRow : cachedRow.replace(reuseRow, rowId);
-    }
+  ArrowReader(
+      ColumnVector[] columnVectors,
+      org.apache.arrow.vector.complex.ListVector[] caches,
+      BorrowedStringValues[] borrowed) {
+    this.cachedRow =
+        caches == null && borrowed == null ? null : new StringCacheRowData(caches, borrowed);
+    this.columnVectors = Preconditions.checkNotNull(columnVectors);
+    this.reuseRow = new ColumnarRowData();
+    this.reuseRow.setVectorizedColumnBatch(new VectorizedColumnBatch(columnVectors));
+  }
+
+  /** Gets the column vectors. */
+  public ColumnVector[] getColumnVectors() {
+    return columnVectors;
+  }
+
+  /** Read the specified row from underlying Arrow format data. */
+  public RowData read(int rowId) {
+    reuseRow.setRowId(rowId);
+    return cachedRow == null ? reuseRow : cachedRow.replace(reuseRow, rowId);
+  }
 }

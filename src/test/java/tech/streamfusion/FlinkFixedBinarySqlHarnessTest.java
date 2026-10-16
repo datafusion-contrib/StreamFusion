@@ -13,10 +13,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 class FlinkFixedBinarySqlHarnessTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  void nestedFixedBinaryResultsRemainOutsideTheGeneratedBoundaryWhitelist(boolean legacy) throws Exception {
-    NativeParity.assertFallbackReasonContains(() -> strings(legacy),
-        "SELECT ARRAY[TRY_CAST(s AS BINARY(4))], JSON_OBJECT('id' VALUE id) FROM src",
-        "row-fused UDF output type");
+  void nestedFixedBinaryResultsRequireTheExperimentalBoundary(boolean legacy) throws Exception {
+    String sql = "SELECT ARRAY[TRY_CAST(s AS BINARY(4))], JSON_OBJECT('id' VALUE id) FROM src";
+    if (Boolean.getBoolean("streamfusion.experimental.nestedScalarUdfs"))
+      BuiltinFunctionParity.assertParity(() -> strings(legacy), sql);
+    else
+      NativeParity.assertFallbackReasonContains(() -> strings(legacy), sql,
+          "row-fused UDF output type");
   }
 
   @Test

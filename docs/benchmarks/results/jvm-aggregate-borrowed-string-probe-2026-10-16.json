@@ -1,0 +1,669 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_commit": "dd53a0316130e280b4b0b7605e8ddb404f76d15d",
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/operator/JvmAccumulatorCache.java": "96237fd6105f6e831a3df6550544eae83a105e648cae228fd209f43654c33fae",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarJvmGroupOperator.java": "8f0495152671077db8afbe1cbb6970e9db912b469872f66b613c931af8d7dae7"
+  },
+  "variant": "Borrow current Arrow UTF-8 bytes for map lookup; retain owned BinaryRow key storage",
+  "flink": "2.2.1",
+  "jdk": "17",
+  "cpu": "Intel i7-12650H",
+  "native_library_sha256": "d55c5bfa509c460a84c76c9bc2b62a4a46575cec32ff4d905847a1e66c4bd786",
+  "configuration": {
+    "build": "release mimalloc",
+    "heap": "2 GiB",
+    "parallelism": 1,
+    "production_ipc": true,
+    "both_transposes": true,
+    "batch_rows": 1024,
+    "metrics_cluster": "per job"
+  },
+  "profile": {
+    "rows": 1000000,
+    "keys": 32768,
+    "warmup_pairs": 2,
+    "pairs": 3,
+    "includes": [
+      "JVM UDAF",
+      "native builtin SUM Rust control"
+    ],
+    "timings_excluded": true,
+    "activity": {
+      "exit_code": 0,
+      "external_activity": [],
+      "timing_excluded": true
+    },
+    "stacks": {
+      "cpu": {
+        "file": "jvm-aggregate-borrowed-string-probe-cpu-2026-10-16.collapsed.gz",
+        "sha256": "16be83e4dc73ab745c04b574bda44443365061e30e5a084c7c90428b3a815bc0",
+        "units": "CPU samples",
+        "inclusive_jvm_aggregate_total": 1352,
+        "inclusive_methods": {
+          "RowDataSerializer.copy": 135,
+          "ColumnarRowData.getString": 53,
+          "JvmAccumulatorCache": 702,
+          "HashMap.getNode": 577,
+          "BinaryRowDataKeySelector.getKey": 10
+        },
+        "leading_jvm_leaves": [
+          [
+            "java/util/HashMap.getNode_[i]",
+            362
+          ],
+          [
+            "org/apache/flink/core/memory/MemorySegment.equalTo_[i]",
+            69
+          ],
+          [
+            "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+            48
+          ],
+          [
+            "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+            40
+          ],
+          [
+            "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.keyFor_[i]",
+            30
+          ],
+          [
+            "org/apache/flink/table/data/binary/BinarySegmentUtils.inFirstSegment_[i]",
+            29
+          ],
+          [
+            "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.update_[i]",
+            25
+          ],
+          [
+            "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+            24
+          ],
+          [
+            "java/lang/Integer.rotateLeft_[i]",
+            22
+          ],
+          [
+            "org/apache/flink/table/data/binary/BinarySection.equals_[i]",
+            22
+          ],
+          [
+            "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+            20
+          ],
+          [
+            "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+            18
+          ]
+        ],
+        "leading_rust_frames": [
+          [
+            "streamfusion::group_agg::GroupAggregator<S>::update",
+            639
+          ],
+          [
+            "streamfusion::group_agg::output_of",
+            91
+          ],
+          [
+            "streamfusion::group_agg::GroupChanges::push",
+            37
+          ],
+          [
+            "streamfusion::exchange::coalesce::coalesce_batches",
+            21
+          ],
+          [
+            "streamfusion::flink_key::write_value",
+            14
+          ],
+          [
+            "streamfusion::aggregates::scalars_to_array",
+            13
+          ],
+          [
+            "streamfusion::aggregates::RunningAgg::emit",
+            9
+          ],
+          [
+            "streamfusion::group_agg::GroupAggregator<S>::create",
+            8
+          ],
+          [
+            "streamfusion::group_agg::GroupAggState::accumulate",
+            7
+          ],
+          [
+            "streamfusion::group_agg::emit_running",
+            6
+          ]
+        ]
+      },
+      "alloc": {
+        "file": "jvm-aggregate-borrowed-string-probe-alloc-2026-10-16.collapsed.gz",
+        "sha256": "9ec383a655d06b4dca55be3ad0175c85ad994605e0e9ccbd873e4a205cddb529",
+        "units": "sampled allocation bytes",
+        "inclusive_jvm_aggregate_total": 4030726144,
+        "inclusive_methods": {
+          "ColumnarRowData.getString": 856686592,
+          "RowDataSerializer.copy": 1927282688,
+          "JvmAccumulatorCache": 85983232,
+          "BinaryRowDataKeySelector.getKey": 54525952
+        },
+        "leading_jvm_leaves": [
+          [
+            "java.lang.Long_[i]",
+            608174080
+          ],
+          [
+            "org.apache.flink.table.data.GenericRowData_[i]",
+            577765376
+          ],
+          [
+            "java.lang.Object[]_[i]",
+            568328192
+          ],
+          [
+            "org.apache.flink.core.memory.MemorySegment_[i]",
+            511705088
+          ],
+          [
+            "byte[]_[i]",
+            369098752
+          ],
+          [
+            "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+            339738624
+          ],
+          [
+            "org.apache.flink.table.data.binary.BinarySection_[i]",
+            329252864
+          ],
+          [
+            "org.apache.flink.core.memory.MemorySegment[]_[i]",
+            208666624
+          ],
+          [
+            "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+            173015040
+          ],
+          [
+            "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+            173015040
+          ],
+          [
+            "java.util.concurrent.atomic.AtomicBoolean_[i]",
+            140509184
+          ],
+          [
+            "java.util.HashMap$Node_[i]",
+            5242880
+          ]
+        ],
+        "leading_rust_frames": []
+      }
+    }
+  },
+  "matched_local_allocation_comparison": {
+    "previous": "jvm-aggregate-copying-string-probe-2026-10-16.json",
+    "same_host_jdk_library_fixture_and_queries": true,
+    "native_udaf_input_rows_each": 5000000,
+    "before_inclusive_ingest_bytes": 4998561792,
+    "after_inclusive_ingest_bytes": 4030726144,
+    "ingest_reduction_pct": 19.36228235787707,
+    "before_inclusive_cache_bytes": 1060110336,
+    "after_inclusive_cache_bytes": 85983232,
+    "cache_reduction_pct": 91.88921859545005
+  },
+  "diagnostic_measurement": {
+    "rows": 2000000,
+    "keys": 65536,
+    "stock_trials_s": [
+      1.350063335,
+      1.897086574,
+      1.530119854,
+      1.432307495,
+      1.34496669
+    ],
+    "native_trials_s": [
+      1.479001817,
+      1.572635356,
+      1.694193626,
+      1.514926708,
+      1.276488436
+    ],
+    "stock_median_s": 1.432307495,
+    "native_median_s": 1.514926708,
+    "admitted": false,
+    "raw_log": "jvm-aggregate-borrowed-string-probe-contaminated-2026-10-16.log.gz",
+    "competing_observations": 46,
+    "competing_cpu_s": 34.529999999999994,
+    "external_activity": [
+      {
+        "time_ms": 1792128416690,
+        "pid": 678987,
+        "delta_cpu_s": 1.54,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 2.42,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128417199,
+        "pid": 678987,
+        "delta_cpu_s": 2.71,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 5.13,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128417707,
+        "pid": 678987,
+        "delta_cpu_s": 3.5200000000000005,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 8.65,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128417707,
+        "pid": 679217,
+        "delta_cpu_s": 0.18,
+        "name": "cargo",
+        "parent": 679189,
+        "cpu_s": 0.29,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128418215,
+        "pid": 678987,
+        "delta_cpu_s": 1.1500000000000004,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 9.8,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128418215,
+        "pid": 679235,
+        "delta_cpu_s": 0.5,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 0.75,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128418724,
+        "pid": 678987,
+        "delta_cpu_s": 0.9599999999999991,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 10.76,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128418724,
+        "pid": 679235,
+        "delta_cpu_s": 0.51,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 1.26,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128419232,
+        "pid": 678987,
+        "delta_cpu_s": 1.3800000000000008,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 12.14,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128419232,
+        "pid": 679235,
+        "delta_cpu_s": 0.52,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 1.78,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128419746,
+        "pid": 678987,
+        "delta_cpu_s": 0.6899999999999995,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 12.83,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128419746,
+        "pid": 679235,
+        "delta_cpu_s": 0.51,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 2.29,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128420256,
+        "pid": 678987,
+        "delta_cpu_s": 2.08,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 14.91,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128420256,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 2.8,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128420766,
+        "pid": 678987,
+        "delta_cpu_s": 0.6199999999999992,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 15.53,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128420766,
+        "pid": 679235,
+        "delta_cpu_s": 0.5100000000000002,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 3.31,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128421274,
+        "pid": 678987,
+        "delta_cpu_s": 1.7500000000000018,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 17.28,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128421274,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 3.82,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128421787,
+        "pid": 678987,
+        "delta_cpu_s": 0.6799999999999997,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 17.96,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128421787,
+        "pid": 679235,
+        "delta_cpu_s": 0.5100000000000002,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 4.33,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128422296,
+        "pid": 678987,
+        "delta_cpu_s": 0.5299999999999976,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 18.49,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128422296,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 4.84,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128422806,
+        "pid": 678987,
+        "delta_cpu_s": 0.5100000000000016,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 19.0,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128422806,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 5.35,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128423312,
+        "pid": 678987,
+        "delta_cpu_s": 0.5,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 19.5,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128423312,
+        "pid": 679235,
+        "delta_cpu_s": 0.5100000000000007,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 5.86,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128423818,
+        "pid": 678987,
+        "delta_cpu_s": 0.5199999999999996,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 20.02,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128423818,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 6.37,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128424327,
+        "pid": 678987,
+        "delta_cpu_s": 0.5,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 20.52,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128424327,
+        "pid": 679235,
+        "delta_cpu_s": 0.5,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 6.87,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128424833,
+        "pid": 678987,
+        "delta_cpu_s": 0.5,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 21.02,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128424833,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 7.38,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128425339,
+        "pid": 678987,
+        "delta_cpu_s": 0.5100000000000016,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 21.53,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128425339,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 7.89,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128425849,
+        "pid": 678987,
+        "delta_cpu_s": 0.509999999999998,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 22.04,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128425849,
+        "pid": 679235,
+        "delta_cpu_s": 0.5000000000000009,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 8.39,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128426355,
+        "pid": 678987,
+        "delta_cpu_s": 0.5100000000000016,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 22.55,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128426355,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 8.9,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128426860,
+        "pid": 678987,
+        "delta_cpu_s": 0.5,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 23.05,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128426860,
+        "pid": 679235,
+        "delta_cpu_s": 0.5,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 9.4,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128427366,
+        "pid": 678987,
+        "delta_cpu_s": 0.5199999999999996,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 23.57,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128427366,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 9.91,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128427874,
+        "pid": 678987,
+        "delta_cpu_s": 0.5,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 24.07,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128427874,
+        "pid": 679235,
+        "delta_cpu_s": 0.5099999999999998,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 10.42,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      },
+      {
+        "time_ms": 1792128428380,
+        "pid": 678987,
+        "delta_cpu_s": 0.5,
+        "name": "java",
+        "parent": 4740,
+        "cpu_s": 24.57,
+        "cwd": "<workspace>/.codex/iceberg-373"
+      },
+      {
+        "time_ms": 1792128428380,
+        "pid": 679235,
+        "delta_cpu_s": 0.4900000000000002,
+        "name": "rustc",
+        "parent": 679217,
+        "cpu_s": 10.91,
+        "cwd": "<workspace>/.codex/iceberg-373/native"
+      }
+    ],
+    "interpretation": "External Java/Rust work observed; diagnostic only. Runner stopped before low/distinct cases."
+  },
+  "admitted": false,
+  "limitations": [
+    "Sampled Java allocation estimates; inclusive counts overlap downstream copying. Not copied-byte or peak-memory measurements.",
+    "Profiles include stock/native UDAF and Rust builtin control, warmups, JIT and cluster setup. Profile timings excluded.",
+    "Cache map lookup remains the dominant sampled leaf under native JVM aggregation; allocation reduction alone is not throughput admission.",
+    "No uncontaminated whole-job borrowed-probe comparison yet; both released lines and prior fallback remain required."
+  ],
+  "preflight_limitation": "Historical v1 benchmark explains only native before timing. Stock/native admission must use corrected symmetric preflight. Profiled NativeJvmGroup stacks remain diagnostic; all profile timings excluded."
+}

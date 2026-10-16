@@ -1,5 +1,18 @@
 use crate::*;
 
+/// Physical ROW metadata is not a logical SQL field.
+pub fn nested_row_kind_index(fields: &arrow::datatypes::Fields) -> Option<usize> {
+    let index = fields.len().checked_sub(1)?;
+    let field = &fields[index];
+    (field.data_type() == &DataType::Int8
+        && field
+            .metadata()
+            .get("streamfusion.nested-row-kind")
+            .map(String::as_str)
+            == Some("1"))
+    .then_some(index)
+}
+
 /// The hidden column carrying a changelog row's `RowKind` as a byte across the row/Arrow boundary
 /// (must match the JVM converter's column name). See divergences/13.
 pub const ROW_KIND_COLUMN: &str = "$row_kind$";

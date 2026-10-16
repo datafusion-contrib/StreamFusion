@@ -21,7 +21,7 @@ fn sort_array(array: &ArrayRef) -> ArrayRef {
                 .as_primitive::<Float64Type>()
                 .unary::<_, Float64Type>(|v| if v == 0.0 { 0.0 } else { v }),
         ),
-        _ => array.clone(),
+        _ => streamfusion_bridge::ordering::canonical_ordering_column(array),
     }
 }
 

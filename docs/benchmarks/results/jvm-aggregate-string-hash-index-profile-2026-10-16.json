@@ -1,0 +1,182 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "source_commit": "84b9cc59830273021954d148c746a2b13713f642",
+  "variant": "Primitive STRING hash index with full equality and borrowed probes",
+  "rows": 1000000,
+  "keys": 32768,
+  "warmup_pairs": 2,
+  "measured_pairs": 3,
+  "native_udaf_input_rows": 5000000,
+  "includes": [
+    "generated JVM UDAF",
+    "native builtin SUM Rust control"
+  ],
+  "timings_excluded": true,
+  "external_cpu_s": 52.83,
+  "external_observations": 30,
+  "stacks": {
+    "cpu": {
+      "file": "jvm-aggregate-string-hash-index-cpu-2026-10-16.collapsed.gz",
+      "sha256": "a892863261db734d6214a81d1afa7a72708b3756ebfe8e59064c46561948b0d3",
+      "inclusive_ingest_total": 1521,
+      "units": "samples",
+      "inclusive_methods": {
+        "stringEntry": 617,
+        "JvmAccumulatorCache": 776,
+        "LongObjectHashMap.get": 335,
+        "BinaryRowDataKeySelector.getKey": 13
+      },
+      "leading_jvm_leaves": [
+        [
+          "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+          241
+        ],
+        [
+          "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.stringEntry_[i]",
+          100
+        ],
+        [
+          "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.indexOf_[i]",
+          91
+        ],
+        [
+          "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+          80
+        ],
+        [
+          "org/apache/flink/core/memory/MemorySegment.getLong_[i]",
+          71
+        ],
+        [
+          "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.keyFor_[i]",
+          46
+        ],
+        [
+          "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+          41
+        ],
+        [
+          "java/lang/Integer.rotateLeft_[i]",
+          27
+        ],
+        [
+          "org/apache/flink/core/memory/MemorySegment.get_[i]",
+          23
+        ],
+        [
+          "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+          21
+        ],
+        [
+          "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.update_[i]",
+          21
+        ],
+        [
+          "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+          19
+        ]
+      ],
+      "leading_rust_frames": [
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::update",
+          633
+        ],
+        [
+          "streamfusion::group_agg::output_of",
+          88
+        ],
+        [
+          "streamfusion::group_agg::GroupChanges::push",
+          33
+        ],
+        [
+          "streamfusion::exchange::coalesce::coalesce_batches",
+          21
+        ],
+        [
+          "streamfusion::flink_key::write_value",
+          19
+        ],
+        [
+          "streamfusion::aggregates::scalars_to_array",
+          17
+        ],
+        [
+          "streamfusion::aggregates::ValueColumn::at",
+          9
+        ],
+        [
+          "streamfusion::flink_key::BinaryRowWriter::write_variable",
+          9
+        ]
+      ]
+    },
+    "alloc": {
+      "file": "jvm-aggregate-string-hash-index-alloc-2026-10-16.collapsed.gz",
+      "sha256": "96554338bbb246b950a97a49c53630141397b031f4360a3dda11ea221ef78314",
+      "inclusive_ingest_total": 4060086272,
+      "units": "sampled allocation bytes",
+      "inclusive_methods": {
+        "JvmAccumulatorCache": 92274688,
+        "BinaryRowDataKeySelector.getKey": 62914560
+      },
+      "leading_jvm_leaves": [
+        [
+          "java.lang.Object[]_[i]",
+          611319808
+        ],
+        [
+          "java.lang.Long_[i]",
+          579862528
+        ],
+        [
+          "org.apache.flink.table.data.GenericRowData_[i]",
+          570425344
+        ],
+        [
+          "org.apache.flink.core.memory.MemorySegment_[i]",
+          533725184
+        ],
+        [
+          "byte[]_[i]",
+          363855872
+        ],
+        [
+          "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+          341835776
+        ],
+        [
+          "org.apache.flink.table.data.binary.BinarySection_[i]",
+          331350016
+        ],
+        [
+          "org.apache.flink.core.memory.MemorySegment[]_[i]",
+          241172480
+        ],
+        [
+          "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+          180355072
+        ],
+        [
+          "java.util.concurrent.atomic.AtomicBoolean_[i]",
+          147849216
+        ],
+        [
+          "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+          127926272
+        ],
+        [
+          "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+          8388608
+        ]
+      ],
+      "leading_rust_frames": []
+    }
+  },
+  "limitations": [
+    "Process-scoped diagnostic profile under recorded external workload; no timing or causal before/after CPU claim",
+    "Fixture v1 explains only native before timing; any throughput comparison requires the corrected symmetric-preflight fixture",
+    "Inclusive native ingest counts include downstream output copying; allocation samples are not copied bytes or peak memory"
+  ]
+}

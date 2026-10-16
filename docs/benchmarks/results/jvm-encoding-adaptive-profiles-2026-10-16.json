@@ -1,0 +1,554 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "admitted": false,
+  "configuration": {
+    "rows": 500000,
+    "text_cardinality": 500000,
+    "width": 256,
+    "keys": 16384,
+    "warmup_pairs": 2,
+    "pairs": 3,
+    "heap": "2 GiB",
+    "java": 17,
+    "build": "release+mimalloc",
+    "production_ipc": true,
+    "both_transposes": true,
+    "profiler": "async-profiler4 cpu-clock2ms/DWARF and Java allocation1MiB"
+  },
+  "limitations": [
+    "Every profile duration is excluded; external Java work was observed. Allocation samples are estimates, not copied bytes, retained heap or native allocations. Inclusive stacks overlap.",
+    "Split recordings isolate Java string work; separate numeric-group recordings demonstrate native Rust controls, not Rust costs of split-only execution.",
+    "The newer source includes three singleton-shuffle Java changes; all five captured split/Arrow/fixture sources match except the writer and both use the same native DSO.",
+    "82 focused correctness checks pass. Whole-job comparisons for the hit-reset policy remain pending.",
+    "Full collapsed CPU/allocation stacks are checked in; raw JFRs remain in the original local recordings and CI artifacts, with their hashes recorded here."
+  ],
+  "profiles": [
+    {
+      "flink_line": "1.18.1",
+      "variant": "cold-cache8",
+      "shape": "split",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "9a1cde77fc85c165f23221bee17f19d1cb7813d6ef415e3110b7b12f470fcce8",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 13.400000000001015,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-cache8-command.json.gz",
+          "sha256": "00eaf94841ef5cddc6c7cd92bd8878f9544ea9bec1ddb9654201c936806ec2a2"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-cache8-activity.json.gz",
+          "sha256": "14b2e707bc3d78d1dfd1410c6f8a78debb4b91befb0ae7ec4cf1c3498f0e0a28"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-cache8.log.gz",
+          "sha256": "1e3d268acf29d4e547430da047a2a7f00a6dc2dfb9279ff5c39654ed4e7d9d26"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-cache8-gc.log.gz",
+          "sha256": "04db7eb7e85520fba5fb4fd500372e6d44d8bf989a85d2ea424554b172e9c780"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-cache8-cpu.collapsed.gz",
+          "sha256": "ed5027e73109e7142510a7d790760c9020cc6a8bb662fdeb67597a05640fd1f6"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-cache8-alloc.collapsed.gz",
+          "sha256": "036e1b51c72288659159aad4029f9db7db7f4dd4155a3a45801b24c1f50669e0"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "table_function": 1449,
+          "RowDataSerializer.copy": 184,
+          "VarCharWriter": 471,
+          "String.getBytes": 378,
+          "StringStringConverter.toExternal": 378,
+          "decodeUTF8Strict": 328
+        },
+        "alloc": {
+          "table_function": 10758389760,
+          "RowDataSerializer.copy": 2128609280,
+          "String.getBytes": 3633315840,
+          "VarCharWriter": 3633315840,
+          "StringStringConverter.toExternal": 1259339776
+        }
+      },
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-118-split-cold-cache8.jfr",
+          "raw_sha256": "247e67393bd547fd82d6bf316eccb438fdcb34637af21dd012f98f97088af251",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "1.18.1",
+      "variant": "cold-cache8",
+      "shape": "numeric-group",
+      "source_revision": "5cbd6ec2bfe9a40bba59a861abc2b30063b5bb56",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "9a1cde77fc85c165f23221bee17f19d1cb7813d6ef415e3110b7b12f470fcce8",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 31.159999999999428,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-cache8-command.json.gz",
+          "sha256": "3f88843827c5ae690796a0e5a20bd3fac1c5f363a6b098795061be52c9dbcb6a"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-cache8-activity.json.gz",
+          "sha256": "d265d2951d6e44792b3b894bf64536b04186e5762ceaaf19dca6af41985b6def"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-cache8.log.gz",
+          "sha256": "1f29a00a6d65c16ad346f85bb4db723b67c1b559831d7636db3f08b787e70ac9"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-cache8-gc.log.gz",
+          "sha256": "be25f899f769cf8c0e5c70e1b21eb2fcbd3ea6807423d34953f8b2dd195be2d3"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-cache8-cpu.collapsed.gz",
+          "sha256": "a746a37196ec4f4e8002d32fe156f8a9492fb719adace2f7a3e9dc28bfadb0f0"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-cache8-alloc.collapsed.gz",
+          "sha256": "0a8b63dbaab58137ce734bc32480ad06b4d4b22520efbd16278e9932df584746"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "symbolized_rust": 651,
+          "table_function": 279
+        },
+        "alloc": {
+          "table_function": 742391808
+        }
+      },
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-cache8.jfr",
+          "raw_sha256": "7744e0b3f68fb23dc403c9334da882d11b794aeea5184f42670a0ce3d8505773",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "1.18.1",
+      "variant": "cold-adaptive",
+      "shape": "split",
+      "source_revision": "846cbb7c5cd8c14fb4cfe32b9329dd3f1b13ef70",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ad93000de6383bef1c6c3a9abfdad0b192f8adec387b515ef4fdb8466e9dc6f9",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 54.150000000001086,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-adaptive-command.json.gz",
+          "sha256": "d171a3bb029888fea7046b62af8a85c7736e9b3bec64a7e0e7e4fd46702df2ab"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-adaptive-activity.json.gz",
+          "sha256": "60b7f22e1e688fecdec138794191d51d8581753a9652cf8ba1be7a8bcc247ce6"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-adaptive.log.gz",
+          "sha256": "79b1d10888ae87ffae10e81ec02aa69fc73818ed8eb0c45148c21e9563411129"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-adaptive-gc.log.gz",
+          "sha256": "50ff0224e74876508399e16661dc118504c918b6a77340257412c2fac53750b0"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-adaptive-cpu.collapsed.gz",
+          "sha256": "37bb783d635643455cf66176a782060cdf0bac2204eca74193c866aab9a35a26"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-split-cold-adaptive-alloc.collapsed.gz",
+          "sha256": "51d1fdb732bbb87f8e2f7c33af04e12c61fa5facb4839d96ec24195682b92dce"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "table_function": 1177,
+          "StringStringConverter.toExternal": 330,
+          "decodeUTF8Strict": 296,
+          "RowDataSerializer.copy": 188,
+          "VarCharWriter": 248,
+          "String.getBytes": 178
+        },
+        "alloc": {
+          "table_function": 9279897600,
+          "String.getBytes": 1830813696,
+          "VarCharWriter": 1833959424,
+          "StringStringConverter.toExternal": 1282408448,
+          "RowDataSerializer.copy": 2302672896
+        }
+      },
+      "sampled_table_function_allocation_reduction": 0.13742690058479534,
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-118-split-cold-adaptive.jfr",
+          "raw_sha256": "440f3c3dea0c1931c0edd64a9e3667a9918b74c89856757a67dfa2ba1e604f38",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "1.18.1",
+      "variant": "cold-adaptive",
+      "shape": "numeric-group",
+      "source_revision": "846cbb7c5cd8c14fb4cfe32b9329dd3f1b13ef70",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ad93000de6383bef1c6c3a9abfdad0b192f8adec387b515ef4fdb8466e9dc6f9",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 51.23999999999957,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-adaptive-command.json.gz",
+          "sha256": "335f42c92452d8570f8fb2bebd6f5b056f886568da5f269ad6a4113d92069db9"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-adaptive-activity.json.gz",
+          "sha256": "5f84551af72182321338b531ca1fdb52339739b3454dd840bae578426a68f83a"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-adaptive.log.gz",
+          "sha256": "d64dd7e8a65a66d3759fa93c03fc52b9d3f6a119544d66c09e99021e8bdbe1c1"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-adaptive-gc.log.gz",
+          "sha256": "e23433e5e6f1622ef3819f292b526b08cb8c706664c5da8555bb23fe55e92ca8"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-adaptive-cpu.collapsed.gz",
+          "sha256": "612ebc721317edfccfeae791c62b18465bc89986210f36d3e7a5c8113ed56ba4"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-adaptive-alloc.collapsed.gz",
+          "sha256": "e87d7b289dc7d5ef0d882d91c9245d0590b6e217c11c56c9ae6006ad80b5bc14"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "symbolized_rust": 688,
+          "table_function": 375
+        },
+        "alloc": {
+          "table_function": 803209216
+        }
+      },
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-118-numeric-group-cold-adaptive.jfr",
+          "raw_sha256": "6f773ab1545be77846cf53129d7c832330676366c55e6b1a93b65890473b5f37",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "2.2.1",
+      "variant": "cold-cache8",
+      "shape": "split",
+      "source_revision": "fcc979012d9b1fdd0ddf5238d55830c6dc9c08e6",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "9a1cde77fc85c165f23221bee17f19d1cb7813d6ef415e3110b7b12f470fcce8",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 46.14000000000014,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-cache8-command.json.gz",
+          "sha256": "8df43cf1b7b670dc44fa45c9503e30ba83baeeaf69fce4f5efebeef636d47367"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-cache8-activity.json.gz",
+          "sha256": "fe904207c0c486cb2dd080ce294e92d78f737ab3cebe22a9b63c214fb8bd40c3"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-cache8.log.gz",
+          "sha256": "fc759e52241e2a78a81f77f1db351e83e7b741edd70553060403af4cb84b6023"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-cache8-gc.log.gz",
+          "sha256": "b62f22e9ff7361ca7289c753d485e38287db5011e8026546a9c4cb91657987c0"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-cache8-cpu.collapsed.gz",
+          "sha256": "ff7e3092e6a7b213e419194fd8c7ef8302c1d07bed7d0ade3a4cb17ea7943b6f"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-cache8-alloc.collapsed.gz",
+          "sha256": "c398f3d1ae6ce229d9f5628c9d5432d78497c46e095559103ff82f98ce21bfd4"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "table_function": 1514,
+          "RowDataSerializer.copy": 212,
+          "StringStringConverter.toExternal": 362,
+          "decodeUTF8Strict": 300,
+          "VarCharWriter": 341,
+          "String.getBytes": 260
+        },
+        "alloc": {
+          "table_function": 11054088192,
+          "StringStringConverter.toExternal": 1290797056,
+          "String.getBytes": 3662675968,
+          "VarCharWriter": 3663724544,
+          "RowDataSerializer.copy": 2252341248
+        }
+      },
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-22-split-cold-cache8.jfr",
+          "raw_sha256": "79570e5b9da44efcd77b961d49a8fb9d859e5795c1ccf3e65b9fa7335a1ac9a8",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "2.2.1",
+      "variant": "cold-cache8",
+      "shape": "numeric-group",
+      "source_revision": "fcc979012d9b1fdd0ddf5238d55830c6dc9c08e6",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "9a1cde77fc85c165f23221bee17f19d1cb7813d6ef415e3110b7b12f470fcce8",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 22.909999999999414,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-cache8-command.json.gz",
+          "sha256": "c57f3c13b459dda5edfbc53927ba6665fc9c57810519e36444e42604b5b6a842"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-cache8-activity.json.gz",
+          "sha256": "6404fc7043f059dc91e5096024163c16b406b5af5f167ac4baf072bc8ae648f8"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-cache8.log.gz",
+          "sha256": "414303b39b0c2e54709147eee7a27042f2636d8b909d6a531733a82268b63d79"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-cache8-gc.log.gz",
+          "sha256": "0495e2fadc3a68c830d16affa4fa5ad9d5a4223f9f3796ea3838a244664d5a54"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-cache8-cpu.collapsed.gz",
+          "sha256": "188bd1fe8f560416d02fc8a46cd50f9af94fb34778f8eafbd41a79e356e7cc26"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-cache8-alloc.collapsed.gz",
+          "sha256": "311157314334508a714c08b5e2ccf1680e2164a29f907a76321206caadf3de34"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "symbolized_rust": 657,
+          "table_function": 306
+        },
+        "alloc": {
+          "table_function": 753926144
+        }
+      },
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-cache8.jfr",
+          "raw_sha256": "d7221501c39bfa703da1caffe303885db726ec67a049c1d348a42a5f5415fd0b",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "2.2.1",
+      "variant": "cold-adaptive",
+      "shape": "split",
+      "source_revision": "846cbb7c5cd8c14fb4cfe32b9329dd3f1b13ef70",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ad93000de6383bef1c6c3a9abfdad0b192f8adec387b515ef4fdb8466e9dc6f9",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 38.1599999999995,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-adaptive-command.json.gz",
+          "sha256": "a3500535ce58425f3da274d309a05209672e6c1517260c5ba01fe855c79ce1e2"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-adaptive-activity.json.gz",
+          "sha256": "d0ab60da88969d96e33d6f202a51ec1c2636f5410875bed513298e2358b26483"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-adaptive.log.gz",
+          "sha256": "6633c040867c9877409e4a67fa89db5f3a66205cb292d3b6d29a5b36b3bf23e0"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-adaptive-gc.log.gz",
+          "sha256": "be5cd958524ddec25e99c6633f576799062ca55a16c8203138f715d0361e757b"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-adaptive-cpu.collapsed.gz",
+          "sha256": "c1c8e7da57187aeea262bedba5f61feded3765487ba7d46d87f9383f6d96e07c"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-split-cold-adaptive-alloc.collapsed.gz",
+          "sha256": "cb7e37c8dac55364bd82797576ec369ccef98e220991e14abf96fc990863e718"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "table_function": 1141,
+          "StringStringConverter.toExternal": 315,
+          "decodeUTF8Strict": 259,
+          "RowDataSerializer.copy": 176,
+          "VarCharWriter": 256,
+          "String.getBytes": 164
+        },
+        "alloc": {
+          "table_function": 9009364992,
+          "RowDataSerializer.copy": 2208301056,
+          "String.getBytes": 1795162112,
+          "VarCharWriter": 1800404992,
+          "StringStringConverter.toExternal": 1217396736
+        }
+      },
+      "sampled_table_function_allocation_reduction": 0.18497438816163914,
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-22-split-cold-adaptive.jfr",
+          "raw_sha256": "c29f64aef3388c4eab9f5c24a9b86b0acbd309ae0ab37905883fe91019a37bdc",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    },
+    {
+      "flink_line": "2.2.1",
+      "variant": "cold-adaptive",
+      "shape": "numeric-group",
+      "source_revision": "846cbb7c5cd8c14fb4cfe32b9329dd3f1b13ef70",
+      "source_sha256": {
+        "src/main/java/tech/streamfusion/operator/NativeColumnarTableFunctionOperator.java": "5578ac4e679e2294b5bbd7601ac5026bbf2260ebee7370418e26bd0a599d778c",
+        "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c3752cd1ffee27cb1450bba16e8decef6720151681a0bb214f4ec38859305163",
+        "src/main/java/tech/streamfusion/arrow/writers/VarCharWriter.java": "ad93000de6383bef1c6c3a9abfdad0b192f8adec387b515ef4fdb8466e9dc6f9",
+        "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "bb9acae9eb775b960b5a7034a41f50b9d7222b98a1a96a49ba509f20b8b48cc5",
+        "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "bf6ded5ceb074a22b3c8d9edcd568fc8b777571348630f8a74f08bb71975a91c"
+      },
+      "native_sha256": "a3be932234ef318df8291357ad56a3165b373f2ee136781ff161ea89b71f7e31",
+      "timing_excluded": true,
+      "external_cpu_seconds": 25.28,
+      "artifacts": [
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-adaptive-command.json.gz",
+          "sha256": "da61fb873b1195be5c53546896b3800c150c1a617d72110416dc161ab4c1543c"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-adaptive-activity.json.gz",
+          "sha256": "d9918871a9c7c74f485a577f5bc0db638c422fc8f62e35641f5150b9e572f219"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-adaptive.log.gz",
+          "sha256": "c50b1b6575b4988a20ce71f47b7c16cccf53b40af57b6b5463f366e2341169c6"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-adaptive-gc.log.gz",
+          "sha256": "77f4e48a20833f37a144f06996817a9e2b70c9099bf827492b02f78c62297a88"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-adaptive-cpu.collapsed.gz",
+          "sha256": "5ba15a089c188014999cadcc4c24344b25201200cacc91c6ff49dc55ffd3fb18"
+        },
+        {
+          "file": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-adaptive-alloc.collapsed.gz",
+          "sha256": "6f1c83665d6e67e9ba1adf6e5a8aab90a1b90e9316d4377bca9ce942c42b266f"
+        }
+      ],
+      "inclusive": {
+        "cpu": {
+          "symbolized_rust": 706,
+          "table_function": 405
+        },
+        "alloc": {
+          "table_function": 697303040
+        }
+      },
+      "raw_jfr_recordings": [
+        {
+          "recording": "jvm-encoding-adaptive-2026-10-16-22-numeric-group-cold-adaptive.jfr",
+          "raw_sha256": "0e9758d062a43cccefcfb732d49d1f0d614fe8215838a69601d8e95fd2759f8e",
+          "retained_in": "original local recordings and CI artifacts when applicable"
+        }
+      ]
+    }
+  ],
+  "correctness": [
+    {
+      "flink_line": "1.18.1",
+      "passed": 41,
+      "log": {
+        "file": "jvm-encoding-adaptive-2026-10-16-118-checks.log.gz",
+        "sha256": "9b10e8d4a0f170e1e9d6c6fc9bc2b25910d4fa599fa34f2bb13ade7ebd102b2e"
+      }
+    },
+    {
+      "flink_line": "2.2.1",
+      "passed": 41,
+      "log": {
+        "file": "jvm-encoding-adaptive-2026-10-16-22-checks.log.gz",
+        "sha256": "5614c99dbd30083c00cc4b830dd08713da8ef24f5d5f34dcb42c9c7ab11231aa"
+      }
+    }
+  ],
+  "source_overrides": [
+    {
+      "file": "jvm-encoding-adaptive-2026-10-16-cache8-writer.java.gz",
+      "sha256": "16f1684c71a926a57afd273a0c41f164614edad9e482a3786317eb4fd0e505cb"
+    },
+    {
+      "file": "jvm-encoding-adaptive-2026-10-16-adaptive-writer.java.gz",
+      "sha256": "2545b483b9c4b915f8f966a9868ad255370d50ce2f3c2ff07189659435d73296"
+    }
+  ]
+}

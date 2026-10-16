@@ -1,0 +1,250 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_commit": "84b9cc59830273021954d148c746a2b13713f642",
+  "fixture_method": "symmetric-preflight-v2",
+  "source_sha256": {
+    "src/test/java/tech/streamfusion/JvmAggregateBenchmark.java": "7da9f7a72a3222a3d267e0ca677e1de0ddc3e73354427a156f9561ed440fac96",
+    "src/test/java/tech/streamfusion/TableFunctionBenchmark.java": "3949a96c1a59b4050f24cb0adbca49e7aa396780a252735cdd02fe0dc6a3971a"
+  },
+  "runtime_variant": "primitive STRING hash index with full equality, borrowed probes and managed-state cold bypass",
+  "configuration": {
+    "flink": "2.2.1",
+    "jdk": "17",
+    "cpu": "Intel i7-12650H",
+    "rows": 2000000,
+    "key_type": "STRING",
+    "key_prefix_chars": 16,
+    "precision": "VARCHAR prefix includes \u00e9 plus decimal key digits",
+    "heap": "2 GiB",
+    "parallelism": 1,
+    "batch_rows": 1024,
+    "native": "release mimalloc",
+    "production_ipc": true,
+    "both_transposes": true,
+    "metrics_cluster": "fresh per job",
+    "preflight_explain": "both engines outside clock",
+    "boundary": "executeSql(insert).await including planning/submission, row source/sink, conversions and state",
+    "warmup_pairs": 2,
+    "measured_pairs": 5
+  },
+  "smokes": [
+    {
+      "flink": "2.2.1",
+      "rows": 2000,
+      "warmups": 1,
+      "pairs": 1,
+      "shapes": [
+        "STRING UDAF",
+        "STRING builtin Rust SUM",
+        "table split",
+        "table JSON group",
+        "table numeric",
+        "table numeric group"
+      ],
+      "purpose": "Fixture/native-work/stock-exclusion smoke only; no speed claim"
+    },
+    {
+      "flink": "1.18.1",
+      "rows": 2000,
+      "warmups": 1,
+      "pairs": 1,
+      "shapes": [
+        "STRING UDAF",
+        "STRING builtin Rust SUM",
+        "table split",
+        "table JSON group",
+        "table numeric",
+        "table numeric group"
+      ],
+      "purpose": "Fixture/native-work/stock-exclusion smoke only; no speed claim"
+    }
+  ],
+  "runs": [
+    {
+      "label": "symmetric-v2-hash-index-16",
+      "keys": 16,
+      "stock_trials_s": [
+        0.777440128,
+        0.725645556,
+        0.72085558,
+        0.656497544,
+        0.657109693
+      ],
+      "native_trials_s": [
+        0.683735401,
+        0.685540934,
+        0.637023771,
+        0.597047232,
+        0.569032502
+      ],
+      "stock_median_s": 0.72085558,
+      "native_median_s": 0.637023771,
+      "stock_range_s": [
+        0.656497544,
+        0.777440128
+      ],
+      "native_range_s": [
+        0.569032502,
+        0.685540934
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": "jvm-aggregate-symmetric-v2-hash-index-16-2026-10-16.log.gz",
+      "raw_trials": [
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=0 warmup=true rows=2000000 keys=16 start_ms=1792131187779 seconds=1.522542",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=0 warmup=true rows=2000000 keys=16 start_ms=1792131189550 seconds=1.250570",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=1 warmup=true rows=2000000 keys=16 start_ms=1792131191003 seconds=0.841580",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=1 warmup=true rows=2000000 keys=16 start_ms=1792131191981 seconds=0.843170",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=2 warmup=false rows=2000000 keys=16 start_ms=1792131192977 seconds=0.777440",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=2 warmup=false rows=2000000 keys=16 start_ms=1792131193867 seconds=0.683735",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=3 warmup=false rows=2000000 keys=16 start_ms=1792131194688 seconds=0.685541",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=3 warmup=false rows=2000000 keys=16 start_ms=1792131195480 seconds=0.725646",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=4 warmup=false rows=2000000 keys=16 start_ms=1792131196331 seconds=0.720856",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=4 warmup=false rows=2000000 keys=16 start_ms=1792131197154 seconds=0.637024",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=5 warmup=false rows=2000000 keys=16 start_ms=1792131197881 seconds=0.597047",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=5 warmup=false rows=2000000 keys=16 start_ms=1792131198561 seconds=0.656498",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=6 warmup=false rows=2000000 keys=16 start_ms=1792131199310 seconds=0.657110",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=6 warmup=false rows=2000000 keys=16 start_ms=1792131200040 seconds=0.569033"
+      ],
+      "cache_counters": [
+        "[jvm-aggregate-cache] hits=1999984 bypasses=0",
+        "[jvm-aggregate-cache] hits=1999984 bypasses=0",
+        "[jvm-aggregate-cache] hits=1999984 bypasses=0",
+        "[jvm-aggregate-cache] hits=1999984 bypasses=0",
+        "[jvm-aggregate-cache] hits=1999984 bypasses=0",
+        "[jvm-aggregate-cache] hits=1999984 bypasses=0",
+        "[jvm-aggregate-cache] hits=1999984 bypasses=0"
+      ]
+    },
+    {
+      "label": "symmetric-v2-hash-index-65k",
+      "keys": 65536,
+      "stock_trials_s": [
+        1.36856787,
+        1.400757524,
+        1.36125744,
+        1.284795841,
+        1.213149456
+      ],
+      "native_trials_s": [
+        1.416667244,
+        1.333139186,
+        1.252813144,
+        1.261229176,
+        1.200803048
+      ],
+      "stock_median_s": 1.36125744,
+      "native_median_s": 1.261229176,
+      "stock_range_s": [
+        1.213149456,
+        1.400757524
+      ],
+      "native_range_s": [
+        1.200803048,
+        1.416667244
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": "jvm-aggregate-symmetric-v2-hash-index-65k-2026-10-16.log.gz",
+      "raw_trials": [
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=0 warmup=true rows=2000000 keys=65536 start_ms=1792131160158 seconds=2.281904",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=0 warmup=true rows=2000000 keys=65536 start_ms=1792131162688 seconds=1.872577",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=1 warmup=true rows=2000000 keys=65536 start_ms=1792131164747 seconds=1.352281",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=1 warmup=true rows=2000000 keys=65536 start_ms=1792131166241 seconds=1.388037",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=2 warmup=false rows=2000000 keys=65536 start_ms=1792131167770 seconds=1.368568",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=2 warmup=false rows=2000000 keys=65536 start_ms=1792131169267 seconds=1.416667",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=3 warmup=false rows=2000000 keys=65536 start_ms=1792131170859 seconds=1.333139",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=3 warmup=false rows=2000000 keys=65536 start_ms=1792131172397 seconds=1.400758",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=4 warmup=false rows=2000000 keys=65536 start_ms=1792131173981 seconds=1.361257",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=4 warmup=false rows=2000000 keys=65536 start_ms=1792131175471 seconds=1.252813",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=5 warmup=false rows=2000000 keys=65536 start_ms=1792131176817 seconds=1.261229",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=5 warmup=false rows=2000000 keys=65536 start_ms=1792131178158 seconds=1.284796",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=6 warmup=false rows=2000000 keys=65536 start_ms=1792131179530 seconds=1.213149",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=6 warmup=false rows=2000000 keys=65536 start_ms=1792131180827 seconds=1.200803"
+      ],
+      "cache_counters": [
+        "[jvm-aggregate-cache] hits=1934464 bypasses=0",
+        "[jvm-aggregate-cache] hits=1934464 bypasses=0",
+        "[jvm-aggregate-cache] hits=1934464 bypasses=0",
+        "[jvm-aggregate-cache] hits=1934464 bypasses=0",
+        "[jvm-aggregate-cache] hits=1934464 bypasses=0",
+        "[jvm-aggregate-cache] hits=1934464 bypasses=0",
+        "[jvm-aggregate-cache] hits=1934464 bypasses=0"
+      ]
+    },
+    {
+      "label": "symmetric-v2-hash-index-distinct",
+      "keys": 2000000,
+      "stock_trials_s": [
+        2.099637961,
+        2.064687943,
+        2.042077848,
+        2.048273092,
+        2.035559979
+      ],
+      "native_trials_s": [
+        2.259868176,
+        2.234911605,
+        2.212708254,
+        2.184811588,
+        2.103212413
+      ],
+      "stock_median_s": 2.048273092,
+      "native_median_s": 2.212708254,
+      "stock_range_s": [
+        2.035559979,
+        2.099637961
+      ],
+      "native_range_s": [
+        2.103212413,
+        2.259868176
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": "jvm-aggregate-symmetric-v2-hash-index-distinct-2026-10-16.log.gz",
+      "raw_trials": [
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=0 warmup=true rows=2000000 keys=2000000 start_ms=1792131206616 seconds=3.007101",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=0 warmup=true rows=2000000 keys=2000000 start_ms=1792131209920 seconds=2.955152",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=1 warmup=true rows=2000000 keys=2000000 start_ms=1792131213016 seconds=2.269181",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=1 warmup=true rows=2000000 keys=2000000 start_ms=1792131215441 seconds=2.054601",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=2 warmup=false rows=2000000 keys=2000000 start_ms=1792131217593 seconds=2.099638",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=2 warmup=false rows=2000000 keys=2000000 start_ms=1792131219802 seconds=2.259868",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=3 warmup=false rows=2000000 keys=2000000 start_ms=1792131222179 seconds=2.234912",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=3 warmup=false rows=2000000 keys=2000000 start_ms=1792131224560 seconds=2.064688",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=4 warmup=false rows=2000000 keys=2000000 start_ms=1792131226712 seconds=2.042078",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=4 warmup=false rows=2000000 keys=2000000 start_ms=1792131228853 seconds=2.212708",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=5 warmup=false rows=2000000 keys=2000000 start_ms=1792131231147 seconds=2.184812",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=5 warmup=false rows=2000000 keys=2000000 start_ms=1792131233448 seconds=2.048273",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=Flink trial=6 warmup=false rows=2000000 keys=2000000 start_ms=1792131235573 seconds=2.035560",
+        "[jvm-aggregate-trial] shape=udaf key_type=string engine=StreamFusion trial=6 warmup=false rows=2000000 keys=2000000 start_ms=1792131237706 seconds=2.103212"
+      ],
+      "cache_counters": [
+        "[jvm-aggregate-cache] hits=0 bypasses=1",
+        "[jvm-aggregate-cache] hits=0 bypasses=1",
+        "[jvm-aggregate-cache] hits=0 bypasses=1",
+        "[jvm-aggregate-cache] hits=0 bypasses=1",
+        "[jvm-aggregate-cache] hits=0 bypasses=1",
+        "[jvm-aggregate-cache] hits=0 bypasses=1",
+        "[jvm-aggregate-cache] hits=0 bypasses=1"
+      ]
+    }
+  ],
+  "admitted": false,
+  "limitations": [
+    "Single supported Flink line measured locally; second line and prior fallback comparison remain pending",
+    "Low/medium medians improve but ranges overlap; distinct medians regress with separated ranges",
+    "No observed external Java/Rust/compiler work in 500 ms process sampling; unrelated system activity is not exhaustively measured",
+    "Earlier fixtures explained only the native plan; retain old trials as historical diagnostics, not fair admission evidence",
+    "Table-function full-size comparisons under the corrected per-job/symmetric fixture are pending"
+  ]
+}

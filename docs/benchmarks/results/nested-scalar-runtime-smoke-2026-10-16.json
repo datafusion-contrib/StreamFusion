@@ -1,0 +1,218 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "performance_admitted": false,
+  "timings_excluded": true,
+  "suites": [
+    {
+      "flink_line": "2.2.1",
+      "passed_workloads": 10,
+      "artifacts": [
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-identity-16-gc.log.gz",
+          "sha256": "3514cc7fe500690305bdfd3eee30cccea77144e72890a60dbddb91aa646e2886"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-identity-16.log.gz",
+          "sha256": "e7199fdb27e07d1a4ecd3ba9ce0ce29ff5f421bb3bb35d3e6bcbf57b245e086e"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-identity-256-gc.log.gz",
+          "sha256": "1344c731bd3eaae6ebbf2e6591998786c10e2001ac112fdd9400dad73864389a"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-identity-256.log.gz",
+          "sha256": "a1e574dc8a0a48d6936d0357872d87369368b9cd70b4eabb891bfda7d1f251eb"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-rust-16-gc.log.gz",
+          "sha256": "c572bc4f309799543d1fb99fd075860998aac1062dba9fed6f7099af67c70090"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-rust-16.log.gz",
+          "sha256": "716b3467aa019290850cd1c4ba41ee46a8408f16f6225c3095679ff625d3ecbb"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-transform-16-gc.log.gz",
+          "sha256": "0e2085bda3f01961825ea5d6d4729056c59717936c60a09e85af124ebb47664e"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-transform-16.log.gz",
+          "sha256": "7b84c012c3573feea62bb8735b0f1468021a54dc6ed95d5e351bbe0b262649a9"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-transform-256-gc.log.gz",
+          "sha256": "22d84fe3290f33347203962ccb3a5f6038f7835871aaeb81a04439d0a814bb44"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-candidate-transform-256.log.gz",
+          "sha256": "073901b023c183a0530833470d74cc80848af1e46debab8b45dc4a2cb3e03798"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-identity-16-gc.log.gz",
+          "sha256": "a13e278c60ecaaf857ef0acb8ec77772f52f24647c78bc35371c404edce07e6a"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-identity-16.log.gz",
+          "sha256": "5a05635111b8f41ec6231bb955b25647ac864f729f250347984d208d7a151ebc"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-identity-256-gc.log.gz",
+          "sha256": "dc9bec0c63edf79bbb2ac27755bb3cb68c474907640af979318af3b5f6a3cbf9"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-identity-256.log.gz",
+          "sha256": "f5a4cc25940f6788fdb7fd868c40b3fca9177991824f7192b61dce63c3420d28"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-java-build.log.gz",
+          "sha256": "cd01541ebe94161132ab31e1dc8002a14b9d5d682fd9f1f98a794f79c4a514ee"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-native-build.log.gz",
+          "sha256": "a6532931b981a0f9252c4229ccb86969ca4cbd2278afd89dac1e8ba99cb5e879"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-rust-16-gc.log.gz",
+          "sha256": "98378deec609ad893f83358e16dde71c400060b7b40df3ac0172b004d55299fa"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-rust-16.log.gz",
+          "sha256": "3661382205d1220b3381b3f7766800a6ecceb83d53a3fafe1c6e50a026e2e0be"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-transform-16-gc.log.gz",
+          "sha256": "abd0ac05431e4ec79f3895ec3063c118622728f573fd1d7cd9ddf03b5907d8fe"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-transform-16.log.gz",
+          "sha256": "b70b9f9a360bf74ff17a31b196f6ea6c78a01a5b32c5ea9782bc2c19f0e741a2"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-transform-256-gc.log.gz",
+          "sha256": "1714d8e85a863161533ef8f0dae60522b57a7ac895f6c48bc9f2da38b4f5824e"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-previous-transform-256.log.gz",
+          "sha256": "63e78292e94f2fdfbd42df71694e3d996a57df79cf89a057c8353462ffc50f63"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-22-results.json.gz",
+          "sha256": "4d95bbf811f8b2cda1df93b10922f29f59572f1f6076f037b6efb476c38f53dd"
+        }
+      ]
+    },
+    {
+      "flink_line": "1.18.1",
+      "passed_workloads": 10,
+      "artifacts": [
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-identity-16-gc.log.gz",
+          "sha256": "e72fa1c91f4bf1045ea5ea7fb112043eb48f4e29de04694d6882e92c4c0cf326"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-identity-16.log.gz",
+          "sha256": "4956a9036f3e962cb1aa03bc44b0bfad473f5689cff6b0710dcc0efd8b28e88c"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-identity-256-gc.log.gz",
+          "sha256": "1011613cc1a4e1bf6cdec46752cc0d1351d011c77ae04d648b7eea3b6fb19044"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-identity-256.log.gz",
+          "sha256": "b0150bad139435eddafb7d6d525bf2a40985e18b59b2d744c52a78f3a232324a"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-rust-16-gc.log.gz",
+          "sha256": "13514f4d29e613d19f826f0b74c09d06fe9fb5ab6ef1736ae11c1d0f56a4ebb9"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-rust-16.log.gz",
+          "sha256": "bb102506d4c9a5c9e53d637b9eb5a7fcff028c0f577a98ec2eebb9e0b48883d3"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-transform-16-gc.log.gz",
+          "sha256": "03176fcd73c3e7400f8b0eb1504d3a75204d823fe361e62783be594944fd7241"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-transform-16.log.gz",
+          "sha256": "0c573ede71bcd671857a44064a92be0e1668899dfd5944ff4f4f644fd93529ff"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-transform-256-gc.log.gz",
+          "sha256": "aa2acce470fa4dd782d7ee02013953a8bc17a250c1197b78554f125c61a4b75c"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-candidate-transform-256.log.gz",
+          "sha256": "d6d535dbfe798e7c6044d613a1bf3e39e93e0e9827464cfbc0f8e1384bf231fc"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-identity-16-gc.log.gz",
+          "sha256": "e9a7dc9c6b6ffa8460d9b2d327cbad62ab25b8c9a28e67f5aea83c2107a05390"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-identity-16.log.gz",
+          "sha256": "640a9f571791f881590d9c71d959f62edcad76dda3248cc662e3624207f15eb6"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-identity-256-gc.log.gz",
+          "sha256": "d1768f56b1c5a217dc52973a8e7912680ca9774248b476714b5310e30e4d13b5"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-identity-256.log.gz",
+          "sha256": "e3afc4398c9061b3a98dd6405da07945c56df6e07a12c71660680e76e65eb960"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-java-build.log.gz",
+          "sha256": "0da1cf757c4bdc0ae2b37727f9bd172a980e7e37d589fa1c325b60a8c7691b1b"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-native-build.log.gz",
+          "sha256": "08dae5d3fcf3be68894bb1fc543f0a8b415c0971d2292ff3bbf89190dc53044a"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-rust-16-gc.log.gz",
+          "sha256": "cbd80b03337478711ee7eea029ed5032b399d6a5aee0df83148dafae130addf0"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-rust-16.log.gz",
+          "sha256": "05cd843f7939bb05b4fb442c79fb1d84c83ed77b107ee760feb03185fbcbf184"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-transform-16-gc.log.gz",
+          "sha256": "2b80ca674fa79481d8c83451a3727628c1a12343ffbb8871f57a1009cd30d16d"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-transform-16.log.gz",
+          "sha256": "32bf344d042e6f259a49cdd6e52f53c88db97a0c0d25598209834df3b22da6d7"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-transform-256-gc.log.gz",
+          "sha256": "51fac1a8876b109275c63dc68a3ce4f1b9adc830425a3e0cb40f3bd87ae0d91f"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-previous-transform-256.log.gz",
+          "sha256": "962ad7201c7522a9dc6d1189191dd4a6cd0663de222c33dd3f7fe6e29a873068"
+        },
+        {
+          "file": "nested-scalar-runtime-smoke-2026-10-16-118-results.json.gz",
+          "sha256": "3eeab05f7015be84110b274ee11f3e8d8fe2ebbfa873a6fd86f658eec4c88470"
+        }
+      ]
+    }
+  ],
+  "candidate_java_overlay": {
+    "compared_revision": "4839e25a6cb72b178060b6933f614a5dc1de17c9",
+    "matching_src_main_files": 499
+  },
+  "limitations": [
+    "Only 2000-row fixture/build smokes; durations do not establish acceleration.",
+    "The local 1.18 candidate is a dirty compatibility checkout with production Java matching candidate4839e25; its loaded native library matches the pinned release from that candidate. Both previous production trees are clean.",
+    "The final runner adds cleanliness assertions and mixed-JFR conversion to this validated smoke version. The exact executed smoke runner is retained.",
+    "Full isolated release comparisons and profiles remain pending."
+  ],
+  "executed_smoke_runner": {
+    "file": "nested-scalar-runtime-smoke-2026-10-16-runner.py.gz",
+    "sha256": "d973514f365fe651b6e5ce3c4302405a4f637352fd019f78e30ae89092202ca0"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_commit": "ae8e363332b303d778a2c706e39a4322525d267b",
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/operator/JvmAccumulatorCache.java": "3e02e5ad759972c6a0b10224f6d35eb9399d8b025083a988d848a96aa27c2727",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarJvmGroupOperator.java": "377b87a7ebd88600ceea86e02f823776c910596fb33d8361b0636aef806cde89",
+    "src/main/java/tech/streamfusion/planner/NativeJvmGroupExecNode.java": "306218989359b3f34f9996e0744f0a676eee6529822818858065e6ae3a4eeb57",
+    "src/test/java/tech/streamfusion/FlinkJvmAggregateSqlHarnessTest.java": "feb85946fc1184d212ddf77a4e449b615bb9fd7b281b747387821eebb21ed1e0",
+    "src/test/java/tech/streamfusion/JvmAggregateBenchmark.java": "e2c1186150927036552de2ba8d30ce406df072fb8636ec8936b47f64c3bd34bc"
+  },
+  "configuration": {
+    "jdk": "17",
+    "native": "release mimalloc, production IPC",
+    "heap": "2 GiB",
+    "new_cases": "8: STRING NULL/empty/long Unicode and embedded NUL, all RowKinds, delete/reinsert, ListView ownership, parallelism 1/3, repeated recovery with memory/native RocksDB"
+  },
+  "runs": [
+    {
+      "flink": "2.2.1",
+      "suite": "focused",
+      "capacity": 65536,
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "2.2.1",
+      "suite": "focused+rescale",
+      "capacity": 3,
+      "tests": 46,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "2.2.1",
+      "suite": "fixture smoke",
+      "capacity": 65536,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "1.18.1",
+      "suite": "focused",
+      "capacity": 65536,
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "1.18.1",
+      "suite": "focused+rescale",
+      "capacity": 3,
+      "tests": 46,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "1.18.1",
+      "suite": "fixture smoke",
+      "capacity": 65536,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    }
+  ],
+  "performance_admitted": false,
+  "performance": "STRING candidate not yet measured; the prior uncached matrix and profiles are retained separately",
+  "validation": [
+    "google-java-format 1.24.0",
+    "strict mkdocs",
+    "actionlint",
+    "benchmark runner AST and parsing actual typed smoke output"
+  ]
+}

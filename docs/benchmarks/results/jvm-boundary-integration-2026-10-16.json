@@ -1,0 +1,65 @@
+{
+  "production_java_revision": "3eea34b2",
+  "jdk": 17,
+  "maven_java_release": 11,
+  "flink_lines": [
+    "2.2.1",
+    "1.18.1"
+  ],
+  "flink22": {
+    "full_selection": 173,
+    "passed": 173,
+    "skipped": 0,
+    "fixture_revision": "541c26cf",
+    "final_collection_source_fixture_recheck": {
+      "revision": "3eea34b2",
+      "passed": 17
+    }
+  },
+  "flink118": {
+    "full_selection": 173,
+    "passed": 170,
+    "skipped": 3,
+    "revision": "3eea34b2"
+  },
+  "native_sha256": "acf7e95b8a2170af17817b75c9f7a5938237d93a0197f1321550a18ddf4af140",
+  "flags": {
+    "nestedScalarUdfs": true,
+    "temporalScalarUdfs": true,
+    "jvmGroupAggregates": true,
+    "jvmAccumulatorCacheEntries": 65536,
+    "borrowedStringExit": true
+  },
+  "limitations": [
+    "Correctness only; no duration is performance evidence.",
+    "Local tests pin the prior nested-candidate release payload rather than rebuilding current main Rust. The required CI now rebuilds native production and runs this opt-in selection on both lines.",
+    "The final Flink2.2 source-API fixture change is rechecked separately; production Java is unchanged between the two revisions."
+  ],
+  "payloads": [
+    {
+      "path": "jvm-boundary-integration-2026-10-16-compile22.log.gz",
+      "sha256": "6b2788faece5ee8059d0aa6ad1344dc0e00b98b0f68e5ddd114f9f581f7d0943",
+      "uncompressed_sha256": "89d2a6f2bb5823ce077b4551c8a0bdfabf7efc43533090315e1cbf45ac8acbe7"
+    },
+    {
+      "path": "jvm-boundary-integration-2026-10-16-checks22.log.gz",
+      "sha256": "90bedfbf07d69b44551ef82b69314322f21d4a3106ecb98b4bd82d661ba97f12",
+      "uncompressed_sha256": "73b9172b7a06464c3cf83c9411b84ede310934cbc656c6c1bb9dc2b9bb67b314"
+    },
+    {
+      "path": "jvm-boundary-integration-2026-10-16-map-final22.log.gz",
+      "sha256": "da40d68796eb3ceabb9c6a1ef723c4146d91e66957790b5410e61b813c2af638",
+      "uncompressed_sha256": "58387c33534ba0f74fc82f0d3f9f740fca65477d022947e2751288303a6f83d0"
+    },
+    {
+      "path": "jvm-boundary-integration-2026-10-16-compile118.log.gz",
+      "sha256": "5de8986d7d57a321930fefe930090e1cd02f4a83c438f48b2b33f2bef8dba2ba",
+      "uncompressed_sha256": "5e2d2150078d3d7b6701a5e87900c059752f65bac9c33b862f4a68450d2546ee"
+    },
+    {
+      "path": "jvm-boundary-integration-2026-10-16-checks118.log.gz",
+      "sha256": "d2fbf3bcfb6b9fef5d8c2b9fabc73c176ad0223bc08c17f57e87e3eba0f7bf49",
+      "uncompressed_sha256": "3fbcd4790f6ba292958f832154fc3ebc654bc593e27975570fd292c01249dd10"
+    }
+  ]
+}

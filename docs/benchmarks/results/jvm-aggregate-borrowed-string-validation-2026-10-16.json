@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_commit": "dd53a0316130e280b4b0b7605e8ddb404f76d15d",
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/operator/JvmAccumulatorCache.java": "96237fd6105f6e831a3df6550544eae83a105e648cae228fd209f43654c33fae",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarJvmGroupOperator.java": "8f0495152671077db8afbe1cbb6970e9db912b469872f66b613c931af8d7dae7",
+    "src/test/java/tech/streamfusion/operator/JvmStringKeyProbeTest.java": "67bf178423f0777ca05cdf1eba1e0474b4a1ffae57cfe31a3e2baece44e686a0"
+  },
+  "configuration": {
+    "jdk": "17",
+    "native": "release mimalloc; production IPC",
+    "heap": "2 GiB"
+  },
+  "runs": [
+    {
+      "flink": "2.2.1",
+      "cache_entries": 65536,
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "2.2.1",
+      "cache_entries": 3,
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "1.18.1",
+      "cache_entries": 65536,
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "flink": "1.18.1",
+      "cache_entries": 3,
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    }
+  ],
+  "coverage": [
+    "39 focused SQL parity/lifecycle/fallback/recovery cases",
+    "7 checkpoint/canonical-savepoint rescale and output-reader cases",
+    "3 borrowed UTF-8 slice, NULL/empty-buffer and copy/close ownership cases",
+    "Final buffer-size fallback guard compiles on both released Flink lines; 3 focused view checks per line pass"
+  ],
+  "performance_admitted": false
+}

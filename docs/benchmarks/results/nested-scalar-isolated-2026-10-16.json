@@ -1,0 +1,2261 @@
+{
+  "workflow_run": 38889442933,
+  "workflow_url": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/38889442933",
+  "measured_revision": "83970cab7d69bac237ec41b0db518c001af777cc",
+  "current_production_fixture_match": "Production/native/build inputs and three timing fixtures match eab6d2ec; later main integration is not measured.",
+  "configuration": {
+    "release": true,
+    "mimalloc": true,
+    "jdk": 17,
+    "rows": 2000000,
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "parallelism": 1,
+    "heap": "2GiB",
+    "production_ipc": true,
+    "both_transposes": true
+  },
+  "limitations": [
+    "All profile durations excluded.",
+    "Independent stock controls retain cross-JVM drift.",
+    "Sampled allocations are estimates; inclusive stacks overlap.",
+    "Raw JFR retained in original CI artifact, not checked into the repository.",
+    "These results demonstrate regressions; maintainer accepted shipping default-off implementation with performance deferred."
+  ],
+  "runtimes": [
+    {
+      "flink_line": "2.2",
+      "artifact_id": 12044421205,
+      "report": {
+        "candidate_revision": "83970cab7d69bac237ec41b0db518c001af777cc",
+        "previous_revision": "b170a474d5658330ed7e92e9b8bcc54117c8d287",
+        "flink_line": "2.2",
+        "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment Temurin-17.0.20.1+1 (build 17.0.20.1+1)\nOpenJDK 64-Bit Server VM Temurin-17.0.20.1+1 (build 17.0.20.1+1, mixed mode, sharing)\n",
+        "smoke": false,
+        "admitted": false,
+        "configuration": {
+          "rows": 2000000,
+          "warmup_pairs": 2,
+          "measured_pairs": 5,
+          "heap": "2 GiB",
+          "parallelism": 1,
+          "production_ipc": true,
+          "both_transposes": true
+        },
+        "fixtures": {
+          "src/test/java/tech/streamfusion/NestedScalarBenchmark.java": "f059207199461f77623fd12eef1de3765e25092db027f86635d809dc5381583d",
+          "src/test/java/tech/streamfusion/FlinkNestedScalarSqlHarnessTest.java": "eaa84284664534f8fa97cd865724483af52bc72fd466a49a22c34b88ae8fa4f5",
+          "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java": "0aab69f0654260d52783f4efae2b4b0c2308593aeaba88fe8e2b1ff803bdd899"
+        },
+        "runtimes": {
+          "candidate": {
+            "native_sha256": "0d5f5c928259f25feb52515ed4748ea3b99e3c66d68bfdb69569ebfd368f0792",
+            "production_clean": true
+          },
+          "previous": {
+            "native_sha256": "e71c22501aa636e2c8c334802b69c8846fe3640de6d108929c7ae179495e6e27",
+            "production_clean": true
+          }
+        },
+        "commands": [
+          {
+            "label": "previous-native-build",
+            "command": [
+              "cargo",
+              "build",
+              "--manifest-path",
+              "native/Cargo.toml",
+              "--locked",
+              "-p",
+              "streamfusion",
+              "--release",
+              "--features",
+              "mimalloc"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0
+          },
+          {
+            "label": "previous-java-build",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-am",
+              "-DskipTests",
+              "-Dnative.build.skip=true",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "test-compile"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0
+          },
+          {
+            "label": "candidate-identity-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "identity",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              2.420058793,
+              2.361014735,
+              2.320285282,
+              2.312399525,
+              2.34564308
+            ],
+            "runtime_seconds": [
+              3.686181585,
+              3.576217177,
+              3.601643969,
+              3.547276961,
+              3.532119215
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-transform-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "transform",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              2.578849971,
+              2.558523379,
+              2.554274379,
+              2.569974307,
+              2.522562661
+            ],
+            "runtime_seconds": [
+              3.655173415,
+              3.639430769,
+              3.610036161,
+              3.605021583,
+              3.582597299
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-identity-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "identity",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              3.641683613,
+              3.552456813,
+              3.525383623,
+              3.501669154,
+              3.519154055
+            ],
+            "runtime_seconds": [
+              5.086751258,
+              4.947461848,
+              4.814394511,
+              4.873886384,
+              4.882534443
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-transform-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "transform",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              3.960009352,
+              3.939635889,
+              3.963196341,
+              3.926106121,
+              3.935220929
+            ],
+            "runtime_seconds": [
+              5.345689712,
+              5.231635276,
+              5.171936491,
+              5.179519985,
+              5.193725496
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-rust-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-rust-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "rust",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              0.484381182,
+              0.485706571,
+              0.4759375,
+              0.513518273,
+              0.382024778
+            ],
+            "runtime_seconds": [
+              0.630390668,
+              0.619381371,
+              0.539114203,
+              0.471301493,
+              0.499927971
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-identity-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "identity",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              2.043065934,
+              2.077074256,
+              2.013959798,
+              2.022846333,
+              1.999240559
+            ],
+            "runtime_seconds": [
+              2.030467361,
+              2.043509519,
+              2.026818086,
+              2.061192332,
+              1.944612257
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-transform-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "transform",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              2.2097565,
+              2.190474411,
+              2.131068965,
+              2.221891765,
+              2.116796432
+            ],
+            "runtime_seconds": [
+              2.250798556,
+              2.215667198,
+              2.136365253,
+              2.133355275,
+              2.109423932
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-identity-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "identity",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              3.214524404,
+              3.219622992,
+              3.230070269,
+              3.186959166,
+              3.216663558
+            ],
+            "runtime_seconds": [
+              3.296115327,
+              3.20551524,
+              3.215965725,
+              3.177957418,
+              3.257839463
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-transform-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "transform",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              3.778788945,
+              3.731246332,
+              3.664520703,
+              3.646421022,
+              3.628430327
+            ],
+            "runtime_seconds": [
+              3.674059393,
+              3.690444856,
+              3.679746605,
+              3.809871634,
+              3.547503368
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-rust-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-rust-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "rust",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              0.52555454,
+              0.464720886,
+              0.406095755,
+              0.401700569,
+              0.422804757
+            ],
+            "runtime_seconds": [
+              0.814088047,
+              0.582875394,
+              0.631538128,
+              0.563816897,
+              0.547479052
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-identity-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-256-profile.jfr",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "identity",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              1.980066032,
+              1.915213089,
+              1.898264685
+            ],
+            "runtime_seconds": [
+              2.835152526,
+              2.712666521,
+              2.697149456
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "candidate-identity-256-profile-cpu.collapsed",
+                "sha256": "831734666b10f6a71847cc72e89d678ea985d745e5a083170b18723726619a05"
+              },
+              "alloc": {
+                "file": "candidate-identity-256-profile-alloc.collapsed",
+                "sha256": "69a4ad8be748baa514fa582600abdb6e910c813e9e1eee0712c227350d39cc4f"
+              }
+            }
+          },
+          {
+            "label": "candidate-transform-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-256-profile.jfr",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "transform",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              2.216259987,
+              2.169279708,
+              2.120274038
+            ],
+            "runtime_seconds": [
+              2.995013789,
+              2.967209912,
+              2.988988299
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "candidate-transform-256-profile-cpu.collapsed",
+                "sha256": "ea97b188d879d23bf5a1a4242f5ae17bf5850e332c89fe0dad21c636ef49a9ea"
+              },
+              "alloc": {
+                "file": "candidate-transform-256-profile-alloc.collapsed",
+                "sha256": "b2e5b075679091ee311926bdc45cc3e15d72378f6e1e7d6860738b376a1d1b01"
+              }
+            }
+          },
+          {
+            "label": "candidate-rust-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-rust-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-rust-256-profile.jfr",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "rust",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              0.328660332,
+              0.369074599,
+              0.316051275
+            ],
+            "runtime_seconds": [
+              0.579053813,
+              0.413191576,
+              0.385567491
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "candidate-rust-256-profile-cpu.collapsed",
+                "sha256": "93ca98e3469eab2de608f997189925998f4156a1ed9460a9166479a5d958f4fa"
+              },
+              "alloc": {
+                "file": "candidate-rust-256-profile-alloc.collapsed",
+                "sha256": "03a84918d5df509baf372dd615a0bd397874d9c33664f28f6f525fdcd808c9bc"
+              }
+            }
+          },
+          {
+            "label": "previous-identity-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-256-profile.jfr",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "identity",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              1.835197283,
+              1.811072189,
+              1.794213718
+            ],
+            "runtime_seconds": [
+              1.808482043,
+              1.816265683,
+              1.763444836
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "previous-identity-256-profile-cpu.collapsed",
+                "sha256": "c0122bfb38516933ac3f3abd4dc089e0b31d17a3154fd7d94ea747721e32b9c7"
+              },
+              "alloc": {
+                "file": "previous-identity-256-profile-alloc.collapsed",
+                "sha256": "099049ebda073091f9ba53cf9b728574651c683762d2b98149c5feb4ef276dc9"
+              }
+            }
+          },
+          {
+            "label": "previous-transform-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-256-profile.jfr",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "transform",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              1.99800752,
+              2.001284188,
+              1.96144787
+            ],
+            "runtime_seconds": [
+              2.03665204,
+              1.971876088,
+              1.94024734
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "previous-transform-256-profile-cpu.collapsed",
+                "sha256": "7bc42767716e36f1132cc80d838384882ca50ab89d44db99108aedb6fd937cba"
+              },
+              "alloc": {
+                "file": "previous-transform-256-profile-alloc.collapsed",
+                "sha256": "113054413b6b4883e44bdb0352ddebb2b39d4a0ee6edc168d519723a340bb447"
+              }
+            }
+          },
+          {
+            "label": "previous-rust-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-rust-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-rust-256-profile.jfr",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "rust",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              0.345321901,
+              0.360974436,
+              0.349388748
+            ],
+            "runtime_seconds": [
+              0.560024642,
+              0.508688605,
+              0.399306039
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "previous-rust-256-profile-cpu.collapsed",
+                "sha256": "8a1fb6664d23d61ad5cf0ca98f7d3e8f42763692e8bade5926d6a6a6982aeaff"
+              },
+              "alloc": {
+                "file": "previous-rust-256-profile-alloc.collapsed",
+                "sha256": "f5ca301f262e520f9798bd64899ea68e8766bef469e5a162151a96e5ed88ece4"
+              }
+            }
+          }
+        ],
+        "limitations": [
+          "Profile durations and smoke durations are not performance evidence.",
+          "Each runtime has its own stock controls; cross-JVM drift prevents assigning all changes to the implementation."
+        ],
+        "fixture_worktree_dirty": false
+      }
+    },
+    {
+      "flink_line": "1.18",
+      "artifact_id": 12042617686,
+      "report": {
+        "candidate_revision": "83970cab7d69bac237ec41b0db518c001af777cc",
+        "previous_revision": "b170a474d5658330ed7e92e9b8bcc54117c8d287",
+        "flink_line": "1.18",
+        "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment Temurin-17.0.20.1+1 (build 17.0.20.1+1)\nOpenJDK 64-Bit Server VM Temurin-17.0.20.1+1 (build 17.0.20.1+1, mixed mode, sharing)\n",
+        "smoke": false,
+        "admitted": false,
+        "configuration": {
+          "rows": 2000000,
+          "warmup_pairs": 2,
+          "measured_pairs": 5,
+          "heap": "2 GiB",
+          "parallelism": 1,
+          "production_ipc": true,
+          "both_transposes": true
+        },
+        "fixtures": {
+          "src/test/java/tech/streamfusion/NestedScalarBenchmark.java": "f059207199461f77623fd12eef1de3765e25092db027f86635d809dc5381583d",
+          "src/test/java/tech/streamfusion/FlinkNestedScalarSqlHarnessTest.java": "eaa84284664534f8fa97cd865724483af52bc72fd466a49a22c34b88ae8fa4f5",
+          "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java": "0aab69f0654260d52783f4efae2b4b0c2308593aeaba88fe8e2b1ff803bdd899"
+        },
+        "runtimes": {
+          "candidate": {
+            "native_sha256": "8ee93b4854c8e9b897cdf8e9035b78123c78667ac01151201dca99bd1531817e",
+            "production_clean": true
+          },
+          "previous": {
+            "native_sha256": "e187516f200080f458276dc1d40e5e05136d4491f461899d649c9f520ac351ee",
+            "production_clean": true
+          }
+        },
+        "commands": [
+          {
+            "label": "previous-native-build",
+            "command": [
+              "cargo",
+              "build",
+              "--manifest-path",
+              "native/Cargo.toml",
+              "--locked",
+              "-p",
+              "streamfusion",
+              "--release",
+              "--features",
+              "mimalloc"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0
+          },
+          {
+            "label": "previous-java-build",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-am",
+              "-DskipTests",
+              "-Dnative.build.skip=true",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "test-compile"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0
+          },
+          {
+            "label": "candidate-identity-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "identity",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              1.231336536,
+              1.238345576,
+              1.243145786,
+              1.197447703,
+              1.174689702
+            ],
+            "runtime_seconds": [
+              1.943180662,
+              1.853761363,
+              1.814755766,
+              1.811884726,
+              1.768605665
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-transform-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "transform",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              1.273481856,
+              1.258424392,
+              1.246128425,
+              1.34425395,
+              1.285486025
+            ],
+            "runtime_seconds": [
+              2.001013836,
+              1.991977875,
+              1.932552536,
+              1.947498973,
+              1.890029174
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-identity-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "identity",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              1.882187309,
+              1.968795171,
+              1.93447101,
+              1.91994052,
+              1.86787052
+            ],
+            "runtime_seconds": [
+              2.712640266,
+              2.744238452,
+              2.744460841,
+              2.717179267,
+              2.647550927
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-transform-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "transform",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              2.370176051,
+              2.27187436,
+              2.30941438,
+              2.30513399,
+              2.255468763
+            ],
+            "runtime_seconds": [
+              3.07938069,
+              3.006976673,
+              2.973197105,
+              3.043215437,
+              2.929262372
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-rust-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-rust-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "rust",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              0.249924068,
+              0.252980351,
+              0.236652406,
+              0.227890123,
+              0.265487153
+            ],
+            "runtime_seconds": [
+              0.354030228,
+              0.287783807,
+              0.292585651,
+              0.265099433,
+              0.265746155
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-identity-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "identity",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              1.174224649,
+              1.348901068,
+              1.097986807,
+              1.129973954,
+              1.090019787
+            ],
+            "runtime_seconds": [
+              1.170961842,
+              1.0858636,
+              1.0761999,
+              1.159151122,
+              1.054389584
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-transform-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "transform",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              1.131445791,
+              1.094591197,
+              1.096709702,
+              1.13862444,
+              1.071220567
+            ],
+            "runtime_seconds": [
+              1.122853799,
+              1.205857098,
+              1.034420651,
+              1.131358928,
+              1.059853714
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-identity-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "identity",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              1.717648034,
+              1.725035124,
+              1.692021085,
+              1.661309655,
+              1.709974038
+            ],
+            "runtime_seconds": [
+              1.781326822,
+              1.833022977,
+              1.725899133,
+              1.687788741,
+              1.732314327
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-transform-256",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-256-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "transform",
+            "width": 256,
+            "rows": 2000000,
+            "stock_seconds": [
+              2.158951046,
+              2.070829103,
+              2.117680814,
+              2.090805096,
+              2.089111964
+            ],
+            "runtime_seconds": [
+              2.07955148,
+              2.130718669,
+              2.070246382,
+              2.022589486,
+              2.147348574
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "previous-rust-16",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-rust-16-gc.log:time,uptime,level,tags'",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=2000000",
+              "-Dnestedbench.width=16",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=5",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "rust",
+            "width": 16,
+            "rows": 2000000,
+            "stock_seconds": [
+              0.237571547,
+              0.230899163,
+              0.234527898,
+              0.247153542,
+              0.251299379
+            ],
+            "runtime_seconds": [
+              0.37386158,
+              0.391548666,
+              0.284762034,
+              0.342897018,
+              0.266277452
+            ],
+            "timing_excluded": false
+          },
+          {
+            "label": "candidate-identity-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-identity-256-profile.jfr",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "identity",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              1.12359471,
+              1.06240656,
+              1.054359566
+            ],
+            "runtime_seconds": [
+              1.623567425,
+              1.620841942,
+              1.502756245
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "candidate-identity-256-profile-cpu.collapsed",
+                "sha256": "1873c13e642269e6155e299583c695467ace49cc1517b6e780ca306a16eec61f"
+              },
+              "alloc": {
+                "file": "candidate-identity-256-profile-alloc.collapsed",
+                "sha256": "2411f5bf949a6ce7a28573d0dd3ee09f6fd3b1205adda87e6c3ec3bc33a114ac"
+              }
+            }
+          },
+          {
+            "label": "candidate-transform-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-transform-256-profile.jfr",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "transform",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              1.370608211,
+              1.236642596,
+              1.264694743
+            ],
+            "runtime_seconds": [
+              1.727736004,
+              1.705514158,
+              1.711266738
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "candidate-transform-256-profile-cpu.collapsed",
+                "sha256": "a262dd0ca40c90a982b12d3d18c1ae45540983b2d835f0ea08d3d407b5f5ddc7"
+              },
+              "alloc": {
+                "file": "candidate-transform-256-profile-alloc.collapsed",
+                "sha256": "cc3b223686a874fb84dc12f3a6c67bb5ea9be58a25b5c37a3aa21739e9993b08"
+              }
+            }
+          },
+          {
+            "label": "candidate-rust-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-native -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-rust-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/candidate-rust-256-profile.jfr",
+              "-Dnestedbench.expectNative=true",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/StreamFusion/StreamFusion",
+            "exit_code": 0,
+            "runtime": "candidate",
+            "shape": "rust",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              0.198990974,
+              0.165694782,
+              0.16395885
+            ],
+            "runtime_seconds": [
+              0.278410884,
+              0.181374203,
+              0.219643294
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "candidate-rust-256-profile-cpu.collapsed",
+                "sha256": "f11372741fbee0dfd03a43d2b60eb8186fd318fbcb475bd87ce6c35bfeb66c41"
+              },
+              "alloc": {
+                "file": "candidate-rust-256-profile-alloc.collapsed",
+                "sha256": "d761e87f0cda171c8b00cd2185678a16bf27498669537ac2b8fe826c8942f04b"
+              }
+            }
+          },
+          {
+            "label": "previous-identity-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-identity-256-profile.jfr",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=identity",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "identity",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              1.006730858,
+              1.005382422,
+              0.98101264
+            ],
+            "runtime_seconds": [
+              1.01790948,
+              0.966399058,
+              0.961376396
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "previous-identity-256-profile-cpu.collapsed",
+                "sha256": "774c875cd811a06a251ad848fdbf92c9f3233abfcff5bd433be825b56bbf2480"
+              },
+              "alloc": {
+                "file": "previous-identity-256-profile-alloc.collapsed",
+                "sha256": "7f6e2d719343db3b9918b16db22a4f6a2caa498dccfc61d4377e7c6a620c629c"
+              }
+            }
+          },
+          {
+            "label": "previous-transform-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-transform-256-profile.jfr",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=transform",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "transform",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              1.146541438,
+              1.132884904,
+              1.157959817
+            ],
+            "runtime_seconds": [
+              1.137518395,
+              1.12140171,
+              1.151710632
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "previous-transform-256-profile-cpu.collapsed",
+                "sha256": "124a3c8aafb0b91ab956ab5022635d8132ac1a5c3cba1b6e61cad5cdeb555bb2"
+              },
+              "alloc": {
+                "file": "previous-transform-256-profile-alloc.collapsed",
+                "sha256": "1dffca4d9d37f20b623bb6c772c789911e24c688aac0c92d43e415daf7878f15"
+              }
+            }
+          },
+          {
+            "label": "previous-rust-256-profile",
+            "command": [
+              "mvn",
+              "-B",
+              "-ntp",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "-Dnative.build.skip=true",
+              "-Dtest=NestedScalarBenchmark",
+              "-Dsf.testForks=1",
+              "-Dnative.resource.directory=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release",
+              "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+              "-Dsf.extraJvmArgs=-Djava.library.path=/home/runner/work/_temp/streamfusion-previous-nested/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true '-Xlog:gc*,safepoint:file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-rust-256-profile-gc.log:time,uptime,level,tags' -agentpath:/home/runner/work/_temp/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=/home/runner/work/StreamFusion/StreamFusion/native/target/nested-scalar-diagnostics/previous-rust-256-profile.jfr",
+              "-Dnestedbench.expectNative=false",
+              "-Dnestedbench.cases=rust",
+              "-Dnestedbench.rows=1000000",
+              "-Dnestedbench.width=256",
+              "-Dnestedbench.warmup=2",
+              "-Dnestedbench.runs=3",
+              "surefire:test@default-test"
+            ],
+            "working_directory": "/home/runner/work/_temp/streamfusion-previous-nested",
+            "exit_code": 0,
+            "runtime": "previous",
+            "shape": "rust",
+            "width": 256,
+            "rows": 1000000,
+            "stock_seconds": [
+              0.158784624,
+              0.17612055,
+              0.177792445
+            ],
+            "runtime_seconds": [
+              0.212454466,
+              0.247206378,
+              0.246745382
+            ],
+            "timing_excluded": true,
+            "stacks": {
+              "cpu": {
+                "file": "previous-rust-256-profile-cpu.collapsed",
+                "sha256": "a13519c169bb5f77283b9196ac3cc2490715f3f797d729b10f3bc68f2051d5a5"
+              },
+              "alloc": {
+                "file": "previous-rust-256-profile-alloc.collapsed",
+                "sha256": "a2d211ba3798244d4013e41a6c39f10270ffc373113a326f12e09ea03d7223cf"
+              }
+            }
+          }
+        ],
+        "limitations": [
+          "Profile durations and smoke durations are not performance evidence.",
+          "Each runtime has its own stock controls; cross-JVM drift prevents assigning all changes to the implementation."
+        ],
+        "fixture_worktree_dirty": false
+      }
+    }
+  ],
+  "payloads": [
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-16-gc.log",
+      "sha256": "b557444a6dca1146e198cca842a0ec96bd580035215b56d768c36828b95957e5",
+      "uncompressed_sha256": "c33b99992b1311bc1e249041ad516a38cb97839da3214659b584dc2d114af77a"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-16.log",
+      "sha256": "5aa4b9c2a91210d185243d93ec094b1601e9df9eaeb8a0397005f2736622058f",
+      "uncompressed_sha256": "2e69ccda066de0a80c2bbe3204a04e3747a7064a10acc79bac37107a98ff2de3"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-gc.log",
+      "sha256": "cf73858d0579e6fd73e00eb16b7949d5bb8cd18ebd919e90b9ac7a5a923bcae7",
+      "uncompressed_sha256": "b85d6bedb1fe10a9331d1c0b997f2be0a4ff22845e9e2e7eed9b75b351d1617d"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile-alloc.collapsed",
+      "sha256": "077f27e3e41bd031b131ef00b7d0bf86363df0a0c29b955e7eccad8d598c4f1c",
+      "uncompressed_sha256": "69a4ad8be748baa514fa582600abdb6e910c813e9e1eee0712c227350d39cc4f"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile-cpu.collapsed",
+      "sha256": "d5aa475e0c162657e35ab7a2a1c3af6031f47b525cb4227dc682061be387a881",
+      "uncompressed_sha256": "831734666b10f6a71847cc72e89d678ea985d745e5a083170b18723726619a05"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile-gc.log",
+      "sha256": "2d9ad997137c78948c7766fe368a133d3c078599e2e736b0fa4c182383ef6617",
+      "uncompressed_sha256": "36c1c7c3ed224a55dd7c70ca83c06e9fc65b44fd79a314e27265bb57f029335b"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile.log",
+      "sha256": "35b56cefbd87e78f65c19158b6b573e33e43dc7353c82de03ac13bf01b99dd8a",
+      "uncompressed_sha256": "92195dd9b16a24e8cfdd67467bce553b672560a248a8891f68ea70c6f78778df"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-identity-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256.log",
+      "sha256": "0ee5adde06df73ce55dde53038aaa041a0ae319f4a33bd29e05ea46c547dda53",
+      "uncompressed_sha256": "b785f94fee6c9ffcc33b4a25870dd5500d76ce236f842db6fdc5ad45a6bf065b"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-rust-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-16-gc.log",
+      "sha256": "6bca8960ff34133a633ca2f82eb3bfcec70e39a5dc51085cecb8b02f05a75a77",
+      "uncompressed_sha256": "6a0d2dc2860330a808a3411921df29bf20fec530228f2fe3dd8d6de593d979b7"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-rust-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-16.log",
+      "sha256": "895788d8e4bb017ef7088dbf8bc1d568ddc4082f8f0e43b9a454c421353720c7",
+      "uncompressed_sha256": "4ac6f38873926efb5d04ff5db6d4b314afd098a55c45be48e0622653dface59c"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-rust-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile-alloc.collapsed",
+      "sha256": "ce58ca7b1d6d91dc6872418bd1e3b1e65bb50b62ea01fe4e6195be8a7dc73e33",
+      "uncompressed_sha256": "03a84918d5df509baf372dd615a0bd397874d9c33664f28f6f525fdcd808c9bc"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-rust-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile-cpu.collapsed",
+      "sha256": "46e3562ad446a68f9220c72469c68e26641cc813cbda01c07d8c8451d703c975",
+      "uncompressed_sha256": "93ca98e3469eab2de608f997189925998f4156a1ed9460a9166479a5d958f4fa"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-rust-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile-gc.log",
+      "sha256": "14f0bf4208edfd9e26c1502a300eca4598c4ea054e423de8f6b51556ee49f4d3",
+      "uncompressed_sha256": "9be5df329f742bdb35bfe87ee8a58cf6c6a8c3cbeae70b18ab25f14078e3b300"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-rust-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile.log",
+      "sha256": "4a4a5357d20c0aa384a0df9939ff20840f23b036d9ef078cd872645b71769b5c",
+      "uncompressed_sha256": "d644cd7b27e4611a6e74ef8c14df2121a4e8adecbd16fc391de13672695031fa"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-16-gc.log",
+      "sha256": "46acb62d719acc863d912445d231900613d9d7295c64158f8409187ffe5b1dc3",
+      "uncompressed_sha256": "4ab65363aac6c186806736946ffcaecd986ea5b3cda78f4108983f4e8960dbe9"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-16.log",
+      "sha256": "6d9d8cd36610a3f9378c6245a26ef528253cc66343e987858e341cc1454e152c",
+      "uncompressed_sha256": "e781da834180d6a5078e2e4fe8398fe2b04c7d73076ab014a6d3b76f94fae00d"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-gc.log",
+      "sha256": "e60fe3c4230bc4a464b9a7218e92efab7203cd663ff956b49004b2ef46518689",
+      "uncompressed_sha256": "4ec713ba2a53d420a3deaed6aecc7b996f1954bde81f2d1a8259f4b44ee59c23"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile-alloc.collapsed",
+      "sha256": "ec5fdc0ee38b43a3d798797210f71adecd6ffbafbf8f4e0bdd138d35befc8410",
+      "uncompressed_sha256": "b2e5b075679091ee311926bdc45cc3e15d72378f6e1e7d6860738b376a1d1b01"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile-cpu.collapsed",
+      "sha256": "08a933f89168a7d6ba6d7f50bb492a9e06e09400be26c216b0f77a3ff58daa99",
+      "uncompressed_sha256": "ea97b188d879d23bf5a1a4242f5ae17bf5850e332c89fe0dad21c636ef49a9ea"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile-gc.log",
+      "sha256": "687819211e268f65e19305d0d8c44a7c95d6704ab7ccbcbc3e16aa79bf00152b",
+      "uncompressed_sha256": "cad6f3321031bd6aec8ae63a29596b491a3787758b99e848349dc752ccd3d434"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile.log",
+      "sha256": "aaa97d6372406410177c3c2a384bb129561e4ab826298e223c3acb72c6d959a4",
+      "uncompressed_sha256": "d14a1c746fc48904b6799e6b5ca51080a071fbe1c9160ca8fa23381eb4ec7198"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-candidate-transform-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256.log",
+      "sha256": "6f5302f1a580c8e425d612edbfffdfc8d19ac0d93f9f18359e24eb2659be9331",
+      "uncompressed_sha256": "c43ba559432d222f3d508ff59e77d1ad7f9f7f43d0bf351f86d6d72c7bb06f21"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-16-gc.log",
+      "sha256": "114293cf9ca71106ec13c2a34e6e42c03fcdfbb3bf753ad5ff835f1f16b785ef",
+      "uncompressed_sha256": "acc7c0aa92106ce50409932d15e7e9f13efe1836fd11a43c249738c36d770983"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-16.log",
+      "sha256": "0a878ded588663df8d94b8f9070910bfd4840cdedb30813cf86c66d2be763f05",
+      "uncompressed_sha256": "8b925c9accbd4e9dd328ceeed5d1257dc66358a2f7f3a6567c99eb5b8fffb5ec"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-gc.log",
+      "sha256": "1132686a660ef8c2ebf98434dec47353e8dcb0c5618ed4427a7f8179ad9a6a3a",
+      "uncompressed_sha256": "18e6c63b7172dba951e73cccd7c2bfa3bddd6e9ff5198172e5ff451ef86bcdba"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile-alloc.collapsed",
+      "sha256": "c5b5ab7f10a96ace0307779c9a3c75a147aa3d897ced9b137d3d6402a5ff27bb",
+      "uncompressed_sha256": "099049ebda073091f9ba53cf9b728574651c683762d2b98149c5feb4ef276dc9"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile-cpu.collapsed",
+      "sha256": "bd138aa490c0f1158a9a0c8be785c9967a0c16474b50ac4aa660431a24d49c40",
+      "uncompressed_sha256": "c0122bfb38516933ac3f3abd4dc089e0b31d17a3154fd7d94ea747721e32b9c7"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile-gc.log",
+      "sha256": "b4e8715229b793f2bffe1829dc4f648066ff90ffb53723cbb510e9dd371cfba3",
+      "uncompressed_sha256": "9c883a645251d5eeba115f0eb5fc9844868bfa195587a67de010e714a8f31478"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile.log",
+      "sha256": "1d0bbe2848c2ddaa01993b477edd9ec8759bf88ff7e364c97ed14087443650d3",
+      "uncompressed_sha256": "142627e727d5ce311d1a2209ce4af610895d5c920c702de58e8b659f26d60c4f"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-identity-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256.log",
+      "sha256": "8136a32e5c4fc971812e174140568c549ac3f906590276601593d4dd3ce2efc0",
+      "uncompressed_sha256": "91d2caa24d8ca6f340e4fb4743a12fadfb91757a9584409a10cb23ab89b693bf"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-java-build.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-java-build.log",
+      "sha256": "1f253f1d65f4430e0aa149b52ca545adba63d7af823b19d92573ab12036c05bb",
+      "uncompressed_sha256": "f6d4a69e42c2409d7eb3059c4efa67027ed0efcdfe92dd9c77dc074a1d3e1789"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-native-build.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-native-build.log",
+      "sha256": "9de32e6ad603a9e8c3aefb5413825b8e2c5729a13c95e2350ba8a0a59d2fb530",
+      "uncompressed_sha256": "ffc46d984cdaf05b447247c8a2a4f5350d4bfef1307e16f81ebde542d295a530"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-rust-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-16-gc.log",
+      "sha256": "ce403c03af830a1d053d459a455a6934bb2d8274f1593c551f39acbed9f22e61",
+      "uncompressed_sha256": "2fa3fbb83c98934325dc91ad21da48dbc1701b2a0d827b2758f9185e755bd6f9"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-rust-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-16.log",
+      "sha256": "dfc3853e90a3796eebc09399e7b5892a8da23ebe6b611d7117c64e8675803108",
+      "uncompressed_sha256": "11ad5bef5e62e972b2cb6381b2b000632530fad8ee603265acab1bdbfdd93be5"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-rust-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile-alloc.collapsed",
+      "sha256": "9724fe912268e5805ae7ae94cf91654cfa2a6fa7fd8b960f072f622e26d32e8f",
+      "uncompressed_sha256": "f5ca301f262e520f9798bd64899ea68e8766bef469e5a162151a96e5ed88ece4"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-rust-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile-cpu.collapsed",
+      "sha256": "77e6cea13cce0babad34e0987c3b9260cc70441392044158c5bb8becbac11729",
+      "uncompressed_sha256": "8a1fb6664d23d61ad5cf0ca98f7d3e8f42763692e8bade5926d6a6a6982aeaff"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-rust-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile-gc.log",
+      "sha256": "c66a227218bec0d233f3a1c96a886e527de78d3a3c1d4105a6398d18d2be81b3",
+      "uncompressed_sha256": "e6a6cf15f4900992dc379be6601ff5e26127960f097f425c97e8e2801b2934ba"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-rust-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile.log",
+      "sha256": "9a123adf09ffe5cb555fd2721ddcbaa807566fb8486ae872c94992e67b11fd37",
+      "uncompressed_sha256": "5e9dbd7e753559a6b78b722612f89c93207a723394895f583d876140b941a4f5"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-16-gc.log",
+      "sha256": "3b48995818c1baa703be388f74703c093bae6503ba51a246245e6d2eee5d5f81",
+      "uncompressed_sha256": "e69d52d734dfae5b6546539c85ad34a880228173cf2228b25f52c73d012ef587"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-gc.log",
+      "sha256": "14cb001b536ef22d89e1ad26ed4539c10720b6b1504653ce025ea3db7af79119",
+      "uncompressed_sha256": "e097a3fddc9e595735d5c0d1e0057fee4b70c7f0629a0293c98799ab00ccfa7b"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-16.log",
+      "sha256": "eac9d310d73d7e6095964de3c8beab5c5d2b318c3d7473c586cd4770159fdbee",
+      "uncompressed_sha256": "990b5b853b4fad5736df39260df8b032be521ce500a8f045337e2b6c671dffe1"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile-alloc.collapsed",
+      "sha256": "2e587d685e72e97b5e06d9e24d406b3f2b7a25a3a9482a67b3f190f42078e729",
+      "uncompressed_sha256": "113054413b6b4883e44bdb0352ddebb2b39d4a0ee6edc168d519723a340bb447"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile-cpu.collapsed",
+      "sha256": "cdb21462f557b3aa8913ccdff83646287d4cb7bac0faa637f66abcd85b2b4ea3",
+      "uncompressed_sha256": "7bc42767716e36f1132cc80d838384882ca50ab89d44db99108aedb6fd937cba"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile-gc.log",
+      "sha256": "bea6760e18dbd5b546ea3ebfee6332bba25439ba139e2ec362a4d35764d68be5",
+      "uncompressed_sha256": "fc2c955e89c6031f3a1f172e735b3e0955c343cad0819471afb4216902bd9b68"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile.log",
+      "sha256": "aaabbdb16d6700b1fb3dd918d3f645efdf5c361ef2ff62eed5afa2987e227e8d",
+      "uncompressed_sha256": "6693ea6b3258d7905a23e2a7a04155ae834f343236c2bd36777b5272cd09e17b"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-previous-transform-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256.log",
+      "sha256": "0adb362b4daaeeab01080a7029d95ec01bb3c6a89ba31bf1df869f3bbca9c96d",
+      "uncompressed_sha256": "f29ebc343551fa5fb557074a1b855ac084945ff27c29ea9acc7e911950dc26d2"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-22-results.json.gz",
+      "source": "native/target/nested-scalar-diagnostics/results.json",
+      "sha256": "203baef4957fb8a59fe7426dc8850fc224f09303d520a4003771e05136c81b39",
+      "uncompressed_sha256": "d550e8806705e119173ec0bd748f4c7544dea6d26fd7d6d54a5c1194068a47c0"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-16.log",
+      "sha256": "db703e7f14f90fe9074bc8077d23f3e8ba86fa3147fba1c6a9e85022cfb3e7cf",
+      "uncompressed_sha256": "9e3946ed1a62db836369d0e6e192716b0e2595ebc0727525829d3089ad72a271"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-gc.log",
+      "sha256": "6f226d1537832140cedbc74faecff346d746b43fc43ceab42943bc54def66972",
+      "uncompressed_sha256": "bef34814e7f314e239e3ac846d065e46b5b41b3abbafc571c6257a612d86e097"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-16-gc.log",
+      "sha256": "3d054d20b9b1d897e1afce0780d66e0d9db2442daf95de4a64503dd907061f60",
+      "uncompressed_sha256": "550e4c778cadab2ab6d186fded4d92792f5a76517e02c40dee01522ef97e4da8"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile-alloc.collapsed",
+      "sha256": "194c8a215016d8cedc8946affce9b56ca9b4210ea12940cec0a7cfea231d5ec2",
+      "uncompressed_sha256": "2411f5bf949a6ce7a28573d0dd3ee09f6fd3b1205adda87e6c3ec3bc33a114ac"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile-cpu.collapsed",
+      "sha256": "fabf99e48afae1dc83e7a8ed1086a2d36ddd317c6c86302e372b2c7bb72e00cd",
+      "uncompressed_sha256": "1873c13e642269e6155e299583c695467ace49cc1517b6e780ca306a16eec61f"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile-gc.log",
+      "sha256": "b94596cd1b4f221e4ddcd18be39a7acc6e2439adaee9824ae880167a28be03a7",
+      "uncompressed_sha256": "9332e09ebf14ed13ac7a8abf439bdb4ae0dd0e2b978f43a6fe0ee573af303756"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256-profile.log",
+      "sha256": "73cfa5d4da2cc7596d59a134be9a2c16e5debcabad581fdc13b64fe497896f7d",
+      "uncompressed_sha256": "c0c26a12bf22212084705947bd9363e53c96399cf839cbf913fd921bea6091f2"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-identity-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-identity-256.log",
+      "sha256": "463ed7e4c3effe77867979c4de62b80ed1b985a2787d61cd1a2a78c0f4201cf5",
+      "uncompressed_sha256": "35d9c2fdae91c7cb96dc46c183f1ab7985df6e66fdfc054256e5cce689f6ac4c"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-rust-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-16-gc.log",
+      "sha256": "0aa1d8481f36598196f595ede2ce8bcd6985349946f226661ce3a55ab307dbf6",
+      "uncompressed_sha256": "d5ac7fb39335855c074bfcf148d91e06ccf7edf4b7199227e5d2a3645e07ace4"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-rust-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-16.log",
+      "sha256": "72f3b32ea7d6c741b44f8630907715202e6ae036cc2d37bcb7cfa63f7c5541e1",
+      "uncompressed_sha256": "3cc52a75c6fc2da862b72c345cfa803d4e518728bc13864b10450ef862b0944d"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-rust-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile-alloc.collapsed",
+      "sha256": "26dfc1c94178fc4a3aa43d1321eba856f3c0a6260d62429daa95fb15447014bb",
+      "uncompressed_sha256": "d761e87f0cda171c8b00cd2185678a16bf27498669537ac2b8fe826c8942f04b"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-rust-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile-cpu.collapsed",
+      "sha256": "9f7ed172d3dda15b3157a4374774624529325fff85c77e1b68e2c51b77681021",
+      "uncompressed_sha256": "f11372741fbee0dfd03a43d2b60eb8186fd318fbcb475bd87ce6c35bfeb66c41"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-rust-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile-gc.log",
+      "sha256": "8a341845b978fc676792f55acb728fb13cf82a88d81302da55aeb28a5fe4478e",
+      "uncompressed_sha256": "5ee1df0457e381ddaaf68e90f7d682fc7d5b795a170ace8802fe83e4f870f2eb"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-rust-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-rust-256-profile.log",
+      "sha256": "54e5b273010f0c968220d7cce2b6185bff3c302ce09ab5ad93996842876556ed",
+      "uncompressed_sha256": "e8b6eaf21f9db70011ddc0ccb30e97c7c7426b5f702a955ca8d9770fe2b694da"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-16-gc.log",
+      "sha256": "e9824265f2c10951210cdf6edd6aea71080fe0f09b6aa1b2811e6f775ee4f70e",
+      "uncompressed_sha256": "ce596447406e46935b292d0122922830d073947ae75c7e6cc2bdcf70a1e3c794"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-16.log",
+      "sha256": "a384a4b73af961ecabb7c73ad1417152c32a1902f85817913696f29ce7c90279",
+      "uncompressed_sha256": "3f88006dd01c33b9a8b0d99e00a8284227245ced4ce0bcb7b2151965538fbf96"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-gc.log",
+      "sha256": "cd3878e59a505554b565806745cde003e62a18eb0d4e6125c322e4ca2add2171",
+      "uncompressed_sha256": "29dab3c5c3cb08ecc89b5eac83b4175bddfbad8dafcc8e9867d5b30b7abe1811"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile-alloc.collapsed",
+      "sha256": "548ce93f8d0f2fe126e1d4aee869e3a2b4de279cb259ed66ea1ba52cdd915cee",
+      "uncompressed_sha256": "cc3b223686a874fb84dc12f3a6c67bb5ea9be58a25b5c37a3aa21739e9993b08"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile-cpu.collapsed",
+      "sha256": "1b1e0b4b37340fb4719e4c4fdc80007dbcfc8bf186cc6c5fd6810f2d7c350e5a",
+      "uncompressed_sha256": "a262dd0ca40c90a982b12d3d18c1ae45540983b2d835f0ea08d3d407b5f5ddc7"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile-gc.log",
+      "sha256": "4617a370fa7842937e27039357e9e7fba03eb6c401ea4c143a22328d53398e52",
+      "uncompressed_sha256": "04e112d01792038de788d302834775c7303fba3c16a2c38ee5b6d2409f0bbd80"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256-profile.log",
+      "sha256": "925bb625de2b422a3db673db5aaaf876b401d855b3583db23bf474585b32f92e",
+      "uncompressed_sha256": "bde6722fe55bd74d4190005929a75b68e01eeab658cb13a660949af56ba46bbd"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-candidate-transform-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/candidate-transform-256.log",
+      "sha256": "9ac43e610419fd193d66215a655f760b3c2084b4249f1cf98aea71080cc14acb",
+      "uncompressed_sha256": "687dbf61a57a06face0ba69bcba92389b113375028d555aae62f0d891adb9907"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-16-gc.log",
+      "sha256": "4054e35b5cf563e46891a81daf9509d93624e87233daeed6b73b7b74d9dcca02",
+      "uncompressed_sha256": "20461e01731238f46ab1b84d0a1af7c31488b81b2124fad1986f3d1cc992141e"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-16.log",
+      "sha256": "f155e9715b7a12e596d1d1082e3e0316fb67ac84a4d34d32e311d0c300257dcb",
+      "uncompressed_sha256": "8f3ceae7021a3fc5edb398ffa900aef2310cc0fe6ab9be198d3bb448293b3dc5"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-gc.log",
+      "sha256": "32f9d7e3db07ad30bffaa7be7ce4c8cecfe04fca9e1242e42909e0801300b759",
+      "uncompressed_sha256": "c3216b64b539a3167d55132c622c292e7c572a0d0b8394e18af157657ab82ce5"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile-alloc.collapsed",
+      "sha256": "bd0842f5ebb3ec321e040f4ba308cba1d193acd951121e1d353b56316bb36afd",
+      "uncompressed_sha256": "7f6e2d719343db3b9918b16db22a4f6a2caa498dccfc61d4377e7c6a620c629c"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile-cpu.collapsed",
+      "sha256": "ac8527c94866bb7e542c4f760587c9c882517c0f0fe2f1252a93b3c5cdb32b50",
+      "uncompressed_sha256": "774c875cd811a06a251ad848fdbf92c9f3233abfcff5bd433be825b56bbf2480"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile-gc.log",
+      "sha256": "750c3bf009cb1d1231e8c44ecc881f531185df51d4fecf0e54536855cf49bf92",
+      "uncompressed_sha256": "1dc3322fc297eb2d96b46ea04d786efb7ba132087fd40018cae8ac520e84b85c"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256-profile.log",
+      "sha256": "2e98526e3bc25d22d8ea68f1fe4bd98945029c1e54e46de49dbc2fb6d98647fc",
+      "uncompressed_sha256": "af3311ec296054b9eeff7c96f2ecad78601a1826b554c6d081e51e978fcebfc7"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-identity-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-identity-256.log",
+      "sha256": "a3e6a1fac21103ba0effa9de4e029587649a4a823e430f387196422dfaafcde9",
+      "uncompressed_sha256": "9362717c47a734ea757cdb7426c73b6297aba949dad3f1a014c49816e38fbe14"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-java-build.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-java-build.log",
+      "sha256": "561ca0a53983fcddc331f254184e14a1fa89095c02faf41ea9ddc3c5ddb2cecf",
+      "uncompressed_sha256": "c516a4686d5bfa83c7455fd3b9bd3c388835c94165a1abfb21a9756fd7763ebe"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-native-build.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-native-build.log",
+      "sha256": "1071fed91bafebd0bbd32a5a0385d67eef0d36b108a51366b4807b2a54242e33",
+      "uncompressed_sha256": "612d21140fc7435a1053d34174aa46021ce6b6cbaf6a298ab22e00996d8ebc25"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-rust-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-16-gc.log",
+      "sha256": "7b7ff9bb97cec282fef6c2bd677324e60924f149a6cb5c366f06974952a73a06",
+      "uncompressed_sha256": "5f96d8805d421123b4a417f64c4f02491f4db6f6a4f368ea55936e4bf65342d5"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-rust-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-16.log",
+      "sha256": "02ab84af2051ef02bd21d8b64a3d5af5e5b0cff15602b775dd8f3f9cbbe6efe8",
+      "uncompressed_sha256": "124e396bc780fcc6db3dde6b19bc66484cdadd488b81241eb2a6de6fe74703f4"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-rust-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile-alloc.collapsed",
+      "sha256": "36c665afc5cf726d015843aba735e85f57dcd057aa6c481eb43ac6c85859933d",
+      "uncompressed_sha256": "a2d211ba3798244d4013e41a6c39f10270ffc373113a326f12e09ea03d7223cf"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-rust-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile-cpu.collapsed",
+      "sha256": "688828a6eedf5ba771c64f0649b79814fc5f69d7c6809dce741e6f2dba5c4de5",
+      "uncompressed_sha256": "a13519c169bb5f77283b9196ac3cc2490715f3f797d729b10f3bc68f2051d5a5"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-rust-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile-gc.log",
+      "sha256": "9baa31eb0efae628615e6d3499fb0500847a7fdf460c3c7e7f407add1fa14836",
+      "uncompressed_sha256": "e21ee1fc4d83eecd191ad48176d3121bbf2a0ef330689b546f202e7543623fba"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-rust-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-rust-256-profile.log",
+      "sha256": "533b58286625a31f3024cfa6ed19264ccaad34d8fb24b920c62e533a3c429d9c",
+      "uncompressed_sha256": "f578ee92036e2ebcdd7eae1a8fd857452bc707a56df4ad993f0d23cfa531facc"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-16-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-16-gc.log",
+      "sha256": "359d0f558082868da44e39380a4863a2e53981b4fed08a133383e8ea6147eb49",
+      "uncompressed_sha256": "df1833f294123db91175d94bd72fc786f7e79a2c641e668304a8df6c585f2de5"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-16.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-16.log",
+      "sha256": "8e05357575df7bd4bcd19fbd767bfa7633484bd17a56a6d8f22a180803889a19",
+      "uncompressed_sha256": "2fafa0c50095d707d118f590198b497f349b114777d54f6c4796fe53da0524d2"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-256-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-gc.log",
+      "sha256": "d8ba7b9a2d2e949a406e790ba2426c3d7b69e4849fc6b5d780ef42d6ab6bf3d5",
+      "uncompressed_sha256": "53b5f76c53fe1685d44040cf1ee2bda6701ef647687c1192a2e6a999803cf9e8"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-256-profile-alloc.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile-alloc.collapsed",
+      "sha256": "06c7c93af9d8c9eab4003a381bda7bfb80e3196fd23fd3c5179b2c8f7b906e66",
+      "uncompressed_sha256": "1dffca4d9d37f20b623bb6c772c789911e24c688aac0c92d43e415daf7878f15"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-256-profile-gc.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile-gc.log",
+      "sha256": "737bd0526e00719f5a63a1d2dfadaa9447381da9eb95f48e61083ee560017a67",
+      "uncompressed_sha256": "180a4abc355c763591ae226f1dfe0d541a4b780ee4207dceb073d6d76d726a62"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-256-profile-cpu.collapsed.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile-cpu.collapsed",
+      "sha256": "3fe1957689927390049ae645b07e4bb375646b975ccc48c6986cb46b8092ce4f",
+      "uncompressed_sha256": "124a3c8aafb0b91ab956ab5022635d8132ac1a5c3cba1b6e61cad5cdeb555bb2"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-256-profile.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256-profile.log",
+      "sha256": "b74caebaf0c123bf28c29db01a32460412bece418f99305508129cd4cc0da2b0",
+      "uncompressed_sha256": "603fe9e53cd5ffd6b706f03eaffc320c7187fb7ded4319007372a6354cfc799c"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-previous-transform-256.log.gz",
+      "source": "native/target/nested-scalar-diagnostics/previous-transform-256.log",
+      "sha256": "e3134b23aeb6f5d6791945bc0498e67426e0a394737c02877a9b8e87961065b9",
+      "uncompressed_sha256": "1afedba6ae9155d400313b98992cb49121e8cf63e940963f4d7d3effb3369bc8"
+    },
+    {
+      "path": "nested-scalar-isolated-2026-10-16-118-results.json.gz",
+      "source": "native/target/nested-scalar-diagnostics/results.json",
+      "sha256": "e11baae06167b459c908e369ed408f89ccaec4e32c6f1e27d38935b6e83091f9",
+      "uncompressed_sha256": "f7f6e7d88b75fece5183696903e1d4b7179cb2e6be41b59ac3b2f057b1431290"
+    }
+  ]
+}

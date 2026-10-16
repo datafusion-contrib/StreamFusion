@@ -120,6 +120,10 @@ final class PortableSqlRecovery implements Supplier<TableEnvironment>, AutoClose
     return this;
   }
 
+  long counterValue(String name) {
+    return executionMetrics == null ? 0 : executionMetrics.counterValue(name);
+  }
+
   List<Map<String, Object>> nativeExecution() {
     return executionMetrics == null ? List.of() : executionMetrics.nativeOperators();
   }

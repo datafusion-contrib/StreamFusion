@@ -1,0 +1,103 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "production_revision": "04549f703fdc2b1f9591d8195a50bebeacaddc98",
+  "test_source": "src/test/java/tech/streamfusion/FlinkNestedScalarRecoveryTest.java",
+  "test_source_sha256": "bfb970d0d50db19ecdd5dbeded18539e927f3d92a1c82309553a1a6334a7adb2",
+  "native_sha256": "acf7e95b8a2170af17817b75c9f7a5938237d93a0197f1321550a18ddf4af140",
+  "configuration": {
+    "java": 17,
+    "backends": [
+      "hashmap",
+      "tech.streamfusion.state.RocksDBNativeStateBackendFactory"
+    ],
+    "parallelism": [
+      1,
+      3
+    ],
+    "rows": 48,
+    "failure_after_completed_source_offsets": [
+      12,
+      32
+    ],
+    "object_reuse": true,
+    "transpose_batch_rows": 5,
+    "nested_row_kinds": [
+      "INSERT",
+      "UPDATE_BEFORE",
+      "UPDATE_AFTER",
+      "DELETE"
+    ],
+    "values": [
+      "NULL nested rows",
+      "NULL fields, arrays and array elements",
+      "long Unicode strings",
+      "identity result kinds",
+      "mutable Row/array results"
+    ]
+  },
+  "checks": [
+    "Stock uninterrupted versus native twice-recovered result multiset and resolved schema",
+    "Exactly 48 output records",
+    "Actual NativeCalc consumed rows",
+    "Source failures only after completed checkpoints; exact restored offsets12 and32",
+    "Completed source and no active source after collection"
+  ],
+  "limitations": [
+    "The query EXPLAIN precedes its sink; sink-side transpose admission is covered by the complete-job benchmark, not asserted from this open query plan.",
+    "The 1.18 candidate is a copied-source compatibility worktree, with matching candidate production Java and pinned native library.",
+    "Separate planner/task JVM configuration and throughput admission remain pending."
+  ],
+  "suites": [
+    {
+      "flink_line": "2.2.1",
+      "passed": 4,
+      "skipped": 0,
+      "proof": [
+        "[nested-recovery-proof] backend=hashmap parallelism=1 observations=[{failedAfterCheckpoint=false, restoredOffsets=[], emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48]}, {failedAfterCheckpoint=true, restoredOffsets=[12, 32], emittedWatermarks=[], completedCheckpoints=3, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48]}]",
+        "[nested-recovery-proof] backend=hashmap parallelism=3 observations=[{failedAfterCheckpoint=false, restoredOffsets=[], emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48]}, {failedAfterCheckpoint=true, restoredOffsets=[12, 32], emittedWatermarks=[], completedCheckpoints=3, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48]}]",
+        "[nested-recovery-proof] backend=tech.streamfusion.state.RocksDBNativeStateBackendFactory parallelism=1 observations=[{failedAfterCheckpoint=false, restoredOffsets=[], emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48]}, {failedAfterCheckpoint=true, restoredOffsets=[12, 32], emittedWatermarks=[], completedCheckpoints=3, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48]}]",
+        "[nested-recovery-proof] backend=tech.streamfusion.state.RocksDBNativeStateBackendFactory parallelism=3 observations=[{failedAfterCheckpoint=false, restoredOffsets=[], emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48]}, {failedAfterCheckpoint=true, restoredOffsets=[12, 32], emittedWatermarks=[], completedCheckpoints=3, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48]}]"
+      ],
+      "artifacts": [
+        {
+          "file": "nested-scalar-recovery-2026-10-16-22.log.gz",
+          "sha256": "608d4eba13f8c60abc10eb8803ed6deb9323a59b696ecd0902c14b9bb3ca9e0a"
+        },
+        {
+          "file": "nested-scalar-recovery-2026-10-16-22-compile.log.gz",
+          "sha256": "ac42c7654bcbf3e1d0db646699f82b84456a1a46a26ef38edd83e6d0c7a39be7"
+        },
+        {
+          "file": "nested-scalar-recovery-2026-10-16-22-report.txt.gz",
+          "sha256": "2be3f3da59678efb9515144a120eec41465869c30ab6221a6dd3fcf755c25a00"
+        }
+      ]
+    },
+    {
+      "flink_line": "1.18.1",
+      "passed": 4,
+      "skipped": 0,
+      "proof": [
+        "[nested-recovery-proof] backend=hashmap parallelism=1 observations=[{emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48], failedAfterCheckpoint=false, restoredOffsets=[]}, {emittedWatermarks=[], completedCheckpoints=4, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48], failedAfterCheckpoint=true, restoredOffsets=[12, 32]}]",
+        "[nested-recovery-proof] backend=hashmap parallelism=3 observations=[{emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48], failedAfterCheckpoint=false, restoredOffsets=[]}, {emittedWatermarks=[], completedCheckpoints=3, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48], failedAfterCheckpoint=true, restoredOffsets=[12, 32]}]",
+        "[nested-recovery-proof] backend=tech.streamfusion.state.RocksDBNativeStateBackendFactory parallelism=1 observations=[{emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48], failedAfterCheckpoint=false, restoredOffsets=[]}, {emittedWatermarks=[], completedCheckpoints=4, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48], failedAfterCheckpoint=true, restoredOffsets=[12, 32]}]",
+        "[nested-recovery-proof] backend=tech.streamfusion.state.RocksDBNativeStateBackendFactory parallelism=3 observations=[{emittedWatermarks=[], completedCheckpoints=1, injectedOffsets=[], activeSources=0, restoredSourceOffset=-1, completedOffsets=[48], failedAfterCheckpoint=false, restoredOffsets=[]}, {emittedWatermarks=[], completedCheckpoints=3, injectedOffsets=[12, 32], activeSources=0, restoredSourceOffset=32, completedOffsets=[12, 32, 48], failedAfterCheckpoint=true, restoredOffsets=[12, 32]}]"
+      ],
+      "artifacts": [
+        {
+          "file": "nested-scalar-recovery-2026-10-16-118.log.gz",
+          "sha256": "a2debd0358a66025ebbf099844751080d7912875d0032c9314a15702f4dabd9b"
+        },
+        {
+          "file": "nested-scalar-recovery-2026-10-16-118-compile.log.gz",
+          "sha256": "37f41e66b2859a915a6b67b3048c8ce0983daaa22b8a67bc6b1a5954c9d1e72b"
+        },
+        {
+          "file": "nested-scalar-recovery-2026-10-16-118-report.txt.gz",
+          "sha256": "738e188116084efe21e7ee87069ec4bb6307ac267fda636c88d727c944e7e193"
+        }
+      ]
+    }
+  ]
+}

@@ -60,6 +60,8 @@ final class TextTimeBenchmarkInputs {
         return "a";
       case "tt_json_array":
         return "a";
+      case "tt_json_map":
+        return "m";
       case "tt_timestamp":
       case "tt_timestamp_ltz":
         return "ts";
@@ -94,6 +96,8 @@ final class TextTimeBenchmarkInputs {
         return "ARRAY<DECIMAL(38,9)>";
       case "tt_json_array":
         return "ARRAY<STRING>";
+      case "tt_json_map":
+        return "MAP<STRING NOT NULL, STRING>";
       case "tt_timestamp":
         return "TIMESTAMP(9)";
       case "tt_timestamp_ltz":
@@ -124,6 +128,16 @@ final class TextTimeBenchmarkInputs {
               charsets[(int) (i % charsets.length)]))
           .returns(Types.ROW_NAMED(new String[] {"s", "b", "c"},
               Types.STRING, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.STRING)));
+    } else if (input.equals("tt_json_map")) {
+      tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
+          .map(i -> {
+            java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+            map.put("first", text[(int) (i % 2)]); map.put("absent", null); map.put("last", "tail");
+            return Row.of(isNull(i, nullEvery) ? null : map, "{\"items\":[1,2,3]}");
+          }).returns(Types.ROW_NAMED(new String[] {"m", "s"},
+              Types.MAP(Types.STRING, Types.STRING), Types.STRING)),
+          Schema.newBuilder().column("m", DataTypes.MAP(DataTypes.STRING().notNull(), DataTypes.STRING()))
+              .column("s", DataTypes.STRING()).build());
     } else if (input.equals("tt_json_array")) {
       tables.createTemporaryView(
           "inputs",

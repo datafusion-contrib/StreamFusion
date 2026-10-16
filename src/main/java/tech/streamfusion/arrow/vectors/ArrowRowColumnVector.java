@@ -18,6 +18,7 @@
 
 package tech.streamfusion.arrow.vectors;
 
+import org.apache.arrow.vector.complex.StructVector;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.data.columnar.ColumnarRowData;
 import org.apache.flink.table.data.columnar.vector.ColumnVector;
@@ -25,30 +26,33 @@ import org.apache.flink.table.data.columnar.vector.RowColumnVector;
 import org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch;
 import org.apache.flink.util.Preconditions;
 
-import org.apache.arrow.vector.complex.StructVector;
-
 /** Arrow column vector for Row. */
 @Internal
 public final class ArrowRowColumnVector implements RowColumnVector {
 
-    /** Container which is used to store the sequence of row values of a column to read. */
-    private final StructVector structVector;
+  /** Container which is used to store the sequence of row values of a column to read. */
+  private final StructVector structVector;
 
-    private final ColumnVector[] fieldColumns;
+  private final ColumnVector[] fieldColumns;
+  private final org.apache.arrow.vector.TinyIntVector kinds;
 
-    public ArrowRowColumnVector(StructVector structVector, ColumnVector[] fieldColumns) {
-        this.structVector = Preconditions.checkNotNull(structVector);
-        this.fieldColumns = Preconditions.checkNotNull(fieldColumns);
-    }
+  public ArrowRowColumnVector(StructVector structVector, ColumnVector[] fieldColumns) {
+    this.structVector = Preconditions.checkNotNull(structVector);
+    this.fieldColumns = Preconditions.checkNotNull(fieldColumns);
+    this.kinds = tech.streamfusion.arrow.NestedRowKinds.vector(structVector);
+  }
 
-    @Override
-    public ColumnarRowData getRow(int i) {
-        VectorizedColumnBatch vectorizedColumnBatch = new VectorizedColumnBatch(fieldColumns);
-        return new ColumnarRowData(vectorizedColumnBatch, i);
-    }
+  @Override
+  public ColumnarRowData getRow(int i) {
+    VectorizedColumnBatch vectorizedColumnBatch = new VectorizedColumnBatch(fieldColumns);
+    ColumnarRowData row = new ColumnarRowData(vectorizedColumnBatch, i);
+    if (kinds != null && !kinds.isNull(i))
+      row.setRowKind(org.apache.flink.types.RowKind.fromByteValue(kinds.get(i)));
+    return row;
+  }
 
-    @Override
-    public boolean isNullAt(int i) {
-        return structVector.isNull(i);
-    }
+  @Override
+  public boolean isNullAt(int i) {
+    return structVector.isNull(i);
+  }
 }

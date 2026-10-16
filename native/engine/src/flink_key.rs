@@ -1,10 +1,11 @@
 use crate::*;
 use arrow::array::{
-    BinaryArray, Date32Array, Decimal128Array, FixedSizeBinaryArray, LargeBinaryArray,
+    BinaryArray, Date32Array, Decimal128Array, FixedSizeBinaryArray, Int8Array, LargeBinaryArray,
     LargeListArray, LargeStringArray, ListArray, MapArray, StringArray, StructArray,
     Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray, Time64NanosecondArray,
 };
 use arrow::datatypes::TimeUnit;
+use streamfusion_bridge::nested_row_kind_index;
 use streamfusion_bridge::timestamp::{is_timestamp, TimestampColumn, TimestampValue};
 
 const DEFAULT_SEED: u32 = 42;
@@ -15,9 +16,14 @@ const MAX_INLINE_BYTES: usize = 7;
 struct KeyTypeSchema {
     timestamp_precision: i32,
     children: Vec<KeyTypeSchema>,
+    row_kind: Option<usize>,
 }
 
 fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize) -> KeyTypeSchema {
+    let row_kind = match data_type {
+        DataType::Struct(fields) => nested_row_kind_index(fields),
+        _ => None,
+    };
     let timestamp_precision = *precisions
         .get(*cursor)
         .expect("missing Flink key type descriptor");
@@ -29,6 +35,7 @@ fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize)
         }
         DataType::Struct(fields) => fields
             .iter()
+            .take(row_kind.unwrap_or(fields.len()))
             .map(|field| key_type_schema(field.data_type(), precisions, cursor))
             .collect(),
         DataType::Map(entries, _) => match entries.data_type() {
@@ -43,6 +50,7 @@ fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize)
     KeyTypeSchema {
         timestamp_precision,
         children,
+        row_kind,
     }
 }
 
@@ -311,8 +319,26 @@ fn encode_array(array: &ArrayRef, schema: &KeyTypeSchema) -> Vec<u8> {
 }
 
 fn encode_struct(array: &StructArray, row: usize, schema: &KeyTypeSchema) -> Vec<u8> {
-    assert_eq!(array.num_columns(), schema.children.len());
-    let mut writer = BinaryRowWriter::new(array.num_columns());
+    let kind = schema.row_kind;
+    assert_eq!(
+        array.num_columns(),
+        schema.children.len() + usize::from(kind.is_some())
+    );
+    let mut writer = BinaryRowWriter::new(schema.children.len());
+    if let Some(index) = kind {
+        let kinds = array
+            .column(index)
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .unwrap();
+        let value = if kinds.is_null(row) {
+            0
+        } else {
+            kinds.value(row) as u8
+        };
+        assert!(value <= 3, "invalid nested Flink RowKind");
+        writer.bytes[0] = value;
+    }
     for (pos, child_schema) in schema.children.iter().enumerate() {
         write_value(&mut writer, pos, array.column(pos), row, child_schema);
     }

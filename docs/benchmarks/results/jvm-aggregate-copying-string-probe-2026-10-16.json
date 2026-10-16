@@ -1,0 +1,391 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "source_commit": "dd53a0316130e280b4b0b7605e8ddb404f76d15d",
+  "variant": "STRING cache with copying Arrow reader probes, before borrowed probe experiment",
+  "flink": "2.2.1",
+  "jdk": "17",
+  "cpu": "Intel i7-12650H",
+  "configuration": {
+    "heap": "2 GiB",
+    "parallelism": 1,
+    "build": "release mimalloc",
+    "production_ipc": true,
+    "both_transposes": true,
+    "batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "metrics_cluster": "fresh per job",
+    "boundary": "executeSql().await including source/sink, state and conversions"
+  },
+  "measurements": [
+    {
+      "label": "string-cache-16",
+      "rows": 2000000,
+      "keys": 16,
+      "stock_trials_s": [
+        0.727575729,
+        0.708105867,
+        0.717205442,
+        0.760919697,
+        0.714603522
+      ],
+      "native_trials_s": [
+        0.729680903,
+        0.714809868,
+        0.716069469,
+        0.691952305,
+        0.622429621
+      ],
+      "stock_median_s": 0.717205442,
+      "native_median_s": 0.714809868,
+      "stock_range_s": [
+        0.708105867,
+        0.760919697
+      ],
+      "native_range_s": [
+        0.622429621,
+        0.729680903
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": "jvm-aggregate-copying-string-probe-string-cache-16-2026-10-16.log.gz",
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<benchmark-artifacts>/native/target/232-json-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<benchmark-artifacts>/native/target/232-json-fixed -Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Xlog:gc*,safepoint:file=<benchmark-artifacts>/native/target/237-jvm-aggregate/string-cache-16-gc.log:time,uptime,level,tags",
+        "-Djvmagg.expectNative=true",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.rows=2000000",
+        "-Djvmagg.keys=16",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.keyType=string",
+        "-Djvmagg.expectCache=true"
+      ]
+    },
+    {
+      "label": "string-cache-65k",
+      "rows": 2000000,
+      "keys": 65536,
+      "stock_trials_s": [
+        1.305394494,
+        1.283711585,
+        1.876215893,
+        1.210459842,
+        1.173259626
+      ],
+      "native_trials_s": [
+        1.449921878,
+        1.427949061,
+        1.315862028,
+        1.405219242,
+        1.18262709
+      ],
+      "stock_median_s": 1.283711585,
+      "native_median_s": 1.405219242,
+      "stock_range_s": [
+        1.173259626,
+        1.876215893
+      ],
+      "native_range_s": [
+        1.18262709,
+        1.449921878
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": "jvm-aggregate-copying-string-probe-string-cache-65k-2026-10-16.log.gz",
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<benchmark-artifacts>/native/target/232-json-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<benchmark-artifacts>/native/target/232-json-fixed -Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Xlog:gc*,safepoint:file=<benchmark-artifacts>/native/target/237-jvm-aggregate/string-cache-65k-gc.log:time,uptime,level,tags",
+        "-Djvmagg.expectNative=true",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.rows=2000000",
+        "-Djvmagg.keys=65536",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.keyType=string",
+        "-Djvmagg.expectCache=true"
+      ]
+    },
+    {
+      "label": "string-cache-distinct",
+      "rows": 2000000,
+      "keys": 2000000,
+      "stock_trials_s": [
+        1.988491944,
+        2.004538852,
+        1.972298231,
+        2.018344024,
+        1.955629815
+      ],
+      "native_trials_s": [
+        2.159814393,
+        2.081507494,
+        2.203838157,
+        2.078862545,
+        2.071798086
+      ],
+      "stock_median_s": 1.988491944,
+      "native_median_s": 2.081507494,
+      "stock_range_s": [
+        1.955629815,
+        2.018344024
+      ],
+      "native_range_s": [
+        2.071798086,
+        2.203838157
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": "jvm-aggregate-copying-string-probe-string-cache-distinct-2026-10-16.log.gz",
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<benchmark-artifacts>/native/target/232-json-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<benchmark-artifacts>/native/target/232-json-fixed -Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Xlog:gc*,safepoint:file=<benchmark-artifacts>/native/target/237-jvm-aggregate/string-cache-distinct-gc.log:time,uptime,level,tags",
+        "-Djvmagg.expectNative=true",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.rows=2000000",
+        "-Djvmagg.keys=2000000",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.keyType=string",
+        "-Djvmagg.expectCache=true"
+      ]
+    }
+  ],
+  "profile": {
+    "rows": 1000000,
+    "keys": 32768,
+    "warmup_pairs": 2,
+    "pairs": 3,
+    "includes": [
+      "JVM UDAF",
+      "native builtin SUM Rust control"
+    ],
+    "timings_excluded": true,
+    "activity": {
+      "exit_code": 0,
+      "external_activity": [],
+      "timing_excluded": true
+    },
+    "stacks": {
+      "cpu": {
+        "file": "jvm-aggregate-copying-string-probe-cpu-2026-10-16.collapsed.gz",
+        "sha256": "126613f8b1e1e92d58b7b637f2220018047c93fbcda54409efc6bba3a6caadfd",
+        "units": "CPU samples",
+        "inclusive_jvm_aggregate_total": 1383,
+        "inclusive_methods": {
+          "JvmAccumulatorCache": 736,
+          "BinaryRowDataKeySelector.getKey": 6,
+          "HashMap.getNode": 582,
+          "ColumnarRowData.getString": 85,
+          "RowDataSerializer.copy": 140
+        },
+        "leading_jvm_leaves": [
+          [
+            "java/util/HashMap.getNode_[i]",
+            349
+          ],
+          [
+            "org/apache/flink/core/memory/MemorySegment.equalTo_[i]",
+            100
+          ],
+          [
+            "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+            62
+          ],
+          [
+            "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+            51
+          ],
+          [
+            "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.keyFor_[i]",
+            28
+          ],
+          [
+            "org/apache/flink/table/data/binary/BinarySegmentUtils.inFirstSegment_[i]",
+            25
+          ],
+          [
+            "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+            23
+          ],
+          [
+            "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+            23
+          ],
+          [
+            "org/apache/flink/table/data/binary/LazyBinaryFormat.ensureMaterialized_[j]",
+            22
+          ],
+          [
+            "org/apache/flink/table/data/binary/BinaryStringData.equals_[j]",
+            22
+          ],
+          [
+            "jdk/internal/misc/Unsafe.copyMemory_[i]",
+            21
+          ],
+          [
+            "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.update_[i]",
+            21
+          ]
+        ],
+        "leading_rust_frames": [
+          [
+            "streamfusion::group_agg::GroupAggregator<S>::update",
+            614
+          ],
+          [
+            "streamfusion::group_agg::output_of",
+            80
+          ],
+          [
+            "streamfusion::group_agg::GroupChanges::push",
+            35
+          ],
+          [
+            "streamfusion::exchange::coalesce::coalesce_batches",
+            22
+          ],
+          [
+            "streamfusion::flink_key::write_value",
+            20
+          ],
+          [
+            "streamfusion::aggregates::scalars_to_array",
+            13
+          ],
+          [
+            "streamfusion::flink_key::BinaryRowWriter::write_variable",
+            10
+          ],
+          [
+            "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+            6
+          ],
+          [
+            "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+            6
+          ],
+          [
+            "streamfusion::group_agg::group_agg_state_bytes",
+            6
+          ]
+        ]
+      },
+      "alloc": {
+        "file": "jvm-aggregate-copying-string-probe-alloc-2026-10-16.collapsed.gz",
+        "sha256": "20fc14c2a8a53a8687412f482128374c8318a5a76a3424b6e8a28cddad0208eb",
+        "units": "sampled allocation bytes",
+        "inclusive_jvm_aggregate_total": 4998561792,
+        "inclusive_methods": {
+          "JvmAccumulatorCache": 1060110336,
+          "ColumnarRowData.getString": 1811939328,
+          "RowDataSerializer.copy": 1891631104,
+          "BinaryRowDataKeySelector.getKey": 62914560
+        },
+        "leading_jvm_leaves": [
+          [
+            "org.apache.flink.core.memory.MemorySegment_[i]",
+            809500672
+          ],
+          [
+            "java.lang.Long_[i]",
+            612368384
+          ],
+          [
+            "org.apache.flink.table.data.GenericRowData_[i]",
+            608174080
+          ],
+          [
+            "java.lang.Object[]_[i]",
+            577765376
+          ],
+          [
+            "byte[]_[i]",
+            572522496
+          ],
+          [
+            "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+            460324864
+          ],
+          [
+            "org.apache.flink.table.data.binary.BinarySection_[i]",
+            445644800
+          ],
+          [
+            "org.apache.flink.core.memory.MemorySegment[]_[i]",
+            369098752
+          ],
+          [
+            "java.util.concurrent.atomic.AtomicBoolean_[i]",
+            205520896
+          ],
+          [
+            "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+            177209344
+          ],
+          [
+            "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+            121634816
+          ],
+          [
+            "java.util.HashMap$Node_[i]",
+            5242880
+          ]
+        ],
+        "leading_rust_frames": []
+      }
+    }
+  },
+  "admitted": false,
+  "interpretation": [
+    "No observed competing Java/Rust build/job work in 500 ms sampling",
+    "16 keys roughly ties stock; medium and distinct medians regress. No default admission.",
+    "The local profile is on different hardware/JDK from the isolated baseline; it is not a matched causal comparison. Key selector sampling is small, but cache lookup and temporary string wrappers remain concrete targets.",
+    "Profile timings excluded. Inclusive sampled counts overlap downstream copying and are not copied-byte or peak-memory measurements."
+  ],
+  "preflight_limitation": "Historical v1 benchmark explains only native before timing. Stock/native admission must use corrected symmetric preflight. Profiled NativeJvmGroup stacks remain diagnostic; all profile timings excluded."
+}

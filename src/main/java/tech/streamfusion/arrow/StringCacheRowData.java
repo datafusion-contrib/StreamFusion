@@ -13,11 +13,13 @@ import org.apache.flink.types.RowKind;
 /** Reusable boundary row preserving explicit Java string caches over borrowed Arrow buffers. */
 final class StringCacheRowData extends tech.streamfusion.compat.ProjectedRowDataCompat {
   private final ListVector[] caches;
+  private final BorrowedStringValues[] borrowed;
   private RowData row;
   private int rowIndex;
 
-  StringCacheRowData(ListVector[] caches) {
+  StringCacheRowData(ListVector[] caches, BorrowedStringValues[] borrowed) {
     this.caches = caches;
+    this.borrowed = borrowed;
   }
 
   RowData replace(RowData row, int rowIndex) {
@@ -88,7 +90,11 @@ final class StringCacheRowData extends tech.streamfusion.compat.ProjectedRowData
 
   @Override
   public StringData getString(int pos) {
-    var binary = (org.apache.flink.table.data.binary.BinaryStringData) row.getString(pos);
+    var binary =
+        borrowed != null && borrowed[pos] != null
+            ? borrowed[pos].value(rowIndex)
+            : (org.apache.flink.table.data.binary.BinaryStringData) row.getString(pos);
+    if (caches == null) return binary;
     var restored = StringCacheColumns.read(caches[pos], rowIndex, binary);
     return restored == null ? binary : restored;
   }

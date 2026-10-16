@@ -266,6 +266,17 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     entries.add(
         Substitution.of(
                 StreamPhysicalGroupAggregate.class,
+                "jvmGroupAggregate",
+                JvmGroupAggregateMatcher::substitute)
+            .shaped(JvmGroupAggregateMatcher::enabledUserAggregate)
+            .matching(JvmGroupAggregateMatcher::matches)
+            .reason(JvmGroupAggregateMatcher::unsupportedReason)
+            .keyedState()
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGroupAggregate.class,
                 "groupAggregate",
                 GroupAggregateMatcher::substitute)
             .keyedState()

@@ -1,0 +1,135 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "admitted": false,
+  "decision": "Reject generic Java array conversion; retain released Flink converter and Unicode ARRAY_SORT regression.",
+  "base_revision": "b170a474d5658330ed7e92e9b8bcc54117c8d287",
+  "source_identity": "Uncommitted nested-scalar prototype; complete original working-tree snapshot was not retained. These profiles precede the native key/UNNEST/order metadata fixes. Not admission or exact-final-head evidence.",
+  "native_base_sha256": "d55c5bfa509c460a84c76c9bc2b62a4a46575cec32ff4d905847a1e66c4bd786",
+  "native_build": "release with mimalloc; unchanged baseline for both profiles",
+  "configuration": {
+    "java": "JDK 17",
+    "flink": "2.2.1",
+    "heap": "2 GiB",
+    "rows_per_shape": 1000000,
+    "shapes": [
+      "identity",
+      "transform",
+      "rust builtin control"
+    ],
+    "warmup_pairs": 2,
+    "measured_pairs": 3,
+    "parallelism": 1,
+    "width": 16,
+    "production_ipc": true,
+    "both_transposes": true,
+    "profiling": "async-profiler 4.0 cpu-clock interval 2 ms, cstack=dwarf, Java allocation interval 1 MiB"
+  },
+  "limitations": [
+    "ALL profile timings excluded; external Java activity observed during both recordings.",
+    "Java allocation estimates are not copied bytes, native allocation volume or retained memory.",
+    "Whole-process recordings include warmup, setup, JIT and a separate primitive Rust-control shape. Inclusive stack totals overlap.",
+    "Callback allocation reduction does not establish correctness or throughput. The candidate changes ARRAY_SORT Unicode order and is rejected."
+  ],
+  "profiles": [
+    {
+      "label": "nested-scalar-first",
+      "exit_code": 0,
+      "profile_timing_excluded": true,
+      "external_cpu_seconds": 63.06,
+      "external_observations": 154,
+      "files": [
+        {
+          "file": "nested-scalar-first-2026-10-16.log.gz",
+          "sha256": "2a65c0d8482d1b6b02cd8bc1d7cd1bcfada71fed9469fd1a3d17d907bf78bc2b"
+        },
+        {
+          "file": "nested-scalar-first-2026-10-16-gc.log.gz",
+          "sha256": "b3945460070a17994d079669322700a1b8e61667957b6badc0b54e45e61becdb"
+        }
+      ],
+      "stacks": {
+        "cpu": {
+          "file": "nested-scalar-first-2026-10-16-cpu.collapsed.gz",
+          "sha256": "a0aec15dd86c1e2d0bfacf5f577375ae766e19dc07a3e91171b96cda7227cd93",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 29375,
+            "callback": 2955,
+            "array_converter": 945,
+            "row_to_external": 473,
+            "rust_calc": 181,
+            "rust_udf": 130
+          }
+        },
+        "alloc": {
+          "file": "nested-scalar-first-2026-10-16-alloc.collapsed.gz",
+          "sha256": "1e608454c4f48165a049165f6ad179515e769575bd0154d15c85047ac84b4620",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 68654500360,
+            "callback": 15635316736,
+            "array_converter": 5885657088,
+            "row_to_external": 1755316224,
+            "rust_calc": 0,
+            "rust_udf": 0
+          }
+        }
+      }
+    },
+    {
+      "label": "nested-scalar-generic",
+      "exit_code": 0,
+      "profile_timing_excluded": true,
+      "external_cpu_seconds": 72.46,
+      "external_observations": 81,
+      "files": [
+        {
+          "file": "nested-scalar-generic-2026-10-16.log.gz",
+          "sha256": "d354873699de260994b4a0c8555be5ee57ee0a1ce143e9f05e4a64c631bcbfec"
+        },
+        {
+          "file": "nested-scalar-generic-2026-10-16-gc.log.gz",
+          "sha256": "7d76b442338ac1744fa868372b09a4d1457f68a8d826953a4437b7eeed215e09"
+        }
+      ],
+      "stacks": {
+        "cpu": {
+          "file": "nested-scalar-generic-2026-10-16-cpu.collapsed.gz",
+          "sha256": "137c14ef05539752d28f94ff780bfbe577682b1ebc3efef6501e59e961aaf89a",
+          "units": "samples",
+          "inclusive": {
+            "whole_process": 28301,
+            "callback": 2601,
+            "array_converter": 390,
+            "row_to_external": 490,
+            "rust_calc": 200,
+            "rust_udf": 156
+          }
+        },
+        "alloc": {
+          "file": "nested-scalar-generic-2026-10-16-alloc.collapsed.gz",
+          "sha256": "906d4fda486100c7afb46400e01c9c4a476c9aadab889d0655d8a1535ecaff68",
+          "units": "sampled Java allocation bytes",
+          "inclusive": {
+            "whole_process": 65149659440,
+            "callback": 12168724480,
+            "array_converter": 1169162240,
+            "row_to_external": 1827667968,
+            "rust_calc": 0,
+            "rust_udf": 0
+          }
+        }
+      }
+    }
+  ],
+  "rejected_converter": {
+    "file": "nested-scalar-rejected-converter-2026-10-16.java.gz",
+    "sha256": "4903f72de771ced19509a462e3362843e79320634b38c5e6500419ff082a7b53"
+  },
+  "sampled_callback_allocation_reduction": 0.2217155120380927,
+  "regression_log": {
+    "file": "nested-scalar-rejected-unicode-order-2026-10-16.log.gz",
+    "sha256": "767fc877bfe999970e4c9f54a6db38fa6057bec82b3f3506f9acdfd74bc1c5cd"
+  }
+}

@@ -1,0 +1,639 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_commit": "9bba46f633e8dc37a7dd8ba866cc5cfaecad6b79",
+  "source_sha256": {
+    ".github/workflows/jvm-aggregates.yml": "9ee31868094b06826af4e14cda96b2f8d2229363eb8e80ef699dc12e0dcc4d6f",
+    "bin/bench-jvm-aggregates.py": "f749c4895bccbcd72590bd2741ff3aef90b23af0335eb375d15f35daee04e1bb",
+    "src/main/java/tech/streamfusion/arrow/ArrowConversion.java": "c0b3fe8d1ce3fc919d88c526eb602f67191d1a5b68dd11245a26a2d6c9c7b1ee",
+    "src/main/java/tech/streamfusion/arrow/ArrowReader.java": "fa5e375b8c88509142d45fae6db74e9697eff707d7c3229e906f41620269623b",
+    "src/main/java/tech/streamfusion/arrow/StringCacheRowData.java": "d38eff304fa2cad52ba54a066ca454de3cd2e956885cffb8fd076eb872d8eb42",
+    "src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java": "7521bc9e3ffc259205649af16946bd866a6dff432cc0c28dd7091629fac9a7d0",
+    "src/main/java/tech/streamfusion/operator/JvmAccumulatorCache.java": "0383e8d56eda258f4f2dd26fe1b8f6ba0cb8cefcce1e8f225a0f12f17abf3635",
+    "src/test/java/tech/streamfusion/operator/JvmStringKeyProbeTest.java": "fb17b5c38c25d9cc0d36d3219228830b65121a09e24b779518fc48f550a2a49a",
+    "src/main/java/tech/streamfusion/arrow/BorrowedStringValues.java": "b4ced47d87ff76519640f8e682228f4fb28cfef87cdea9c9a20ac3cbc524bfa2",
+    "src/test/java/tech/streamfusion/operator/StringExitOwnershipTest.java": "d87b38992e391c006eb4ef08b470e348f4697e202cda450dca884cbaa59abcdf"
+  },
+  "configuration": {
+    "flink_line": "2.2.1",
+    "jdk": "17",
+    "host": "Core i7-12650H / Linux",
+    "native_library": "unchanged release+mimalloc 232-json-fixed",
+    "heap": "2 GiB",
+    "parallelism": 1,
+    "cache_entries": 65536,
+    "production_ipc": true,
+    "batch_rows": 1024,
+    "both_transposes": true,
+    "fixture_method": "symmetric-preflight-v2",
+    "cluster_lifetime": "per job",
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "borrowed_string_exit": true
+  },
+  "measurements": [
+    {
+      "label": "string-exit-v2-16",
+      "shape": "udaf",
+      "key_type": "string",
+      "key_prefix_chars": 16,
+      "rows": 2000000,
+      "keys": 16,
+      "stock_seconds": [
+        0.811791354,
+        0.801129711,
+        0.809937183,
+        0.732358853,
+        0.743845254
+      ],
+      "native_seconds": [
+        0.693290101,
+        0.681996949,
+        0.646867158,
+        0.591864701,
+        0.564690293
+      ],
+      "stock_median_seconds": 0.801129711,
+      "native_median_seconds": 0.646867158,
+      "stock_range_seconds": [
+        0.732358853,
+        0.811791354
+      ],
+      "native_range_seconds": [
+        0.564690293,
+        0.693290101
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": {
+        "file": "string-exit-v2-16-2026-10-16.log.gz",
+        "sha256": "9dc479c9fcb09d29973d11e6807e60957f29ccb964e352ae2a54c1716b9c333b"
+      }
+    },
+    {
+      "label": "string-exit-v2-65k",
+      "shape": "udaf",
+      "key_type": "string",
+      "key_prefix_chars": 16,
+      "rows": 2000000,
+      "keys": 65536,
+      "stock_seconds": [
+        1.390744666,
+        1.489076349,
+        1.297787273,
+        1.154439666,
+        1.309924322
+      ],
+      "native_seconds": [
+        1.310037541,
+        1.328559618,
+        1.118057515,
+        1.159313705,
+        1.186672107
+      ],
+      "stock_median_seconds": 1.309924322,
+      "native_median_seconds": 1.186672107,
+      "stock_range_seconds": [
+        1.154439666,
+        1.489076349
+      ],
+      "native_range_seconds": [
+        1.118057515,
+        1.328559618
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": {
+        "file": "string-exit-v2-65k-2026-10-16.log.gz",
+        "sha256": "34da3df6648fe792f2a382d60c804d969be8f6004594e86a7ef7dca77bb2d3eb"
+      }
+    },
+    {
+      "label": "string-exit-v2-distinct",
+      "shape": "udaf",
+      "key_type": "string",
+      "key_prefix_chars": 16,
+      "rows": 2000000,
+      "keys": 2000000,
+      "stock_seconds": [
+        2.067901413,
+        2.008212788,
+        2.019962905,
+        1.934162031,
+        1.869206093
+      ],
+      "native_seconds": [
+        2.171588037,
+        2.20290773,
+        2.084697902,
+        2.160216112,
+        2.041461574
+      ],
+      "stock_median_seconds": 2.008212788,
+      "native_median_seconds": 2.160216112,
+      "stock_range_seconds": [
+        1.869206093,
+        2.067901413
+      ],
+      "native_range_seconds": [
+        2.041461574,
+        2.20290773
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "interpretation": "Any external build activity disqualifies this run from headline comparisons."
+      },
+      "raw_log": {
+        "file": "string-exit-v2-distinct-2026-10-16.log.gz",
+        "sha256": "979fc1f935d4b1fc65bff098a204d8435a969a45e6e04b64806935e9c2f05989"
+      }
+    }
+  ],
+  "profiles": [
+    {
+      "label": "string-exit-baseline-medium",
+      "stacks": {
+        "cpu": {
+          "file": "string-exit-2026-10-16-string-exit-baseline-medium-cpu.collapsed.gz",
+          "sha256": "ada2a5d91223a8e5e535d9482c1a1cde120e276a94102e0ba20b3817875dedd2",
+          "units": "samples",
+          "whole_process_total": 26793,
+          "inclusive_jvm_aggregate_total": 1283,
+          "inclusive_aggregate_methods": {
+            "JvmAccumulatorCache": 657,
+            "LongObjectHashMap.toExternal": 229,
+            "BorrowedStringValues": 2,
+            "ArrowToRowDataOperator": 180,
+            "RowDataSerializer.copy": 154,
+            "ColumnarRowData.getString": 40,
+            "BinaryRowDataKeySelector.getKey": 8,
+            "HeapValueState.update": 1
+          },
+          "leading_aggregate_leaves": [
+            [
+              "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+              229
+            ],
+            [
+              "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.stringEntry_[i]",
+              117
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+              64
+            ],
+            [
+              "org/apache/flink/core/memory/MemorySegment.getLong_[i]",
+              52
+            ],
+            [
+              "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.indexOf_[i]",
+              40
+            ],
+            [
+              "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.update_[i]",
+              26
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+              25
+            ],
+            [
+              "org/apache/flink/table/runtime/operators/aggregate/utils/GroupAggHelper.processElement_[j]",
+              22
+            ],
+            [
+              "org/apache/flink/table/data/binary/BinarySection.equals_[i]",
+              21
+            ],
+            [
+              "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+              19
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              19
+            ],
+            [
+              "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+              19
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              621
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              96
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              42
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              25
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              16
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              14
+            ],
+            [
+              "streamfusion::flink_key::BinaryRowWriter::write_variable",
+              9
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+              9
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+              9
+            ],
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::create",
+              8
+            ],
+            [
+              "streamfusion::group_agg::group_agg_state_bytes",
+              6
+            ],
+            [
+              "streamfusion::aggregates::ValueColumn::at",
+              5
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "string-exit-2026-10-16-string-exit-baseline-medium-alloc.collapsed.gz",
+          "sha256": "da174a9afaff943b0b775607ab33ab8193fd5c879a5c9ae2ec34985e5c01ed60",
+          "units": "sampled Java allocation bytes",
+          "whole_process_total": 32237997560,
+          "inclusive_jvm_aggregate_total": 4150263808,
+          "inclusive_aggregate_methods": {
+            "RowDataSerializer.copy": 1998585856,
+            "ArrowToRowDataOperator": 2143289344,
+            "ColumnarRowData.getString": 855638016,
+            "JvmAccumulatorCache": 89128960,
+            "BinaryRowDataKeySelector.getKey": 62914560,
+            "BorrowedStringValues": 1048576
+          },
+          "leading_aggregate_leaves": [
+            [
+              "java.lang.Long_[i]",
+              631242752
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              624951296
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              592445440
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              533725184
+            ],
+            [
+              "byte[]_[i]",
+              407896064
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              371195904
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              298844160
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              203423744
+            ],
+            [
+              "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+              174063616
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              141557760
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              139460608
+            ],
+            [
+              "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+              7340032
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "borrowed_string_exit": false,
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "timing_excluded": true
+      },
+      "raw_log": {
+        "file": "string-exit-baseline-medium-2026-10-16.log.gz",
+        "sha256": "cf726ff9721a2e862035612b15f092993c709d96f70e34a92a23b27b51212ea7"
+      }
+    },
+    {
+      "label": "string-exit-medium-diagnostic",
+      "stacks": {
+        "cpu": {
+          "file": "string-exit-2026-10-16-string-exit-medium-diagnostic-cpu.collapsed.gz",
+          "sha256": "44d21a76fc72100a7977837c1ee2663064cf647fb8b6cf9f149d4d66ce481497",
+          "units": "samples",
+          "whole_process_total": 26258,
+          "inclusive_jvm_aggregate_total": 1273,
+          "inclusive_aggregate_methods": {
+            "JvmAccumulatorCache": 635,
+            "BorrowedStringValues": 15,
+            "ArrowToRowDataOperator": 132,
+            "RowDataSerializer.copy": 88,
+            "BinaryRowDataKeySelector.getKey": 10,
+            "ColumnarRowData.getString": 3,
+            "LongObjectHashMap.toExternal": 203
+          },
+          "leading_aggregate_leaves": [
+            [
+              "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+              203
+            ],
+            [
+              "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.stringEntry_[i]",
+              115
+            ],
+            [
+              "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+              64
+            ],
+            [
+              "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.indexOf_[i]",
+              61
+            ],
+            [
+              "org/apache/flink/core/memory/MemorySegment.getLong_[i]",
+              50
+            ],
+            [
+              "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+              37
+            ],
+            [
+              "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+              35
+            ],
+            [
+              "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.update_[i]",
+              22
+            ],
+            [
+              "java/lang/Integer.rotateLeft_[i]",
+              21
+            ],
+            [
+              "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+              19
+            ],
+            [
+              "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+              18
+            ],
+            [
+              "org/apache/flink/table/data/binary/BinarySection.equals_[i]",
+              17
+            ]
+          ],
+          "leading_rust_frames": [
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::update",
+              644
+            ],
+            [
+              "streamfusion::group_agg::output_of",
+              80
+            ],
+            [
+              "streamfusion::group_agg::GroupChanges::push",
+              41
+            ],
+            [
+              "streamfusion::flink_key::write_value",
+              21
+            ],
+            [
+              "streamfusion::aggregates::scalars_to_array",
+              19
+            ],
+            [
+              "streamfusion::flink_key::BinaryRowWriter::write_variable",
+              11
+            ],
+            [
+              "streamfusion::group_agg::GroupAggregator<S>::create",
+              10
+            ],
+            [
+              "streamfusion::exchange::coalesce::coalesce_batches",
+              9
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+              6
+            ],
+            [
+              "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+              6
+            ],
+            [
+              "streamfusion::aggregates::ValueColumn::at",
+              6
+            ],
+            [
+              "streamfusion::group_agg::group_agg_state_bytes",
+              5
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "string-exit-2026-10-16-string-exit-medium-diagnostic-alloc.collapsed.gz",
+          "sha256": "ef639138487f31b4b0c77273746cf06bdab74880705b55d39d650caf31c57904",
+          "units": "sampled Java allocation bytes",
+          "whole_process_total": 30477972816,
+          "inclusive_jvm_aggregate_total": 3235905536,
+          "inclusive_aggregate_methods": {
+            "RowDataSerializer.copy": 1078984704,
+            "ArrowToRowDataOperator": 1220542464,
+            "BinaryRowDataKeySelector.getKey": 61865984,
+            "JvmAccumulatorCache": 90177536,
+            "ColumnarRowData.getString": 30408704,
+            "BorrowedStringValues": 2097152
+          },
+          "leading_aggregate_leaves": [
+            [
+              "java.lang.Long_[i]",
+              673185792
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              628097024
+            ],
+            [
+              "java.lang.Object[]_[i]",
+              566231040
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              249561088
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinarySection_[i]",
+              224395264
+            ],
+            [
+              "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+              212860928
+            ],
+            [
+              "byte[]_[i]",
+              171966464
+            ],
+            [
+              "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+              146800640
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              136314880
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment[]_[i]",
+              118489088
+            ],
+            [
+              "java.util.concurrent.atomic.AtomicBoolean_[i]",
+              74448896
+            ],
+            [
+              "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+              6291456
+            ]
+          ],
+          "leading_rust_frames": []
+        }
+      },
+      "borrowed_string_exit": true,
+      "activity": {
+        "exit_code": 0,
+        "external_activity": [],
+        "timing_excluded": true
+      },
+      "raw_log": {
+        "file": "string-exit-medium-diagnostic-2026-10-16.log.gz",
+        "sha256": "78ca5bef3e6efa0b5cbceceafed56da0ad7176727d404e7e6481d0f97168aab8"
+      }
+    }
+  ],
+  "profile_configuration": {
+    "rows": 1000000,
+    "keys": 32768,
+    "warmup_pairs": 2,
+    "measured_pairs": 3,
+    "shapes": [
+      "udaf",
+      "builtin SUM Rust control"
+    ],
+    "native_udaf_rows": 5000000,
+    "cpu_event": "cpu-clock",
+    "cpu_interval": "2 ms",
+    "native_unwinding": "DWARF",
+    "java_allocation_interval": "1 MB",
+    "all_profile_timings_excluded": true
+  },
+  "validation": [
+    {
+      "label": "string-exit-full-normal-22",
+      "tests": 73,
+      "passed": 73,
+      "skipped": 0,
+      "raw_log": {
+        "file": "string-exit-full-normal-22-2026-10-16.log.gz",
+        "sha256": "ced0323eb1047e936490f91b044c99d7baaf6fcb3130a7c833da6170b1a18ca5"
+      }
+    },
+    {
+      "label": "string-exit-full-normal-118",
+      "tests": 73,
+      "passed": 73,
+      "skipped": 0,
+      "raw_log": {
+        "file": "string-exit-full-normal-118-2026-10-16.log.gz",
+        "sha256": "cf0d0762e65be47130b417bc0a4f7c746b80b4bfddf9ae488e88a1e5a18e0d77"
+      }
+    },
+    {
+      "label": "string-exit-full-small-json-22",
+      "tests": 108,
+      "passed": 108,
+      "skipped": 0,
+      "raw_log": {
+        "file": "string-exit-full-small-json-22-2026-10-16.log.gz",
+        "sha256": "6cb5e15f06fa1241559b8d0bad192cb6abd214b746a7974b842929f83e8969f5"
+      }
+    },
+    {
+      "label": "string-exit-full-small-json-118",
+      "tests": 108,
+      "passed": 106,
+      "skipped": 2,
+      "raw_log": {
+        "file": "string-exit-full-small-json-118-2026-10-16.log.gz",
+        "sha256": "72ac6bb2be93b3794b3a406ada5fac22cd6a4c43b03bc652a4f4dc50e8e68db0"
+      }
+    },
+    {
+      "label": "reactor-test-compile-22",
+      "result": "success",
+      "raw_log": {
+        "file": "string-exit-reactor-22-2026-10-16.log.gz",
+        "sha256": "184f55118049866585344cb89dd9841a26d928021e950d36d60bfb56240a609b"
+      }
+    },
+    {
+      "label": "reactor-test-compile-118",
+      "result": "success",
+      "raw_log": {
+        "file": "string-exit-reactor-118-2026-10-16.log.gz",
+        "sha256": "7c60809afd008a92666ace7789dc0bcac47bf0fa1672f85aac07c0c01d5bcaad"
+      }
+    }
+  ],
+  "admitted": false,
+  "limitations": [
+    "Borrowed STRING exit is experimental and defaults OFF; generic Arrow input readers retain existing ownership.",
+    "Matched allocation profiles use identical current source with only the exit flag differing. Inclusive counts overlap. Sampled allocation estimates are not copied bytes, peak memory or native heap totals.",
+    "CPU sample counts are diagnostics, not time-normalized throughput. Both recordings contain symbolized Rust builtin SUM control stacks.",
+    "Low/medium whole-job stock/native ranges overlap. Distinct-key native median still regresses by 7.6%.",
+    "Earlier flag-OFF complete-job runs are separate JVMs with control drift, not a paired causal comparison against this candidate.",
+    "Flink 1.18 correctness and test compilation pass; its candidate performance matrix is pending. No throughput admission or default enablement follows."
+  ]
+}

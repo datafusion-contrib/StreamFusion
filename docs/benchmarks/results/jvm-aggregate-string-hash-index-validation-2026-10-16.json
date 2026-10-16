@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "base_commit": "712da8eabf47be4f4e4d46322006130d290216b2",
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/operator/JvmAccumulatorCache.java": "79e2c877fd964fdc364fe73dbd4a20debc99cfdef8f54073e15b1a55c8a8b651",
+    "src/test/java/tech/streamfusion/FlinkJvmAggregateSqlHarnessTest.java": "7902104fd89481e9fd4b7285e4666bac9fd14f900f408f76903fcb3778a705fc"
+  },
+  "change": "Primitive long hash index for STRING cache; full binary-string equality resolves 32-bit hash collisions; capacity counts all entries, not buckets",
+  "collision_fixture": {
+    "first": "collision-10875",
+    "second": "collision-18154",
+    "hash": -444991605,
+    "verified": [
+      "Flink 2.2.1",
+      "Flink 1.18.1"
+    ]
+  },
+  "configuration": {
+    "jdk": "17",
+    "native": "release mimalloc, production IPC",
+    "heap": "2 GiB",
+    "backends": [
+      "memory",
+      "RocksDBNative with released Flink RocksDB for JVM state"
+    ]
+  },
+  "runs": [
+    {
+      "flink": "2.2.1",
+      "capacity": 65536,
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "flink": "2.2.1",
+      "capacity": 3,
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "flink": "1.18.1",
+      "capacity": 65536,
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "flink": "1.18.1",
+      "capacity": 3,
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "coverage": [
+    "44 SQL parity/lifecycle/fallback/recovery cases",
+    "7 checkpoint/canonical-savepoint rescale and output-reader controls",
+    "3 borrowed-string slice/NULL/empty-buffer/owned-copy tests",
+    "Colliding VARCHAR keys at p1/p3, deletion and reinsertion, two repeated restores with memory/native RocksDB, fitting three-key set and overflow of a fourth distinct key",
+    "Every native query checks consumed native work; stateful runs check released Arrow/native/task memory"
+  ],
+  "performance_admitted": false,
+  "profiling": "Follow-up local profile deferred because external Java/Rust build activity is live. Existing clean borrowed-probe profile identifies HashMap lookup as the dominant sampled Java leaf.",
+  "retained_test_fixture_correction": "First overflow fixture repeated a collision key instead of using a fourth distinct key. That expected-bypass assertion failed; corrected input and all four complete 54-case suites rerun successfully. Production code unchanged by fixture correction."
+}

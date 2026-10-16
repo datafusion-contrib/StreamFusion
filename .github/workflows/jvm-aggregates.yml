@@ -1,0 +1,174 @@
+name: JVM aggregate release diagnostics
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/jvm-aggregates.yml'
+      - 'bin/bench-jvm-aggregates.py'
+      - 'bin/bench-jvm-previous.py'
+      - 'src/main/java/tech/streamfusion/operator/*Jvm*'
+      - 'src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java'
+      - 'src/main/java/tech/streamfusion/arrow/**'
+      - 'src/main/java/tech/streamfusion/planner/*Jvm*'
+      - 'src/main/java-flink*/tech/streamfusion/compat/JvmAggregateCompat.java'
+      - 'src/test/java/tech/streamfusion/*JvmAggregate*'
+      - 'src/test/java/tech/streamfusion/StatefulSqlRescaleTest.java'
+      - 'src/test/java/tech/streamfusion/PortableSqlRecovery.java'
+      - 'src/test/java/tech/streamfusion/operator/JvmStringKeyProbeTest.java'
+      - 'src/test/java/tech/streamfusion/operator/StringExitOwnershipTest.java'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jvm-aggregate-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-diagnostics:
+    name: JVM aggregate diagnostics (Flink ${{ matrix.line }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - line: '2.2'
+            profile: bench
+          - line: '1.18'
+            profile: bench,flink-1.18
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Fingerprint native release inputs before restoring build outputs
+        id: native-inputs
+        env:
+          SF_NATIVE_INPUT_HASH: ${{ hashFiles('native/**', '.cargo/**', 'rust-toolchain*', 'pom.xml', 'streamfusion-core/pom.xml', 'streamfusion-runtime/pom.xml') }}
+          SF_NATIVE_PROFILE: ${{ matrix.profile }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, subprocess
+          source = os.environ['SF_NATIVE_INPUT_HASH']
+          assert len(source) == 64, 'native source fingerprint is absent'
+          digest = hashlib.sha256(source.encode())
+          digest.update(subprocess.check_output(['rustc', '-Vv']))
+          for name in ['SF_NATIVE_PROFILE', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS',
+                       'CARGO_BUILD_TARGET', 'CC', 'CXX', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS']:
+              digest.update((name + '=' + os.environ.get(name, '') + '\n').encode())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('fingerprint=' + digest.hexdigest() + '\n')
+          PY
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: native
+          key: criterion-release
+          cache-workspace-crates: true
+          save-if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      - uses: actions/cache/restore@v4
+        id: native-payload
+        with:
+          path: native/target/release/libstreamfusion.so
+          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+      - name: Build and install release modules before measurements
+        run: >-
+          mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime -am
+          -DskipTests -Dnative.build.skip=${{ steps.native-payload.outputs.cache-hit == 'true' }} install
+      - name: Save the release payload before correctness and measurements
+        if: steps.native-payload.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native/target/release/libstreamfusion.so
+          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+      - name: Validate aggregate state and recovery before measurements
+        run: |
+          for capacity in 65536 3; do
+            mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime \
+              -Dnative.build.skip=true '-Dtest=FlinkJvmAggregateSqlHarnessTest,StatefulSqlRescaleTest,JvmStringKeyProbeTest,StringExitOwnershipTest,TransposeOperatorsTest' \
+              -Dsf.testForks=1 \
+              '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false' \
+              "-Dsf.extraJvmArgs=-Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=$capacity -Dstreamfusion.experimental.borrowedStringExit=true" \
+              surefire:test@default-test
+          done
+      - name: Install pinned released profiler
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/async-profiler/async-profiler/releases/download/v4.0/async-profiler-4.0-linux-x64.tar.gz \
+            --output "$RUNNER_TEMP/async-profiler.tar.gz"
+          echo "ba32bd69cc2906f6251cd5aa8ae72c3abc12267ba858d38733f7751cc4d3e05b  $RUNNER_TEMP/async-profiler.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/async-profiler.tar.gz" -C "$RUNNER_TEMP"
+          sudo sysctl kernel.perf_event_paranoid=1
+      - name: Measure complete jobs then profile Java and Rust
+        env:
+          SF_NATIVE_SOURCE_FINGERPRINT: ${{ steps.native-inputs.outputs.fingerprint }}
+          SF_NATIVE_PAYLOAD_CACHE_HIT: ${{ steps.native-payload.outputs.cache-hit }}
+        run: >-
+          python3 bin/bench-jvm-aggregates.py --flink-line '${{ matrix.line }}'
+          --output native/target/jvm-aggregate-diagnostics
+          --profiler-agent "$RUNNER_TEMP/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so"
+          --borrowed-string-exit
+      - name: Validate UTF-8 ownership and table-function recovery before measurements
+        run: >-
+          mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime
+          -Dnative.build.skip=true
+          '-Dtest=Utf8WriterReuseTest,FlinkTableFunctionSqlHarnessTest,StringExitOwnershipTest,TransposeOperatorsTest,ArrowWriterResetTest,IntArrayWriterOwnershipTest'
+          -Dsf.testForks=1
+          '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false'
+          "-Dsf.extraJvmArgs=-Djava.library.path=$GITHUB_WORKSPACE/native/target/release -Dstreamfusion.experimental.borrowedStringExit=true"
+          surefire:test@default-test
+      - name: Measure table functions with symmetric preflight and per-job clusters
+        env:
+          SF_BENCHMARK: 'true'
+        run: |
+          sf_table_native="$GITHUB_WORKSPACE/native/target/release"
+          sf_table_output="$GITHUB_WORKSPACE/native/target/jvm-aggregate-diagnostics"
+          for sf_table_case in basic wide grouped distinct wide-distinct; do
+            sf_table_text_cardinality=1
+            case "$sf_table_case" in
+              basic) sf_table_rows=2000000; sf_table_width=16; sf_table_shapes=split,numeric ;;
+              wide) sf_table_rows=2000000; sf_table_width=256; sf_table_shapes=split ;;
+              grouped) sf_table_rows=500000; sf_table_width=16; sf_table_shapes=group ;;
+              distinct) sf_table_rows=2000000; sf_table_width=16; sf_table_shapes=split; sf_table_text_cardinality=$sf_table_rows ;;
+              wide-distinct) sf_table_rows=2000000; sf_table_width=256; sf_table_shapes=split; sf_table_text_cardinality=$sf_table_rows ;;
+            esac
+            mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime \
+              -Dnative.build.skip=true -Dtest=TableFunctionBenchmark -Dsf.testForks=1 \
+              "-Dnative.resource.directory=$sf_table_native" \
+              '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false' \
+              "-Dsf.extraJvmArgs=-Djava.library.path=$sf_table_native -Dstreamfusion.experimental.borrowedStringExit=true -Xlog:gc*,safepoint:file=$sf_table_output/table-functions-v2-$sf_table_case-gc.log:time,uptime,level,tags" \
+              "-Dtablefunc.cases=$sf_table_shapes" "-Dtablefunc.rows=$sf_table_rows" \
+              "-Dtablefunc.width=$sf_table_width" -Dtablefunc.keys=65536 \
+              "-Dtablefunc.textCardinality=$sf_table_text_cardinality" \
+              -Dtablefunc.warmup=2 -Dtablefunc.runs=5 \
+              surefire:test@default-test > "$sf_table_output/table-functions-v2-$sf_table_case.log" 2>&1
+          done
+      - name: Build then measure the native runtime before the cache hit reset
+        run: >-
+          python3 bin/bench-jvm-previous.py --flink-line '${{ matrix.line }}'
+          --native-table-baseline 846cbb7c5cd8c14fb4cfe32b9329dd3f1b13ef70
+          --borrowed-string-exit
+          --worktree "$RUNNER_TEMP/streamfusion-previous-native-tables"
+          --output native/target/jvm-aggregate-diagnostics/previous-native-tables
+      - name: Build then measure the actual previous fallback revision
+        run: >-
+          python3 bin/bench-jvm-previous.py --flink-line '${{ matrix.line }}'
+          --worktree "$RUNNER_TEMP/streamfusion-previous-runtime"
+          --output native/target/jvm-aggregate-diagnostics/previous-runtime
+      - name: Retain every trial, GC log, profile and correctness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-aggregate-diagnostics-${{ matrix.line }}-${{ github.sha }}
+          path: |
+            native/target/jvm-aggregate-diagnostics/
+            streamfusion-runtime/target/surefire-reports/
+          retention-days: 14

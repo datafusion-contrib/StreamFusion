@@ -1,0 +1,5217 @@
+{
+  "date": "2026-10-16",
+  "issue": 237,
+  "workflow_run": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/38865289316",
+  "branch_head": "23d16dce7039bd2e1ffba589247944919e74a446",
+  "actual_merge_checkout": "30c446544f8f358512f37d5db3cabb5502ce033f",
+  "source_equivalence": "git diff --exit-code passes between branch and merge for src/main, entire native tree, root/core/runtime poms, runner and both benchmark fixtures",
+  "variant": "primitive STRING hash-index cache; symmetric preflight; borrowed STRING exit; before borrowed key projection",
+  "admitted": false,
+  "limitations": [
+    "Two warmups and five alternating complete-job pairs per case. All negative results and ranges retained.",
+    "Four logical CPU GitHub-hosted Ubuntu jobs, separate Flink lines. Physical host interference is not measured.",
+    "No corrected-preflight comparison against the actual previous fallback revision in this matrix.",
+    "Whole-process profiles include UDAF and Rust builtin SUM controls, warmups, setup and JIT. Profile timings excluded. Inclusive stack totals overlap.",
+    "Java allocation samples estimate allocation volume; they are not copied bytes, peak memory or native heap totals.",
+    "Borrowed STRING exit is ON. The subsequent borrowed key-projection change requires its own matrix.",
+    "Aggregate distinct-key cases include regressions and wide variability. Table-function widths remain workload-specific; full ranges retained."
+  ],
+  "runs": [
+    {
+      "source_commit": "30c446544f8f358512f37d5db3cabb5502ce033f",
+      "flink_line": "2.2",
+      "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "native_sha256": "738c9ad47f5ed3956d03249be2b3f1eccfa38871e4907b4806e21dfb25a46720",
+      "native_source_fingerprint": "2a5c6af6bc8cd9374b3c1b57cfb7a267b8e095573ee58d0f47e7b97c7812580d",
+      "native_payload_cache_hit": "",
+      "cpu_count": 4,
+      "processor": "x86_64",
+      "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment Temurin-17.0.20.1+1 (build 17.0.20.1+1)\nOpenJDK 64-Bit Server VM Temurin-17.0.20.1+1 (build 17.0.20.1+1, mixed mode, sharing)\n",
+      "configuration": {
+        "rows": 2000000,
+        "capacity": 65536,
+        "warmup_pairs": 2,
+        "pairs": 5,
+        "heap": "2 GiB",
+        "parallelism": 1,
+        "production_ipc": true,
+        "both_transposes": true,
+        "cluster_lifetime": "per job",
+        "preflight_explain": "both engines outside the clock",
+        "fixture_method": "symmetric-preflight-v2",
+        "borrowed_string_exit": true,
+        "boundary": "complete executeSql(insert).await; cluster boot/config outside clock"
+      },
+      "measurements": [
+        {
+          "label": "int-low",
+          "exit_code": 0,
+          "elapsed_seconds": 28.68393874168396,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.205471066,
+                0.990284269,
+                1.060545056,
+                0.999466017,
+                0.996489462
+              ],
+              "native_seconds": [
+                1.038793237,
+                0.998045782,
+                0.886417286,
+                0.789961325,
+                0.713193519
+              ],
+              "stock_median_seconds": 0.999466017,
+              "native_median_seconds": 0.886417286,
+              "stock_range_seconds": [
+                0.990284269,
+                1.205471066
+              ],
+              "native_range_seconds": [
+                0.713193519,
+                1.038793237
+              ],
+              "stock_over_native": 1.127534438672939,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 32.45155477523804,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.622372471,
+                1.416313146,
+                1.490695727,
+                1.426453606,
+                1.434900771
+              ],
+              "native_seconds": [
+                1.198318718,
+                1.098712967,
+                1.228114598,
+                0.942501464,
+                0.905892703
+              ],
+              "stock_median_seconds": 1.434900771,
+              "native_median_seconds": 1.098712967,
+              "stock_range_seconds": [
+                1.416313146,
+                1.622372471
+              ],
+              "native_range_seconds": [
+                0.905892703,
+                1.228114598
+              ],
+              "stock_over_native": 1.3059832859877405,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 58.970072746276855,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                2.825006424,
+                2.974247785,
+                2.910862423,
+                2.849933906,
+                2.526898384
+              ],
+              "native_seconds": [
+                3.689598097,
+                3.725578999,
+                3.059993459,
+                2.829495629,
+                4.494619763
+              ],
+              "stock_median_seconds": 2.849933906,
+              "native_median_seconds": 3.689598097,
+              "stock_range_seconds": [
+                2.526898384,
+                2.974247785
+              ],
+              "native_range_seconds": [
+                2.829495629,
+                4.494619763
+              ],
+              "stock_over_native": 0.7724239418697857,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-low",
+          "exit_code": 0,
+          "elapsed_seconds": 28.704583644866943,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.269678276,
+                1.007090409,
+                1.090812469,
+                1.125334306,
+                0.973401955
+              ],
+              "native_seconds": [
+                1.055475168,
+                0.937581436,
+                0.859335993,
+                0.8723253,
+                0.810236526
+              ],
+              "stock_median_seconds": 1.090812469,
+              "native_median_seconds": 0.8723253,
+              "stock_range_seconds": [
+                0.973401955,
+                1.269678276
+              ],
+              "native_range_seconds": [
+                0.810236526,
+                1.055475168
+              ],
+              "stock_over_native": 1.250465243871753,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 31.976879596710205,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.592649251,
+                1.367707318,
+                1.39094704,
+                1.335133408,
+                1.316552558
+              ],
+              "native_seconds": [
+                1.093943181,
+                1.020600005,
+                1.090477982,
+                0.942275395,
+                0.92060813
+              ],
+              "stock_median_seconds": 1.367707318,
+              "native_median_seconds": 1.020600005,
+              "stock_range_seconds": [
+                1.316552558,
+                1.592649251
+              ],
+              "native_range_seconds": [
+                0.92060813,
+                1.093943181
+              ],
+              "stock_over_native": 1.3401012260430079,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 58.48618459701538,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                4.327846793,
+                2.688348434,
+                3.466609373,
+                3.227019658,
+                3.474543464
+              ],
+              "native_seconds": [
+                3.229720875,
+                3.019274983,
+                2.799566308,
+                2.46837438,
+                2.704946466
+              ],
+              "stock_median_seconds": 3.466609373,
+              "native_median_seconds": 2.799566308,
+              "stock_range_seconds": [
+                2.688348434,
+                4.327846793
+              ],
+              "native_range_seconds": [
+                2.46837438,
+                3.229720875
+              ],
+              "stock_over_native": 1.2382665711806387,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-low",
+          "exit_code": 0,
+          "elapsed_seconds": 33.353458881378174,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.532254954,
+                1.345965706,
+                1.382675765,
+                1.558168446,
+                1.293668888
+              ],
+              "native_seconds": [
+                1.246271869,
+                1.07623041,
+                1.230110551,
+                1.293271452,
+                1.043956919
+              ],
+              "stock_median_seconds": 1.382675765,
+              "native_median_seconds": 1.230110551,
+              "stock_range_seconds": [
+                1.293668888,
+                1.558168446
+              ],
+              "native_range_seconds": [
+                1.043956919,
+                1.293271452
+              ],
+              "stock_over_native": 1.124025612068748,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 40.722792863845825,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.95566665,
+                1.774513076,
+                1.814700778,
+                1.990987266,
+                1.69968079
+              ],
+              "native_seconds": [
+                1.853090131,
+                1.849255361,
+                1.618521681,
+                1.558390545,
+                1.551915554
+              ],
+              "stock_median_seconds": 1.814700778,
+              "native_median_seconds": 1.618521681,
+              "stock_range_seconds": [
+                1.69968079,
+                1.990987266
+              ],
+              "native_range_seconds": [
+                1.551915554,
+                1.853090131
+              ],
+              "stock_over_native": 1.1212088162321008,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 66.78858828544617,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                3.625936669,
+                3.672098539,
+                2.992563234,
+                3.450050945,
+                3.36473447
+              ],
+              "native_seconds": [
+                3.60665261,
+                3.443335557,
+                5.42126517,
+                3.651750132,
+                3.198681106
+              ],
+              "stock_median_seconds": 3.450050945,
+              "native_median_seconds": 3.60665261,
+              "stock_range_seconds": [
+                2.992563234,
+                3.672098539
+              ],
+              "native_range_seconds": [
+                3.198681106,
+                5.42126517
+              ],
+              "stock_over_native": 0.9565797757827307,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "label": "profile-int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 31.54202103614807,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.903305158,
+                0.889871359,
+                0.828996007
+              ],
+              "native_seconds": [
+                0.772111739,
+                0.695809101,
+                0.743163362
+              ],
+              "stock_median_seconds": 0.889871359,
+              "native_median_seconds": 0.743163362,
+              "stock_range_seconds": [
+                0.828996007,
+                0.903305158
+              ],
+              "native_range_seconds": [
+                0.695809101,
+                0.772111739
+              ],
+              "stock_over_native": 1.1974101583872214,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.761639419,
+                0.662685226,
+                0.662670889
+              ],
+              "native_seconds": [
+                0.662136776,
+                0.608042507,
+                0.543347301
+              ],
+              "stock_median_seconds": 0.662685226,
+              "native_median_seconds": 0.608042507,
+              "stock_range_seconds": [
+                0.662670889,
+                0.761639419
+              ],
+              "native_range_seconds": [
+                0.543347301,
+                0.662136776
+              ],
+              "stock_over_native": 1.089866610263154,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 43.39535856246948,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.391015939,
+                1.379152428,
+                1.580838791
+              ],
+              "native_seconds": [
+                1.911512445,
+                1.82153228,
+                1.398433462
+              ],
+              "stock_median_seconds": 1.391015939,
+              "native_median_seconds": 1.82153228,
+              "stock_range_seconds": [
+                1.379152428,
+                1.580838791
+              ],
+              "native_range_seconds": [
+                1.398433462,
+                1.911512445
+              ],
+              "stock_over_native": 0.7636515445117449,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.148803354,
+                0.830063281,
+                1.520758454
+              ],
+              "native_seconds": [
+                1.100961319,
+                0.873178637,
+                0.935909148
+              ],
+              "stock_median_seconds": 1.148803354,
+              "native_median_seconds": 0.935909148,
+              "stock_range_seconds": [
+                0.830063281,
+                1.520758454
+              ],
+              "native_range_seconds": [
+                0.873178637,
+                1.100961319
+              ],
+              "stock_over_native": 1.2274731542639008,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 35.31653070449829,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                1.188647528,
+                1.104055888,
+                0.970032352
+              ],
+              "native_seconds": [
+                1.050585921,
+                1.009853666,
+                0.919195185
+              ],
+              "stock_median_seconds": 1.104055888,
+              "native_median_seconds": 1.009853666,
+              "stock_range_seconds": [
+                0.970032352,
+                1.188647528
+              ],
+              "native_range_seconds": [
+                0.919195185,
+                1.050585921
+              ],
+              "stock_over_native": 1.093283042060076,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.958482447,
+                0.899514863,
+                0.835944672
+              ],
+              "native_seconds": [
+                0.740543105,
+                0.721909007,
+                0.669032216
+              ],
+              "stock_median_seconds": 0.899514863,
+              "native_median_seconds": 0.721909007,
+              "stock_range_seconds": [
+                0.835944672,
+                0.958482447
+              ],
+              "native_range_seconds": [
+                0.669032216,
+                0.740543105
+              ],
+              "stock_over_native": 1.2460224962950213,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 47.7433819770813,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                2.153511699,
+                1.957510943,
+                1.880758427
+              ],
+              "native_seconds": [
+                1.875384744,
+                1.647830683,
+                1.752011672
+              ],
+              "stock_median_seconds": 1.957510943,
+              "native_median_seconds": 1.752011672,
+              "stock_range_seconds": [
+                1.880758427,
+                2.153511699
+              ],
+              "native_range_seconds": [
+                1.647830683,
+                1.875384744
+              ],
+              "stock_over_native": 1.1172933230321538,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.606702643,
+                1.101645805,
+                1.54239018
+              ],
+              "native_seconds": [
+                1.157329572,
+                1.359784532,
+                1.116786816
+              ],
+              "stock_median_seconds": 1.54239018,
+              "native_median_seconds": 1.157329572,
+              "stock_range_seconds": [
+                1.101645805,
+                1.606702643
+              ],
+              "native_range_seconds": [
+                1.116786816,
+                1.359784532
+              ],
+              "stock_over_native": 1.3327147403090809,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "admitted": false,
+      "github_artifact_id": 12032355077,
+      "github_job_id": 116856586700,
+      "borrowed_string_exit": true,
+      "profile_stacks": [
+        {
+          "label": "profile-int-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-medium-cpu.collapsed.gz",
+              "sha256": "9d1efd21e0ebdf51d005d655ca9df2369daa4be72b54cdfc4f6b6d6dd7cdca4f",
+              "units": "samples",
+              "whole_process_total": 34904,
+              "inclusive_jvm_aggregate_total": 1338,
+              "inclusive_aggregate_methods": {
+                "RowDataSerializer.copy": 76,
+                "ArrowToRowDataOperator": 240,
+                "JvmAccumulatorCache": 211,
+                "LongObjectHashMap.toExternal": 36,
+                "BinaryRowDataKeySelector.getKey": 11
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+                  67
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/utils/GroupAggHelper.processElement_[j]",
+                  54
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  49
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  45
+                ],
+                [
+                  "itable stub",
+                  42
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  38
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+                  35
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$6_[i]",
+                  29
+                ],
+                [
+                  "tech/streamfusion/operator/ArrowToRowDataOperator.processElement_[j]",
+                  29
+                ],
+                [
+                  "tech/streamfusion/operator/NativeColumnarJvmGroupOperator.ingest_[j]",
+                  25
+                ],
+                [
+                  "ColumnarJvmAggsHandler$10.accumulate_[j]",
+                  25
+                ],
+                [
+                  "org/apache/flink/runtime/state/AbstractKeyedStateBackend.setCurrentKey_[i]",
+                  21
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  985
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  146
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  71
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  38
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  36
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::accumulate",
+                  22
+                ],
+                [
+                  "streamfusion::aggregates::RunningAgg::fold",
+                  17
+                ],
+                [
+                  "streamfusion::aggregates::ValueColumn::at",
+                  14
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  14
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  14
+                ],
+                [
+                  "streamfusion::group_agg::emit_running",
+                  10
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  9
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-medium-alloc.collapsed.gz",
+              "sha256": "bd0e7ae979cd165defbdb979f626f996299a95169bbbba731755982318fdd364",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 20737750352,
+              "inclusive_jvm_aggregate_total": 2615148544,
+              "inclusive_aggregate_methods": {
+                "BinaryRowDataKeySelector.getKey": 33554432,
+                "JvmAccumulatorCache": 42991616,
+                "ArrowToRowDataOperator": 886046720,
+                "RowDataSerializer.copy": 680525824
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  521142272
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  508559360
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  503316480
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  220200960
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  204472320
+                ],
+                [
+                  "byte[]_[i]",
+                  193986560
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  145752064
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  123731968
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  101711872
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  74448896
+                ],
+                [
+                  "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+                  8388608
+                ],
+                [
+                  "java.util.HashMap$Node[]_[i]",
+                  2097152
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-int-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-distinct-cpu.collapsed.gz",
+              "sha256": "9fe20bd411cd23064a5fe24a91a784867e0e7d6fe0d2bf7fb3b34c69852b4acf",
+              "units": "samples",
+              "whole_process_total": 55475,
+              "inclusive_jvm_aggregate_total": 2354,
+              "inclusive_aggregate_methods": {
+                "RowDataSerializer.copy": 73,
+                "ArrowToRowDataOperator": 224,
+                "JvmAccumulatorCache": 1237,
+                "HeapValueState.update": 408,
+                "LongObjectHashMap.toExternal": 1,
+                "BinaryRowDataKeySelector.getKey": 146
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  573
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+                  162
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  75
+                ],
+                [
+                  "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+                  62
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  49
+                ],
+                [
+                  "G1SATBMarkQueueSet::filter",
+                  45
+                ],
+                [
+                  "org/apache/flink/util/MathUtils.bitMix_[i]",
+                  43
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  42
+                ],
+                [
+                  "itable stub",
+                  40
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  36
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  34
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/utils/GroupAggHelper.processElement_[j]",
+                  25
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1421
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  450
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  354
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  354
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  202
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  196
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  179
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  60
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  47
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  35
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::new",
+                  15
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  11
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-distinct-alloc.collapsed.gz",
+              "sha256": "fb7ac9549872cad811bd12ff25d7847faad1ceab6af0c260cd966bc0e4633db2",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 23743992808,
+              "inclusive_jvm_aggregate_total": 4212129840,
+              "inclusive_aggregate_methods": {
+                "BinaryRowDataKeySelector.getKey": 807403520,
+                "JvmAccumulatorCache": 1116733488,
+                "HeapValueState.update": 290455552,
+                "ArrowToRowDataOperator": 988807168,
+                "RowDataSerializer.copy": 849346560
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "java.lang.Object[]_[i]",
+                  727711744
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  715128832
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  559939584
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  360710144
+                ],
+                [
+                  "byte[]_[i]",
+                  340787200
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  334495744
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  319815680
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  222298112
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+                  202375168
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  173015040
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  136314880
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry[]_[i]",
+                  88080384
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-medium-cpu.collapsed.gz",
+              "sha256": "06a2baa72b9c5b531e4c38d607a9eddc6a210acfb4858752cb73628b72707f36",
+              "units": "samples",
+              "whole_process_total": 39869,
+              "inclusive_jvm_aggregate_total": 2114,
+              "inclusive_aggregate_methods": {
+                "RowDataSerializer.copy": 305,
+                "ArrowToRowDataOperator": 389,
+                "JvmAccumulatorCache": 744,
+                "LongObjectHashMap.toExternal": 136,
+                "BorrowedStringValues": 34,
+                "HeapValueState.update": 2,
+                "BinaryRowDataKeySelector.getKey": 26,
+                "ColumnarRowData.getString": 10
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  140
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+                  136
+                ],
+                [
+                  "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.stringEntry_[j]",
+                  104
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  65
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  59
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.indexOf_[i]",
+                  58
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  50
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+                  43
+                ],
+                [
+                  "itable stub",
+                  37
+                ],
+                [
+                  "ColumnarJvmAggsHandler$10.accumulate_[j]",
+                  36
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  35
+                ],
+                [
+                  "org/apache/flink/core/memory/MemorySegment.equalTo_[i]",
+                  33
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1043
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  130
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  72
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  67
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  29
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  24
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  19
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  19
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  16
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  16
+                ],
+                [
+                  "streamfusion::aggregates::ValueColumn::at",
+                  13
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::accumulate",
+                  10
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-medium-alloc.collapsed.gz",
+              "sha256": "c9c29bf80960576df346c6241d7fa3ea34c804cacfc8f9f3179992a5d80f131d",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 30405093680,
+              "inclusive_jvm_aggregate_total": 3282042880,
+              "inclusive_aggregate_methods": {
+                "ArrowToRowDataOperator": 1309671424,
+                "BinaryRowDataKeySelector.getKey": 79691776,
+                "JvmAccumulatorCache": 118489088,
+                "ColumnarRowData.getString": 39845888,
+                "RowDataSerializer.copy": 1170210816,
+                "BorrowedStringValues": 2097152
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "java.lang.Long_[i]",
+                  628097024
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  594542592
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  583008256
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  289406976
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  228589568
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  218103808
+                ],
+                [
+                  "byte[]_[i]",
+                  213909504
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  161480704
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  135266304
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  114294784
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  77594624
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  7340032
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-distinct-cpu.collapsed.gz",
+              "sha256": "22e1e0ece1f47c0880d5bee19e7ebd53c391699f8a8da9773b9701f79fe60597",
+              "units": "samples",
+              "whole_process_total": 61695,
+              "inclusive_jvm_aggregate_total": 3162,
+              "inclusive_aggregate_methods": {
+                "JvmAccumulatorCache": 1607,
+                "HeapValueState.update": 423,
+                "BinaryRowDataKeySelector.getKey": 380,
+                "ColumnarRowData.getString": 103,
+                "BorrowedStringValues": 15,
+                "RowDataSerializer.copy": 324,
+                "ArrowToRowDataOperator": 394,
+                "LongObjectHashMap.toExternal": 9
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  550
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+                  183
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  83
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  82
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  78
+                ],
+                [
+                  "tech$streamfusion$PortableSqlFixtures$SumState$3$Converter.toInternal_[i]",
+                  72
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+                  70
+                ],
+                [
+                  "itable stub",
+                  60
+                ],
+                [
+                  "org/apache/arrow/vector/BaseVariableWidthVector.isSet_[i]",
+                  49
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  49
+                ],
+                [
+                  "jbyte_disjoint_arraycopy",
+                  47
+                ],
+                [
+                  "sun/misc/Unsafe.getInt_[i]",
+                  46
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1658
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  590
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  377
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  377
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  200
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  193
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  153
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  92
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  76
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  38
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  35
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  24
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-distinct-alloc.collapsed.gz",
+              "sha256": "fda00b1df07e43cc3e8382d93653174a579b0e57f452709fe52d26c4968f9101",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 34607754384,
+              "inclusive_jvm_aggregate_total": 5950668848,
+              "inclusive_aggregate_methods": {
+                "BinaryRowDataKeySelector.getKey": 1883242496,
+                "JvmAccumulatorCache": 2183135280,
+                "ColumnarRowData.getString": 953155584,
+                "RowDataSerializer.copy": 1322254336,
+                "ArrowToRowDataOperator": 1463812096,
+                "BorrowedStringValues": 3145728,
+                "HeapValueState.update": 249561088
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  867172352
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  853540864
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  814743552
+                ],
+                [
+                  "byte[]_[i]",
+                  702545920
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  461373440
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  393216000
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  380633088
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  355467264
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  286261248
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  265289728
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+                  183500800
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  146800640
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        }
+      ],
+      "raw_logs": [
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-bigint-distinct.log.gz",
+          "sha256": "d058aebb1e10c81d323747ff3c14bd4879bd1a21ef34334cf05cc926c7af5908"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-bigint-low.log.gz",
+          "sha256": "332f436eeec449f6d139775a0d4dc9a94a0c4f64ab593d42e35d0ad10d0ba0e0"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-bigint-medium.log.gz",
+          "sha256": "7be4b6d4850a31d69b0339211da1783022c43768b88211e112f74e320ca78bc0"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-int-distinct.log.gz",
+          "sha256": "250116e6cb5a6c6ccddda51f02a8b339e2608bf50b1724f504c48c13fcf4d0ad"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-int-low.log.gz",
+          "sha256": "fd2aac43517a4464cb74c5414bfeca942bd9b05e3c2694c4c7862a72adfce4c3"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-int-medium.log.gz",
+          "sha256": "3fd7191c9bf6b39d9c43335752d9e744f20197212d0012a5c88e9f3a93ffe073"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-distinct.log.gz",
+          "sha256": "af00cfa9a6c63b2fff04d9411486ed51d9f2948e94a4ed4852cf0655a720aece"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-medium.log.gz",
+          "sha256": "566a7933a26b4ecb31fda49788cd264c20d00d1ca98f875fcc31ea3c04620fef"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-distinct.log.gz",
+          "sha256": "5c35c4740878cabc489490a703583e06a1e36ee96038dd0dad078b301490ae72"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-medium.log.gz",
+          "sha256": "9b5437bfc1ac9fda6f1a95f8352764f69c3904b3bdc47a467ba29be414ddefe7"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-string-distinct.log.gz",
+          "sha256": "11272b1cc2d226ca2768f7ebf6c9a5e1b0f18822342c22f5b495332adf144b7a"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-string-low.log.gz",
+          "sha256": "282964b14ed7a28c695c61f823b752e8239ba74a2283a7fefccf34de14cb3be8"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-string-medium.log.gz",
+          "sha256": "fe381f4f2867bc43b7e8ac89ad6ef35857c8105dd84315e49aa5e81faaf87c85"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-table-functions-v2-basic.log.gz",
+          "sha256": "4ddf967704411d5c72fd39795cfcae5b1545e8c2f9c5ee77cd7344126c807fc1"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-table-functions-v2-grouped.log.gz",
+          "sha256": "5a912987dba70db3527adc17cbb87ce0a6dec8277fd4024b5c2f8fc03791efbd"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-table-functions-v2-wide.log.gz",
+          "sha256": "d7d1692ccc9ffd7b8ceb78431de630635c328efe90f5f8e83c615b1ad412770b"
+        }
+      ],
+      "table_function_measurements": [
+        {
+          "shape": "split",
+          "rows": 2000000,
+          "keys": 65536,
+          "width": 16,
+          "stock_seconds": [
+            2.379283298,
+            2.402608466,
+            2.424057338,
+            2.387937667,
+            2.513617596
+          ],
+          "native_seconds": [
+            1.994220204,
+            1.932347169,
+            1.903258195,
+            1.888340663,
+            1.90745076
+          ],
+          "stock_median_seconds": 2.402608466,
+          "native_median_seconds": 1.90745076,
+          "stock_range_seconds": [
+            2.379283298,
+            2.513617596
+          ],
+          "native_range_seconds": [
+            1.888340663,
+            1.994220204
+          ]
+        },
+        {
+          "shape": "numeric",
+          "rows": 2000000,
+          "keys": 65536,
+          "width": 16,
+          "stock_seconds": [
+            1.552913,
+            1.485417271,
+            1.432824345,
+            1.539921567,
+            1.450733593
+          ],
+          "native_seconds": [
+            0.931061856,
+            0.902381833,
+            0.936103538,
+            0.904914962,
+            0.980817569
+          ],
+          "stock_median_seconds": 1.485417271,
+          "native_median_seconds": 0.931061856,
+          "stock_range_seconds": [
+            1.432824345,
+            1.552913
+          ],
+          "native_range_seconds": [
+            0.902381833,
+            0.980817569
+          ]
+        },
+        {
+          "shape": "group",
+          "rows": 500000,
+          "keys": 65536,
+          "width": 16,
+          "stock_seconds": [
+            4.419337881,
+            3.396202344,
+            3.393949868,
+            3.46952934,
+            3.807210025
+          ],
+          "native_seconds": [
+            1.684278193,
+            1.386818203,
+            1.527891446,
+            1.661547597,
+            1.522953591
+          ],
+          "stock_median_seconds": 3.46952934,
+          "native_median_seconds": 1.527891446,
+          "stock_range_seconds": [
+            3.393949868,
+            4.419337881
+          ],
+          "native_range_seconds": [
+            1.386818203,
+            1.684278193
+          ]
+        },
+        {
+          "shape": "split",
+          "rows": 2000000,
+          "keys": 65536,
+          "width": 256,
+          "stock_seconds": [
+            4.515757949,
+            4.500380972,
+            4.511859468,
+            4.458219992,
+            4.392519313
+          ],
+          "native_seconds": [
+            4.603961797,
+            4.492138904,
+            4.497304388,
+            4.5253734,
+            4.494087459
+          ],
+          "stock_median_seconds": 4.500380972,
+          "native_median_seconds": 4.497304388,
+          "stock_range_seconds": [
+            4.392519313,
+            4.515757949
+          ],
+          "native_range_seconds": [
+            4.492138904,
+            4.603961797
+          ]
+        }
+      ],
+      "gc_logs": [
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-bigint-distinct-gc.log.gz",
+          "sha256": "362307d59d7b621aad180fdf8b8118cd7b61a18386a3e1340714da484f101a42"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-bigint-low-gc.log.gz",
+          "sha256": "4825cf38abac91f7569ea85aad8c1ac8fd577ebe2efe80603221cd09791fcb84"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-bigint-medium-gc.log.gz",
+          "sha256": "b325d6a5790cc174dabaf8c180acdec16fe6f7a62dd5eaba55fe3a1a7651b8b2"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-int-distinct-gc.log.gz",
+          "sha256": "98bc0be9a5ef6ad3489a4f3ec1a64446ab69422fcd578c256cf01c69316d4f42"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-int-low-gc.log.gz",
+          "sha256": "7c6776d9b128a84bdddfba8ef3542d34c4195300d87352ece87be12ffc3c7c03"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-int-medium-gc.log.gz",
+          "sha256": "0d68ed411876f1cf8d7b986a59081abb419d3e2e422c91d35dd9bd0dcb470bd4"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-distinct-gc.log.gz",
+          "sha256": "e653ddca052d373b0e9d368c45258679cbeee6fd39789a6fba3eda863ef5e074"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-int-medium-gc.log.gz",
+          "sha256": "c7187279ff8729deeee382a86824c5bc46af23443071b6ebe2c6bf6cd87c3975"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-distinct-gc.log.gz",
+          "sha256": "9683f8cf6acedbc197a9bf5e87bb9166f7050d433731598fbdb28e290b54d37e"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-profile-string-medium-gc.log.gz",
+          "sha256": "e1e0379230a99d7b87e63016cb092fe13dc94a72584fa2225e0a30033a6ca77a"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-string-distinct-gc.log.gz",
+          "sha256": "1ecc281f79ecd19cdc41fca4ef26d2bc5c73fb37463294ed8232c60f2be4e656"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-string-low-gc.log.gz",
+          "sha256": "3fd1ca2fe66f53835f9485b0ecbd49c7c78513b77b688fb4b048bc2b5a241e36"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-string-medium-gc.log.gz",
+          "sha256": "87e566007a983f3460c58aae850982e3d86a96358b68699f40b929ce44026613"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-table-functions-v2-basic-gc.log.gz",
+          "sha256": "0aaff2c8c0689f0629d6aa065251caf80533b3243c3cd32221e5fb3505415c85"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-table-functions-v2-grouped-gc.log.gz",
+          "sha256": "54c92dbe3c5effcf199722a4701beb2cb1321e233e98ff4dde4143c3de25dbcc"
+        },
+        {
+          "file": "jvm-exit-isolated-flink22-2026-10-16-table-functions-v2-wide-gc.log.gz",
+          "sha256": "fa2a430d121ceea4a156355fe25dcbb803199438bebe68db9d4f899d01d137b1"
+        }
+      ],
+      "gc_trials": [
+        {
+          "label": "int-low",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.430536,
+              "stop_the_world_gc_ms": 83.732666015625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.826491,
+              "stop_the_world_gc_ms": 37.587158203125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.41684,
+              "stop_the_world_gc_ms": 41.346923828125
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.68884,
+              "stop_the_world_gc_ms": 31.604736328125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.205471,
+              "stop_the_world_gc_ms": 25.317626953125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.038793,
+              "stop_the_world_gc_ms": 27.614990234375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.998046,
+              "stop_the_world_gc_ms": 23.70703125
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.990284,
+              "stop_the_world_gc_ms": 23.85693359375
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.060545,
+              "stop_the_world_gc_ms": 22.69384765625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.886417,
+              "stop_the_world_gc_ms": 20.4091796875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.789961,
+              "stop_the_world_gc_ms": 25.208251953125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.999466,
+              "stop_the_world_gc_ms": 20.547119140625
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.996489,
+              "stop_the_world_gc_ms": 22.826171875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.713194,
+              "stop_the_world_gc_ms": 24.004150390625
+            }
+          ]
+        },
+        {
+          "label": "int-medium",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.96235,
+              "stop_the_world_gc_ms": 161.468017578125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.088999,
+              "stop_the_world_gc_ms": 70.291748046875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.251921,
+              "stop_the_world_gc_ms": 71.35791015625
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.523946,
+              "stop_the_world_gc_ms": 75.675048828125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.622372,
+              "stop_the_world_gc_ms": 81.336181640625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.198319,
+              "stop_the_world_gc_ms": 46.989013671875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.098713,
+              "stop_the_world_gc_ms": 60.907958984375
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.416313,
+              "stop_the_world_gc_ms": 76.828857421875
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.490696,
+              "stop_the_world_gc_ms": 66.926025390625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.228115,
+              "stop_the_world_gc_ms": 69.20703125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.942501,
+              "stop_the_world_gc_ms": 72.337158203125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.426454,
+              "stop_the_world_gc_ms": 76.868896484375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.434901,
+              "stop_the_world_gc_ms": 75.398193359375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.905893,
+              "stop_the_world_gc_ms": 63.052978515625
+            }
+          ]
+        },
+        {
+          "label": "int-distinct",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.874838,
+              "stop_the_world_gc_ms": 576.414794921875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 4.099283,
+              "stop_the_world_gc_ms": 860.916748046875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 2.84769,
+              "stop_the_world_gc_ms": 599.47509765625
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 4.258662,
+              "stop_the_world_gc_ms": 2101.1337890625
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 2.825006,
+              "stop_the_world_gc_ms": 744.1591796875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 3.689598,
+              "stop_the_world_gc_ms": 1432.009033203125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 3.725579,
+              "stop_the_world_gc_ms": 1611.42431640625
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 2.974248,
+              "stop_the_world_gc_ms": 1037.85400390625
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.910862,
+              "stop_the_world_gc_ms": 830.981689453125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 3.059993,
+              "stop_the_world_gc_ms": 1012.718017578125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.829496,
+              "stop_the_world_gc_ms": 1005.9599609375
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.849934,
+              "stop_the_world_gc_ms": 933.808349609375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 2.526898,
+              "stop_the_world_gc_ms": 635.0947265625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 4.49462,
+              "stop_the_world_gc_ms": 2544.78173828125
+            }
+          ]
+        },
+        {
+          "label": "bigint-low",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.348427,
+              "stop_the_world_gc_ms": 78.20166015625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.071283,
+              "stop_the_world_gc_ms": 43.577392578125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.293127,
+              "stop_the_world_gc_ms": 34.103271484375
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.447657,
+              "stop_the_world_gc_ms": 27.01611328125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.269678,
+              "stop_the_world_gc_ms": 24.548095703125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.055475,
+              "stop_the_world_gc_ms": 25.380859375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.937581,
+              "stop_the_world_gc_ms": 27.399169921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.00709,
+              "stop_the_world_gc_ms": 21.0390625
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.090812,
+              "stop_the_world_gc_ms": 23.81640625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.859336,
+              "stop_the_world_gc_ms": 19.478759765625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.872325,
+              "stop_the_world_gc_ms": 25.3701171875
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.125334,
+              "stop_the_world_gc_ms": 24.1728515625
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.973402,
+              "stop_the_world_gc_ms": 22.390380859375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.810237,
+              "stop_the_world_gc_ms": 18.78564453125
+            }
+          ]
+        },
+        {
+          "label": "bigint-medium",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.962391,
+              "stop_the_world_gc_ms": 175.462890625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.364368,
+              "stop_the_world_gc_ms": 67.2490234375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.243902,
+              "stop_the_world_gc_ms": 69.6591796875
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.559652,
+              "stop_the_world_gc_ms": 78.463134765625
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.592649,
+              "stop_the_world_gc_ms": 77.658935546875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.093943,
+              "stop_the_world_gc_ms": 67.571044921875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.0206,
+              "stop_the_world_gc_ms": 56.890380859375
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.367707,
+              "stop_the_world_gc_ms": 77.1337890625
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.390947,
+              "stop_the_world_gc_ms": 75.001953125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.090478,
+              "stop_the_world_gc_ms": 53.89501953125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.942275,
+              "stop_the_world_gc_ms": 54.591064453125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.335133,
+              "stop_the_world_gc_ms": 79.420166015625
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.316553,
+              "stop_the_world_gc_ms": 67.60400390625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.920608,
+              "stop_the_world_gc_ms": 55.537841796875
+            }
+          ]
+        },
+        {
+          "label": "bigint-distinct",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.870265,
+              "stop_the_world_gc_ms": 583.52685546875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.957053,
+              "stop_the_world_gc_ms": 851.38330078125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 3.024522,
+              "stop_the_world_gc_ms": 889.40576171875
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 2.888923,
+              "stop_the_world_gc_ms": 711.044921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 4.327847,
+              "stop_the_world_gc_ms": 2215.286865234375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 3.229721,
+              "stop_the_world_gc_ms": 977.091796875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 3.019275,
+              "stop_the_world_gc_ms": 1079.25927734375
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 2.688348,
+              "stop_the_world_gc_ms": 715.484130859375
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 3.466609,
+              "stop_the_world_gc_ms": 1409.339599609375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.799566,
+              "stop_the_world_gc_ms": 1006.63720703125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.468374,
+              "stop_the_world_gc_ms": 611.96484375
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 3.22702,
+              "stop_the_world_gc_ms": 1284.476318359375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 3.474543,
+              "stop_the_world_gc_ms": 1766.627685546875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 2.704946,
+              "stop_the_world_gc_ms": 758.573974609375
+            }
+          ]
+        },
+        {
+          "label": "string-low",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.781538,
+              "stop_the_world_gc_ms": 69.968505859375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.552217,
+              "stop_the_world_gc_ms": 65.695068359375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.682968,
+              "stop_the_world_gc_ms": 37.771240234375
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.665542,
+              "stop_the_world_gc_ms": 38.34228515625
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.532255,
+              "stop_the_world_gc_ms": 31.92236328125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.246272,
+              "stop_the_world_gc_ms": 25.260009765625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.07623,
+              "stop_the_world_gc_ms": 28.592041015625
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.345966,
+              "stop_the_world_gc_ms": 29.358642578125
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.382676,
+              "stop_the_world_gc_ms": 29.02099609375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.230111,
+              "stop_the_world_gc_ms": 28.172119140625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.293271,
+              "stop_the_world_gc_ms": 34.4111328125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.558168,
+              "stop_the_world_gc_ms": 39.509521484375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.293669,
+              "stop_the_world_gc_ms": 29.25390625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.043957,
+              "stop_the_world_gc_ms": 24.359619140625
+            }
+          ]
+        },
+        {
+          "label": "string-medium",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.662763,
+              "stop_the_world_gc_ms": 192.5234375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.411,
+              "stop_the_world_gc_ms": 109.005126953125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 2.031387,
+              "stop_the_world_gc_ms": 92.68310546875
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.999828,
+              "stop_the_world_gc_ms": 113.6767578125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.955667,
+              "stop_the_world_gc_ms": 106.94091796875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.85309,
+              "stop_the_world_gc_ms": 83.494873046875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.849255,
+              "stop_the_world_gc_ms": 110.533203125
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.774513,
+              "stop_the_world_gc_ms": 112.9365234375
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.814701,
+              "stop_the_world_gc_ms": 115.39013671875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.618522,
+              "stop_the_world_gc_ms": 89.010986328125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.558391,
+              "stop_the_world_gc_ms": 88.457763671875
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.990987,
+              "stop_the_world_gc_ms": 266.696044921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.699681,
+              "stop_the_world_gc_ms": 86.8740234375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.551916,
+              "stop_the_world_gc_ms": 61.47900390625
+            }
+          ]
+        },
+        {
+          "label": "string-distinct",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 4.254116,
+              "stop_the_world_gc_ms": 654.1064453125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 5.320869,
+              "stop_the_world_gc_ms": 981.132080078125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 3.331377,
+              "stop_the_world_gc_ms": 636.213134765625
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 3.933578,
+              "stop_the_world_gc_ms": 1045.14501953125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 3.625937,
+              "stop_the_world_gc_ms": 1012.991943359375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 3.606653,
+              "stop_the_world_gc_ms": 1100.10888671875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 3.443336,
+              "stop_the_world_gc_ms": 805.32568359375
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 3.672099,
+              "stop_the_world_gc_ms": 1066.307373046875
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.992563,
+              "stop_the_world_gc_ms": 851.24169921875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 5.421265,
+              "stop_the_world_gc_ms": 2895.789794921875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 3.65175,
+              "stop_the_world_gc_ms": 1220.983642578125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 3.450051,
+              "stop_the_world_gc_ms": 1238.615234375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 3.364734,
+              "stop_the_world_gc_ms": 1181.456298828125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 3.198681,
+              "stop_the_world_gc_ms": 721.330078125
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_commit": "30c446544f8f358512f37d5db3cabb5502ce033f",
+      "flink_line": "1.18",
+      "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "native_sha256": "738c9ad47f5ed3956d03249be2b3f1eccfa38871e4907b4806e21dfb25a46720",
+      "native_source_fingerprint": "30d65833dadc352635eb1d021f6e27261e529f1a52e8556ae9c2667af06233b1",
+      "native_payload_cache_hit": "",
+      "cpu_count": 4,
+      "processor": "x86_64",
+      "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment Temurin-17.0.20.1+1 (build 17.0.20.1+1)\nOpenJDK 64-Bit Server VM Temurin-17.0.20.1+1 (build 17.0.20.1+1, mixed mode, sharing)\n",
+      "configuration": {
+        "rows": 2000000,
+        "capacity": 65536,
+        "warmup_pairs": 2,
+        "pairs": 5,
+        "heap": "2 GiB",
+        "parallelism": 1,
+        "production_ipc": true,
+        "both_transposes": true,
+        "cluster_lifetime": "per job",
+        "preflight_explain": "both engines outside the clock",
+        "fixture_method": "symmetric-preflight-v2",
+        "borrowed_string_exit": true,
+        "boundary": "complete executeSql(insert).await; cluster boot/config outside clock"
+      },
+      "measurements": [
+        {
+          "label": "int-low",
+          "exit_code": 0,
+          "elapsed_seconds": 20.155797243118286,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                0.72808798,
+                0.767163366,
+                0.593131983,
+                0.636858495,
+                0.587157127
+              ],
+              "native_seconds": [
+                0.749560855,
+                0.680502902,
+                0.555106811,
+                0.58159406,
+                0.583167178
+              ],
+              "stock_median_seconds": 0.636858495,
+              "native_median_seconds": 0.583167178,
+              "stock_range_seconds": [
+                0.587157127,
+                0.767163366
+              ],
+              "native_range_seconds": [
+                0.555106811,
+                0.749560855
+              ],
+              "stock_over_native": 1.0920684822903393,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 24.65842032432556,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.265117179,
+                1.246470099,
+                1.138068885,
+                1.117530217,
+                1.097870472
+              ],
+              "native_seconds": [
+                0.82999745,
+                0.885902946,
+                0.756450415,
+                0.694636245,
+                0.625829045
+              ],
+              "stock_median_seconds": 1.138068885,
+              "native_median_seconds": 0.756450415,
+              "stock_range_seconds": [
+                1.097870472,
+                1.265117179
+              ],
+              "native_range_seconds": [
+                0.625829045,
+                0.885902946
+              ],
+              "stock_over_native": 1.504485769896762,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 47.50127983093262,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                2.324958265,
+                2.269993454,
+                2.671613351,
+                2.639516275,
+                3.097392634
+              ],
+              "native_seconds": [
+                2.408088792,
+                4.125232356,
+                2.944996221,
+                2.129965506,
+                2.246502802
+              ],
+              "stock_median_seconds": 2.639516275,
+              "native_median_seconds": 2.408088792,
+              "stock_range_seconds": [
+                2.269993454,
+                3.097392634
+              ],
+              "native_range_seconds": [
+                2.129965506,
+                4.125232356
+              ],
+              "stock_over_native": 1.0961042149977334,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-low",
+          "exit_code": 0,
+          "elapsed_seconds": 20.215688467025757,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                0.741959751,
+                0.692641078,
+                0.669339906,
+                0.698535592,
+                0.592031358
+              ],
+              "native_seconds": [
+                0.709660707,
+                0.760231522,
+                0.586581597,
+                0.640331416,
+                0.51410389
+              ],
+              "stock_median_seconds": 0.692641078,
+              "native_median_seconds": 0.640331416,
+              "stock_range_seconds": [
+                0.592031358,
+                0.741959751
+              ],
+              "native_range_seconds": [
+                0.51410389,
+                0.760231522
+              ],
+              "stock_over_native": 1.08169154393012,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 24.818506479263306,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.283414648,
+                1.145540109,
+                1.120344923,
+                1.113103443,
+                1.168571267
+              ],
+              "native_seconds": [
+                0.831065741,
+                0.788512033,
+                0.69437261,
+                0.691760475,
+                0.621720492
+              ],
+              "stock_median_seconds": 1.145540109,
+              "native_median_seconds": 0.69437261,
+              "stock_range_seconds": [
+                1.113103443,
+                1.283414648
+              ],
+              "native_range_seconds": [
+                0.621720492,
+                0.831065741
+              ],
+              "stock_over_native": 1.6497484095750838,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "bigint-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 48.250781536102295,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "bigint",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                2.934111724,
+                2.458367585,
+                2.253761453,
+                2.68107591,
+                3.119002056
+              ],
+              "native_seconds": [
+                2.298529016,
+                2.742474879,
+                3.921875816,
+                2.151912117,
+                2.368114766
+              ],
+              "stock_median_seconds": 2.68107591,
+              "native_median_seconds": 2.368114766,
+              "stock_range_seconds": [
+                2.253761453,
+                3.119002056
+              ],
+              "native_range_seconds": [
+                2.151912117,
+                3.921875816
+              ],
+              "stock_over_native": 1.1321562402689735,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-low",
+          "exit_code": 0,
+          "elapsed_seconds": 24.00984787940979,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 16,
+              "stock_seconds": [
+                1.022312705,
+                0.949456765,
+                0.984440785,
+                0.871659705,
+                0.850060343
+              ],
+              "native_seconds": [
+                0.992394569,
+                0.976100948,
+                0.835856352,
+                0.80802834,
+                0.694119116
+              ],
+              "stock_median_seconds": 0.949456765,
+              "native_median_seconds": 0.835856352,
+              "stock_range_seconds": [
+                0.850060343,
+                1.022312705
+              ],
+              "native_range_seconds": [
+                0.694119116,
+                0.992394569
+              ],
+              "stock_over_native": 1.1359090144235693,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 31.40880537033081,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 65536,
+              "stock_seconds": [
+                1.441824567,
+                1.524310149,
+                1.470783807,
+                1.378807432,
+                1.604540044
+              ],
+              "native_seconds": [
+                1.470678921,
+                1.398597516,
+                1.300411007,
+                1.293244471,
+                1.134137713
+              ],
+              "stock_median_seconds": 1.470783807,
+              "native_median_seconds": 1.300411007,
+              "stock_range_seconds": [
+                1.378807432,
+                1.604540044
+              ],
+              "native_range_seconds": [
+                1.134137713,
+                1.470678921
+              ],
+              "stock_over_native": 1.1310145785316321,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 52.69925856590271,
+          "profile_timing_excluded": false,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 2000000,
+              "keys": 2000000,
+              "stock_seconds": [
+                2.484436881,
+                2.864758523,
+                2.806862882,
+                2.694705245,
+                2.717338487
+              ],
+              "native_seconds": [
+                4.680356602,
+                3.196472015,
+                2.687280057,
+                2.77415765,
+                2.707410439
+              ],
+              "stock_median_seconds": 2.717338487,
+              "native_median_seconds": 2.77415765,
+              "stock_range_seconds": [
+                2.484436881,
+                2.864758523
+              ],
+              "native_range_seconds": [
+                2.687280057,
+                4.680356602
+              ],
+              "stock_over_native": 0.9795184087681535,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "label": "profile-int-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 24.49369478225708,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.752858364,
+                0.718942268,
+                0.651438219
+              ],
+              "native_seconds": [
+                0.62442235,
+                0.609875563,
+                0.519858744
+              ],
+              "stock_median_seconds": 0.718942268,
+              "native_median_seconds": 0.609875563,
+              "stock_range_seconds": [
+                0.651438219,
+                0.752858364
+              ],
+              "native_range_seconds": [
+                0.519858744,
+                0.62442235
+              ],
+              "stock_over_native": 1.1788343583787764,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.554439883,
+                0.511980079,
+                0.540091949
+              ],
+              "native_seconds": [
+                0.534455773,
+                0.496490828,
+                0.458570269
+              ],
+              "stock_median_seconds": 0.540091949,
+              "native_median_seconds": 0.496490828,
+              "stock_range_seconds": [
+                0.511980079,
+                0.554439883
+              ],
+              "native_range_seconds": [
+                0.458570269,
+                0.534455773
+              ],
+              "stock_over_native": 1.0878185830252638,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-int-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 34.01054310798645,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.172754857,
+                1.153943171,
+                1.454715991
+              ],
+              "native_seconds": [
+                1.111958865,
+                1.479158372,
+                1.465778502
+              ],
+              "stock_median_seconds": 1.172754857,
+              "native_median_seconds": 1.465778502,
+              "stock_range_seconds": [
+                1.153943171,
+                1.454715991
+              ],
+              "native_range_seconds": [
+                1.111958865,
+                1.479158372
+              ],
+              "stock_over_native": 0.8000900923296526,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "int",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                0.877822206,
+                0.765167421,
+                1.0427388
+              ],
+              "native_seconds": [
+                0.911977524,
+                0.823116897,
+                0.879751936
+              ],
+              "stock_median_seconds": 0.877822206,
+              "native_median_seconds": 0.879751936,
+              "stock_range_seconds": [
+                0.765167421,
+                1.0427388
+              ],
+              "native_range_seconds": [
+                0.823116897,
+                0.911977524
+              ],
+              "stock_over_native": 0.9978065066741724,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-medium",
+          "exit_code": 0,
+          "elapsed_seconds": 26.87420392036438,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.939780478,
+                0.883851838,
+                0.805671593
+              ],
+              "native_seconds": [
+                0.818115527,
+                0.845321964,
+                0.700595775
+              ],
+              "stock_median_seconds": 0.883851838,
+              "native_median_seconds": 0.818115527,
+              "stock_range_seconds": [
+                0.805671593,
+                0.939780478
+              ],
+              "native_range_seconds": [
+                0.700595775,
+                0.845321964
+              ],
+              "stock_over_native": 1.080350890345588,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 32768,
+              "stock_seconds": [
+                0.662284383,
+                0.736884303,
+                0.648121438
+              ],
+              "native_seconds": [
+                0.524686439,
+                0.536316275,
+                0.598310537
+              ],
+              "stock_median_seconds": 0.662284383,
+              "native_median_seconds": 0.536316275,
+              "stock_range_seconds": [
+                0.648121438,
+                0.736884303
+              ],
+              "native_range_seconds": [
+                0.524686439,
+                0.598310537
+              ],
+              "stock_over_native": 1.2348765343733044,
+              "admitted": false
+            }
+          ]
+        },
+        {
+          "label": "profile-string-distinct",
+          "exit_code": 0,
+          "elapsed_seconds": 38.057679176330566,
+          "profile_timing_excluded": true,
+          "results": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                1.596388354,
+                1.146436561,
+                1.381593702
+              ],
+              "native_seconds": [
+                1.664848803,
+                1.446113992,
+                1.740268782
+              ],
+              "stock_median_seconds": 1.381593702,
+              "native_median_seconds": 1.664848803,
+              "stock_range_seconds": [
+                1.146436561,
+                1.596388354
+              ],
+              "native_range_seconds": [
+                1.446113992,
+                1.740268782
+              ],
+              "stock_over_native": 0.8298613660954772,
+              "admitted": false
+            },
+            {
+              "shape": "builtin",
+              "key_type": "string",
+              "key_prefix_chars": 16,
+              "rows": 1000000,
+              "keys": 1000000,
+              "stock_seconds": [
+                0.948403946,
+                1.016682533,
+                1.094778736
+              ],
+              "native_seconds": [
+                1.294659843,
+                0.946721489,
+                1.191802858
+              ],
+              "stock_median_seconds": 1.016682533,
+              "native_median_seconds": 1.191802858,
+              "stock_range_seconds": [
+                0.948403946,
+                1.094778736
+              ],
+              "native_range_seconds": [
+                0.946721489,
+                1.294659843
+              ],
+              "stock_over_native": 0.8530626740618205,
+              "admitted": false
+            }
+          ]
+        }
+      ],
+      "admitted": false,
+      "github_artifact_id": 12031886597,
+      "github_job_id": 116856586404,
+      "borrowed_string_exit": true,
+      "profile_stacks": [
+        {
+          "label": "profile-int-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-medium-cpu.collapsed.gz",
+              "sha256": "928e01be262531a3d01f351a504bc328398cc8c5f02f54c498f4ade2211bbb40",
+              "units": "samples",
+              "whole_process_total": 25110,
+              "inclusive_jvm_aggregate_total": 982,
+              "inclusive_aggregate_methods": {
+                "JvmAccumulatorCache": 179,
+                "BinaryRowDataKeySelector.getKey": 6,
+                "LongObjectHashMap.toExternal": 50,
+                "ArrowToRowDataOperator": 162,
+                "RowDataSerializer.copy": 42,
+                "HeapValueState.update": 3
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  79
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+                  50
+                ],
+                [
+                  "itable stub",
+                  40
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  30
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  26
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  25
+                ],
+                [
+                  "org/apache/flink/table/data/binary/BinaryRowData.hashCode_[i]",
+                  19
+                ],
+                [
+                  "tech/streamfusion/PortableSqlFixtures$Sum.getValue_[i]",
+                  18
+                ],
+                [
+                  "org/apache/flink/streaming/api/operators/StreamOperatorStateHandler.getCurrentKey_[i]",
+                  18
+                ],
+                [
+                  "org/apache/flink/runtime/state/AbstractKeyedStateBackend.setCurrentKey_[i]",
+                  17
+                ],
+                [
+                  "tech$streamfusion$PortableSqlFixtures$SumState$3$Converter.toInternal_[i]",
+                  17
+                ],
+                [
+                  "tech/streamfusion/operator/NativeColumnarJvmGroupOperator.ingest_[j]",
+                  15
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  829
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  119
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  49
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  48
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  29
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  15
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  12
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  10
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  10
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::accumulate",
+                  10
+                ],
+                [
+                  "streamfusion::group_agg::emit_running",
+                  9
+                ],
+                [
+                  "streamfusion::aggregates::RunningAgg::fold",
+                  6
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-medium-alloc.collapsed.gz",
+              "sha256": "2c813c9e03c5ea22e969a38431b50acebc1334f3051bb696eada776da8dd80c2",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 20595632016,
+              "inclusive_jvm_aggregate_total": 2619342848,
+              "inclusive_aggregate_methods": {
+                "RowDataSerializer.copy": 718274560,
+                "ArrowToRowDataOperator": 904921088,
+                "JvmAccumulatorCache": 31457280,
+                "BinaryRowDataKeySelector.getKey": 24117248
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "java.lang.Long_[i]",
+                  516947968
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  487587840
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  480247808
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  268435456
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  190840832
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  183500800
+                ],
+                [
+                  "byte[]_[i]",
+                  179306496
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  122683392
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  99614720
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  72351744
+                ],
+                [
+                  "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+                  4194304
+                ],
+                [
+                  "java.util.ArrayList$Itr_[i]",
+                  2097152
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-int-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-distinct-cpu.collapsed.gz",
+              "sha256": "3ff804e99157630d98620983fa191b520da4a7f6102d0c27ad246f31e817f41d",
+              "units": "samples",
+              "whole_process_total": 42364,
+              "inclusive_jvm_aggregate_total": 1842,
+              "inclusive_aggregate_methods": {
+                "ArrowToRowDataOperator": 175,
+                "RowDataSerializer.copy": 61,
+                "JvmAccumulatorCache": 1142,
+                "LongObjectHashMap.toExternal": 1,
+                "HeapValueState.update": 341,
+                "BinaryRowDataKeySelector.getKey": 95
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[j]",
+                  405
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  401
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  61
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  50
+                ],
+                [
+                  "tech/streamfusion/operator/ArrowToRowDataOperator.processElement_[j]",
+                  29
+                ],
+                [
+                  "org/apache/flink/table/data/columnar/vector/VectorizedColumnBatch.isNullAt_[i]",
+                  27
+                ],
+                [
+                  "itable stub",
+                  27
+                ],
+                [
+                  "org/apache/flink/util/MathUtils.bitMix_[i]",
+                  27
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  25
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  25
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.fmix_[i]",
+                  23
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.addNewStateMapEntry_[i]",
+                  23
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1337
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  394
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  379
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  379
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  204
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  202
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  151
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  66
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  44
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  23
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggState::new",
+                  13
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  12
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-distinct-alloc.collapsed.gz",
+              "sha256": "73fa087e469aa0d8350168745d08f9d979031ce16774efe6437ebc03a9d09be1",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 23703605576,
+              "inclusive_jvm_aggregate_total": 4170186784,
+              "inclusive_aggregate_methods": {
+                "HeapValueState.update": 271581184,
+                "JvmAccumulatorCache": 1072693280,
+                "RowDataSerializer.copy": 791674880,
+                "ArrowToRowDataOperator": 994050048,
+                "BinaryRowDataKeySelector.getKey": 787480576
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "java.lang.Object[]_[i]",
+                  740294656
+                ],
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  739246080
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  510656512
+                ],
+                [
+                  "byte[]_[i]",
+                  370147328
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  327155712
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryRowData_[i]",
+                  294649856
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  287309824
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  262144000
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+                  201326592
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  201326592
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  141557760
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry[]_[i]",
+                  70254592
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-medium",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-medium-cpu.collapsed.gz",
+              "sha256": "5ca5c3121f63e775ceade2840b3b7a8f281a19884b54f4f7c541e57f6d576bd1",
+              "units": "samples",
+              "whole_process_total": 28615,
+              "inclusive_jvm_aggregate_total": 1566,
+              "inclusive_aggregate_methods": {
+                "JvmAccumulatorCache": 645,
+                "BinaryRowDataKeySelector.getKey": 18,
+                "ColumnarRowData.getString": 5,
+                "BorrowedStringValues": 25,
+                "LongObjectHashMap.toExternal": 111,
+                "ArrowToRowDataOperator": 225,
+                "RowDataSerializer.copy": 175,
+                "HeapValueState.update": 5
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "tech/streamfusion/operator/JvmAccumulatorCache$CachedState.stringEntry_[j]",
+                  115
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.toExternal_[i]",
+                  111
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  95
+                ],
+                [
+                  "org/apache/flink/shaded/netty4/io/netty/util/collection/LongObjectHashMap.indexOf_[i]",
+                  71
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  66
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  63
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+                  35
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  32
+                ],
+                [
+                  "org/apache/flink/core/memory/MemorySegment.getLong_[i]",
+                  29
+                ],
+                [
+                  "org/apache/flink/table/data/binary/BinarySegmentUtils.inFirstSegment_[i]",
+                  28
+                ],
+                [
+                  "org/apache/flink/core/memory/MemorySegment.equalTo_[i]",
+                  26
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  26
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  938
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  143
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  71
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  52
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  28
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  24
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  17
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  15
+                ],
+                [
+                  "streamfusion::group_agg::emit_running",
+                  13
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  12
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  12
+                ],
+                [
+                  "streamfusion::aggregates::ValueColumn::at",
+                  10
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-medium-alloc.collapsed.gz",
+              "sha256": "2586759be2a91b8f0e476b94b29cabd0e4c68b083345535aa0b58e879dfdc004",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 30064858296,
+              "inclusive_jvm_aggregate_total": 3299868672,
+              "inclusive_aggregate_methods": {
+                "RowDataSerializer.copy": 1164967936,
+                "ArrowToRowDataOperator": 1317011456,
+                "BinaryRowDataKeySelector.getKey": 67108864,
+                "JvmAccumulatorCache": 95420416,
+                "ColumnarRowData.getString": 33554432,
+                "BorrowedStringValues": 6291456
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  648019968
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  609222656
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  594542592
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  273678336
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  231735296
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  206569472
+                ],
+                [
+                  "byte[]_[i]",
+                  191889408
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  176160768
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  145752064
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  100663296
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  85983232
+                ],
+                [
+                  "tech.streamfusion.operator.JvmAccumulatorCache$Entry_[i]",
+                  10485760
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        },
+        {
+          "label": "profile-string-distinct",
+          "stacks": {
+            "cpu": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-distinct-cpu.collapsed.gz",
+              "sha256": "78f272e0599fd8d55cc2e1208590b8c66b5e5235d01f36a0dbd504a8b227162c",
+              "units": "samples",
+              "whole_process_total": 47195,
+              "inclusive_jvm_aggregate_total": 2437,
+              "inclusive_aggregate_methods": {
+                "HeapValueState.update": 377,
+                "JvmAccumulatorCache": 1420,
+                "BinaryRowDataKeySelector.getKey": 222,
+                "ColumnarRowData.getString": 44,
+                "BorrowedStringValues": 15,
+                "ArrowToRowDataOperator": 287,
+                "RowDataSerializer.copy": 225,
+                "LongObjectHashMap.toExternal": 9
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.incrementalRehash_[i]",
+                  423
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.get_[i]",
+                  397
+                ],
+                [
+                  "org/apache/flink/table/data/RowData.lambda$createFieldGetter$245ca7d1$7_[i]",
+                  126
+                ],
+                [
+                  "java/lang/Integer.rotateLeft_[i]",
+                  64
+                ],
+                [
+                  "org/apache/flink/table/data/GenericRowData.<init>_[i]",
+                  58
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.mixH1_[i]",
+                  47
+                ],
+                [
+                  "org/apache/flink/table/runtime/operators/aggregate/GroupAggFunction.processElement_[j]",
+                  45
+                ],
+                [
+                  "G1SATBMarkQueueSet::filter",
+                  39
+                ],
+                [
+                  "itable stub",
+                  36
+                ],
+                [
+                  "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]",
+                  34
+                ],
+                [
+                  "org/apache/flink/util/MathUtils.bitMix_[i]",
+                  32
+                ],
+                [
+                  "org/apache/flink/runtime/state/heap/CopyOnWriteStateMap.addNewStateMapEntry_[i]",
+                  28
+                ]
+              ],
+              "leading_rust_frames": [
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::update",
+                  1508
+                ],
+                [
+                  "streamfusion::group_agg::GroupAggregator<S>::create",
+                  487
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+                  388
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::state::MemoryStateStore<streamfusion::group_agg::GroupKeyState>>",
+                  388
+                ],
+                [
+                  "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+                  216
+                ],
+                [
+                  "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+                  212
+                ],
+                [
+                  "streamfusion::group_agg::output_of",
+                  165
+                ],
+                [
+                  "streamfusion::group_agg::GroupChanges::push",
+                  72
+                ],
+                [
+                  "streamfusion::flink_key::write_value",
+                  61
+                ],
+                [
+                  "streamfusion::aggregates::scalars_to_array",
+                  29
+                ],
+                [
+                  "streamfusion::flink_key::BinaryRowWriter::write_variable",
+                  25
+                ],
+                [
+                  "streamfusion::exchange::coalesce::coalesce_batches",
+                  19
+                ]
+              ]
+            },
+            "alloc": {
+              "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-distinct-alloc.collapsed.gz",
+              "sha256": "467ba17b308ae3eaf79f4e0f4f74403fc61353748f57e338b252c58a5044dc0d",
+              "units": "sampled Java allocation bytes",
+              "whole_process_total": 34313944736,
+              "inclusive_jvm_aggregate_total": 5783945264,
+              "inclusive_aggregate_methods": {
+                "RowDataSerializer.copy": 1267728384,
+                "ArrowToRowDataOperator": 1428160512,
+                "BinaryRowDataKeySelector.getKey": 1753219072,
+                "JvmAccumulatorCache": 2053111856,
+                "ColumnarRowData.getString": 869269504,
+                "HeapValueState.update": 252706816,
+                "BorrowedStringValues": 1048576
+              },
+              "leading_aggregate_leaves": [
+                [
+                  "org.apache.flink.table.data.GenericRowData_[i]",
+                  831520768
+                ],
+                [
+                  "java.lang.Object[]_[i]",
+                  831520768
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment_[i]",
+                  816840704
+                ],
+                [
+                  "byte[]_[i]",
+                  638582784
+                ],
+                [
+                  "java.lang.Long_[i]",
+                  447741952
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinaryStringData_[i]",
+                  380633088
+                ],
+                [
+                  "org.apache.flink.core.memory.MemorySegment[]_[i]",
+                  351272960
+                ],
+                [
+                  "org.apache.flink.table.data.binary.BinarySection_[i]",
+                  338690048
+                ],
+                [
+                  "tech.streamfusion.PortableSqlFixtures$SumState_[i]",
+                  306184192
+                ],
+                [
+                  "java.util.concurrent.atomic.AtomicBoolean_[i]",
+                  243269632
+                ],
+                [
+                  "org.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry_[i]",
+                  180355072
+                ],
+                [
+                  "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+                  157286400
+                ]
+              ],
+              "leading_rust_frames": []
+            }
+          }
+        }
+      ],
+      "raw_logs": [
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-bigint-distinct.log.gz",
+          "sha256": "e91396808627543f4b123b71c01c75c76eb2487f96c0e9b7f16b0894974f53aa"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-bigint-low.log.gz",
+          "sha256": "8662fcdf1c6812e2fb6c978556210af2b9dc422bd31135c01717e85c8d780ca7"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-bigint-medium.log.gz",
+          "sha256": "139de5607bd29e18a6610f733db73c32533660125721b5afcf6d8f1d581d1a45"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-int-distinct.log.gz",
+          "sha256": "5e4d7281d3d3641259312f474c69fc45d6db57f3b9c0ff6ad4aeece5eaa411ff"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-int-low.log.gz",
+          "sha256": "b560a765a9fbe1ca0c0cc056fb3ce973525aadae023a608fbdc46ac47783d190"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-int-medium.log.gz",
+          "sha256": "9b2e8c7dd656487f4d18ac9f6e8932e73e9820066c4ae9a0adab3407db46858d"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-distinct.log.gz",
+          "sha256": "4386e188efbb4ebfe6622c52371174410cc63c53e59d0f8432207a7139bcc34d"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-medium.log.gz",
+          "sha256": "ed5a01435b852c1a76762c54d8c6c6087442913106978266461c34d8dc130a8a"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-distinct.log.gz",
+          "sha256": "de51c064fee420e4b963d879093b642bba70f6fbb30312edd5ab89f60642ee59"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-medium.log.gz",
+          "sha256": "845229ba134c5e874eb3f0ebef3a68a7532e7d02fddcfa3cc0072fd3f41e0236"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-string-distinct.log.gz",
+          "sha256": "bc75016ce8f73a4d2081b1f67fdb1575cbc1d729f538e88e1444f65fbf7ec845"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-string-low.log.gz",
+          "sha256": "3d4a17700a6e23522a8d9777ebe3165a02bfff192dfdf359b05d52f4c4a15e7d"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-string-medium.log.gz",
+          "sha256": "2e5185d33271f8d9d6689b4f7124e1157dc6cbb667265d63d93b2b8fdd1799c0"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-table-functions-v2-basic.log.gz",
+          "sha256": "6772aa7da93f10c673c526a73245b196f443e79de48ef95e254cfe9f97f42009"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-table-functions-v2-grouped.log.gz",
+          "sha256": "fe94b358e7904f3f05dfb9959ec2ad52a6877f5c6d5de320680183c255c86fe7"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-table-functions-v2-wide.log.gz",
+          "sha256": "0b332a114fd326a8bdc92ce4ca39df637d24a54fa7c22a6ad4e2e3801cb38dcd"
+        }
+      ],
+      "table_function_measurements": [
+        {
+          "shape": "split",
+          "rows": 2000000,
+          "keys": 65536,
+          "width": 16,
+          "stock_seconds": [
+            1.58806319,
+            1.562644368,
+            1.638850833,
+            1.525426947,
+            1.543187651
+          ],
+          "native_seconds": [
+            1.447321719,
+            1.33633002,
+            1.331214296,
+            1.321663555,
+            1.331903047
+          ],
+          "stock_median_seconds": 1.562644368,
+          "native_median_seconds": 1.331903047,
+          "stock_range_seconds": [
+            1.525426947,
+            1.638850833
+          ],
+          "native_range_seconds": [
+            1.321663555,
+            1.447321719
+          ]
+        },
+        {
+          "shape": "numeric",
+          "rows": 2000000,
+          "keys": 65536,
+          "width": 16,
+          "stock_seconds": [
+            1.10713712,
+            1.114212302,
+            1.121913757,
+            1.125575905,
+            1.077870842
+          ],
+          "native_seconds": [
+            0.850240073,
+            0.703733057,
+            0.709793524,
+            0.683060832,
+            0.696446972
+          ],
+          "stock_median_seconds": 1.114212302,
+          "native_median_seconds": 0.703733057,
+          "stock_range_seconds": [
+            1.077870842,
+            1.125575905
+          ],
+          "native_range_seconds": [
+            0.683060832,
+            0.850240073
+          ]
+        },
+        {
+          "shape": "group",
+          "rows": 500000,
+          "keys": 65536,
+          "width": 16,
+          "stock_seconds": [
+            3.561161011,
+            3.09281233,
+            2.838306945,
+            2.871114005,
+            3.029548276
+          ],
+          "native_seconds": [
+            1.228758759,
+            1.215245027,
+            1.377970009,
+            1.107501617,
+            1.022877788
+          ],
+          "stock_median_seconds": 3.029548276,
+          "native_median_seconds": 1.215245027,
+          "stock_range_seconds": [
+            2.838306945,
+            3.561161011
+          ],
+          "native_range_seconds": [
+            1.022877788,
+            1.377970009
+          ]
+        },
+        {
+          "shape": "split",
+          "rows": 2000000,
+          "keys": 65536,
+          "width": 256,
+          "stock_seconds": [
+            3.513045665,
+            3.560538146,
+            3.479537055,
+            3.496232055,
+            3.503432514
+          ],
+          "native_seconds": [
+            3.503855419,
+            3.527329914,
+            3.480747922,
+            3.473780307,
+            3.475495763
+          ],
+          "stock_median_seconds": 3.503432514,
+          "native_median_seconds": 3.480747922,
+          "stock_range_seconds": [
+            3.479537055,
+            3.560538146
+          ],
+          "native_range_seconds": [
+            3.473780307,
+            3.527329914
+          ]
+        }
+      ],
+      "gc_logs": [
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-bigint-distinct-gc.log.gz",
+          "sha256": "2a5712eb615eb8e9eb1654cd84235ed8c531b840d55dfcf2a723e0f5013d2e7f"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-bigint-low-gc.log.gz",
+          "sha256": "75a9ba06175cc54c86c99a578dc3eadb9f75dc6a253eedfdea2589a425615fe6"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-bigint-medium-gc.log.gz",
+          "sha256": "9ee6b022b8d2405ce2b2615b8fd73a65d7e1f04ff8f3f3d567e2ec38380a99ca"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-int-distinct-gc.log.gz",
+          "sha256": "e2522b3e80234ad0b5946b576cb78324b9c34ffccd1cb87b646a1e5d3f9fa491"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-int-low-gc.log.gz",
+          "sha256": "1a089fb78c104b1925c30f03f3a3f7ff7b83a052d44757ca30234b0d3deda88f"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-int-medium-gc.log.gz",
+          "sha256": "dcff8f3b2b341c25f9d4af037a65c923298b74ebb6c69f38badb9260f6ca45ec"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-distinct-gc.log.gz",
+          "sha256": "1ab4d4e66cae6403a5bd958337917d07bf3dab0a2c991da56f33402324dc5c6c"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-int-medium-gc.log.gz",
+          "sha256": "881e661e9486afcc0ae32325c25b25f79f4bc75308984d1bb09e380fd60c3fa6"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-distinct-gc.log.gz",
+          "sha256": "921f23ef3a60a4fdf0d60287188c18131782cafc5b92be42caddfdaf800e931b"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-profile-string-medium-gc.log.gz",
+          "sha256": "1876ef6b147710e6e6c33fc590bc1e788113068c80a320ea27ca251665829ed3"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-string-distinct-gc.log.gz",
+          "sha256": "2a48ab028d15a025d1727b79a3f3e0406ec5bfd1c54d70fcc0c9fa0e9889f389"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-string-low-gc.log.gz",
+          "sha256": "000a6003ed5caae0943d2954bffaf41eb363439c25a0adea360c8d560f0dbeeb"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-string-medium-gc.log.gz",
+          "sha256": "6e5cfadab9a48247f4d1071e8355cb5b28fa8dc60f7a5d7d47700376dcf2d9d4"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-table-functions-v2-basic-gc.log.gz",
+          "sha256": "5a04a7d9e3f30b01f622c1eea28696b207c09f1ca30f53b38e8768ac870f94e6"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-table-functions-v2-grouped-gc.log.gz",
+          "sha256": "dbf8a6af46d9b99fec7204c61aa8250ef8307d5e40a11075e3f70a8a23ab48ca"
+        },
+        {
+          "file": "jvm-exit-isolated-flink118-2026-10-16-table-functions-v2-wide-gc.log.gz",
+          "sha256": "38d77911038987d98980fbf220cd2f9f918bec792e4fa7577200d35a2ed1d5c3"
+        }
+      ],
+      "gc_trials": [
+        {
+          "label": "int-low",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.621315,
+              "stop_the_world_gc_ms": 64.194580078125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.45633,
+              "stop_the_world_gc_ms": 28.7783203125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.011306,
+              "stop_the_world_gc_ms": 31.071044921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 0.783605,
+              "stop_the_world_gc_ms": 26.697021484375
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 0.728088,
+              "stop_the_world_gc_ms": 18.780029296875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 0.749561,
+              "stop_the_world_gc_ms": 15.172119140625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.680503,
+              "stop_the_world_gc_ms": 17.124755859375
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.767163,
+              "stop_the_world_gc_ms": 18.30126953125
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.593132,
+              "stop_the_world_gc_ms": 13.307861328125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.555107,
+              "stop_the_world_gc_ms": 13.27880859375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.581594,
+              "stop_the_world_gc_ms": 18.531005859375
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.636858,
+              "stop_the_world_gc_ms": 16.2177734375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.587157,
+              "stop_the_world_gc_ms": 12.9658203125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.583167,
+              "stop_the_world_gc_ms": 14.56689453125
+            }
+          ]
+        },
+        {
+          "label": "int-medium",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.21836,
+              "stop_the_world_gc_ms": 129.396728515625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.587337,
+              "stop_the_world_gc_ms": 58.413818359375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 0.955253,
+              "stop_the_world_gc_ms": 49.05126953125
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.316424,
+              "stop_the_world_gc_ms": 70.826904296875
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.265117,
+              "stop_the_world_gc_ms": 51.5478515625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 0.829997,
+              "stop_the_world_gc_ms": 49.841064453125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.885903,
+              "stop_the_world_gc_ms": 44.59716796875
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.24647,
+              "stop_the_world_gc_ms": 58.36083984375
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.138069,
+              "stop_the_world_gc_ms": 70.26708984375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.75645,
+              "stop_the_world_gc_ms": 58.5791015625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.694636,
+              "stop_the_world_gc_ms": 38.30517578125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.11753,
+              "stop_the_world_gc_ms": 53.6669921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.09787,
+              "stop_the_world_gc_ms": 57.3828125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.625829,
+              "stop_the_world_gc_ms": 33.487060546875
+            }
+          ]
+        },
+        {
+          "label": "int-distinct",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.867403,
+              "stop_the_world_gc_ms": 476.816650390625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.027702,
+              "stop_the_world_gc_ms": 554.0625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 2.926994,
+              "stop_the_world_gc_ms": 865.698974609375
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 2.465488,
+              "stop_the_world_gc_ms": 761.524658203125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 2.324958,
+              "stop_the_world_gc_ms": 852.159912109375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 2.408089,
+              "stop_the_world_gc_ms": 680.3505859375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 4.125232,
+              "stop_the_world_gc_ms": 2385.170654296875
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 2.269993,
+              "stop_the_world_gc_ms": 715.89404296875
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.671613,
+              "stop_the_world_gc_ms": 1255.497314453125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.944996,
+              "stop_the_world_gc_ms": 1456.5126953125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.129966,
+              "stop_the_world_gc_ms": 623.512939453125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.639516,
+              "stop_the_world_gc_ms": 978.611083984375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 3.097393,
+              "stop_the_world_gc_ms": 1577.0029296875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 2.246503,
+              "stop_the_world_gc_ms": 776.949462890625
+            }
+          ]
+        },
+        {
+          "label": "bigint-low",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.586608,
+              "stop_the_world_gc_ms": 61.544189453125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.554544,
+              "stop_the_world_gc_ms": 32.660888671875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 0.995513,
+              "stop_the_world_gc_ms": 34.69921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 0.833479,
+              "stop_the_world_gc_ms": 28.698974609375
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 0.74196,
+              "stop_the_world_gc_ms": 14.810791015625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 0.709661,
+              "stop_the_world_gc_ms": 17.7099609375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.760232,
+              "stop_the_world_gc_ms": 21.024169921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.692641,
+              "stop_the_world_gc_ms": 15.267822265625
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.66934,
+              "stop_the_world_gc_ms": 15.5927734375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.586582,
+              "stop_the_world_gc_ms": 21.986083984375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.640331,
+              "stop_the_world_gc_ms": 21.8701171875
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.698536,
+              "stop_the_world_gc_ms": 20.064697265625
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.592031,
+              "stop_the_world_gc_ms": 15.4130859375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.514104,
+              "stop_the_world_gc_ms": 15.4150390625
+            }
+          ]
+        },
+        {
+          "label": "bigint-medium",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.366767,
+              "stop_the_world_gc_ms": 143.220947265625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.658964,
+              "stop_the_world_gc_ms": 51.2958984375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 0.961684,
+              "stop_the_world_gc_ms": 53.1103515625
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.295242,
+              "stop_the_world_gc_ms": 69.68212890625
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.283415,
+              "stop_the_world_gc_ms": 68.84912109375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 0.831066,
+              "stop_the_world_gc_ms": 46.425048828125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.788512,
+              "stop_the_world_gc_ms": 55.223876953125
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.14554,
+              "stop_the_world_gc_ms": 65.191162109375
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.120345,
+              "stop_the_world_gc_ms": 63.27294921875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.694373,
+              "stop_the_world_gc_ms": 57.324951171875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.69176,
+              "stop_the_world_gc_ms": 45.3779296875
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.113103,
+              "stop_the_world_gc_ms": 52.968017578125
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.168571,
+              "stop_the_world_gc_ms": 79.36669921875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.62172,
+              "stop_the_world_gc_ms": 60.585205078125
+            }
+          ]
+        },
+        {
+          "label": "bigint-distinct",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.986821,
+              "stop_the_world_gc_ms": 514.905029296875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.151462,
+              "stop_the_world_gc_ms": 748.7158203125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 2.517666,
+              "stop_the_world_gc_ms": 562.9951171875
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 3.056662,
+              "stop_the_world_gc_ms": 1363.955078125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 2.934112,
+              "stop_the_world_gc_ms": 1469.17626953125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 2.298529,
+              "stop_the_world_gc_ms": 683.635009765625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 2.742475,
+              "stop_the_world_gc_ms": 1049.38232421875
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 2.458368,
+              "stop_the_world_gc_ms": 851.357666015625
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.253761,
+              "stop_the_world_gc_ms": 697.96337890625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 3.921876,
+              "stop_the_world_gc_ms": 2336.6845703125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.151912,
+              "stop_the_world_gc_ms": 587.40771484375
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.681076,
+              "stop_the_world_gc_ms": 1029.880615234375
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 3.119002,
+              "stop_the_world_gc_ms": 1674.185546875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 2.368115,
+              "stop_the_world_gc_ms": 793.34716796875
+            }
+          ]
+        },
+        {
+          "label": "string-low",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.95394,
+              "stop_the_world_gc_ms": 77.32763671875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 1.839434,
+              "stop_the_world_gc_ms": 37.344970703125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.235569,
+              "stop_the_world_gc_ms": 38.9658203125
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.147154,
+              "stop_the_world_gc_ms": 33.1298828125
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.022313,
+              "stop_the_world_gc_ms": 24.3427734375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 0.992395,
+              "stop_the_world_gc_ms": 19.9951171875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.976101,
+              "stop_the_world_gc_ms": 25.161865234375
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 0.949457,
+              "stop_the_world_gc_ms": 22.220458984375
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.984441,
+              "stop_the_world_gc_ms": 21.759521484375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 0.835856,
+              "stop_the_world_gc_ms": 24.826904296875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.808028,
+              "stop_the_world_gc_ms": 20.593994140625
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 0.87166,
+              "stop_the_world_gc_ms": 25.25390625
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.85006,
+              "stop_the_world_gc_ms": 23.080810546875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 0.694119,
+              "stop_the_world_gc_ms": 20.11181640625
+            }
+          ]
+        },
+        {
+          "label": "string-medium",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.641227,
+              "stop_the_world_gc_ms": 151.332763671875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 2.39086,
+              "stop_the_world_gc_ms": 93.73486328125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.595903,
+              "stop_the_world_gc_ms": 79.614990234375
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 1.565367,
+              "stop_the_world_gc_ms": 87.6806640625
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.441825,
+              "stop_the_world_gc_ms": 72.89404296875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 1.470679,
+              "stop_the_world_gc_ms": 76.093017578125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.398598,
+              "stop_the_world_gc_ms": 78.23828125
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 1.52431,
+              "stop_the_world_gc_ms": 100.2119140625
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.470784,
+              "stop_the_world_gc_ms": 79.715087890625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 1.300411,
+              "stop_the_world_gc_ms": 75.60400390625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.293244,
+              "stop_the_world_gc_ms": 94.759033203125
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 1.378807,
+              "stop_the_world_gc_ms": 98.561767578125
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.60454,
+              "stop_the_world_gc_ms": 217.399169921875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 1.134138,
+              "stop_the_world_gc_ms": 53.85693359375
+            }
+          ]
+        },
+        {
+          "label": "string-distinct",
+          "trials": [
+            {
+              "engine": "Flink",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 3.133568,
+              "stop_the_world_gc_ms": 538.924560546875
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 0,
+              "warmup": true,
+              "seconds": 4.017407,
+              "stop_the_world_gc_ms": 785.939208984375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 3.109397,
+              "stop_the_world_gc_ms": 876.820068359375
+            },
+            {
+              "engine": "Flink",
+              "trial": 1,
+              "warmup": true,
+              "seconds": 2.843944,
+              "stop_the_world_gc_ms": 920.80029296875
+            },
+            {
+              "engine": "Flink",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 2.484437,
+              "stop_the_world_gc_ms": 666.38818359375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 2,
+              "warmup": false,
+              "seconds": 4.680357,
+              "stop_the_world_gc_ms": 2321.82958984375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 3.196472,
+              "stop_the_world_gc_ms": 1075.228271484375
+            },
+            {
+              "engine": "Flink",
+              "trial": 3,
+              "warmup": false,
+              "seconds": 2.864759,
+              "stop_the_world_gc_ms": 991.789794921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.806863,
+              "stop_the_world_gc_ms": 1031.08837890625
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 4,
+              "warmup": false,
+              "seconds": 2.68728,
+              "stop_the_world_gc_ms": 870.06396484375
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.774158,
+              "stop_the_world_gc_ms": 1014.760009765625
+            },
+            {
+              "engine": "Flink",
+              "trial": 5,
+              "warmup": false,
+              "seconds": 2.694705,
+              "stop_the_world_gc_ms": 933.539794921875
+            },
+            {
+              "engine": "Flink",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 2.717338,
+              "stop_the_world_gc_ms": 952.501220703125
+            },
+            {
+              "engine": "StreamFusion",
+              "trial": 6,
+              "warmup": false,
+              "seconds": 2.70741,
+              "stop_the_world_gc_ms": 996.2958984375
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "gc_method": "GC pause summary events (exact gc tag, excluding phase/start duplicates) intersect each recorded executeSql interval using wall-clock timestamps. Summed stop-the-world time is diagnostic only; no time is subtracted from results. Concurrent GC and safepoint/non-GC work are not included in this measure."
+}
