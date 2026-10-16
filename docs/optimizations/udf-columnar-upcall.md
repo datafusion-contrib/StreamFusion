@@ -287,3 +287,46 @@ with `SF_BENCHMARK=true`, `-Dtest=TemporalUdfBenchmark`, `-Dtemporal.cases=ident
 with `jfrconv --cpu --threads -o collapsed` and `jfrconv --alloc --threads --total -o collapsed`.
 Using the explicit Surefire execution prevents an unrelated empty fork from overwriting a fixed
 recording filename. Run unprofiled measurements separately before making admission decisions.
+
+
+### Temporal benchmark isolation correction (2026-10-16)
+
+The temporal fixture now closes its metrics cluster after each job, checks native work
+for each native job, and rejects native execution in the stock control. Earlier trials
+shared one cluster across all jobs in a case. This corrects resource lifetime; it does
+not establish that retained history caused any previous regression. Cluster construction
+and plan checks remain outside the clock; complete `executeSql().await()` jobs retain
+the row source, both transposes, conversions and row sink inside it.
+
+Fresh Flink 2.2.1/JDK 17 release runs use 2M rows, precision 9, production IPC, 2 GiB,
+two warmups and five alternating measured pairs. No competing Java/Rust build or job
+activity was observed. Median elapsed seconds are:
+
+| Case | Cardinality | Stock Flink | StreamFusion |
+| --- | ---: | ---: | ---: |
+| Identity | 8 | 0.617 | 0.659 |
+| Text | 8 | 0.961 | 0.869 |
+| Epoch | 8 | 0.495 | 0.520 |
+| Identity | 16384 | 0.634 | 0.746 |
+| Text | 16384 | 0.939 | 0.887 |
+| Epoch | 16384 | 0.491 | 0.592 |
+
+[All trials, counters and configuration](../benchmarks/results/temporal-udf-per-job-2026-10-16.json)
+are retained. Text conversion wins at both cardinalities, but identity and epoch still
+regress. These measurements supersede earlier figures for the current fixture; they
+are not a repeat against the previous fallback or the second supported Flink line.
+The temporal PR remains draft and all temporal experiments remain off by default.
+
+
+The same corrected fixture has separate CPU/allocation profiles for identity, epoch
+and a projection-only Rust perimeter control. The linked data includes full compressed
+stacks. Identity and epoch recordings had no observed external work; the perimeter
+recording overlapped another Java process and remains diagnostic only. All profile
+timings are excluded. The direct temporal cases execute generated Java against Arrow
+columns, so Rust projection samples occur in the perimeter control instead.
+
+Allocation stacks still identify timestamp reconstruction in Arrow input reads;
+identity also reconstructs at output conversion and Flink's copying chain. Whole-process
+CPU profiles include cluster setup and substantial JIT work, and cannot alone establish
+a steady-state CPU bottleneck. These observations identify investigation targets, without
+claiming an optimization or enabling a slower path.

@@ -1,0 +1,970 @@
+{
+  "date": "2026-10-16",
+  "issue": 364,
+  "base_commit": "8e522206f686a01107f0eac44871fc0d4d4defb6",
+  "fixture_sha256": "019c141a32f860e2714df3784794fa649707ee8145564e27e6b29fc47aa32e93",
+  "native_library_sha256": "24cef157092f0564f6f6c70a1d0f3d92169dd4a4c6b6fffede564cc566e96e0c",
+  "configuration": {
+    "flink": "2.2.1",
+    "jdk": "17",
+    "build": "release Rust with mimalloc",
+    "rows": 2000000,
+    "precision": 9,
+    "timezone": "UTC",
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "batch_rows": 1024,
+    "local_exchange": "production IPC",
+    "warmups": 2,
+    "measured_pairs": 5,
+    "ordering": "alternating engine order each trial",
+    "metrics_cluster": "fresh per job, closed before the next job",
+    "measurement": "executeSql(insert).await(), preserving row source, row sink, both transposes and conversions; cluster construction and plan checks outside clock",
+    "experimental_options": [
+      "directTemporalCalc",
+      "temporalAliases"
+    ],
+    "competing_java_rust_compilers": "none observed by 500 ms /proc activity sampling"
+  },
+  "limitations": [
+    "Flink 1.18 and previous fallback not repeated with this corrected fixture",
+    "No claim that retained cluster history caused previous regressions",
+    "Profiled timings excluded; all results here are unprofiled",
+    "Text wins do not establish admission for the complete temporal scope; identity and epoch regress; keep draft and default off"
+  ],
+  "runs": [
+    {
+      "case": "identity",
+      "cardinality": 8,
+      "stock_trials_s": [
+        0.601866527,
+        0.627787238,
+        0.617188426,
+        0.619878152,
+        0.615224224
+      ],
+      "native_trials_s": [
+        0.67785983,
+        0.67070548,
+        0.648688177,
+        0.659136913,
+        0.657189133
+      ],
+      "stock_median_s": 0.617188426,
+      "native_median_s": 0.659136913,
+      "native_elapsed_change_pct": 6.796706683543663,
+      "raw_trials": [
+        "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126348372 seconds=1.145330",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126349910 seconds=1.032025",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126351097 seconds=0.796098",
+        "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126352000 seconds=0.680342",
+        "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126352782 seconds=0.601867",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126353475 seconds=0.677860",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126354264 seconds=0.670705",
+        "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126355019 seconds=0.627787",
+        "[temporal-udf-trial] case=identity engine=Flink trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126355733 seconds=0.617188",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126356437 seconds=0.648688",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126357177 seconds=0.659137",
+        "[temporal-udf-trial] case=identity engine=Flink trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126357924 seconds=0.619878",
+        "[temporal-udf-trial] case=identity engine=Flink trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126358626 seconds=0.615224",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126359322 seconds=0.657189"
+      ],
+      "execution_counters": [
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000"
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": []
+      },
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -Xlog:gc*,safepoint:file=<checkout>/native/target/364-per-job/identity-card8-gc.log:time,uptime,level,tags",
+        "-Dtemporal.rows=2000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=5",
+        "-Dtemporal.cases=identity",
+        "-Dtemporal.cardinality=8"
+      ]
+    },
+    {
+      "case": "text",
+      "cardinality": 8,
+      "stock_trials_s": [
+        1.026551305,
+        0.960637016,
+        0.962854361,
+        0.957847533,
+        0.945185817
+      ],
+      "native_trials_s": [
+        0.891878577,
+        0.93206164,
+        0.864840634,
+        0.869395921,
+        0.857824058
+      ],
+      "stock_median_s": 0.960637016,
+      "native_median_s": 0.869395921,
+      "native_elapsed_change_pct": -9.497978266538087,
+      "raw_trials": [
+        "[temporal-udf-trial] case=text engine=Flink trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126365655 seconds=1.580126",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126367608 seconds=1.202623",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126368966 seconds=0.994504",
+        "[temporal-udf-trial] case=text engine=Flink trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126370066 seconds=1.021971",
+        "[temporal-udf-trial] case=text engine=Flink trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126371196 seconds=1.026551",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126372332 seconds=0.891879",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126373335 seconds=0.932062",
+        "[temporal-udf-trial] case=text engine=Flink trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126374342 seconds=0.960637",
+        "[temporal-udf-trial] case=text engine=Flink trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126375386 seconds=0.962854",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126376443 seconds=0.864841",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126377396 seconds=0.869396",
+        "[temporal-udf-trial] case=text engine=Flink trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126378342 seconds=0.957848",
+        "[temporal-udf-trial] case=text engine=Flink trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126379391 seconds=0.945186",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126380413 seconds=0.857824"
+      ],
+      "execution_counters": [
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000"
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": []
+      },
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -Xlog:gc*,safepoint:file=<checkout>/native/target/364-per-job/text-card8-gc.log:time,uptime,level,tags",
+        "-Dtemporal.rows=2000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=5",
+        "-Dtemporal.cases=text",
+        "-Dtemporal.cardinality=8"
+      ]
+    },
+    {
+      "case": "epoch",
+      "cardinality": 8,
+      "stock_trials_s": [
+        0.556834129,
+        0.494774042,
+        0.488809159,
+        0.488364555,
+        0.495481156
+      ],
+      "native_trials_s": [
+        0.5270227,
+        0.580355975,
+        0.503221661,
+        0.520257225,
+        0.519576953
+      ],
+      "stock_median_s": 0.494774042,
+      "native_median_s": 0.520257225,
+      "native_elapsed_change_pct": 5.150468867968616,
+      "raw_trials": [
+        "[temporal-udf-trial] case=epoch engine=Flink trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126386964 seconds=1.119669",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126388456 seconds=0.881746",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126389502 seconds=0.693212",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126390328 seconds=0.569269",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126391015 seconds=0.556834",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126391674 seconds=0.527023",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126392327 seconds=0.580356",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126392994 seconds=0.494774",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126393579 seconds=0.488809",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126394162 seconds=0.503222",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126394760 seconds=0.520257",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126395382 seconds=0.488365",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126395956 seconds=0.495481",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126396530 seconds=0.519577"
+      ],
+      "execution_counters": [
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000"
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": []
+      },
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -Xlog:gc*,safepoint:file=<checkout>/native/target/364-per-job/epoch-card8-gc.log:time,uptime,level,tags",
+        "-Dtemporal.rows=2000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=5",
+        "-Dtemporal.cases=epoch",
+        "-Dtemporal.cardinality=8"
+      ]
+    },
+    {
+      "case": "identity",
+      "cardinality": 16384,
+      "stock_trials_s": [
+        0.702013043,
+        0.701215128,
+        0.633789074,
+        0.61581363,
+        0.620063915
+      ],
+      "native_trials_s": [
+        0.748356075,
+        0.746257408,
+        0.745465448,
+        0.747401852,
+        0.742742056
+      ],
+      "stock_median_s": 0.633789074,
+      "native_median_s": 0.746257408,
+      "native_elapsed_change_pct": 17.745388586487376,
+      "raw_trials": [
+        "[temporal-udf-trial] case=identity engine=Flink trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126402745 seconds=1.181999",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126404316 seconds=1.122089",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126405605 seconds=0.825791",
+        "[temporal-udf-trial] case=identity engine=Flink trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126406551 seconds=0.723972",
+        "[temporal-udf-trial] case=identity engine=Flink trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126407402 seconds=0.702013",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126408206 seconds=0.748356",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126409054 seconds=0.746257",
+        "[temporal-udf-trial] case=identity engine=Flink trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126409905 seconds=0.701215",
+        "[temporal-udf-trial] case=identity engine=Flink trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126410702 seconds=0.633789",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126411422 seconds=0.745465",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126412275 seconds=0.747402",
+        "[temporal-udf-trial] case=identity engine=Flink trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126413101 seconds=0.615814",
+        "[temporal-udf-trial] case=identity engine=Flink trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126413793 seconds=0.620064",
+        "[temporal-udf-trial] case=identity engine=StreamFusion trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126414502 seconds=0.742742"
+      ],
+      "execution_counters": [
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000",
+        "[temporal-direct-calc] case=identity rows=2000000",
+        "[temporal-direct-aliases] values=4000000"
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": []
+      },
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -Xlog:gc*,safepoint:file=<checkout>/native/target/364-per-job/identity-card16384-gc.log:time,uptime,level,tags",
+        "-Dtemporal.rows=2000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=5",
+        "-Dtemporal.cases=identity",
+        "-Dtemporal.cardinality=16384"
+      ]
+    },
+    {
+      "case": "text",
+      "cardinality": 16384,
+      "stock_trials_s": [
+        1.015671975,
+        0.938545348,
+        0.939666384,
+        0.929123061,
+        0.927266227
+      ],
+      "native_trials_s": [
+        0.914500049,
+        0.887189625,
+        0.900018376,
+        0.870743968,
+        0.802799397
+      ],
+      "stock_median_s": 0.938545348,
+      "native_median_s": 0.887189625,
+      "native_elapsed_change_pct": -5.471842475106492,
+      "raw_trials": [
+        "[temporal-udf-trial] case=text engine=Flink trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126421096 seconds=1.550077",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126423045 seconds=1.223355",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126424413 seconds=0.987345",
+        "[temporal-udf-trial] case=text engine=Flink trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126425504 seconds=0.994649",
+        "[temporal-udf-trial] case=text engine=Flink trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126426615 seconds=1.015672",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126427729 seconds=0.914500",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126428753 seconds=0.887190",
+        "[temporal-udf-trial] case=text engine=Flink trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126429724 seconds=0.938545",
+        "[temporal-udf-trial] case=text engine=Flink trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126430755 seconds=0.939666",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126431782 seconds=0.900018",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126432774 seconds=0.870744",
+        "[temporal-udf-trial] case=text engine=Flink trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126433722 seconds=0.929123",
+        "[temporal-udf-trial] case=text engine=Flink trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126434735 seconds=0.927266",
+        "[temporal-udf-trial] case=text engine=StreamFusion trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126435741 seconds=0.802799"
+      ],
+      "execution_counters": [
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000",
+        "[temporal-direct-calc] case=text rows=2000000"
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": []
+      },
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -Xlog:gc*,safepoint:file=<checkout>/native/target/364-per-job/text-card16384-gc.log:time,uptime,level,tags",
+        "-Dtemporal.rows=2000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=5",
+        "-Dtemporal.cases=text",
+        "-Dtemporal.cardinality=16384"
+      ]
+    },
+    {
+      "case": "epoch",
+      "cardinality": 16384,
+      "stock_trials_s": [
+        0.58343062,
+        0.486285251,
+        0.48458058,
+        0.491207082,
+        0.503308554
+      ],
+      "native_trials_s": [
+        0.628483105,
+        0.604819775,
+        0.587800632,
+        0.591563519,
+        0.590832686
+      ],
+      "stock_median_s": 0.491207082,
+      "native_median_s": 0.591563519,
+      "native_elapsed_change_pct": 20.430576161766332,
+      "raw_trials": [
+        "[temporal-udf-trial] case=epoch engine=Flink trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126442343 seconds=1.105354",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=0 warmup=true rows=2000000 precision=9 start_ms=1792126443843 seconds=0.939644",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126444962 seconds=0.726503",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=1 warmup=true rows=2000000 precision=9 start_ms=1792126445815 seconds=0.586885",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126446508 seconds=0.583431",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=2 warmup=false rows=2000000 precision=9 start_ms=1792126447214 seconds=0.628483",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126447972 seconds=0.604820",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=3 warmup=false rows=2000000 precision=9 start_ms=1792126448671 seconds=0.486285",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126449246 seconds=0.484581",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=4 warmup=false rows=2000000 precision=9 start_ms=1792126449830 seconds=0.587801",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126450500 seconds=0.591564",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=5 warmup=false rows=2000000 precision=9 start_ms=1792126451192 seconds=0.491207",
+        "[temporal-udf-trial] case=epoch engine=Flink trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126451775 seconds=0.503309",
+        "[temporal-udf-trial] case=epoch engine=StreamFusion trial=6 warmup=false rows=2000000 precision=9 start_ms=1792126452364 seconds=0.590833"
+      ],
+      "execution_counters": [
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000",
+        "[temporal-direct-calc] case=epoch rows=2000000"
+      ],
+      "activity": {
+        "exit_code": 0,
+        "external_activity": []
+      },
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -Xlog:gc*,safepoint:file=<checkout>/native/target/364-per-job/epoch-card16384-gc.log:time,uptime,level,tags",
+        "-Dtemporal.rows=2000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=5",
+        "-Dtemporal.cases=epoch",
+        "-Dtemporal.cardinality=16384"
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "case": "identity",
+      "rows": 1000000,
+      "warmups": 2,
+      "measured_pairs": 3,
+      "timings_excluded": true,
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -agentpath:<checkout>/native/target/profiling-tools/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=<checkout>/native/target/364-per-job/profile-identity-card16384.jfr",
+        "-Dtemporal.rows=1000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=3",
+        "-Dtemporal.cases=identity",
+        "-Dtemporal.cardinality=16384"
+      ],
+      "external_activity_observations": 0,
+      "exit_code": 0,
+      "stacks": {
+        "cpu": {
+          "file": "temporal-per-job-identity-cpu-2026-10-16.collapsed.gz",
+          "sha256": "173d9b726889a53e5b2f15e0933b824cfc315c6306a6aec64422b186bd74f6f1",
+          "total": 12856,
+          "units": "samples",
+          "inclusive_methods": {
+            "RowDataToArrowOperator": 476,
+            "RowDataSerializer.copyRowData": 398,
+            "ArrowToRowDataOperator": 134,
+            "TimestampAccessor.getTimestamp": 12,
+            "NativeUdf.evaluateTemporalRowCalc": 214,
+            "NativeUdf.evaluateAliasedTimestamps": 172
+          },
+          "leading_leaves": [
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              652
+            ],
+            [
+              "SymbolTable::do_lookup",
+              270
+            ],
+            [
+              "itable stub",
+              254
+            ],
+            [
+              "/usr/lib/x86_64-linux-gnu/libc.so.6",
+              235
+            ],
+            [
+              "IndexSetIterator::advance_and_next",
+              234
+            ],
+            [
+              "PhaseChaitin::Split",
+              171
+            ],
+            [
+              "/usr/lib/x86_64-linux-gnu/libz.so.1.2.11",
+              168
+            ],
+            [
+              "G1ParScanThreadState::trim_queue_to_threshold",
+              166
+            ],
+            [
+              "PhaseChaitin::gather_lrg_masks",
+              162
+            ],
+            [
+              "PhaseChaitin::interfere_with_live",
+              153
+            ],
+            [
+              "PhaseChaitin::elide_copy",
+              125
+            ],
+            [
+              "PhaseLive::compute",
+              115
+            ]
+          ],
+          "rust_frames": []
+        },
+        "alloc": {
+          "file": "temporal-per-job-identity-alloc-2026-10-16.collapsed.gz",
+          "sha256": "51af4fe12e0b1f9c4f55259dc79359cb52445ba15d4c56b57fe2172de5cbc479",
+          "total": 10783079536,
+          "units": "sampled allocation bytes",
+          "inclusive_methods": {
+            "RowDataSerializer.copyRowData": 481296384,
+            "RowDataToArrowOperator": 1525678080,
+            "NativeUdf.evaluateTemporalRowCalc": 842006528,
+            "NativeUdf.evaluateAliasedTimestamps": 823132160,
+            "TimestampAccessor.getTimestamp": 398458880,
+            "ArrowToRowDataOperator": 629145600
+          },
+          "leading_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              2163212288
+            ],
+            [
+              "org.apache.flink.table.data.TimestampData_[i]",
+              1623195648
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              1591738368
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              1063256064
+            ],
+            [
+              "java.time.Instant_[i]",
+              641728512
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              620756992
+            ],
+            [
+              "java.lang.Integer_[i]",
+              587202560
+            ],
+            [
+              "byte[]_[i]",
+              452508784
+            ],
+            [
+              "java.time.LocalTime_[i]",
+              449839104
+            ],
+            [
+              "java.time.LocalDate_[i]",
+              416284672
+            ],
+            [
+              "java.time.LocalDateTime_[i]",
+              389021696
+            ],
+            [
+              "java.lang.Long_[i]",
+              257949696
+            ]
+          ],
+          "rust_frames": []
+        }
+      }
+    },
+    {
+      "case": "epoch",
+      "rows": 1000000,
+      "warmups": 2,
+      "measured_pairs": 3,
+      "timings_excluded": true,
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -agentpath:<checkout>/native/target/profiling-tools/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=<checkout>/native/target/364-per-job/profile-epoch-card16384.jfr",
+        "-Dtemporal.rows=1000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=3",
+        "-Dtemporal.cases=epoch",
+        "-Dtemporal.cardinality=16384"
+      ],
+      "external_activity_observations": 0,
+      "exit_code": 0,
+      "stacks": {
+        "cpu": {
+          "file": "temporal-per-job-epoch-cpu-2026-10-16.collapsed.gz",
+          "sha256": "e28f3b2edbec3b7cbafcbe53696ff5889ab52cbdd2f7f0a0d44cf24d600c7164",
+          "total": 12376,
+          "units": "samples",
+          "inclusive_methods": {
+            "RowDataSerializer.copyRowData": 178,
+            "RowDataToArrowOperator": 298,
+            "ArrowToRowDataOperator": 94,
+            "NativeUdf.evaluateTemporalRowCalc": 102,
+            "TimestampAccessor.getTimestamp": 3
+          },
+          "leading_leaves": [
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              690
+            ],
+            [
+              "SymbolTable::do_lookup",
+              262
+            ],
+            [
+              "IndexSetIterator::advance_and_next",
+              251
+            ],
+            [
+              "/usr/lib/x86_64-linux-gnu/libc.so.6",
+              209
+            ],
+            [
+              "itable stub",
+              180
+            ],
+            [
+              "PhaseChaitin::Split",
+              176
+            ],
+            [
+              "/usr/lib/x86_64-linux-gnu/libz.so.1.2.11",
+              172
+            ],
+            [
+              "PhaseChaitin::gather_lrg_masks",
+              171
+            ],
+            [
+              "G1ParScanThreadState::trim_queue_to_threshold",
+              131
+            ],
+            [
+              "PhaseLive::compute",
+              127
+            ],
+            [
+              "PhaseChaitin::interfere_with_live",
+              122
+            ],
+            [
+              "PhaseIdealLoop::build_loop_late",
+              120
+            ]
+          ],
+          "rust_frames": []
+        },
+        "alloc": {
+          "file": "temporal-per-job-epoch-alloc-2026-10-16.collapsed.gz",
+          "sha256": "127fdb177a4731b67bd8651ec20d808be98bb8fdaf5b3c8c44e626c69b0f91ce",
+          "total": 10413992240,
+          "units": "sampled allocation bytes",
+          "inclusive_methods": {
+            "RowDataSerializer.copyRowData": 382730240,
+            "RowDataToArrowOperator": 1444937728,
+            "NativeUdf.evaluateTemporalRowCalc": 370147328,
+            "TimestampAccessor.getTimestamp": 109051904,
+            "ArrowToRowDataOperator": 1052770304
+          },
+          "leading_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              1943011328
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              1632632832
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              970981376
+            ],
+            [
+              "org.apache.flink.table.data.TimestampData_[i]",
+              912261120
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              673185792
+            ],
+            [
+              "byte[]_[i]",
+              666429744
+            ],
+            [
+              "java.time.Instant_[i]",
+              622854144
+            ],
+            [
+              "java.lang.Long_[i]",
+              585105408
+            ],
+            [
+              "java.lang.Integer_[i]",
+              583008256
+            ],
+            [
+              "org.apache.flink.core.memory.MemorySegment_[i]",
+              289406976
+            ],
+            [
+              "java.time.LocalDate_[i]",
+              224395264
+            ],
+            [
+              "java.time.LocalDateTime_[i]",
+              216006656
+            ]
+          ],
+          "rust_frames": []
+        }
+      }
+    },
+    {
+      "case": "perimeter",
+      "rows": 1000000,
+      "warmups": 2,
+      "measured_pairs": 3,
+      "timings_excluded": true,
+      "command": [
+        "mvn",
+        "-o",
+        "-B",
+        "-ntp",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-pl",
+        "streamfusion-runtime",
+        "-Dtest=TemporalUdfBenchmark",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<checkout>/native/target/365-fixed",
+        "-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<checkout>/native/target/365-fixed -Dstreamfusion.experimental.directTemporalCalc=true -Dstreamfusion.experimental.temporalAliases=true -agentpath:<checkout>/native/target/profiling-tools/async-profiler-4.0-linux-x64/lib/libasyncProfiler.so=start,event=cpu-clock,interval=2ms,cstack=dwarf,alloc=1m,file=<checkout>/native/target/364-per-job/profile-perimeter-card16384.jfr",
+        "-Dtemporal.rows=1000000",
+        "-Dtemporal.warmup=2",
+        "-Dtemporal.runs=3",
+        "-Dtemporal.cases=perimeter",
+        "-Dtemporal.cardinality=16384"
+      ],
+      "external_activity_observations": 19,
+      "exit_code": 0,
+      "stacks": {
+        "cpu": {
+          "file": "temporal-per-job-perimeter-cpu-2026-10-16.collapsed.gz",
+          "sha256": "ce069eec4d5efc61a82b6a1041e257e75e0011ac728498efc0365e6bb4f95ede",
+          "total": 12695,
+          "units": "samples",
+          "inclusive_methods": {
+            "RowDataSerializer.copyRowData": 423,
+            "RowDataToArrowOperator": 494,
+            "ArrowToRowDataOperator": 183,
+            "TimestampAccessor.getTimestamp": 18
+          },
+          "leading_leaves": [
+            [
+              "_raw_spin_unlock_irqrestore_[k]",
+              635
+            ],
+            [
+              "SymbolTable::do_lookup",
+              296
+            ],
+            [
+              "itable stub",
+              239
+            ],
+            [
+              "IndexSetIterator::advance_and_next",
+              235
+            ],
+            [
+              "/usr/lib/x86_64-linux-gnu/libc.so.6",
+              233
+            ],
+            [
+              "/usr/lib/x86_64-linux-gnu/libz.so.1.2.11",
+              189
+            ],
+            [
+              "PhaseChaitin::Split",
+              161
+            ],
+            [
+              "G1ParScanThreadState::trim_queue_to_threshold",
+              143
+            ],
+            [
+              "PhaseChaitin::gather_lrg_masks",
+              141
+            ],
+            [
+              "PhaseLive::compute",
+              121
+            ],
+            [
+              "PhaseChaitin::interfere_with_live",
+              116
+            ],
+            [
+              "clear_page_erms_[k]",
+              110
+            ]
+          ],
+          "rust_frames": [
+            [
+              "streamfusion::calc::CalcExpression::evaluate",
+              7
+            ],
+            [
+              "streamfusion::calc::evaluate_projection",
+              2
+            ],
+            [
+              "streamfusion::calc::read_calc_expression",
+              1
+            ]
+          ]
+        },
+        "alloc": {
+          "file": "temporal-per-job-perimeter-alloc-2026-10-16.collapsed.gz",
+          "sha256": "0d04525f723a730bfeb36b91df974bffe618591cab6fd8b5fdf2c536a8bc49bb",
+          "total": 9529523968,
+          "units": "sampled allocation bytes",
+          "inclusive_methods": {
+            "RowDataToArrowOperator": 897581056,
+            "ArrowToRowDataOperator": 602931200,
+            "TimestampAccessor.getTimestamp": 199229440,
+            "RowDataSerializer.copyRowData": 446693376
+          },
+          "leading_leaves": [
+            [
+              "java.lang.Object[]_[i]",
+              2127560704
+            ],
+            [
+              "org.apache.flink.streaming.runtime.streamrecord.StreamRecord_[i]",
+              1635778560
+            ],
+            [
+              "org.apache.flink.table.data.TimestampData_[i]",
+              1047527424
+            ],
+            [
+              "org.apache.flink.table.data.GenericRowData_[i]",
+              1045430272
+            ],
+            [
+              "org.apache.flink.types.Row_[i]",
+              614465536
+            ],
+            [
+              "java.lang.Integer_[i]",
+              587202560
+            ],
+            [
+              "byte[]_[i]",
+              508624640
+            ],
+            [
+              "java.time.Instant_[i]",
+              401604608
+            ],
+            [
+              "java.lang.Long_[i]",
+              275775488
+            ],
+            [
+              "java.time.LocalTime_[i]",
+              227540992
+            ],
+            [
+              "java.time.LocalDateTime_[i]",
+              227540992
+            ],
+            [
+              "java.time.LocalDate_[i]",
+              198180864
+            ]
+          ],
+          "rust_frames": []
+        }
+      }
+    }
+  ],
+  "profile_limitations": [
+    "async-profiler 4.0 cpu-clock at 2 ms, DWARF native stacks and Java allocation sampling at 1 MiB",
+    "Whole-process profiles include both engines, all warmup jobs, JIT and cluster setup. Whole-process allocation totals are not a native-versus-stock attribution. Inclusive method counts overlap.",
+    "Direct temporal cases run generated Java on Arrow columns; zero Rust expression samples are expected. The perimeter control supplies Rust projection samples.",
+    "Perimeter control overlapped external Java work and is diagnostic only. All profile timings excluded.",
+    "Identity and epoch sampled TimestampData reconstruction at Arrow reads; identity also reconstructs at RowDataSerializer.copyRowData and generated UDF output conversions. These are targets for investigation, not a demonstrated optimization."
+  ]
+}
