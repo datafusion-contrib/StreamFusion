@@ -1,0 +1,8 @@
+{
+  "comparedFiles": 480,
+  "differentFileBytes": 480,
+  "identicalDataPages": true,
+  "equalDecodedFootersAfterSortingUnorderedEncodingLists": true,
+  "baseline": "previous complete matrix, cohort-001",
+  "current": "optimized complete matrix, cohort-001"
+}

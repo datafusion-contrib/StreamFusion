@@ -1,0 +1,12 @@
+{
+  "queries": 23,
+  "cells": 30,
+  "allTrials": 240,
+  "measuredTrials": 180,
+  "passingPairs": 120,
+  "exactGeomean": 1.43094963147195,
+  "readmeGeomean": 1.43068083955254,
+  "exactWins": 20,
+  "appendExactGeomean": 1.2430697364934753,
+  "primaryKeyExactGeomean": 1.9740013326116443
+}

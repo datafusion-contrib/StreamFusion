@@ -1,0 +1,37 @@
+query,engine,category,samples,execution_cpu_samples,execution_cpu_percent,patterns
+q0,flink,source_chain_fetch,275,470,58.51063829787234,SourceReaderBase.pollNext | KafkaSourceReader | KafkaRecordEmitter.emitRecord | NativeKafkaSourceFetcherManager | NativeJsonFormat.decodeContiguousBytesInto | KafkaPartitionSplitReader.fetch
+q0,flink,sink_process,64,470,13.617021276595745,IcebergStreamWriter.processElement
+q0,flink,sink_precheckpoint_flush,3,470,0.6382978723404256,IcebergStreamWriter.prepareSnapshotPreBarrier
+q0,flink,rust_data_encoding_write,0,470,0.0,tech/streamfusion/iceberg/NativeIceberg.write | tech/streamfusion/iceberg/NativeIceberg.finish
+q0,flink,java_data_writer,51,470,10.851063829787234,org/apache/iceberg/io/DataWriter.write
+q0,flink,java_position_delete_close,0,470,0.0,SortingPositionOnlyDeleteWriter.close
+q0,flink,java_delete_key_bookkeeping,0,470,0.0,BaseTaskWriter$BaseEqualityDeltaWriter.deleteKey
+q0,flink,native_topn_push,0,470,0.0,tech/streamfusion/Native.pushRocksDBTopNRanker
+q0,flink,stock_topn_process,0,470,0.0,org/apache/flink/table/runtime/operators/rank/AppendOnlyTopNFunction.processElement
+q0,streamfusion,source_chain_fetch,107,223,47.98206278026906,SourceReaderBase.pollNext | KafkaSourceReader | KafkaRecordEmitter.emitRecord | NativeKafkaSourceFetcherManager | NativeJsonFormat.decodeContiguousBytesInto | KafkaPartitionSplitReader.fetch
+q0,streamfusion,sink_process,29,223,13.004484304932735,IcebergStreamWriter.processElement
+q0,streamfusion,sink_precheckpoint_flush,4,223,1.7937219730941705,IcebergStreamWriter.prepareSnapshotPreBarrier
+q0,streamfusion,rust_data_encoding_write,26,223,11.659192825112108,tech/streamfusion/iceberg/NativeIceberg.write | tech/streamfusion/iceberg/NativeIceberg.finish
+q0,streamfusion,java_data_writer,0,223,0.0,org/apache/iceberg/io/DataWriter.write
+q0,streamfusion,java_position_delete_close,0,223,0.0,SortingPositionOnlyDeleteWriter.close
+q0,streamfusion,java_delete_key_bookkeeping,0,223,0.0,BaseTaskWriter$BaseEqualityDeltaWriter.deleteKey
+q0,streamfusion,native_topn_push,0,223,0.0,tech/streamfusion/Native.pushRocksDBTopNRanker
+q0,streamfusion,stock_topn_process,0,223,0.0,org/apache/flink/table/runtime/operators/rank/AppendOnlyTopNFunction.processElement
+q19,flink,source_chain_fetch,246,5106,4.81786133960047,SourceReaderBase.pollNext | KafkaSourceReader | KafkaRecordEmitter.emitRecord | NativeKafkaSourceFetcherManager | NativeJsonFormat.decodeContiguousBytesInto | KafkaPartitionSplitReader.fetch
+q19,flink,sink_process,1286,5106,25.18605562083823,IcebergStreamWriter.processElement
+q19,flink,sink_precheckpoint_flush,529,5106,10.36036036036036,IcebergStreamWriter.prepareSnapshotPreBarrier
+q19,flink,rust_data_encoding_write,0,5106,0.0,tech/streamfusion/iceberg/NativeIceberg.write | tech/streamfusion/iceberg/NativeIceberg.finish
+q19,flink,java_data_writer,526,5106,10.301605953779866,org/apache/iceberg/io/DataWriter.write
+q19,flink,java_position_delete_close,477,5106,9.341950646298473,SortingPositionOnlyDeleteWriter.close
+q19,flink,java_delete_key_bookkeeping,468,5106,9.165687426556993,BaseTaskWriter$BaseEqualityDeltaWriter.deleteKey
+q19,flink,native_topn_push,0,5106,0.0,tech/streamfusion/Native.pushRocksDBTopNRanker
+q19,flink,stock_topn_process,1363,5106,26.694085389737563,org/apache/flink/table/runtime/operators/rank/AppendOnlyTopNFunction.processElement
+q19,streamfusion,source_chain_fetch,149,2350,6.340425531914893,SourceReaderBase.pollNext | KafkaSourceReader | KafkaRecordEmitter.emitRecord | NativeKafkaSourceFetcherManager | NativeJsonFormat.decodeContiguousBytesInto | KafkaPartitionSplitReader.fetch
+q19,streamfusion,sink_process,785,2350,33.40425531914894,IcebergStreamWriter.processElement
+q19,streamfusion,sink_precheckpoint_flush,504,2350,21.4468085106383,IcebergStreamWriter.prepareSnapshotPreBarrier
+q19,streamfusion,rust_data_encoding_write,189,2350,8.042553191489361,tech/streamfusion/iceberg/NativeIceberg.write | tech/streamfusion/iceberg/NativeIceberg.finish
+q19,streamfusion,java_data_writer,1,2350,0.0425531914893617,org/apache/iceberg/io/DataWriter.write
+q19,streamfusion,java_position_delete_close,494,2350,21.02127659574468,SortingPositionOnlyDeleteWriter.close
+q19,streamfusion,java_delete_key_bookkeeping,394,2350,16.76595744680851,BaseTaskWriter$BaseEqualityDeltaWriter.deleteKey
+q19,streamfusion,native_topn_push,291,2350,12.382978723404255,tech/streamfusion/Native.pushRocksDBTopNRanker
+q19,streamfusion,stock_topn_process,0,2350,0.0,org/apache/flink/table/runtime/operators/rank/AppendOnlyTopNFunction.processElement

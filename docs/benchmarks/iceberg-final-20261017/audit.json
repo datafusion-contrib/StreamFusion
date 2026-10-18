@@ -1,0 +1,90 @@
+{
+  "inputReproducibility": {
+    "comparedFiles": 960,
+    "differentFileBytes": 480,
+    "identicalDataPages": true,
+    "equalDecodedFootersAfterSortingUnorderedEncodingLists": true
+  },
+  "cells": 120,
+  "pairedValidations": 480,
+  "measuredPairs": 360,
+  "measurements": 960,
+  "nativeTrials": 480,
+  "auditedGraphs": {
+    "streamfusion": 480,
+    "flink": 480
+  },
+  "allNativeGraphsHaveNoRowArrowTransposes": true,
+  "allNativePlansHaveNoOperatorFallback": true,
+  "identicalInputParquetBytesAcrossCohorts": false,
+  "inputFilesPerCohort": 480,
+  "cohorts": [
+    {
+      "cohort": "cohort-001",
+      "environment": {
+        "commit": "78339ea324ab1d1c5c664a176d160a9bd5abaa16",
+        "dirty": false,
+        "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+        "processor": "x86_64",
+        "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+        "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+        "build": "cargo build --release --features mimalloc -p streamfusion -p streamfusion-iceberg",
+        "javaHeap": "4g",
+        "libraries": {
+          "libstreamfusion_iceberg.so": "445e387fe6950d69039ac43fe252fbc12da8262b7b78cc0946f12d9802c0376e",
+          "libstreamfusion.so": "9f5f26c3d0538872d6b5fc59783b1fcc33974d50b61ed7567366675e9446f497"
+        },
+        "cpu": "12th Gen Intel(R) Core(TM) i7-12650H"
+      },
+      "productionJavaTrees": {
+        "src/main/java": "2d0875737dc33ffaa71290a34a61c6199459c760",
+        "streamfusion-iceberg/src/main/java": "cdc50f5439d7b1cddd3665796ca80d3c93aa7ea5"
+      }
+    },
+    {
+      "cohort": "cohort-002",
+      "environment": {
+        "commit": "2f004ae5877178b812f6d0304d51a9326697916a",
+        "dirty": false,
+        "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+        "processor": "x86_64",
+        "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+        "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+        "build": "cargo build --release --features mimalloc -p streamfusion -p streamfusion-iceberg",
+        "javaHeap": "4g",
+        "libraries": {
+          "libstreamfusion_iceberg.so": "445e387fe6950d69039ac43fe252fbc12da8262b7b78cc0946f12d9802c0376e",
+          "libstreamfusion.so": "9f5f26c3d0538872d6b5fc59783b1fcc33974d50b61ed7567366675e9446f497"
+        },
+        "cpu": "12th Gen Intel(R) Core(TM) i7-12650H"
+      },
+      "productionJavaTrees": {
+        "src/main/java": "2d0875737dc33ffaa71290a34a61c6199459c760",
+        "streamfusion-iceberg/src/main/java": "cdc50f5439d7b1cddd3665796ca80d3c93aa7ea5"
+      }
+    },
+    {
+      "cohort": "cohort-003",
+      "environment": {
+        "commit": "ce0292d06288e85ba57bf14394d044c705fd32c3",
+        "dirty": false,
+        "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+        "processor": "x86_64",
+        "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+        "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+        "build": "cargo build --release --features mimalloc -p streamfusion -p streamfusion-iceberg",
+        "javaHeap": "4g",
+        "libraries": {
+          "libstreamfusion_iceberg.so": "445e387fe6950d69039ac43fe252fbc12da8262b7b78cc0946f12d9802c0376e",
+          "libstreamfusion.so": "9f5f26c3d0538872d6b5fc59783b1fcc33974d50b61ed7567366675e9446f497"
+        },
+        "cpu": "12th Gen Intel(R) Core(TM) i7-12650H"
+      },
+      "productionJavaTrees": {
+        "src/main/java": "2d0875737dc33ffaa71290a34a61c6199459c760",
+        "streamfusion-iceberg/src/main/java": "cdc50f5439d7b1cddd3665796ca80d3c93aa7ea5"
+      }
+    }
+  ],
+  "cancellationCleanupCommit": "2182cb99"
+}

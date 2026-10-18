@@ -1,0 +1,42 @@
+[package]
+name = "streamfusion-iceberg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+streamfusion-bridge = { path = "../bridge" }
+arrow.workspace = true
+parquet.workspace = true
+jni.workspace = true
+iceberg = "=0.10.1"
+async-trait = "0.1"
+bytes.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+typetag = "0.2"
+
+[dependencies.libmimalloc-sys]
+workspace = true
+optional = true
+
+[build-dependencies]
+streamfusion-native-build = { path = "../native-build" }
+
+[features]
+default = []
+mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
+
+[dev-dependencies]
+criterion.workspace = true
+streamfusion-benchmark-support.workspace = true
+
+[[bench]]
+name = "iceberg_io"
+harness = false

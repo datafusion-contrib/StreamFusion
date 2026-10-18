@@ -1,0 +1,10 @@
+Iceberg stream: org.apache.iceberg.hadoop.HadoopStreams$HadoopSeekableInputStream
+Delegate: org.apache.hadoop.fs.ChecksumFileSystem$FSDataBoundedInputStream
+Wrapped: org.apache.hadoop.fs.ChecksumFileSystem$ChecksumFSInputChecker
+Wrapped ByteBufferReadable: false
+readbytebuffer capability: false
+SLF4J: Class path contains multiple SLF4J bindings.
+SLF4J: Found binding in [jar:file:/root/.m2/repository/org/apache/logging/log4j/log4j-slf4j-impl/2.24.3/log4j-slf4j-impl-2.24.3.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J: Found binding in [jar:file:/root/.m2/repository/org/slf4j/slf4j-reload4j/1.7.36/slf4j-reload4j-1.7.36.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J: See http://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J: Actual binding is of type [org.apache.logging.slf4j.Log4jLoggerFactory]

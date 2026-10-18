@@ -72,6 +72,7 @@
         <scala.binary.version>2.12</scala.binary.version>
         <!-- Matches the protobuf runtime Flink's protobuf format generates code against. -->
         <protobuf.version>4.32.1</protobuf.version>
+        <iceberg.version>1.12.0</iceberg.version>
         <delta.version>4.4.0</delta.version>
         <paimon.version>2.0.0</paimon.version>
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
@@ -935,6 +936,10 @@
         </profile>
         <!-- Delta remains optional so deployments only install its connector and native extension
              when they use Delta tables. The module resolves entirely from published artifacts. -->
+        <profile>
+            <id>iceberg</id>
+            <modules><module>streamfusion-iceberg</module></modules>
+        </profile>
         <profile>
             <id>delta</id>
             <modules>

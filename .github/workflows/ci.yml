@@ -193,6 +193,10 @@ jobs:
             jdk: '17'
             profile: delta
             module: streamfusion-delta
+          - name: Iceberg
+            jdk: '17'
+            profile: iceberg,iceberg-upstream
+            module: streamfusion-iceberg
           - name: Paimon Parquet
             jdk: '17'
             profile: paimon

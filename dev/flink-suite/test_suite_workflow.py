@@ -35,7 +35,7 @@ class SuiteWorkflowTest(unittest.TestCase):
             runner = root / "bin/flink-suite.sh"
             runner.write_text('#!/bin/bash\necho "$1" >> invoked\necho "report-$1"\n[[ "$1" != "$FAIL_SUITE" ]]\n')
             runner.chmod(0o755)
-            suites = "formats parquet orc kafka delta"
+            suites = "formats parquet orc kafka delta iceberg"
             for failure in ("", *suites.split()):
                 with self.subTest(failure=failure):
                     (root / "invoked").unlink(missing_ok=True)

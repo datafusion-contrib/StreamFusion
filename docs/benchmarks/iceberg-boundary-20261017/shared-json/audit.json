@@ -1,0 +1,10 @@
+{
+  "pairs": 12,
+  "measurements": 24,
+  "audited": {
+    "plan.txt": 24,
+    "graph.json": 24,
+    "streamfusion": 12,
+    "flink": 12
+  }
+}

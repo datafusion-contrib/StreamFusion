@@ -1098,6 +1098,12 @@ class NexmarkMatrixBenchmark {
 
   private static double runLakeSinkOnce(
       String brokers, Path output, Query q, boolean nativeRun, LakeSink sink) throws Exception {
+    return runLakeSinkOnce(brokers, output, q, nativeRun, sink, null);
+  }
+
+  static double runLakeSinkOnce(
+      String brokers, Path output, Query q, boolean nativeRun, LakeSink sink, Path evidence)
+      throws Exception {
     StreamTableEnvironment tEnv = kafkaEnvironment(brokers, "json");
     tEnv.getConfig().getConfiguration().setString("execution.checkpointing.interval", "1 s");
     tEnv.getConfig().getConfiguration().setString("table.exec.mini-batch.enabled", "false");
@@ -1116,6 +1122,10 @@ class NexmarkMatrixBenchmark {
     sink.initialize(output, sinkType);
     String plan =
         tEnv.explainSql(q.insertSql, org.apache.flink.table.api.ExplainDetail.JSON_EXECUTION_PLAN);
+    if (evidence != null) {
+      Files.writeString(evidence.resolve("plan.txt"), plan);
+      Files.writeString(evidence.resolve("sink.sql"), sink.ddl(q, output));
+    }
     boolean checkDiskState =
         "disk".equals(System.getenv("SF_LAKE_STATE_BACKEND")) && q.label.equals("q4");
     Path rocksDir = checkDiskState ? Files.createTempDirectory("nexmark-lake-rocksdb") : null;
@@ -1177,6 +1187,12 @@ class NexmarkMatrixBenchmark {
               + ", substitutions="
               + scan.substitutions()
               + "). "
+              + scan.explainSummary());
+    }
+    if (evidence != null) {
+      Files.writeString(
+          evidence.resolve("checks.txt"),
+          "native=" + nativeRun + "\nq4RocksDBObserved=" + stateSeen.get() + "\n"
               + scan.explainSummary());
     }
     return seconds;
@@ -1251,7 +1267,7 @@ class NexmarkMatrixBenchmark {
     };
   }
 
-  private static LakeSink paimonPrimaryKeySink() {
+  static LakeSink paimonPrimaryKeySink() {
     return new LakeSink() {
       @Override
       public String id() {
@@ -1297,7 +1313,7 @@ class NexmarkMatrixBenchmark {
     };
   }
 
-  private static LakeSink paimonAppendSink(boolean fixedBucket) {
+  static LakeSink paimonAppendSink(boolean fixedBucket) {
     return new LakeSink() {
       @Override
       public String id() {

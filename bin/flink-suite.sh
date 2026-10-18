@@ -2,6 +2,10 @@
 
 set -uo pipefail
 
+if [[ "${1:-runtime}" == iceberg ]]; then
+  exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/iceberg-suite.sh"
+fi
+
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly FLINK_VERSION="${FLINK_VERSION:-2.2.1}"
 readonly FLINK_TAG="release-${FLINK_VERSION}"
@@ -231,12 +235,13 @@ case "${SUITE_MODE}" in
     "${BASH_SOURCE[0]}" paimon || exit $?
     if [[ "${FLINK_LINE}" == "2.2" ]]; then
       "${BASH_SOURCE[0]}" delta || exit $?
+      "${BASH_SOURCE[0]}" iceberg || exit $?
     fi
     "${BASH_SOURCE[0]}" kafka
     exit $?
     ;;
   *)
-    echo "Usage: $0 [config|prepare|runtime|diagnostic|state|formats|parquet|orc|kafka|paimon|delta|all]" >&2
+    echo "Usage: $0 [config|prepare|runtime|diagnostic|state|formats|parquet|orc|kafka|paimon|delta|iceberg|all]" >&2
     exit 2
     ;;
 esac
@@ -408,6 +413,8 @@ else
   if [[ "${SUITE_MODE}" == "delta" || ( "${SUITE_MODE}" == "prepare" && "${FLINK_LINE}" == "2.2" ) ]]; then
     streamfusion_profiles+=",delta"
     streamfusion_modules+=",streamfusion-delta"
+    streamfusion_profiles+=",iceberg"
+    streamfusion_modules+=",streamfusion-iceberg"
   fi
   mvn -B -ntp -s "${MAVEN_SETTINGS}" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
     -Dstreamfusion.flink-source-suite "-P${streamfusion_profiles}" "${STREAMFUSION_LINE_PROFILES[@]}" \

@@ -1,0 +1,89 @@
+{
+  "nativePlans": 120,
+  "tableSchemas": 240,
+  "nativeTrialsWithRustFiles": 109,
+  "parquetFooters": 3114,
+  "stockPlans": 120,
+  "rocksDBWitnesses": 8,
+  "freshJvmCohorts": 1,
+  "resumedCells": 0,
+  "libraries": {
+    "libstreamfusion_parquet.so": "618137129032cd16b3d60159677373b51bd79c1451ddb2b753dc76d7c4c9c4af",
+    "libstreamfusion_kafka.so": "ba10905528e0ed2e2d8dae7f773e53db730ee08e0ae6734cb94b6af74fe55224",
+    "libstreamfusion_orc.so": "68848260c77e6ea63e13b5771fecb3e4fc88156d59605729a0404781f2ca556e",
+    "libstreamfusion.so": "928680f01c11fb40dd01782cb090691dddec33a7e93eb17c6cae67ffb2acd1d2",
+    "libstreamfusion_paimon.so": "e83e2f298fd54e73153a563c346fc348f8aa38343bcf499a9321d16e5a0186f6",
+    "libstreamfusion_json.so": "ecda6aa4ec79d9f943282dbc4a48583f0ea8f5f1586ab0fa82a8815870ab6ae2"
+  },
+  "writerParallelism": {
+    "q0": [
+      4
+    ],
+    "q1": [
+      4
+    ],
+    "q2": [
+      4
+    ],
+    "q3": [
+      4
+    ],
+    "q4": [
+      4
+    ],
+    "q7": [
+      4
+    ],
+    "q8": [
+      4
+    ],
+    "q9": [
+      4
+    ],
+    "q10": [
+      4
+    ],
+    "q11": [
+      4
+    ],
+    "q12": [
+      4
+    ],
+    "q15": [
+      4
+    ],
+    "q16": [
+      4
+    ],
+    "q17": [
+      4
+    ],
+    "q18": [
+      4
+    ],
+    "q19": [
+      4
+    ],
+    "q20": [
+      4
+    ],
+    "q22": [
+      4
+    ],
+    "q5": [
+      1
+    ],
+    "q13": [
+      4
+    ],
+    "q14": [
+      4
+    ],
+    "q21": [
+      4
+    ],
+    "q23": [
+      4
+    ]
+  }
+}

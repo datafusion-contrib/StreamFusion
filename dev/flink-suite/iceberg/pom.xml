@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>tech.streamfusion</groupId><artifactId>streamfusion-upstream-iceberg-tests</artifactId><version>1.0-SNAPSHOT</version>
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <iceberg.version>1.12.0</iceberg.version><flink.version>2.2.1</flink.version>
+        <iceberg.test.output>${project.basedir}/target</iceberg.test.output>
+        <iceberg.test.jvm.args></iceberg.test.jvm.args>
+    </properties>
+    <dependencies>
+                <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>4.11.0</version><scope>test</scope></dependency>
+                <dependency><groupId>org.awaitility</groupId><artifactId>awaitility</artifactId><version>4.3.0</version><scope>test</scope></dependency>
+
+        <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>1.7.36</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.iceberg</groupId><artifactId>iceberg-flink-runtime-2.2</artifactId><version>${iceberg.version}</version></dependency>
+        <dependency><groupId>org.apache.iceberg</groupId><artifactId>iceberg-flink-2.2</artifactId><version>${iceberg.version}</version><type>test-jar</type><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.iceberg</groupId><artifactId>iceberg-api</artifactId><version>${iceberg.version}</version><type>test-jar</type><scope>test</scope></dependency>
+                <dependency><groupId>org.apache.iceberg</groupId><artifactId>iceberg-data</artifactId><version>${iceberg.version}</version><type>test-jar</type><scope>test</scope></dependency>
+                <dependency><groupId>org.apache.iceberg</groupId><artifactId>iceberg-core</artifactId><version>${iceberg.version}</version><type>test-jar</type><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-table-planner_2.12</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-table-api-java-bridge</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-connector-files</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-connector-base</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-metrics-dropwizard</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-test-utils</artifactId><version>${flink.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.flink</groupId><artifactId>flink-runtime</artifactId><version>${flink.version}</version><type>test-jar</type><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.hadoop</groupId><artifactId>hadoop-common</artifactId><version>3.3.4</version><scope>test</scope><exclusions>
+            <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion>
+            <exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-log4j12</artifactId></exclusion>
+            <exclusion><groupId>log4j</groupId><artifactId>log4j</artifactId></exclusion>
+        </exclusions></dependency>
+        <dependency><groupId>org.apache.hadoop</groupId><artifactId>hadoop-mapreduce-client-core</artifactId><version>3.3.4</version><scope>test</scope><exclusions><exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-reload4j</artifactId></exclusion><exclusion><groupId>org.slf4j</groupId><artifactId>slf4j-log4j12</artifactId></exclusion><exclusion><groupId>log4j</groupId><artifactId>log4j</artifactId></exclusion></exclusions></dependency>
+        <dependency><groupId>org.apache.hadoop</groupId><artifactId>hadoop-hdfs-client</artifactId><version>3.3.4</version><scope>test</scope></dependency>
+        <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>3.27.3</version><scope>test</scope></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.11.4</version><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.logging.log4j</groupId><artifactId>log4j-slf4j-impl</artifactId><version>2.24.3</version><scope>test</scope></dependency>
+    </dependencies>
+    <build>
+        <directory>${iceberg.test.output}</directory>
+        <plugins>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.3</version>
+                <configuration>
+                    <dependenciesToScan><dependency>org.apache.iceberg:iceberg-flink-2.2:test-jar:tests</dependency></dependenciesToScan>
+                    <includes><include>**/TestFlinkTableSinkExtended.class</include><include>**/TestIcebergSourceSql.class</include><include>**/TestDataStatisticsOperator.class</include><include>**/TestDataStatisticsCoordinator.class</include><include>**/TestRangePartitioner.class</include><include>**/TestDynamicIcebergSink.class</include><include>**/TestDynamicWriter.class</include><include>**/TestDynamicRecordProcessor.class</include><include>**/TestDynamicTableUpdateOperator.class</include><include>**/TestDynamicWriteResultAggregator.class</include><include>**/TestDynamicCommitter.class</include><include>**/TestDynamicCommittableSerializer.class</include><include>**/TestDynamicWriteResultSerializer.class</include><include>**/TestHashKeyGenerator.class</include><include>**/TestLRUCache.class</include></includes>
+                    <classpathDependencyExcludes>
+                        <classpathDependencyExclude>org.slf4j:slf4j-reload4j</classpathDependencyExclude>
+                        <classpathDependencyExclude>org.slf4j:slf4j-log4j12</classpathDependencyExclude>
+                        <classpathDependencyExclude>ch.qos.reload4j:reload4j</classpathDependencyExclude>
+                        <classpathDependencyExclude>log4j:log4j</classpathDependencyExclude>
+                    </classpathDependencyExcludes>
+                    <failIfNoTests>true</failIfNoTests>
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                    <argLine>-Xmx4g --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED ${iceberg.test.jvm.args}</argLine>
+                    <systemPropertyVariables>
+                        <log4j.configurationFile>${project.basedir}/src/test/resources/log4j2-test.xml</log4j.configurationFile>
+                        <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
+                        <junit.jupiter.execution.parallel.enabled>false</junit.jupiter.execution.parallel.enabled>
+                        <junit.jupiter.execution.timeout.default>10m</junit.jupiter.execution.timeout.default>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

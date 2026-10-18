@@ -19,8 +19,9 @@ if [ "$host_only" = true ] && [ "$linux_only" = true ]; then
   echo "--host-only and --linux-only are mutually exclusive" >&2
   exit 64
 fi
+native_extensions="core fluss kafka json csv raw avro protobuf parquet orc paimon"
 case "$flink_line" in
-  2.2) maven_profiles=dist,universal,release,delta,paimon ;;
+  2.2) maven_profiles=dist,universal,release,delta,paimon,iceberg; native_extensions="$native_extensions iceberg" ;;
   1.18) maven_profiles=dist,universal,release,paimon,flink-1.18 ;;
   *) echo "unsupported Flink line: $flink_line" >&2; exit 64 ;;
 esac
@@ -98,17 +99,9 @@ stage_darwin_libraries() {
   for target_and_architecture in aarch64-apple-darwin:aarch64 x86_64-apple-darwin:x86_64; do
     target=${target_and_architecture%:*}
     architecture=${target_and_architecture#*:}
-    stage_darwin_library core "$target" "$architecture"
-    stage_darwin_library fluss "$target" "$architecture"
-    stage_darwin_library kafka "$target" "$architecture"
-    stage_darwin_library json "$target" "$architecture"
-    stage_darwin_library csv "$target" "$architecture"
-    stage_darwin_library raw "$target" "$architecture"
-    stage_darwin_library avro "$target" "$architecture"
-    stage_darwin_library protobuf "$target" "$architecture"
-    stage_darwin_library parquet "$target" "$architecture"
-    stage_darwin_library orc "$target" "$architecture"
-    stage_darwin_library paimon "$target" "$architecture"
+    for extension in $native_extensions; do
+      stage_darwin_library "$extension" "$target" "$architecture"
+    done
   done
 }
 
@@ -128,7 +121,7 @@ stage_linux_libraries() {
   docker build --platform "$platform" --tag "$image" \
     --file "$repo_root/docker/native-release.Dockerfile" "$native_dir"
   container=$(docker create --platform "$platform" "$image")
-  for extension in core kafka fluss json csv raw avro protobuf parquet orc paimon; do
+  for extension in $native_extensions; do
     case "$extension" in
       core)
         destination_directory=$stage_dir/linux/$architecture
@@ -188,17 +181,9 @@ assert_exports_only_its_own_entry_points() {
 rm -rf "$stage_dir"
 mkdir -p "$stage_dir"
 if [ "$host_only" = true ]; then
-  stage_host_library core
-  stage_host_library fluss
-  stage_host_library kafka
-  stage_host_library json
-  stage_host_library csv
-  stage_host_library raw
-  stage_host_library avro
-  stage_host_library protobuf
-  stage_host_library parquet
-  stage_host_library orc
-  stage_host_library paimon
+  for extension in $native_extensions; do
+    stage_host_library "$extension"
+  done
 else
   command -v docker >/dev/null 2>&1 || {
     echo "Docker is required to build the Linux release libraries." >&2

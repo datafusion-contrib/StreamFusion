@@ -1,0 +1,13 @@
+{
+  "native/bridge/benches/handoffs.rs": "c770de12933574121536ac19662547d4988d393f9e58527950ac2ce70027bfe1",
+  "native/bridge/src/bridge.rs": "68e30522df2265b876867cb8f98b3ed0a2dbb89c113ddff21946b7cac1e68c46",
+  "native/iceberg/src/lib.rs": "dcecf25c88da38a1c7100c19a71c4c1e536c3699a296700a352588e3a74745b8",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/ArrowWriteContext.java": "09ff694ea217976916172ac436a6ad22f032fb464f042c7b620dee4a92c37817",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergHashRouter.java": "9f609fa2a7b5e49b055580021c38892292516a884996e13ced40d08e792c13a1",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergJson.java": "b62d224ec5934d1271b07e5539cb722eda90d1513c0a0d0bfef61f29a01938a1",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergNativeTaskReader.java": "ee00b127f044544887da0b891c5a7593d5066e0aa02849968b02506a098a3056",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergParquetSettings.java": "2619626a0eb452f059e015374e70c06dbf66284e9b83bfa639a23c77de70598b",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergPartitionGroups.java": "1e55f6af18d2dfc974ef73064df02f1707b62ae7a0dfa23bfa38e6a092c5c341",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/NativeIceberg.java": "bfe72df066d2d8a663d2a1f6eb254c22930272a1b19407ac593bf12661c828c1",
+  "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/NativeIcebergAppender.java": "bbdb75b5a8656513b764cd41d9724a2ea75b883c23db277724d60c1126fb1a6d"
+}

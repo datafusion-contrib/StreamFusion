@@ -1,0 +1,15 @@
+{
+  "commit": "abf8f0e4aebc724175bf282d40cce0821fd5057e",
+  "dirty": true,
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "processor": "x86_64",
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+  "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+  "build": "cargo build --release --features mimalloc -p streamfusion -p streamfusion-iceberg",
+  "javaHeap": "4g",
+  "libraries": {
+    "libstreamfusion_iceberg.so": "3aeedfa7b151ea5abda8d27bb9d5da8500b4e846a0e312a3d5fec7e3e0189eb8",
+    "libstreamfusion.so": "17bfce78697dec52ee111f83df323cc8017c8a810bbf064f837b6abffd8849f8"
+  },
+  "cpu": "12th Gen Intel(R) Core(TM) i7-12650H"
+}

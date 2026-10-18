@@ -1,0 +1,80 @@
+{
+  "events": 2000000,
+  "parallelism": 4,
+  "partitions": 4,
+  "stripeEvents": 50000,
+  "watermarks": "Iceberg ordered file lower bounds via SOURCE_WATERMARK()",
+  "watermarkDelayMillis": 4000,
+  "warmups": 1,
+  "runs": 3,
+  "baselineEngine": "streamfusion-stock-io",
+  "baselineLabel": "StreamFusion with stock Iceberg IO",
+  "completionProtocol": "configured checkpoint then draining native savepoint",
+  "checkpointStorage": "shared MiniCluster filesystem default",
+  "objectReuse": true,
+  "snapshotCompression": false,
+  "profileEvent": "none",
+  "fileSettings": {
+    "write.distribution-mode": "hash",
+    "write.parquet.dict-size-bytes": "2097152",
+    "write.parquet.page-size-bytes": "1048576",
+    "write.target-file-size-bytes": "536870912",
+    "write.parquet.compression-level": "3",
+    "write.format.default": "parquet",
+    "write.parquet.compression-codec": "zstd",
+    "format-version": "2",
+    "write.parquet.row-group-size-bytes": "134217728"
+  },
+  "snapshots": [
+    8377529600918311893,
+    4618654467776619671,
+    6157137254177512046
+  ],
+  "java": "17.0.20.1",
+  "maxJavaHeapBytes": 4294967296,
+  "os": "Linux amd64",
+  "cpuCount": 16,
+  "expectedCells": [
+    [
+      "q0",
+      "memory-off",
+      "exact"
+    ],
+    [
+      "q0",
+      "disk-off",
+      "exact"
+    ],
+    [
+      "q3",
+      "memory-off",
+      "exact"
+    ],
+    [
+      "q3",
+      "disk-off",
+      "exact"
+    ],
+    [
+      "q4",
+      "memory-off",
+      "exact"
+    ],
+    [
+      "q4",
+      "disk-off",
+      "exact"
+    ],
+    [
+      "q9",
+      "memory-off",
+      "exact"
+    ],
+    [
+      "q9",
+      "disk-off",
+      "exact"
+    ]
+  ],
+  "resumedCells": []
+}

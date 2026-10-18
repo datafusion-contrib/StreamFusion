@@ -1,0 +1,31 @@
+{
+  "events" : 2000000,
+  "parallelism" : 4,
+  "partitions" : 4,
+  "stripeEvents" : 50000,
+  "watermarks" : "Iceberg ordered file lower bounds via SOURCE_WATERMARK()",
+  "watermarkDelayMillis" : 4000,
+  "warmups" : 0,
+  "runs" : 1,
+  "baselineEngine" : "flink",
+  "baselineLabel" : "Flink",
+  "profileEvent" : "itimer",
+  "fileSettings" : {
+    "write.format.default" : "parquet",
+    "write.parquet.compression-level" : "3",
+    "write.target-file-size-bytes" : "536870912",
+    "write.parquet.page-size-bytes" : "1048576",
+    "write.parquet.dict-size-bytes" : "2097152",
+    "write.distribution-mode" : "hash",
+    "write.parquet.row-group-size-bytes" : "134217728",
+    "format-version" : "2",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "snapshots" : [ 400970127668934136, 6703843599036611117, 7544696435826550699 ],
+  "java" : "17.0.20.1",
+  "maxJavaHeapBytes" : 4294967296,
+  "os" : "Linux amd64",
+  "cpuCount" : 16,
+  "expectedCells" : [ [ "q3", "memory-off", "exact" ], [ "q3", "memory-on", "exact" ], [ "q3", "disk-off", "exact" ], [ "q4", "memory-off", "exact" ], [ "q4", "memory-on", "exact" ], [ "q4", "disk-off", "exact" ] ],
+  "resumedCells" : [ ]
+}

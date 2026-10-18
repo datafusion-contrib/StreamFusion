@@ -18,7 +18,7 @@ def matrix(inventory=False, scope="all", line=None):
         if not inventory or scope in ("all", "runtime"):
             groups.extend((f"runtime-{shard}", "runtime", str(shard)) for shard in range(1, 5))
         if not inventory or scope in ("all", "connectors"):
-            connectors = "formats parquet orc kafka" + (" delta" if line == "2.2" else "")
+            connectors = "formats parquet orc kafka" + (" delta iceberg" if line == "2.2" else "")
             groups.extend((("connectors", connectors, ""), ("paimon", "paimon", "")))
         if not inventory or scope == "all":
             groups.append(("state", "state", ""))

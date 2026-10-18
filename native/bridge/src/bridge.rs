@@ -298,6 +298,17 @@ pub fn export_schema(schema: &Schema, schema_address: jlong) {
     }
 }
 
+/// Exports only buffers when the consumer already owns the immutable output schema.
+pub fn export_record_batch_array(batch: RecordBatch, array_address: jlong) {
+    let out_data = StructArray::from(batch).to_data();
+    unsafe {
+        std::ptr::write(
+            array_address as *mut FFI_ArrowArray,
+            FFI_ArrowArray::new(&out_data),
+        );
+    }
+}
+
 /// Exports a batch into consumer-allocated C structs; the JVM owns and releases it after import.
 pub fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_address: jlong) {
     let out_data = StructArray::from(batch).to_data();

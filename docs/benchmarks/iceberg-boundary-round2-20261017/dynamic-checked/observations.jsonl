@@ -1,0 +1,15 @@
+{"stripes":4,"batchRows":8192,"targetBytes":536870912,"warmups":2,"settings":{"write.parquet.page-size-bytes":"1048576","write.parquet.dict-size-bytes":"2097152","write.parquet.compression-codec":"zstd","write.parquet.compression-level":"3","write.parquet.row-group-size-bytes":"134217728","format-version":"2"},"rows":262144,"kind":"method","width":48,"runs":5,"partitions":4,"cases":["dynamic-route"],"stockFetchRows":8192,"profileEvent":"none","inputFiles":0}
+{"seconds":0.110125699,"rows":262144,"trial":-2,"operation":"dynamic-route","kind":"measurement","native":false,"warmup":true,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.029580212,"rows":262144,"trial":-2,"operation":"dynamic-route","kind":"measurement","native":true,"warmup":true,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.03006846,"rows":262144,"trial":-1,"operation":"dynamic-route","kind":"measurement","native":true,"warmup":true,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.038667959,"rows":262144,"trial":-1,"operation":"dynamic-route","kind":"measurement","native":false,"warmup":true,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.035994315,"rows":262144,"trial":0,"operation":"dynamic-route","kind":"measurement","native":false,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.0105712,"rows":262144,"trial":0,"operation":"dynamic-route","kind":"measurement","native":true,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.010102642,"rows":262144,"trial":1,"operation":"dynamic-route","kind":"measurement","native":true,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.055055678,"rows":262144,"trial":1,"operation":"dynamic-route","kind":"measurement","native":false,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.041468712,"rows":262144,"trial":2,"operation":"dynamic-route","kind":"measurement","native":false,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.009398174,"rows":262144,"trial":2,"operation":"dynamic-route","kind":"measurement","native":true,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.00945545,"rows":262144,"trial":3,"operation":"dynamic-route","kind":"measurement","native":true,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.041550068,"rows":262144,"trial":3,"operation":"dynamic-route","kind":"measurement","native":false,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.037580171,"rows":262144,"trial":4,"operation":"dynamic-route","kind":"measurement","native":false,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}
+{"seconds":0.009896065,"rows":262144,"trial":4,"operation":"dynamic-route","kind":"measurement","native":true,"warmup":false,"arrowBytes":35749888,"nativeTasks":0,"fallbackTasks":0}

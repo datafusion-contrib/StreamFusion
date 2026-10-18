@@ -15,6 +15,7 @@ members = [
   "parquet",
   "orc",
   "paimon",
+  "iceberg",
   "integration-tests",
   "benchmark-support",
 ]

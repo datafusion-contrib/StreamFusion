@@ -412,6 +412,98 @@ on its median, and stateful outliers remain in the results. Delivery is exactly-
 for Kafka and at-least-once for Fluss. The connector page contains the absolute
 per-query table, baseline sweep, controlled shutdown experiment and profiles.
 
+## Iceberg streaming comparison
+
+The fresh [Kafka-to-Iceberg RocksDB/off suite](benchmarks/kafka-iceberg-final-20261017/README.md)
+completes all 23 queries and 120 paired validations: repeated-median geometric
+means are **1.44× exact SQL** and **1.47× with the README variants** over stock
+Flink. It uses four Kafka partitions, four-bucket output tables, 512 MiB managed
+memory across four slots, one warmup and three alternating measured pairs.
+All regressions, ranges and configuration differences from historical runs are retained.
+
+
+The separate Kafka JSON → Iceberg comparison uses the unchanged Kafka corpus and
+views with four topic partitions, parallelism four and four-bucket Iceberg output
+tables. Select the input with `SF_ICEBERG_SOURCE=kafka`; for the RocksDB,
+mini-batching-off suite run:
+
+```sh
+SF_ICEBERG_SOURCE=kafka SF_ICEBERG_MODES=disk-off \
+  SF_BENCH_MANAGED_MEMORY='512 mb' \
+  SF_ROWS=2000000 SF_PARALLELISM=4 SF_WARMUP=1 SF_RUNS=3 \
+  bin/bench-iceberg.sh
+```
+
+Use JDK 17. This command gives both engines 512 MiB managed memory across four
+slots (128 MiB per slot), matching the historical disk/Paimon diagnostic. Both engines run in streaming mode with the same earliest-to-latest
+finite Kafka offsets, 8,192-record poll setting, `UTC` IANA session zone, one-second
+checkpoints and Iceberg writer settings. Timings include planning/submission,
+consumption, query/state/shuffle work and the final Iceberg commit; input production
+and committed-output readback are untimed. Updating queries use identifier-field
+upserts and Java delete encoding. Every native graph must have the native Kafka
+source, native Iceberg writer and no row/Arrow transposes; data-file footers must
+identify parquet-rs. q4 checks that each requested RocksDB backend actually opens.
+All warmups and alternating measured pairs are retained. Exact SQL and the existing
+labelled expression variants are reported separately. Processing-time q12 leaves
+unfinished windows open, as the historical Kafka suites do; its emitted per-bidder
+counts are checked against input bounds rather than requiring identical clock-dependent
+windows. The Iceberg-input comparison below has a different completion procedure.
+
+
+For connector development, the [fast reader/writer loop](benchmarks/iceberg-io.md)
+isolates production file tasks against stock Flink Iceberg in seconds. It complements
+the full streaming comparison below; it does not replace query, shuffle, checkpoint
+or commit measurements.
+
+The latest [four-partition Iceberg Nexmark matrix](benchmarks/iceberg-optimized-20261017/README.md)
+passes all 120 cells / 480 paired validations. Using the README query variants,
+geometric means of repeated median speedups are **1.22× / 1.81×** on memory and
+**2.80× / 2.94×** on RocksDB (mini-batching off/on). Exact-SQL ratios are
+1.23× / 1.69× and 2.51× / 2.74×. The report retains every range, remaining
+state-heavy regressions and the mixed comparison with the
+[previous complete matrix](benchmarks/iceberg-final-20261017/README.md).
+The optional connector accelerates supported streaming contracts by default when
+installed; the Kafka headline is unchanged.
+
+
+## Paimon streaming comparison
+
+The fresh [Kafka→Paimon RocksDB/off comparison](benchmarks/kafka-paimon-final-20261017/README.md)
+completes all 23 queries and 120 paired validations on this same host: **1.43×**
+for exact SQL and the README selection. Exact append / primary-key geomeans are
+**1.24× / 1.97×**, versus **1.45× / 1.40×** for the matched Kafka→Iceberg setup.
+The whole-suite point estimates are almost identical (Iceberg exact: 1.44×).
+Paimon retains q5/q20/q23 losses and every wide timing range. The detailed report
+contains per-query comparisons, physical write-volume witnesses and an independent
+plan/table/footer audit. This fresh Flink 2.2 run does not reuse the historical
+Flink 1.18 best-of-two samples.
+
+The matched Kafka→Paimon runner, `bin/bench-paimon.sh`, uses the unchanged
+Kafka JSON corpus and Paimon SQL fixtures with four Kafka partitions and four
+fixed output buckets. Run with JDK 17: `bin/bench-paimon.sh`. It builds and stages
+release/mimalloc libraries, defaults to 2M events, RocksDB, mini-batching off,
+512 MiB managed memory across four slots and a 4 GiB job JVM heap. Each exact SQL
+cell and existing labelled expression variant gets one warmup and three measured
+pairs, alternating engine order. `SF_ROWS`, `SF_WARMUP`, `SF_RUNS`,
+`SF_MATRIX_QUERIES`, `SF_PAIMON_VARIANTS=false`, and `SF_PAIMON_ARTIFACTS` support
+smaller iteration runs and choosing the evidence directory. Production acceleration
+remains enabled by default.
+
+The runner times streaming `executeSql` through final end-of-input commit;
+finite Kafka offsets bound the corpus. Corpus production, plan inspection and
+stock committed-table readback are untimed. Every deterministic pair must match
+full-value multiset fingerprints; processing-time q12 instead checks emitted
+per-bidder counts against input bounds. Native plans require native Kafka decode
+and Paimon routing without row/Arrow transposes, and nonempty native outputs must
+contain Rust Parquet files. q4 observes both real RocksDB backends. It retains all
+trial times, plans, sink DDL, file footers, table payloads/metadata and fingerprints.
+`bin/report-paimon.py <artifacts>` audits all pairs and regenerates the median/range
+report, metrics CSV and geometric means from the retained observations.
+Test logging uses WARN, matching the Iceberg comparison. Paimon's released default
+file settings (recorded from the released connector) and normal in-job compaction
+apply to both engines; these differ from the explicit Iceberg writer settings and delete files,
+so a cross-connector speedup gap is a diagnostic signal rather than proof of its
+cause. The original best-of Paimon runner remains available unchanged.
 
 ## Historical Nexmark report review (2026-09-08)
 

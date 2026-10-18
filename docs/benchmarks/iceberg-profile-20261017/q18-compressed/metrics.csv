@@ -1,0 +1,3 @@
+query,mode,variant,engine,repetitions,median_seconds,min_seconds,max_seconds,nominal_corpus_events_per_second,corpus_window_median_seconds,settling_checkpoint_median_seconds,drain_commit_median_seconds,checkpoint_state_median_bytes,checkpoint_reported_median_millis,sampled_task_peak_median_bytes,sampled_arrow_peak_median_bytes,sampled_rss_peak_median_bytes,java_heap_limit_bytes,data_files_median,delete_files_median
+q18,memory-off,exact,flink,3,4.148500263,3.937089737,12.140240005,482101.9340019745,3.330335513,0.487121932,0.3310428179999998,67835936,296,0,0,5686755328,4294967296,16,8
+q18,memory-off,exact,streamfusion,3,3.601466398,3.5997875,30.322627883,555329.3517081428,1.977690632,0.682017641,0.9651528619999998,98901100,654,373603663,4149739,5904269312,4294967296,12,4

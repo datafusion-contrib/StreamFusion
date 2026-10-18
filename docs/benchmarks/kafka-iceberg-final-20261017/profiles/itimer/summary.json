@@ -1,0 +1,46 @@
+{
+  "profiler": "async-profiler 4.5",
+  "event": "itimer",
+  "profiledPairs": 4,
+  "measuredPairs": 2,
+  "excludedFromPrimaryMatrix": true,
+  "productionLibrariesMatchMain": true,
+  "compilerExclusionPatterns": [
+    "C2Compiler::compile_method",
+    "Compiler::compile_method"
+  ],
+  "samples": [
+    {
+      "query": "q0",
+      "engine": "flink",
+      "seconds": 2.254680618,
+      "allCpuSamples": 785,
+      "executionCpuSamples": 470,
+      "compilerCpuSamples": 315
+    },
+    {
+      "query": "q0",
+      "engine": "streamfusion",
+      "seconds": 1.360907063,
+      "allCpuSamples": 361,
+      "executionCpuSamples": 223,
+      "compilerCpuSamples": 138
+    },
+    {
+      "query": "q19",
+      "engine": "flink",
+      "seconds": 30.722716473,
+      "allCpuSamples": 5530,
+      "executionCpuSamples": 5106,
+      "compilerCpuSamples": 424
+    },
+    {
+      "query": "q19",
+      "engine": "streamfusion",
+      "seconds": 9.48664182,
+      "allCpuSamples": 2494,
+      "executionCpuSamples": 2350,
+      "compilerCpuSamples": 144
+    }
+  ]
+}

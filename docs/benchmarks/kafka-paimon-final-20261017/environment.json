@@ -1,0 +1,19 @@
+{
+  "commit": "413bd056cce485c8438d73fe892fbc37d674e464",
+  "dirty": false,
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "processor": "x86_64",
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+  "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+  "build": "cargo build --release --features mimalloc -p streamfusion -p streamfusion-parquet -p streamfusion-orc -p streamfusion-paimon -p streamfusion-kafka -p streamfusion-json",
+  "javaHeap": "4g",
+  "libraries": {
+    "libstreamfusion_parquet.so": "618137129032cd16b3d60159677373b51bd79c1451ddb2b753dc76d7c4c9c4af",
+    "libstreamfusion_kafka.so": "ba10905528e0ed2e2d8dae7f773e53db730ee08e0ae6734cb94b6af74fe55224",
+    "libstreamfusion_orc.so": "68848260c77e6ea63e13b5771fecb3e4fc88156d59605729a0404781f2ca556e",
+    "libstreamfusion.so": "928680f01c11fb40dd01782cb090691dddec33a7e93eb17c6cae67ffb2acd1d2",
+    "libstreamfusion_paimon.so": "e83e2f298fd54e73153a563c346fc348f8aa38343bcf499a9321d16e5a0186f6",
+    "libstreamfusion_json.so": "ecda6aa4ec79d9f943282dbc4a48583f0ea8f5f1586ab0fa82a8815870ab6ae2"
+  },
+  "cpu": "12th Gen Intel(R) Core(TM) i7-12650H"
+}

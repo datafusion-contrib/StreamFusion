@@ -31,6 +31,44 @@ fixture does not measure Flink job throughput. UTF-16 DECODE fixtures cover all 
 variants with both JDK U+FFFE rules, sliced nullable arrays, narrow/wide text, and malformed
 trailing bytes at 16, 1024 and 16384 rows. Input construction is outside the measured kernel.
 
+The optional `streamfusion-iceberg` package's `iceberg_io` suite measures the production
+single-file parquet-rs Arrow encoder through finalization into memory-backed storage.
+Each write includes the production retained-memory estimate used for JNI accounting.
+Its 18 fixtures cover 16/1024/16384 rows, nullable strings at widths 8/264/4096,
+contiguous slices and sparse selections, field IDs, and stock parquet-rs readback.
+Input construction is outside timing; encoder construction, selection/gather, encoding,
+statistics, and finalization are inside. JNI and Java FileIO remain outside this isolated
+suite and must be included in the Iceberg end-to-end comparison. A further 27
+production routing fixtures cross the same sizes and widths with one/four/128
+destinations. Routing retains contiguous Arrow slices and gathers sparse selections;
+allocation diagnostics report buffer sharing. Destination selection in Java and
+network transport remain outside that isolated kernel. Another 36 fixtures exercise
+the production released Iceberg task reader at the same sizes/widths, full versus
+single-column projection, and batch sizes 16/1024. Parquet fixture encoding and
+memory-file setup happen before timing; reader construction, footer/decode,
+projection, Arrow output collection and teardown are measured. JNI/FileIO callbacks,
+delete indexes, Flink discovery and checkpoints remain end-to-end costs. Six further
+scalar fixtures cross the three row counts with encoding and read/adaptation;
+they include nullable float/double, NaN/infinity, precision-38 decimals, time unit
+conversion, and local/UTC microsecond timestamps using the common component
+representation. They call the same schema adaptation used at the JNI boundary.
+Three scalar-filter fixtures include signed-zero floating set membership. Another
+27 task-semantics fixtures cross the same row counts and widths with projected-away
+predicate keys, identity partition constants absent from the physical file, and legacy
+renamed columns without field IDs. Fixture encoding stays outside timing; task metadata
+binding, native decode/filter/adaptation and output collection stay inside. Nine split
+fixtures read half of a four-row-group file with bloom metadata; footer loading,
+physical-to-reader range translation and native decode stay inside timing.
+
+The `streamfusion-bridge` package's `handoffs` suite also covers array-only C Data
+export with a cached schema. A further 54 fanout fixtures cross the existing row
+counts/string widths with one/four/16 consumers and repeated versus shared imports.
+They call the production C Data bridge and verify identical sliced/null data plus
+buffer sharing. The measured boundary includes Rust C Data export/import and teardown;
+Java export, JNI calls, Parquet encoding and Flink scheduling stay in the end-to-end
+comparison. Repeated imports model the previous Iceberg file handoff; shared imports
+model retaining one batch while several file writers borrow it.
+
 The `operators` target includes `floating_group`: FLOAT/DOUBLE SUM/MIN/MAX, ordered
 FIRST/LAST, SINGLE_VALUE, DISTINCT SUM, and typed local partials at 256/4096 rows, one/64 keys,
 nullable/non-null inputs, NaNs and signed zeros. Retraction fixtures seed state outside the

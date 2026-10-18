@@ -25,6 +25,7 @@ def main():
         "streamfusion-fluss": "Java_tech_streamfusion_fluss_NativeFluss_",
         "streamfusion-kafka": "Java_tech_streamfusion_kafka_NativeKafka_",
         "streamfusion-paimon": "Java_tech_streamfusion_paimon_NativePaimon_",
+        "streamfusion-iceberg": "Java_tech_streamfusion_iceberg_NativeIceberg_",
         "streamfusion-orc": "Java_tech_streamfusion_orc_NativeOrc_",
         "streamfusion-parquet": "Java_tech_streamfusion_parquet_NativeParquet_",
     }
@@ -61,8 +62,8 @@ def main():
             continue
         suffix = "dylib" if sys.platform == "darwin" else "so"
         library = args.libraries / f"lib{cdylibs[0]['name']}.{suffix}"
-        if name == "streamfusion-paimon" and not library.exists():
-            # The optional Maven paimon profile builds this library. Its JNI tests require it;
+        if name in {"streamfusion-paimon", "streamfusion-iceberg"} and not library.exists():
+            # The optional Maven connector profiles build these libraries. Its JNI tests require it;
             # the default reactor still checks the dependency graph without building the module.
             continue
         command = ["nm", "-gU"] if sys.platform == "darwin" else ["nm", "-D", "--defined-only"]

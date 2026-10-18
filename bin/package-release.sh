@@ -18,7 +18,7 @@ done
 artifact_suffix=""
 modules="kafka fluss json csv raw avro avro-confluent-registry protobuf parquet orc paimon"
 case "$flink_line" in
-  2.2) set --; modules="$modules delta" ;;
+  2.2) set --; modules="$modules delta iceberg" ;;
   1.18) artifact_suffix=-flink1.18; set -- -Pflink-1.18 ;;
   *) echo "unsupported Flink line: $flink_line" >&2; exit 64 ;;
 esac

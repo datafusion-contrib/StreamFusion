@@ -2,6 +2,9 @@ import importlib.util
 import io
 from pathlib import Path
 import struct
+import subprocess
+import sys
+import tempfile
 import unittest
 import zipfile
 
@@ -22,6 +25,27 @@ def archive(entries, multi_release=False):
 
 
 class JavaBytecodeTest(unittest.TestCase):
+    def test_iceberg_requires_java_17_without_relaxing_core(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for module, major in [('core', 55), ('iceberg', 61)]:
+                target = root / f'streamfusion-{module}' / 'target'
+                target.mkdir(parents=True)
+                (target / f'{module}.jar').write_bytes(archive({'Module.class': major}).getvalue())
+            command = [sys.executable, str(Path(__file__).with_name('check-java-bytecode.py')), '--root', tmp]
+            self.assertEqual(0, subprocess.run(command, capture_output=True).returncode)
+            core = root / 'streamfusion-core/target/core.jar'
+            core.write_bytes(archive({'Module.class': 61}).getvalue())
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('maximum 55', result.stderr)
+            core.write_bytes(archive({'Module.class': 55}).getvalue())
+            iceberg = root / 'streamfusion-iceberg/target/iceberg.jar'
+            iceberg.write_bytes(archive({'Module.class': 65}).getvalue())
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('maximum 61', result.stderr)
+
     def test_rejects_newer_base_class_and_embedded_payload(self):
         payload = archive({'Native.class': 61}).getvalue()
         checked, failures = bytecode.inspect_jar(archive({'Old.class': 52, 'payload.jar': payload}), 'loader')

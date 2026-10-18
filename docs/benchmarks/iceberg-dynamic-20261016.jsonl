@@ -1,0 +1,16 @@
+{"committedRows": 2000000, "mode": "forward-hash", "native": true, "rows": 2000000, "seconds": 4.335655167, "trial": -1}
+{"committedRows": 2000000, "mode": "forward-hash", "native": false, "rows": 2000000, "seconds": 3.587586497, "trial": -1}
+{"committedRows": 2000000, "mode": "forward-hash", "native": false, "rows": 2000000, "seconds": 2.974697951, "trial": 0}
+{"committedRows": 2000000, "mode": "forward-hash", "native": true, "rows": 2000000, "seconds": 2.556398006, "trial": 0}
+{"committedRows": 2000000, "mode": "forward-hash", "native": true, "rows": 2000000, "seconds": 3.425439664, "trial": 1}
+{"committedRows": 2000000, "mode": "forward-hash", "native": false, "rows": 2000000, "seconds": 2.786695593, "trial": 1}
+{"committedRows": 2000000, "mode": "forward-hash", "native": false, "rows": 2000000, "seconds": 2.790683757, "trial": 2}
+{"committedRows": 2000000, "mode": "forward-hash", "native": true, "rows": 2000000, "seconds": 2.352048842, "trial": 2}
+{"committedRows": 100000, "mode": "keyed", "native": true, "rows": 2000000, "seconds": 3.683491965, "trial": -1}
+{"committedRows": 100000, "mode": "keyed", "native": false, "rows": 2000000, "seconds": 4.058348549, "trial": -1}
+{"committedRows": 100000, "mode": "keyed", "native": false, "rows": 2000000, "seconds": 3.573326568, "trial": 0}
+{"committedRows": 100000, "mode": "keyed", "native": true, "rows": 2000000, "seconds": 2.972597614, "trial": 0}
+{"committedRows": 100000, "mode": "keyed", "native": true, "rows": 2000000, "seconds": 2.965115709, "trial": 1}
+{"committedRows": 100000, "mode": "keyed", "native": false, "rows": 2000000, "seconds": 3.567988519, "trial": 1}
+{"committedRows": 100000, "mode": "keyed", "native": false, "rows": 2000000, "seconds": 3.557234808, "trial": 2}
+{"committedRows": 100000, "mode": "keyed", "native": true, "rows": 2000000, "seconds": 3.089716805, "trial": 2}

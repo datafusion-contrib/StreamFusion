@@ -18,6 +18,7 @@ class SuiteMatrixTest(unittest.TestCase):
             for suite in ("formats", "parquet", "orc", "kafka", "paimon", "state"):
                 expected[line, suite, ""] += 1
         expected["2.2", "delta", ""] += 1
+        expected["2.2", "iceberg", ""] += 1
         self.assertEqual(expected, self.cases())
         self.assertEqual(14, len(matrix()["include"]))
         for entry in matrix()["include"]:

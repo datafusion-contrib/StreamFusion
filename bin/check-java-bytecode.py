@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the classes JDK 11 selects from deployment JARs, including embedded payloads."""
+"""Check deployment bytecode: JDK 11, or JDK 17 for the optional Iceberg adapter."""
 import argparse
 import io
 from pathlib import Path
@@ -58,12 +58,13 @@ def main():
     checked = 0
     failures = []
     for jar in jars:
-        count, errors = inspect_jar(jar, str(jar))
+        java_version = 17 if jar.parent.parent.name == "streamfusion-iceberg" else 11
+        count, errors = inspect_jar(jar, str(jar), java_version)
         checked += count
         failures.extend(errors)
     if failures:
         raise SystemExit('\n'.join(failures))
-    print(f'JDK 11 bytecode: {checked} selected classes in {len(jars)} deployment JARs passed')
+    print(f'Deployment bytecode: {checked} classes in {len(jars)} JARs passed (JDK 11; Iceberg JDK 17)')
 
 
 if __name__ == '__main__':

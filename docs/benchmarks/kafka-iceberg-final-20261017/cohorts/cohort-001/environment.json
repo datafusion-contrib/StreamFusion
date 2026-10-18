@@ -1,0 +1,17 @@
+{
+  "commit": "16e25a53685f7c3f836e05968251262351ce1d11",
+  "dirty": false,
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "processor": "x86_64",
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+  "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+  "build": "cargo build --release --features mimalloc -p streamfusion -p streamfusion-iceberg -p streamfusion-kafka -p streamfusion-json",
+  "javaHeap": "4g",
+  "libraries": {
+    "libstreamfusion_kafka.so": "9f19c9a3486bfe73937bb12e0dbc63d3d75773e2695f25194c65f9aecbf8ab8f",
+    "libstreamfusion_iceberg.so": "0b087330b3e7fab424fa11255790992af94869f5464032bb39d432555f19896c",
+    "libstreamfusion.so": "d85c92d72fdddc8d8804989ed403ff1e16cabb251b80ac57529db5d5d0fe4943",
+    "libstreamfusion_json.so": "6d5cae4bc437b2818b07e36bfa9550df8ffd7256d6eab24420cba3bea3728755"
+  },
+  "cpu": "12th Gen Intel(R) Core(TM) i7-12650H"
+}

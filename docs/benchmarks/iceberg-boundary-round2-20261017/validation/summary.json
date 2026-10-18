@@ -1,0 +1,310 @@
+{
+  "tests": 316,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 13,
+  "passed": 303,
+  "classes": 37,
+  "reports": [
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergKeyedTest",
+      "tests": "26",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "56.144"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergTemporalPredicateTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.899"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergPredicateTest",
+      "tests": "10",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "1.982"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergDynamicSinkTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "25.45"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergRangeTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.525"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergSourceRecoveryTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "7.486"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergSinkTest",
+      "tests": "8",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "5.75"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergSourceTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.709"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergEncoderMemoryTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.094"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.IcebergSinkAdapterTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.671"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergSqlTest",
+      "tests": "14",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "12.763"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergSourceSqlTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "2.501"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergRangeSinkTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "19.95"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergEvolutionTest",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.241"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.IcebergDynamicGeneratorTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.008"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergReaderTest",
+      "tests": "9",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.879"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergTypeTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "2.069"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergCapturedRecoveryTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "179.768"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergTaskMetadataTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.28"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergFloatingPredicateTest",
+      "tests": "28",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "1.846"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.IcebergPartitionGroupsTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.077"
+    },
+    {
+      "name": "tech.streamfusion.iceberg.NativeIcebergTaskFallbackTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.885"
+    },
+    {
+      "name": "org.apache.iceberg.flink.TestFlinkTableSinkExtended",
+      "tests": "20",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "8",
+      "time": "31.339"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicCommittableSerializer",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.003"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicCommitter",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "1.487"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicIcebergSink",
+      "tests": "35",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "9.893"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicRecordProcessor",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.003"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicTableUpdateOperator",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.209"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicWriteResultAggregator",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.099"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicWriteResultSerializer",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.017"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestDynamicWriter",
+      "tests": "9",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.419"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestHashKeyGenerator",
+      "tests": "18",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.01"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.dynamic.TestLRUCache",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.002"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.shuffle.TestDataStatisticsCoordinator",
+      "tests": "11",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.093"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.shuffle.TestDataStatisticsOperator",
+      "tests": "17",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "1.57"
+    },
+    {
+      "name": "org.apache.iceberg.flink.sink.shuffle.TestRangePartitioner",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.017"
+    },
+    {
+      "name": "org.apache.iceberg.flink.source.TestIcebergSourceSql",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "5",
+      "time": "1.589"
+    }
+  ],
+  "libraries": {
+    "libstreamfusion_iceberg.so": "dcf4520d34302f66d506f275a378428e2c3d9ab1404c1214d460b9e8d103e8c9",
+    "libstreamfusion.so": "17bfce78697dec52ee111f83df323cc8017c8a810bbf064f837b6abffd8849f8"
+  }
+}

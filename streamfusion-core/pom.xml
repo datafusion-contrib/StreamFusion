@@ -111,4 +111,33 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>iceberg-nexmark</id>
+            <build>
+                <testResources><testResource><directory>${project.basedir}/src/iceberg-nexmark/resources</directory></testResource></testResources>
+                <plugins>
+                    <plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
+                        <executions><execution><id>iceberg-benchmark-test-sources</id><phase>generate-test-sources</phase><goals><goal>add-test-source</goal></goals><configuration><sources><source>${project.basedir}/../src/test/java</source></sources></configuration></execution></executions>
+                    </plugin>
+                    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+                        <configuration><testIncludes>
+                            <testInclude>tech/streamfusion/NexmarkBenchmark.java</testInclude>
+                            <testInclude>tech/streamfusion/NexmarkMatrixBenchmark.java</testInclude>
+                            <testInclude>tech/streamfusion/NexmarkKafkaBenchmark.java</testInclude>
+                            <testInclude>tech/streamfusion/SharedFlinkCluster.java</testInclude>
+                            <testInclude>tech/streamfusion/TestLookupTableFactory.java</testInclude>
+                            <testInclude>tech/streamfusion/proto/**</testInclude>
+                        </testIncludes></configuration>
+                    </plugin>
+                    <plugin><groupId>org.xolstice.maven.plugins</groupId><artifactId>protobuf-maven-plugin</artifactId>
+                        <configuration><protoTestSourceRoot>${project.basedir}/../src/test/proto</protoTestSourceRoot></configuration>
+                    </plugin>
+                    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
+                        <executions><execution><id>iceberg-benchmark-corpus</id><phase>process-test-classes</phase><goals><goal>test-jar</goal></goals></execution></executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

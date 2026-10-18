@@ -66,6 +66,7 @@ nav:
       - Parquet: connectors/parquet.md
       - ORC: connectors/orc.md
       - Delta Lake: connectors/delta.md
+      - Apache Iceberg: connectors/iceberg.md
       - Apache Paimon: connectors/paimon.md
       - Formats:
           - JSON: connectors/formats/json.md
@@ -123,6 +124,9 @@ nav:
       - Performance audit reproduction: benchmarks/performance-audit.md
       - Scalar functions: benchmarks/scalar-functions.md
       - Decimal expressions: benchmarks/decimal-expressions.md
+      - Fast Iceberg I/O loop: benchmarks/iceberg-io.md
+      - Iceberg streaming results: benchmarks/iceberg-optimized-20261017/README.md
+      - Kafka to Iceberg results: benchmarks/kafka-iceberg-final-20261017/README.md
       - Basic type coverage: benchmarks/basic-type-coverage.md
       - Floating GROUP BY: benchmarks/floating-group-by.md
       - Flink 1.18 compatibility: benchmarks/flink118-nexmark.md
@@ -173,6 +177,7 @@ nav:
       - Lookup joins kept in the island: optimizations/lookup-join-in-island.md
       - Identity expression passthroughs: optimizations/identity-expression-passthroughs.md
       - Parquet sink file coalescing: optimizations/parquet-sink-file-coalescing.md
+      - Iceberg boundary setup: optimizations/iceberg-boundary-overhead.md
       - Delta batch sink handoff: optimizations/delta-batch-sink-handoff.md
       - Retire dead Delta checkpoint buffers: optimizations/delta-live-buffer-retirement.md
       - Preserve Paimon partition pruning: optimizations/paimon-partition-pruning.md

@@ -16,7 +16,9 @@ coordinates for 2.2 remain unchanged. The `flink-1.18` development profile produ
 `streamfusion-*-flink1.18` coordinates and admits only Flink 1.18.1; release support remains gated
 by the outstanding validation in [#182](https://github.com/datafusion-contrib/StreamFusion/issues/182).
 See [Flink line compatibility](flink-compatibility.md) for build commands, dependency selections and
-known host differences. Builds and deployments support JDK 11 and JDK 17; all deployment artifacts target Java 11.
+known host differences. Builds and deployments support JDK 11 and JDK 17. Core and the existing connector/format
+artifacts target Java 11; the optional Iceberg adapter targets Java 17 and requires
+JDK 17 throughout its deployment.
 Use the same JDK version on the client, JobManager and TaskManagers. The
 [Java compatibility matrix](flink-compatibility.md#java-compatibility) describes build checks
 and version-dependent runtime behavior.
@@ -119,6 +121,9 @@ same way. Paimon needs `paimon-flink-2.2-2.0.0.jar`, the selected `streamfusion-
 format factory it finds and Flink loads `lib/` in sorted name order, so the StreamFusion JAR must
 sort before `paimon-flink-*`; see [Apache Paimon](connectors/paimon.md). A missing optional module is always a normal planner fallback to stock Flink, never a
 linkage failure — the core image doesn't require any of them.
+Iceberg on Flink 2.2/JDK 17 uses the released `iceberg-flink-runtime-2.2` JAR plus
+`streamfusion-iceberg`; its data encoder and reader live in that module's own native
+library. It does not require `streamfusion-parquet`. See [Iceberg](connectors/iceberg.md).
 
 ## Bare metal
 
@@ -152,6 +157,14 @@ benchmarks. Build the portable optimized artifacts when developing or preparing 
 bin/build-release.sh
 ```
 
+The Flink 2.2 release reactor and deployment archive include the optional Iceberg
+JAR and its platform-specific native payload. Host, macOS and container staging,
+artifact isolation checks and Maven publication all include it. Flink 1.18 builds
+omit Iceberg because the released adapter targets 2.2/JDK 17. The bytecode check
+retains the Java 11 limit for core and other modules, with a Java 17 limit only
+for Iceberg. Ordinary PR CI runs the Iceberg/upstream streaming selection on JDK 17;
+the native workspace check also verifies Iceberg's package and JNI export ownership.
+
 The release build enables `mimalloc` by default. Its thread-local allocator state uses dynamic
 TLS because the JVM loads JNI libraries after startup, potentially through more than one
 classloader. Linux artifact validation rejects libraries that require a reserved static TLS
@@ -174,6 +187,7 @@ native build requirements. See [ORC](connectors/orc.md) for deployment and confi
 | `native/fluss` | Fluss compacted bucket-key encoding, bucket grouping and Arrow batch statistics, bundled only in `streamfusion-fluss`. Connection management and statistics wire serialization remain in the Java SDK. |
 | `native/parquet` | Parquet format encoding and decoding, including reads through host FileIO. |
 | `native/orc` | orc-rust decoding, with host-owned I/O and Arrow C Data. Java ORC writing lives in the format/connector JARs. |
+| `native/iceberg` | Optional Iceberg task decode and Parquet data-file encode; Java retains file/table lifecycle and delete encoding. |
 | `native/paimon` | Optional Paimon snapshot merge, bundled in `streamfusion-paimon`; consumes the selected file codec's Arrow C Data output. |
 | `native/json`, `native/csv`, `native/raw`, `native/avro`, `native/protobuf` | One decoder library per format JAR. Avro and Avro-Confluent-Registry continue to share the Avro native library. |
 | `native/native-build` | Shared build dependency for library-local mimalloc aliases and the checked free/realloc shim. |

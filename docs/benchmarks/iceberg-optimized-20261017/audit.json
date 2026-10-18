@@ -1,0 +1,43 @@
+{
+  "inputReproducibility": {
+    "comparedFiles": 480,
+    "differentFileBytes": 480,
+    "identicalDataPages": true,
+    "equalDecodedFootersAfterSortingUnorderedEncodingLists": true,
+    "baseline": "previous complete matrix, cohort-001",
+    "current": "optimized complete matrix, cohort-001"
+  },
+  "cells": 120,
+  "pairedValidations": 480,
+  "measuredPairs": 360,
+  "measurements": 960,
+  "nativeTrials": 480,
+  "auditedGraphs": {
+    "streamfusion": 480,
+    "flink": 480
+  },
+  "allNativeGraphsHaveNoRowArrowTransposes": true,
+  "allNativePlansHaveNoOperatorFallback": true,
+  "identicalInputParquetBytesAcrossCohorts": true,
+  "inputFilesPerCohort": 480,
+  "cohorts": [
+    {
+      "cohort": "cohort-001",
+      "environment": {
+        "commit": "8cd39960fd2043a9bc700b905719a9386cf6af73",
+        "dirty": false,
+        "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+        "processor": "x86_64",
+        "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+        "rust": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+        "build": "cargo build --release --features mimalloc -p streamfusion -p streamfusion-iceberg",
+        "javaHeap": "4g",
+        "libraries": {
+          "libstreamfusion_iceberg.so": "dcf4520d34302f66d506f275a378428e2c3d9ab1404c1214d460b9e8d103e8c9",
+          "libstreamfusion.so": "17bfce78697dec52ee111f83df323cc8017c8a810bbf064f837b6abffd8849f8"
+        },
+        "cpu": "12th Gen Intel(R) Core(TM) i7-12650H"
+      }
+    }
+  ]
+}

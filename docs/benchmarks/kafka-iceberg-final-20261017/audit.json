@@ -1,0 +1,31 @@
+{
+  "commit": "16e25a53685f7c3f836e05968251262351ce1d11",
+  "freshJvmCohorts": 1,
+  "resumedCells": 0,
+  "queries": 23,
+  "cells": 30,
+  "allTrials": 240,
+  "measuredTrials": 180,
+  "passingPairs": 120,
+  "measuredPairs": 90,
+  "nativeGraphs": 120,
+  "stockGraphs": 120,
+  "verifiedTableMetadata": 240,
+  "nativeGraphsWithoutRowTransposes": 120,
+  "writerParallelism": {
+    "q5": 1,
+    "otherQueries": 4
+  },
+  "nativeMeasurementsWithDataFiles": 108,
+  "exactGeomean": 1.4355283560360692,
+  "readmeSelectionGeomean": 1.473955096413348,
+  "exactMedianWins": 16,
+  "readmeSelectionMedianWins": 17,
+  "q12Validation": "Per-bidder emitted-count bounds; unfinished processing-time windows remain open",
+  "libraries": {
+    "libstreamfusion_kafka.so": "9f19c9a3486bfe73937bb12e0dbc63d3d75773e2695f25194c65f9aecbf8ab8f",
+    "libstreamfusion_iceberg.so": "0b087330b3e7fab424fa11255790992af94869f5464032bb39d432555f19896c",
+    "libstreamfusion.so": "d85c92d72fdddc8d8804989ed403ff1e16cabb251b80ac57529db5d5d0fe4943",
+    "libstreamfusion_json.so": "6d5cae4bc437b2818b07e36bfa9550df8ffd7256d6eab24420cba3bea3728755"
+  }
+}

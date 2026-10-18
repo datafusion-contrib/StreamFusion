@@ -1,0 +1,11 @@
+{
+  "reason": "Completed checkpoint statistics not yet present in the execution-graph snapshot; diagnostic assertion stopped the trial.",
+  "completedCellsRetained": 62,
+  "incompleteCell": [
+    "q16",
+    "memory-on",
+    "exact"
+  ],
+  "resumption": "Rerun the entire incomplete cell, including its warmup. Completed checkpoint future, commit/readback parity and native witnesses remain required.",
+  "excludedObservationCount": 10
+}

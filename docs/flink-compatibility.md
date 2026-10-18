@@ -2,8 +2,9 @@
 
 The default build targets Flink **2.2.1** and also admits the released **2.2.0** planner ABI.
 The `flink-1.18` profile builds a separate **1.18.1** payload from the same source tree.
-Both support JDK 11 and JDK 17. Deployable artifacts target Java 11 (class version 55),
-including the separately built planner loader. The 1.18 build is a development target until the connector matrix,
+Both support JDK 11 and JDK 17. Core and the existing connector/format artifacts target Java 11 (class version 55),
+including the separately built planner loader. The optional Iceberg adapter targets
+Java 17 (class version 61) and supports only Flink 2.2 with JDK 17. The 1.18 build is a development target until the connector matrix,
 real-cluster upgrade checks and required CI/release matrix in
 [#187](https://github.com/datafusion-contrib/StreamFusion/issues/187),
 [#188](https://github.com/datafusion-contrib/StreamFusion/issues/188) and
@@ -21,12 +22,16 @@ Build and run the declared Flink line on JDK 11 or JDK 17. Maven uses `--release
 both build JDKs, so newer build environments cannot introduce newer Java APIs into the
 payload. The dependency gate rejects base bytecode above Java 11; the deployment JAR check
 also inspects shaded and embedded classes and applies Java 11 multi-release JAR selection.
+The `iceberg` profile is the explicit exception: the released Iceberg 1.12.0 Flink
+2.2 API requires Java 17. Its module enforces that build/runtime requirement and
+the artifact checker applies a Java 17 ceiling only to its deployment JAR.
 No connector or format dependency is replaced with a local or forked build.
 
 | Flink payload | JDK 11 | JDK 17 |
 | --- | --- | --- |
 | 2.2.1 (also admits the 2.2.0 planner ABI) | Build/runtime CI | Build/runtime CI |
 | 1.18.1 | Build/runtime CI | Build/runtime CI |
+| Optional Iceberg / Flink 2.2 | Unsupported | Build/runtime CI |
 
 The normal reactor includes core, loader, Kafka, Fluss, and the separate JSON, CSV, raw,
 Avro, Confluent Avro, Protobuf, Parquet and ORC modules. The opt-in Delta module remains a

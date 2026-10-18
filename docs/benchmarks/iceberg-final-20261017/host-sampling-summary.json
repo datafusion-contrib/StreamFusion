@@ -1,0 +1,20 @@
+[
+  {
+    "cohort": "cohort-001",
+    "samples": 139,
+    "samplesWithOtherBuildOrJavaProcesses": 1,
+    "minimumAvailableBytes": 1602519040
+  },
+  {
+    "cohort": "cohort-002",
+    "samples": 199,
+    "samplesWithOtherBuildOrJavaProcesses": 0,
+    "minimumAvailableBytes": 3066163200
+  },
+  {
+    "cohort": "cohort-003",
+    "samples": 79,
+    "samplesWithOtherBuildOrJavaProcesses": 0,
+    "minimumAvailableBytes": 1093013504
+  }
+]

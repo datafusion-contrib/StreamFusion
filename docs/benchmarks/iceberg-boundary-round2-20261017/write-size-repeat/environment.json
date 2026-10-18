@@ -1,0 +1,34 @@
+{
+  "native": "1fab7f49199c5793a8241f064e3c6733403013e3a11b53994fdc51894c3c6427",
+  "module": "7a31abbb29193953750810fd560121497f2904f196989db7ef10318fcff112c1",
+  "benchmark": "4555abd0da6a8767440520cb0aaf7b8c8ad4cdca1958e97ec9a67d1fef7e2a5d",
+  "support": "94b6c476515ed43677af6e30caf58d63d523d27891d80bb5e39ba510a090e9b2",
+  "nativeDirectory": "/root/data/StreamFusion/.codex/iceberg-373/target/iceberg-io/native-baf282fe0eaa9903",
+  "libraries": {
+    "libstreamfusion.so": "17bfce78697dec52ee111f83df323cc8017c8a810bbf064f837b6abffd8849f8",
+    "libstreamfusion_iceberg.so": "4910b8ba6c8b63ace194aac8105ab0e08d3e6c034a287384eca426abc35ba3aa"
+  },
+  "commit": "60c864fa39e832197406a37094e58875af7a13ca",
+  "dirty": true,
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)\n",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "cpuCount": 16,
+  "arguments": {
+    "prepare": false,
+    "rows": 262144,
+    "batch_rows": 8192,
+    "width": 48,
+    "partitions": 4,
+    "stripes": 4,
+    "warmup": 2,
+    "runs": 5,
+    "target_bytes": 536870912,
+    "cases": "read,write",
+    "profile": null,
+    "profiler": null,
+    "baseline": "target/iceberg-round2/before/observations.jsonl",
+    "output": "/root/data/StreamFusion/.codex/iceberg-373/target/iceberg-round2/write-size-repeat"
+  },
+  "prepareSeconds": 0.03646321599808289,
+  "benchmarkProcessSeconds": 8.197847817005822
+}

@@ -1,0 +1,6 @@
+{
+  "dirtyFlagExplanation": "The only untracked path was bin/__pycache__/ created by the Python syntax/archive checks; no benchmark or production source differed from the recorded commit.",
+  "observedGitStatus": "?? bin/__pycache__/",
+  "sourceCommit": "ea5f2e91a28045cdf8fabc7a0dacfe1d3e5397b6",
+  "sourceDiffAgainstRecordedCommit": "empty"
+}

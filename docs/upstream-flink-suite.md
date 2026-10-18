@@ -1141,3 +1141,37 @@ and a thread-local scope clears coverage on normal and exceptional exits.
 The counter visitor reads the original local-variable slots before lifecycle advice remaps them.
 A composed transformation regression loads and executes the rewritten method, checks repeated
 terminal pairs, and verifies cleanup after normal and exceptional exits.
+
+## Iceberg streaming SQL
+
+`bin/flink-suite.sh iceberg` runs the published Iceberg 1.12.0 Flink 2.2 test
+artifacts against released Flink 2.2, then repeats the same streaming invocations
+with StreamFusion's experimental Iceberg planner path enabled. It also requires
+the connector's Arrow hook, native Parquet readback, scalar precision, keyed
+checkpoint/restart stress, and SQL native-file witnesses.
+The CI connector matrix includes this suite on the 2.2 line. It requires Java 17.
+
+The initial upstream selection is `TestFlinkTableSinkExtended`: all four methods
+and all three streaming sink-API parameters (legacy, V2, and default), preserving
+the SQL, data, assertions, and upstream timeouts. Its eight batch invocations are
+explicitly excluded by an execution condition. Stock/native Surefire inventories
+must match: 12 executed streaming sink invocations each. Unsupported sink APIs and
+distributions continue to exercise stock fallback. Published test JARs retain the
+upstream parameterization; no Iceberg production source is built or modified.
+
+The source selection adds the unchanged `testWatermarkValidConfig` and
+`testWatermarkInvalidConfig` methods from published `TestIcebergSourceSql`.
+Their table environments execute in streaming mode; its five batch cases are
+explicitly excluded. The extension installs StreamFusion in the fixture's existing
+streaming table environment after its original setup. These source SQL cases
+currently verify stock-source fallback and downstream parity; they do not establish
+native source admission. Published `iceberg-data` and `iceberg-core` test JARs provide
+the original helpers. The verifier requires the same 14 executed upstream SQL cases
+and 13 batch exclusions across both engines, plus all required native witnesses.
+
+Reports are retained under `.flink-suite/2.2/iceberg/{stock,native}/target/surefire-reports`.
+`TestFlinkTableSink` and additional source/recovery suites remain to be integrated;
+its base fixture starts Hive and REST services even for Hadoop parameters, so that
+fixture dependency footprint must be provisioned before admitting its cases. The
+coverage inventory will expand alongside the capabilities in
+[issue #373](https://github.com/datafusion-contrib/StreamFusion/issues/373).
