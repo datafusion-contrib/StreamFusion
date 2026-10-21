@@ -43,14 +43,26 @@ final class CollectionValueIdentity {
 
   static boolean requiresGeneratedEvaluation(RexProgram program) {
     if (!RexExpression.usesCollectionFunctions(program)) return false;
-    return program.getExprList().stream()
-        .anyMatch(CollectionValueIdentity::consumerNeedsGeneration);
+    boolean joins=program.getExprList().stream().anyMatch(node -> node instanceof RexCall && RexExpression.nativeArrayJoin((RexCall)node));
+    if (joins && program.getProjectList().stream().map(program::expandLocalRef)
+        .anyMatch(node -> sensitive(node.getType()) && !(node instanceof RexCall && RexExpression.nativeArrayJoin((RexCall)node)))) return true;
+    return program.getProjectList().stream().anyMatch(ref -> consumerNeedsGeneration(program.expandLocalRef(ref)))
+        || program.getCondition()!=null && consumerNeedsGeneration(program.expandLocalRef(program.getCondition()));
+  }
+
+  private static boolean verifiedConsumer(RexCall call) {
+    return RexExpression.nativeArrayJoin(call) || RexExpression.nativeObjectUpdate(call) || RexExpression.nativeObjectOf(call)
+        || call.getOperator().getName().equals("CARDINALITY")
+        || tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) == null
+            && java.util.Set.of("MAP_KEYS","MAP_VALUES","MAP_ENTRIES","MAP_UNION").contains(call.getOperator().getName())
+            && !call.getOperands().isEmpty()
+            && call.getOperands().stream().allMatch(arg -> RexExpression.nativeBasicMap(arg.getType()));
   }
 
   private static boolean consumerNeedsGeneration(RexNode node) {
     if (!(node instanceof RexCall)) return false;
     var call = (RexCall) node;
-    return !call.getOperator().getName().equals("CARDINALITY")
+    return !verifiedConsumer(call)
             && call.getOperands().stream().anyMatch(arg -> sensitive(arg.getType()))
         || call.getOperands().stream().anyMatch(CollectionValueIdentity::consumerNeedsGeneration);
   }
@@ -71,7 +83,7 @@ final class CollectionValueIdentity {
       return readsSensitiveInput(((RexFieldAccess) node).getReferenceExpr());
     if (!(node instanceof RexCall)) return false;
     var call = (RexCall) node;
-    return !call.getOperator().getName().equals("CARDINALITY")
+    return !verifiedConsumer(call)
         && call.getOperands().stream().anyMatch(CollectionValueIdentity::readsSensitiveInput);
   }
 
@@ -124,6 +136,8 @@ final class CollectionValueIdentity {
       return true;
     if (node instanceof StreamPhysicalNativeCalc) {
       var calc = (StreamPhysicalNativeCalc) node;
+      if (calc.sourceProgram()!=null && RexExpression.usesCollectionFunctions(calc.sourceProgram())
+          && calc.getRowType().getFieldList().stream().anyMatch(field -> requiresCopySemantics(field.getType()))) return true;
       if (calc.preservesCollections()
           && calc.getRowType().getFieldList().stream()
               .anyMatch(field -> sensitive(field.getType()))) return true;

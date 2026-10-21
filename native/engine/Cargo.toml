@@ -101,6 +101,14 @@ name = "scalar_registry"
 harness = false
 
 [[bench]]
+name = "array_edits"
+harness = false
+
+[[bench]]
+name = "array_sort"
+harness = false
+
+[[bench]]
 name = "keys_and_checkpoints"
 harness = false
 
@@ -128,6 +136,14 @@ harness = false
 
 [[bench]]
 name = "collection_expressions"
+harness = false
+
+[[bench]]
+name = "array_search"
+harness = false
+
+[[bench]]
+name = "array_extrema"
 harness = false
 
 [[bench]]

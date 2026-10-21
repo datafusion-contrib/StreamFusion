@@ -21,7 +21,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class FlinkGeneratedCollectionSqlHarnessTest {
   @ParameterizedTest
-  @ValueSource(strings = {"ARRAY[n]", "MAP[n,n]", "ROW(n,s)"})
+  @ValueSource(strings = {"ROW(n,s)"})
   void constructorDiagnosticsIdentifyJvmEvaluation(String expression) {
     var table = environment(false);
     var scan = tech.streamfusion.planner.NativePlanner.install(table);

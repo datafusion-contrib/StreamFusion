@@ -1,0 +1,125 @@
+{
+  "date": "2026-10-20",
+  "scope": "MAP constructor admission and ordinary/generated UNNEST route parity",
+  "native_build": {
+    "profile": "release",
+    "default_features": false,
+    "features": [
+      "mimalloc"
+    ]
+  },
+  "profiles": [
+    {
+      "flink": "2.2.1",
+      "jdk": 17,
+      "totals": {
+        "tests": 93,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 93
+      },
+      "suites": [
+        {
+          "suite": "FlinkGeneratedUnnestSqlHarnessTest",
+          "tests": 64,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "FlinkMapConstructorSqlHarnessTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "FlinkComputedUnnestSqlHarnessTest",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    {
+      "flink": "1.18.1",
+      "jdk": 11,
+      "totals": {
+        "tests": 93,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 23,
+        "passed": 70
+      },
+      "suites": [
+        {
+          "suite": "FlinkGeneratedUnnestSqlHarnessTest",
+          "tests": 64,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 18
+        },
+        {
+          "suite": "FlinkMapConstructorSqlHarnessTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "FlinkComputedUnnestSqlHarnessTest",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 5
+        }
+      ]
+    }
+  ],
+  "map_expansion_matrix": {
+    "cases": 24,
+    "operands": [
+      "MAP[id,n]",
+      "MAP[id,n,n,id+1]",
+      "MAP[CAST(NULL AS BIGINT),id,id,n]"
+    ],
+    "source_modes": [
+      "append",
+      "updating"
+    ],
+    "joins": [
+      "INNER",
+      "LEFT ON TRUE"
+    ],
+    "ordinality": [
+      false,
+      true
+    ],
+    "flink118_ordinality_skips": 12
+  },
+  "assertions": [
+    "Released host and native-enabled row multisets, including RowKinds",
+    "Resolved SQL result types",
+    "Ordered rows on the verified Arrow route and for supported ordinality",
+    "Rust MAP function diagnostics contain jvm=[]",
+    "Both native Calc and ordinary UNNEST consume rows on the Arrow route",
+    "Multi-entry MAP retains the released generated route on Flink 1.18",
+    "Other generated expansion signatures retain their strict operator assertions"
+  ],
+  "excluded_local_methods": [
+    "FlinkGeneratedUnnestSqlHarnessTest#generatedMapExpansionFeedsStateAcrossTwoRestores",
+    "FlinkComputedUnnestSqlHarnessTest#computedArraysFeedStateAcrossTwoRestores"
+  ],
+  "exclusion_reason": "These methods include native RocksDB restores; the local release library has no RocksDB feature. They remain enabled in CI and passed on the original CI head.",
+  "original_ci_failure": {
+    "url": "https://github.com/datafusion-contrib/StreamFusion/actions/runs/39368717935/job/118473804681",
+    "head": "ad7206c1d7cebadb3514228771e9eb2c1121632a",
+    "runtime_tests": 7650,
+    "failures": 2,
+    "errors": 0,
+    "skipped": 46,
+    "failed_stage": "Strict generated-UNNEST route assertions, after values and SQL types already matched"
+  }
+}

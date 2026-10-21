@@ -49,10 +49,17 @@ full row-source jobs. Setting it false restores host execution for the extension
 performance evidence belong in [Calc/filter](../docs/operators/calc-filter.md#collection-expressions)
 and the [scalar benchmark page](../docs/benchmarks/scalar-functions.md#extended-function-coverage).
 
-
 Ordinary OVER COUNT over a newly admitted complex argument needs an IPC-safe retained carrier
 when its input schema contains MAP, including MAP columns only passed through as payload.
-Arrow Java's MAP key declaration is non-nullable even when Flink supplies NULL keys. Rust IPC
+Arrow Java's MAP key declaration is non-nullable even when Flink supplies NULL keys. Native
+MAP_FROM_ARRAYS results therefore reuse the List-of-entry-Struct carrier, with nullable
+key/value children and a `streamfusion.map-list` marker on the list's child field. Keeping
+the marker in the DataType child preserves it through expression type inference without
+unsafe Arrow schema construction. This follows the existing IPC carrier; the Java reader
+recognizes either its original outer marker or the expression child marker. Matching
+input offsets share both flattened child buffers; other offsets are aligned by row.
+NULL keys, duplicate keys and entry order remain visible to subsequent consumers.
+Rust IPC
 validates it during restore. For these newly admitted queries, a metadata-only schema view aliases
 MAP buffers as List-of-entry-Struct with nullable keys before native import. Map and List share
 offset/validity/value layout; Comet's C export/load ownership pattern retains the original buffers
@@ -75,3 +82,32 @@ Standalone event-time OVER COUNT over MULTISET uses this same nullable-key entry
 with non-null INT occurrence counts. Window aggregates instead consume parent validity and
 retain only their BIGINT aggregate state. Neither path sums occurrences. Released Flink
 checks return original bags and restore pending/frame state twice on both backends.
+
+## Native basic-type searches
+
+ARRAY_CONTAINS and ARRAY_POSITION follow Comet's typed flat-values/offsets search structure,
+with one type dispatch per batch and no per-row subarray allocation. They do not reuse Spark's
+or DataFusion's results verbatim: Flink CONTAINS matches NULL needles to NULL elements, and
+POSITION returns INT zero when absent and NULL for a NULL needle. Matching BOOLEAN, integer and
+DECIMAL types have exact native equality; decimal precision and scale are checked before dispatch.
+Scalar needles are not expanded to the batch length. Potentially failing arguments retain the
+complete generated Calc to preserve Flink's evaluation schedule. The existing representation
+checks keep strings, nested values and NOT NULL-element arrays on their verified generated route.
+CONTAINS also retains generated evaluation for non-NULL literals or nonnullable needles: Flink
+constructs its array element getter from that needle type. For DECIMAL, a stock binary array's
+unchecked read of a NULL cell can throw where the Arrow-backed JVM view returns NULL; that
+combination retains the complete stock Calc rather than normalizing the error away.
+
+ARRAY_MIN and ARRAY_MAX instead reuse released DataFusion 54 directly for nullable integer and
+DECIMAL arrays. Flink's NULL skipping, nullable empty result, exact ordering and declared result
+type agree with those released kernels, including their short-list scan and long-list Arrow
+reduction. No duplicated reduction implementation or private dependency is needed. The planner
+retains generated evaluation for floating/string/temporal/nested elements, NOT NULL elements,
+fallible operands and representation-sensitive consumers; neither Spark floating ordering nor
+DataFusion's broader type support establishes parity for these excluded signatures.
+
+MAP projections reuse DataFusion/Comet's shared Arrow view pattern, with the
+verified map-list carrier retained for NULL keys. MAP_UNION cannot use ordinary
+hash-map overwrite semantics: Flink preserves right duplicates, special-cases
+empty right maps and treats left NULL keys differently from other duplicates.
+A typed stable gather preserves those released behaviors.

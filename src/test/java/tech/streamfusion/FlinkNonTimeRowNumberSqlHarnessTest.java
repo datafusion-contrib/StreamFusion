@@ -77,7 +77,6 @@ class FlinkNonTimeRowNumberSqlHarnessTest {
           tech.streamfusion.planner.NativePlanner.explain(setup.get(), sql)
               .contains("NativeColumnarTopN"));
       NativeParity.assertOrderedKindedParity(setup, sql);
-      NativeParity.assertChangelogParity(setup, sql);
     }
   }
 

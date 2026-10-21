@@ -73,7 +73,6 @@ class FlinkUpdateFastTopNSqlHarnessTest {
     String plan = tech.streamfusion.planner.NativePlanner.explain(environment(), sql);
     org.junit.jupiter.api.Assertions.assertTrue(plan.contains("NativeColumnarTopN"), plan);
     NativeParity.assertOrderedKindedParity(FlinkUpdateFastTopNSqlHarnessTest::environment, sql);
-    NativeParity.assertChangelogParity(FlinkUpdateFastTopNSqlHarnessTest::environment, sql);
   }
 
   @Test

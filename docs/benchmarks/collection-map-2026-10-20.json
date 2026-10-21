@@ -1,0 +1,22 @@
+{
+  "baseline_commit": "8798b8e6696447b80e2f63088131c9cab754395b",
+  "expression": "MAP[idx,idx+1]",
+  "rows": 2000000,
+  "warmups": 2,
+  "trials": 5,
+  "prior_stock_seconds": 0.469221708,
+  "prior_streamfusion_seconds": 0.69924775,
+  "stock_seconds": 0.47737575,
+  "streamfusion_seconds": 0.59347025,
+  "baseline_library_sha256": "7386a207a98876eec0e9c2101bead26ec9253edbbf01655f916fe867f36c1b58",
+  "candidate_library_sha256": "c4495587b49874402ca524949398f0547c72aeda27e2d9f6b66cfa4fef78fcdb",
+  "fixture": [
+    "map",
+    "MAP[idx,idx+1]",
+    "INT",
+    8,
+    2000000
+  ],
+  "parent_null_period": 8,
+  "element_null_period": 7
+}

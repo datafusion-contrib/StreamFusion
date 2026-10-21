@@ -1,0 +1,21 @@
+stage,expression,rows,engine,trial,seconds
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,1,0.547497125
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,2,0.587246208
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,3,0.5925915
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,4,0.526784
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,5,0.558644791
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,1,0.679886916
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,2,0.677483625
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,3,0.670943875
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,4,0.674472125
+baseline,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,5,0.673114709
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,1,0.532376709
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,2,0.522853333
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,3,0.49679325
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,4,0.487951125
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,stock,5,0.522930292
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,1,0.463335041
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,2,0.455266458
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,3,0.448795416
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,4,0.445843834
+candidate,"ARRAY_APPEND(arr,CAST(idx AS BIGINT))",2000000,streamfusion,5,0.444570792

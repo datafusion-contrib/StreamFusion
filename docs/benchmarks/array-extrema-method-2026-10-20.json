@@ -1,0 +1,76 @@
+{
+  "baseline_commit": "180d55e7b2fa14417ba5aa092395e9d468b9eb1f",
+  "platform": "macOS arm64",
+  "cpu": "Apple M4 Pro, 14 physical/logical cores",
+  "flink": "2.2.1",
+  "java": "17.0.12",
+  "native": "release, mimalloc, no default RocksDB feature",
+  "parallelism": 1,
+  "heap": "2 GiB",
+  "warmups_per_engine": 2,
+  "measured_trials_per_engine": 5,
+  "row_source": true,
+  "row_sink": "blackhole",
+  "both_transposes_verified": true,
+  "local_zero_copy_exchange": false,
+  "timed_cohorts": 12,
+  "timed_observations": 120,
+  "cases": [
+    [
+      "min-bigint-8",
+      "ARRAY_MIN",
+      "BIGINT",
+      8,
+      10000000
+    ],
+    [
+      "max-bigint-64",
+      "ARRAY_MAX",
+      "BIGINT",
+      64,
+      2000000
+    ],
+    [
+      "min-int-64",
+      "ARRAY_MIN",
+      "INT",
+      64,
+      2000000
+    ],
+    [
+      "max-int-8",
+      "ARRAY_MAX",
+      "INT",
+      8,
+      10000000
+    ],
+    [
+      "min-decimal-8",
+      "ARRAY_MIN",
+      "DECIMAL",
+      8,
+      2000000
+    ],
+    [
+      "max-wide-decimal-8",
+      "ARRAY_MAX",
+      "DECIMAL",
+      8,
+      2000000
+    ]
+  ],
+  "baseline_native_sha256": "cc10b2e9a2c69acaa98579d77880c866377355d2e1178c8c87d5bb269ce9bfed",
+  "candidate_native_sha256": "7386a207a98876eec0e9c2101bead26ec9253edbbf01655f916fe867f36c1b58",
+  "scope": "Whole job including planning/startup, both row/Arrow conversions and JNI. One fresh JVM per cohort, two warmups per engine and five alternating stock/StreamFusion trials. Baseline ran before implementation. No task build/test overlaps timing; desktop activity is uncontrolled and CPUs are not pinned.",
+  "fixture": {
+    "array_null_period": 8,
+    "element_null_period": 7,
+    "widths": [
+      8,
+      64
+    ],
+    "domain": "equal to width",
+    "decimal_type": "DECIMAL(38,18)",
+    "wide_decimal_offset": "9007199254740993"
+  }
+}

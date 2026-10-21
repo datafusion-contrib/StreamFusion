@@ -23,11 +23,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
+import org.apache.flink.util.IOUtils;
 import org.apache.fluss.client.Connection;
 import org.apache.fluss.client.ConnectionFactory;
 import org.apache.fluss.config.ConfigOptions;
@@ -36,6 +39,7 @@ import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.row.BinaryString;
 import org.apache.fluss.row.GenericRow;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -51,6 +55,7 @@ class FlussSqlTest {
   private static FlussTestCluster cluster;
   private static Connection connection;
   private static String previous;
+  private static final Map<Boolean, StreamTableEnvironment> environments = new HashMap<>();
 
   @BeforeAll
   static void start() throws Exception {
@@ -73,6 +78,18 @@ class FlussSqlTest {
         if (previous == null) System.clearProperty("streamfusion.fluss.enabled");
         else System.setProperty("streamfusion.fluss.enabled", previous);
       }
+    }
+  }
+
+  @AfterEach
+  void closeEnvironments() throws Exception {
+    try {
+      IOUtils.closeAll(
+          environments.values().stream()
+              .<AutoCloseable>map(tables -> tables.getCatalog("fluss").orElseThrow()::close)
+              .collect(ListCollectors.toList()));
+    } finally {
+      environments.clear();
     }
   }
 
@@ -135,12 +152,8 @@ class FlussSqlTest {
     writer.flush();
     List<String> expected = List.of("+I[null]", "+I[null]", "+I[null]", "+I[Paris]");
     var tables = environment(true);
-    try {
-      String plan = tables.explainSql("SELECT customer.address.city FROM " + qualified(source));
-      assertTrue(plan.contains("NativeCalc"), plan);
-    } finally {
-      tables.getCatalog("fluss").orElseThrow().close();
-    }
+    String plan = tables.explainSql("SELECT customer.address.city FROM " + qualified(source));
+    assertTrue(plan.contains("NativeCalc"), plan);
     assertEquals(expected, query(source, "customer.address.city", false, false));
     assertEquals(expected, query(source, "customer.address.city", true, true));
   }
@@ -301,17 +314,13 @@ class FlussSqlTest {
       assertEquals(128, stock.size());
       assertEquals(stock, accelerated);
       var tables = environment(true);
-      try {
-        String sql = "SELECT a, b FROM " + qualified(output) + " WHERE part='new' AND b>=64";
-        plan(tables, sql, output + "_partition_filter", true, false);
-        List<String> rows = new ArrayList<>();
-        try (var iterator = tables.executeSql(sql).collect()) {
-          iterator.forEachRemaining(row -> rows.add(row.toString()));
-        }
-        assertEquals(32, rows.size());
-      } finally {
-        tables.getCatalog("fluss").orElseThrow().close();
+      String sql = "SELECT a, b FROM " + qualified(output) + " WHERE part='new' AND b>=64";
+      plan(tables, sql, output + "_partition_filter", true, false);
+      List<String> rows = new ArrayList<>();
+      try (var iterator = tables.executeSql(sql).collect()) {
+        iterator.forEachRemaining(row -> rows.add(row.toString()));
       }
+      assertEquals(32, rows.size());
     }
   }
 
@@ -440,7 +449,6 @@ class FlussSqlTest {
       }
     } finally {
       executor.shutdownNow();
-      tables.getCatalog("fluss").orElseThrow().close();
     }
   }
 
@@ -476,21 +484,17 @@ class FlussSqlTest {
     List<String> stock = null;
     for (boolean nativeRun : new boolean[] {false, true}) {
       var tables = environment(nativeRun);
-      try {
-        String sql = "SELECT a FROM " + qualified(source) + " WHERE b=2 AND a>=300";
-        plan(tables, sql, source + "_batch_filter_" + nativeRun, nativeRun, false);
-        if (nativeRun) assertTrue(tables.explainSql(sql).contains("batchFilter"));
-        List<String> result = new ArrayList<>();
-        try (var iterator = tables.executeSql(sql).collect()) {
-          iterator.forEachRemaining(row -> result.add(row.toString()));
-        }
-        result.sort(String::compareTo);
-        if (stock == null) stock = result;
-        else assertEquals(stock, result);
-        assertEquals(84, result.size());
-      } finally {
-        tables.getCatalog("fluss").orElseThrow().close();
+      String sql = "SELECT a FROM " + qualified(source) + " WHERE b=2 AND a>=300";
+      plan(tables, sql, source + "_batch_filter_" + nativeRun, nativeRun, false);
+      if (nativeRun) assertTrue(tables.explainSql(sql).contains("batchFilter"));
+      List<String> result = new ArrayList<>();
+      try (var iterator = tables.executeSql(sql).collect()) {
+        iterator.forEachRemaining(row -> result.add(row.toString()));
       }
+      result.sort(String::compareTo);
+      if (stock == null) stock = result;
+      else assertEquals(stock, result);
+      assertEquals(84, result.size());
     }
   }
 
@@ -503,27 +507,23 @@ class FlussSqlTest {
       writer.flush();
     }
     var tables = environment(true);
-    try {
-      String sql =
-          "SELECT a FROM "
-              + qualified(source)
-              + " WHERE b=1 UNION ALL SELECT a FROM "
-              + qualified(source)
-              + " WHERE b=2";
-      plan(tables, sql, source + "_different_filters", true, false);
-      List<String> result = new ArrayList<>();
-      try (var iterator = tables.executeSql(sql).collect()) {
-        iterator.forEachRemaining(row -> result.add(row.toString()));
-      }
-      assertEquals(
-          java.util.stream.IntStream.range(100, 300)
-              .mapToObj(i -> "+I[" + i + "]")
-              .sorted()
-              .collect(ListCollectors.toList()),
-          result.stream().sorted().collect(ListCollectors.toList()));
-    } finally {
-      tables.getCatalog("fluss").orElseThrow().close();
+    String sql =
+        "SELECT a FROM "
+            + qualified(source)
+            + " WHERE b=1 UNION ALL SELECT a FROM "
+            + qualified(source)
+            + " WHERE b=2";
+    plan(tables, sql, source + "_different_filters", true, false);
+    List<String> result = new ArrayList<>();
+    try (var iterator = tables.executeSql(sql).collect()) {
+      iterator.forEachRemaining(row -> result.add(row.toString()));
     }
+    assertEquals(
+        java.util.stream.IntStream.range(100, 300)
+            .mapToObj(i -> "+I[" + i + "]")
+            .sorted()
+            .collect(ListCollectors.toList()),
+        result.stream().sorted().collect(ListCollectors.toList()));
   }
 
   @Test
@@ -570,11 +570,7 @@ class FlussSqlTest {
 
   private static void ddl(String sql) throws Exception {
     var tables = environment(false);
-    try {
-      tables.executeSql(sql).await();
-    } finally {
-      tables.getCatalog("fluss").orElseThrow().close();
-    }
+    tables.executeSql(sql).await();
   }
 
   private static List<String> query(
@@ -586,29 +582,21 @@ class FlussSqlTest {
       String source, String fields, String predicate, boolean nativeRun, boolean nativeSource)
       throws Exception {
     var tables = environment(nativeRun);
-    try {
-      String sql = "SELECT " + fields + " FROM " + qualified(source) + predicate;
-      plan(tables, sql, source + (nativeRun ? "_native_read" : "_stock_read"), nativeSource, false);
-      List<String> rows = new ArrayList<>();
-      try (var iterator = tables.executeSql(sql).collect()) {
-        iterator.forEachRemaining(row -> rows.add(row.toString()));
-      }
-      return rows;
-    } finally {
-      tables.getCatalog("fluss").orElseThrow().close();
+    String sql = "SELECT " + fields + " FROM " + qualified(source) + predicate;
+    plan(tables, sql, source + (nativeRun ? "_native_read" : "_stock_read"), nativeSource, false);
+    List<String> rows = new ArrayList<>();
+    try (var iterator = tables.executeSql(sql).collect()) {
+      iterator.forEachRemaining(row -> rows.add(row.toString()));
     }
+    return rows;
   }
 
   private static void insert(
       String sql, String output, boolean nativeRun, boolean nativeSource, boolean nativeSink)
       throws Exception {
     var tables = environment(nativeRun);
-    try {
-      plan(tables, sql, output + "_insert", nativeSource, nativeSink);
-      tables.executeSql(sql).await();
-    } finally {
-      tables.getCatalog("fluss").orElseThrow().close();
-    }
+    plan(tables, sql, output + "_insert", nativeSource, nativeSink);
+    tables.executeSql(sql).await();
   }
 
   private static void plan(
@@ -627,6 +615,8 @@ class FlussSqlTest {
   }
 
   private static StreamTableEnvironment environment(boolean nativeRun) {
+    var existing = environments.get(nativeRun);
+    if (existing != null) return existing;
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     env.enableCheckpointing(1000);
@@ -636,6 +626,7 @@ class FlussSqlTest {
         "CREATE CATALOG fluss WITH ('type'='fluss', 'bootstrap.servers'='"
             + cluster.config().get(ConfigOptions.BOOTSTRAP_SERVERS).get(0)
             + "')");
+    environments.put(nativeRun, tables);
     if (nativeRun) NativePlanner.install(tables);
     return tables;
   }

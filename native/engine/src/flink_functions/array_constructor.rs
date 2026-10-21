@@ -23,9 +23,9 @@ struct ArrayConstructor {
 impl ScalarUDFImpl for ArrayConstructor {
     fn name(&self) -> &str {
         if self.compact_timestamp {
-            "flink_unnest_compact_timestamp_array"
+            "flink_compact_timestamp_array"
         } else {
-            "flink_unnest_scalar_array"
+            "flink_scalar_array"
         }
     }
 

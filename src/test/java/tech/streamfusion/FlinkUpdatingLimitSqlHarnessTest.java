@@ -119,16 +119,14 @@ class FlinkUpdatingLimitSqlHarnessTest {
     String sql = "SELECT k, v FROM src ORDER BY v DESC NULLS LAST, k ASC LIMIT 2 OFFSET 1";
     assertTrue(NativePlanner.explain(input.get(), sql).contains("NativeColumnarTopN"));
     NativeParity.assertOrderedKindedParity(input, sql);
-    NativeParity.assertChangelogParity(input, sql);
     String ranked = "SELECT k, v, rn FROM (SELECT k, v, ROW_NUMBER() OVER "
         + "(ORDER BY v DESC NULLS LAST, k ASC) AS rn FROM src) WHERE rn BETWEEN 2 AND 3";
     assertTrue(NativePlanner.explain(input.get(), ranked).contains("NativeColumnarTopN"));
     if (!miniBatch) NativeParity.assertOrderedKindedParity(input, ranked);
-    NativeParity.assertChangelogParity(input, ranked);
+    else NativeParity.assertChangelogParity(input, ranked);
     String hidden = ranked.replace("SELECT k, v, rn FROM", "SELECT k, v FROM");
     assertTrue(NativePlanner.explain(input.get(), hidden).contains("NativeColumnarTopN"));
     NativeParity.assertOrderedKindedParity(input, hidden);
-    NativeParity.assertChangelogParity(input, hidden);
   }
 
   private static void assertNative(Supplier<TableEnvironment> environment, String sql,

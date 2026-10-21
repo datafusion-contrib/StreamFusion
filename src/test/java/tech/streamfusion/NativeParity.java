@@ -72,6 +72,7 @@ final class NativeParity {
     assertEquals(multiset(host), multiset(nativeRows), "kinded changelog differs from host");
   }
 
+  /** Checks ordered changes and their materialized result from the same host/native executions. */
   static void assertOrderedKindedParity(Supplier<TableEnvironment> environment, String sql)
       throws Exception {
     List<List<Object>> host = collectKinded(environment.get(), sql);
@@ -81,6 +82,10 @@ final class NativeParity {
     assertTrue(
         scan.substitutions() > 0, "query did not route to native: " + scan.fallbackReasons());
     assertEquals(host, actual, "ordered changelog differs from Flink");
+    assertEquals(
+        collapsedChangelog(host),
+        collapsedChangelog(actual),
+        "collapsed changelog differs from host");
   }
 
   /** {@link #collect} with the row's kind prepended, so ±U/±D changes are distinguishable. */
@@ -137,15 +142,32 @@ final class NativeParity {
         }
         long delta =
             row.getKind() == RowKind.DELETE || row.getKind() == RowKind.UPDATE_BEFORE ? -1 : 1;
-        long next = counts.getOrDefault(fields, 0L) + delta;
-        if (next == 0) {
-          counts.remove(fields);
-        } else {
-          counts.put(fields, next);
-        }
+        addChange(counts, fields, delta);
       }
     }
     return counts;
+  }
+
+  static Map<List<Object>, Long> collapsedChangelog(List<List<Object>> rows) {
+    Map<List<Object>, Long> counts = new HashMap<>();
+    for (List<Object> row : rows) {
+      long delta =
+          RowKind.DELETE.shortString().equals(row.get(0))
+                  || RowKind.UPDATE_BEFORE.shortString().equals(row.get(0))
+              ? -1
+              : 1;
+      addChange(counts, row.subList(1, row.size()), delta);
+    }
+    return counts;
+  }
+
+  private static void addChange(Map<List<Object>, Long> counts, List<Object> fields, long delta) {
+    long next = counts.getOrDefault(fields, 0L) + delta;
+    if (next == 0) {
+      counts.remove(fields);
+    } else {
+      counts.put(fields, next);
+    }
   }
 
   /**

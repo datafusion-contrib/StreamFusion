@@ -410,7 +410,7 @@ jobs:
 
   all-tests:
     name: All CI tests
-    if: ${{ always() }}
+    if: ${{ always() && !cancelled() }}
     needs: [native-build, native-tests, java-tests, lake-module-tests, image-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

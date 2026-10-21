@@ -1,0 +1,91 @@
+case,allocation_calls,requested_bytes,shared_output_buffer_bytes,new_output_buffer_bytes
+append/Int8/0/width=0/nulls=false,23,1290,0,4
+append/Int16/0/width=0/nulls=false,23,1290,0,4
+append/Int32/0/width=0/nulls=false,23,1290,0,4
+append/Int64/0/width=0/nulls=false,23,1290,0,4
+"append/Decimal128(38, 9)/0/width=0/nulls=false",23,1290,0,4
+append/Int8/0/width=0/nulls=true,23,1290,0,4
+append/Int16/0/width=0/nulls=true,23,1290,0,4
+append/Int32/0/width=0/nulls=true,23,1290,0,4
+append/Int64/0/width=0/nulls=true,23,1290,0,4
+"append/Decimal128(38, 9)/0/width=0/nulls=true",23,1290,0,4
+append/Int8/0/width=8/nulls=false,23,1290,0,4
+append/Int16/0/width=8/nulls=false,23,1290,0,4
+append/Int32/0/width=8/nulls=false,23,1290,0,4
+append/Int64/0/width=8/nulls=false,23,1290,0,4
+"append/Decimal128(38, 9)/0/width=8/nulls=false",23,1290,0,4
+append/Int8/0/width=8/nulls=true,23,1290,0,4
+append/Int16/0/width=8/nulls=true,23,1290,0,4
+append/Int32/0/width=8/nulls=true,23,1290,0,4
+append/Int64/0/width=8/nulls=true,23,1290,0,4
+"append/Decimal128(38, 9)/0/width=8/nulls=true",23,1290,0,4
+append/Int8/0/width=64/nulls=false,23,1290,0,4
+append/Int16/0/width=64/nulls=false,23,1290,0,4
+append/Int32/0/width=64/nulls=false,23,1290,0,4
+append/Int64/0/width=64/nulls=false,23,1290,0,4
+"append/Decimal128(38, 9)/0/width=64/nulls=false",23,1290,0,4
+append/Int8/0/width=64/nulls=true,23,1290,0,4
+append/Int16/0/width=64/nulls=true,23,1290,0,4
+append/Int32/0/width=64/nulls=true,23,1290,0,4
+append/Int64/0/width=64/nulls=true,23,1290,0,4
+"append/Decimal128(38, 9)/0/width=64/nulls=true",23,1290,0,4
+append/Int8/16/width=0/nulls=false,37,2056,0,84
+append/Int16/16/width=0/nulls=false,37,2056,0,100
+append/Int32/16/width=0/nulls=false,37,2056,0,132
+append/Int64/16/width=0/nulls=false,37,2120,0,196
+"append/Decimal128(38, 9)/16/width=0/nulls=false",37,2248,0,324
+append/Int8/16/width=0/nulls=true,40,2138,3,84
+append/Int16/16/width=0/nulls=true,40,2138,3,98
+append/Int32/16/width=0/nulls=true,40,2138,3,126
+append/Int64/16/width=0/nulls=true,40,2202,3,182
+"append/Decimal128(38, 9)/16/width=0/nulls=true",40,2330,3,294
+append/Int8/16/width=8/nulls=false,37,2184,0,212
+append/Int16/16/width=8/nulls=false,37,2312,0,356
+append/Int32/16/width=8/nulls=false,37,2632,0,644
+append/Int64/16/width=8/nulls=false,37,3208,0,1220
+"append/Decimal128(38, 9)/16/width=8/nulls=false",37,4424,0,2372
+append/Int8/16/width=8/nulls=true,41,2240,3,210
+append/Int16/16/width=8/nulls=true,41,2368,3,336
+append/Int32/16/width=8/nulls=true,41,2624,3,588
+append/Int64/16/width=8/nulls=true,41,3136,3,1092
+"append/Decimal128(38, 9)/16/width=8/nulls=true",41,4160,3,2100
+append/Int8/16/width=64/nulls=false,37,3144,0,1108
+append/Int16/16/width=64/nulls=false,37,4232,0,2148
+append/Int32/16/width=64/nulls=false,37,6408,0,4228
+append/Int64/16/width=64/nulls=false,37,10824,0,8388
+"append/Decimal128(38, 9)/16/width=64/nulls=false",37,19656,0,16708
+append/Int8/16/width=64/nulls=true,41,3170,3,1092
+append/Int16/16/width=64/nulls=true,41,4066,3,2002
+append/Int32/16/width=64/nulls=true,41,5858,3,3822
+append/Int64/16/width=64/nulls=true,41,9506,3,7462
+"append/Decimal128(38, 9)/16/width=64/nulls=true",41,16802,3,14742
+append/Int8/1024/width=0/nulls=false,37,7048,0,5124
+append/Int16/1024/width=0/nulls=false,37,8072,0,6148
+append/Int32/1024/width=0/nulls=false,37,10120,0,8196
+append/Int64/1024/width=0/nulls=false,37,14216,0,12292
+"append/Decimal128(38, 9)/1024/width=0/nulls=false",37,22408,0,20484
+append/Int8/1024/width=0/nulls=true,40,7256,129,5106
+append/Int16/1024/width=0/nulls=true,40,8280,129,5984
+append/Int32/1024/width=0/nulls=true,40,10328,129,7740
+append/Int64/1024/width=0/nulls=true,40,14424,129,11252
+"append/Decimal128(38, 9)/1024/width=0/nulls=true",40,22616,129,18276
+append/Int8/1024/width=8/nulls=false,37,15304,0,13316
+append/Int16/1024/width=8/nulls=false,37,24520,0,22532
+append/Int32/1024/width=8/nulls=false,37,42952,0,40964
+append/Int64/1024/width=8/nulls=false,37,79816,0,77828
+"append/Decimal128(38, 9)/1024/width=8/nulls=false",37,153608,0,151556
+append/Int8/1024/width=8/nulls=true,41,15198,129,13008
+append/Int16/1024/width=8/nulls=true,41,23262,129,20910
+append/Int32/1024/width=8/nulls=true,41,39326,129,36714
+append/Int64/1024/width=8/nulls=true,41,71518,129,68322
+"append/Decimal128(38, 9)/1024/width=8/nulls=true",41,135902,129,131538
+append/Int8/1024/width=64/nulls=false,37,72648,0,70660
+append/Int16/1024/width=64/nulls=false,37,139272,0,137220
+append/Int32/1024/width=64/nulls=false,37,272520,0,270340
+append/Int64/1024/width=64/nulls=false,37,539016,0,536580
+"append/Decimal128(38, 9)/1024/width=64/nulls=false",37,1072008,0,1069060
+append/Int8/1024/width=64/nulls=true,41,70496,129,68322
+append/Int16/1024/width=64/nulls=true,41,127712,129,125392
+append/Int32/1024/width=64/nulls=true,41,242144,129,239532
+append/Int64/1024/width=64/nulls=true,41,471008,129,467812
+"append/Decimal128(38, 9)/1024/width=64/nulls=true",41,928736,129,924372

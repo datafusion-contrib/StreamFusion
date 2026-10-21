@@ -1,0 +1,21 @@
+stage,expression,rows,engine,trial,seconds
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,1,0.735843958
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,2,0.760773042
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,3,0.754689541
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,4,0.744535167
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,5,0.752655209
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,1,1.210825042
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,2,1.221918
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,3,1.223664792
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,4,1.19750325
+baseline,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,5,1.215213958
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,1,0.740103375
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,2,0.750185375
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,3,0.733767083
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,4,0.79563175
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,stock,5,0.719264208
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,1,0.711768584
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,2,0.769443
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,3,0.731314958
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,4,0.723311833
+candidate,"ARRAY_REMOVE(arr,CAST(idx AS BIGINT))",1000000,streamfusion,5,0.711302875

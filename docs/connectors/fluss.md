@@ -639,6 +639,15 @@ performance assertions. It reuses that job's staged release library, runs zero w
 and one pair per query, and uploads SQL/Nexmark plans and test reports. The environment
 opt-in still protects normal local builds from unexpectedly running the full matrix.
 
+Each SQL test invocation reuses one stock and one native table environment across its
+DDL, reads and inserts. Both catalogs close in `@AfterEach`, including after a failing
+assertion; subsequent invocations start with fresh environments. Job completion, iterator
+cleanup, discovery-job cancellation and native-memory checks retain their existing boundaries.
+This avoids paying the Fluss client's approximately two-second Netty shutdown quiet period
+for every SQL helper call. A focused release-library comparison reduced the unchanged plain
+bucket/statistics case from 44.149 s to 21.642 s. This measures test overhead, not connector
+throughput; the full-suite timings are recorded in the [CI guide](../ci.md).
+
 ```sh
 mvn -Pbench -pl streamfusion-fluss -am test \
   -Dtest=FlussSqlTest -Dsurefire.failIfNoSpecifiedTests=false

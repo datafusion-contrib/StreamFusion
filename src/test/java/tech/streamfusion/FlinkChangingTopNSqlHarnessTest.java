@@ -35,7 +35,6 @@ class FlinkChangingTopNSqlHarnessTest {
         String plan = NativePlanner.explain(environment(false, retracting), sql);
         assertTrue(plan.contains("NativeColumnarTopN"), plan);
         NativeParity.assertOrderedKindedParity(() -> environment(false, retracting), sql);
-        NativeParity.assertChangelogParity(() -> environment(false, retracting), sql);
         String miniBatchPlan = NativePlanner.explain(environment(true, retracting), sql);
         assertTrue(miniBatchPlan.contains("NativeColumnarTopN"), miniBatchPlan);
         NativeParity.assertOrderedKindedParity(() -> environment(true, retracting), sql);

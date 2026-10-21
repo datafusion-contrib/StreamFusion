@@ -151,6 +151,8 @@ nav:
       - SQL/JSON parsing: optimizations/sql-json-parsing.md
       - Calc projection before filtering: optimizations/calc-projection-before-filter.md
       - Collection representation work: optimizations/collection-representation-work.md
+      - Native basic-array searches and extrema: optimizations/native-array-search.md
+      - Native collection edits: optimizations/native-collection-edits.md
       - Export Calc schemas once: optimizations/calc-schema-once-c-data.md
       - Shared FFI allocator: optimizations/shared-ffi-allocator.md
       - DataFusion hash joins: optimizations/datafusion-hash-joins.md

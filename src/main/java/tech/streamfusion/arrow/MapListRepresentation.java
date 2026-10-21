@@ -41,7 +41,10 @@ public final class MapListRepresentation {
   }
 
   public static boolean isMapList(Field field) {
-    return field.getType() instanceof ArrowType.List && "1".equals(field.getMetadata().get(MARKER));
+    return field.getType() instanceof ArrowType.List
+        && ("1".equals(field.getMetadata().get(MARKER))
+            || field.getChildren().size()==1
+                && "1".equals(field.getChildren().get(0).getMetadata().get(MARKER)));
   }
 
   /** A borrowed export view; close the original root, never this view's shared vectors. */

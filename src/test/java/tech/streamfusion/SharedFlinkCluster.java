@@ -1,40 +1,32 @@
 package tech.streamfusion;
 
-import tech.streamfusion.operator.TaskOffHeapMemory;
-import tech.streamfusion.operator.NativeAllocator;
 import java.util.concurrent.TimeUnit;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
+import org.apache.flink.runtime.testutils.MiniClusterResource;
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
-import org.apache.flink.test.junit5.MiniClusterExtension;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import tech.streamfusion.compat.FlinkTestContexts;
+import tech.streamfusion.operator.NativeAllocator;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 
 /**
- * Auto-registered (see {@code src/test/resources/junit-platform.properties} and the JUnit extension
- * service file) for every test class, this shares one Flink mini-cluster per test class instead of the
- * default of booting and tearing down a fresh local cluster on each {@code executeSql().collect()} /
- * {@code env.execute()}. Flink's {@link MiniClusterExtension} starts the cluster once (per class) and
- * redirects {@code StreamExecutionEnvironment.getExecutionEnvironment()} to it, so the SQL harness tests
- * submit their jobs to the shared cluster — removing the suite's dominant per-test cost.
- *
- * <p>{@code MiniClusterExtension} is {@code final}, so this composes it rather than subclassing, only to
- * supply a slot count large enough for the tests that run at parallelism &gt; 1. Tests that never touch a
- * cluster (the operator harness unit tests) simply ignore it.
- *
- * <p>Being registered around every test also makes this the suite-wide native leak check: see
- * {@link #assertNativeMemoryReleased}.
+ * Reuses one MiniCluster per launcher session (one Surefire fork), with fresh execution contexts
+ * and native leak checks for every test. Launcher-session ownership closes the cluster when the
+ * test run ends.
  */
 public final class SharedFlinkCluster
     implements BeforeAllCallback, AfterAllCallback, BeforeEachCallback, AfterEachCallback {
 
-  private final MiniClusterExtension cluster;
+  private static final ExtensionContext.Namespace NAMESPACE =
+      ExtensionContext.Namespace.create(SharedFlinkCluster.class);
 
-  public SharedFlinkCluster() {
+  private static MiniClusterResourceConfiguration configuration() {
     // Task off-heap sized like a tuned deployment: the TaskManager-wide StreamFusion pool accounts
     // native state, Arrow buffers, and connector queues against this normal Flink process budget.
     // Sized for the benchmark
@@ -59,31 +51,42 @@ public final class SharedFlinkCluster
     // silent multi-hour hang where a test failure should be. A real deployment tunes its own
     // restart strategy; a test's job either works or should fail its assertion promptly.
     config.setString("restart-strategy.type", "none");
-    cluster =
-        new MiniClusterExtension(
-            new MiniClusterResourceConfiguration.Builder()
-                .setConfiguration(config)
-                .setNumberTaskManagers(1)
-                .setNumberSlotsPerTaskManager(
-                    managedMemory == null
-                        ? 8
-                        : Integer.parseInt(System.getenv().getOrDefault("SF_PARALLELISM", "4")))
-                .build());
+    return new MiniClusterResourceConfiguration.Builder()
+        .setConfiguration(config)
+        .setNumberTaskManagers(1)
+        .setNumberSlotsPerTaskManager(
+            managedMemory == null
+                ? 8
+                : Integer.parseInt(System.getenv().getOrDefault("SF_PARALLELISM", "4")))
+        .build();
+  }
+
+  static SessionCluster session(ExtensionContext context) {
+    var sessionCluster = SharedFlinkClusterSession.currentCluster();
+    if (sessionCluster != null) return sessionCluster;
+    return context
+        .getRoot()
+        .getStore(NAMESPACE)
+        .getOrComputeIfAbsent(
+            SessionCluster.class, key -> new SessionCluster(), SessionCluster.class);
   }
 
   @Override
   public void beforeAll(ExtensionContext context) throws Exception {
-    cluster.beforeAll(context);
+    var cluster = session(context);
+    cluster.start();
+    TaskOffHeapMemory.initialize(cluster.getMiniCluster().getConfiguration());
   }
 
   @Override
-  public void beforeEach(ExtensionContext context) throws Exception {
-    cluster.beforeEach(context);
+  public void beforeEach(ExtensionContext context) {
+    var cluster = session(context);
+    FlinkTestContexts.setForLocalTests(cluster.getMiniCluster(), cluster.getNumberSlots());
   }
 
   @Override
   public void afterEach(ExtensionContext context) throws Exception {
-    cluster.afterEach(context);
+    FlinkTestContexts.clearForRemoteSubmission();
     assertNativeMemoryReleased(context.getDisplayName());
   }
 
@@ -92,18 +95,20 @@ public final class SharedFlinkCluster
    * leak audit: every native handle created over JNI must have been closed (a live handle is Rust
    * memory the JVM's tooling cannot see), and the shared Arrow FFI allocator must hold zero bytes
    * (a nonzero balance is an unclosed {@code VectorSchemaRoot} or a dropped C Data release
-   * callback, in either transfer direction — imports are registered as foreign allocations).
-   * The task pool must also release every reservation, including native state outside Arrow.
+   * callback, in either transfer direction — imports are registered as foreign allocations). The
+   * task pool must also release every reservation, including native state outside Arrow.
    *
    * <p>Task cleanup can trail the job result by a moment (source fetcher threads close
-   * asynchronously), so the check polls briefly before failing; when clean it costs one JNI call per loaded library.
+   * asynchronously), so the check polls briefly before failing; when clean it costs one JNI call
+   * per loaded library.
    */
   static void assertNativeMemoryReleased(String scenario) throws InterruptedException {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
     String handles = NativeExtensionLoader.liveNativeHandles();
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
     long reserved = TaskOffHeapMemory.reservedBytes();
-    while ((!handles.isEmpty() || allocated != 0 || reserved != 0) && System.nanoTime() < deadline) {
+    while ((!handles.isEmpty() || allocated != 0 || reserved != 0)
+        && System.nanoTime() < deadline) {
       // Records a failed job dropped in flight are freed by the ArrowBatch cleaner backstop, which
       // only runs once a GC notices they are unreachable — nudge it rather than waiting one out.
       System.gc();
@@ -129,6 +134,54 @@ public final class SharedFlinkCluster
 
   @Override
   public void afterAll(ExtensionContext context) throws Exception {
-    cluster.afterAll(context);
+    session(context).cancelRemainingJobs();
+  }
+
+  static final class SessionCluster extends MiniClusterResource
+      implements ExtensionContext.Store.CloseableResource {
+    private boolean started;
+
+    SessionCluster() {
+      super(configuration());
+    }
+
+    synchronized void start() throws Exception {
+      if (!started) {
+        try {
+          before();
+          started = true;
+          System.out.println(
+              "StreamFusion test MiniCluster started pid=" + ProcessHandle.current().pid());
+        } catch (Exception failure) {
+          after();
+          throw failure;
+        }
+      }
+    }
+
+    void cancelRemainingJobs() throws Exception {
+      if (!started) return;
+      var cluster = getMiniCluster();
+      for (var job : cluster.listJobs().get(30, TimeUnit.SECONDS)) {
+        if (job.getJobState().isGloballyTerminalState()) continue;
+        try {
+          cluster.cancelJob(job.getJobId()).get(30, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException failure) {
+          if (!cluster
+              .getJobStatus(job.getJobId())
+              .get(30, TimeUnit.SECONDS)
+              .isGloballyTerminalState()) throw failure;
+        }
+        cluster.requestJobResult(job.getJobId()).get(30, TimeUnit.SECONDS);
+      }
+    }
+
+    @Override
+    public void close() {
+      if (started) {
+        after();
+        started = false;
+      }
+    }
   }
 }

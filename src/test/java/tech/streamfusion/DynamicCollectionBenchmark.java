@@ -1,5 +1,6 @@
 package tech.streamfusion;
 
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Locale;
 import org.apache.flink.api.common.typeinfo.Types;
@@ -24,6 +25,8 @@ class DynamicCollectionBenchmark {
   private static final boolean INTS = Boolean.getBoolean("collection.int");
   private static final String ELEMENT_TYPE =
       System.getProperty("collection.type", INTS ? "INT" : "BIGINT");
+  private static final BigDecimal DECIMAL_OFFSET =
+      new BigDecimal(System.getProperty("collection.decimalOffset", "0"));
   private static final int NULL_EVERY = Integer.getInteger("collection.nullEvery", 8);
   private static final int ELEMENT_NULL_EVERY =
       Integer.getInteger("collection.elementNullEvery", 7);
@@ -39,6 +42,9 @@ class DynamicCollectionBenchmark {
           System.getProperty("collection.expression", map ? "m[lookup_key]" : "arr[idx]");
       if (System.getProperty("collection.expression") != null
           && map != Boolean.parseBoolean(System.getProperty("collection.map", "true"))) continue;
+      if (!map && ELEMENT_TYPE.equals("DECIMAL")) {
+        System.out.println("[collection-fixture] decimal_offset=" + DECIMAL_OFFSET.toPlainString());
+      }
       if (EMPTY_ARRAYS && !map) {
         if (java.lang.reflect.Array.getLength(inputArray(1)) != 0) {
           throw new IllegalStateException("Expected empty-array fixture");
@@ -47,6 +53,7 @@ class DynamicCollectionBenchmark {
       }
       TableEnvironment check = environment(map);
       String sql = prepare(check, expression);
+      PhysicalPlanScan planning = NativePlanner.install(check);
       String plan = NativePlanner.explain(check, sql);
       if (EXPECT_NATIVE
           && (!plan.contains("NativeCalc")
@@ -57,6 +64,9 @@ class DynamicCollectionBenchmark {
       if (!EXPECT_NATIVE && plan.contains("NativeCalc")) {
         throw new IllegalStateException("Expected fallback control: " + plan);
       }
+      String rustFunction = System.getProperty("collection.rustFunction");
+      assertRustFunction(planning);
+      if (rustFunction != null) System.out.println("[collection-engine] " + planning.functionExecutions());
       String fallbackReason = System.getProperty("collection.fallbackReason");
       if (!EXPECT_NATIVE && fallbackReason != null && !plan.contains(fallbackReason)) {
         throw new IllegalStateException("Unexpected fallback reason: " + plan);
@@ -110,7 +120,18 @@ class DynamicCollectionBenchmark {
     if (nativeRun && (scan.substitutions() > 0) != EXPECT_NATIVE) {
       throw new IllegalStateException("Unexpected route: " + scan.explainSummary());
     }
+    if (nativeRun) assertRustFunction(scan);
     return seconds;
+  }
+
+  private static void assertRustFunction(PhysicalPlanScan scan) {
+    String function = System.getProperty("collection.rustFunction");
+    if (function != null
+        && scan.functionExecutions().stream().noneMatch(execution ->
+            execution.contains("native=[") && execution.contains(function)
+                && execution.contains("jvm=[]"))) {
+      throw new IllegalStateException("Expected Rust function execution: " + scan.functionExecutions());
+    }
   }
 
   private static double median(double[] values) {
@@ -129,6 +150,8 @@ class DynamicCollectionBenchmark {
           return new Boolean[0];
         case "BIGINT":
           return new Long[0];
+        case "DECIMAL":
+          return new BigDecimal[0];
         default:
           return new Integer[0];
       }
@@ -150,6 +173,16 @@ class DynamicCollectionBenchmark {
       return values;
     }
     if (ELEMENT_TYPE.equals("BIGINT")) return array(row);
+    if (ELEMENT_TYPE.equals("DECIMAL")) {
+      Long[] values = array(row);
+      BigDecimal[] decimals = new BigDecimal[values.length];
+      for (int i = 0; i < values.length; i++) {
+        if (values[i] == null) continue;
+        BigDecimal value = BigDecimal.valueOf(values[i]);
+        decimals[i] = DECIMAL_OFFSET.signum() == 0 ? value : value.add(DECIMAL_OFFSET);
+      }
+      return decimals;
+    }
     if (WIDTH == 0) return new Integer[] {(int) row, null, -(int) row};
     Integer[] values = new Integer[WIDTH];
     for (int i = 0; i < WIDTH; i++) {
@@ -206,6 +239,9 @@ class DynamicCollectionBenchmark {
           break;
         case "BIGINT":
           arrayType = Types.OBJECT_ARRAY(Types.LONG);
+          break;
+        case "DECIMAL":
+          arrayType = Types.OBJECT_ARRAY(Types.BIG_DEC);
           break;
         case "STRING":
           arrayType = Types.OBJECT_ARRAY(Types.STRING);

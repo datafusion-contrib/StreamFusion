@@ -25,6 +25,8 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 
 - [Columnar changelog operators](columnar-changelog-operators.md): pass unchanged filter batches by ownership and avoid standalone row/Arrow round trips.
 - [Collection representation work](collection-representation-work.md): omit unnecessary snapshots, reuse nested-row readers and prune UNNEST expansion before copying.
+- [Native basic-array searches and extrema](native-array-search.md): scan or reduce flat values without JVM row reconstruction and avoid temporary bytes for wide-precision decimals whose actual value fits a long; retain measured standalone limits.
+- [Native collection edits](native-collection-edits.md): build verified collection results from Arrow offsets and values while retaining Flink NULL and ordering semantics.
 - [Shared-window state costs](shared-window-state.md): exact memory deltas, batched reservations and preserved accumulator state.
 - [Compact window-rank timestamp cells](window-rank-timestamp-cells.md): exact numeric digits avoid per-row timestamp struct slicing.
 - [Bounded rank payload rejection](bounded-rank-payloads.md): skip full payload encoding for batches already outside fixed rank bounds.

@@ -2073,9 +2073,27 @@ Existing admitted collection subscripts and Boolean/integer ARRAY_DISTINCT retai
 | --- | --- |
 | ARRAY_REVERSE, ARRAY_SLICE | Rust kernels for nullable primitive elements; generated Flink program for STRING/ROW/MAP-bearing or NOT NULL-element arrays and consumers requiring Java value semantics |
 | CARDINALITY on ARRAY/MAP | Rust outer-offset count, returning INT; NULL container produces NULL |
-| ARRAY_APPEND, ARRAY_PREPEND, ARRAY_CONTAINS, ARRAY_POSITION, ARRAY_REMOVE, ARRAY_SORT, ARRAY_UNION, ARRAY_CONCAT, ARRAY_EXCEPT, ARRAY_INTERSECT, ARRAY_JOIN, ARRAY_MIN, ARRAY_MAX | Flink's released generated program through the existing batch JVM bridge |
-| MAP_KEYS, MAP_VALUES, MAP_ENTRIES, MAP_FROM_ARRAYS, MAP_UNION, ELEMENT | Same generated program |
-| Runtime ARRAY[...], MAP[...], ROW(...), OBJECT_OF, OBJECT_UPDATE | Same generated program; homogeneous scalar ARRAYs immediately consumed by UNNEST have a native consumer-specific path |
+| ARRAY_CONTAINS, ARRAY_POSITION | Rust scans for matching BOOLEAN, integer and DECIMAL element/needle types with nullable elements; other signatures, representation-sensitive consumers and fallible arguments use the generated Flink program. Non-NULL literal or nonnullable CONTAINS needles retain Flink evaluation; DECIMAL arrays with such needles require whole-Calc fallback |
+| ARRAY_MIN, ARRAY_MAX | Released DataFusion Rust kernels for nullable integer and DECIMAL elements; other types, NOT NULL elements, representation-sensitive consumers and fallible arguments retain Flink's generated program |
+| ARRAY_APPEND, ARRAY_PREPEND | Rust offset-based copying for nullable BOOLEAN/integer/DECIMAL arrays and a matching element, including a NULL element; sensitive representations and fallible arguments retain Flink evaluation |
+| ARRAY_REMOVE | Rust stable selection for matching nullable BOOLEAN/integer/DECIMAL arrays; removes every matching element, including NULL when the needle is NULL; other signatures retain Flink evaluation |
+| ARRAY_CONCAT | Rust concatenation for matching nullable BOOLEAN/integer/DECIMAL arrays; any NULL operand returns NULL; other signatures retain Flink evaluation |
+| ARRAY_UNION | Released DataFusion Rust kernel for matching nullable BOOLEAN/integer/DECIMAL arrays; first-occurrence order and one NULL element retained; either NULL container returns NULL |
+| ARRAY_EXCEPT | Rust stable set difference for matching nullable BOOLEAN/integer/DECIMAL arrays, retaining the first left-side occurrence of each value absent on the right, with NULL treated as a value; either NULL array returns NULL |
+| ARRAY_INTERSECT | Rust stable intersection for matching nullable BOOLEAN/integer/DECIMAL arrays; distinct matches follow left-side order even when the left array is shorter; NULL is a value, either NULL container returns NULL |
+| ARRAY_SORT | Released DataFusion Rust sort for nullable integer/DECIMAL arrays proven shorter than 32 elements or produced by native ARRAY_DISTINCT, with non-NULL constant Boolean options; unrestricted, runtime-option, sensitive and fallible signatures retain Flink's comparator behavior |
+| ARRAY_JOIN | Rust UTF-8 join for total nullable string arrays and string options, including strict explicit NULL replacement; co-projected sensitive values and unverified consumers remain generated |
+| ELEMENT | Rust extraction for nullable BOOLEAN/integer/DECIMAL arrays; NULL/empty arrays return NULL, a singleton returns its element, longer arrays raise the selected Flink line's exception with the released message; multiple failure sites and sensitive/fallible operands retain row evaluation |
+| MAP_FROM_ARRAYS | Rust construction for nullable basic key/value arrays, preserving duplicate and NULL keys, entry order and strict parent NULLs; mismatched lengths retain Flink's typed exception; other signatures remain generated |
+| MAP_KEYS | Rust shared-key view for total maps with nullable BOOLEAN/integer/DECIMAL keys and values; other signatures retain generated evaluation |
+| MAP_VALUES | Rust shared-value view under the same verified basic-map admission |
+| MAP_ENTRIES | Rust shared entry-row list for verified basic maps; representation-sensitive row consumers remain generated |
+| MAP_UNION | Rust stable typed membership/gather for total matching nullable basic maps, preserving right ordering/duplicates and Flink NULL-key behavior |
+| Runtime ARRAY[...] | Rust construction for matching nullable BOOLEAN/integer/DECIMAL/DATE/TIME/TIMESTAMP/LTZ elements and total arguments; other projected signatures retain the generated program; UNNEST retains its existing wider scalar-specific admission |
+| Runtime MAP[...] | Rust construction for total nullable basic keys/values and distinct literal/input-reference key expressions; repeated/generated keys and fallible arguments remain generated; Flink 1.18 multi-entry constructors retain generated grouping order |
+| Runtime ROW(...) | Released DataFusion named-struct construction for total BOOLEAN/integer/DECIMAL fields; other fields and representation-sensitive consumers remain generated |
+| OBJECT_OF | Released named-struct construction for validated metadata and total basic fields; other signatures remain generated |
+| OBJECT_UPDATE | Native field selection only for one unshared inline basic OBJECT_OF in the complete Calc and atomic literal/input-reference values; shared objects and other signatures remain generated |
 
 The generated route evaluates the complete filter and projection together, preserving failure
 order, NULLs, empty filtered batches, function invocation order and released Flink overloads.
@@ -2083,6 +2101,33 @@ It retains Arrow batch inputs/outputs and production JNI costs. A NativeCalc con
 functions does **not** imply that its scalar work executes in Rust; the function-engine diagnostic
 reports the assignment, including ARRAY/MAP/ROW constructors. Programs with user scalar
 functions retain their existing admission gates.
+
+Basic-type ARRAY_CONTAINS and ARRAY_POSITION scan the flattened values and offsets without
+constructing per-row arrays or invoking the JVM. Admitted scalar needles remain scalar instead of
+being broadcast across the batch. NULL arrays produce NULL; CONTAINS can match a NULL needle to a NULL
+element, whereas POSITION returns NULL for a NULL needle. POSITION returns the first one-based
+position as INT, or zero when absent. DECIMAL equality compares the exact unscaled value at the
+resolved precision and scale. Mixed element/needle types and potentially failing arguments retain
+Flink evaluation; NOT NULL-element and sensitive-string gates still apply to the complete Calc.
+Flink derives CONTAINS' element getter from the needle's type, including nullability. A non-NULL
+literal or nonnullable needle can therefore change the behavior of NULL array elements. These
+CONTAINS signatures retain Flink evaluation. For DECIMAL, the Arrow-backed JVM view also differs
+from the binary array's unchecked getter, so the complete Calc falls back to stock Flink. Tests
+compare both successful results and released-version exceptions, including all-filtered inputs.
+The [optimization evidence](../optimizations/native-array-search.md) compares these paths with
+stock Flink and the prior generated evaluator, including the remaining standalone regressions.
+
+ARRAY_MIN and ARRAY_MAX directly reuse DataFusion 54's released typed kernels for TINYINT,
+SMALLINT, INT, BIGINT and DECIMAL arrays with nullable elements. They ignore NULL elements;
+NULL arrays, empty arrays and arrays containing only NULL return a nullable result of the
+declared element type, preserving DECIMAL precision and scale. The released implementation
+dispatches once per batch, scans short lists directly and uses Arrow's integer/decimal reduction
+for lists of at least 32 elements. Both paths preserve exact integer and unscaled DECIMAL ordering.
+Strings, floating values, temporal elements, nested values, NOT NULL-element arrays and fallible
+operands retain their existing Flink evaluation. BOOLEAN extrema remain a Flink validation error.
+The existing collection switch and whole-Calc representation/error-order safeguards still apply.
+Availability still follows the released Flink catalog: Flink 1.18 has ARRAY_MAX but no ARRAY_MIN;
+native registration does not introduce a SQL function missing from the host release.
 
 An ARRAY materialized solely for [UNNEST](unnest-correlate.md) can use released DataFusion's scalar
 array constructor because the container's generic/binary identity does not escape that consumer.
@@ -2092,7 +2137,9 @@ casts also have native kernels in that operand context, with SQL epoch bounds an
 truncation preserved. Non-UTC offsets come from JDK ZoneRules through the batch bridge and are
 cached between transitions, preserving historical and daylight-saving behavior. This total lookup
 does not trigger whole-Calc row evaluation; other JVM calls retain their error-order safeguards.
-Ordinary projected ARRAYs retain their existing routes.
+Ordinary projected arrays of verified nullable basic and temporal elements reuse the same
+constructor; floating, NOT NULL-element, character and representation-sensitive projected
+arrays retain generated evaluation.
 
 Primitive bridge types and recursively supported ARRAY/MAP/ROW values are admitted, including
 nullable typed map keys, decimal and timestamp values. Fixed BINARY leaves inside generated
@@ -2136,7 +2183,7 @@ the original arrays; partial slices copy contiguous child ranges. CARDINALITY co
 elements, including NULL entries, rather than flattening nested arrays; map entries include NULL
 values and repeated keys. MULTISET retains released Flink's validation/code-generation behavior.
 
-Flink 1.18.1 lacks ARRAY_APPEND, ARRAY_PREPEND, ARRAY_SORT, ARRAY_EXCEPT, ARRAY_INTERSECT,
+Flink 1.18.1 lacks ARRAY_APPEND, ARRAY_PREPEND, ARRAY_SORT,
 ARRAY_MIN, MAP_UNION, OBJECT_OF and OBJECT_UPDATE. The remaining signatures are checked on
 both supported releases; absent functions are explicitly N/A, not counted as native coverage.
 Binary-key map projection checks use ordered internal input: external Java byte-array keys have
@@ -2146,8 +2193,13 @@ before either engine evaluates the function. The checks compare the resulting ar
 Earlier direct extrema and map-projection experiments were slower than Flink and remain
 recorded in the [extrema investigation](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-array-extrema.md)
 and [map investigation](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-map-array-projections.md).
-Those direct native prototypes remain unused. The generated route is enabled under the accepted
-performance tradeoff and does not establish standalone acceleration.
+The earlier extrema prototype's broad standalone admission remains rejected: its historical
+Linux short-array regression is not invalidated by newer macOS measurements. Matching nullable
+integer/DECIMAL extrema now use released DataFusion inside the already-admitted experimental
+extension, with [current before/after evidence](../optimizations/native-array-search.md#integer-and-decimal-array-extrema)
+and the remaining standalone limits retained. The map-projection prototype remains unused.
+Generated routes remain enabled under the accepted performance tradeoff and do not establish
+standalone acceleration.
 [Issue #234](https://github.com/datafusion-contrib/StreamFusion/issues/234) also tracks remaining
 collection aggregate and cast work outside this extension.
 
@@ -2637,3 +2689,106 @@ include both perimeter transposes and make no standalone acceleration claim.
 operand under `TYPEOF` alone does not request whole-Calc ROW materialization or widen another
 expression's admission. Composed exact DOUBLE `TRUNCATE` calls register their actual function
 definition with Flink's bridging SQL function, preserving runtime implementation discovery.
+
+### Verified native map keys
+
+Within the collection extension, MAP_KEYS evaluates in Rust for total MAP operands
+whose keys and values are nullable BOOLEAN, integer or DECIMAL. Parent NULLs,
+NULL keys, duplicates and entry order survive as a shared Arrow list view. Other
+signatures retain generated Flink evaluation, including representation-sensitive
+nested/string values and fallible arguments. This does not change default
+collection admission or the standalone conversion limitations tracked by #392.
+
+MAP_VALUES uses the same verified basic-map admission and shared-buffer view, selecting the value child without changing NULLs or entry order.
+
+MAP_ENTRIES uses the same verified basic-map admission and reuses entry children
+as a list of nullable key/value rows, preserving order and parent NULLs. Consumers
+that inspect row representation or RowKind retain generated evaluation. A direct
+projection creates fresh INSERT-kind entry rows, so it does not require the
+whole-Calc ROW metadata callback. This exception applies only to the verified
+basic-map signature; nested ROW maps and ROW-valued consumers keep that callback.
+
+MAP_UNION folds verified total basic maps left to right, propagating any NULL
+parent. Each nonempty right map emits all its entries first; unmatched non-NULL
+left keys are deduplicated, while all left NULL-key entries survive when the
+right map has no NULL key. An empty right map leaves the left duplicates intact.
+Typed hash membership and Arrow gathering avoid per-entry JVM objects. Variadic,
+sliced, empty and duplicate/NULL-key cases have production-kernel fixtures.
+
+Runtime MAP constructors use released Arrow array construction plus the nullable
+map carrier for total nullable basic keys/values. Keys must be distinct literal
+or input-reference expressions. Runtime equal keys remain separate entries;
+repeated/generated key expressions retain Flink evaluation because its constructor
+deduplicates generated expressions rather than runtime key values. Fallible
+operands also remain generated, including discarded value-expression cases.
+Flink 1.18 groups generated key expressions through an unordered map rather than
+the ordered grouping used by 2.2. Its multi-entry MAP constructors retain complete
+Flink generation so later lookups and array-valued consumers do not assume an
+unverified construction order. Verified single-entry constructors remain native;
+the existing narrow-integer compilation restrictions still apply.
+
+ROW constructors with total BOOLEAN/integer/DECIMAL fields reuse DataFusion's
+released named-struct builder, sharing field arrays. Fields retain their SQL
+names and nullable values; the constructed row itself is present with INSERT
+row kind. These fresh basic rows and their scalar field projections bypass the
+whole-Calc ROW metadata callback. Other fields and representation-dependent row
+consumers remain generated; nested ROW arguments still trigger metadata handling.
+
+OBJECT_OF with validated class/field metadata and total basic fields reuses the
+released named-struct builder. Runtime values and field order match Flink's fresh
+GenericRowData construction; metadata validation still belongs to Flink planning.
+String/nested/temporal fields and fallible operands retain generated evaluation.
+
+OBJECT_UPDATE admits only one unshared inline basic OBJECT_OF construction in the
+complete Calc, with literal/input-reference field values and literal field names.
+It folds the field choices into the released named-struct builder. Flink still
+validates field names and rejects repeated update names during planning. Shared objects, runtime structured inputs,
+nested updates and non-atomic values retain generated evaluation to preserve
+Flink's in-place mutation, aliases, evaluation order and random/UDF effects.
+
+ARRAY_JOIN evaluates total nullable string arrays in Rust, skipping NULL elements
+in its two-argument form and propagating an explicit NULL replacement in its
+three-argument form. Every input is materialized separately to UTF-8 bytes before
+joining, as in Flink concatWs. Empty/all-skipped arrays yield an empty string.
+Runtime separators/replacements and isolated UTF-16 source surrogates have parity
+fixtures. A Calc that also projects original sensitive values or uses an unverified
+string/collection consumer retains generated evaluation, preserving their Java
+representation. Other array element types/nullability and fallible operands stay
+generated. DataFusion's explicit NULL replacement skips elements, so it is not a
+direct substitute for this Flink kernel.
+
+ELEMENT preserves the selected released line's exception: Flink 1.18 throws
+java.lang.RuntimeException for multiple elements, whereas Flink 2.2 throws
+TableRuntimeException. The compatibility profile selects that native variant;
+empty, NULL and singleton arrays keep identical values on both lines.
+
+Flink 1.18 ELEMENT over TINYINT/SMALLINT retains stock fallback: the released
+host's narrow-result conditional does not compile in Janino. The parity tests
+retain this host compilation failure rather than asserting a successful value.
+
+Flink 1.18 ARRAY constructors with TINYINT/SMALLINT elements keep stock fallback:
+the released generated array initializer calls narrow writers with int literals
+and fails Janino compilation. Tests compare that released initialization failure;
+Flink 2.2 retains native construction for these verified element types.
+
+Flink 1.18 MAP constructors with TINYINT/SMALLINT keys or values keep stock
+fallback because the released binary-array initializer does not compile. Direct
+map inputs and map projection kernels retain their independently verified narrow
+type support. Flink 2.2 retains native basic MAP construction.
+
+Flink 1.18 ROW constructors containing TINYINT/SMALLINT fields keep stock fallback
+for the released narrow-writer initialization failure. The SQL tests assert that
+failure for the constructed row and field-access forms; Flink 2.2 still evaluates
+verified basic rows in Rust.
+
+Native map-producing collection expressions retain the row-sink requirement. Their
+nullable-key map-list carrier is an internal batch representation, not a verified
+Parquet MAP encoding; a native sink must not consume it as an ordinary Arrow MAP.
+
+Native ROW-bearing collection results retain the existing row-sink requirement as
+well. Arrow field sharing inside Calc does not widen connector admission for Java
+row representation, RowKind, or nested copy semantics.
+
+Unary MAP_UNION accepts an ordinary map or the nullable-key map-list carrier and
+returns the verified carrier by sharing entry children, offsets and validity.
+This preserves the declared native type as well as Flink's unchanged contents.

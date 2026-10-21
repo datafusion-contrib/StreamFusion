@@ -1,0 +1,7 @@
+case,allocation_calls,requested_bytes,shared_output_buffer_bytes,new_output_buffer_bytes
+op=195/unary/flink_map_union/16/nulls=false/unicode=false,17,1295,1165,0
+op=195/unary/flink_map_union/16/nulls=true/unicode=false,17,1295,1168,0
+op=195/unary/flink_map_union/1024/nulls=false/unicode=false,17,1295,70213,0
+op=195/unary/flink_map_union/1024/nulls=true/unicode=false,17,1295,70342,0
+op=195/unary/flink_map_union/16384/nulls=false/unicode=false,17,1295,1122373,0
+op=195/unary/flink_map_union/16384/nulls=true/unicode=false,17,1295,1124422,0

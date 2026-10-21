@@ -32,6 +32,9 @@ hosts, connectors, backends, exact SQL and explicitly labelled expression varian
 | Kafka to Iceberg | [Repeated comparison](kafka-iceberg-final-20261017/README.md) | Separate [q0/q19 CPU diagnostics](kafka-iceberg-final-20261017/profiles/README.md) are excluded from its aggregate |
 | Kafka to Paimon | [Repeated comparison](kafka-paimon-final-20261017/README.md) | Includes a [matched Iceberg comparison](kafka-paimon-final-20261017/iceberg-comparison.md) with connector-setting differences retained |
 | Scalar functions | [Recorded function workloads](scalar-functions.md) | Dated cohorts with full-job conversion costs and current coverage links |
+| Basic ARRAY searches | [Native search and decimal-entry comparison](../optimizations/native-array-search.md) | Original/generated versus Rust kernels, large-decimal controls and remaining standalone losses; all 260 measured trials retained |
+| Integer/DECIMAL ARRAY extrema | [Released reduction kernels](../optimizations/native-array-search.md#integer-and-decimal-array-extrema) | Generated versus released DataFusion MIN/MAX with both transposes; 120 measured trials, including tied cases and wide-decimal standalone losses |
+| Basic collection edits | [Offset-based collection edits](../optimizations/native-collection-edits.md) | Prior generated evaluator and stock Flink versus Rust, with both transposes and complete measured trials |
 | Decimal expressions | [Exact arithmetic comparison](decimal-expressions.md) | Recorded expression workloads and argument/type restrictions |
 | Other focused workloads | [Append Top-1](append-top1.md), [basic types](basic-type-coverage.md), [floating GROUP BY](floating-group-by.md), [Flink 1.18](flink118-nexmark.md) | Separate fixtures and environments; not interchangeable headline cells |
 

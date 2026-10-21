@@ -1,0 +1,21 @@
+stage,expression,rows,engine,trial,seconds
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,1,0.585161875
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,2,0.571242042
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,3,0.573045125
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,4,0.579178334
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,5,0.584692791
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,1,1.036744541
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,2,1.010874625
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,3,1.030478
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,4,1.025013667
+baseline,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,5,1.038272167
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,1,0.567207084
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,2,0.577830083
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,3,0.580153208
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,4,0.587231917
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,stock,5,0.58156075
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,1,0.6059245
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,2,0.603231
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,3,0.60172575
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,4,0.607352583
+candidate,"ARRAY_PREPEND(arr,CAST(idx AS BIGINT))",1000000,streamfusion,5,0.594721667

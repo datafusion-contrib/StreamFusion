@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.DecimalVector;
 import org.apache.flink.table.data.DecimalData;
@@ -11,6 +12,38 @@ import org.junit.jupiter.api.Test;
 import tech.streamfusion.arrow.vectors.ArrowDecimalColumnVector;
 
 class DecimalAccessorTest {
+  @Test
+  void widePrecisionPreservesSignedLongLimitsAndLargerValuesAcrossGrowth() {
+    BigInteger[] values = {
+        BigInteger.ZERO, BigInteger.ONE, BigInteger.ONE.negate(),
+        BigInteger.valueOf(Long.MIN_VALUE), BigInteger.valueOf(Long.MAX_VALUE),
+        BigInteger.valueOf(Long.MIN_VALUE).subtract(BigInteger.ONE),
+        BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE),
+        BigInteger.TEN.pow(38).subtract(BigInteger.ONE),
+        BigInteger.TEN.pow(38).negate().add(BigInteger.ONE)
+    };
+    for (int scale : new int[] {0, 9, 18, 38}) {
+      try (var allocator = new RootAllocator();
+          var vector = new DecimalVector("d", allocator, 38, scale)) {
+        vector.setInitialCapacity(1);
+        vector.allocateNew();
+        int initialCapacity = vector.getValueCapacity();
+        int rows = Math.max(128, initialCapacity + 1);
+        for (int i = 0; i < rows; i++) {
+          BigDecimal value = new BigDecimal(values[i % values.length], scale);
+          DecimalAccessor.set(vector, i,
+              i % 11 == 0 ? null : DecimalData.fromBigDecimal(value, 38, scale));
+        }
+        vector.setValueCount(rows);
+        assertTrue(vector.getValueCapacity() > initialCapacity);
+        for (int i = 0; i < rows; i++) {
+          if (i % 11 == 0) assertTrue(vector.isNull(i));
+          else assertEquals(new BigDecimal(values[i % values.length], scale), vector.getObject(i));
+        }
+      }
+    }
+  }
+
   @Test
   void wideReconstructionPreservesUnscaledValueAndOverflowContract() {
     for (String text : java.util.List.of("0.000", "-9999999999999999999.25", "123456789012345678901234567890.12345678")) {

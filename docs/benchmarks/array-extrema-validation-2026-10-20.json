@@ -1,0 +1,37 @@
+{
+  "rust_core": {
+    "passed": 677,
+    "failed": 0,
+    "ignored": 0
+  },
+  "criterion_extrema_smoke_fixtures": 360,
+  "criterion_new_scalar_registry_smoke_cases": 18,
+  "new_extrema_rust_checks": 4,
+  "flink22_extrema": {
+    "tests": 26,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "flink22": {
+    "tests": 224,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 224
+  },
+  "flink118_extrema": {
+    "tests": 26,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 13
+  },
+  "flink118": {
+    "tests": 224,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 39,
+    "passed": 185
+  },
+  "scope": "Selected collection/DECIMAL regressions with the stateless release native library. ARRAY_MIN is absent from released Flink 1.18; each function is checked independently, retaining all ARRAY_MAX decimal scales. The full JVM and stateful recovery suites were not run locally."
+}

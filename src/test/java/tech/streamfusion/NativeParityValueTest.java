@@ -3,13 +3,37 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 
 class NativeParityValueTest {
+  @Test
+  void collapsedChangelogKeepsDuplicateCountsNullsAndRetractions() {
+    List<List<Object>> rows =
+        List.of(
+            Arrays.asList("+I", "kept", null),
+            Arrays.asList("+I", "kept", null),
+            List.of("+I", "changed", 1),
+            List.of("-U", "changed", 1),
+            List.of("+U", "changed", 2),
+            List.of("+I", "removed", 3),
+            List.of("-D", "removed", 3),
+            List.of("-D", "orphan", 4));
+
+    assertEquals(
+        Map.of(
+            Arrays.asList("kept", null), 2L,
+            List.of("changed", 2), 1L,
+            List.of("orphan", 4), -1L),
+        NativeParity.collapsedChangelog(rows));
+    assertEquals(Map.of(), NativeParity.collapsedChangelog(List.of()));
+  }
+
   @Test
   void nestedMapsCompareArrayContentsRegardlessOfEntryOrder() {
     Map<String, Object> left = new LinkedHashMap<>();

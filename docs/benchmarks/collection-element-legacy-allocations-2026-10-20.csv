@@ -1,0 +1,10 @@
+case,allocation_calls,requested_bytes,shared_output_buffer_bytes,new_output_buffer_bytes
+op=201/flink_element_legacy/16/nulls=false/unicode=false,13,858,0,130
+op=201/flink_element_legacy/16/nulls=true/unicode=false,13,858,0,130
+op=201/flink_element_legacy/16/nulls=true/unicode=true,13,858,0,130
+op=201/flink_element_legacy/1024/nulls=false/unicode=false,13,21208,0,8320
+op=201/flink_element_legacy/1024/nulls=true/unicode=false,13,21208,0,8320
+op=201/flink_element_legacy/1024/nulls=true/unicode=true,13,21208,0,8320
+op=201/flink_element_legacy/16384/nulls=false/unicode=false,13,332248,0,133120
+op=201/flink_element_legacy/16384/nulls=true/unicode=false,13,332248,0,133120
+op=201/flink_element_legacy/16384/nulls=true/unicode=true,13,332248,0,133120

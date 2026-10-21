@@ -1,0 +1,22 @@
+{
+  "baseline_commit": "8798b8e6696447b80e2f63088131c9cab754395b",
+  "expression": "ARRAY_APPEND(arr,CAST(idx AS BIGINT))",
+  "rows": 2000000,
+  "warmups": 2,
+  "trials": 5,
+  "prior_stock_seconds": 0.558644791,
+  "prior_streamfusion_seconds": 0.674472125,
+  "stock_seconds": 0.522853333,
+  "streamfusion_seconds": 0.448795416,
+  "baseline_library_sha256": "7386a207a98876eec0e9c2101bead26ec9253edbbf01655f916fe867f36c1b58",
+  "candidate_library_sha256": "89fa76386b58a8e6a7ded2011884f8021c5301ad484ebb278c152ff50ecaf7d6",
+  "fixture": [
+    "array_append",
+    "ARRAY_APPEND(arr,CAST(idx AS BIGINT))",
+    "BIGINT",
+    8,
+    2000000
+  ],
+  "parent_null_period": 8,
+  "element_null_period": 7
+}

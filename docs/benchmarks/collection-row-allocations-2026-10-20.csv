@@ -1,0 +1,10 @@
+case,allocation_calls,requested_bytes,shared_output_buffer_bytes,new_output_buffer_bytes
+op=197/named_struct/16/nulls=false/unicode=false,10,900,128,128
+op=197/named_struct/16/nulls=true/unicode=false,10,900,131,128
+op=197/named_struct/16/nulls=true/unicode=true,10,900,131,128
+op=197/named_struct/1024/nulls=false/unicode=false,10,8964,8192,8192
+op=197/named_struct/1024/nulls=true/unicode=false,10,8964,8321,8192
+op=197/named_struct/1024/nulls=true/unicode=true,10,8964,8321,8192
+op=197/named_struct/16384/nulls=false/unicode=false,10,131844,131072,131072
+op=197/named_struct/16384/nulls=true/unicode=false,10,131844,133121,131072
+op=197/named_struct/16384/nulls=true/unicode=true,10,131844,133121,131072

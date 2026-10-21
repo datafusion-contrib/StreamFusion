@@ -42,7 +42,6 @@ class FlinkVariableTopNSqlHarnessTest {
       String plan = NativePlanner.explain(input.get(), sql);
       assertTrue(plan.contains("NativeColumnarTopN"), plan);
       NativeParity.assertOrderedKindedParity(input, sql);
-      NativeParity.assertChangelogParity(input, sql);
     }
   }
 
@@ -68,7 +67,6 @@ class FlinkVariableTopNSqlHarnessTest {
         String plan = NativePlanner.explain(input.get(), sql);
         assertTrue(plan.contains("NativeColumnarTopN"), plan);
         NativeParity.assertOrderedKindedParity(input, sql);
-        NativeParity.assertChangelogParity(input, sql);
       }
     }
   }
@@ -215,7 +213,6 @@ class FlinkVariableTopNSqlHarnessTest {
         "SELECT k, n, rn FROM (SELECT k, n, ROW_NUMBER() OVER (ORDER BY n DESC) AS rn FROM (SELECT"
             + " k, COUNT(*) AS n FROM src GROUP BY k)) WHERE rn <= k";
     NativeParity.assertOrderedKindedParity(() -> environment(false, false), sql);
-    NativeParity.assertChangelogParity(() -> environment(false, false), sql);
     // Seed both aggregate phases before other keys can propose a different first bound.
     List<Row> prefix = new ArrayList<>();
     for (int i = 0; i < MINI_BATCH_SIZE * MINI_BATCH_SIZE; i++) {
@@ -247,7 +244,6 @@ class FlinkVariableTopNSqlHarnessTest {
       String plan = NativePlanner.explain(input.get(), sql);
       assertTrue(plan.contains("NativeColumnarTopN"), plan);
       NativeParity.assertOrderedKindedParity(input, sql);
-      NativeParity.assertChangelogParity(input, sql);
     }
   }
 

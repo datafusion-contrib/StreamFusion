@@ -71,7 +71,7 @@ jobs:
 
   all-tests:
     name: All upstream integration tests
-    if: ${{ always() }}
+    if: ${{ always() && !cancelled() }}
     needs: [upstream-line, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 10

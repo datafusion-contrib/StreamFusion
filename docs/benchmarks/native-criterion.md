@@ -19,6 +19,23 @@ kernel speedup does not establish current operator admission or complete-job
 acceleration. See [operator coverage](../operators/index.md) for support and
 [complete-job methodology](../benchmarks.md) for performance admission.
 
+The `array_search` suite exercises production ARRAY_CONTAINS/POSITION through compiled Calc,
+including result allocation, at 0/16/1,024 rows and 0/8/64 elements per array. Integer, BIGINT,
+BOOLEAN and precision-38 DECIMAL fixtures include NULL containers, NULL needles and elements,
+duplicates, misses and sliced input. Fixture construction and expected results stay outside
+timing; allocation and Arrow buffer reports accompany the checks. The scalar registry also
+covers their registrations (178/179), including constant-needle adaptation. Whole-job comparisons
+use `DynamicCollectionBenchmark` with both transposes and `collection.rustFunction` to verify
+the function engine instead of inferring Rust execution from NativeCalc alone.
+
+The `array_extrema` suite calls the production ARRAY_MIN/MAX registrations (180/181), which
+delegate to released DataFusion integer/DECIMAL kernels. Its 360 compiled-Calc fixtures cover
+0/16/1,024-row batches, widths 0/8/31/32/33/64, all four integer types and DECIMAL(38,9), with
+and without NULL parents/elements. The 31/32/33 cases cross the released scalar/Arrow reduction
+threshold. Expected results, sliced inputs and fixture construction stay outside timing;
+warm execution includes result allocation and reports allocation requests and buffer sharing.
+Scalar-registry fixtures cover both new registrations, including scalar adaptation.
+
 `scalar_functions` includes `scalar/uuid`, invoking the same volatile production UUID registration
 as native Calc for empty, 16, 1,024 and 16,384-row evaluations. It measures batch random generation,
 formatting and output allocation; fixture and schema setup remain outside timing. Full-job
@@ -35,11 +52,15 @@ The scalar registry also exercises the production CARDINALITY and TYPEOF selecti
 it returns that string without inspecting the collection's values. Collection benchmarks
 verify array/map cardinalities over sliced batches, NULL containers and empty maps.
 
-The registry includes computed UNNEST's scalar/timestamp ARRAY constructors and temporal
+The registry includes projected scalar and computed-UNNEST timestamp ARRAY constructors and temporal
 conversion helpers (171–177). Fixtures combine sliced nullable arrays with literals, pre-epoch
 timestamps, positive/negative UTC offsets and independently NULL offsets. All nine batch/null/
 Unicode profiles exercise these registrations; the completeness assertion covers helper kernels
 as well as functions directly exposed in SQL.
+The registry also covers ELEMENT (190) with mixed empty/singleton/NULL arrays,
+sliced inputs and nullable elements; multi-element exception parity is verified
+by the Rust and released Flink SQL regressions.
+
 
 Criterion benchmarks call production Rust implementations through thin adapters, with Arrow
 fixtures built before measurement. They isolate where allocation and materialization costs arise
@@ -351,6 +372,10 @@ Some historical suites use
 | Collection expression kernels | `collection_expressions` | ARRAY_DISTINCT over Boolean, integer and string arrays; CARDINALITY over arrays and maps; ARRAY_REVERSE/ARRAY_SLICE over structs carrying string caches and row kinds; immediate-UNNEST scalar ARRAY construction over numeric, Boolean, decimal, DATE/TIME and compact/expanded timestamp elements; bounded epoch conversion and UTC/JDK-offset-adjusted temporal casts (offset lookup excluded from native fixture timing and retained in complete jobs); sliced/null input, empty/short/large containers, unique/repeated values and wide UTF-8; expected outputs asserted |
 | Exact scalar JNI upcalls | `jvm_truncate` | Production Rust Calc/C Data export, Java reflection/generated row evaluation and Arrow result import; bounded DOUBLE TRUNCATE shortcut versus released Flink; nullable sliced input and fallback profiles |
 | Registered Flink scalar functions | `scalar_registry` | Every registered numeric opcode; completeness assertion requires a fixture for new registrations; ASCII/null/Unicode profiles |
+| Basic ARRAY searches | `array_search` | Compiled production CONTAINS/POSITION, 0/16/1024 rows, widths 0/8/64, INTEGER/BIGINT/BOOLEAN/DECIMAL, NULL parents/elements/needles, duplicates, misses and sliced buffers; warm expression execution with allocation and buffer probes |
+| Integer/DECIMAL ARRAY extrema | `array_extrema` | 360 compiled production MIN/MAX fixtures, 0/16/1024 rows, widths 0/8/31/32/33/64, four integer types and DECIMAL(38,9), sliced arrays and NULL parents/elements; released DataFusion scalar/Arrow paths, result allocation and buffer probes |
+| Basic ARRAY edits | `array_edits` | Production ARRAY_APPEND/PREPEND/REMOVE/CONCAT/UNION/EXCEPT/INTERSECT through compiled Calc; sliced inputs, 0/16/1024 rows, widths 0/8/64, integer/DECIMAL types and NULL parents/elements/needles; independent expected arrays, allocation requests and buffer probes |
+| Verified ARRAY sort | `array_sort` | Compiled released sort across 0/16/1024 rows, widths 0/8/31/64, four integer types and DECIMAL, sliced NULL-bearing inputs and all four ascending/null-order combinations; independent expected results and allocation probes |
 | Parameterized scalar kernels | `scalar_registry` | Decimal cast/round/truncate/arithmetic/float conversion, integer parse/format/divide, FROM_UNIXTIME, array item, literal/dynamic map lookup, random, clock, float comparison |
 | JSON decode | `json_decode`, `json_codecs` | Direct production decode, projection, wide messages, historical nested Nexmark corpus |
 | Raw decode | `raw_decode` | All admitted primitive/string/binary types, endianness, null bodies, slices |
@@ -2712,3 +2737,66 @@ empty values, event-time ROWS/RANGE and proctime ROWS. Fixture/operator construc
 outside timing. The measured production push/fire performs RocksDB frame and payload writes;
 checks compare independent membership counts and every returned payload. Native unit and Java
 operator fixtures separately cover checkpoint and canonical backend transitions.
+
+MAP_FROM_ARRAYS (191) has scalar-registry fixtures with sliced nullable and
+duplicate-key arrays at three batch sizes. Rust regressions verify aligned-buffer
+sharing, differing offsets, empty arrays, NULL suppression and typed errors; SQL
+fixtures retain both conversion boundaries.
+
+The scalar registry includes MAP_KEYS with sliced nullable map inputs and shared child buffers.
+
+MAP_VALUES uses the same verified basic-map admission and shared-buffer view, selecting the value child without changing NULLs or entry order.
+
+MAP_ENTRIES uses the same verified basic-map admission and reuses entry children
+as a list of nullable key/value rows, preserving order and parent NULLs. Consumers
+that inspect row representation or RowKind retain generated evaluation.
+
+MAP_UNION folds verified total basic maps left to right, propagating any NULL
+parent. Each nonempty right map emits all its entries first; unmatched non-NULL
+left keys are deduplicated, while all left NULL-key entries survive when the
+right map has no NULL key. An empty right map leaves the left duplicates intact.
+Typed hash membership and Arrow gathering avoid per-entry JVM objects. Variadic,
+sliced, empty and duplicate/NULL-key cases have production-kernel fixtures.
+
+Runtime MAP constructors use released Arrow array construction plus the nullable
+map carrier for total nullable basic keys/values. Keys must be distinct literal
+or input-reference expressions. Runtime equal keys remain separate entries;
+repeated/generated key expressions retain Flink evaluation because its constructor
+deduplicates generated expressions rather than runtime key values. Fallible
+operands also remain generated, including discarded value-expression cases.
+On Flink 1.18, multi-entry constructors also retain generated evaluation because
+the released constructor uses unordered generated-expression grouping. The Rust
+fixtures exercise the kernel, not permission to bypass this SQL admission rule;
+see [the constructor contract](../operators/calc-filter.md#collection-expressions).
+
+ROW constructors with total BOOLEAN/integer/DECIMAL fields reuse DataFusion's
+released named-struct builder, sharing field arrays. Fields retain their SQL
+names and nullable values; the constructed row itself is present with INSERT
+row kind. Other fields and representation-dependent row consumers remain generated.
+
+OBJECT_OF with validated class/field metadata and total basic fields reuses the
+released named-struct builder. Runtime values and field order match Flink's fresh
+GenericRowData construction; metadata validation still belongs to Flink planning.
+String/nested/temporal fields and fallible operands retain generated evaluation.
+
+OBJECT_UPDATE admits only one unshared inline basic OBJECT_OF construction in the
+complete Calc, with literal/input-reference field values and literal field names.
+It folds the field choices into the released named-struct builder. Flink still
+validates field names and rejects repeated update names during planning. Shared objects, runtime structured inputs,
+nested updates and non-atomic values retain generated evaluation to preserve
+Flink's in-place mutation, aliases, evaluation order and random/UDF effects.
+
+ARRAY_JOIN evaluates total nullable string arrays in Rust, skipping NULL elements
+in its two-argument form and propagating an explicit NULL replacement in its
+three-argument form. Every input is materialized separately to UTF-8 bytes before
+joining, as in Flink concatWs. Empty/all-skipped arrays yield an empty string.
+Runtime separators/replacements and isolated UTF-16 source surrogates have parity
+fixtures. A Calc that also projects original sensitive values or uses an unverified
+string/collection consumer retains generated evaluation, preserving their Java
+representation. Other array element types/nullability and fallible operands stay
+generated. DataFusion's explicit NULL replacement skips elements, so it is not a
+direct substitute for this Flink kernel.
+
+The scalar registry also exercises ELEMENT's Flink 1.18 exception variant (opcode 201); its successful extraction kernel is shared with the 2.2 variant.
+
+The scalar registry's `op=195/unary` profiles cover ordinary sliced nullable maps normalized to the MAP_UNION return carrier.

@@ -76,6 +76,37 @@ fn fixtures(rows: usize, nulls: bool, unicode: bool) -> Vec<(i64, Vec<ColumnarVa
         list.append(valid(row));
     }
     let lists = array(list.finish(), rows);
+    let singletons = array(
+        arrow::array::ListArray::from_iter_primitive::<arrow::datatypes::Int64Type, _, _>(
+            (0..rows + 1).map(|row| {
+                valid(row).then(|| {
+                    if row % 3 == 0 {
+                        vec![]
+                    } else {
+                        vec![(row % 5 != 0).then_some(row as i64)]
+                    }
+                })
+            }),
+        ),
+        rows,
+    );
+    let mut map = MapBuilder::new(None, Int64Builder::new(), Int64Builder::new());
+    for row in 0..rows + 1 {
+        for i in 0..4 {
+            map.keys().append_value(i);
+            map.values().append_option((i % 2 == 0).then_some(i));
+        }
+        map.append(valid(row)).unwrap();
+    }
+    let maps = array(map.finish(), rows);
+    let mut strings = arrow::array::ListBuilder::new(arrow::array::StringBuilder::new());
+    for row in 0..rows + 1 {
+        for value in [Some(text.as_str()), None, Some("")] {
+            strings.values().append_option(value);
+        }
+        strings.append(valid(row));
+    }
+    let string_lists = array(strings.finish(), rows);
     let mut cases = vec![
         (
             65,
@@ -180,14 +211,53 @@ fn fixtures(rows: usize, nulls: bool, unicode: bool) -> Vec<(i64, Vec<ColumnarVa
         (167, vec![lists.clone()]),
         (169, vec![lists.clone()]),
         (170, vec![lists.clone(), int(-2), int(-1)]),
-        (168, vec![lists, literal("ARRAY<BIGINT>")]),
+        (168, vec![lists.clone(), literal("ARRAY<BIGINT>")]),
         (171, vec![integers.clone(), long(42)]),
         (172, vec![times.clone(), times.clone()]),
-        (173, vec![integers]),
+        (173, vec![integers.clone()]),
         (174, vec![times.clone()]),
         (175, vec![times.clone(), int(1000)]),
         (176, vec![times.clone(), offsets.clone()]),
         (177, vec![times, offsets, int(1000)]),
+        (178, vec![lists.clone(), long(1)]),
+        (179, vec![lists.clone(), long(1)]),
+        (180, vec![lists.clone()]),
+        (181, vec![lists.clone()]),
+        (182, vec![lists.clone(), long(1)]),
+        (183, vec![lists.clone(), long(1)]),
+        (184, vec![lists.clone(), long(1)]),
+        (185, vec![lists.clone(), lists.clone()]),
+        (186, vec![lists.clone(), lists.clone()]),
+        (187, vec![lists.clone(), lists.clone()]),
+        (188, vec![lists.clone(), lists.clone()]),
+        (
+            189,
+            vec![lists.clone(), literal("ASC"), literal("NULLS FIRST")],
+        ),
+        (190, vec![singletons.clone()]),
+        (201, vec![singletons]),
+        (191, vec![lists.clone(), lists]),
+        (192, vec![maps.clone()]),
+        (193, vec![maps.clone()]),
+        (194, vec![maps.clone()]),
+        (195, vec![maps.clone(), maps]),
+        (
+            196,
+            vec![integers.clone(), long(2), long(3), integers.clone()],
+        ),
+        (
+            197,
+            vec![literal("f0"), integers.clone(), literal("f1"), long(2)],
+        ),
+        (
+            198,
+            vec![literal("a"), integers.clone(), literal("b"), long(2)],
+        ),
+        (
+            199,
+            vec![literal("a"), integers.clone(), literal("b"), long(2)],
+        ),
+        (200, vec![string_lists, string("|"), string("NULL")]),
     ];
     for op in [144, 145, 146, 147] {
         cases.push((op, vec![string("{\"a\":1}"), literal("13.0")]));
@@ -294,7 +364,11 @@ fn parameterized(
     add("from_unixtime", DataType::Int64, vec![ints.clone()]);
     add("array_item", list.data_type(), vec![list, long(2)]);
     add("map_lookup_literal", map.data_type(), vec![map.clone()]);
-    add("map_lookup_dynamic", map.data_type(), vec![map, long(1)]);
+    add(
+        "map_lookup_dynamic",
+        map.data_type(),
+        vec![map.clone(), long(1)],
+    );
     add(
         "float_comparison",
         DataType::Float64,
@@ -317,6 +391,11 @@ fn parameterized(
     ] {
         add(name, DataType::Int64, vec![]);
     }
+    cases.push((
+        "op=195/unary".into(),
+        flink_scalar_function(195, 1),
+        vec![map],
+    ));
     cases
 }
 

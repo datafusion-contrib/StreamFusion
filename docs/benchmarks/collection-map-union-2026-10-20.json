@@ -1,0 +1,22 @@
+{
+  "baseline_commit": "8798b8e6696447b80e2f63088131c9cab754395b",
+  "expression": "MAP_UNION(MAP_FROM_ARRAYS(arr,arr),MAP_FROM_ARRAYS(arr,arr))",
+  "rows": 2000000,
+  "warmups": 2,
+  "trials": 5,
+  "prior_stock_seconds": 1.114926541,
+  "prior_streamfusion_seconds": 1.189788958,
+  "stock_seconds": 1.115453958,
+  "streamfusion_seconds": 0.81872875,
+  "baseline_library_sha256": "7386a207a98876eec0e9c2101bead26ec9253edbbf01655f916fe867f36c1b58",
+  "candidate_library_sha256": "e79df2089bdc9ffd95e1e99bb32cd0896ccf3daea1fb58ce99af3a109231f6df",
+  "fixture": [
+    "map_union",
+    "MAP_UNION(MAP_FROM_ARRAYS(arr,arr),MAP_FROM_ARRAYS(arr,arr))",
+    "BIGINT",
+    8,
+    2000000
+  ],
+  "parent_null_period": 8,
+  "element_null_period": 7
+}

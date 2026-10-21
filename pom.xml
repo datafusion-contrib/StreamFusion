@@ -114,6 +114,12 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.10.2</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Arrow on the JVM is the marshalling glue this library owns: it fills the C Data
              Interface structs handed to native code and reads results back, so it ships with the
              library rather than being provided by the host. -->

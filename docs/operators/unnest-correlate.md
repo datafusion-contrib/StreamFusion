@@ -22,14 +22,31 @@ The operand may be a direct column, a nested array field, or an encodable comput
 `ON TRUE` followed by a separate encodable WHERE filter also composes; the WHERE remains a filter
 after expansion.
 
-Computed MAPs, STRING/ROW/MAP-bearing ARRAYs and LEFT element predicates use the released Flink
-correlate generator inside an Arrow-input/Arrow-output operator. This preserves the host's map
+Computed MAPs outside the verified native constructor signatures, STRING/ROW/MAP-bearing ARRAYs
+and LEFT element predicates use the released Flink correlate generator inside an
+Arrow-input/Arrow-output operator. This preserves the host's map
 constructor ordering, duplicate-key policy, generic/binary container behavior and LEFT padding
 after predicate evaluation. It covers verified builtin expressions; it does not expand admission
 for user functions. The existing Arrow take kernel remains the first choice for ordinary direct
-collections and native scalar ARRAY operands. The
-`streamfusion.experimental.collectionExpressions` switch also controls computed collection
+collections and native scalar ARRAY operands. On Flink 2.2, computed MAPs with total nullable basic
+key/value pairs and distinct literal/input-reference key expressions instead use the
+[native MAP constructor](calc-filter.md#collection-expressions) in a native Calc followed by
+ordinary Arrow UNNEST. This route retains NULL keys/values and runtime duplicate keys in
+constructor order; repeated syntactic keys, sensitive representations and unverified
+signatures retain generated evaluation. Its SQL regression matrix checks INNER/LEFT,
+append/updating inputs and ordinality where the released Flink catalog supports it, comparing
+ordered rows and result types and requiring Rust MAP diagnostics plus consumed Calc/UNNEST
+metrics. Flink 1.18 uses unordered generated-expression grouping for multi-entry MAP
+constructors, so those operands retain the released generator and compare row multisets
+without assuming construction order. Verified single-entry MAP constructors still use Rust.
+The `streamfusion.experimental.collectionExpressions` switch also controls computed collection
 operands on the generated route; `streamfusion.operator.unnest.enabled` controls both routes.
+
+The [MAP expansion validation inventory](../benchmarks/collection-map-expansion-validation-2026-10-20.json)
+records 93 related checks on Flink 2.2/JDK 17 and 70 passes with 23 capability skips
+on Flink 1.18/JDK 11. The 24-case MAP matrix includes runtime duplicate and NULL
+keys, two-row batches, both join modes and updating input. Native RocksDB recovery
+methods remain enabled in CI but are excluded from this local stateless check.
 
 The source transpose preserves collection representation and can prune unused input columns before
 generated expansion. Generated collection Calc results and other generated expansions are verified

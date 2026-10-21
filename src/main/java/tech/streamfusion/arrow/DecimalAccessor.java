@@ -30,7 +30,14 @@ public final class DecimalAccessor {
       // Flink's compact text parser may retain a rounding carry beyond the declared precision.
       vector.setSafe(row, value.toUnscaledLong());
     } else {
-      vector.setSafe(row, value.toBigDecimal());
+      BigDecimal decimal = value.toBigDecimal();
+      var unscaled = decimal.unscaledValue();
+      // Wide declared precision does not require a byte array when the actual value fits a long.
+      if (unscaled.bitLength() < Long.SIZE) {
+        vector.setSafe(row, unscaled.longValue());
+      } else {
+        vector.setSafe(row, decimal);
+      }
     }
   }
 }

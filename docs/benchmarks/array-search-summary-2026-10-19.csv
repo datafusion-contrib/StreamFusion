@@ -1,0 +1,53 @@
+cohort,query,rows,engine,median_seconds,min_seconds,max_seconds
+baseline-contains-bigint-64-miss,"ARRAY_CONTAINS(arr,CAST(12345 AS BIGINT))",2000000,stock,0.985051958,0.981854708,1.0021545
+baseline-contains-bigint-64-miss,"ARRAY_CONTAINS(arr,CAST(12345 AS BIGINT))",2000000,streamfusion,1.472931209,1.438940667,1.489301417
+baseline-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",2000000,stock,0.329056375,0.326157583,0.339047375
+baseline-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",2000000,streamfusion,0.493630291,0.47797425,0.529679792
+baseline-contains-boolean-8,"ARRAY_CONTAINS(arr,TRUE)",2000000,stock,0.304233084,0.297637334,0.315069375
+baseline-contains-boolean-8,"ARRAY_CONTAINS(arr,TRUE)",2000000,streamfusion,0.423073792,0.413020292,0.472284667
+baseline-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",2000000,stock,0.303842959,0.29933375,0.314731125
+baseline-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",2000000,streamfusion,0.459819542,0.450476083,0.470308292
+baseline-long-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",10000000,stock,1.370957792,1.349861459,1.406607167
+baseline-long-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",10000000,streamfusion,2.09963925,2.09022425,2.112907833
+baseline-long-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",10000000,stock,1.179444542,1.176041667,1.212163792
+baseline-long-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",10000000,streamfusion,1.927237542,1.92260525,1.932952458
+baseline-long-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",10000000,stock,1.381317667,1.36956,1.504632083
+baseline-long-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",10000000,streamfusion,2.175369791,2.172335583,2.192902875
+baseline-long-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",10000000,stock,3.582921542,3.550292208,3.623231917
+baseline-long-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",10000000,streamfusion,7.48152625,7.439508958,7.511615041
+baseline-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",2000000,stock,0.345478625,0.328767292,0.3496945
+baseline-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",2000000,streamfusion,0.508036041,0.494281875,0.534086125
+baseline-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",2000000,stock,0.755285,0.753692667,0.768573916
+baseline-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",2000000,streamfusion,1.567116292,1.561868292,1.577389334
+baseline-position-int-64,"ARRAY_POSITION(arr,idx)",2000000,stock,0.828653417,0.820139792,0.834049166
+baseline-position-int-64,"ARRAY_POSITION(arr,idx)",2000000,streamfusion,1.200762792,1.18412575,1.216218834
+baseline-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,stock,0.954802917,0.948855292,0.985892792
+baseline-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,streamfusion,2.016706042,2.0037605,2.028447417
+candidate-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",2000000,stock,0.333471709,0.320026625,0.353865083
+candidate-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",2000000,streamfusion,0.326101833,0.319532292,0.336136792
+candidate-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",2000000,stock,0.303675833,0.297530667,0.344436334
+candidate-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",2000000,streamfusion,0.312058458,0.305772833,0.343460125
+candidate-long-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",10000000,stock,1.403881458,1.353771209,1.425537709
+candidate-long-contains-bigint-8,"ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",10000000,streamfusion,1.381452625,1.365448166,1.394147042
+candidate-long-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",10000000,stock,1.224894834,1.212528,1.248323541
+candidate-long-contains-boolean-variable-8,"ARRAY_CONTAINS(arr,idx>0)",10000000,streamfusion,1.345061875,1.334309708,1.34593275
+candidate-long-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",10000000,stock,1.352340292,1.33680275,1.405156875
+candidate-long-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",10000000,streamfusion,1.372357875,1.367229292,1.38297525
+candidate-long-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",10000000,stock,3.774383042,3.752976709,3.807424167
+candidate-long-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",10000000,streamfusion,5.041353666,4.998933833,5.118004
+candidate-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",2000000,stock,0.330632,0.327232,0.383778791
+candidate-position-bigint-8,"ARRAY_POSITION(arr,CAST(idx AS BIGINT))",2000000,streamfusion,0.332359625,0.327701541,0.338318583
+candidate-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",2000000,stock,0.817472166,0.8081585,0.824984833
+candidate-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",2000000,streamfusion,1.12685875,1.112668625,1.138996042
+candidate-position-int-64,"ARRAY_POSITION(arr,idx)",2000000,stock,0.819693667,0.813097917,0.834754958
+candidate-position-int-64,"ARRAY_POSITION(arr,idx)",2000000,streamfusion,0.712874459,0.699955833,0.722104625
+kernel-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,stock,1.130547375,1.115951833,1.135565083
+kernel-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,streamfusion,1.47532275,1.459723708,1.507563708
+optimized-long-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",10000000,stock,3.774973,3.754091709,3.806582709
+optimized-long-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",10000000,streamfusion,4.360047667,4.326228042,4.3879625
+optimized-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",2000000,stock,0.816522375,0.808105292,0.832897083
+optimized-position-decimal-8,"ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",2000000,streamfusion,0.865803417,0.853033792,0.874284916
+optimized-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,stock,1.092587084,1.071088125,1.103166375
+optimized-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,streamfusion,1.426981708,1.396662,1.446564917
+optimized-repeat-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,stock,1.08559175,1.0784225,1.105309458
+optimized-repeat-position-wide-decimal-8,"ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",2000000,streamfusion,1.454255375,1.444017083,1.469906

@@ -1,7 +1,18 @@
 # Direct native integer ARRAY_MIN and ARRAY_MAX admission
 
-**Status:** rejected default admission, 2026-09-28. This does not close the broader
+**Status:** historical rejected standalone default admission, 2026-09-28. This does not close the broader
 collection issue [#234](https://github.com/datafusion-contrib/StreamFusion/issues/234).
+
+On 2026-10-20, matching nullable integer/DECIMAL signatures reuse the same released
+DataFusion kernels inside the collection extension already admitted by PR #393.
+This replaces its generated JVM evaluation under the previously accepted experimental
+tradeoff; it does not repeat the proposal to broaden ordinary standalone admission.
+[Current evidence](../../docs/optimizations/native-array-search.md#integer-and-decimal-array-extrema)
+compares that generated baseline and stock Flink, retaining ties and wide-decimal
+losses. The macOS results do not invalidate the Linux regression recorded below.
+The original registrations, validation counts and reproduction instructions below
+describe the discarded September revision; current opcodes are 180/181 and the
+current coverage gates live in [Calc/filter](../../docs/operators/calc-filter.md#collection-expressions).
 
 A prototype registered DataFusion 54's released `min_max::array_min_udf()` and
 `array_max_udf()` under scalar opcodes 166/167 and admitted a single ARRAY operand
@@ -83,7 +94,7 @@ improvement, potentially through the separately tracked boundary investigation
 [#248](https://github.com/datafusion-contrib/StreamFusion/issues/248). No boundary
 architecture is changed by this investigation.
 
-To reproduce the prototype, restore the two DataFusion registrations and the
+At the investigation revision, reproducing the prototype required restoring the two DataFusion registrations and the
 integer-only Java admissions described above, then vary function, rows and width:
 
 ```sh
@@ -94,7 +105,8 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
   -Dcollection.domain=8 -Dcollection.warmup=5
 ```
 
-On production admission this intentionally fails the native-plan assertion.
-For the previous behavior, leave admission unchanged and add
+On that revision's production admission this intentionally failed the native-plan assertion.
+The investigation's previous-behavior control left admission unchanged and added
 `-Dcollection.native=false` and
 `'-Dcollection.fallbackReason=unsupported function/operator: ARRAY_MIN'`.
+These fallback controls do not describe the current generated collection extension.

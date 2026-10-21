@@ -3,6 +3,8 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.*;
 import static tech.streamfusion.compat.FlinkTestSources.fromData;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.Schema;
@@ -13,6 +15,8 @@ import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class FlinkGeneratedUnnestSqlHarnessTest {
@@ -20,7 +24,6 @@ class FlinkGeneratedUnnestSqlHarnessTest {
   @ValueSource(
       strings = {
         "MAP['z',id,'a',n,'m',id+1]",
-        "MAP[id,n,n,id+1]",
         "MAP[id,n,id,id+1]",
         "MAP[s,id,'Aa',n,'BB',id+1]",
         "MAP[CAST(id AS TINYINT),CAST(n AS SMALLINT),CAST(n AS TINYINT),CAST(id AS SMALLINT)]",
@@ -33,11 +36,48 @@ class FlinkGeneratedUnnestSqlHarnessTest {
         "MAP[id,ROW(s,n),n,ROW(s,id)]",
         "MAP[ROW(s,id),ARRAY[n,id],ROW(s,n),ARRAY[id,n]]",
         "MAP[id,MAP[s,n],n,MAP['x',id]]",
-        "MAP[CAST(NULL AS BIGINT),id,id,n]",
         "MAP[CAST(s AS CHAR(5)),id,CAST('x' AS CHAR(5)),n]"
       })
   void computedMapScalarAndNestedTypesMatchTheReleasedHost(String operand) throws Exception {
     check("SELECT id,mk,mv FROM src CROSS JOIN UNNEST(" + operand + ") AS u(mk,mv)", false);
+  }
+
+  @ParameterizedTest
+  @MethodSource("basicMapExpansions")
+  void basicMapConstructorsUseTheReleasedExpansionRoute(
+      String operand, boolean updating, boolean left, boolean ordinality) throws Exception {
+    if (ordinality)
+      org.junit.jupiter.api.Assumptions.assumeTrue(
+          tech.streamfusion.compat.FlinkTestCapabilities.UNNEST_ORDINALITY);
+    String sql =
+        "SELECT id,mk,mv"
+            + (ordinality ? ",o" : "")
+            + " FROM src "
+            + (left ? "LEFT JOIN" : "CROSS JOIN")
+            + " UNNEST("
+            + operand
+            + ")"
+            + (ordinality ? " WITH ORDINALITY" : "")
+            + " AS u(mk,mv"
+            + (ordinality ? ",o" : "")
+            + ")"
+            + (left ? " ON TRUE" : "");
+    String expected =
+        operand.equals("MAP[id,n]") || tech.streamfusion.compat.FlinkCompat.ORDERED_MAP_CONSTRUCTORS
+            ? "NativeUnnest"
+            : "NativeGeneratedUnnest";
+    check(sql, updating, expected);
+  }
+
+  private static List<Arguments> basicMapExpansions() {
+    List<Arguments> cases = new ArrayList<>();
+    for (String operand :
+        List.of("MAP[id,n]", "MAP[id,n,n,id+1]", "MAP[CAST(NULL AS BIGINT),id,id,n]"))
+      for (boolean updating : new boolean[] {false, true})
+        for (boolean left : new boolean[] {false, true})
+          for (boolean ordinality : new boolean[] {false, true})
+            cases.add(Arguments.of(operand, updating, left, ordinality));
+    return cases;
   }
 
   @ParameterizedTest
@@ -293,7 +333,25 @@ class FlinkGeneratedUnnestSqlHarnessTest {
   }
 
   private static void check(String sql, boolean updating) throws Exception {
+    check(sql, updating, "NativeGeneratedUnnest");
+  }
+
+  private static void check(String sql, boolean updating, String expectedOperator) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
+      if (expectedOperator.equals("NativeUnnest")) {
+        var table = environment(updating, metrics);
+        var scan = tech.streamfusion.planner.NativePlanner.install(table);
+        String plan = table.explainSql(sql);
+        assertFalse(plan.contains("NativeGeneratedUnnest"), plan);
+        assertTrue(
+            scan.functionExecutions().stream()
+                .anyMatch(
+                    execution ->
+                        execution.contains("NativeUnnestOperand")
+                            && execution.contains("native=[MAP]")
+                            && execution.contains("jvm=[]")),
+            plan + scan.functionExecutions());
+      }
       var result = NativeFailureParity.run(() -> environment(updating, metrics), sql);
       if (org.apache.flink.runtime.util.EnvironmentInformation.getVersion().startsWith("1.18.")) {
         if (sql.contains("CAST(id AS TINYINT)")) {
@@ -330,10 +388,13 @@ class FlinkGeneratedUnnestSqlHarnessTest {
       }
       result.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(result.host().resultTypes(), result.nativeRun().resultTypes());
-      if (sql.contains("ORDINALITY")) assertEquals(result.host().rows(), result.nativeRun().rows());
+      if (sql.contains("ORDINALITY") || expectedOperator.equals("NativeUnnest"))
+        assertEquals(result.host().rows(), result.nativeRun().rows());
       assertTrue(
-          result.nativeRun().plan().contains("NativeGeneratedUnnest"), result.nativeRun().plan());
-      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeGeneratedUnnest");
+          result.nativeRun().plan().contains(expectedOperator), result.nativeRun().plan());
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), expectedOperator);
+      if (expectedOperator.equals("NativeUnnest"))
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
     }
   }
 

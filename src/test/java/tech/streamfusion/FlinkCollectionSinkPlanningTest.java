@@ -20,6 +20,7 @@ class FlinkCollectionSinkPlanningTest {
   @ValueSource(strings = {
     "ROW(id)|ROW<v INT>",
     "MAP[id,id]|MAP<INT,INT>",
+    "MAP_FROM_ARRAYS(ARRAY[id],ARRAY[id])|MAP<INT,INT>",
     "ARRAY[s]|ARRAY<STRING>",
     "ARRAY_JOIN(ARRAY[s],',')|STRING"
   })

@@ -1,0 +1,28 @@
+{
+  "flink118": {
+    "tests": 212,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 33,
+    "passed": 179
+  },
+  "flink22": {
+    "tests": 212,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 212
+  },
+  "rust_core": {
+    "passed": 672,
+    "failed": 0,
+    "ignored": 0
+  },
+  "criterion_array_search": {
+    "smoke_fixtures_passed": 144
+  },
+  "criterion_scalar_registry": {
+    "new_opcode_cases_passed": 18
+  },
+  "scope": "Selected collection SQL/representation and decimal boundary regression suites, not the full JVM or stateful recovery suite. Both selected Java suites use the release native library; new search tests have zero skips on both lines."
+}

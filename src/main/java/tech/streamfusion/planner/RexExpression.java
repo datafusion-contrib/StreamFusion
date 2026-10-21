@@ -429,6 +429,12 @@ final class RexExpression {
   private static CalcEncoding tryEncodeCalc(Calc calc, boolean unnestOperand) {
     RexExpression encoder = forCalc(calc);
     encoder.unnestOperand = unnestOperand;
+    if (NativeConfig.collectionExpressionsEnabled()
+        && unsafeDecimalArraySearch(calc.getProgram())) {
+      // The columnar JVM view cannot reproduce unchecked reads of NULL binary DECIMAL cells.
+      encoder.reject("ARRAY_CONTAINS requires Flink's binary DECIMAL array getter");
+      return new CalcEncoding(encoder, false);
+    }
     if ((NativeConfig.metadataExpressionsEnabled() || NativeConfig.collectionExpressionsEnabled())
         && calc.getProgram().getExprList().stream().anyMatch(encoder::unpairedMetadataIdentifier)) {
       encoder.reject("metadata identifiers containing unpaired UTF-16 require Flink");
@@ -502,6 +508,33 @@ final class RexExpression {
     return new CalcEncoding(encoder, supported);
   }
 
+  private static boolean unsafeArrayContains(RexCall call) {
+    var args = call.getOperands();
+    return "ARRAY_CONTAINS".equals(call.getOperator().getName())
+        && args.size() == 2
+        && args.get(0).getType().getSqlTypeName() == SqlTypeName.ARRAY
+        && args.get(0).getType().getComponentType().isNullable()
+        && (!args.get(1).getType().isNullable()
+            || RexUtil.isLiteral(args.get(1), true)
+                && !RexUtil.isNullLiteral(args.get(1), true));
+  }
+
+  private static boolean unsafeDecimalArraySearch(RexNode node) {
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    return unsafeArrayContains(call)
+            && call.getOperands().get(0).getType().getComponentType().getSqlTypeName()
+                == SqlTypeName.DECIMAL
+        || call.getOperands().stream().anyMatch(RexExpression::unsafeDecimalArraySearch);
+  }
+
+  private static boolean unsafeDecimalArraySearch(RexProgram program) {
+    return program.getProjectList().stream()
+            .anyMatch(ref -> unsafeDecimalArraySearch(program.expandLocalRef(ref)))
+        || program.getCondition() != null
+            && unsafeDecimalArraySearch(program.expandLocalRef(program.getCondition()));
+  }
+
   private boolean requiresFixedBinaryRow(RexProgram program) {
     for (int i = 0; i < program.getProjectList().size(); i++) {
       if (program.getProjectList().get(i).getType().getSqlTypeName() != SqlTypeName.BINARY)
@@ -548,6 +581,16 @@ final class RexExpression {
     encoder.expressionClassLoader =
         org.apache.flink.table.planner.utils.ShortcutUtils.unwrapClassLoader(calc);
     encoder.configure(org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(calc));
+    int[] constructions={0};
+    var objectVisitor=new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+      @Override public Void visitCall(RexCall call) {
+        if (call.getOperator().getName().equals("OBJECT_OF")) constructions[0]++;
+        return super.visitCall(call);
+      }
+    };
+    for(var project:calc.getProgram().getProjectList()) calc.getProgram().expandLocalRef(project).accept(objectVisitor);
+    if(calc.getProgram().getCondition()!=null)calc.getProgram().expandLocalRef(calc.getProgram().getCondition()).accept(objectVisitor);
+    encoder.uniqueObjectConstruction=constructions[0]==1;
     encoder.watermarkAvailable = true;
     encoder.javaStringInputs = HostStringInputs.areJavaBacked(calc.getInput());
     return encoder;
@@ -848,8 +891,9 @@ final class RexExpression {
           public Boolean visitCall(RexCall call) {
             if (isBuiltinDefinition(call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.TYPE_OF))
               return false;
-            if (containsRowType(call.getType())
-                || call.getOperands().stream().anyMatch(arg -> containsRowType(arg.getType())))
+            if (!createsFreshBasicRows(call)
+                && (containsRowType(call.getType())
+                    || call.getOperands().stream().anyMatch(arg -> containsRowType(arg.getType()))))
               return true;
             return call.getOperands().stream()
                 .anyMatch(arg -> Boolean.TRUE.equals(arg.accept(this)));
@@ -870,6 +914,25 @@ final class RexExpression {
       return true;
     return program.getProjectList().stream()
         .anyMatch(project -> Boolean.TRUE.equals(program.expandLocalRef(project).accept(visitor)));
+  }
+
+  private static boolean createsFreshBasicRows(RexCall call) {
+    return NativeConfig.collectionExpressionsEnabled()
+        && (nativeBasicRow(call)
+            || isBuiltinDefinition(
+                    call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.MAP_ENTRIES)
+                && call.getOperands().size() == 1
+                && nativeBasicMap(call.getOperands().get(0).getType()));
+  }
+
+  private static boolean nativeBasicRow(RexCall call) {
+    return call.getKind() == SqlKind.ROW
+        && tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) == null
+        && !call.getOperands().isEmpty()
+        && call.getOperands().stream().allMatch(arg ->
+            java.util.Set.of(SqlTypeName.BOOLEAN, SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+                    SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.DECIMAL)
+                .contains(arg.getType().getSqlTypeName()));
   }
 
   private static boolean containsCollectionStringFunction(RexProgram program) {
@@ -1483,6 +1546,88 @@ final class RexExpression {
     }
   }
 
+  private static boolean nativeBasicArray(RelDataType type) {
+    return type.getSqlTypeName() == SqlTypeName.ARRAY
+        && type.getComponentType().isNullable()
+        && java.util.Set.of(SqlTypeName.BOOLEAN, SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+                SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.DECIMAL)
+            .contains(type.getComponentType().getSqlTypeName());
+  }
+
+  private static boolean hostSupportsConstructorField(RelDataType type) {
+    return tech.streamfusion.compat.FlinkCompat.NARROW_CONSTRUCTORS_COMPILE
+        || !java.util.Set.of(SqlTypeName.TINYINT,SqlTypeName.SMALLINT).contains(type.getSqlTypeName());
+  }
+
+  static boolean nativeBasicMap(RelDataType type) {
+    return type.getSqlTypeName() == SqlTypeName.MAP
+        && java.util.stream.Stream.of(type.getKeyType(),type.getValueType()).allMatch(t ->
+            t.isNullable() && java.util.Set.of(SqlTypeName.BOOLEAN,SqlTypeName.TINYINT,
+                SqlTypeName.SMALLINT,SqlTypeName.INTEGER,SqlTypeName.BIGINT,SqlTypeName.DECIMAL)
+                .contains(t.getSqlTypeName()));
+  }
+
+  private boolean uniqueObjectConstruction;
+
+  static boolean nativeObjectUpdate(RexCall call) {
+    var args=call.getOperands();
+    if (!call.getOperator().getName().equals("OBJECT_UPDATE")
+        || tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
+        || args.size()<3 || args.size()%2!=1 || !(args.get(0) instanceof RexCall)
+        || !nativeObjectOf((RexCall)args.get(0))) return false;
+    var original=(RexCall)args.get(0);
+    for(int i=2;i<original.getOperands().size();i+=2)
+      if (!(original.getOperands().get(i) instanceof RexLiteral || original.getOperands().get(i) instanceof RexInputRef)) return false;
+    for(int i=1;i<args.size();i+=2) {
+      if (!(args.get(i) instanceof RexLiteral) || ((RexLiteral)args.get(i)).isNull()
+          || !(args.get(i+1) instanceof RexLiteral || args.get(i+1) instanceof RexInputRef)) return false;
+    }
+    return true;
+  }
+
+  static boolean nativeObjectOf(RexCall call) {
+    var args=call.getOperands();
+    if (!call.getOperator().getName().equals("OBJECT_OF")
+        || tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
+        || args.size()<3 || args.size()%2!=1
+        || !(args.get(0) instanceof RexLiteral) || ((RexLiteral)args.get(0)).isNull()
+        || call.getType().getFieldCount()!=(args.size()-1)/2) return false;
+    for(int i=1;i<args.size();i+=2) {
+      if (!(args.get(i) instanceof RexLiteral) || ((RexLiteral)args.get(i)).isNull()
+          || !java.util.Set.of(SqlTypeName.BOOLEAN,SqlTypeName.TINYINT,SqlTypeName.SMALLINT,
+              SqlTypeName.INTEGER,SqlTypeName.BIGINT,SqlTypeName.DECIMAL)
+              .contains(args.get(i+1).getType().getSqlTypeName())) return false;
+    }
+    return true;
+  }
+
+  static boolean nativeArrayJoin(RexCall call) {
+    var args=call.getOperands();
+    return call.getOperator().getName().equals("ARRAY_JOIN")
+        && tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) == null
+        && args.size()>=2 && args.size()<=3
+        && args.get(0).getType().getSqlTypeName()==SqlTypeName.ARRAY
+        && args.get(0).getType().getComponentType().isNullable()
+        && org.apache.calcite.sql.type.SqlTypeFamily.CHARACTER.contains(args.get(0).getType().getComponentType())
+        && args.stream().skip(1).allMatch(arg -> org.apache.calcite.sql.type.SqlTypeFamily.CHARACTER.contains(arg.getType()));
+  }
+
+  private static boolean verifiedSortInput(RexNode node) {
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) return false;
+    if (call.getOperator().getName().equals("ARRAY_DISTINCT")) return true;
+    if (call.getKind() == SqlKind.ARRAY_VALUE_CONSTRUCTOR) return call.getOperands().size() < 32;
+    if (!call.getOperator().getName().equals("ARRAY_SLICE") || call.getOperands().size() != 3)
+      return false;
+    var args = call.getOperands();
+    if (!(args.get(1) instanceof RexLiteral) || !(args.get(2) instanceof RexLiteral)
+        || ((RexLiteral) args.get(1)).isNull() || ((RexLiteral) args.get(2)).isNull()) return false;
+    Integer start = ((RexLiteral) args.get(1)).getValueAs(Integer.class);
+    Integer end = ((RexLiteral) args.get(2)).getValueAs(Integer.class);
+    return start != null && start == 1 && end != null && end >= 1 && end < 32;
+  }
+
   private boolean emitCall(RexCall call) {
     if (containsMetadataDependentDecimalRounding(call)) {
       if (!validateDecimalRoundingBoundary(call)) return false;
@@ -1502,7 +1647,73 @@ final class RexExpression {
     if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) {
       return emitUdf(call);
     }
-    if (unnestOperand
+    if (NativeConfig.collectionExpressionsEnabled() && call.getKind()==SqlKind.MAP_VALUE_CONSTRUCTOR) {
+      var args=call.getOperands();
+      java.util.Set<RexNode> keys=new java.util.HashSet<>();
+      if (!nativeBasicMap(call.getType()) || args.isEmpty() || args.size()%2!=0
+          || args.stream().anyMatch(this::requiresRowShortCircuit))
+        return reject("MAP uses Flink evaluation outside total nullable basic pairs");
+      if (args.size() > 2 && !tech.streamfusion.compat.FlinkCompat.ORDERED_MAP_CONSTRUCTORS)
+        return reject("MAP retains Flink 1.18's generated-expression grouping order");
+      for(int i=0;i<args.size();i+=2) {
+        RexNode key=args.get(i);
+        if (!(key instanceof RexLiteral || key instanceof RexInputRef) || !keys.add(key))
+          return reject("MAP retains Flink's generated-expression key deduplication");
+      }
+      if (!hostSupportsConstructorField(call.getType().getKeyType())
+          || !hostSupportsConstructorField(call.getType().getValueType()))
+        return reject("MAP retains Flink 1.18's narrow-constructor code-generation failure");
+      return emitBuiltinCall(call,196);
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && call.getKind()==SqlKind.ROW) {
+      if (call.getOperands().stream().anyMatch(arg -> !hostSupportsConstructorField(arg.getType())))
+        return reject("ROW retains Flink 1.18's narrow-constructor code-generation failure");
+      if (!nativeBasicRow(call)
+          || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit))
+        return reject("ROW uses Flink evaluation outside total basic fields");
+      add(KIND_CALL,197,call.getOperands().size()*2);
+      for(int i=0;i<call.getOperands().size();i++) {
+        if (!emitStringLiteral(call.getType().getFieldList().get(i).getName()) || !emit(call.getOperands().get(i))) return false;
+      }
+      return true;
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && call.getOperator().getName().equals("OBJECT_UPDATE")) {
+      if (!uniqueObjectConstruction || !nativeObjectUpdate(call))
+        return reject("OBJECT_UPDATE retains Flink mutation for shared or non-inline objects and non-atomic values");
+      var args=call.getOperands();var original=(RexCall)args.get(0);
+      java.util.Map<String,RexNode> fields=new java.util.LinkedHashMap<>();
+      for(int i=1;i<original.getOperands().size();i+=2)
+        fields.put(((RexLiteral)original.getOperands().get(i)).getValueAs(String.class),original.getOperands().get(i+1));
+      for(int i=1;i<args.size();i+=2)
+        fields.put(((RexLiteral)args.get(i)).getValueAs(String.class),args.get(i+1));
+      add(KIND_CALL,199,call.getType().getFieldCount()*2);
+      for(var field:call.getType().getFieldList()) {
+        RexNode value=fields.get(field.getName());
+        if (value==null || !emitStringLiteral(field.getName()) || !emit(value)) return false;
+      }
+      return true;
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && call.getOperator().getName().equals("OBJECT_OF")) {
+      if (!nativeObjectOf(call) || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit))
+        return reject("OBJECT_OF uses Flink evaluation outside total basic fields");
+      add(KIND_CALL,198,call.getOperands().size()-1);
+      for(int i=1;i<call.getOperands().size();i+=2) {
+        if (!emitStringLiteral(call.getType().getFieldList().get((i-1)/2).getName())
+            || !emit(call.getOperands().get(i+1))) return false;
+      }
+      return true;
+    }
+    if (call.getKind()==SqlKind.ARRAY_VALUE_CONSTRUCTOR
+        && !hostSupportsConstructorField(call.getType().getComponentType()))
+      return reject("ARRAY retains Flink 1.18's narrow-constructor code-generation failure");
+    boolean ordinaryArray = call.getKind() == SqlKind.ARRAY_VALUE_CONSTRUCTOR
+        && call.getType().getComponentType().isNullable()
+        && java.util.Set.of(SqlTypeName.BOOLEAN,SqlTypeName.TINYINT,SqlTypeName.SMALLINT,
+            SqlTypeName.INTEGER,SqlTypeName.BIGINT,SqlTypeName.DECIMAL,SqlTypeName.DATE,
+            SqlTypeName.TIME,SqlTypeName.TIMESTAMP,SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE)
+            .contains(call.getType().getComponentType().getSqlTypeName())
+        && call.getOperands().stream().noneMatch(this::requiresRowShortCircuit);
+    if ((unnestOperand || ordinaryArray)
         && call.getKind() == SqlKind.ARRAY_VALUE_CONSTRUCTOR
         && !call.getOperands().isEmpty()
         && NativeConfig.collectionExpressionsEnabled()) {
@@ -1899,6 +2110,128 @@ final class RexExpression {
     }
     if (jsonPredicate >= 0) {
       return emitIsJson(call, jsonPredicate, functionName.startsWith("IS NOT"));
+    }
+    if (NativeConfig.collectionExpressionsEnabled()
+        && ("ARRAY_CONTAINS".equals(functionName) || "ARRAY_POSITION".equals(functionName))) {
+      var args = call.getOperands();
+      if (args.size() != 2 || args.get(0).getType().getSqlTypeName() != SqlTypeName.ARRAY) {
+        return reject(functionName + " requires an ARRAY and a matching element");
+      }
+      var element = args.get(0).getType().getComponentType();
+      if (!java.util.Set.of(SqlTypeName.BOOLEAN, SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+                  SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.DECIMAL)
+              .contains(element.getSqlTypeName())
+          || !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+              element, args.get(1).getType())) {
+        return reject(functionName + " uses Flink evaluation outside matching basic element types");
+      }
+      if (args.stream().anyMatch(this::requiresRowShortCircuit)) {
+        return reject(functionName + " uses Flink evaluation for fallible arguments");
+      }
+      // Flink derives CONTAINS' element getter from the needle, including its nullability.
+      if (unsafeArrayContains(call)) {
+        return reject(functionName + " uses Flink evaluation for non-null needles");
+      }
+      return emitBuiltinCall(call, "ARRAY_CONTAINS".equals(functionName) ? 178 : 179);
+    }
+    if (NativeConfig.collectionExpressionsEnabled()
+        && ("ARRAY_APPEND".equals(functionName) || "ARRAY_PREPEND".equals(functionName)
+            || "ARRAY_REMOVE".equals(functionName))) {
+      var args = call.getOperands();
+      if (args.size() != 2 || !nativeBasicArray(args.get(0).getType())
+          || !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+              args.get(0).getType().getComponentType(), args.get(1).getType())
+          || args.stream().anyMatch(this::requiresRowShortCircuit)) {
+        return reject(functionName + " uses Flink evaluation outside total matching basic arrays");
+      }
+      return emitBuiltinCall(call, "ARRAY_APPEND".equals(functionName) ? 182
+          : "ARRAY_PREPEND".equals(functionName) ? 183 : 184);
+    }
+    if (NativeConfig.collectionExpressionsEnabled()
+        && ("ARRAY_CONCAT".equals(functionName) || "ARRAY_UNION".equals(functionName)
+            || "ARRAY_EXCEPT".equals(functionName) || "ARRAY_INTERSECT".equals(functionName))) {
+      var args = call.getOperands();
+      if (args.size() < 2 || !"ARRAY_CONCAT".equals(functionName) && args.size() != 2
+          || args.stream().anyMatch(arg -> !nativeBasicArray(arg.getType())
+              || !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
+                  args.get(0).getType(),arg.getType()) || requiresRowShortCircuit(arg))) {
+        return reject(functionName + " uses Flink evaluation outside total matching basic arrays");
+      }
+      return emitBuiltinCall(call,"ARRAY_CONCAT".equals(functionName) ? 185
+          : "ARRAY_UNION".equals(functionName) ? 186
+          : "ARRAY_EXCEPT".equals(functionName) ? 187 : 188);
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && ("MAP_KEYS".equals(functionName) || "MAP_VALUES".equals(functionName) || "MAP_ENTRIES".equals(functionName))) {
+      var args=call.getOperands();
+      if (args.size()!=1 || !nativeBasicMap(args.get(0).getType())
+          || requiresRowShortCircuit(args.get(0)))
+        return reject(functionName + " uses Flink evaluation outside total nullable basic maps");
+      return emitBuiltinCall(call,"MAP_KEYS".equals(functionName) ? 192 : "MAP_VALUES".equals(functionName) ? 193 : 194);
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && "MAP_UNION".equals(functionName)) {
+      var args=call.getOperands();
+      if (args.isEmpty() || args.stream().anyMatch(arg -> !nativeBasicMap(arg.getType())
+          || !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(args.get(0).getType(),arg.getType())
+          || requiresRowShortCircuit(arg)))
+        return reject("MAP_UNION uses Flink evaluation outside matching total nullable basic maps");
+      return emitBuiltinCall(call,195);
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && "ARRAY_JOIN".equals(functionName)) {
+      if (!nativeArrayJoin(call) || call.getOperands().stream().anyMatch(this::requiresRowShortCircuit))
+        return reject("ARRAY_JOIN uses Flink evaluation outside total nullable string arrays");
+      return emitBuiltinCall(call,200);
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && "MAP_FROM_ARRAYS".equals(functionName)) {
+      var args=call.getOperands();
+      if (args.size()!=2 || args.stream().anyMatch(arg->!nativeBasicArray(arg.getType())
+          || requiresRowShortCircuit(arg)))
+        return reject("MAP_FROM_ARRAYS uses Flink evaluation outside total basic nullable arrays");
+      return emitBuiltinCall(call,191);
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && "ELEMENT".equals(functionName)) {
+      var args=call.getOperands();
+      if (args.size()!=1 || !nativeBasicArray(args.get(0).getType())
+          || requiresRowShortCircuit(args.get(0)))
+        return reject("ELEMENT uses Flink evaluation outside total basic nullable arrays");
+      if (!tech.streamfusion.compat.FlinkCompat.TABLE_RUNTIME_ELEMENT_EXCEPTION
+          && java.util.Set.of(SqlTypeName.TINYINT,SqlTypeName.SMALLINT)
+              .contains(args.get(0).getType().getComponentType().getSqlTypeName()))
+        return reject("ELEMENT retains Flink 1.18's narrow-element code-generation failure");
+      return emitBuiltinCall(call,tech.streamfusion.compat.FlinkCompat.TABLE_RUNTIME_ELEMENT_EXCEPTION ? 190 : 201);
+    }
+    if (NativeConfig.collectionExpressionsEnabled() && "ARRAY_SORT".equals(functionName)) {
+      var args = call.getOperands();
+      if (args.isEmpty() || args.size() > 3 || !nativeBasicArray(args.get(0).getType())
+          || args.get(0).getType().getComponentType().getSqlTypeName() == SqlTypeName.BOOLEAN
+          || !verifiedSortInput(args.get(0)) || requiresRowShortCircuit(args.get(0))
+          || args.stream().skip(1).anyMatch(arg -> !(arg instanceof RexLiteral)
+              || ((RexLiteral) arg).isNull() || arg.getType().getSqlTypeName() != SqlTypeName.BOOLEAN)) {
+        return reject("ARRAY_SORT retains Flink's comparator behavior outside verified short or distinct arrays and constant options");
+      }
+      boolean ascending = args.size() < 2 || Boolean.TRUE.equals(((RexLiteral) args.get(1)).getValueAs(Boolean.class));
+      boolean nullFirst = args.size() < 3 ? ascending
+          : Boolean.TRUE.equals(((RexLiteral) args.get(2)).getValueAs(Boolean.class));
+      add(KIND_CALL,189,3);
+      if (!emit(args.get(0))) return false;
+      emitStringLiteral(ascending ? "ASC" : "DESC");
+      return emitStringLiteral(nullFirst ? "NULLS FIRST" : "NULLS LAST");
+    }
+    if (NativeConfig.collectionExpressionsEnabled()
+        && ("ARRAY_MIN".equals(functionName) || "ARRAY_MAX".equals(functionName))) {
+      var args = call.getOperands();
+      if (args.size() != 1 || args.get(0).getType().getSqlTypeName() != SqlTypeName.ARRAY
+          || !java.util.Set.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+                  SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.DECIMAL)
+              .contains(args.get(0).getType().getComponentType().getSqlTypeName())) {
+        return reject(functionName + " uses Flink evaluation outside integer and DECIMAL arrays");
+      }
+      if (!args.get(0).getType().getComponentType().isNullable()) {
+        return reject(functionName + " uses Flink evaluation for NOT NULL array elements");
+      }
+      if (requiresRowShortCircuit(args.get(0))) {
+        return reject(functionName + " uses Flink evaluation for fallible arguments");
+      }
+      return emitBuiltinCall(call, "ARRAY_MIN".equals(functionName) ? 180 : 181);
     }
     if ("ARRAY_DISTINCT".equals(functionName)) {
       if (call.getOperands().size() != 1
@@ -2492,6 +2825,9 @@ final class RexExpression {
     }
     String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
     List<RexNode> args = call.getOperands();
+    if (name.equals("ELEMENT")) return true;
+    if (name.equals("MAP_FROM_ARRAYS"))
+      return args.size()!=2 || !args.get(0).equals(args.get(1));
     if (call.getKind() == SqlKind.CAST
         && (call.getType().getSqlTypeName() == SqlTypeName.BOOLEAN
             || SqlTypeFamily.INTEGER.getTypeNames().contains(call.getType().getSqlTypeName()))

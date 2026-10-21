@@ -48,7 +48,6 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
     String plan = NativePlanner.explain(environment(false), sql);
     assertTrue(plan.contains("NativeColumnarTopN"), plan);
     NativeParity.assertOrderedKindedParity(() -> environment(false), sql);
-    NativeParity.assertChangelogParity(() -> environment(false), sql);
   }
 
   static Stream<Arguments> changingQueries() {
@@ -83,7 +82,6 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
     String plan = NativePlanner.explain(environment(false), sql);
     assertTrue(plan.contains("NativeColumnarTopN"), plan);
     NativeParity.assertOrderedKindedParity(() -> environment(false), sql);
-    NativeParity.assertChangelogParity(() -> environment(false), sql);
   }
 
   @ParameterizedTest
@@ -124,7 +122,6 @@ class FlinkUpdateFastVariableTopNSqlHarnessTest {
       String plan = NativePlanner.explain(environment(false), sql);
       assertTrue(plan.contains("NativeColumnarTopN"), plan);
       NativeParity.assertOrderedKindedParity(() -> environment(false), sql);
-      NativeParity.assertChangelogParity(() -> environment(false), sql);
       NativeParity.assertChangelogParity(() -> environment(true), sql);
     }
   }

@@ -1,0 +1,431 @@
+{
+  "date": "2026-10-20",
+  "scope": "Stateless collection expression parity, representation admission and sink planning",
+  "jvm_validation_method": "Expanded suite followed by focused sink and MAP_UNION rechecks; each suite records its latest successful report, rather than a single uninterrupted run.",
+  "jvm_profiles": [
+    {
+      "flink": "2.2.1",
+      "jdk": 17,
+      "totals": {
+        "tests": 429,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 429
+      },
+      "suites": [
+        {
+          "suite": "tech.streamfusion.FlinkArrayConstructorSqlHarnessTest",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayDistinctSqlHarnessTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayEditSqlHarnessTest",
+          "tests": 42,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayExtremaSqlHarnessTest",
+          "tests": 26,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayJoinSqlHarnessTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayRearrangementSqlHarnessTest",
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArraySearchSqlHarnessTest",
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArraySortSqlHarnessTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionCardinalitySqlHarnessTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionRepresentationSqlHarnessTest",
+          "tests": 39,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionSinkPlanningTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionStringBuiltinsSqlHarnessTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkDynamicCollectionSqlHarnessTest",
+          "tests": 53,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkElementSqlHarnessTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkGeneratedCollectionSqlHarnessTest",
+          "tests": 84,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapArraySqlHarnessTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapConstructorSqlHarnessTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapProjectionSqlHarnessTest",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapUnionSqlHarnessTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkNativeObjectSqlHarnessTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkObjectFunctionsSqlHarnessTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkRowConstructorSqlHarnessTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.arrow.ArrowConversionReadsAsTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.arrow.IntArrayWriterOwnershipTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.planner.CollectionValueIdentityTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    {
+      "flink": "1.18.1",
+      "jdk": 11,
+      "totals": {
+        "tests": 429,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 99,
+        "passed": 330
+      },
+      "suites": [
+        {
+          "suite": "tech.streamfusion.FlinkArrayConstructorSqlHarnessTest",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayDistinctSqlHarnessTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayEditSqlHarnessTest",
+          "tests": 42,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 24
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayExtremaSqlHarnessTest",
+          "tests": 26,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 13
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayJoinSqlHarnessTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArrayRearrangementSqlHarnessTest",
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArraySearchSqlHarnessTest",
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkArraySortSqlHarnessTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 11
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionCardinalitySqlHarnessTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionRepresentationSqlHarnessTest",
+          "tests": 39,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 11
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionSinkPlanningTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkCollectionStringBuiltinsSqlHarnessTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2
+        },
+        {
+          "suite": "tech.streamfusion.FlinkDynamicCollectionSqlHarnessTest",
+          "tests": 53,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2
+        },
+        {
+          "suite": "tech.streamfusion.FlinkElementSqlHarnessTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkGeneratedCollectionSqlHarnessTest",
+          "tests": 84,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 15
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapArraySqlHarnessTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapConstructorSqlHarnessTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapProjectionSqlHarnessTest",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkMapUnionSqlHarnessTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 12
+        },
+        {
+          "suite": "tech.streamfusion.FlinkNativeObjectSqlHarnessTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 3
+        },
+        {
+          "suite": "tech.streamfusion.FlinkObjectFunctionsSqlHarnessTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 6
+        },
+        {
+          "suite": "tech.streamfusion.FlinkRowConstructorSqlHarnessTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.arrow.ArrowConversionReadsAsTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.arrow.IntArrayWriterOwnershipTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.planner.CollectionValueIdentityTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    }
+  ],
+  "rust_core": {
+    "passed": 690,
+    "failed": 0,
+    "ignored": 0,
+    "profile": "release",
+    "default_features": false,
+    "features": [
+      "mimalloc"
+    ]
+  },
+  "criterion": [
+    {
+      "suite": "array_edits",
+      "passed": 630,
+      "mode": "release Criterion --test",
+      "scope": "compiled production Calc with independently constructed expected arrays"
+    },
+    {
+      "suite": "array_sort",
+      "passed": 480,
+      "mode": "release Criterion --test",
+      "scope": "compiled production Calc with independently constructed expected arrays"
+    },
+    {
+      "suite": "scalar_registry_collection_subset",
+      "passed": 240,
+      "mode": "release Criterion --test",
+      "scope": "opcodes 171,172,178-201, including six unary MAP_UNION profiles"
+    }
+  ],
+  "diagnostics": "SQL admission tests require function execution diagnostics containing jvm=[] for verified Rust signatures. Version-specific failures and representation-sensitive signatures retain their tested stock/generated routes.",
+  "skips": "The released Flink catalog and supported capability guards determine skips; no failing result comparison is reclassified as a pass.",
+  "unary_map_union": {
+    "sql_cases_flink22": 6,
+    "native_buffer_sharing_test": true,
+    "allocation_artifact": "collection-map-union-unary-allocations-2026-10-20.csv",
+    "whole_job_timing": "Not measured for the unary form. Existing MAP_UNION complete-job observations cover two arguments."
+  },
+  "checks": [
+    "cargo fmt --all -- --check",
+    "Native package and JNI export boundary validation",
+    "Changed documentation local-link validation"
+  ],
+  "not_run_locally": [
+    "full JVM test suite",
+    "external connector integration suite",
+    "stateful recovery suite"
+  ]
+}

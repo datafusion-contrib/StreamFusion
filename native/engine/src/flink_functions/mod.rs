@@ -31,15 +31,24 @@ pub(crate) mod split_index;
 pub(crate) mod substring;
 pub(crate) mod to_date;
 
+mod array_concat;
 mod array_constructor;
 mod array_distinct;
+mod array_edit;
+#[cfg(test)]
+mod array_extrema_tests;
 pub(crate) mod array_item;
+mod array_join;
+mod array_remove;
+mod array_search;
+mod array_set;
 mod array_slice;
 mod ascii;
 mod binary_strings;
 mod cardinality;
 mod charset;
 mod chr;
+mod element;
 mod hash_code;
 mod if_null;
 mod instr;
@@ -52,7 +61,11 @@ mod json_path;
 mod json_serialize;
 mod json_value;
 mod locate;
+mod map_arrays;
+mod map_constructor;
 pub(crate) mod map_lookup;
+mod map_projection;
+mod map_union;
 pub(crate) mod numeric;
 pub(crate) mod numeric_cast;
 mod scalar;
@@ -206,6 +219,38 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         175 => unnest_temporal::function(unnest_temporal::Operation::UtcTime),
         176 => unnest_temporal::function(unnest_temporal::Operation::ZonedDate),
         177 => unnest_temporal::function(unnest_temporal::Operation::ZonedTime),
+        178 => array_search::function(true),
+        179 => array_search::function(false),
+        180 => datafusion::functions_nested::min_max::array_min_udf()
+            .as_ref()
+            .clone(),
+        181 => datafusion::functions_nested::min_max::array_max_udf()
+            .as_ref()
+            .clone(),
+        182 => array_edit::function(false),
+        183 => array_edit::function(true),
+        184 => array_remove::function(),
+        185 => array_concat::function(arity),
+        186 => datafusion::functions_nested::set_ops::array_union_udf()
+            .as_ref()
+            .clone(),
+        187 => array_set::function(false),
+        188 => array_set::function(true),
+        189 => datafusion::functions_nested::sort::array_sort_udf()
+            .as_ref()
+            .clone(),
+        190 => element::function(false),
+        191 => map_arrays::function(),
+        192 => map_projection::function(0),
+        193 => map_projection::function(1),
+        194 => map_projection::function(2),
+        195 => map_union::function(arity),
+        196 => map_constructor::function(arity),
+        197 => datafusion::functions::core::named_struct().as_ref().clone(),
+        198 => datafusion::functions::core::named_struct().as_ref().clone(),
+        199 => datafusion::functions::core::named_struct().as_ref().clone(),
+        200 => array_join::function(arity),
+        201 => element::function(true),
         _ => return None,
     })
 }

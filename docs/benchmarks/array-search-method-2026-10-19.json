@@ -1,0 +1,80 @@
+{
+  "baseline_commit": "616691f5ae807727cffe215e6466bef5663e4a18",
+  "platform": "macOS arm64",
+  "java": "17.0.12+8-LTS-286",
+  "flink": "2.2.1",
+  "native": "release, mimalloc, no default RocksDB feature",
+  "parallelism": 1,
+  "heap": "2 GiB",
+  "warmups_per_engine": 2,
+  "measured_trials_per_engine": 5,
+  "row_source": true,
+  "row_sink": "blackhole",
+  "both_transposes_verified": true,
+  "local_zero_copy_exchange": false,
+  "timed_cohorts": 26,
+  "timed_observations": 260,
+  "scope": "Whole job, including planning/startup, both row/Arrow conversions and production JNI. Cohorts use fresh JVMs; stock and StreamFusion trials alternate. No other task build or test overlaps timing. Background desktop activity is uncontrolled.",
+  "stages": {
+    "baseline": "Original planner encoder, DECIMAL setter and native DSO, with identical benchmark fixture. Initial cases ran before implementation; remaining controls use the frozen original classes and DSO.",
+    "candidate": "Rust search kernels; original DECIMAL setter. Final non-DECIMAL code is unchanged by the later DECIMAL setter optimization.",
+    "optimized": "Rust search kernels plus signed-long write for wide-precision decimals whose actual unscaled value fits.",
+    "kernel": "Rust kernels with the frozen original DECIMAL setter; wide-value control.",
+    "optimized-repeat": "Repeat of the final wide-value control in another fresh JVM."
+  },
+  "unmatched_controls": [
+    "baseline-contains-bigint-64-miss",
+    "baseline-contains-boolean-8"
+  ],
+  "unmatched_reason": "Constant CONTAINS probes preceded discovery of needle-nullability restrictions. They do not represent an admitted Rust path and are excluded from primary comparisons.",
+  "baseline_native_sha256": "22c5ed37999ceed143e5cf6c49ef0e676ac7fc75cf700134e480183443dbef1f",
+  "candidate_native_sha256": "1ef35f04b09481b8ac913111ea3296f87ee85bd347bffc6d07f802a609d3160a",
+  "queries": [
+    [
+      "contains-bigint-8",
+      "ARRAY_CONTAINS(arr,CAST(idx AS BIGINT))",
+      "BIGINT",
+      8
+    ],
+    [
+      "position-bigint-8",
+      "ARRAY_POSITION(arr,CAST(idx AS BIGINT))",
+      "BIGINT",
+      8
+    ],
+    [
+      "position-int-64",
+      "ARRAY_POSITION(arr,idx)",
+      "INT",
+      64
+    ],
+    [
+      "contains-boolean-variable-8",
+      "ARRAY_CONTAINS(arr,idx>0)",
+      "BOOLEAN",
+      8
+    ],
+    [
+      "position-decimal-8",
+      "ARRAY_POSITION(arr,CAST(idx AS DECIMAL(38,18)))",
+      "DECIMAL",
+      8
+    ]
+  ],
+  "wide_decimal_offset": "9007199254740993",
+  "wide_decimal_query": "ARRAY_POSITION(arr,CAST(idx + 9007199254740993 AS DECIMAL(38,18)))",
+  "fixture": {
+    "widths": [
+      8,
+      64
+    ],
+    "domain": "equal to width",
+    "array_null_period": 8,
+    "element_null_period": 7,
+    "needle_null_period": 7,
+    "needle": "row % 6 - 1; BOOLEAN needle is idx > 0",
+    "array_values": "(31 * elementIndex + row) % domain - domain / 2; BOOLEAN uses parity; DECIMAL optionally adds decimalOffset before conversion to DECIMAL(38,18)"
+  },
+  "cpu": "Apple M4 Pro, 14 physical/logical cores",
+  "macos": "26.5"
+}
