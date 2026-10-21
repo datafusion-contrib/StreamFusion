@@ -3403,7 +3403,9 @@ impl LocalGroupAggregator {
             .iter()
             .enumerate()
             .map(|(i, column)| {
-                view_only[i] && column.is_some() && !self.distinct_view_sources.contains(&(i as i64))
+                view_only[i]
+                    && column.is_some()
+                    && !self.distinct_view_sources.contains(&(i as i64))
             })
             .collect();
         // Per aggregate, a string/timestamp MIN/MAX value column — folded as a scalar

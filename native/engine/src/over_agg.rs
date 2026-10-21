@@ -4,8 +4,8 @@ mod range_order;
 mod string_first_last;
 use range_order::HeapRangeOrder;
 mod string_extreme;
-mod string_views;
-use string_views::StringView;
+mod value_views;
+use value_views::ValueView;
 
 #[cfg(test)]
 mod tests;
@@ -105,12 +105,30 @@ impl OverResultColumn {
         }
     }
 
-    fn set_string_view(&mut self, row: usize, state: &StringView) {
-        let Self::Strings { values, caches } = self else {
-            unreachable!("STRING view output")
-        };
-        values[row] = state.selected().map(|value| value.text.clone());
-        caches[row] = state.selected().and_then(|value| value.cache.clone());
+    fn set_value_view(&mut self, row: usize, state: &ValueView, data_type: &DataType) {
+        match self {
+            Self::Strings { values, caches } => {
+                values[row] = state.selected().map(|value| value.text.clone());
+                caches[row] = state.selected().and_then(|value| value.cache.clone());
+            }
+            Self::Scalars(values) => {
+                values[row] = state
+                    .scalar()
+                    .cloned()
+                    .unwrap_or_else(|| null_scalar(data_type));
+            }
+            Self::Timestamps(values) => {
+                values[row] = state.scalar().map(|value| {
+                    let ScalarValue::Struct(array) = value else {
+                        unreachable!("timestamp selection carrier")
+                    };
+                    streamfusion_bridge::timestamp::TimestampColumn::try_new(array.as_ref())
+                        .unwrap()
+                        .value(0)
+                        .unwrap()
+                });
+            }
+        }
     }
 
     fn cache_array(&self, enabled: bool) -> Option<ArrayRef> {
@@ -314,15 +332,14 @@ impl OverAggState {
         retain: impl FnOnce() -> (Arc<str>, Option<Arc<[u16]>>),
     ) {
         if let Some(seen) = &mut self.distinct {
-            assert!(
-                matches!(self.agg, RunningAgg::Count(_)),
-                "text DISTINCT OVER count"
-            );
-            if seen.change_string(candidate, false, 1) {
-                self.distinct_payload_bytes += candidate.len();
-                self.agg.fold(Num::I64(0));
+            if !seen.change_string(candidate, false, 1) {
+                return;
             }
-            return;
+            self.distinct_payload_bytes += candidate.len();
+            if matches!(self.agg, RunningAgg::Count(_)) {
+                self.agg.fold(Num::I64(0));
+                return;
+            }
         }
         let RunningAgg::OverStringValue {
             value,
@@ -332,7 +349,6 @@ impl OverAggState {
         else {
             unreachable!("string OVER accumulator");
         };
-        assert!(self.distinct.is_none(), "string DISTINCT OVER admission");
         if value.as_deref().is_none_or(|current| match *kind {
             1 | 2 => {
                 let order = match (cache, java_utf16.as_deref()) {
@@ -814,7 +830,7 @@ pub(crate) struct BufferedRow {
 struct BufferedExtra {
     texts: Option<Box<[Option<Arc<str>>]>>,
     caches: Option<Box<[Option<Arc<[u16]>>]>>,
-    string_views: Option<Box<[StringView]>>,
+    value_views: Option<Box<[ValueView]>>,
     fold_state: Option<Vec<ScalarValue>>,
 }
 
@@ -828,7 +844,7 @@ impl BufferedRow {
             self.extra.get_or_insert_with(Default::default).fold_state = Some(state);
         } else if let Some(extra) = &mut self.extra {
             extra.fold_state = None;
-            if extra.texts.is_none() && extra.string_views.is_none() && extra.caches.is_none() {
+            if extra.texts.is_none() && extra.value_views.is_none() && extra.caches.is_none() {
                 self.extra = None;
             }
         }
@@ -890,9 +906,9 @@ impl BufferedRow {
     fn views_bytes(&self) -> usize {
         self.extra
             .as_ref()
-            .and_then(|extra| extra.string_views.as_ref())
+            .and_then(|extra| extra.value_views.as_ref())
             .map_or(0, |views| {
-                views.iter().map(StringView::bytes).sum::<usize>()
+                views.iter().map(ValueView::bytes).sum::<usize>()
                     + if self.extra.as_ref().unwrap().texts.is_none() {
                         std::mem::size_of::<BufferedExtra>()
                     } else {
@@ -901,8 +917,8 @@ impl BufferedRow {
             })
     }
 
-    fn take_string_views(&mut self) -> Option<Box<[StringView]>> {
-        let views = self.extra.as_mut()?.string_views.take();
+    fn take_value_views(&mut self) -> Option<Box<[ValueView]>> {
+        let views = self.extra.as_mut()?.value_views.take();
         self.prune_extra();
         views
     }
@@ -911,23 +927,23 @@ impl BufferedRow {
         if self.extra.as_ref().is_some_and(|extra| {
             extra.texts.is_none()
                 && extra.caches.is_none()
-                && extra.string_views.is_none()
+                && extra.value_views.is_none()
                 && extra.fold_state.is_none()
         }) {
             self.extra = None;
         }
     }
 
-    fn set_string_views(&mut self, views: Option<Box<[StringView]>>) {
+    fn set_value_views(&mut self, views: Option<Box<[ValueView]>>) {
         if let Some(views) = views {
-            self.extra.get_or_insert_with(Default::default).string_views = Some(views);
+            self.extra.get_or_insert_with(Default::default).value_views = Some(views);
         } else if let Some(extra) = &mut self.extra {
-            extra.string_views = None;
+            extra.value_views = None;
             self.prune_extra();
         }
     }
 
-    fn restore_string_views(&mut self, arithmetic_width: usize, kinds: &[i64]) {
+    fn restore_value_views(&mut self, arithmetic_width: usize, kinds: &[i64]) {
         let Some(extra) = &mut self.extra else {
             return;
         };
@@ -936,13 +952,13 @@ impl BufferedRow {
         };
         let encoded = fold.split_off(arithmetic_width);
         if encoded.iter().any(|value| !value.is_null()) {
-            extra.string_views = Some(
+            extra.value_views = Some(
                 encoded
                     .iter()
                     .zip(kinds)
                     .map(|(value, &kind)| match value {
-                        ScalarValue::Binary(Some(bytes)) => StringView::restore(kind, bytes),
-                        _ => StringView::new(kind),
+                        ScalarValue::Binary(Some(bytes)) => ValueView::restore(kind, bytes),
+                        _ => ValueView::new(kind),
                     })
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
@@ -960,7 +976,7 @@ impl BufferedRow {
         } else {
             self.extra
                 .as_ref()
-                .and_then(|extra| extra.string_views.as_ref())
+                .and_then(|extra| extra.value_views.as_ref())
                 .map_or_else(
                     || null_scalar(ty),
                     |views| ScalarValue::Binary(Some(views[column - arithmetic_width].snapshot())),
@@ -1015,7 +1031,7 @@ impl BufferedRow {
                 Box::new(BufferedExtra {
                     texts,
                     caches: None,
-                    string_views: None,
+                    value_views: None,
                     fold_state: fold,
                 })
             }),
@@ -1037,7 +1053,7 @@ pub(crate) struct BoundedOverAggregator {
     /// One value type per aggregate (aggregates may read different value columns of different types).
     value_types: Vec<DataType>,
     arithmetic_slots: Vec<usize>,
-    string_view_slots: Vec<usize>,
+    value_view_slots: Vec<usize>,
     arithmetic_width: usize,
     range_order: Option<HashMap<ByteKey, HeapRangeOrder>>,
     fold_types: Vec<DataType>,
@@ -1067,22 +1083,24 @@ impl BoundedOverAggregator {
             .flat_map(|&slot| OverAggState::new(kinds[slot], &value_types[slot]).state_types())
             .collect();
         let arithmetic_width = fold_types.len();
-        let string_view_slots = kinds
+        let value_view_slots = kinds
             .iter()
             .zip(&value_types)
             .enumerate()
             .filter_map(|(slot, (&kind, ty))| {
-                (matches!(kind, 1 | 2 | 5 | 6) && *ty == DataType::Utf8).then_some(slot)
+                ((matches!(kind, 1 | 2 | 5 | 6) && *ty == DataType::Utf8)
+                    || matches!(kind, 105 | 106))
+                .then_some(slot)
             })
             .collect::<Vec<_>>();
-        fold_types.extend(string_view_slots.iter().map(|_| DataType::Binary));
+        fold_types.extend(value_view_slots.iter().map(|_| DataType::Binary));
         BoundedOverAggregator {
             value_types,
             range_order: (!rows_frame
-                && (!arithmetic_slots.is_empty() || !string_view_slots.is_empty()))
+                && (!arithmetic_slots.is_empty() || !value_view_slots.is_empty()))
             .then(HashMap::default),
             arithmetic_slots,
-            string_view_slots,
+            value_view_slots,
             arithmetic_width,
             fold_types,
             kinds,
@@ -1145,9 +1163,8 @@ impl BoundedOverAggregator {
             mapping
                 .extend((0..width).map(|column| offsets.get(&slot).map(|offset| offset + column)));
         }
-        legacy_types.extend(self.string_view_slots.iter().map(|_| DataType::Binary));
-        mapping
-            .extend((0..self.string_view_slots.len()).map(|column| Some(string_offset + column)));
+        legacy_types.extend(self.value_view_slots.iter().map(|_| DataType::Binary));
+        mapping.extend((0..self.value_view_slots.len()).map(|column| Some(string_offset + column)));
         (legacy_types, mapping)
     }
 
@@ -1291,7 +1308,7 @@ impl BoundedOverAggregator {
                                         .collect::<Vec<_>>()
                                         .into_boxed_slice()
                                 }),
-                            string_views: None,
+                            value_views: None,
                             fold_state: None,
                         })
                     }),
@@ -1309,28 +1326,28 @@ impl BoundedOverAggregator {
             .map(|(&kind, ty)| OverResultColumn::new(&OverAggState::new(kind, ty).result_type(), n))
             .collect::<Vec<_>>();
         let mut running: HashMap<ByteKey, (usize, usize, Vec<OverAggState>)> = HashMap::default();
-        let mut string_running: HashMap<ByteKey, (usize, usize, Vec<StringView>)> =
+        let mut value_running: HashMap<ByteKey, (usize, usize, Vec<ValueView>)> =
             HashMap::default();
         let mut old_view_bytes = 0;
         for &row in &order {
             let key = keys_encoded.row(row).data();
             let i = buffer_index[row];
-            if !self.string_view_slots.is_empty() && !string_running.contains_key(key) {
+            if !self.value_view_slots.is_empty() && !value_running.contains_key(key) {
                 let views = (i > 0)
                     .then(|| {
                         let previous = &mut self.keys.get_mut(key).unwrap()[i - 1];
                         old_view_bytes += previous.views_bytes();
-                        previous.take_string_views()
+                        previous.take_value_views()
                     })
                     .flatten()
                     .map(|views| views.into_vec())
                     .unwrap_or_else(|| {
-                        self.string_view_slots
+                        self.value_view_slots
                             .iter()
-                            .map(|&slot| StringView::new(self.kinds[slot]))
+                            .map(|&slot| ValueView::new(self.kinds[slot]))
                             .collect()
                     });
-                string_running.insert(ByteKey::from(key), (0, i, views));
+                value_running.insert(ByteKey::from(key), (0, i, views));
             }
             if serialized_strings && i > 0 {
                 let prior = &mut self
@@ -1355,11 +1372,11 @@ impl BoundedOverAggregator {
                 (lo, hi)
             };
             let mut expired_rows: Vec<usize> =
-                if !self.arithmetic_slots.is_empty() || !self.string_view_slots.is_empty() {
+                if !self.arithmetic_slots.is_empty() || !self.value_view_slots.is_empty() {
                     let old_lower = running
                         .get(key)
                         .map(|cursor| cursor.0)
-                        .or_else(|| string_running.get(key).map(|cursor| cursor.0))
+                        .or_else(|| value_running.get(key).map(|cursor| cursor.0))
                         .unwrap_or(0);
                     (old_lower..lower).collect()
                 } else {
@@ -1455,29 +1472,33 @@ impl BoundedOverAggregator {
                     results[slot].set(row, state);
                 }
             }
-            if let Some((old_lower, folded_end, views)) = string_running.get_mut(key) {
+            if let Some((old_lower, folded_end, views)) = value_running.get_mut(key) {
                 for view in views.iter_mut() {
                     view.set_persistent(persistent_strings);
                 }
                 for &index in &expired_rows {
                     let expired = &buffer[index];
-                    for (&slot, view) in self.string_view_slots.iter().zip(views.iter_mut()) {
+                    for (&slot, view) in self.value_view_slots.iter().zip(views.iter_mut()) {
                         if let Some(text) = expired.text_value(slot) {
                             view.retract(text, expired.java_cache(slot));
+                        } else if let Some(value) = expired.values[slot] {
+                            view.retract_num(value, &self.value_types[slot]);
                         }
                     }
                 }
                 for added in &buffer[*folded_end..=upper] {
-                    for (&slot, view) in self.string_view_slots.iter().zip(views.iter_mut()) {
+                    for (&slot, view) in self.value_view_slots.iter().zip(views.iter_mut()) {
                         if let Some(text) = added.text_value(slot) {
                             view.add(text, added.java_cache(slot));
+                        } else if let Some(value) = added.values[slot] {
+                            view.add_num(value, &self.value_types[slot]);
                         }
                     }
                 }
                 *old_lower = lower;
                 *folded_end = upper + 1;
-                for (&slot, view) in self.string_view_slots.iter().zip(views.iter()) {
-                    results[slot].set_string_view(row, view);
+                for (&slot, view) in self.value_view_slots.iter().zip(views.iter()) {
+                    results[slot].set_value_view(row, view, &self.value_types[slot]);
                 }
                 if serialized_strings {
                     for view in views {
@@ -1491,7 +1512,7 @@ impl BoundedOverAggregator {
                 .zip(&self.value_types)
                 .enumerate()
                 .filter(|(slot, _)| {
-                    !self.arithmetic_slots.contains(slot) && !self.string_view_slots.contains(slot)
+                    !self.arithmetic_slots.contains(slot) && !self.value_view_slots.contains(slot)
                 })
                 .map(|(slot, (&kind, ty))| (slot, OverAggState::new(kind, ty)))
                 .collect();
@@ -1527,9 +1548,9 @@ impl BoundedOverAggregator {
         }
 
         let mut new_view_bytes = 0;
-        for (key, (_, _, views)) in string_running {
+        for (key, (_, _, views)) in value_running {
             let row = self.keys.get_mut(&*key.0).unwrap().last_mut().unwrap();
-            row.set_string_views(Some(views.into_boxed_slice()));
+            row.set_value_views(Some(views.into_boxed_slice()));
             new_view_bytes += row.views_bytes();
         }
         if self.track {
@@ -1563,7 +1584,7 @@ impl BoundedOverAggregator {
     fn evict(&mut self) {
         let (rows_frame, offset) = (self.rows_frame, self.offset);
         let (track, row_bytes, fold_bytes) = (self.track, self.row_bytes(), self.fold_bytes());
-        let incremental = !self.arithmetic_slots.is_empty() || !self.string_view_slots.is_empty();
+        let incremental = !self.arithmetic_slots.is_empty() || !self.value_view_slots.is_empty();
         let mut freed = 0usize;
         self.keys.retain(|key, buffer| {
             let dropped = if rows_frame {
@@ -1730,7 +1751,7 @@ impl BoundedOverAggregator {
                 let buffer = aggregator.keys.entry(key).or_default();
                 if let Some(previous) = buffer.last_mut() {
                     previous.set_fold_state(None);
-                    previous.set_string_views(None);
+                    previous.set_value_views(None);
                 }
                 let fold = (!aggregator.fold_types.is_empty()).then(|| {
                     mapping
@@ -1756,10 +1777,10 @@ impl BoundedOverAggregator {
                     &aggregator.kinds,
                     fold,
                 ));
-                buffer.last_mut().unwrap().restore_string_views(
+                buffer.last_mut().unwrap().restore_value_views(
                     aggregator.arithmetic_width,
                     &aggregator
-                        .string_view_slots
+                        .value_view_slots
                         .iter()
                         .map(|&slot| aggregator.kinds[slot])
                         .collect::<Vec<_>>(),
@@ -2557,7 +2578,7 @@ impl OverWindowAggregator {
     ) {
         assert!(
             matches!(&self.inner, OverInner::Bounded(inner)
-                if inner.range_order.is_some() || !inner.string_view_slots.is_empty()),
+                if inner.range_order.is_some() || !inner.value_view_slots.is_empty()),
             "heap incremental OVER copy probe shape"
         );
         self.heap_snapshot_probe = Some(HeapSnapshotProbe {
@@ -3292,8 +3313,7 @@ impl OverWindowAggregator {
         let OverInner::Bounded(inner) = &self.inner else {
             return;
         };
-        if (values && inner.string_view_slots.is_empty())
-            || (!values && inner.range_order.is_none())
+        if (values && inner.value_view_slots.is_empty()) || (!values && inner.range_order.is_none())
         {
             return;
         }
@@ -3337,15 +3357,15 @@ impl OverWindowAggregator {
                 .and_then(|keys| keys.get_mut(key))
                 .and_then(|rows| rows.last_mut())
                 .and_then(|row| row.extra.as_mut())
-                .and_then(|extra| extra.string_views.as_mut())
+                .and_then(|extra| extra.value_views.as_mut())
             {
-                let before = views.iter().map(StringView::bytes).sum::<usize>();
+                let before = views.iter().map(ValueView::bytes).sum::<usize>();
                 for view in views.iter_mut() {
                     view.copy_heap();
                 }
                 if inner.track {
                     inner.bytes =
-                        inner.bytes - before + views.iter().map(StringView::bytes).sum::<usize>();
+                        inner.bytes - before + views.iter().map(ValueView::bytes).sum::<usize>();
                 }
             }
         }
@@ -3809,10 +3829,10 @@ impl OverWindowAggregator {
                             (index + 1 == row_count && !inner.fold_types.is_empty())
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
-                        frame.restore_string_views(
+                        frame.restore_value_views(
                             inner.arithmetic_width,
                             &inner
-                                .string_view_slots
+                                .value_view_slots
                                 .iter()
                                 .map(|&slot| inner.kinds[slot])
                                 .collect::<Vec<_>>(),
@@ -4348,7 +4368,7 @@ impl OverWindowAggregator {
             if let Some(views) = rows
                 .last_mut()
                 .and_then(|row| row.extra.as_mut())
-                .and_then(|extra| extra.string_views.as_mut())
+                .and_then(|extra| extra.value_views.as_mut())
             {
                 for view in views.iter_mut() {
                     view.restore_canonical_order();
@@ -4446,10 +4466,10 @@ impl OverWindowAggregator {
                             (index + 1 == row_count && !inner.fold_types.is_empty())
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
-                        frame.restore_string_views(
+                        frame.restore_value_views(
                             inner.arithmetic_width,
                             &inner
-                                .string_view_slots
+                                .value_view_slots
                                 .iter()
                                 .map(|&slot| inner.kinds[slot])
                                 .collect::<Vec<_>>(),

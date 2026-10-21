@@ -62,20 +62,38 @@ class OverBasicValuesBenchmark {
     if (rows < 1 || keys < 1 || warmups < 1 || runs < 3)
       throw new IllegalArgumentException("Invalid fixture");
     int engines = Integer.getInteger("over.values.engines", 3);
-    if (engines < 2 || engines > 3) throw new IllegalArgumentException("Expected two or three engines");
+    if (engines < 2 || engines > 3)
+      throw new IllegalArgumentException("Expected two or three engines");
     boolean countOnly = Boolean.getBoolean("over.values.countOnly");
     boolean distinctCount = Boolean.getBoolean("over.values.distinctCount");
     boolean expectNative =
         Boolean.parseBoolean(System.getProperty("over.values.expectNative", "true"));
-    String reductions = countOnly ? "COUNT(v) OVER w" : "COUNT(v) OVER w, MIN(v) OVER w, MAX(v) OVER w";
+    String reductions =
+        countOnly ? "COUNT(v) OVER w" : "COUNT(v) OVER w, MIN(v) OVER w, MAX(v) OVER w";
     if (distinctCount) reductions = "COUNT(DISTINCT v) OVER w";
-    if (!distinctCount && !countOnly && (!(type.equals("timestamp") || type.equals("ltz") || type.equals("date") || type.equals("time"))
-        || tech.streamfusion.compat.RuntimeCompat.supportsTemporalOverFirstLast())) {
+    if (!distinctCount
+        && !countOnly
+        && (!(type.equals("timestamp")
+                || type.equals("ltz")
+                || type.equals("date")
+                || type.equals("time"))
+            || tech.streamfusion.compat.RuntimeCompat.supportsTemporalOverFirstLast())) {
       reductions += ", FIRST_VALUE(v) OVER w, LAST_VALUE(v) OVER w";
     }
-    if (!distinctCount && !countOnly && type.equals("decimal")) reductions += ", SUM(v) OVER w, AVG(v) OVER w";
+    if (!distinctCount && !countOnly && type.equals("decimal"))
+      reductions += ", SUM(v) OVER w, AVG(v) OVER w";
     if (Boolean.getBoolean("over.values.distinctReductions"))
       reductions = "SUM(DISTINCT v) OVER w, AVG(DISTINCT v) OVER w, COUNT(DISTINCT v) OVER w";
+    if (Boolean.getBoolean("over.values.distinctSelections")) {
+      reductions = "COUNT(DISTINCT v) OVER w, MIN(DISTINCT v) OVER w, MAX(DISTINCT v) OVER w";
+      if (!(type.equals("timestamp")
+              || type.equals("ltz")
+              || type.equals("date")
+              || type.equals("time"))
+          || tech.streamfusion.compat.RuntimeCompat.supportsTemporalOverFirstLast()) {
+        reductions += ", FIRST_VALUE(DISTINCT v) OVER w, LAST_VALUE(DISTINCT v) OVER w";
+      }
+    }
     String query =
         "SELECT k, "
             + reductions

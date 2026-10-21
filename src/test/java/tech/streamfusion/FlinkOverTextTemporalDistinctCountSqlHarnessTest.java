@@ -39,10 +39,22 @@ class FlinkOverTextTemporalDistinctCountSqlHarnessTest {
   void distinctCountsPreserveStringBytesTemporalFractionsAndPeers(
       String column, String order, String frame) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
-      var comparison = NativeFailureParity.run(() -> environment(metrics),
-          "SELECT id, k, s, COUNT(DISTINCT " + column + ") OVER w, COUNT(" + column + ") OVER w"
-              + (column.contains("CHAR") ? "" : ", MIN(" + column + ") OVER w, MAX(" + column + ") OVER w")
-              + " FROM src WINDOW w AS (PARTITION BY k ORDER BY " + order + " " + frame + ")");
+      var comparison =
+          NativeFailureParity.run(
+              () -> environment(metrics),
+              "SELECT id, k, s, COUNT(DISTINCT "
+                  + column
+                  + ") OVER w, COUNT("
+                  + column
+                  + ") OVER w"
+                  + (column.contains("CHAR")
+                      ? ""
+                      : ", MIN(" + column + ") OVER w, MAX(" + column + ") OVER w")
+                  + " FROM src WINDOW w AS (PARTITION BY k ORDER BY "
+                  + order
+                  + " "
+                  + frame
+                  + ")");
       comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
       RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeOverAggregate");
@@ -60,10 +72,30 @@ class FlinkOverTextTemporalDistinctCountSqlHarnessTest {
         rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap",
         rows, types(), schema(false).watermark("rt", "SOURCE_WATERMARK()").build(), false, 11, 23)
         .withExecutionMetrics().withWatermarks(java.util.Map.of(9, 1000L, 18, 1400L, 27, 1800L, 36, 5000L))) {
-      var comparison = NativeFailureParity.runRecovery(recovery::uninterrupted, recovery,
-          "SELECT id, k, s, COUNT(DISTINCT s) OVER w, COUNT(DISTINCT t) OVER w, COUNT(DISTINCT z) OVER w,"
-              + " MIN(s) OVER w, MAX(t) OVER w, COUNT(*) OVER w FROM recovery_input"
-              + " WINDOW w AS (PARTITION BY k ORDER BY rt " + bounds[frame] + ")");
+      String selections =
+          ", FIRST_VALUE(DISTINCT s) OVER w, LAST_VALUE(DISTINCT s) OVER w,"
+              + " FIRST_VALUE(DISTINCT (MOD(id, 4) = 0)) OVER w,"
+              + " LAST_VALUE(DISTINCT (MOD(id, 4) = 0)) OVER w,"
+              + " FIRST_VALUE(DISTINCT CAST(MOD(id, 5) AS DECIMAL(20,3))) OVER w,"
+              + " LAST_VALUE(DISTINCT CAST(MOD(id, 5) AS DECIMAL(20,3))) OVER w";
+      if (tech.streamfusion.compat.RuntimeCompat.supportsTemporalOverFirstLast()) {
+        selections +=
+            ", FIRST_VALUE(DISTINCT CAST(t AS DATE)) OVER w,"
+                + " LAST_VALUE(DISTINCT CAST(t AS DATE)) OVER w,"
+                + " FIRST_VALUE(DISTINCT t) OVER w, LAST_VALUE(DISTINCT t) OVER w,"
+                + " FIRST_VALUE(DISTINCT z) OVER w, LAST_VALUE(DISTINCT z) OVER w";
+      }
+      var comparison =
+          NativeFailureParity.runRecovery(
+              recovery::uninterrupted,
+              recovery,
+              "SELECT id, k, s, COUNT(DISTINCT s) OVER w, COUNT(DISTINCT t) OVER w, COUNT(DISTINCT"
+                  + " z) OVER w, MIN(s) OVER w, MAX(t) OVER w, COUNT(*) OVER w"
+                  + selections
+                  + " FROM recovery_input"
+                  + " WINDOW w AS (PARTITION BY k ORDER BY rt "
+                  + bounds[frame]
+                  + ")");
       comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
       recovery.verifyRepeatedRecovery();
@@ -76,25 +108,48 @@ class FlinkOverTextTemporalDistinctCountSqlHarnessTest {
   @CsvSource({"0,false", "3,false", "6,false", "9,false", "0,true", "3,true", "6,true", "9,true"})
   void runtimePrecisionMatchesTheReleasedTimestampSerializer(int precision, boolean ltz) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
-      var comparison = NativeFailureParity.run(() -> {
-        var env = metrics.environment(new Configuration(), 1, 0);
-        var table = StreamTableEnvironment.create(env);
-        table.getConfig().setLocalTimeZone(ZoneOffset.ofHoursMinutes(5, 45));
-        var type = DataTypes.ROW(DataTypes.FIELD("id", DataTypes.INT()),
-            DataTypes.FIELD("v", ltz ? DataTypes.TIMESTAMP_LTZ(precision) : DataTypes.TIMESTAMP(precision)),
-            DataTypes.FIELD("ts", DataTypes.BIGINT()));
-        var source = env.fromSequence(0, 23).map(id -> {
-          var time = timeValue(id.intValue());
-          return Row.of(id.intValue(), id % 7 == 0 ? null : ltz ? time.toInstant(ZoneOffset.UTC) : time,
-              1000L + id / 3 * 400L);
-        }).returns(org.apache.flink.table.runtime.typeutils.ExternalTypeInfo.<Row>of(type))
-            .assignTimestampsAndWatermarks(WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofDays(1))
-                .withTimestampAssigner((value, old) -> (Long) value.getField(2)));
-        table.createTemporaryView("precision_input", source, Schema.newBuilder().fromRowDataType(type)
-            .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
-            .watermark("rt", "SOURCE_WATERMARK()").build());
-        return table;
-      }, "SELECT id, COUNT(DISTINCT v) OVER (ORDER BY rt ROWS UNBOUNDED PRECEDING) FROM precision_input");
+      var comparison =
+          NativeFailureParity.run(
+              () -> {
+                var env = metrics.environment(new Configuration(), 1, 0);
+                var table = StreamTableEnvironment.create(env);
+                table.getConfig().setLocalTimeZone(ZoneOffset.ofHoursMinutes(5, 45));
+                var type =
+                    DataTypes.ROW(
+                        DataTypes.FIELD("id", DataTypes.INT()),
+                        DataTypes.FIELD(
+                            "v",
+                            ltz
+                                ? DataTypes.TIMESTAMP_LTZ(precision)
+                                : DataTypes.TIMESTAMP(precision)),
+                        DataTypes.FIELD("ts", DataTypes.BIGINT()));
+                var source =
+                    env.fromSequence(0, 23)
+                        .map(
+                            id -> {
+                              var time = timeValue(id.intValue());
+                              return Row.of(
+                                  id.intValue(),
+                                  id % 7 == 0 ? null : ltz ? time.toInstant(ZoneOffset.UTC) : time,
+                                  1000L + id / 3 * 400L);
+                            })
+                        .returns(
+                            org.apache.flink.table.runtime.typeutils.ExternalTypeInfo.<Row>of(type))
+                        .assignTimestampsAndWatermarks(
+                            WatermarkStrategy.<Row>forBoundedOutOfOrderness(Duration.ofDays(1))
+                                .withTimestampAssigner((value, old) -> (Long) value.getField(2)));
+                table.createTemporaryView(
+                    "precision_input",
+                    source,
+                    Schema.newBuilder()
+                        .fromRowDataType(type)
+                        .columnByMetadata("rt", DataTypes.TIMESTAMP_LTZ(3), "rowtime")
+                        .watermark("rt", "SOURCE_WATERMARK()")
+                        .build());
+                return table;
+              },
+              "SELECT id, COUNT(DISTINCT v) OVER (ORDER BY rt ROWS UNBOUNDED PRECEDING) FROM"
+                  + " precision_input");
       comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
       RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeOverAggregate");
@@ -106,7 +161,8 @@ class FlinkOverTextTemporalDistinctCountSqlHarnessTest {
   void stringDistinctHashingPreservesMixedSelectionRepresentation(boolean distinctFirst) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       String count = "COUNT(DISTINCT s) OVER w";
-      String selections = "FIRST_VALUE(s) OVER w, LAST_VALUE(s) OVER w, MIN(s) OVER w, MAX(s) OVER w";
+      String selections =
+          "FIRST_VALUE(s) OVER w, LAST_VALUE(s) OVER w, MIN(s) OVER w, MAX(s) OVER w";
       var comparison = NativeFailureParity.run(() -> environment(metrics),
           "SELECT id, " + (distinctFirst ? count + ", " + selections : selections + ", " + count)
               + " FROM src WINDOW w AS (PARTITION BY k ORDER BY rt ROWS UNBOUNDED PRECEDING)");
@@ -125,7 +181,8 @@ class FlinkOverTextTemporalDistinctCountSqlHarnessTest {
   @MethodSource("charSelections")
   void charSelectionsRetainReleasedFactoryBehavior(String function, boolean retracting) {
     try (var metrics = new RecoveryExecutionMetrics()) {
-      String bounds = retracting ? "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW" : "ROWS UNBOUNDED PRECEDING";
+      String bounds =
+          retracting ? "ROWS BETWEEN 3 PRECEDING AND CURRENT ROW" : "ROWS UNBOUNDED PRECEDING";
       var comparison = NativeFailureParity.run(() -> environment(metrics),
           "SELECT id, COUNT(DISTINCT CAST(s AS CHAR(8))) OVER w, " + function
               + "(CAST(s AS CHAR(8))) OVER w FROM src"
@@ -145,7 +202,7 @@ class FlinkOverTextTemporalDistinctCountSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment environment(RecoveryExecutionMetrics metrics) {
+  static TableEnvironment environment(RecoveryExecutionMetrics metrics) {
     var env = metrics.environment(new Configuration(), 1, 0);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.ofHoursMinutes(5, 45));
@@ -167,7 +224,8 @@ class FlinkOverTextTemporalDistinctCountSqlHarnessTest {
     var builder = Schema.newBuilder().column("id", DataTypes.INT()).column("k", DataTypes.INT())
         .column("s", DataTypes.STRING()).column("t", DataTypes.TIMESTAMP(9))
         .column("z", DataTypes.TIMESTAMP_LTZ(9)).column("rt", DataTypes.TIMESTAMP(3));
-    if (proctime) builder.watermark("rt", "SOURCE_WATERMARK()").columnByExpression("pt", "PROCTIME()");
+    if (proctime)
+      builder.watermark("rt", "SOURCE_WATERMARK()").columnByExpression("pt", "PROCTIME()");
     return builder;
   }
 

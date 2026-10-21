@@ -7,7 +7,7 @@ Time-based `OVER` runs over one ascending order (rowtime or, where noted, procti
 aggregate reads its own — possibly different — value column of type
 bigint/int/smallint/tinyint/double/float, exact DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN,
 TIMESTAMP and TIMESTAMP_LTZ. Ordinary COUNT also admits VARBINARY, day-time/year-month
-intervals and ARRAY/ROW/MAP/MULTISET. DATE/TIME/BOOLEAN support ordinary
+intervals and ARRAY/ROW/MAP/MULTISET. The supported scalar types admit ordinary and DISTINCT
 COUNT/MIN/MAX/FIRST_VALUE/LAST_VALUE; released Flink 1.18
 retains its DATE/TIME FIRST/LAST factory failures. Their frames and checkpoints retain the declared logical type.
 Narrow ints and 4-byte float retain the host result type. Decimal SUM/AVG use exact widened
@@ -352,9 +352,9 @@ The matcher declines:
   and TIMESTAMP_LTZ, except ordinary COUNT also admits VARBINARY, day-time/year-month intervals
   and ARRAY/ROW/MAP/MULTISET. Processing-time COUNT also admits MAP/MULTISET descendants
   in all existing proctime frames. Complex DISTINCT
-  and complex value selections retain fallback. The scalar types admit ordinary COUNT and typed MIN/MAX/FIRST_VALUE/LAST_VALUE;
-  DECIMAL also admits SUM/SUM0/AVG and their DISTINCT forms. COUNT(DISTINCT) additionally
-  admits all these types; other DISTINCT aggregates retain their numeric whitelist.
+  and complex value selections retain fallback. The supported scalar types admit ordinary and
+  DISTINCT COUNT/MIN/MAX/FIRST_VALUE/LAST_VALUE; DECIMAL also admits SUM/SUM0/AVG and their
+  DISTINCT forms. Released factory restrictions below apply equally to DISTINCT selections.
 - Temporal FIRST_VALUE/LAST_VALUE on released Flink 1.18, whose aggregate factory rejects them.
   Native planning retains the same failure; Flink 2.2 admits these functions.
 - CHAR MIN/MAX/FIRST_VALUE/LAST_VALUE combinations rejected by the released aggregate factory.
@@ -516,8 +516,8 @@ Properties select `over.values.types`, `over.values.frames` (0 running RANGE, 1 
 Ordinary MIN/MAX/FIRST_VALUE/LAST_VALUE now use a typed 32-bit selected value with its logical
 DATE/TIME/BOOLEAN type. Frame rows, output and checkpoints retain the declared type; they
 do not expose an integer carrier. NULL-only groups remain NULL, boolean false remains a
-value, and bounded frames evict NULL rows as well as contributing rows. DISTINCT value
-selection remains gated; the order and input gates remain unchanged. Flink 1.18 keeps its temporal FIRST/LAST factory
+value, and bounded frames evict NULL rows as well as contributing rows. DISTINCT selections
+retain counted arrival history, as described below; the order and input gates remain unchanged. Flink 1.18 keeps its temporal FIRST/LAST factory
 failures; COUNT/MIN/MAX and boolean FIRST/LAST run natively where that release accepts them.
 
 The focused selection has 96 passing checks and eight released-host skips on Flink 2.2.1,
@@ -549,6 +549,44 @@ Released Flink 1.18 bounded-ROWS profiles improve 5.218–6.030x over paired sto
 warmup/trial, all controls, configurations, source/DSO hashes and 336 allocation records.
 Correctness also covers proctime; these whole-job timings are rowtime workloads. Results
 are representative rather than a universal speed guarantee.
+
+## DISTINCT scalar value selection
+
+MIN/MAX/FIRST_VALUE/LAST_VALUE DISTINCT admit the supported numeric, decimal, character,
+DATE, TIME, BOOLEAN and timestamp value types. Flink normally removes DISTINCT from MIN/MAX;
+FIRST/LAST retain it. Unbounded frames fold each new distinct value once. Bounded FIRST/LAST
+keep live multiplicities and first-arrival order: evicting one duplicate does not move a value
+whose other occurrences remain in the frame. Its order changes only after membership reaches
+zero and the value subsequently returns. Recomputing a fresh set per frame would lose this
+history. The retained views use the existing binary frame-state columns and memory reservation;
+memory and RocksDB snapshots retain their selected values, counts and string caches.
+
+Focused execution checks combine seven scalar families across all seven supported frames,
+require native OVER consumption and compare exact values and result types. Repeated recovery
+covers strings, Boolean and DATE selections across the four event-time frames on memory and
+RocksDB. Released Flink 1.18 temporal/CHAR factory limits remain unchanged. Its compatible TIME
+fixture uses positive TIME(0) values: TIME(3) MIN/MAX can fail relational type preservation, and
+casting a pre-epoch TIMESTAMP to TIME can yield a negative internal time and fail collection.
+Those host failures do not establish a missing native selection.
+
+`OverBasicValuesBenchmark -Dover.values.distinctSelections=true` measures the whole query with
+runtime RowData input, a rowwise sink, both transposes, production JNI and state work. The
+separate OVER-disabled engine is a configured fallback control, not an additional native path.
+
+On released Flink 2.2.1/JDK 17, release+mimalloc, one million rows/64 keys, a 2 GiB JVM heap,
+two warmups and three measured trials, all twelve profiles beat stock by 1.45–4.35x. Each
+cell below gives stock/native median seconds. The [raw artifact](../benchmarks/results/over-distinct-selections-2026-10-20.json)
+retains every warmup, measured trial and fallback control. These are complete-job measurements,
+so they include the conversions excluded by the small Rust/Arrow functionality gate.
+
+| Value type | Running RANGE | Bounded ROWS, 16 preceding |
+| --- | ---: | ---: |
+| STRING | 2.763 / 1.027 | 6.181 / 2.030 |
+| DATE | 1.838 / 0.719 | 6.311 / 1.587 |
+| TIME | 1.774 / 0.702 | 6.660 / 1.575 |
+| BOOLEAN | 1.787 / 0.683 | 5.527 / 1.269 |
+| DECIMAL(12,2) | 2.231 / 0.884 | 6.322 / 1.758 |
+| TIMESTAMP(9) | 1.821 / 0.858 | 6.720 / 4.635 |
 
 ## DATE, TIME and BOOLEAN distinct counts
 

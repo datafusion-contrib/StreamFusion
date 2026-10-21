@@ -56,3 +56,5 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testConstantGr
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testFunctionSplitWhenCodegenOverLengthLimit	*	NativeFilterOperator|NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testUserDefinedFunctionWithParameter	*	NativeFilterOperator|NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testMultipleUserDefinedFunctions	*	NativeFilterOperator|NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	changelog=false	NativeOverAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state

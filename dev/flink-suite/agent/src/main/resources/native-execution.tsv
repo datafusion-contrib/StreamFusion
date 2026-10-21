@@ -37,3 +37,4 @@ org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testMultipleUserD
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testScalarFunctionConstructorWithParams	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testInlineScalarFunction	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testNonStaticObjectScalarFunction	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	*	NativeOverAggregateOperator

@@ -51,3 +51,5 @@ org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testUnarySortTopNOn
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testUnarySortTopNOnString	changelog=false	NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testConstantGroupKeyWithUpsertSink	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testConstantGroupKeyWithUpsertSink	changelog=false	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	changelog=false	NativeOverAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state

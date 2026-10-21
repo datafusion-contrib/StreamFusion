@@ -491,7 +491,7 @@ impl DistinctSet {
         }
     }
 
-    pub(super) fn scalar_count(&self, value: &ScalarValue) -> i64 {
+    pub(crate) fn scalar_count(&self, value: &ScalarValue) -> i64 {
         match (self, value) {
             (Self::I64(m), ScalarValue::Int64(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
             (Self::I32(m), ScalarValue::Int32(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
@@ -632,7 +632,7 @@ impl DistinctSet {
     pub(crate) fn remove_scalar(&mut self, v: &ScalarValue) -> bool {
         self.change_scalar(v, Change::Remove)
     }
-    pub(super) fn insert_restored(&mut self, v: ScalarValue, n: i64) {
+    pub(crate) fn insert_restored(&mut self, v: ScalarValue, n: i64) {
         self.change_value(v, Change::Restore(n));
     }
     pub(super) fn insert_imported(&mut self, v: ScalarValue, n: i64) {

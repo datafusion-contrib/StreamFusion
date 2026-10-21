@@ -23,6 +23,13 @@ fixtures exercise shared DISTINCT infrastructure with integer/string inputs. Flo
 SUM/AVG DISTINCT additionally uses focused SQL, map-order and repeated-recovery contracts
 against each released Flink line; the upstream fixtures alone do not establish floating parity.
 
+`OverAggregateITCase.testProcTimeDistinctUnboundedPartitionedRowsOver` requires positive
+native OVER work across its released backend/operator-version fixtures. This unchanged
+numeric DISTINCT test protects shared OVER infrastructure. Typed DISTINCT value selections
+add focused seven-frame and memory/RocksDB recovery contracts, including duplicate eviction
+that preserves live arrival history. Released temporal/CHAR factory failures retain their
+existing explicit fallback expectations.
+
 ## Runner and suite selection
 
 StreamFusion can run Flink's own table planner runtime integration tests with native acceleration

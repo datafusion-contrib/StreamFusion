@@ -107,6 +107,15 @@ watermark comparison. See the OVER coverage page for restore and expiry behavior
 
 ## Scope
 
+Bounded DISTINCT FIRST_VALUE/LAST_VALUE also require retained history. A value's first
+arrival into the live distinct set survives eviction of its earliest duplicate until its
+final occurrence leaves the frame. Recomputing a fresh set from the remaining rows loses
+that order. These selections keep multiplicities and an ordered live-value deque beside
+the final frame row, using the existing binary view columns. Snapshots retain multiplicities,
+declared scalar values and selected strings' UTF-16 caches; memory and RocksDB recovery
+share that layout. Ordinary string extrema and first/last keep their existing specialized
+views. Other bounded reductions retain their existing incremental or recomputed strategies.
+
 Decimal reductions add an exception to bounded recomputation. Its
 sum/count fold is retained beside the final frame row in the existing frame
 codec, and expired values retract before new values accumulate. SUM can replace a

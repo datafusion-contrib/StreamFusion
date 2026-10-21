@@ -1,0 +1,1497 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-20",
+  "feature": "scalar DISTINCT OVER value selections and retained bounded arrival history",
+  "base_commit": "d53f6b39",
+  "flink_line": "2.2.1",
+  "runtime": "JDK 17; release+mimalloc",
+  "dso_sha256": "a7594dcb69dd78df5782aa286598fe7315bbf98019ac1cec265b99e2aa2f3beb",
+  "configuration": {
+    "rows": 1000000,
+    "keys": 64,
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "warmups": 2,
+    "measured_trials": 3,
+    "frames": {
+      "0": "RANGE UNBOUNDED PRECEDING",
+      "1": "ROWS BETWEEN 16 PRECEDING AND CURRENT ROW"
+    },
+    "operations": "COUNT/MIN/MAX/FIRST_VALUE/LAST_VALUE DISTINCT",
+    "boundary": "complete jobs retain runtime RowData source, rowwise blackhole sink, both Arrow transposes, production JNI, allocations and state",
+    "control": "OVER-disabled configured fallback control; not an actual prior-revision binary"
+  },
+  "cases": [
+    {
+      "type": "string",
+      "frame": 0,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.749824
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.368361
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.841303
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.136972
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.780461
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.860909
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.889319
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.838003
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.023177
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.593321
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.082559
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.551823
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.027269
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.738132
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.762929
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          2.838003164,
+          2.593320903,
+          2.762929401
+        ],
+        "native": [
+          1.023176711,
+          1.082558902,
+          1.027268513
+        ],
+        "over_disabled_fallback": [
+          2.889319089,
+          2.55182262,
+          2.738131766
+        ]
+      },
+      "median_seconds": {
+        "stock": 2.762929401,
+        "native": 1.027268513,
+        "over_disabled_fallback": 2.738131766
+      },
+      "stock_over_native": 2.689588326747439
+    },
+    {
+      "type": "string",
+      "frame": 1,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.047289
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.129195
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.446409
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.037171
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.280574
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.153529
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.050285
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.181378
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.011289
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.100273
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.114536
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.076226
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.029612
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 5.900313
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.197957
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          6.181377792,
+          6.100273441,
+          6.197956671
+        ],
+        "native": [
+          2.011289009,
+          2.114535897,
+          2.029611741
+        ],
+        "over_disabled_fallback": [
+          6.050284836,
+          6.076225687,
+          5.900312781
+        ]
+      },
+      "median_seconds": {
+        "stock": 6.181377792,
+        "native": 2.029611741,
+        "over_disabled_fallback": 6.050284836
+      },
+      "stock_over_native": 3.045596193168652
+    },
+    {
+      "type": "date",
+      "frame": 0,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.927353
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.752554
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.810848
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.709284
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.818091
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.859632
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.850893
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.837693
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.718965
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.794818
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.725382
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.888095
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.716539
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.829816
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.899166
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          1.837692703,
+          1.794818172,
+          1.899166128
+        ],
+        "native": [
+          0.718965122,
+          0.725381881,
+          0.716538987
+        ],
+        "over_disabled_fallback": [
+          1.850893213,
+          1.888095404,
+          1.829815798
+        ]
+      },
+      "median_seconds": {
+        "stock": 1.837692703,
+        "native": 0.718965122,
+        "over_disabled_fallback": 1.850893213
+      },
+      "stock_over_native": 2.5560248289763354
+    },
+    {
+      "type": "date",
+      "frame": 1,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.330248
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.577193
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.985472
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.568028
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.303033
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.313948
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.163504
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.151513
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.587327
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.31053
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.576794
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.5584
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.606095
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.218448
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.425584
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          6.151512962,
+          6.310529953,
+          6.42558429
+        ],
+        "native": [
+          1.587327159,
+          1.576793944,
+          1.606094675
+        ],
+        "over_disabled_fallback": [
+          6.163503803,
+          6.558399811,
+          6.218447902
+        ]
+      },
+      "median_seconds": {
+        "stock": 6.310529953,
+        "native": 1.587327159,
+        "over_disabled_fallback": 6.218447902
+      },
+      "stock_over_native": 3.9755698232843
+    },
+    {
+      "type": "time",
+      "frame": 0,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.863424
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.730645
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.938869
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.719
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.045828
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.823589
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.858298
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.839279
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.702453
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.758231
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.700191
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.778813
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.711242
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.8332
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.773856
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          1.839278639,
+          1.758231346,
+          1.773855841
+        ],
+        "native": [
+          0.702452905,
+          0.700191107,
+          0.711242295
+        ],
+        "over_disabled_fallback": [
+          1.858298324,
+          1.778812601,
+          1.833200297
+        ]
+      },
+      "median_seconds": {
+        "stock": 1.773855841,
+        "native": 0.702452905,
+        "over_disabled_fallback": 1.833200297
+      },
+      "stock_over_native": 2.525230984702099
+    },
+    {
+      "type": "time",
+      "frame": 1,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.568759
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.541773
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.417316
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.553056
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.546729
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.15317
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.592049
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.380007
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.57517
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.659709
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.607442
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.581792
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.573976
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.524069
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.669493
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          6.380007307,
+          6.659709231,
+          6.669492558
+        ],
+        "native": [
+          1.57516952,
+          1.607442439,
+          1.57397586
+        ],
+        "over_disabled_fallback": [
+          6.592048535,
+          6.581791872,
+          6.524069379
+        ]
+      },
+      "median_seconds": {
+        "stock": 6.659709231,
+        "native": 1.57516952,
+        "over_disabled_fallback": 6.581791872
+      },
+      "stock_over_native": 4.227931753656584
+    },
+    {
+      "type": "boolean",
+      "frame": 0,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.74752
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.700395
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.719288
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.68433
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.661508
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.832266
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.752874
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.786625
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.700298
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.650608
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.682855
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.870343
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.682424
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.692579
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.826895
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          1.786624564,
+          1.650607562,
+          1.826894591
+        ],
+        "native": [
+          0.700298431,
+          0.682854537,
+          0.682423868
+        ],
+        "over_disabled_fallback": [
+          1.752873943,
+          1.870343084,
+          1.69257882
+        ]
+      },
+      "median_seconds": {
+        "stock": 1.786624564,
+        "native": 0.682854537,
+        "over_disabled_fallback": 1.752873943
+      },
+      "stock_over_native": 2.6164057895100434
+    },
+    {
+      "type": "boolean",
+      "frame": 1,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.416694
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.296062
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.284931
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.272331
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 5.602213
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 5.499293
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 5.653561
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 5.487225
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.26943
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 5.52701
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.256215
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 5.512887
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.306821
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 5.358255
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 5.624782
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          5.487224723,
+          5.527010106,
+          5.624782372
+        ],
+        "native": [
+          1.269429834,
+          1.256215178,
+          1.30682115
+        ],
+        "over_disabled_fallback": [
+          5.653561344,
+          5.512886728,
+          5.358254529
+        ]
+      },
+      "median_seconds": {
+        "stock": 5.527010106,
+        "native": 1.269429834,
+        "over_disabled_fallback": 5.512886728
+      },
+      "stock_over_native": 4.353931157096154
+    },
+    {
+      "type": "decimal",
+      "frame": 0,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.065384
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.917633
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.150879
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.884032
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.075129
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.034757
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.074573
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.359598
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.913544
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.023206
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.884458
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.239024
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.876309
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.129752
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.230798
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          2.359598468,
+          2.023205999,
+          2.230798404
+        ],
+        "native": [
+          0.913544142,
+          0.884458202,
+          0.876309351
+        ],
+        "over_disabled_fallback": [
+          2.074573109,
+          2.239024344,
+          2.129751876
+        ]
+      },
+      "median_seconds": {
+        "stock": 2.230798404,
+        "native": 0.884458202,
+        "over_disabled_fallback": 2.129751876
+      },
+      "stock_over_native": 2.5222202688103965
+    },
+    {
+      "type": "decimal",
+      "frame": 1,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.264437
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.751282
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.199292
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.76447
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.388016
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.383466
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.49554
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.321912
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.758762
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.41252
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.757601
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.380319
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.756074
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.55761
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.265858
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          6.32191201,
+          6.412519821,
+          6.265858202
+        ],
+        "native": [
+          1.758762153,
+          1.757600973,
+          1.756073557
+        ],
+        "over_disabled_fallback": [
+          6.495539829,
+          6.38031906,
+          6.557610396
+        ]
+      },
+      "median_seconds": {
+        "stock": 6.32191201,
+        "native": 1.757600973,
+        "over_disabled_fallback": 6.495539829
+      },
+      "stock_over_native": 3.5968983330780167
+    },
+    {
+      "type": "timestamp",
+      "frame": 0,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.165109
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.858361
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.801214
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.870041
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.87063
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.815373
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.830033
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.806208
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.863322
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.82103
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.858274
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.954922
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.855549
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.84711
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.922025
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          1.806208317,
+          1.82103032,
+          1.922025446
+        ],
+        "native": [
+          0.863321793,
+          0.858274395,
+          0.855548976
+        ],
+        "over_disabled_fallback": [
+          1.830033106,
+          1.954921741,
+          1.847109852
+        ]
+      },
+      "median_seconds": {
+        "stock": 1.82103032,
+        "native": 0.858274395,
+        "over_disabled_fallback": 1.847109852
+      },
+      "stock_over_native": 2.1217344133865255
+    },
+    {
+      "type": "timestamp",
+      "frame": 1,
+      "rows": 1000000,
+      "keys": 64,
+      "trials": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.748433
+        },
+        {
+          "engine": "native",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 4.565658
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 7.010091
+        },
+        {
+          "engine": "native",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 4.553567
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.832655
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 7.060673
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.80809
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.719865
+        },
+        {
+          "engine": "native",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 4.648001
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.630175
+        },
+        {
+          "engine": "native",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 4.615762
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.995374
+        },
+        {
+          "engine": "native",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 4.634593
+        },
+        {
+          "engine": "over_disabled_fallback",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.831375
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.825807
+        }
+      ],
+      "measured_seconds": {
+        "stock": [
+          6.719865242,
+          6.630175001,
+          6.82580679
+        ],
+        "native": [
+          4.648001075,
+          4.615762039,
+          4.634592633
+        ],
+        "over_disabled_fallback": [
+          6.808089536,
+          6.995374418,
+          6.831374748
+        ]
+      },
+      "median_seconds": {
+        "stock": 6.719865242,
+        "native": 4.634592633,
+        "over_disabled_fallback": 6.831374748
+      },
+      "stock_over_native": 1.449936547637886
+    }
+  ],
+  "validation": {
+    "2.2.1": "seven mixed scalar frame contracts plus 54 selection/typed count/recovery contracts pass",
+    "1.18.1": "seven mixed scalar frame contracts plus 54 selection/typed count/recovery contracts pass; TIME(0) fixture avoids released TIME(3) planning and pre-epoch cast failures",
+    "extended_decimal_timestamp_recovery": "54-case typed-count/selection/recovery suite passes on each released line after extending repeated recovery to decimal and, on 2.2, timestamp/LTZ selections",
+    "native": {
+      "full_regression_before_test_fixture_correction": {
+        "passed": 819,
+        "failed": 1,
+        "ignored": 2
+      },
+      "failure": "new DATE fixture supplied Num::I64 instead of the production Date32 reader Num::I32; production SQL checks already pass",
+      "after_test_only_correction": {
+        "selected_value_view_tests_passed": 2,
+        "failed": 0
+      },
+      "unique_verified_native_tests": 820
+    }
+  },
+  "optimization_passes": 0
+}

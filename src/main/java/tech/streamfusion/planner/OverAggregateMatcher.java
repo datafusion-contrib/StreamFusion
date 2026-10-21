@@ -308,7 +308,6 @@ final class OverAggregateMatcher {
       return kind == WindowAggregateMatcher.KIND_COUNT && !distinct;
     }
     if (type == SqlTypeName.DATE || type == SqlTypeName.TIME || type == SqlTypeName.BOOLEAN) {
-      if (distinct) return kind == WindowAggregateMatcher.KIND_COUNT;
       return kind == WindowAggregateMatcher.KIND_COUNT
           || kind == 1
           || kind == 2
@@ -316,10 +315,15 @@ final class OverAggregateMatcher {
           || kind == 6;
     }
     if (type == SqlTypeName.DECIMAL) {
-      if (distinct) return kind == WindowAggregateMatcher.KIND_COUNT
-          || kind == WindowAggregateMatcher.KIND_SUM
-          || kind == WindowAggregateMatcher.KIND_SUM_ZERO
-          || kind == WindowAggregateMatcher.KIND_AVG;
+      if (distinct)
+        return kind == WindowAggregateMatcher.KIND_COUNT
+            || kind == WindowAggregateMatcher.KIND_SUM
+            || kind == WindowAggregateMatcher.KIND_SUM_ZERO
+            || kind == WindowAggregateMatcher.KIND_AVG
+            || kind == 1
+            || kind == 2
+            || kind == 5
+            || kind == 6;
       return kind == WindowAggregateMatcher.KIND_SUM
           || kind == WindowAggregateMatcher.KIND_SUM_ZERO
           || kind == WindowAggregateMatcher.KIND_AVG
@@ -333,7 +337,6 @@ final class OverAggregateMatcher {
         || type == SqlTypeName.VARCHAR
         || type == SqlTypeName.TIMESTAMP
         || type == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
-      if (distinct) return kind == WindowAggregateMatcher.KIND_COUNT;
       return kind == WindowAggregateMatcher.KIND_COUNT
           || kind == 1
           || kind == 2

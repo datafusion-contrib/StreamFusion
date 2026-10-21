@@ -1045,6 +1045,16 @@ and rowwise edges measured. This does not change the existing input/order/DISTIN
 
 ### Borrowed OVER distinct membership
 
+Bounded DISTINCT FIRST/LAST now keep multiplicities and an ordered live-value view beside
+the final frame row. Eviction decrements membership without rebuilding the frame's distinct
+order; the selected value changes only when its last occurrence leaves or a new distinct
+value arrives. This both preserves Flink's arrival history and avoids repeated set creation
+and frame scans. String views probe borrowed bytes and retain their original selected cache;
+typed scalar views preserve their logical Arrow values through snapshot/restore.
+The [complete-job measurements](../operators/over.md#distinct-scalar-value-selection) cover
+six types and running/bounded frames: 1.45–4.35x stock, with conversions and configured
+fallback controls retained. No additional performance optimization pass was needed.
+
 Running STRING COUNT(DISTINCT) probes the existing typed membership map with borrowed bytes,
 allocating an owned key only on first membership. Timestamp distinct counts insert their
 nanosecond carrier directly instead of constructing a scalar and temporary Arrow representation.
