@@ -375,8 +375,8 @@ fn wide_decimal_local_views_share_order_and_keep_filtered_zero_entries() {
         let output = local.flush();
         assert!(local.memory.state_bytes > 0 && local.memory.state_bytes < retained);
         for (column, expected_counts) in [
-            (4, vec![0, 2, 1, 1]),
-            (5, vec![0, 1, 1, 0]),
+            (4, vec![1, 2, 1, 1]),
+            (5, vec![1, 1, 1, 0]),
             (6, vec![0, 1, 0, 1]),
         ] {
             let view = output

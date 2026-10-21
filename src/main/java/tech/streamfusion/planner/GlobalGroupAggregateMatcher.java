@@ -104,14 +104,6 @@ final class GlobalGroupAggregateMatcher {
             && !LocalGroupAggregateMatcher.supportedDistinctValueType(value.getSqlTypeName())) {
           return "global group aggregate: unsupported COUNT(DISTINCT) value type " + value;
         }
-        if (needRetraction
-            && kind != WindowAggregateMatcher.KIND_COUNT
-            && (value.getSqlTypeName() == SqlTypeName.FLOAT
-                || value.getSqlTypeName() == SqlTypeName.REAL
-                || value.getSqlTypeName() == SqlTypeName.DOUBLE
-                || value.getSqlTypeName() == SqlTypeName.DECIMAL && value.getPrecision() > 19))
-          return "global group aggregate: retracting ordered numeric DISTINCT views are not yet"
-              + " verified";
         boolean countDistinct =
             kind == WindowAggregateMatcher.KIND_COUNT
                 && partialType == SqlTypeName.BIGINT

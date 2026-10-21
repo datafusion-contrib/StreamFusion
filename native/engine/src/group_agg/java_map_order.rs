@@ -1,4 +1,4 @@
-//! Insert-only Java HashMap iteration order for caller-supplied spread hashes and tie order.
+//! Java HashMap iteration order for caller-supplied spread hashes and tie order.
 //! Callers supply keys whose Ord matches the host key comparison for equal hashes.
 
 #[derive(Clone)]
@@ -21,6 +21,7 @@ struct Bucket {
 pub(super) struct JavaMapOrder<K> {
     buckets: Vec<Bucket>,
     nodes: Vec<Node<K>>,
+    size: usize,
 }
 
 impl<K: Copy + Ord> JavaMapOrder<K> {
@@ -28,12 +29,14 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
         Self {
             buckets: vec![Bucket::default(); capacity],
             nodes: Vec::new(),
+            size: 0,
         }
     }
 
     pub(super) fn clear(&mut self) {
         self.buckets.fill(Bucket::default());
         self.nodes = Vec::new();
+        self.size = 0;
     }
 
     pub(super) fn insert(&mut self, key: K, hash: i32) -> bool {
@@ -93,7 +96,8 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
                 self.treeify(bucket);
             }
         }
-        if self.nodes.len() > self.buckets.len() * 3 / 4 && self.buckets.len() < 1 << 30 {
+        self.size += 1;
+        if self.size > self.buckets.len() * 3 / 4 && self.buckets.len() < 1 << 30 {
             self.resize();
         }
         true
@@ -118,13 +122,174 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
     }
 
     pub(super) fn len(&self) -> usize {
-        self.nodes.len()
+        self.size
     }
 
     pub(super) fn bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.buckets.capacity() * std::mem::size_of::<Bucket>()
             + self.nodes.capacity() * std::mem::size_of::<Node<K>>()
+    }
+
+    pub(super) fn remove(&mut self, key: K, hash: i32) -> bool {
+        let bucket = hash as u32 as usize & (self.buckets.len() - 1);
+        let mut current = self.buckets[bucket].first;
+        while let Some(index) = current {
+            if self.nodes[index].hash == hash && self.nodes[index].key == key {
+                self.remove_node(bucket, index);
+                self.size -= 1;
+                return true;
+            }
+            current = self.nodes[index].next;
+        }
+        false
+    }
+
+    fn remove_node(&mut self, bucket: usize, removed: usize) {
+        let old_root = self.buckets[bucket].first.unwrap();
+        let previous = self.nodes[removed].prev;
+        let next = self.nodes[removed].next;
+        if let Some(previous) = previous {
+            self.nodes[previous].next = next;
+        } else {
+            self.buckets[bucket].first = next;
+        }
+        if let Some(next) = next {
+            self.nodes[next].prev = previous;
+        }
+        if !self.buckets[bucket].tree {
+            return;
+        }
+        if self.buckets[bucket].first.is_none()
+            || self.nodes[old_root].children[1].is_none()
+            || self.nodes[old_root].children[0].is_none()
+            || self.nodes[self.nodes[old_root].children[0].unwrap()].children[0].is_none()
+        {
+            self.buckets[bucket].tree = false;
+            let mut node = self.buckets[bucket].first;
+            while let Some(index) = node {
+                self.nodes[index].parent = None;
+                self.nodes[index].children = [None; 2];
+                self.nodes[index].red = false;
+                node = self.nodes[index].next;
+            }
+            return;
+        }
+        let mut root = Some(old_root);
+        let left = self.nodes[removed].children[0];
+        let right = self.nodes[removed].children[1];
+        let mut successor = removed;
+        let mut was_red = self.nodes[successor].red;
+        let replacement;
+        let replacement_parent;
+        if left.is_none() {
+            replacement = right;
+            replacement_parent = self.nodes[removed].parent;
+            self.transplant(&mut root, removed, right);
+        } else if right.is_none() {
+            replacement = left;
+            replacement_parent = self.nodes[removed].parent;
+            self.transplant(&mut root, removed, left);
+        } else {
+            successor = right.unwrap();
+            while let Some(child) = self.nodes[successor].children[0] {
+                successor = child;
+            }
+            was_red = self.nodes[successor].red;
+            replacement = self.nodes[successor].children[1];
+            if self.nodes[successor].parent == Some(removed) {
+                replacement_parent = Some(successor);
+                if let Some(child) = replacement {
+                    self.nodes[child].parent = Some(successor);
+                }
+            } else {
+                replacement_parent = self.nodes[successor].parent;
+                self.transplant(&mut root, successor, replacement);
+                self.nodes[successor].children[1] = right;
+                self.nodes[right.unwrap()].parent = Some(successor);
+            }
+            self.transplant(&mut root, removed, Some(successor));
+            self.nodes[successor].children[0] = left;
+            self.nodes[left.unwrap()].parent = Some(successor);
+            self.nodes[successor].red = self.nodes[removed].red;
+        }
+        let mut root = root.unwrap();
+        if !was_red {
+            root = self.balance_removal(root, replacement, replacement_parent);
+        }
+        self.nodes[root].red = false;
+        self.move_first(bucket, root);
+    }
+
+    fn transplant(&mut self, root: &mut Option<usize>, removed: usize, replacement: Option<usize>) {
+        let parent = self.nodes[removed].parent;
+        if let Some(parent) = parent {
+            let side = usize::from(self.nodes[parent].children[1] == Some(removed));
+            self.nodes[parent].children[side] = replacement;
+        } else {
+            *root = replacement;
+        }
+        if let Some(replacement) = replacement {
+            self.nodes[replacement].parent = parent;
+        }
+    }
+
+    fn red(&self, node: Option<usize>) -> bool {
+        node.is_some_and(|node| self.nodes[node].red)
+    }
+
+    fn balance_removal(
+        &mut self,
+        mut root: usize,
+        mut node: Option<usize>,
+        mut parent: Option<usize>,
+    ) -> usize {
+        while node != Some(root) && !self.red(node) {
+            let Some(pivot) = parent else {
+                break;
+            };
+            let side = usize::from(
+                self.nodes[pivot].children[1] == node && self.nodes[pivot].children[0] != node,
+            );
+            let mut sibling = self.nodes[pivot].children[1 - side];
+            if self.red(sibling) {
+                self.nodes[sibling.unwrap()].red = false;
+                self.nodes[pivot].red = true;
+                self.rotate(&mut root, pivot, side);
+                sibling = self.nodes[pivot].children[1 - side];
+            }
+            let near = sibling.and_then(|s| self.nodes[s].children[side]);
+            let far = sibling.and_then(|s| self.nodes[s].children[1 - side]);
+            if !self.red(near) && !self.red(far) {
+                if let Some(sibling) = sibling {
+                    self.nodes[sibling].red = true;
+                }
+                node = Some(pivot);
+                parent = self.nodes[pivot].parent;
+                continue;
+            }
+            if !self.red(far) {
+                if let Some(near) = near {
+                    self.nodes[near].red = false;
+                }
+                self.nodes[sibling.unwrap()].red = true;
+                self.rotate(&mut root, sibling.unwrap(), 1 - side);
+                sibling = self.nodes[pivot].children[1 - side];
+            }
+            let sibling = sibling.unwrap();
+            self.nodes[sibling].red = self.nodes[pivot].red;
+            self.nodes[pivot].red = false;
+            if let Some(far) = self.nodes[sibling].children[1 - side] {
+                self.nodes[far].red = false;
+            }
+            self.rotate(&mut root, pivot, side);
+            node = Some(root);
+            parent = None;
+        }
+        if let Some(node) = node {
+            self.nodes[node].red = false;
+        }
+        root
     }
 
     fn move_first(&mut self, bucket: usize, index: usize) {
@@ -319,13 +484,47 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
                 assert_eq!(chain, tree_nodes);
             }
         }
-        assert_eq!(seen.len(), map.nodes.len());
+        assert_eq!(seen.len(), map.size);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mutations_match_jdk_removal_resize_and_reinsertion_order() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../src/test/resources/java-map-removal-order.json"
+        ))
+        .unwrap();
+        for case in fixtures.as_array().unwrap() {
+            let mut map = JavaMapOrder::with_capacity(16);
+            for step in case["steps"].as_array().unwrap() {
+                let key = step["key"].as_i64().unwrap();
+                let hash = step["hash"].as_i64().unwrap() as i32;
+                if step["op"] == "put" {
+                    map.insert(key, hash);
+                } else {
+                    assert!(map.remove(key, hash));
+                }
+                map.assert_structure();
+                let expected: Vec<_> = step["order"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_i64().unwrap())
+                    .collect();
+                assert_eq!(
+                    map.iter().collect::<Vec<_>>(),
+                    expected,
+                    "{}: {step}",
+                    case["name"]
+                );
+                assert_eq!(map.len(), expected.len());
+            }
+        }
+    }
 
     #[test]
     fn matches_released_flink_binary_group_fixtures() {

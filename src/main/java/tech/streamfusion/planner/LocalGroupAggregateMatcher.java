@@ -204,12 +204,6 @@ final class LocalGroupAggregateMatcher {
         }
         RelDataType value = inputType.getFieldList().get(call.getArgList().get(0)).getType();
         SqlTypeName valueType = value.getSqlTypeName();
-        if (needRetraction
-            && kind != WindowAggregateMatcher.KIND_COUNT
-            && (valueType == SqlTypeName.FLOAT
-                || valueType == SqlTypeName.REAL
-                || valueType == SqlTypeName.DOUBLE
-                || valueType == SqlTypeName.DECIMAL && value.getPrecision() > 19)) return false;
         int width = partialWidth(call, needRetraction);
         if (offset + width > outputType.getFieldCount()) return false;
         RelDataType partial = outputType.getFieldList().get(offset).getType();

@@ -683,6 +683,10 @@ impl DistinctSet {
     pub(super) fn add_scalar_n(&mut self, v: ScalarValue, n: i64) -> bool {
         self.change_value(v, Change::Add(n))
     }
+    pub(super) fn merge_scalar_delta(&mut self, value: &ScalarValue, delta: i64) -> bool {
+        self.change_scalar(value, Change::Delta(delta))
+    }
+
     pub(crate) fn remove_scalar(&mut self, v: &ScalarValue) -> bool {
         self.change_scalar(v, Change::Remove)
     }

@@ -44,7 +44,14 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
             "DATE",
             "TIME(3)",
             "TIMESTAMP(9)",
-            "TIMESTAMP_LTZ")
+            "TIMESTAMP_LTZ",
+            "DECIMAL(20,3)",
+            "DECIMAL(38,0)",
+            "DECIMAL(38,37)")
+        .filter(
+            type ->
+                System.getProperty("distinct.retract.type", "").isEmpty()
+                    || System.getProperty("distinct.retract.type").equals(type))
         .flatMap(type -> Stream.of(1, 2, 4).map(bundle -> Arguments.of(type, bundle)));
   }
 
@@ -61,6 +68,19 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
   }
 
   private static void compare(String type, int bundle, boolean explicitCount) {
+    compare(type, bundle, explicitCount, rows(type));
+  }
+
+  static void compare(String type, int bundle, boolean explicitCount, List<Row> input) {
+    compare(type, bundle, explicitCount, input, false);
+  }
+
+  static void compare(
+      String type,
+      int bundle,
+      boolean explicitCount,
+      List<Row> input,
+      boolean hostOverflowFailure) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -70,12 +90,20 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
                 table.createTemporaryView(
                     "src",
                     table.fromChangelogStream(
-                        fromData(env, INPUT_TYPE, rows(type).toArray(Row[]::new)),
+                        fromData(env, INPUT_TYPE, input.toArray(Row[]::new)),
                         SCHEMA,
                         ChangelogMode.all()));
                 return configure(table, bundle);
               },
               explicitCount ? query(type, "src") : query(type, "src").replace(", COUNT(*)", ""));
+      if (hostOverflowFailure) {
+        runs.assertFailure(
+            NullPointerException.class,
+            "toBigDecimal",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
+        return;
+      }
       runs.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
       assertWork(metrics.nativeOperators());
@@ -83,7 +111,8 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
   }
 
   static Stream<Arguments> recoveries() {
-    return Stream.of("BIGINT", "STRING", "TIMESTAMP(9)")
+    return Stream.of(
+            "BIGINT", "STRING", "TIMESTAMP(9)", "DOUBLE", "DECIMAL(38,0)", "DECIMAL(38,37)")
         .flatMap(
             type ->
                 Stream.of("hashmap", "tech.streamfusion.state.RocksDBNativeStateBackendFactory")
@@ -97,7 +126,7 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
     for (int i = 0; i < 8; i++) input.addAll(rows(type));
     input.add(Row.of(0, values(type)[2], true));
     try (var recovery =
-        new PortableSqlRecovery(backend, input, INPUT_TYPE, SCHEMA, true, 43, 111)
+        new PortableSqlRecovery(backend, input, INPUT_TYPE, SCHEMA, true, 44, 112)
             .withExecutionMetrics()) {
       var runs =
           NativeFailureParity.runRecovery(
@@ -131,7 +160,8 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
             ? "TO_TIMESTAMP_LTZ(CAST(raw_value AS BIGINT),3)"
             : "CAST(raw_value AS " + type + ")";
     boolean numeric =
-        List.of("TINYINT", "SMALLINT", "INT", "BIGINT", "DECIMAL(12,2)").contains(type);
+        type.startsWith("DECIMAL(")
+            || List.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE").contains(type);
     return "SELECT k, COUNT(DISTINCT v), COUNT(DISTINCT v) FILTER (WHERE keep_row), "
         + "COUNT(DISTINCT v) FILTER (WHERE NOT keep_row), COUNT(*)"
         + (numeric
@@ -146,6 +176,12 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
   }
 
   private static String[] values(String type) {
+    if (type.equals("DECIMAL(38,0)"))
+      return new String[] {"9" + "0".repeat(37), "8" + "0".repeat(37), "-9" + "0".repeat(37)};
+    if (type.equals("DECIMAL(38,37)"))
+      return new String[] {"9." + "9".repeat(37), "8." + "8".repeat(37), "-9." + "9".repeat(37)};
+    if (type.equals("DECIMAL(20,3)"))
+      return new String[] {"99999999999999999.999", "-99999999999999999.998", "0.001"};
     if (type.equals("BOOLEAN")) return new String[] {"true", "false", "true"};
     if (type.equals("DATE")) return new String[] {"2024-02-29", "1969-12-31", "2000-01-01"};
     if (type.startsWith("TIME("))

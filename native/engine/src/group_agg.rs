@@ -175,6 +175,29 @@ mod distinct_set_tests {
     use super::*;
 
     #[test]
+    fn shared_filter_transitions_retain_zero_entries_in_merged_array_views() {
+        let mut buffer = NumericViewBuffer::new(&DataType::Float64);
+        let one = ScalarValue::Float64(Some(1.0));
+        let two = ScalarValue::Float64(Some(2.0));
+        let null = ScalarValue::Float64(None);
+        buffer.merge_entry(&one, &[(0, 1), (1, 0)]);
+        buffer.merge_entry(&two, &[(0, 0), (1, 1)]);
+        buffer.merge_entry(&null, &[(0, 1), (1, 0)]);
+        buffer.merge_entry(&one, &[(0, -1), (1, 1)]);
+        buffer.merge_entry(&null, &[(0, -1), (1, 1)]);
+        assert_eq!(
+            buffer.order.iter().collect::<Vec<_>>(),
+            vec![one.clone(), two.clone(), null.clone()]
+        );
+        buffer.merge_entry(&one, &[(0, 0), (1, -1)]);
+        buffer.merge_entry(&one, &[(0, 1), (1, 0)]);
+        assert_eq!(
+            buffer.order.iter().collect::<Vec<_>>(),
+            vec![one, two, null]
+        );
+    }
+
+    #[test]
     fn decimal_view_repeated_counts_preserve_null_and_filtered_arrival_order() {
         let mut buffer = NumericViewBuffer::new(&DataType::Decimal128(38, 0));
         let mut expected = DecimalMapOrder::new(0);
@@ -189,7 +212,10 @@ mod distinct_set_tests {
             (Some(11), 4),
         ] {
             expected.insert_optional(value);
-            buffer.merge(ScalarValue::Decimal128(value, 38, 0), count);
+            buffer.merge_entry(
+                &ScalarValue::Decimal128(value, 38, 0),
+                &[(0, count), (1, i64::from(count == 0))],
+            );
             assert_eq!(
                 buffer.order.iter().collect::<Vec<_>>(),
                 expected
@@ -198,24 +224,27 @@ mod distinct_set_tests {
                     .collect::<Vec<_>>()
             );
         }
-        assert_eq!(buffer.counts.len(), 3);
+        assert_eq!(buffer.counts[0].as_ref().unwrap().len(), 3);
         assert_eq!(
-            buffer
-                .counts
+            buffer.counts[0]
+                .as_ref()
+                .unwrap()
                 .scalar_count(&ScalarValue::Decimal128(Some(5), 38, 0)),
             3
         );
         assert_eq!(
-            buffer
-                .counts
+            buffer.counts[0]
+                .as_ref()
+                .unwrap()
                 .scalar_count(&ScalarValue::Decimal128(Some(8), 38, 0)),
             3
         );
         assert_eq!(
-            buffer
-                .counts
+            buffer.counts[0]
+                .as_ref()
+                .unwrap()
                 .scalar_count(&ScalarValue::Decimal128(Some(11), 38, 0)),
-            4
+            3
         );
     }
 
@@ -670,22 +699,24 @@ impl GroupAggState {
     }
 
     /// Folds one (value, count) entry of a local bundle's distinct view into the merged set — the
-    /// two-phase merge. A value newly entering the merged set also
-    /// folds once into its running SUM/AVG accumulator, exactly as the per-row path does. The
-    /// two-phase distinct input is insert-only (the local's bundle is append-only), so there is no
-    /// retracting counterpart.
+    /// two-phase merge. SUM/AVG folds or retracts a value when its signed multiplicity crosses
+    /// positive membership, matching the generated Flink merge.
     fn merge_distinct(&mut self, value: ScalarValue, count: i64) {
         match self {
             GroupAggState::Distinct { set, live } => {
-                if set.add_scalar_n(value, count) {
-                    *live += 1;
+                if set.merge_scalar_delta(&value, count) {
+                    *live += if count > 0 { 1 } else { -1 };
                 }
             }
             GroupAggState::DistinctRunning { counts, agg, live } => {
                 let num = distinct_num(&value);
-                if counts.add_scalar_n(value, count) {
-                    agg.fold(num);
-                    *live += 1;
+                if counts.merge_scalar_delta(&value, count) {
+                    if count > 0 {
+                        agg.fold(num);
+                    } else {
+                        agg.retract(num);
+                    }
+                    *live += if count > 0 { 1 } else { -1 };
                 }
             }
             _ => unreachable!("distinct merge on a non-distinct aggregate"),
@@ -1257,32 +1288,60 @@ fn ordered_distinct_type(data_type: &DataType) -> bool {
         || matches!(data_type, DataType::Decimal128(precision, _) if *precision > 19)
 }
 
+const DISTINCT_VIEW_SOURCE: &str = "streamfusion.distinct-view-source";
+
 struct NumericViewBuffer {
     order: NumericMapOrder,
-    counts: DistinctSet,
+    counts: Vec<Option<DistinctSet>>,
 }
 
 impl NumericViewBuffer {
     fn new(data_type: &DataType) -> Self {
         Self {
             order: NumericMapOrder::new(data_type),
-            counts: DistinctSet::new(data_type),
+            counts: Vec::new(),
         }
     }
 
-    fn merge(&mut self, value: ScalarValue, count: i64) {
-        if !value.is_null() && count > 0 {
-            if self.counts.add_scalar_n(value.clone(), count) {
-                self.order.insert(&value);
+    fn merge_entry(&mut self, value: &ScalarValue, deltas: &[(usize, i64)]) {
+        for &(target, delta) in deltas {
+            if value.is_null() {
+                self.order.add_null_count(target, delta);
+            } else {
+                if self.counts.len() <= target {
+                    self.counts.resize_with(target + 1, || None);
+                }
+                let set = self.counts[target]
+                    .get_or_insert_with(|| DistinctSet::new(self.order.data_type()));
+                set.merge_scalar_delta(value, delta);
             }
+        }
+        let present = if value.is_null() {
+            self.order.has_null_membership()
         } else {
-            self.order.insert(&value);
+            self.counts
+                .iter()
+                .flatten()
+                .any(|set| set.scalar_count(value) != 0)
+        };
+        // Released multi-counter merge code keeps zero-count entries. Their positions affect
+        // later floating folds even though they contribute no current membership.
+        if present || deltas.len() > 1 {
+            self.order.insert(value);
+        } else {
+            self.order.remove(value);
         }
     }
 
     fn bytes(&self) -> usize {
         std::mem::size_of::<Self>() + self.order.bytes() - std::mem::size_of::<NumericMapOrder>()
-            + self.counts.capacity_bytes()
+            + self.counts.capacity() * std::mem::size_of::<Option<DistinctSet>>()
+            + self
+                .counts
+                .iter()
+                .flatten()
+                .map(DistinctSet::capacity_bytes)
+                .sum::<usize>()
     }
 }
 
@@ -1781,14 +1840,42 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .begin_batch(batch, &self.key_columns, &self.key_timestamp_precisions)?;
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
+        let view_groups: Vec<_> = self
+            .distinct_view_columns
+            .iter()
+            .map(|&column| {
+                (column >= 0)
+                    .then(|| {
+                        batch
+                            .schema()
+                            .field(column as usize)
+                            .metadata()
+                            .get(DISTINCT_VIEW_SOURCE)
+                            .cloned()
+                    })
+                    .flatten()
+            })
+            .collect();
+        let same_view = |a: usize, b: usize| {
+            self.distinct_view_columns[a] == self.distinct_view_columns[b]
+                || view_groups[a]
+                    .as_ref()
+                    .is_some_and(|group| view_groups[b].as_ref() == Some(group))
+        };
         let ordered_views: Vec<Option<DataType>> = self
             .kinds
             .iter()
             .enumerate()
             .map(|(i, kind)| {
-                (matches!(kind, 9 | 17 | 34)
+                (matches!(kind, 7 | 9 | 17 | 34)
                     && self.distinct_view_columns[i] >= 0
-                    && ordered_distinct_type(&self.value_types[i]))
+                    && ordered_distinct_type(&self.value_types[i])
+                    && (0..num_agg).any(|j| {
+                        matches!(self.kinds[j], 9 | 17 | 34)
+                            && self.distinct_view_columns[j] >= 0
+                            && self.value_types[j] == self.value_types[i]
+                            && same_view(i, j)
+                    }))
                 .then(|| self.value_types[i].clone())
             })
             .collect();
@@ -1800,8 +1887,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     (0..i)
                         .find(|&previous| {
                             ordered_views[previous].as_ref() == Some(data_type)
-                                && self.distinct_view_columns[previous]
-                                    == self.distinct_view_columns[i]
+                                && same_view(previous, i)
                         })
                         .unwrap_or(i)
                 })
@@ -2132,8 +2218,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let Some(data_type) = metadata else {
                     continue;
                 };
-                assert!(!retract, "ordered numeric views are insert-only");
-                let (list, values, counts) = view_cols[i].expect("ordered numeric membership view");
+                let (list, values, _) = view_cols[i].expect("ordered numeric membership view");
                 if !self.numeric_views.contains_key(key) {
                     let owned = ByteKey::from(key);
                     let buffers = (0..num_agg).map(|_| None).collect::<Vec<_>>();
@@ -2148,10 +2233,25 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 for entry in
                     list.value_offsets()[row] as usize..list.value_offsets()[row + 1] as usize
                 {
-                    buffer.merge(
-                        ScalarValue::try_from_array(values, entry)?,
-                        counts.value(entry),
-                    );
+                    let relative = entry - list.value_offsets()[row] as usize;
+                    let mut deltas = Vec::new();
+                    for target in 0..num_agg {
+                        if ordered_sources[target] != Some(i) {
+                            continue;
+                        }
+                        let (other_list, _, other_counts) =
+                            view_cols[target].expect("shared numeric view");
+                        assert_eq!(
+                            other_list.value_offsets()[row + 1] - other_list.value_offsets()[row],
+                            list.value_offsets()[row + 1] - list.value_offsets()[row],
+                            "shared view entry alignment"
+                        );
+                        deltas.push((
+                            target,
+                            other_counts.value(other_list.value_offsets()[row] as usize + relative),
+                        ));
+                    }
+                    buffer.merge_entry(&ScalarValue::try_from_array(values, entry)?, &deltas);
                 }
                 staged_delta += buffer.bytes() - std::mem::size_of::<NumericViewBuffer>() - before;
             }
@@ -2578,18 +2678,6 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let key_batches = std::mem::take(&mut self.staged_key_batches);
         let num_agg = self.kinds.len();
         let mut key_rows: Vec<(usize, usize)> = Vec::new();
-        let view_targets: Vec<Vec<_>> = (0..num_agg)
-            .map(|source| {
-                (0..num_agg)
-                    .filter(|&target| {
-                        matches!(self.kinds[target], 9 | 17 | 34)
-                            && self.distinct_view_columns[target]
-                                == self.distinct_view_columns[source]
-                            && self.value_types[target] == self.value_types[source]
-                    })
-                    .collect()
-            })
-            .collect();
         let mut out_results: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut out_kinds: Vec<i8> = Vec::new();
         let mut new_cache_bytes = 0usize;
@@ -2640,12 +2728,15 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 } else {
                     0
                 };
-                for (i, buffer) in buffers.into_iter().enumerate() {
+                for buffer in buffers {
                     if let Some(buffer) = buffer {
                         for value in buffer.order.iter() {
-                            let count = buffer.counts.scalar_count(&value);
-                            if count > 0 {
-                                for &target in &view_targets[i] {
+                            if value.is_null() {
+                                continue;
+                            }
+                            for (target, set) in buffer.counts.iter().enumerate() {
+                                let count = set.as_ref().map_or(0, |set| set.scalar_count(&value));
+                                if count != 0 {
                                     state.aggs[target].merge_distinct(value.clone(), count);
                                 }
                             }
@@ -3733,18 +3824,6 @@ impl LocalGroupAggregator {
             if track {
                 delta -= local_entry_state_bytes(entry) as isize;
             }
-            if let Some(orders) = &mut entry.numeric_orders {
-                assert!(!retract, "ordered numeric local views are insert-only");
-                for (order, sources) in orders.iter_mut().zip(&self.ordered_view_groups) {
-                    if sources.iter().any(|&source| {
-                        filter_cols[source]
-                            .map_or(true, |filter| !filter.is_null(row) && filter.value(row))
-                    }) {
-                        let values = batch.column(self.value_columns[sources[0]] as usize);
-                        order.insert(&ScalarValue::try_from_array(values, row)?);
-                    }
-                }
-            }
             for i in 0..num_agg {
                 if omitted_distinct[i] {
                     continue;
@@ -3844,6 +3923,39 @@ impl LocalGroupAggregator {
                                 entry.states[i].accumulate(num);
                             }
                         }
+                    }
+                }
+            }
+            if let Some(orders) = &mut entry.numeric_orders {
+                for (order, sources) in orders.iter_mut().zip(&self.ordered_view_groups) {
+                    let column = batch.column(self.value_columns[sources[0]] as usize);
+                    let value = ScalarValue::try_from_array(column, row)?;
+                    let mut touched = false;
+                    for &source in sources {
+                        if filter_cols[source]
+                            .is_some_and(|filter| filter.is_null(row) || !filter.value(row))
+                        {
+                            continue;
+                        }
+                        touched = true;
+                        if value.is_null() {
+                            order.add_null_count(source, if retract { -1 } else { 1 });
+                        }
+                    }
+                    if !touched {
+                        continue;
+                    }
+                    let present = if value.is_null() {
+                        order.has_null_membership()
+                    } else {
+                        sources
+                            .iter()
+                            .any(|&source| entry.states[source].distinct_count(&value) != 0)
+                    };
+                    if present {
+                        order.insert(&value);
+                    } else {
+                        order.remove(&value);
                     }
                 }
             }
@@ -4090,7 +4202,11 @@ impl LocalGroupAggregator {
                     let copied = original.copy_if_reordered();
                     let transported = copied.as_ref().unwrap_or(original);
                     for value in transported.iter() {
-                        counts.push(entry.states[source].distinct_count(&value));
+                        counts.push(if value.is_null() {
+                            original.null_count(source)
+                        } else {
+                            entry.states[source].distinct_count(&value)
+                        });
                         values.push(value);
                     }
                 } else {
@@ -4115,11 +4231,14 @@ impl LocalGroupAggregator {
                 Arc::new(entries),
                 None,
             );
-            fields.push(Field::new(
-                format!("distinct{v}"),
-                list.data_type().clone(),
-                false,
-            ));
+            fields.push(
+                Field::new(format!("distinct{v}"), list.data_type().clone(), false).with_metadata(
+                    std::collections::HashMap::from([(
+                        DISTINCT_VIEW_SOURCE.to_owned(),
+                        self.value_columns[source].to_string(),
+                    )]),
+                ),
+            );
             columns.push(Arc::new(list));
         }
         // A keyless local aggregate may legitimately have no physical columns (for example a

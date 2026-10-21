@@ -22,6 +22,8 @@ backend/phase invocation and Flink 1.18's explicit changelog-backend fallback. T
 fixtures exercise shared DISTINCT infrastructure with integer/string inputs. Floating
 SUM/AVG DISTINCT additionally uses focused SQL, map-order and repeated-recovery contracts
 against each released Flink line; the upstream fixtures alone do not establish floating parity.
+The unchanged released `testDistinctWithMultiFilter` fixture has also been executed locally
+against this ordered-retraction extension: seven invocations pass on Flink 2.2 and six on 1.18, all with positive native work.
 
 `OverAggregateITCase.testProcTimeDistinctUnboundedPartitionedRowsOver` requires positive
 native OVER work across its released backend/operator-version fixtures. This unchanged

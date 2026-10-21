@@ -766,8 +766,8 @@ incremental chain (a deliberate non-goal — see [Unsupported operators](unsuppo
 `MIN`/`MAX` with a retained physical `DISTINCT` flag, and — under a
 retracting input — aggregates outside `COUNT`/`AVG`/`SUM0`, ordinary numeric `SUM`,
 scalar `SINGLE_VALUE`, and typed `MIN`/`MAX`. Mapped extrema require zero retention until independent
-MapView entry expiry is implemented. Retracting DISTINCT admits the scalar COUNT and exact
-SUM/AVG types below; floating and precision-20–38 decimal SUM/AVG retain their order-sensitive gate.
+MapView entry expiry is implemented. Retracting DISTINCT admits scalar COUNT and numeric
+SUM/AVG, including FLOAT/DOUBLE and decimal precision through 38, using ordered shared views.
 
 ## Type support
 
@@ -1114,8 +1114,8 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
 - A retracting input outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE and typed MIN/MAX.
-  DISTINCT COUNT admits the scalar types above; DISTINCT SUM/AVG admits integer and
-  DECIMAL precision at most 19. Ordered floating/wide-decimal DISTINCT retraction remains gated.
+  DISTINCT COUNT admits the scalar types above; DISTINCT SUM/AVG admits integers,
+  FLOAT/DOUBLE and DECIMAL precision through 38 with the declared partial layout.
 
 **Global group aggregate (two-phase merge) only:**
 
@@ -1127,8 +1127,8 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
   float/double, or `(decimal(38, s), bigint)` for decimal.
 - A distinct merge outside the local half's `COUNT`/`SUM(DISTINCT)` scope.
 - A retracting merge outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE and typed MIN/MAX.
-  Scalar DISTINCT COUNT and exact DISTINCT SUM/AVG use signed membership transitions;
-  floating/wide-decimal DISTINCT arithmetic still needs ordered retraction views.
+  Scalar DISTINCT COUNT and numeric DISTINCT SUM/AVG use signed membership transitions;
+  floating/wide-decimal arithmetic retains the released shared-view iteration order.
   Mapped MIN/MAX with positive retention still require independently expiring map entries.
   The `count1` partial drives per-key liveness.
 - An unsupported grouping-key or output column type.
@@ -1257,20 +1257,27 @@ BOOLEAN and TIMESTAMP_LTZ(3/9), and SUM DISTINCT over DECIMAL(19,2). Five-row bu
 repeated values across flushes, independently filtered/shared views, all-NULL groups, empty
 input, and global aggregation. Native restore tests checkpoint the merged distinct state,
 then merge duplicate and new values without losing multiplicities or decimal result scale.
-Retracting two-phase COUNT DISTINCT also admits these scalar types. Integer and decimal
-precision-at-most-19 SUM/AVG DISTINCT admit retractions too. Local views retain negative
+Retracting two-phase COUNT DISTINCT also admits these scalar types. SUM/AVG DISTINCT admit
+integer, FLOAT/DOUBLE and DECIMAL precision through 38 inputs. Local views retain negative
 multiplicities instead of dropping a deletion that precedes its insertion in a bundle.
 Global merges fold or retract a value only when its signed count crosses into or out of
 positive membership, and retain negative entries through snapshots. Hidden count1 fields
 precede the native views. A SUM_RETRACT DISTINCT partial also carries Flink's separate
-non-null count, while SUM0 DISTINCT keeps one field. Floating and precision-20–38 decimal
-SUM/AVG retraction remain gated until their iteration order is qualified.
+non-null count, while SUM0 DISTINCT keeps one field. Floating and wide-decimal views preserve
+shared-filter key order through deletion, reinsertion, resize, collision trees and transport.
+Flink's multi-counter global merge retains zero-count keys; the native temporary map does too,
+because removing those positions changes later floating and decimal folds. A single-counter
+merge removes a key at zero. All filtered counters update before deciding local key removal.
 
-The new matrix passes 51 checks per released Flink line, including fourteen scalar families,
-shared and independent filters, NULL predicates, group removal/recreation, hidden counters,
-and six repeated memory/native-RocksDB recoveries. Together with exact-average and append
-floating-partial regressions, 75 checks pass per line; the native suite passes 834 checks
-(two diagnostics ignored). Both local/global operators must consume rows.
+The expanded matrix passes 89 checks per released Flink line: seventeen scalar shapes,
+shared and independent filters, NULL predicates, hidden counters, group recreation, twelve
+repeated memory/native-RocksDB recoveries, finite cancellation and 96-key collision traces
+at four bundle sizes. The native suite passes 836 checks (two diagnostics ignored), including
+592 JDK-qualified map mutations. Both native phases must consume rows. Overflow recovery
+cuts align with mini-batches so the test preserves the arithmetic reduction boundaries.
+Released Flink rejects the DECIMAL(38,38) SUM0 initializer; two 1.18 high-scale collision
+profiles instead assert its matching DecimalData null-unboxing failure. The unchanged upstream
+`AggregateITCase.testDistinctWithMultiFilter` passes seven fixture invocations on Flink 2.2 and six on 1.18, all requiring native work.
 
 Release+mimalloc/JDK 17 complete jobs with one million rows, 128 inner/16 outer keys,
 p=1, memory state, 2 GiB heap, 512-row bundles, two warmups and three interleaved trials
@@ -1288,6 +1295,13 @@ The actual canonical `d13e9dc4` planner fallback takes 0.579/0.702 s for BIGINT/
 jobs retain sources, both transposes, JNI, both native stages and rowwise sinks; every
 candidate requires actual native input. The [raw artifact](../benchmarks/results/retracting-distinct-partials-2026-10-21.json)
 retains all warmups, observations, ranges and hashes. These profiles need no optimization passes.
+
+The floating/wide extension also wins all eight one-million-row complete-job profiles on
+both releases, at **1.53–1.99x** stock throughput. These retain the same query, resource limits, warmups, transposes and native-work
+checks as the exact profiles above. The
+[ordered retraction artifact](../benchmarks/results/retracting-ordered-distinct-partials-2026-10-21.json)
+records every observation, actual previous-planner controls, source/DSO hashes and trial ranges.
+No performance optimization passes were needed for these winning profiles.
 
 Two-phase SUM/AVG DISTINCT supports DECIMAL precision 20–38, including the DECIMAL(20,2)
 case in [#231](https://github.com/datafusion-contrib/StreamFusion/issues/231). Decimal overflow

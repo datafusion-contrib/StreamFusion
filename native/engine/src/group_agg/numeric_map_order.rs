@@ -36,12 +36,14 @@ impl Ord for FloatingKey {
 pub(super) struct NumericMapOrder {
     data_type: DataType,
     order: Order,
+    null_counts: Vec<i64>,
 }
 
 impl NumericMapOrder {
     pub(super) fn new(data_type: &DataType) -> Self {
         Self {
             data_type: data_type.clone(),
+            null_counts: Vec::new(),
             order: match data_type {
                 DataType::Decimal128(_, scale) => Order::Decimal(DecimalMapOrder::new(*scale)),
                 DataType::Float32 | DataType::Float64 => {
@@ -78,6 +80,51 @@ impl NumericMapOrder {
         }
     }
 
+    pub(super) fn data_type(&self) -> &DataType {
+        &self.data_type
+    }
+
+    pub(super) fn remove(&mut self, value: &ScalarValue) {
+        match (&mut self.order, value) {
+            (Order::Decimal(order), ScalarValue::Decimal128(value, _, _)) => {
+                order.remove_optional(*value);
+            }
+            (Order::Floating(order), ScalarValue::Float32(value)) => {
+                let key = value.map(|v| FloatingKey {
+                    value: OrdF64::new(v as f64),
+                    bits: v.to_bits() as u64,
+                });
+                let hash = key.map_or(0, |v| (v.value.canonical() as f32).to_bits());
+                order.remove(key, (hash ^ (hash >> 16)) as i32);
+            }
+            (Order::Floating(order), ScalarValue::Float64(value)) => {
+                let key = value.map(|v| FloatingKey {
+                    value: OrdF64::new(v),
+                    bits: v.to_bits(),
+                });
+                let bits = key.map_or(0, |v| v.value.canonical().to_bits());
+                let hash = (bits ^ (bits >> 32)) as u32;
+                order.remove(key, (hash ^ (hash >> 16)) as i32);
+            }
+            _ => panic!("numeric view key does not match its type"),
+        }
+    }
+
+    pub(super) fn add_null_count(&mut self, source: usize, delta: i64) {
+        if self.null_counts.len() <= source {
+            self.null_counts.resize(source + 1, 0);
+        }
+        self.null_counts[source] = self.null_counts[source].wrapping_add(delta);
+    }
+
+    pub(super) fn null_count(&self, source: usize) -> i64 {
+        self.null_counts.get(source).copied().unwrap_or(0)
+    }
+
+    pub(super) fn has_null_membership(&self) -> bool {
+        self.null_counts.iter().any(|count| *count != 0)
+    }
+
     pub(super) fn copy_if_reordered(&self) -> Option<Self> {
         let order = match &self.order {
             Order::Decimal(order) => Order::Decimal(order.copy_if_reordered()?),
@@ -94,6 +141,7 @@ impl NumericMapOrder {
                 }
                 let mut copy = Self {
                     data_type: self.data_type.clone(),
+                    null_counts: self.null_counts.clone(),
                     order: Order::Floating(JavaMapOrder::with_capacity(capacity)),
                 };
                 for value in self.iter() {
@@ -104,6 +152,7 @@ impl NumericMapOrder {
         };
         Some(Self {
             data_type: self.data_type.clone(),
+            null_counts: self.null_counts.clone(),
             order,
         })
     }
@@ -151,6 +200,7 @@ impl NumericMapOrder {
 
     pub(super) fn bytes(&self) -> usize {
         std::mem::size_of::<Self>()
+            + self.null_counts.capacity() * std::mem::size_of::<i64>()
             + match &self.order {
                 Order::Decimal(order) => order.bytes() - std::mem::size_of::<DecimalMapOrder>(),
                 Order::Floating(order) => {

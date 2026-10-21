@@ -1,4 +1,4 @@
-//! Iteration order of insert-only, same-scale decimal membership in a Java HashMap.
+//! Iteration order of same-scale decimal membership in a Java HashMap.
 
 use super::java_map_order::JavaMapOrder;
 
@@ -60,6 +60,11 @@ impl DecimalMapOrder {
     pub(super) fn insert_optional(&mut self, key: Option<i128>) -> bool {
         self.order
             .insert(key, key.map_or(0, |key| decimal_hash(key, self.scale)))
+    }
+
+    pub(super) fn remove_optional(&mut self, key: Option<i128>) -> bool {
+        self.order
+            .remove(key, key.map_or(0, |key| decimal_hash(key, self.scale)))
     }
 
     pub(super) fn iter(&self) -> impl Iterator<Item = Option<i128>> + '_ {
