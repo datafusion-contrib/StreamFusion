@@ -32,20 +32,21 @@ class FlinkJsonAggregatePhaseSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"NULL ON NULL", "ABSENT ON NULL"})
-  void objectWithMergeExposesTheRealLocalGlobalRestriction(String nulls) throws Exception {
+  void objectWithMergeExecutesBothNativePhases(String nulls) throws Exception {
     String sql = "SELECT g, JSON_OBJECTAGG(KEY k VALUE v " + nulls + ") FROM src GROUP BY g";
     var host = environment();
     String plan = host.explainSql(sql);
     assertTrue(plan.contains("LocalGroupAggregate"), plan);
-    var comparison =
-        NativeFailureParity.run(FlinkJsonAggregatePhaseSqlHarnessTest::environment, sql);
-    assertNull(comparison.host().failure(), comparison::toString);
-    assertNull(comparison.nativeRun().failure(), comparison::toString);
-    assertEquals(
-        NativeParity.multiset(comparison.host().rows()),
-        NativeParity.multiset(comparison.nativeRun().rows()));
-    assertFalse(comparison.nativeRun().plan().contains("NativeColumnarLocalGroupAggregate"));
-    assertFalse(comparison.nativeRun().plan().contains("NativeColumnarGroupAggregate"));
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var comparison = NativeFailureParity.run(() -> environment(metrics), sql);
+      comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
+      assertTrue(comparison.nativeRun().plan().contains("NativeColumnarLocalGroupAggregate"));
+      RecoveryExecutionMetrics.assertConsumed(
+          metrics.nativeOperators(), "NativeColumnarLocalGroupAggregate");
+      RecoveryExecutionMetrics.assertConsumed(
+          metrics.nativeOperators(), "NativeColumnarGroupAggregate");
+    }
   }
 
   @ParameterizedTest

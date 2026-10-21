@@ -336,7 +336,15 @@ accumulator without refreshing older entries. A successful array retraction refr
 every surviving element, matching the released ListView rewrite; an unsuccessful
 retraction does not. Expired views are read before computing the previous output, so
 UPDATE_BEFORE also reflects expiry. Checkpoints retain entry deadlines on memory and
-native RocksDB backends. JSON_OBJECTAGG local/global aggregation still falls back.
+native RocksDB backends. JSON_OBJECTAGG also admits real local/global plans for append
+and retracting input. Locals emit Arrow lists of serialized key/value map entries; globals
+merge only the entries that survive each local map. Both NULL policies retain the released
+rules: an omitted local NULL leaves no key for the global duplicate check, while duplicate
+keys still fail inside a local map or across nonempty partials. Local maps admit NULL keys. Released 1.18's split MapView conversion reads a heap NULL
+key as an empty STRING and rebuilds a map, including collapse with a real empty key in the
+same partial; the native partial preserves that behavior. Released 2.2 retains its global
+NULL-key failure. Duplicate NULL keys still fail within a local map on both lines. Positive TTL applies
+when the global bundle flushes, independently for each merged field.
 JSON_ARRAYAGG has no merge method in either released version: even a
 TWO_PHASE request retains a single-phase plan, which runs natively. Released Flink
 2.2.1 and 1.18.1 reject DISTINCT JSON aggregates, JSON_OBJECTAGG WITHIN GROUP ordering,
@@ -2283,3 +2291,46 @@ Final-library complete-job medians (seconds):
 
 These final profiles improve 5.83–10.85x over stock. The artifact also retains the
 initial four release/shape profiles and separately paired previous-version fallback controls.
+
+### JSON_OBJECTAGG map partials
+
+Real local/global plans pass native Arrow map-entry lists between the two aggregate stages.
+A local preserves the released heap MapView's live entries and binary-string hash order;
+transport also preserves rebuilding that map after removals or a NULL/empty-key conversion.
+Only surviving entries reach global duplicate checks. Retractions remove local entries,
+while the global merges the resulting map and uses the separate record-count partial for
+group liveness, matching the released functions rather than inventing signed map entries.
+
+The split SQL harness composes both NULL policies with COUNT, string MIN, and COUNT DISTINCT,
+including DECIMAL/CHAR JSON values, append/updating input, disabled/positive TTL, and two
+memory/native-RocksDB restores. Controlled-clock tests extract both generated released
+operators and both native operators. They delay global flush beyond partial arrival, compare
+exact changelog rows, expire fields independently, and restore twice. Failure tests cover
+local/global duplicates, map-copy iteration order, local duplicate NULLs, and each release's
+NULL/empty transport behavior. Errors at a deferred flush retain their Flink execution type.
+
+Released upstream fixtures combining ARRAY and OBJECT aggregates retain their native
+single-phase contract, because JSON_ARRAYAGG has no merge method. Their unchanged tests
+remain regression witnesses; the dedicated SQL and generated-operator tests require positive
+work in both native phases for real JSON_OBJECTAGG splits.
+
+The initial million-row stock split/TTL warmup was stopped after 102 seconds; a JVM thread
+stack located it in `TtlIncrementalCleanup.runCleanup` while materializing JSON fields at
+the global bundle flush. This is retained as a diagnostic rather than a speedup sample.
+The matched complete-job measurements use 131,072 rows for both engines and the previous
+planner, with both row/Arrow conversions, JNI, state, Arrow exchange and the rowwise sink.
+
+| Released Flink / input | Keys / bytes | Stock median (s) | Native median (s) |
+| --- | --- | ---: | ---: |
+| 2.2.1 append | 65,536 / 16 | 2.345 | 0.350 |
+| 2.2.1 retracting | 32,768 / 128 | 2.798 | 0.444 |
+| 1.18.1 append | 65,536 / 16 | 2.218 | 0.330 |
+| 1.18.1 retracting | 32,768 / 128 | 2.899 | 0.428 |
+
+These profiles improve 6.30–6.78x over stock Flink. The previous canonical planner
+(`d13e9dc4`) falls back, measuring 2.085 s and 2.890 s on the two 2.2.1 shapes.
+Runs use JDK 17, one task, a 2 GiB heap, release+mimalloc, one-hour TTL, 1,024-row
+bundles, two warmups and three measured trials, alternating engine order. Every native
+trial requires consumed local and global work. No slow native gate or optimization
+passes were needed. [Raw trials, source/library hashes and execution evidence](../benchmarks/results/json-object-partials-2026-10-21.json)
+also retain the large stock warmup timebox and its TTL cleanup stack.

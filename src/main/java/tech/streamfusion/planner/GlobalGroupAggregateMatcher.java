@@ -53,6 +53,15 @@ final class GlobalGroupAggregateMatcher {
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       AggregateCall call = agg.aggCalls().apply(i);
       int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
+      if (kind == 42) {
+        if (!LocalGroupAggregateMatcher.supportedJsonObjectCall(call, agg.localAggInputRowType())
+            || offset >= inputType.getFieldCount()
+            || !LocalGroupAggregateMatcher.supportedJsonObjectPartial(
+                inputType.getFieldList().get(offset).getType()))
+          return "global JSON_OBJECTAGG requires a released character MapView partial: " + inputType;
+        offset++;
+        continue;
+      }
       if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
         if (needRetraction
             || call.isDistinct()
@@ -381,7 +390,8 @@ final class GlobalGroupAggregateMatcher {
             GroupAggregateMatcher.retainedValueTypeCode(
                 agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType()));
       } else if (LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind())
-          == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
+              == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+          || call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG) {
         codes.add(3);
       } else if (LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind()) == 14) {
         codes.add(
@@ -436,7 +446,9 @@ final class GlobalGroupAggregateMatcher {
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
       int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
-      if (call.isDistinct()) {
+      if (kind == 42) {
+        kinds[i] = LocalGroupAggregateMatcher.jsonObjectKind(call);
+      } else if (call.isDistinct()) {
         kinds[i] =
             kind == WindowAggregateMatcher.KIND_COUNT
                 ? LocalGroupAggregateMatcher.KIND_COUNT_DISTINCT

@@ -139,3 +139,21 @@ from a snapshot without clocks seeds each full argument view separately from the
 clock, or the restore time for an old snapshot without a group clock. This reuses
 the established incremental state machinery after consulting Arroyo's incremental aggregator;
 its unordered batch recomputation still cannot preserve LISTAGG's observable arrival order.
+
+JSON_OBJECTAGG local/global plans reuse the incremental group-state structure consulted in
+Arroyo, with Arrow list-of-struct map partials rather than host MapView wrappers. Local maps
+retain heap NULL-key behavior and their released binary-string hash iteration order, including
+resize/removal, so a merged duplicate reports the same offending key. Global merge folds
+only surviving local entries into the retained field map at bundle flush and assigns each
+written field its own TTL clock. The existing binary snapshot format stores the logical JSON
+kind and field clocks, not the transient partial layout. No row conversion is introduced
+between the local, exchange and global. The cold local duplicate-NULL failure delegates to
+the released function, like the existing legacy NULL-key compatibility helpers.
+
+For released 1.18 partials, the MapView's non-null STRING element getter reads a heap
+NULL key as empty; rebuilding the external HashMap then collapses NULL/empty aliases.
+Arrow partial construction reproduces that conversion and copy order. Released 2.2 keeps
+its NULL-key failure. Duplicate NULLs still fail before the local map is transported.
+Aggregate errors arising at a deferred bundle flush use the same typed JNI error dispatcher
+as updates, following Comet's distinction between execution and resource failures; a JSON
+duplicate must retain Flink's exception rather than masquerading as a memory-limit failure.

@@ -422,7 +422,7 @@ impl GroupAggState {
     fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
             38 | 39 => Self::Mapped(Box::new(MappedExtreme::new(kind == 38))),
-            26..=31 => Self::Json(Box::new(JsonAggState::new(kind))),
+            26..=31 | 42..=45 => Self::Json(Box::new(JsonAggState::new(kind))),
             24 | 25 | 32 | 33 => Self::List(ListAggState::new(kind)),
             12..=16 | 19..=21 => Self::Ordered(OrderedValueState::new(kind, value_type)),
             1 => GroupAggState::Extremes {
@@ -2115,13 +2115,26 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         let json_columns: Vec<_> = (0..num_agg)
             .map(|i| {
-                is_json_agg(self.kinds[i]).then(|| {
-                    (
-                        StringColumn::new(batch.column(self.value_columns[i] as usize)),
-                        (self.count_columns[i] >= 0).then(|| {
-                            StringColumn::new(batch.column(self.count_columns[i] as usize))
-                        }),
-                    )
+                (is_json_agg(self.kinds[i]) && !json_agg::is_object_merge(self.kinds[i])).then(
+                    || {
+                        (
+                            StringColumn::new(batch.column(self.value_columns[i] as usize)),
+                            (self.count_columns[i] >= 0).then(|| {
+                                StringColumn::new(batch.column(self.count_columns[i] as usize))
+                            }),
+                        )
+                    },
+                )
+            })
+            .collect();
+        let json_partials: Vec<_> = (0..num_agg)
+            .map(|i| {
+                json_agg::is_object_merge(self.kinds[i]).then(|| {
+                    batch
+                        .column(self.value_columns[i] as usize)
+                        .as_any()
+                        .downcast_ref::<arrow::array::ListArray>()
+                        .expect("JSON object partial")
                 })
             })
             .collect();
@@ -2583,6 +2596,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     result_changed[i] = true;
                     if let GroupAggState::Json(json) = &mut state.aggs[i] {
                         json.expire(ttl, state.last_write_ms);
+                        if let Some(partial) = json_partials[i] {
+                            json.merge_partial(partial, row, ttl)?;
+                            continue;
+                        }
                         let (value, key) =
                             json_columns[i].as_ref().expect("JSON aggregate columns");
                         json.update_with_ttl(
@@ -3996,7 +4013,9 @@ impl LocalGroupAggregator {
             .iter()
             .zip(&value_types)
             .map(|(&kind, vt)| {
-                if kind == 21 {
+                if json_agg::is_object_merge(kind) {
+                    json_agg::object_partial_type()
+                } else if kind == 21 {
                     DataType::Int32
                 } else if is_list_agg(kind) || is_ordered_value(kind) || matches!(kind, 38 | 39) {
                     vt.clone()
@@ -4232,6 +4251,16 @@ impl LocalGroupAggregator {
         }
         let n = batch.num_rows();
         let num_agg = self.kinds.len();
+        let json_columns: Vec<_> = (0..num_agg)
+            .map(|i| {
+                json_agg::is_object_merge(self.kinds[i]).then(|| {
+                    (
+                        StringColumn::new(batch.column(self.value_columns[i] as usize)),
+                        StringColumn::new(batch.column(self.auxiliary_columns[i] as usize)),
+                    )
+                })
+            })
+            .collect();
         let list_columns: Vec<_> = (0..num_agg)
             .map(|i| {
                 is_list_agg(self.kinds[i]).then(|| {
@@ -4455,6 +4484,11 @@ impl LocalGroupAggregator {
                         };
                         state.update(value, retract);
                     }
+                    continue;
+                }
+                if let GroupAggState::Json(json) = &mut entry.states[i] {
+                    let (value, key) = json_columns[i].as_ref().expect("local JSON object columns");
+                    json.update_local(key.at(row), value.at(row), retract)?;
                     continue;
                 }
                 if let GroupAggState::List(list) = &mut entry.states[i] {
@@ -4682,6 +4716,26 @@ impl LocalGroupAggregator {
             columns
         };
         for (i, rt) in self.result_types.iter().enumerate() {
+            if json_agg::is_object_merge(self.kinds[i]) {
+                let partials = json_agg::object_partials(order.iter().map(|key| {
+                    let entry = match key {
+                        LocalGroupKey::Byte(key) => &states[key],
+                        LocalGroupKey::Scalar(key) => &scalar_states[key],
+                    };
+                    let GroupAggState::Json(state) = &entry.states[i] else {
+                        unreachable!()
+                    };
+                    state.as_ref()
+                }));
+                fields.push(Field::new(
+                    format!("partial{i}"),
+                    partials.data_type().clone(),
+                    false,
+                ));
+                columns.push(partials);
+                continue;
+            }
+
             if is_list_agg(self.kinds[i]) {
                 let separators = order
                     .iter()
@@ -5144,7 +5198,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushGroupAggregator<'local
         let aggregator = unsafe { &mut *(handle as *mut GroupAggregator) };
         match aggregator.flush_mini_batch_at(now_millis) {
             Ok(out) => export_record_batch(out, out_array_address, out_schema_address),
-            Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+            Err(error) => throw_group_update_error(&mut env, error),
         }
     })
 }

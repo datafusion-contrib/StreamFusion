@@ -27,4 +27,16 @@ public final class TableErrors {
   public static void jsonDuplicateNullKey(String message) throws Exception {
     throw new org.apache.flink.table.api.TableRuntimeException(message);
   }
+
+  public static void jsonLocalDuplicateNullKey(String message) throws Exception {
+    var function =
+        new org.apache.flink.table.runtime.functions.aggregate.JsonObjectAggFunction(
+            new org.apache.flink.table.types.logical.LogicalType[0], false);
+    var accumulator = function.createAccumulator();
+    accumulator.map.setMap(
+        java.util.Collections.singletonMap(
+            null, org.apache.flink.table.data.StringData.fromString("0")));
+    function.accumulate(accumulator, null, org.apache.flink.table.data.StringData.fromString("0"));
+    throw new IllegalStateException("Expected the released local duplicate NULL-key failure");
+  }
 }

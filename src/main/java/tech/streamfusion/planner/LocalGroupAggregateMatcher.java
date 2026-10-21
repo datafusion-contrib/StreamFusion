@@ -52,12 +52,45 @@ final class LocalGroupAggregateMatcher {
   }
 
   static int aggregateKind(org.apache.calcite.sql.SqlKind kind) {
+    if (kind == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG) return 42;
     if (kind == org.apache.calcite.sql.SqlKind.LISTAGG)
       return GroupAggregateMatcher.KIND_LISTAGG_APPEND;
     if (kind == org.apache.calcite.sql.SqlKind.SUM0) return GroupAggregateMatcher.KIND_SUM_ZERO;
     return kind == org.apache.calcite.sql.SqlKind.SINGLE_VALUE
         ? 14
         : WindowAggregateMatcher.aggregateKind(kind);
+  }
+
+  static int jsonObjectKind(AggregateCall call) {
+    return 42
+        + (tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON ? 2 : 0)
+        + (((org.apache.calcite.sql.fun.SqlJsonObjectAggAggFunction) call.getAggregation())
+                    .getNullClause()
+                == org.apache.calcite.sql.SqlJsonConstructorNullClause.ABSENT_ON_NULL
+            ? 0
+            : 1);
+  }
+
+  static boolean supportedJsonObjectPartial(RelDataType partial) {
+    if (partial.isStruct()) {
+      if (partial.getFieldCount() != 1 || !partial.getFieldList().get(0).getName().equals("map"))
+        return false;
+      partial = partial.getFieldList().get(0).getType();
+    }
+    SqlTypeName type = partial.getSqlTypeName();
+    return type == SqlTypeName.OTHER || type == SqlTypeName.ANY || type == SqlTypeName.MAP;
+  }
+
+  static boolean supportedJsonObjectCall(AggregateCall call, RelDataType input) {
+    return !call.isDistinct()
+        && call.filterArg < 0
+        && call.getArgList().size() == 2
+        && call.getCollation().getFieldCollations().isEmpty()
+        && call.getArgList().stream()
+            .allMatch(
+                column ->
+                    GroupAggregateMatcher.isStringType(
+                        input.getFieldList().get(column).getType().getSqlTypeName()));
   }
 
   static int partialWidth(AggregateCall call, boolean retracting) {
@@ -163,6 +196,7 @@ final class LocalGroupAggregateMatcher {
               && retractKind != WindowAggregateMatcher.KIND_AVG
               && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
               && retractKind != WindowAggregateMatcher.KIND_SUM
+              && retractKind != 42
               && retractKind != 14
               && retractKind != WindowAggregateMatcher.KIND_MIN
               && retractKind != WindowAggregateMatcher.KIND_MAX)) {
@@ -178,6 +212,14 @@ final class LocalGroupAggregateMatcher {
         return false;
       }
       int kind = aggregateKind(call.getAggregation().getKind());
+      if (kind == 42) {
+        if (!supportedJsonObjectCall(call, inputType)
+            || offset >= outputType.getFieldCount()
+            || !supportedJsonObjectPartial(outputType.getFieldList().get(offset).getType()))
+          return false;
+        offset++;
+        continue;
+      }
       if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
         if (call.isDistinct()
             || !call.getCollation().getFieldCollations().isEmpty()
@@ -543,7 +585,9 @@ final class LocalGroupAggregateMatcher {
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       int kind = aggregateKind(call.getAggregation().getKind());
-      if (call.isDistinct()) {
+      if (kind == 42) {
+        kinds.add(jsonObjectKind(call));
+      } else if (call.isDistinct()) {
         if (kind == WindowAggregateMatcher.KIND_AVG) {
           kinds.add(18); // DISTINCT widened sum partial; its value set retains the input type.
           kinds.add(KIND_COUNT_DISTINCT);
@@ -617,7 +661,15 @@ final class LocalGroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      int column = call.getArgList().isEmpty() ? -1 : call.getArgList().get(0);
+      int column =
+          call.getArgList().isEmpty()
+              ? -1
+              : call.getArgList()
+                  .get(
+                      call.getAggregation().getKind()
+                              == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG
+                          ? 1
+                          : 0);
       columns.add(column);
       if (stateWidth(call, needRetraction(agg)) == 2) {
         columns.add(column);
@@ -644,7 +696,7 @@ final class LocalGroupAggregateMatcher {
                 inputType.getFieldList().get(call.getArgList().get(0)).getType());
         codes.add(code);
         if (stateWidth(call, needRetraction(agg)) == 2) codes.add(code);
-      } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
+      } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND || kind == 42) {
         codes.add(3);
       } else if (kind == 14) {
         int code =
@@ -705,10 +757,12 @@ final class LocalGroupAggregateMatcher {
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       var call = agg.aggCalls().apply(i);
       columns.add(
-          call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.LISTAGG
-                  && call.getArgList().size() == 2
-              ? call.getArgList().get(1)
-              : -1);
+          call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG
+              ? call.getArgList().get(0)
+              : call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.LISTAGG
+                      && call.getArgList().size() == 2
+                  ? call.getArgList().get(1)
+                  : -1);
       if (stateWidth(call, needRetraction(agg)) == 2) columns.add(-1);
     }
     if (countStarInserted(agg)) columns.add(-1);
