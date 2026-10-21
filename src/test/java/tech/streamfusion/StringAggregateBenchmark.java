@@ -47,7 +47,13 @@ class StringAggregateBenchmark {
     switch (function) {
       case "LISTAGG":
         aggregate =
-            "LISTAGG(" + (Boolean.getBoolean("stringagg.distinct") ? "DISTINCT " : "") + "v, ',')";
+            "LISTAGG("
+                + (Boolean.getBoolean("stringagg.distinct") ? "DISTINCT " : "")
+                + "v"
+                + (Boolean.parseBoolean(System.getProperty("stringagg.literalSeparator", "true"))
+                    ? ", ','"
+                    : "")
+                + ")";
         break;
       case "JSON_ARRAYAGG":
         String order = System.getProperty("stringagg.order", "");

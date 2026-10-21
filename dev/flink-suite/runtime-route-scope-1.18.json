@@ -643,7 +643,7 @@
       "display_name": "testListAggWithRetraction[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
+        "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
     },
@@ -670,7 +670,7 @@
       "display_name": "testListAggWithRetraction[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
+        "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
     },

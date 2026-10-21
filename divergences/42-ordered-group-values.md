@@ -157,3 +157,13 @@ its NULL-key failure. Duplicate NULLs still fail before the local map is transpo
 Aggregate errors arising at a deferred bundle flush use the same typed JNI error dispatcher
 as updates, following Comet's distinction between execution and resource failures; a JSON
 duplicate must retain Flink's exception rather than masquerading as a memory-limit failure.
+
+Retracting LISTAGG now uses the same columnar local/global skeleton for its structured
+value/retraction partial. It preserves the released ordered-list merge instead of Arroyo's
+unordered multiset recomputation. Temporary partials cancel before touching retained lists;
+strings move between owned deques, and only the global merge refreshes surviving entry clocks.
+The explicit-separator empty-partial skip remains distinct from the default-separator rewrite.
+The existing Flink binary-row group-map order is also used for these local groups, because
+its global bundle cuts affect later FIFO retractions and therefore final order after updates.
+Recovering SQL jobs compare equal checkpoint cuts on both engines; the released merge is
+context-dependent under different checkpoint-induced bundle boundaries.

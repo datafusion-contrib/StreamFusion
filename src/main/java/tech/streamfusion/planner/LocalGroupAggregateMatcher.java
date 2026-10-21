@@ -95,6 +95,7 @@ final class LocalGroupAggregateMatcher {
 
   static int partialWidth(AggregateCall call, boolean retracting) {
     int kind = aggregateKind(call.getAggregation().getKind());
+    if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && retracting) return 1;
     return kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
             || kind == 14
             || kind == WindowAggregateMatcher.KIND_AVG
@@ -114,6 +115,20 @@ final class LocalGroupAggregateMatcher {
   static boolean supportedListAggPartials(RelDataType separator, RelDataType prefix) {
     return GroupAggregateMatcher.isStringType(separator.getSqlTypeName())
         && GroupAggregateMatcher.isStringType(prefix.getSqlTypeName());
+  }
+
+  static boolean supportedRetractingListPartial(RelDataType partial, boolean separator) {
+    if (!partial.isStruct() || partial.getFieldCount() != (separator ? 3 : 2)) return false;
+    if (!partial.getFieldList().get(0).getName().equals("list")
+        || !partial.getFieldList().get(1).getName().equals("retractList")) return false;
+    for (int i = 0; i < 2; i++) {
+      SqlTypeName type = partial.getFieldList().get(i).getType().getSqlTypeName();
+      if (type != SqlTypeName.ARRAY && type != SqlTypeName.OTHER && type != SqlTypeName.ANY)
+        return false;
+    }
+    return !separator
+        || GroupAggregateMatcher.isStringType(
+            partial.getFieldList().get(2).getType().getSqlTypeName());
   }
 
   static boolean isRetractingExtreme(AggregateCall call, boolean retracting) {
@@ -196,6 +211,7 @@ final class LocalGroupAggregateMatcher {
               && retractKind != WindowAggregateMatcher.KIND_AVG
               && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
               && retractKind != WindowAggregateMatcher.KIND_SUM
+              && retractKind != GroupAggregateMatcher.KIND_LISTAGG_APPEND
               && retractKind != 42
               && retractKind != 14
               && retractKind != WindowAggregateMatcher.KIND_MIN
@@ -229,12 +245,20 @@ final class LocalGroupAggregateMatcher {
                 inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName())
             || call.getArgList().size() == 2
                 && !GroupAggregateMatcher.literalStringColumn(
-                    agg.getInput(), call.getArgList().get(1))
-            || offset + 1 >= outputType.getFieldCount()
-            || !supportedListAggPartials(
-                outputType.getFieldList().get(offset).getType(),
-                outputType.getFieldList().get(offset + 1).getType())) return false;
-        offset += 2;
+                    agg.getInput(), call.getArgList().get(1))) return false;
+        if (needRetraction) {
+          if (offset >= outputType.getFieldCount()
+              || !supportedRetractingListPartial(
+                  outputType.getFieldList().get(offset).getType(), call.getArgList().size() == 2))
+            return false;
+          offset++;
+        } else {
+          if (offset + 1 >= outputType.getFieldCount()
+              || !supportedListAggPartials(
+                  outputType.getFieldList().get(offset).getType(),
+                  outputType.getFieldList().get(offset + 1).getType())) return false;
+          offset += 2;
+        }
         continue;
       }
       if (kind < 0 || call.getArgList().size() > 1) {
@@ -585,7 +609,11 @@ final class LocalGroupAggregateMatcher {
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       int kind = aggregateKind(call.getAggregation().getKind());
-      if (kind == 42) {
+      if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+          && needRetraction(agg)
+          && !call.isDistinct()) {
+        kinds.add(call.getArgList().size() == 2 ? 47 : 46);
+      } else if (kind == 42) {
         kinds.add(jsonObjectKind(call));
       } else if (call.isDistinct()) {
         if (kind == WindowAggregateMatcher.KIND_AVG) {

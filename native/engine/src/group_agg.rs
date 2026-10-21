@@ -423,7 +423,7 @@ impl GroupAggState {
         match kind {
             38 | 39 => Self::Mapped(Box::new(MappedExtreme::new(kind == 38))),
             26..=31 | 42..=45 => Self::Json(Box::new(JsonAggState::new(kind))),
-            24 | 25 | 32 | 33 => Self::List(ListAggState::new(kind)),
+            24 | 25 | 32 | 33 | 46 | 47 => Self::List(ListAggState::new(kind)),
             12..=16 | 19..=21 => Self::Ordered(OrderedValueState::new(kind, value_type)),
             1 => GroupAggState::Extremes {
                 is_min: true,
@@ -1470,6 +1470,7 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     staged_bytes: usize,
     numeric_views: HashMap<ByteKey, Vec<Option<NumericViewBuffer>>>,
     extreme_partials: HashMap<ByteKey, Vec<Option<MappedExtreme>>>,
+    list_partials: HashMap<ByteKey, Vec<Option<ListAggState>>>,
     sum_partials: HashMap<ByteKey, Vec<Option<RunningAgg>>>,
     deferred_batches: Vec<(RecordBatch, usize)>,
     deferred_keys: HashMap<ByteKey, ()>,
@@ -1635,6 +1636,7 @@ impl GroupAggregator {
             staged_bytes: 0,
             numeric_views: HashMap::default(),
             extreme_partials: HashMap::default(),
+            list_partials: HashMap::default(),
             sum_partials: HashMap::default(),
             deferred_batches: Vec::new(),
             deferred_keys: HashMap::default(),
@@ -1698,6 +1700,7 @@ impl GroupAggregator {
             staged_bytes: self.staged_bytes,
             numeric_views: self.numeric_views,
             extreme_partials: self.extreme_partials,
+            list_partials: self.list_partials,
             sum_partials: self.sum_partials,
             deferred_batches: self.deferred_batches,
             deferred_keys: self.deferred_keys,
@@ -2103,13 +2106,24 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         let list_columns: Vec<_> = (0..num_agg)
             .map(|i| {
-                is_list_agg(self.kinds[i]).then(|| {
+                (is_list_agg(self.kinds[i]) && !list_agg::is_merge(self.kinds[i])).then(|| {
                     (
                         StringColumn::new(batch.column(self.value_columns[i] as usize)),
                         (self.count_columns[i] >= 0).then(|| {
                             StringColumn::new(batch.column(self.count_columns[i] as usize))
                         }),
                     )
+                })
+            })
+            .collect();
+        let list_partials: Vec<_> = (0..num_agg)
+            .map(|i| {
+                list_agg::is_merge(self.kinds[i]).then(|| {
+                    batch
+                        .column(self.value_columns[i] as usize)
+                        .as_any()
+                        .downcast_ref::<arrow::array::StructArray>()
+                        .expect("LISTAGG structured partial")
                 })
             })
             .collect();
@@ -2386,6 +2400,32 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     },
                 );
             }
+            for (i, partial) in list_partials.iter().enumerate() {
+                let Some(partial) = partial else {
+                    continue;
+                };
+                let incoming = ListAggState::from_partial(partial, row);
+                if !self.list_partials.contains_key(key) {
+                    staged_delta +=
+                        byte_key_bytes(key) + num_agg * std::mem::size_of::<Option<ListAggState>>();
+                    self.list_partials
+                        .insert(ByteKey::from(key), (0..num_agg).map(|_| None).collect());
+                }
+                let slot = &mut self.list_partials.get_mut(key).unwrap()[i];
+                let before = slot.as_ref().map_or(0, |state| {
+                    state.bytes() - std::mem::size_of::<ListAggState>()
+                });
+                if let Some(buffer) = slot {
+                    buffer.merge(incoming, self.kinds[i] == 47, StateTtl::new(0, now_ms));
+                } else {
+                    let mut buffer = ListAggState::new(25);
+                    buffer.merge(incoming, self.kinds[i] == 47, StateTtl::new(0, now_ms));
+                    *slot = Some(buffer);
+                }
+                mapped_delta += (slot.as_ref().unwrap().bytes()
+                    - std::mem::size_of::<ListAggState>()) as isize
+                    - before as isize;
+            }
             for i in 0..num_agg {
                 if !matches!(self.kinds[i], 38 | 39) {
                     continue;
@@ -2611,6 +2651,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         continue;
                     }
                     if let GroupAggState::List(list) = &mut state.aggs[i] {
+                        if list_partials[i].is_some() {
+                            continue;
+                        }
                         list.expire(ttl, state.last_write_ms);
                         let (value, separator) = list_columns[i].as_ref().expect("LISTAGG columns");
                         let separator = separator
@@ -3041,9 +3084,30 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let cache_output = self.kinds.as_slice() != [14] || self.filter_columns[0] >= 0;
         let mut numeric_views = std::mem::take(&mut self.numeric_views);
         let mut extreme_partials = std::mem::take(&mut self.extreme_partials);
+        let mut list_partials = std::mem::take(&mut self.list_partials);
         let mut sum_partials = std::mem::take(&mut self.sum_partials);
         let ttl = StateTtl::new(self.ttl_ms, self.last_input_ms);
         for key in order {
+            if let Some(buffers) = list_partials.remove(&key) {
+                let state = self.store.get_mut(&key.0).expect("staged LISTAGG key");
+                let before = if self.memory.tracking() {
+                    group_key_state_bytes(state)
+                } else {
+                    0
+                };
+                for (i, buffer) in buffers.into_iter().enumerate() {
+                    if let Some(buffer) = buffer {
+                        let GroupAggState::List(list) = &mut state.aggs[i] else {
+                            unreachable!()
+                        };
+                        list.merge(buffer, self.kinds[i] == 47, ttl);
+                    }
+                }
+                if self.memory.tracking() {
+                    self.memory
+                        .record(group_key_state_bytes(state) as isize - before as isize);
+                }
+            }
             if let Some(buffers) = extreme_partials.remove(&key) {
                 let state = self
                     .store
@@ -4013,7 +4077,9 @@ impl LocalGroupAggregator {
             .iter()
             .zip(&value_types)
             .map(|(&kind, vt)| {
-                if json_agg::is_object_merge(kind) {
+                if list_agg::is_merge(kind) {
+                    list_agg::partial_type()
+                } else if json_agg::is_object_merge(kind) {
                     json_agg::object_partial_type()
                 } else if kind == 21 {
                     DataType::Int32
@@ -4315,7 +4381,9 @@ impl LocalGroupAggregator {
         let scalar_key_mode = *self.scalar_key_mode.get_or_insert(n == 1);
         let arrow_keys =
             (!scalar_key_mode).then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
-        let mut group_hashes = (!self.ordered_view_groups.is_empty()).then(|| {
+        let mut group_hashes = (!self.ordered_view_groups.is_empty()
+            || self.kinds.iter().any(|&kind| list_agg::is_merge(kind)))
+        .then(|| {
             BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions)
         });
         let key_batch = self.key_batches.len();
@@ -4492,13 +4560,16 @@ impl LocalGroupAggregator {
                     continue;
                 }
                 if let GroupAggState::List(list) = &mut entry.states[i] {
-                    assert!(!retract, "local LISTAGG partials require insert-only input");
                     let (values, separators) = list_columns[i].as_ref().expect("LISTAGG columns");
                     let separator = separators
                         .as_ref()
                         .map_or(Some(","), |column| column.at(row))
                         .expect("validated LISTAGG separator");
-                    list.update_local(values.at(row), separator);
+                    if list_agg::is_merge(self.kinds[i]) {
+                        list.update(values.at(row), separator, retract);
+                    } else {
+                        list.update_local(values.at(row), separator);
+                    }
                     continue;
                 }
                 if let GroupAggState::Ordered(ordered) = &mut entry.states[i] {
@@ -4716,6 +4787,26 @@ impl LocalGroupAggregator {
             columns
         };
         for (i, rt) in self.result_types.iter().enumerate() {
+            if list_agg::is_merge(self.kinds[i]) {
+                let partials = list_agg::partials(order.iter().map(|key| {
+                    let entry = match key {
+                        LocalGroupKey::Byte(key) => &states[key],
+                        LocalGroupKey::Scalar(key) => &scalar_states[key],
+                    };
+                    let GroupAggState::List(state) = &entry.states[i] else {
+                        unreachable!()
+                    };
+                    state
+                }));
+                fields.push(Field::new(
+                    format!("partial{i}"),
+                    partials.data_type().clone(),
+                    false,
+                ));
+                columns.push(partials);
+                continue;
+            }
+
             if json_agg::is_object_merge(self.kinds[i]) {
                 let partials = json_agg::object_partials(order.iter().map(|key| {
                     let entry = match key {

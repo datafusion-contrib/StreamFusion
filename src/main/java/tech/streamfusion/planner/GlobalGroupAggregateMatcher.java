@@ -58,22 +58,31 @@ final class GlobalGroupAggregateMatcher {
             || offset >= inputType.getFieldCount()
             || !LocalGroupAggregateMatcher.supportedJsonObjectPartial(
                 inputType.getFieldList().get(offset).getType()))
-          return "global JSON_OBJECTAGG requires a released character MapView partial: " + inputType;
+          return "global JSON_OBJECTAGG requires a released character MapView partial: "
+              + inputType;
         offset++;
         continue;
       }
       if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
-        if (needRetraction
-            || call.isDistinct()
+        if (call.isDistinct()
             || !call.getCollation().getFieldCollations().isEmpty()
             || call.getArgList().isEmpty()
-            || call.getArgList().size() > 2
-            || offset + 1 >= inputType.getFieldCount()
-            || !LocalGroupAggregateMatcher.supportedListAggPartials(
-                inputType.getFieldList().get(offset).getType(),
-                inputType.getFieldList().get(offset + 1).getType()))
-          return "global LISTAGG requires append-only non-DISTINCT string partials";
-        offset += 2;
+            || call.getArgList().size() > 2)
+          return "global LISTAGG requires verified non-DISTINCT partials";
+        if (needRetraction) {
+          if (offset >= inputType.getFieldCount()
+              || !LocalGroupAggregateMatcher.supportedRetractingListPartial(
+                  inputType.getFieldList().get(offset).getType(), call.getArgList().size() == 2))
+            return "global LISTAGG requires a released value/retraction list partial";
+          offset++;
+        } else {
+          if (offset + 1 >= inputType.getFieldCount()
+              || !LocalGroupAggregateMatcher.supportedListAggPartials(
+                  inputType.getFieldList().get(offset).getType(),
+                  inputType.getFieldList().get(offset + 1).getType()))
+            return "global LISTAGG requires append-only string partials";
+          offset += 2;
+        }
         continue;
       }
       if (kind < 0 || call.getArgList().size() > 1) {
@@ -339,8 +348,9 @@ final class GlobalGroupAggregateMatcher {
       columns[i] =
           offset
               + (LocalGroupAggregateMatcher.aggregateKind(
-                          agg.aggCalls().apply(i).getAggregation().getKind())
-                      == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+                              agg.aggCalls().apply(i).getAggregation().getKind())
+                          == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+                      && !agg.needRetraction()
                   ? 1
                   : 0);
       offset += spanOf(agg, i);
@@ -354,8 +364,9 @@ final class GlobalGroupAggregateMatcher {
     int offset = agg.grouping().length;
     for (int i = 0; i < columns.length; i++) {
       if (LocalGroupAggregateMatcher.aggregateKind(
-              agg.aggCalls().apply(i).getAggregation().getKind())
-          == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
+                  agg.aggCalls().apply(i).getAggregation().getKind())
+              == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+          && !agg.needRetraction()) {
         columns[i] = offset;
       } else if (LocalGroupAggregateMatcher.isRetractingExtreme(
           agg.aggCalls().apply(i), agg.needRetraction())) {
@@ -446,7 +457,11 @@ final class GlobalGroupAggregateMatcher {
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
       int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
-      if (kind == 42) {
+      if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+          && agg.needRetraction()
+          && !call.isDistinct()) {
+        kinds[i] = call.getArgList().size() == 2 ? 47 : 46;
+      } else if (kind == 42) {
         kinds[i] = LocalGroupAggregateMatcher.jsonObjectKind(call);
       } else if (call.isDistinct()) {
         kinds[i] =

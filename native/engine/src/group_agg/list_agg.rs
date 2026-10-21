@@ -3,7 +3,43 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 pub(super) fn is_list_agg(kind: i64) -> bool {
-    matches!(kind, 24 | 25 | 32 | 33)
+    matches!(kind, 24 | 25 | 32 | 33 | 46 | 47)
+}
+
+pub(super) fn is_merge(kind: i64) -> bool {
+    matches!(kind, 46 | 47)
+}
+
+pub(super) fn partials<'a>(states: impl Iterator<Item = &'a ListAggState>) -> ArrayRef {
+    let mut values = arrow::array::ListBuilder::new(arrow::array::StringBuilder::new());
+    let mut retractions = arrow::array::ListBuilder::new(arrow::array::StringBuilder::new());
+    let mut separators = arrow::array::StringBuilder::new();
+    for state in states {
+        for value in &state.values {
+            values.values().append_value(value);
+        }
+        values.append(true);
+        for value in &state.pending_retractions {
+            retractions.values().append_value(value);
+        }
+        retractions.append(true);
+        separators.append_value(state.separator.as_deref().unwrap_or(","));
+    }
+    let columns: Vec<ArrayRef> = vec![
+        Arc::new(values.finish()),
+        Arc::new(retractions.finish()),
+        Arc::new(separators.finish()),
+    ];
+    let fields: arrow::datatypes::Fields = ["values", "retractions", "separator"]
+        .into_iter()
+        .zip(&columns)
+        .map(|(name, values)| Field::new(name, values.data_type().clone(), false))
+        .collect();
+    Arc::new(arrow::array::StructArray::new(fields, columns, None))
+}
+
+pub(super) fn partial_type() -> DataType {
+    partials(std::iter::empty()).data_type().clone()
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -41,6 +77,61 @@ impl ListAggState {
             timestamps: None,
             distinct_bytes: 0,
             element_bytes: 0,
+        }
+    }
+
+    pub(super) fn from_partial(partial: &arrow::array::StructArray, row: usize) -> Self {
+        let mut state = Self::new(25);
+        for (index, target) in [(0, &mut state.values), (1, &mut state.pending_retractions)] {
+            let list = partial
+                .column(index)
+                .as_any()
+                .downcast_ref::<arrow::array::ListArray>()
+                .expect("LISTAGG partial list");
+            let strings = StringColumn::new(list.values());
+            for index in list.value_offsets()[row] as usize..list.value_offsets()[row + 1] as usize
+            {
+                let value = strings
+                    .at(index)
+                    .expect("non-null LISTAGG element")
+                    .to_owned();
+                state.element_bytes += value.capacity();
+                target.push_back(value);
+            }
+        }
+        state.separator = StringColumn::new(partial.column(2))
+            .at(row)
+            .map(str::to_owned);
+        state
+    }
+
+    pub(super) fn merge(&mut self, mut other: Self, skip_empty: bool, ttl: StateTtl) {
+        if skip_empty && other.values.is_empty() && other.pending_retractions.is_empty() {
+            return;
+        }
+        self.separator = other.separator.take();
+        self.element_bytes += other.element_bytes;
+        self.values.append(&mut other.values);
+        self.pending_retractions
+            .append(&mut other.pending_retractions);
+        for pending in std::mem::take(&mut self.pending_retractions) {
+            if let Some(index) = self.values.iter().position(|value| value == &pending) {
+                self.element_bytes -=
+                    self.values.remove(index).unwrap().capacity() + pending.capacity();
+            } else {
+                self.pending_retractions.push_back(pending);
+            }
+        }
+        if ttl.enabled() {
+            let times = self.timestamps.get_or_insert_with(Default::default);
+            times.values.clear();
+            times.values.resize(self.values.len(), ttl.now());
+            times.pending_retractions.clear();
+            times
+                .pending_retractions
+                .resize(self.pending_retractions.len(), ttl.now());
+        } else {
+            self.timestamps = None;
         }
     }
 
@@ -310,6 +401,57 @@ impl<'a> StringColumn<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_single_local_partial_normalizes_pending_retractions_before_retained_values() {
+        let mut local = ListAggState::new(25);
+        local.update(Some("a"), "::", true);
+        local.update(Some("a"), "::", false);
+        let partial = partials(std::iter::once(&local));
+        let incoming = ListAggState::from_partial(partial.as_any().downcast_ref().unwrap(), 0);
+        let mut temporary = ListAggState::new(25);
+        temporary.merge(incoming, true, StateTtl::new(0, 0));
+        let mut retained = ListAggState::new(25);
+        retained.update(Some("a"), "::", false);
+        retained.update(Some("b"), "::", false);
+        retained.merge(temporary, true, StateTtl::new(0, 0));
+        assert_eq!(retained.emit(), ScalarValue::Utf8(Some("a::b".into())));
+        assert_eq!(retained.element_bytes, 2);
+    }
+
+    #[test]
+    fn partials_preserve_pending_retractions_and_bundle_cancellation_before_retained_merge() {
+        let mut retained = ListAggState::new(25);
+        retained.expire(StateTtl::new(1000, 1000), 0);
+        retained.update_with_ttl(Some("a"), "::", false, StateTtl::new(1000, 1000));
+        retained.update_with_ttl(Some("b"), "::", false, StateTtl::new(1000, 1500));
+        let mut first = ListAggState::new(25);
+        first.update(Some("a"), "::", true);
+        let partial = partials(std::iter::once(&first));
+        let mut buffer = ListAggState::from_partial(partial.as_any().downcast_ref().unwrap(), 0);
+        let mut second = ListAggState::new(25);
+        second.update(Some("a"), "::", false);
+        buffer.merge(second, true, StateTtl::new(0, 1700));
+        assert!(buffer.values.is_empty() && buffer.pending_retractions.is_empty());
+        retained.merge(buffer, true, StateTtl::new(1000, 1700));
+        assert!(retained.expire(StateTtl::new(1000, 2000), 1700));
+        assert_eq!(retained.emit(), ScalarValue::Utf8(Some("b".into())));
+    }
+
+    #[test]
+    fn default_separator_empty_merges_refresh_survivors_and_rewrite_pending_clocks() {
+        let mut retained = ListAggState::new(25);
+        retained.expire(StateTtl::new(1000, 1000), 0);
+        retained.update_with_ttl(Some("a"), ",", false, StateTtl::new(1000, 1000));
+        retained.update_with_ttl(Some("missing"), ",", true, StateTtl::new(1000, 1100));
+        retained.merge(ListAggState::new(25), false, StateTtl::new(1000, 1500));
+        assert!(!retained.expire(StateTtl::new(1000, 2000), 1500));
+        let mut restored = ListAggState::new(46);
+        restored.restore(retained.snapshot()).unwrap();
+        assert!(restored.expire(StateTtl::new(1000, 2500), 1500));
+        assert!(restored.values.is_empty() && restored.pending_retractions.is_empty());
+        assert_eq!(restored.element_bytes, 0);
+    }
 
     #[test]
     fn clockless_list_membership_restores_with_separate_separator_arguments() {
