@@ -2079,6 +2079,19 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             // it out only on the key's first touch and retains an Arrow row reference for the key;
             // intermediate rows then mutate state without materializing aggregate output.
             let first_bundle_touch = self.mini_batch && !self.staged_changes.contains_key(key);
+            if exists && ttl.enabled() {
+                let state = self.store.get_mut(key).expect("key present");
+                let mut expired_view = false;
+                for agg in &mut state.aggs {
+                    if let GroupAggState::Json(json) = agg {
+                        expired_view |= json.expire(ttl, state.last_write_ms);
+                    }
+                }
+                if expired_view {
+                    state.last_output = None;
+                    state.last_output_bytes = 0;
+                }
+            }
             let mut prev = if exists && (!self.mini_batch || first_bundle_touch) {
                 let state = self.store.get_mut(key).expect("key present");
                 match state.last_output.take() {
@@ -2189,12 +2202,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     }
                     result_changed[i] = true;
                     if let GroupAggState::Json(json) = &mut state.aggs[i] {
+                        json.expire(ttl, state.last_write_ms);
                         let (value, key) =
                             json_columns[i].as_ref().expect("JSON aggregate columns");
-                        json.update(
+                        json.update_with_ttl(
                             key.as_ref().and_then(|column| column.at(row)),
                             value.at(row),
                             retract,
+                            ttl,
                         )?;
                         continue;
                     }

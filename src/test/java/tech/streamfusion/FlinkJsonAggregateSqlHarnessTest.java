@@ -7,9 +7,50 @@ import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class FlinkJsonAggregateSqlHarnessTest {
+  @ParameterizedTest
+  @CsvSource({
+    "false,false,false",
+    "false,false,true",
+    "false,true,false",
+    "false,true,true",
+    "true,false,false",
+    "true,false,true",
+    "true,true,false",
+    "true,true,true"
+  })
+  void positiveRetentionAdmitsArrayAndObjectViews(boolean object, boolean mini, boolean updating) {
+    var removed = row("a", "a");
+    removed.setKind(RowKind.DELETE);
+    Row[] rows =
+        updating
+            ? new Row[] {row("a", "a"), row("b", "b"), row("c", null), removed, row("a", "last")}
+            : new Row[] {row("a", "a"), row("b", "b"), row("c", null)};
+    for (String nulls : List.of(" NULL ON NULL", " ABSENT ON NULL")) {
+      var comparison =
+          NativeFailureParity.run(
+              () -> {
+                var table = FlinkStringAggregateHostContractTest.environment(updating, rows);
+                table.getConfig().set("table.exec.state.ttl", "1 h");
+                table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+                table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(mini));
+                table.getConfig().set("table.exec.mini-batch.size", "2");
+                table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+                return table;
+              },
+              "SELECT sep, "
+                  + (object ? "JSON_OBJECTAGG(json_key VALUE v" : "JSON_ARRAYAGG(v")
+                  + nulls
+                  + "), COUNT(*) FROM src GROUP BY sep");
+      comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertNative(comparison);
+      assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void arraysPreserveNullPoliciesOrderDuplicatesAndEscapes(boolean updating) {
@@ -85,8 +126,13 @@ class FlinkJsonAggregateSqlHarnessTest {
         row("a", "a"),
         row("b", null),
         row("c", "b"));
-    check(false, "SELECT JSON_ARRAYAGG(keep_row), JSON_ARRAYAGG(CAST(v AS CHAR(4))) FROM src",
-        row("a", "a"), row("b", "abcdef"), row("c", "é🚀"), row("d", null));
+    check(
+        false,
+        "SELECT JSON_ARRAYAGG(keep_row), JSON_ARRAYAGG(CAST(v AS CHAR(4))) FROM src",
+        row("a", "a"),
+        row("b", "abcdef"),
+        row("c", "é🚀"),
+        row("d", null));
     check(
         false,
         "SELECT JSON_OBJECTAGG(json_key VALUE n) FROM src",
@@ -130,8 +176,10 @@ class FlinkJsonAggregateSqlHarnessTest {
         comparison.host().rootCause().getClass(),
         comparison.nativeRun().rootCause().getClass(),
         comparison.toString());
-    assertEquals(tableExceptionCount(comparison.host().failure()),
-        tableExceptionCount(comparison.nativeRun().failure()), comparison.toString());
+    assertEquals(
+        tableExceptionCount(comparison.host().failure()),
+        tableExceptionCount(comparison.nativeRun().failure()),
+        comparison.toString());
     if (!duplicateNullKey || !tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON)
       assertEquals(
           comparison.host().rootCause().getMessage(),

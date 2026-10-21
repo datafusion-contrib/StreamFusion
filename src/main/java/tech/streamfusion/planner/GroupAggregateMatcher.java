@@ -105,14 +105,6 @@ final class GroupAggregateMatcher {
           if (!isStringType(inputType.getFieldList().get(column).getType().getSqlTypeName()))
             return "GROUP BY: JSON aggregates require serialized character arguments";
         }
-        Long hint = FlinkCompat.singleStateTtl(agg);
-        long retention =
-            hint == null
-                ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
-                    .getIdleStateRetention()
-                    .toMillis()
-                : hint;
-        if (retention > 0) return "GROUP BY: JSON aggregate state TTL is not yet verified";
         continue;
       }
       if (call.getArgList().size() > 1) {

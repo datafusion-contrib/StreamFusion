@@ -2,6 +2,13 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 
+#[derive(Default, Serialize, Deserialize)]
+struct JsonViewTimestamps {
+    values: VecDeque<i64>,
+    fields: HashMap<String, i64>,
+    null_key: Option<i64>,
+}
+
 pub(super) fn is_json_agg(kind: i64) -> bool {
     (26..=31).contains(&kind)
 }
@@ -50,6 +57,8 @@ pub(crate) struct JsonAggState {
     values: VecDeque<String>,
     fields: HashMap<String, String>,
     legacy_null_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timestamps: Option<Box<JsonViewTimestamps>>,
     #[serde(skip)]
     element_bytes: usize,
 }
@@ -61,8 +70,89 @@ impl JsonAggState {
             values: VecDeque::new(),
             fields: HashMap::new(),
             legacy_null_key: None,
+            timestamps: None,
             element_bytes: 0,
         }
+    }
+
+    pub(super) fn expire(&mut self, ttl: StateTtl, previous_write_ms: i64) -> bool {
+        if !ttl.enabled() {
+            return false;
+        }
+        let times = self.timestamps.get_or_insert_with(|| {
+            Box::new(JsonViewTimestamps {
+                values: VecDeque::from(vec![previous_write_ms; self.values.len()]),
+                fields: self
+                    .fields
+                    .keys()
+                    .map(|key| (key.clone(), previous_write_ms))
+                    .collect(),
+                null_key: self.legacy_null_key.as_ref().map(|_| previous_write_ms),
+            })
+        });
+        let mut changed = false;
+        let mut value_times = std::mem::take(&mut times.values).into_iter();
+        self.values.retain(|value| {
+            let ts = value_times.next().expect("JSON value timestamp");
+            if ttl.expired(ts) {
+                self.element_bytes -= value.capacity();
+                changed = true;
+                false
+            } else {
+                times.values.push_back(ts);
+                true
+            }
+        });
+        times.fields.retain(|key, ts| {
+            if !ttl.expired(*ts) {
+                return true;
+            }
+            if let Some((key, value)) = self.fields.remove_entry(key) {
+                self.element_bytes -= key.capacity() + value.capacity();
+                changed = true;
+            }
+            false
+        });
+        if times.null_key.is_some_and(|ts| ttl.expired(ts)) {
+            if let Some(value) = self.legacy_null_key.take() {
+                self.element_bytes -= value.capacity();
+                changed = true;
+            }
+            times.null_key = None;
+        }
+        changed
+    }
+
+    pub(super) fn update_with_ttl(
+        &mut self,
+        key: Option<&str>,
+        value: Option<&str>,
+        retract: bool,
+        ttl: StateTtl,
+    ) -> Result<(), DataFusionError> {
+        let old_len = self.values.len();
+        self.update(key, value, retract)?;
+        let Some(times) = &mut self.timestamps else {
+            return Ok(());
+        };
+        if self.kind <= 27 {
+            if self.values.len() > old_len {
+                times.values.push_back(ttl.now());
+            } else if self.values.len() < old_len {
+                // StateListView.remove rewrites all survivors only when removal succeeds.
+                times.values.clear();
+                times.values.resize(self.values.len(), ttl.now());
+            }
+        } else if let Some(key) = key {
+            if retract {
+                times.fields.remove(key);
+            } else if self.fields.contains_key(key) {
+                times.fields.insert(key.to_owned(), ttl.now());
+            }
+        } else {
+            times.null_key = self.legacy_null_key.as_ref().map(|_| ttl.now());
+        }
+        Ok(())
     }
 
     pub(super) fn update(
@@ -193,12 +283,82 @@ impl JsonAggState {
             + self.element_bytes
             + self.values.capacity() * std::mem::size_of::<String>()
             + self.fields.capacity() * (2 * std::mem::size_of::<String>() + 1)
+            + self.timestamps.as_ref().map_or(0, |times| {
+                std::mem::size_of_val(times.as_ref())
+                    + times.values.capacity() * std::mem::size_of::<i64>()
+                    + times.fields.capacity() * (std::mem::size_of::<(String, i64)>() + 1)
+                    + times.fields.keys().map(String::capacity).sum::<usize>()
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn list_entry_expiry_and_successful_removal_have_separate_write_clocks() {
+        let mut state = JsonAggState::new(26);
+        for (now, value, retract) in [
+            (5000, Some("1"), false),
+            (5500, Some("2"), false),
+            (5900, None, false),
+            (6000, Some("3"), false),
+        ] {
+            let ttl = StateTtl::new(1000, now);
+            state.expire(ttl, 0);
+            state.update_with_ttl(None, value, retract, ttl).unwrap();
+        }
+        assert_eq!(
+            state.emit().unwrap(),
+            ScalarValue::Utf8(Some("[2,3]".into()))
+        );
+        state
+            .update_with_ttl(None, Some("2"), true, StateTtl::new(1000, 6400))
+            .unwrap();
+        assert!(!state.expire(StateTtl::new(1000, 7399), 0));
+        assert!(state.expire(StateTtl::new(1000, 7400), 0));
+        assert_eq!(state.emit().unwrap(), ScalarValue::Utf8(Some("[]".into())));
+    }
+
+    #[test]
+    fn object_entry_expiry_survives_restore_and_allows_key_reuse() {
+        let mut state = JsonAggState::new(28);
+        for (now, key, value) in [(5000, "a", "1"), (5500, "b", "2")] {
+            let ttl = StateTtl::new(1000, now);
+            state.expire(ttl, 0);
+            state
+                .update_with_ttl(Some(key), Some(value), false, ttl)
+                .unwrap();
+        }
+        let mut restored = JsonAggState::new(28);
+        restored.restore(state.snapshot()).unwrap();
+        assert!(restored.expire(StateTtl::new(1000, 6000), 0));
+        restored
+            .update_with_ttl(Some("a"), Some("3"), false, StateTtl::new(1000, 6000))
+            .unwrap();
+        assert_eq!(
+            restored.emit().unwrap(),
+            ScalarValue::Utf8(Some("{\"a\":3,\"b\":2}".into()))
+        );
+        assert!(restored.expire(StateTtl::new(1000, 6500), 0));
+        assert_eq!(
+            restored.emit().unwrap(),
+            ScalarValue::Utf8(Some("{\"a\":3}".into()))
+        );
+    }
+
+    #[test]
+    fn list_expiry_handles_a_backwards_clock_without_hiding_expired_members() {
+        let mut state = JsonAggState::new(26);
+        for now in [5000, 4500] {
+            let ttl = StateTtl::new(1000, now);
+            state.expire(ttl, 0);
+            state.update_with_ttl(None, Some("1"), false, ttl).unwrap();
+        }
+        assert!(state.expire(StateTtl::new(1000, 5500), 0));
+        assert_eq!(state.emit().unwrap(), ScalarValue::Utf8(Some("[1]".into())));
+    }
 
     #[test]
     fn arrays_retain_lexemes_order_null_policy_and_first_duplicate_retraction() {

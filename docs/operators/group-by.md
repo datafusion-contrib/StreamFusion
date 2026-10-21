@@ -319,14 +319,49 @@ the existing binary state representation; ordered arrays are not stored as unord
 multisets. JSON_ARRAYAGG also admits inline ORDER BY and WITHIN GROUP ordering clauses.
 Released Flink 2.2.1 and 1.18.1 retain arrival order for these clauses rather than sorting;
 the native accumulator preserves that released behavior, including retractions. These
-clauses therefore do not promise sorted JSON arrays. Positive state TTL remains a
-native restriction for both functions. JSON_OBJECTAGG local/global aggregation also
-falls back. JSON_ARRAYAGG has no merge method in either released version: even a
+clauses therefore do not promise sorted JSON arrays. Positive state TTL is native for
+both functions in immediate and single-phase mini-batch plans. Each array element and
+object key retains its own last-write time; NULL-omitting updates refresh the enclosing
+accumulator without refreshing older entries. A successful array retraction refreshes
+every surviving element, matching the released ListView rewrite; an unsuccessful
+retraction does not. Expired views are read before computing the previous output, so
+UPDATE_BEFORE also reflects expiry. Checkpoints retain entry deadlines on memory and
+native RocksDB backends. JSON_OBJECTAGG local/global aggregation still falls back.
+JSON_ARRAYAGG has no merge method in either released version: even a
 TWO_PHASE request retains a single-phase plan, which runs natively. Released Flink
 2.2.1 and 1.18.1 reject DISTINCT JSON aggregates, JSON_OBJECTAGG WITHIN GROUP ordering,
 and JSON aggregate FILTER syntax; these are host limitations rather than acceleration
 gaps. Eight additional released-SQL checks pin the actual phase plans, native execution,
 NULL modes, and parser/validator failures.
+
+The retention implementation passes 67 SQL/operator checks on each released line,
+including both NULL policies, append and retract input, immediate and mini-batch
+execution, exact inclusive expiry, key reuse and two successive restores on memory
+and native RocksDB. Six focused Rust checks cover JSON state and expiry; the complete
+native suite passes 832 checks (two diagnostic tests ignored). Upstream execution
+contracts include both mixed JSON aggregate tests; consolidated unchanged-upstream
+runtime validation remains required before delivery.
+
+Release+mimalloc/JDK 17 complete jobs with p=1, memory state, 2 GiB heap, one-hour TTL,
+65,536 keys and 16-character values retain sources, both transposes, JNI and rowwise
+sinks. Two warmups and three interleaved trials give:
+
+| Release | Function | Rows | Stock seconds | Native seconds |
+| --- | --- | ---: | ---: | ---: |
+| 2.2.1 | JSON_ARRAYAGG | 1,000,000 | 8.719 | 1.062 |
+| 2.2.1 | JSON_OBJECTAGG | 131,072 | 2.017 | 0.223 |
+| 1.18.1 | JSON_ARRAYAGG | 1,000,000 | 10.350 | 1.033 |
+| 1.18.1 | JSON_OBJECTAGG | 131,072 | 1.962 | 0.213 |
+
+Every candidate trial requires consumed native aggregate work. The million-row object
+warmup was time-boxed after more than two minutes in stock TTL incremental cleanup;
+a warmup thread dump locates `TtlIncrementalCleanup` through `TtlMapState.get` and
+`JsonObjectAggFunction.getValue`. Both engines use the smaller object fixture above.
+The matched canonical `d13e9dc4` planner fallback takes 8.688 s for arrays and 2.060 s
+for objects (stock 8.925 and 1.993 s). It requires zero planner substitutions and uses
+the same compatible library; no affected aggregate executes natively in that control.
+The [raw artifact](../benchmarks/results/json-view-retention-2026-10-21.json) retains
+all completed trials, the previous fallback control, hashes and the abandoned diagnostic.
 Flink 1.18 decimal JSON_STRING expressions use the existing generated evaluator
 inside Calc because that line strips decimal scale; the grouped accumulator still runs
 natively. The 2.2 expression retains scale.
@@ -1027,7 +1062,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 
 **Single-phase / either two-phase half in common:**
 
-- DISTINCT or retracting LISTAGG with positive state TTL; JSON aggregates with positive state TTL.
+- DISTINCT or retracting LISTAGG with positive state TTL.
   Released Flink rejects LISTAGG WITHIN GROUP ordering and JSON DISTINCT/object-ordering
   syntax; these are host limitations. JSON_ARRAYAGG ordering clauses preserve the
   released host's arrival-order behavior described above.

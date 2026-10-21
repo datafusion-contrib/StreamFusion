@@ -1,0 +1,621 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Independent JSON list/map view retention",
+  "base_commit": "d9851392",
+  "dso_sha256": {
+    "libstreamfusion_fluss.so": "779f14a688fd3d3da73143496db2543e6b7f34252ab11aa4e801d41cfd512283",
+    "libstreamfusion_avro.so": "a96b6ef6beab8ccc7780c8d7c3bc98ef777aad812c7b47570cca355e708b1235",
+    "libstreamfusion_parquet.so": "2f808dc8bd0575f7e21d76618878426187357dd13870cd01cb8f5a64c98028ee",
+    "libstreamfusion_kafka.so": "49cf28503f972f8438889bde2ac8d48025c505f4705984c135c46e70085b823a",
+    "libstreamfusion_iceberg.so": "69f4635177986b63030eb2af30562b91cf24638835755f7ee938b6914dcc93f3",
+    "libstreamfusion_protobuf.so": "cd9ade03adc3e5223f1c5c0bdb5ff8ed1c88370b07304508795325e8931453d0",
+    "libstreamfusion_csv.so": "0f0981a1f9d0fda2a921d239a9992d3ea4076f1bcbf859949863ea7031b088d6",
+    "libstreamfusion_orc.so": "a3164f75d24b911395604f186070d59aa1e53057698f128e6b16b6e315ae48d4",
+    "libstreamfusion_raw.so": "79570fd359e4ce97caeadf3fcfddfc93fb6a8970ea6aac341a143961fe3617df",
+    "libstreamfusion.so": "2d0dd4a3ea222afa566b95f0627c2624518b2efc0a0cfb55056840b4f2cd463c",
+    "libstreamfusion_paimon.so": "42cdb1493dd2fbe5ab9c768c4df2efe7f788847b5cc35396654c016f02d6bb11",
+    "libstreamfusion_json.so": "6bcb0566d9266ba5abdc7590b637c1368db589d26f29b6c81f17eb842eba1fd7"
+  },
+  "configuration": {
+    "runtime": "Linux x86_64; JDK 17; release+mimalloc",
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "backend": "memory",
+    "state_ttl": "1 h",
+    "keys": 65536,
+    "width": 16,
+    "null_every": 7,
+    "warmups": 2,
+    "measured_trials": 3,
+    "phase": "ONE_PHASE immediate",
+    "boundary": "Complete jobs include runtime RowData sources, row/Arrow transposes at both edges, JNI, state, output consumption and rowwise blackhole sink. Planning excluded. Timings run alone.",
+    "query": "SELECT k, JSON_ARRAYAGG(v) / JSON_OBJECTAGG(json_key VALUE v) FROM src GROUP BY k"
+  },
+  "measurements": [
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "function": "JSON_ARRAYAGG",
+      "rows": 1000000,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 10.391666
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.613489
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.156143
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 9.163957
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 8.719445
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.076738
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.0625
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 9.694283
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 8.239855
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.043769
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          8.719445081,
+          9.69428283,
+          8.239854949
+        ],
+        "StreamFusion": [
+          1.076737733,
+          1.06249957,
+          1.043769496
+        ]
+      },
+      "median_seconds": {
+        "Flink": 8.719445081,
+        "StreamFusion": 1.06249957
+      },
+      "range_seconds": {
+        "Flink": [
+          8.239854949,
+          9.69428283
+        ],
+        "StreamFusion": [
+          1.043769496,
+          1.076737733
+        ]
+      },
+      "stock_over_native": 8.206539868058488,
+      "log": "streamfusion-json-view-ttl-2.2-JSON_ARRAYAGG-bench-v1.log",
+      "native_work_required": true
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "function": "JSON_OBJECTAGG",
+      "rows": 131072,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.071898
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.49196
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.320316
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.069486
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.145339
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.223174
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.274223
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.017499
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.944774
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.211783
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.145338615,
+          2.017499012,
+          1.944773919
+        ],
+        "StreamFusion": [
+          0.223173868,
+          0.274222761,
+          0.211783293
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.017499012,
+        "StreamFusion": 0.223173868
+      },
+      "range_seconds": {
+        "Flink": [
+          1.944773919,
+          2.145338615
+        ],
+        "StreamFusion": [
+          0.211783293,
+          0.274222761
+        ]
+      },
+      "stock_over_native": 9.040032464732834,
+      "log": "streamfusion-json-view-ttl-2.2-JSON_OBJECTAGG-bench-v2.log",
+      "native_work_required": true
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18.1",
+      "function": "JSON_ARRAYAGG",
+      "rows": 1000000,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 12.343731
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.43546
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.232724
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 10.042726
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 10.350478
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.073334
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.033169
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 11.736555
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 9.418704
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.023331
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          10.350478456,
+          11.736555244,
+          9.418704375
+        ],
+        "StreamFusion": [
+          1.073333856,
+          1.033169457,
+          1.023331316
+        ]
+      },
+      "median_seconds": {
+        "Flink": 10.350478456,
+        "StreamFusion": 1.033169457
+      },
+      "range_seconds": {
+        "Flink": [
+          9.418704375,
+          11.736555244
+        ],
+        "StreamFusion": [
+          1.023331316,
+          1.073333856
+        ]
+      },
+      "stock_over_native": 10.018180837492565,
+      "log": "streamfusion-json-view-ttl-1.18-JSON_ARRAYAGG-bench-v2.log",
+      "native_work_required": true
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18.1",
+      "function": "JSON_OBJECTAGG",
+      "rows": 131072,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.045284
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.479751
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.378115
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.163022
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.063028
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.226163
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.213077
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.96194
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.898568
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.209765
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.06302827,
+          1.961939501,
+          1.898567589
+        ],
+        "StreamFusion": [
+          0.226163387,
+          0.213077196,
+          0.209764812
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.961939501,
+        "StreamFusion": 0.213077196
+      },
+      "range_seconds": {
+        "Flink": [
+          1.898567589,
+          2.06302827
+        ],
+        "StreamFusion": [
+          0.209764812,
+          0.226163387
+        ]
+      },
+      "stock_over_native": 9.207646514176956,
+      "log": "streamfusion-json-view-ttl-1.18-JSON_OBJECTAGG-bench-v2.log",
+      "native_work_required": true
+    },
+    {
+      "revision": "canonical_d13e9dc4_planner_fallback",
+      "flink_line": "2.2.1",
+      "function": "JSON_ARRAYAGG",
+      "rows": 1000000,
+      "measured_seconds": {
+        "Flink": [
+          8.924860193,
+          9.106606357,
+          8.811215962
+        ],
+        "StreamFusion": [
+          8.607076612,
+          8.687693754,
+          8.88744637
+        ]
+      },
+      "median_seconds": {
+        "Flink": 8.924860193,
+        "StreamFusion": 8.687693754
+      },
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 10.290533
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 9.249884
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 8.8499
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 9.574911
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 8.92486
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 8.607077
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 8.687694
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 9.106606
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 8.811216
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 8.887446
+        }
+      ],
+      "log": "streamfusion-json-view-ttl-prior-JSON_ARRAYAGG-bench-v1.log",
+      "native_route": "Zero planner substitutions required; same compatible candidate DSO, no affected aggregate native code executes."
+    },
+    {
+      "revision": "canonical_d13e9dc4_planner_fallback",
+      "flink_line": "2.2.1",
+      "function": "JSON_OBJECTAGG",
+      "rows": 131072,
+      "measured_seconds": {
+        "Flink": [
+          1.950866767,
+          1.995460544,
+          1.992889363
+        ],
+        "StreamFusion": [
+          2.093992226,
+          2.059613,
+          1.889721927
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.992889363,
+        "StreamFusion": 2.059613
+      },
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.138153
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.131854
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.157386
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.102489
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.950867
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.093992
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.059613
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.995461
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.992889
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.889722
+        }
+      ],
+      "log": "streamfusion-json-view-ttl-prior-JSON_OBJECTAGG-bench-v1.log",
+      "native_route": "Zero planner substitutions required; same compatible candidate DSO, no affected aggregate native code executes."
+    }
+  ],
+  "abandoned_diagnostic": {
+    "function": "JSON_OBJECTAGG",
+    "flink_line": "2.2.1",
+    "rows": 1000000,
+    "reason": "Initial stock warmup exceeded two minutes; time-boxed before any completed trial. Replaced by a matched 131072-row workload for both engines.",
+    "thread_dump_sha256": "e9f0bf5cb154ed4dc872fe499868227655ab0411830c803b69785a5e7d98825d",
+    "stack": [
+      "CopyOnWriteStateMap.put",
+      "TtlIncrementalCleanup.runCleanup",
+      "TtlMapState.get",
+      "StateMapView.get",
+      "JsonObjectAggFunction.getValue"
+    ],
+    "timing_observations_used": false
+  },
+  "validation": {
+    "flink_2_2": "67 SQL/operator cases passed",
+    "flink_1_18": "67 SQL/operator cases passed",
+    "native": "832 passed; two diagnostic tests ignored",
+    "entry_retention": "32 controlled-clock cases per line cover 16 profiles, both NULL policies, immediate/mini-batch, exact boundaries, key reuse and two successive memory/RocksDB restores",
+    "focused_native": "Six JSON state/expiry cases passed",
+    "upstream": "Two unchanged upstream mixed JSON aggregate methods declared in execution contracts and route scopes. Actual runtime and required CI reserved for consolidated validation."
+  },
+  "optimization_passes": 0
+}

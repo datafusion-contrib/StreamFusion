@@ -55,3 +55,5 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionF
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	aggMode=OFF	NativeColumnarGroupAggregateOperator
 
 org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression	*	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testJsonArrayAggAndJsonObjectAggWithOtherAggs	*	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupJsonArrayAggAndJsonObjectAggWithOtherAggs	*	NativeColumnarGroupAggregateOperator
