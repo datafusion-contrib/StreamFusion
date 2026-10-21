@@ -1,0 +1,324 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Processing-time offsets and filters; legacy proctime SESSION and non-dividing/gapped HOP; session FILTER",
+  "base_commit": "e20218c2",
+  "native_dso_sha256": "2d0dd4a3ea222afa566b95f0627c2624518b2efc0a0cfb55056840b4f2cd463c",
+  "production_java_sha256": {
+    "src/main/java/tech/streamfusion/operator/NativeColumnarSessionWindowAggregateOperator.java": "1bf7db621b5612ece9d761936910da7aca3f126d219f6105945cad2ec8311842",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarWindowAggregateOperator.java": "353152473e82462159e9bffb394ce26391e105e4cdef555125ed43547ca0d374",
+    "src/main/java/tech/streamfusion/operator/NativeWindowOperatorCore.java": "bb4baf3aebdf75f86bca6cbeb8359f30b117be2b2b6dd8bdf57ecdc936fdf203",
+    "src/main/java/tech/streamfusion/planner/GroupWindowAggregateMatcher.java": "39d46ff0c86b625635ba3c3103d3b9e2b07dffd272facf825fae0b12ea6ed6f0",
+    "src/main/java/tech/streamfusion/planner/NativeColumnarSessionWindowAggExecNode.java": "dfe9a5df0667673d799024a654550ea7a750189766538f9b2ec87780d77b08f5",
+    "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeColumnarSessionWindowAggregate.java": "9cdb4b584b4cd112ea41d5edd53aa25b08c518d9999713d5a87a733d7ffc54b8",
+    "src/main/java/tech/streamfusion/planner/WindowAggregateMatcher.java": "fd5751c06a8ea174fac803dca57c1b8398cdccc2dc579c6078532b4c030fd8a3"
+  },
+  "configuration": {
+    "runtime": "Linux x86_64; JDK 17; release+mimalloc",
+    "rows": 1000000,
+    "keys": 64,
+    "parallelism": 2,
+    "heap": "2 GiB",
+    "backend": "memory",
+    "warmups": 2,
+    "measured_trials": 3,
+    "phase": "ONE_PHASE",
+    "query": "SELECT k, SESSION_START(rt, INTERVAL '10' SECOND), SESSION_END(rt, INTERVAL '10' SECOND), COUNT(*) FILTER (WHERE b), AVG(v) FILTER (WHERE b), SUM(v) FILTER (WHERE b) FROM src GROUP BY k, SESSION(rt, INTERVAL '10' SECOND)",
+    "input": "Cyclic five-second event timestamps; one-day delayed watermarks plus final watermark; nullable BIGINT values and predicates from WindowBasicTypeBenchmark; same logical input in each engine.",
+    "boundary": "Complete jobs include RowData sources, both row/Arrow transposes, JNI, session state, output consumption and rowwise blackhole sink; planning excluded. Timings run alone.",
+    "previous_control": "Actual d13e9dc4 Java planner/runtime sources with only updated benchmark fixture; same compatible native DSO, affected native window operator required absent."
+  },
+  "measurements": [
+    {
+      "flink_line": "2.2.1",
+      "revision": "candidate",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.677284
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.099429
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.79729
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.001525
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.841855
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.664182
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.66697
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.791149
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.794793
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.672568
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.841854693,
+          0.791149427,
+          0.79479313
+        ],
+        "StreamFusion": [
+          0.664182342,
+          0.666969809,
+          0.672567699
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.79479313,
+        "StreamFusion": 0.666969809
+      },
+      "range_seconds": {
+        "Flink": [
+          0.791149427,
+          0.841854693
+        ],
+        "StreamFusion": [
+          0.664182342,
+          0.672567699
+        ]
+      },
+      "stock_over_native": 1.1916478366414331,
+      "log": "streamfusion-processing-window-context-2.2-bench-v1.log"
+    },
+    {
+      "flink_line": "1.18.1",
+      "revision": "candidate",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.606111
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.090753
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.803637
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.988754
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.814227
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.769902
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.66028
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.805021
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.803055
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.689975
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.814227154,
+          0.805021221,
+          0.803054588
+        ],
+        "StreamFusion": [
+          0.76990196,
+          0.660279885,
+          0.689975116
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.805021221,
+        "StreamFusion": 0.689975116
+      },
+      "range_seconds": {
+        "Flink": [
+          0.803054588,
+          0.814227154
+        ],
+        "StreamFusion": [
+          0.660279885,
+          0.76990196
+        ]
+      },
+      "stock_over_native": 1.1667394987618653,
+      "log": "streamfusion-processing-window-context-1.18-bench-v1.log"
+    },
+    {
+      "flink_line": "2.2.1",
+      "revision": "canonical_d13e9dc4_planner_window_fallback",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.692192
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.986413
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.853763
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.847934
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.866029
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.784713
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.831932
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.820721
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.780109
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.797518
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.866029253,
+          0.820720789,
+          0.780108681
+        ],
+        "StreamFusion": [
+          0.784713393,
+          0.831932082,
+          0.79751825
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.820720789,
+        "StreamFusion": 0.79751825
+      },
+      "range_seconds": {
+        "Flink": [
+          0.780108681,
+          0.866029253
+        ],
+        "StreamFusion": [
+          0.784713393,
+          0.831932082
+        ]
+      },
+      "stock_over_native": 1.02909342701562,
+      "log": "streamfusion-processing-window-context-prior-bench-v1.log"
+    }
+  ],
+  "validation": {
+    "fixed_operator": "44 passed on each released line, including eight new shape/offset cases, each with memory and native RocksDB restore and exact last-millisecond firing.",
+    "session_operator": "11 passed on 2.2, plus four new parameterized filter/restore cases on 1.18; SUM and COUNT(*) each cover event/proctime and both backends, including rejected rows bridging the session.",
+    "sql": "24 window SQL checks pass on 2.2; 22 pass/two released SESSION TVF skips on 1.18. Final four positive-consumption checks per line verify actual native operators for six offset/phase TVF and two legacy-filter jobs.",
+    "host_phase_availability": "Both released TwoStageOptimizedWindowAggregateRule implementations reject !windowing.isRowtime(); TWO_PHASE keeps the proven single-phase proctime aggregate.",
+    "upstream": "Unchanged proctime cascade execution contract and route scopes added; consolidated upstream runtime/required CI pending."
+  },
+  "optimization_passes": 0,
+  "prior_admission_evidence": "window-context-offset-filter-2026-10-20.json retains Rust/prebuilt-Arrow vs Java/prebuilt-RowData assignment measurements. No new Rust operation or JNI protocol was added for the clock/filter routes."
+}

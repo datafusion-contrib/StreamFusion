@@ -505,9 +505,9 @@ types and window shapes, with native work required from each selected stage. Flo
 cover selected/rejected NaNs, infinities and signed-zero ties. Memory and RocksDB restore
 checks retain independent extrema and windows whose predicates reject every value.
 
-Updating input still requires a retractable extrema state and falls back. Processing-time,
-session and legacy filtered windows also retain their current gates. Attached windows apply
-the same per-aggregate masks in one or two phases.
+Updating input still requires a retractable extrema state and falls back. Append-only
+processing-time, session and legacy windows apply the same masks; attached windows apply
+them in one or two phases. Rejected rows still establish and extend session membership.
 
 ## Retracting COUNT/SUM/AVG and grouping-only windows
 
@@ -622,8 +622,8 @@ This uses the existing Arrow validity masks and distinct list state, without a n
 checkpoint format. SQL tests cover the admitted types, independent filters, nullable keys
 and values, duplicates across batches and tasks, late watermarks, both aggregation phases,
 and checkpoint continuation on memory and RocksDB. Native work is required from each window
-stage. Updating input and filtered processing-time/session/legacy windows remain outside this
-extension; attached windows use the same independent masks and shared membership state.
+stage. Updating DISTINCT input remains outside this extension. Append-only processing-time,
+session and legacy windows also use the masks; attached windows retain shared membership state.
 
 Timestamp distinct keys follow Flink's serialized key representation: precision 0–3 uses
 milliseconds; precision 4–9 retains the fractional nanos. This matters when an internal cast
@@ -646,7 +646,7 @@ Batch updates and partial-state merges use the same nullable accumulator rule.
 
 The deprecated `GROUP BY TUMBLE(...)` and `GROUP BY HOP(...)` syntax is native for both event time
 and processing time, reusing the same single-phase fixed-window operator as TVF-planned aggregates.
-Legacy event-time `SESSION(...)` is native too. Legacy group windows have no offset and never use
+Legacy event-time and processing-time `SESSION(...)` are native too. Legacy group windows have no offset and never use
 Flink's two-phase local/global optimization.
 
 The auxiliary properties retain Flink's legacy layout and types: start and end are plain
@@ -669,16 +669,21 @@ for a local-time-zone attribute, in UTC (the raw wall-clock value) for a plain `
 operator's current processing-time clock and fired on a processing-time timer. `HOP` and `CUMULATE`
 leave several windows open at once, so the timer chains — each firing emits the earliest-ending open
 window and schedules the next slide boundary, until the clock has passed the latest open window's end.
-This requires **slide divides size**, so every window end lands on a slide boundary.
+Positive and negative SQL offsets shift both assignment and timer grids. Released slicing
+TVFs require the slide/step to divide size. Legacy HOP also admits non-dividing and gapped
+windows: timers follow the start grid shifted by the window size, so they fire at actual ends.
 
 `SESSION` is native on proctime too: the gap is measured on the processing-time clock, and each batch
 registers a cleanup timer at `now + gap` — the earliest the session could close with no further input.
 A later element extends the session (merged in the native aggregator) and registers its own later
 timer, so a firing emits only the sessions the clock has truly left behind by a full gap.
 
-Proctime support is currently **single-phase only**: a single-phase `TUMBLE`/`HOP`/`CUMULATE` whose
-slide divides its size, or a single-phase `SESSION`. The two-phase local/global split is not yet on
-the processing-time-timer path.
+Proctime support is **single-phase** for TUMBLE/HOP/CUMULATE and SESSION. Both released
+Flink planners forbid splitting processing-time windows because clock materialization must
+happen in one node. A TWO_PHASE request therefore retains the native single-phase operator;
+this is a released-host limitation, not a missing native merge path. Per-aggregate FILTER
+also runs on these clocks, including filtered COUNT(*), without discarding rejected rows
+from session bounds.
 
 Watermarks, including the terminal `Long.MAX_VALUE` watermark of a bounded source, do not
 fire processing-time windows. Completing bounded input also leaves an unfinished window open,
@@ -748,16 +753,11 @@ enables columnar composition with downstream consumers; it is not a standalone t
 
 - Window not event-time `TUMBLE`/`HOP`/`CUMULATE` over a local-time-zone or plain
   `TIMESTAMP` rowtime.
-- Proctime: a nonzero SQL offset, or anything other than a single-phase
-  `TUMBLE`/`HOP`/`CUMULATE` with slide dividing size, or
-  a single-phase `SESSION` — the two-phase local/global path isn't yet native on proctime.
-- `HOP` slide / `CUMULATE` step that doesn't divide the window size.
+- Internal processing-time local/global plans; both released planners retain one phase.
+- Slicing TVF `HOP` slide / `CUMULATE` step that doesn't divide size; released Flink rejects them.
 - Legacy row-count `TUMBLE`/`HOP` windows from the Table API.
 - Legacy early/late firing or allowed lateness.
 - A legacy group window over retracting or updating input.
-- Legacy proctime `HOP` when the slide does not divide the size. Event-time legacy `HOP` supports
-  non-dividing and gapped windows.
-- Legacy processing-time `SESSION`.
 - A grouping key outside the [verified scalar types](#scalar-grouping-and-partition-keys).
 - A value type/aggregate mismatch.
   DATE/TIME/BOOLEAN and TIMESTAMP/TIMESTAMP_LTZ values are admitted for insert-only MIN/MAX
@@ -773,8 +773,7 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - Windowed DISTINCT other than single-argument COUNT over the types listed above:
   SUM/AVG DISTINCT and complex values.
   Non-windowed DISTINCT has separate coverage; see [GROUP BY](group-by.md).
-- Filtered MIN/MAX on updating input, and filtered aggregates in processing-time,
-  session or legacy windows.
+- Filtered MIN/MAX on updating input.
 - Retracting input outside aligned event-time TUMBLE/HOP/CUMULATE with grouping-only,
   numeric SUM/AVG (including shared exact SUM0), admitted COUNT(value), and COUNT(*) with optional FILTER.
   DISTINCT, MIN/MAX, processing-time, attached, session
@@ -1769,8 +1768,8 @@ TVFs before execution; legacy group windows have separate assignment rules.
 Attached one/two-phase aggregation applies each FILTER mask before accumulation while keeping
 the assigned window alive even when every value is filtered out. Ordinary COUNT reads parent
 validity without interpreting its payload. The shared BIGINT transfer optimization applies only
-when no mask or COUNT validity conversion is needed. Fused proctime aggregate offsets,
-session FILTER and other documented changelog restrictions remain separate pending contexts.
+when no mask or COUNT validity conversion is needed. Fused proctime aggregate offsets
+and session FILTER use that same preparation. Documented changelog restrictions remain.
 Standalone TVFs admit offsets for both clocks; their output can feed attached aggregates without
 falling out of the native island. The global cumulative merge retains the original offset when
 reconstructing the start from a local partial's window end.
@@ -1822,3 +1821,30 @@ measurements above. Five controlled-clock cases per release additionally check p
 assignment offsets with NULL payload timestamps and positive/negative time-zone offsets.
 Forty-four focused Rust window checks pass. The artifact retains all trials, input hashes,
 release library and driver hashes, and the separately measured actual previous-revision controls.
+
+### Processing-time and session context verification
+
+Processing-time aggregates now admit SQL offsets and per-aggregate masks, and legacy
+processing-time SESSION and non-dividing/gapped HOP reuse the native operators. Fixed
+HOP timers follow the start grid plus size; this also preserves the previous dividing
+shapes. Session masks change aggregate contributions while every row still extends
+session bounds. No Rust operator or JNI protocol is added.
+
+The fixed-window operator suite passes 44 checks on each released line, including eight
+new shape/offset cases with exact timer boundaries and memory/RocksDB restore. Session
+checks include filtered SUM and COUNT(*), FALSE/NULL bridge rows, both clocks and both
+backends. Four SQL checks per release run eight phase/shape jobs and require positive
+input in the intended native operator, separately confirming that released proctime
+planning remains single-phase. Existing SQL window checks pass on both lines, with
+two explicit SESSION TVF skips on 1.18.
+
+A conversion-inclusive million-row filtered legacy SESSION job, 64 keys, p=2, memory
+state, JDK 17, 2 GiB heap and release+mimalloc measures median stock/native
+**0.795/0.667 s on 2.2** and **0.805/0.690 s on 1.18**, with two warmups and three
+alternating trials. The query computes filtered COUNT(*), AVG and SUM over nullable
+BIGINT values; cyclic timestamps merge into one ten-second session per key. The
+actual canonical `d13e9dc4` window fallback measures 0.798 s against paired stock
+0.821 s. Sources, both transposes, JNI, state, final output and rowwise sinks remain
+timed. [Raw trials, ranges, hashes and scope](../benchmarks/results/processing-window-contexts-2026-10-21.json)
+retain the precise protocol and distinguish this session comparison from the earlier
+Rust/Arrow assignment admission gate.

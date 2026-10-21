@@ -23,6 +23,7 @@ public class StreamPhysicalNativeColumnarSessionWindowAggregate extends StreamPh
   private final long gapMillis;
   private final int timeColumn;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] valueTypes;
   private final int[] aggregateKinds;
@@ -37,6 +38,7 @@ public class StreamPhysicalNativeColumnarSessionWindowAggregate extends StreamPh
       long gapMillis,
       int timeColumn,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] valueTypes,
       int[] aggregateKinds,
@@ -46,6 +48,7 @@ public class StreamPhysicalNativeColumnarSessionWindowAggregate extends StreamPh
     this.gapMillis = gapMillis;
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
@@ -68,6 +71,7 @@ public class StreamPhysicalNativeColumnarSessionWindowAggregate extends StreamPh
         gapMillis,
         timeColumn,
         valueColumns,
+        filterColumns,
         keyColumns,
         valueTypes,
         aggregateKinds,
@@ -85,6 +89,7 @@ public class StreamPhysicalNativeColumnarSessionWindowAggregate extends StreamPh
         gapMillis,
         timeColumn,
         valueColumns,
+        filterColumns,
         keyColumns,
         valueTypes,
         aggregateKinds,

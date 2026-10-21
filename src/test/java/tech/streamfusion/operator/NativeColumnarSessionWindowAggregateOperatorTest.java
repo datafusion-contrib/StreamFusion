@@ -213,6 +213,83 @@ class NativeColumnarSessionWindowAggregateOperatorTest {
         0);
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "false,false",
+    "false,true",
+    "true,false",
+    "true,true"
+  })
+  void filteredRowsStillBridgeSessionsAcrossRestore(boolean proctime, boolean rocks)
+      throws Exception {
+    var input =
+        RowType.of(
+            new BigIntType(),
+            new LocalZonedTimestampType(3),
+            new org.apache.flink.table.types.logical.BooleanType());
+    for (int kind : new int[] {0, 3}) {
+      OperatorSubtaskState snapshot = null;
+      for (int attempt = 0; attempt < 2; attempt++) {
+        var operator =
+            new NativeColumnarSessionWindowAggregateOperator(
+                    500,
+                    1,
+                    new int[] {kind == 3 ? -1 : 0},
+                    new int[0],
+                    new int[0],
+                    new int[] {0},
+                    new int[] {kind},
+                    "UTC",
+                    OUTPUT,
+                    proctime,
+                    new int[0],
+                    MAX_PARALLELISM)
+                .withFilterColumns(new int[] {2});
+        try (var allocator = new RootAllocator();
+            var harness =
+                new KeyedOneInputStreamOperatorTestHarness<>(
+                    operator, batch -> 0, Types.INT, MAX_PARALLELISM, 1, 0)) {
+          if (rocks)
+            harness.setStateBackend(
+                new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+                    .createFromConfig(
+                        new org.apache.flink.configuration.Configuration(),
+                        getClass().getClassLoader()));
+          harness.setup(new ArrowBatchSerializer());
+          if (attempt == 1) harness.initializeState(snapshot);
+          harness.open();
+          if (attempt == 0) {
+            for (long now : new long[] {100, 400}) {
+              harness.setProcessingTime(now);
+              var record =
+                  GenericRowData.of(
+                      now == 100 ? 7L : 100L, TimestampData.fromEpochMillis(now), now == 100);
+              harness.processElement(
+                  new StreamRecord<>(
+                      new ArrowBatch(
+                          RowDataArrowConverter.write(List.of(record), input, allocator))));
+            }
+            assertEquals(List.of(), collect(harness));
+            snapshot = harness.snapshot(1, 400);
+          } else {
+            harness.setProcessingTime(650);
+            var record = GenericRowData.of(1000L, TimestampData.fromEpochMillis(650), null);
+            harness.processElement(
+                new StreamRecord<>(
+                    new ArrowBatch(
+                        RowDataArrowConverter.write(List.of(record), input, allocator))));
+            if (proctime) harness.setProcessingTime(1148);
+            else harness.processWatermark(new Watermark(1148));
+            assertEquals(List.of(), collect(harness));
+            if (proctime) harness.setProcessingTime(1149);
+            else harness.processWatermark(new Watermark(1149));
+            assertEquals(List.of(row(kind == 3 ? 1 : 7, 100, 1150)), collect(harness));
+          }
+        }
+      }
+    }
+  }
+
   private static RowData event(long value, long eventTimeMillis) {
     GenericRowData row = new GenericRowData(2);
     row.setField(0, value);

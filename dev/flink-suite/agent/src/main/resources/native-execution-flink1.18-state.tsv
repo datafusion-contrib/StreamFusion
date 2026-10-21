@@ -80,3 +80,5 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testJsonArrayA
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testJsonArrayAggAndJsonObjectAggWithOtherAggs	changelog=false	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupJsonArrayAggAndJsonObjectAggWithOtherAggs	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupJsonArrayAggAndJsonObjectAggWithOtherAggs	changelog=false	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg	changelog=false	NativeColumnarWindowAggregateOperator

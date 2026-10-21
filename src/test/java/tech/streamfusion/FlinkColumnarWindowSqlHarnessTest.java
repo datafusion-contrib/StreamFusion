@@ -224,21 +224,78 @@ class FlinkColumnarWindowSqlHarnessTest {
   }
 
   @Test
-  void nonDividingLegacyProctimeHopFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void nonDividingLegacyProctimeHopRoutesToNative() throws Exception {
+    NativeParity.assertRoutes(
         FlinkColumnarWindowSqlHarnessTest::proctimeEnvironment,
         "SELECT k, SUM(v) AS s FROM src "
-            + "GROUP BY k, HOP(pt, INTERVAL '3' SECOND, INTERVAL '10' SECOND)",
-        "processing-time HOP requires slide to divide size");
+            + "GROUP BY k, HOP(pt, INTERVAL '3' SECOND, INTERVAL '10' SECOND)");
   }
 
   @Test
-  void legacyProctimeSessionFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void legacyProctimeSessionRoutesToNative() throws Exception {
+    NativeParity.assertRoutes(
         FlinkColumnarWindowSqlHarnessTest::proctimeEnvironment,
-        "SELECT k, SUM(v) AS s FROM src "
-            + "GROUP BY k, SESSION(pt, INTERVAL '1' HOUR)",
-        "processing-time SESSION is not native");
+        "SELECT k, SUM(v) AS s FROM src " + "GROUP BY k, SESSION(pt, INTERVAL '1' HOUR)");
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"TUMBLE", "HOP", "CUMULATE"})
+  void offsetProcessingTimeFiltersStaySinglePhaseOnBothStrategies(String shape) throws Exception {
+    for (String phase : new String[] {"ONE_PHASE", "TWO_PHASE"}) {
+      String sql =
+          "SELECT k, window_start, window_end, SUM(v) FILTER (WHERE v > 10), "
+              + "COUNT(*) FILTER (WHERE v < 30) FROM TABLE("
+              + shape
+              + "(TABLE src, DESCRIPTOR(pt), "
+              + (shape.equals("TUMBLE")
+                  ? "INTERVAL '1' HOUR"
+                  : "INTERVAL '1' HOUR, INTERVAL '3' HOUR")
+              + ", INTERVAL '-1' MINUTE)) GROUP BY k, window_start, window_end";
+      assertProcessingWindowNative(phase, sql, "NativeColumnarWindowAggregate");
+    }
+  }
+
+  @Test
+  void legacyProcessingTimeSessionAndGappedHopAdmitFilters() throws Exception {
+    for (String window :
+        new String[] {
+          "SESSION(pt, INTERVAL '1' HOUR)", "HOP(pt, INTERVAL '3' HOUR, INTERVAL '1' HOUR)"
+        }) {
+      assertProcessingWindowNative(
+          "ONE_PHASE",
+          "SELECT k, SUM(v) FILTER (WHERE v > 10), COUNT(*) FILTER (WHERE v < 30) FROM src GROUP BY"
+              + " k, "
+              + window,
+          window.startsWith("SESSION")
+              ? "NativeColumnarSessionWindowAggregate"
+              : "NativeColumnarWindowAggregate");
+    }
+  }
+
+  private static void assertProcessingWindowNative(String phase, String sql, String operator)
+      throws Exception {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var table = proctimeEnvironment(metrics);
+      table.getConfig().set("table.optimizer.agg-phase-strategy", phase);
+      table.getConfig().set("table.exec.mini-batch.enabled", "true");
+      table.getConfig().set("table.exec.mini-batch.size", "2");
+      table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+      String stock = table.explainSql(sql);
+      org.junit.jupiter.api.Assertions.assertFalse(stock.contains("LocalWindowAggregate"), stock);
+      NativePlanner.install(table);
+      String nativePlan = table.explainSql(sql);
+      assertTrue(nativePlan.contains(operator), nativePlan);
+      org.junit.jupiter.api.Assertions.assertFalse(
+          nativePlan.contains("NativeColumnarLocalWindowAggregate"), nativePlan);
+      var result = table.executeSql(sql);
+      String job = result.getJobClient().orElseThrow().getJobID().toString();
+      try (var rows = result.collect()) {
+        while (rows.hasNext()) rows.next();
+      }
+      assertTrue(
+          metrics.recordsIn(job, operator.replace("Aggregate", "Agg") + "ExecNode") > 0,
+          operator + " consumed no rows");
+    }
   }
 
   @Test
@@ -300,7 +357,14 @@ class FlinkColumnarWindowSqlHarnessTest {
   }
 
   private static TableEnvironment proctimeEnvironment() {
-    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    return proctimeEnvironment(null);
+  }
+
+  private static TableEnvironment proctimeEnvironment(RecoveryExecutionMetrics metrics) {
+    StreamExecutionEnvironment env =
+        metrics == null
+            ? StreamExecutionEnvironment.getExecutionEnvironment()
+            : metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
     env.setParallelism(1);
     StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
     tEnv.getConfig().setLocalTimeZone(ZoneId.of("UTC"));

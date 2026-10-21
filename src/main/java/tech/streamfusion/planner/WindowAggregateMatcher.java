@@ -88,7 +88,7 @@ final class WindowAggregateMatcher {
       // window end to land on one — true for tumbling (slide == size) and the aligned hopping/
       // cumulative cases (a non-dividing hop falls back). Single-phase only. Sessions are not a
       // fixed-grid shape (aligned is false) and are handled by matchesSession instead.
-      if (!aligned || assignmentOffset(windowing) != 0) {
+      if (!aligned) {
         return false;
       }
       long slide = windowSlide(windowing);
@@ -262,7 +262,6 @@ final class WindowAggregateMatcher {
       RelDataType inputType) {
     if (!(windowing instanceof TimeAttributeWindowingStrategy)
         || singlePhaseStringExtremaReason(node, windowing, aggCalls, inputType) != null
-        || hasFilters(aggCalls)
         || !insertOnlyInput(node)
         || !(FlinkCompat.isSessionWindow(windowing.getWindow()))) {
       return false;
@@ -719,6 +718,7 @@ final class WindowAggregateMatcher {
         WindowAggregateMatcher.gapMillis(agg.windowing()),
         WindowAggregateMatcher.timeColumn(agg.windowing()),
         WindowAggregateMatcher.valueColumns(agg.aggCalls()),
+        filterColumns(agg.aggCalls(), agg.aggCalls().size()),
         keyColumns,
         WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
         WindowAggregateMatcher.kinds(agg.aggCalls()),
@@ -883,7 +883,6 @@ final class WindowAggregateMatcher {
       WindowingStrategy windowing,
       scala.collection.Seq<AggregateCall> calls,
       RelDataType inputType) {
-    if (hasFilters(calls) && !windowing.isRowtime()) return false;
     return insertOnlyInput(node)
         || (windowing.isRowtime() && supportedRetractingAggregates(calls, inputType));
   }
@@ -943,7 +942,7 @@ final class WindowAggregateMatcher {
             == SqlTypeName.BOOLEAN;
   }
 
-  private static int[] filterColumns(scala.collection.Seq<AggregateCall> calls, int length) {
+  static int[] filterColumns(scala.collection.Seq<AggregateCall> calls, int length) {
     int[] columns = new int[length];
     Arrays.fill(columns, -1);
     for (int i = 0; i < calls.size(); i++) columns[i] = calls.apply(i).filterArg;

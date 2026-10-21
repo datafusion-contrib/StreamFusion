@@ -283,7 +283,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
         reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
       } else if (proctime) {
         long now = getProcessingTimeService().getCurrentProcessingTime();
-        updateColumnarProctime(in, now, valueColumns, keyColumns, keyTypes);
+        updateColumnarProctime(in, now, valueColumns, filterColumns, keyColumns, keyTypes);
         emitClosedWindows(now); // emit windows the clock has already passed
         if (!usesLocalWindowBounds()) maxOpenEnd = Math.max(maxOpenEnd, latestWindowEnd(now));
         scheduleNextTimer(now);
@@ -310,10 +310,8 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
 
   /**
    * Register a timer at the next window's last millisecond strictly after {@code now}, unless every
-   * open window is already drained or that boundary is already scheduled. Window ends fall on slide
-   * boundaries (the matcher requires the slide to divide the size), so the next end is the next
-   * slide multiple minus one millisecond. Processing time only advances, so the latest scheduled
-   * boundary never needs revisiting.
+   * open window is already drained or that boundary is already scheduled. Hopping ends lie on the
+   * start grid shifted by the window size, including legacy non-dividing and gapped windows.
    */
   private void scheduleNextTimer(long now) {
     if (usesLocalWindowBounds()) {
@@ -323,7 +321,8 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
       registeredTimer = next;
       return;
     }
-    long boundary = fixedGridStart(now + 1, slideMillis) + slideMillis - 1;
+    long endShift = cumulative ? 0 : windowMillis;
+    long boundary = fixedGridStart(now + 1 - endShift, slideMillis) + endShift + slideMillis - 1;
     if (boundary < maxOpenEnd && boundary > registeredTimer) {
       getProcessingTimeService().registerTimer(boundary, this);
       registeredTimer = boundary;

@@ -453,7 +453,17 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
    */
   protected final void updateColumnarProctime(
       VectorSchemaRoot in, long nowMillis, int[] valueColumns, int[] keyColumns, int[] keyTypes) {
-    updateColumnarInternal(in, -1, nowMillis, valueColumns, null, keyColumns, keyTypes);
+    updateColumnarProctime(in, nowMillis, valueColumns, null, keyColumns, keyTypes);
+  }
+
+  protected final void updateColumnarProctime(
+      VectorSchemaRoot in,
+      long nowMillis,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] keyTypes) {
+    updateColumnarInternal(in, -1, nowMillis, valueColumns, filterColumns, keyColumns, keyTypes);
   }
 
   /**

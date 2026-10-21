@@ -1,9 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeColumnarSessionWindowAggregateOperator;
-import tech.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -17,6 +13,10 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarSessionWindowAggregateOperator;
+import tech.streamfusion.operator.NativeWindowOperatorCore;
 
 /**
  * Execution node for the columnar session-window aggregate: it consumes Arrow batches from a columnar
@@ -32,6 +32,7 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
   private final long gapMillis;
   private final int timeColumn;
   private final int[] valueColumns;
+  private final int[] filterColumns;
   private final int[] keyColumns;
   private final int[] valueTypes;
   private final int[] aggregateKinds;
@@ -47,6 +48,7 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
       long gapMillis,
       int timeColumn,
       int[] valueColumns,
+      int[] filterColumns,
       int[] keyColumns,
       int[] valueTypes,
       int[] aggregateKinds,
@@ -63,6 +65,7 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
     this.gapMillis = gapMillis;
     this.timeColumn = timeColumn;
     this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
     this.keyColumns = keyColumns;
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
@@ -87,20 +90,21 @@ public class NativeColumnarSessionWindowAggExecNode extends ExecNodeBase<ArrowBa
             input,
             createTransformationMeta(TRANSFORMATION, config),
             new NativeColumnarSessionWindowAggregateOperator(
-                gapMillis,
-                timeColumn,
-                valueColumns,
-                keyColumns,
-                NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
-                valueTypes,
-                aggregateKinds,
-                timeZoneId,
-                timestampLtz,
-                planner.getTableConfig().getLocalTimeZone().getId(),
-                outputType,
-                proctime,
-                keyTimestampPrecisions,
-                maxParallelism),
+                    gapMillis,
+                    timeColumn,
+                    valueColumns,
+                    keyColumns,
+                    NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
+                    valueTypes,
+                    aggregateKinds,
+                    timeZoneId,
+                    timestampLtz,
+                    planner.getTableConfig().getLocalTimeZone().getId(),
+                    outputType,
+                    proctime,
+                    keyTimestampPrecisions,
+                    maxParallelism)
+                .withFilterColumns(filterColumns),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

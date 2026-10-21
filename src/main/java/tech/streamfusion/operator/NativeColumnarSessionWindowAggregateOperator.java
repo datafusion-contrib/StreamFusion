@@ -25,6 +25,7 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   private final boolean proctime;
   private final int timeColumn;
   private final int[] valueColumns;
+  private int[] filterColumns;
   private final int[] keyColumns;
   private final int[] keyTypes;
 
@@ -32,6 +33,11 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   private transient long registeredTimer;
 
   private transient java.time.ZoneId calendarZone;
+
+  public NativeColumnarSessionWindowAggregateOperator withFilterColumns(int[] columns) {
+    filterColumns = columns;
+    return this;
+  }
 
   @Override
   protected boolean isEventTimeWindow() {
@@ -245,11 +251,11 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
     try (VectorSchemaRoot in = element.getValue().root()) {
       if (proctime) {
         long now = getProcessingTimeService().getCurrentProcessingTime();
-        updateColumnarProctime(in, now, valueColumns, keyColumns, keyTypes);
+        updateColumnarProctime(in, now, valueColumns, filterColumns, keyColumns, keyTypes);
         emitClosedWindows(now); // emit any session the clock has already left behind by a full gap
         registerNextTimer();
       } else {
-        updateColumnar(in, timeColumn, valueColumns, keyColumns, keyTypes);
+        updateColumnar(in, timeColumn, valueColumns, filterColumns, keyColumns, keyTypes);
         reportLateRecords(Native.sessionAggregatorLateDrops(handle));
       }
     }

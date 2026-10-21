@@ -219,10 +219,17 @@ class NativeColumnarWindowAggregateOperatorTest {
       before.setup(new ArrowBatchSerializer());
       before.open();
       before.setProcessingTime(500);
-      before.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
-          List.of(GenericRowData.of(1L, StringData.fromString("z"), TimestampData.fromEpochMillis(9999)),
-              GenericRowData.of(1L, null, TimestampData.fromEpochMillis(9999)),
-              GenericRowData.of(2L, null, TimestampData.fromEpochMillis(9999))), input, allocator))));
+      before.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(
+                              1L, StringData.fromString("z"), TimestampData.fromEpochMillis(9999)),
+                          GenericRowData.of(1L, null, TimestampData.fromEpochMillis(9999)),
+                          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(9999))),
+                      input,
+                      allocator))));
       snapshot = before.snapshot(1L, 1L);
       assertTrue(before.getOutput().isEmpty());
     }
@@ -233,10 +240,20 @@ class NativeColumnarWindowAggregateOperatorTest {
       restored.initializeState(snapshot);
       restored.open();
       restored.setProcessingTime(800);
-      restored.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
-          List.of(GenericRowData.of(1L, StringData.fromString(""), TimestampData.fromEpochMillis(-9999)),
-              GenericRowData.of(1L, StringData.fromString(wide), TimestampData.fromEpochMillis(-9999)),
-              GenericRowData.of(2L, null, TimestampData.fromEpochMillis(-9999))), input, allocator))));
+      restored.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(
+                              1L, StringData.fromString(""), TimestampData.fromEpochMillis(-9999)),
+                          GenericRowData.of(
+                              1L,
+                              StringData.fromString(wide),
+                              TimestampData.fromEpochMillis(-9999)),
+                          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(-9999))),
+                      input,
+                      allocator))));
       restored.setProcessingTime(998);
       assertTrue(restored.getOutput().isEmpty());
       restored.setProcessingTime(999);
@@ -1035,6 +1052,93 @@ class NativeColumnarWindowAggregateOperatorTest {
       for (long end = 2000; end <= size; end += slide) {
         restored.setProcessingTime(end);
         assertEquals(List.of(row(7, cumulative ? 0 : end - size, end)), collect(restored));
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "false,1000,1000,250", "false,1000,1000,-250",
+    "false,1000,500,250", "false,1000,500,-250",
+    "true,3000,1000,250", "true,3000,1000,-250",
+    "false,1000,600,0", "false,400,1000,0"
+  })
+  void processingOffsetsFiltersAndNonDividingEndsSurviveRestore(
+      boolean cumulative, long size, long slide, long offset) throws Exception {
+    long now = 1300;
+    var expected = new ArrayList<List<Long>>();
+    if (cumulative) {
+      long start = Math.floorDiv(now - offset, size) * size + offset;
+      for (long end = start + slide; end <= start + size; end += slide)
+        if (end > now) expected.add(row(7, start, end));
+    } else {
+      for (long start = Math.floorDiv(now - offset, slide) * slide + offset;
+          start > now - size;
+          start -= slide) expected.add(row(7, start, start + size));
+      expected.sort(java.util.Comparator.comparingLong(r -> r.get(2)));
+    }
+    for (boolean rocks : new boolean[] {false, true}) {
+      OperatorSubtaskState snapshot = null;
+      for (int attempt = 0; attempt < 2; attempt++) {
+        var operator =
+            new NativeColumnarWindowAggregateOperator(
+                cumulative,
+                size,
+                slide,
+                1,
+                new int[] {0},
+                new int[] {2},
+                new int[0],
+                new int[0],
+                new int[] {0},
+                new int[] {0},
+                "UTC",
+                true,
+                "UTC",
+                OUTPUT,
+                true,
+                new int[0],
+                MAX_PARALLELISM);
+        operator.setAssignmentOffsetMillis(offset);
+        try (var allocator = new RootAllocator();
+            var harness = rawHarness(operator)) {
+          if (rocks)
+            harness.setStateBackend(
+                new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+                    .createFromConfig(
+                        new org.apache.flink.configuration.Configuration(),
+                        getClass().getClassLoader()));
+          harness.setup(new ArrowBatchSerializer());
+          if (attempt == 1) harness.initializeState(snapshot);
+          harness.open();
+          if (attempt == 0) {
+            harness.setProcessingTime(now);
+            var input =
+                RowType.of(
+                    new BigIntType(),
+                    new LocalZonedTimestampType(3),
+                    new org.apache.flink.table.types.logical.BooleanType());
+            harness.processElement(
+                new StreamRecord<>(
+                    new ArrowBatch(
+                        RowDataArrowConverter.write(
+                            List.of(
+                                GenericRowData.of(7L, null, true),
+                                GenericRowData.of(100L, null, false),
+                                GenericRowData.of(1000L, null, null)),
+                            input,
+                            allocator))));
+            assertEquals(List.of(), collect(harness));
+            snapshot = harness.snapshot(1, now);
+          } else {
+            for (var window : expected) {
+              harness.setProcessingTime(window.get(2) - 2);
+              assertEquals(List.of(), collect(harness));
+              harness.setProcessingTime(window.get(2) - 1);
+              assertEquals(List.of(window), collect(harness));
+            }
+          }
+        }
       }
     }
   }

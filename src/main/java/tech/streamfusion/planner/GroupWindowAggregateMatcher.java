@@ -42,7 +42,7 @@ final class GroupWindowAggregateMatcher {
     boolean session = window instanceof SessionGroupWindow;
     boolean fixed = window instanceof TumblingGroupWindow || window instanceof SlidingGroupWindow;
     if (!session && !fixed) {
-      return "legacy group-window: only TUMBLE, HOP, and event-time SESSION are native";
+      return "legacy group-window: only TUMBLE, HOP, and SESSION are native";
     }
 
     LogicalType timeType = window.timeAttribute().getOutputDataType().getLogicalType();
@@ -52,9 +52,6 @@ final class GroupWindowAggregateMatcher {
     boolean proctime = LogicalTypeChecks.isProctimeAttribute(timeType);
     if (!proctime && timeColumn(agg) < 0) {
       return "legacy group-window: host input time attribute is unavailable";
-    }
-    if (session && proctime) {
-      return "legacy group-window: processing-time SESSION is not native";
     }
     if (agg.emitStrategy().produceUpdates() || agg.emitStrategy().getAllowLateness() > 0) {
       return "legacy group-window: early/late firing and allowed lateness are not native";
@@ -70,9 +67,6 @@ final class GroupWindowAggregateMatcher {
         || !RowDataArrowConverter.supports(
             FlinkTypeFactory$.MODULE$.toLogicalRowType(agg.getRowType()))) {
       return "legacy group-window: an input or output column type the boundary cannot carry";
-    }
-    if (WindowAggregateMatcher.hasFilters(agg.aggCalls())) {
-      return "legacy group-window: filtered aggregates are unsupported";
     }
     if (!WindowAggregateMatcher.supportedAggregates(
         agg.grouping(), agg.aggCalls(), agg.getInput().getRowType())) {
@@ -100,9 +94,6 @@ final class GroupWindowAggregateMatcher {
     long slideMillis = slide.toMillis();
     if (sizeMillis <= 0 || slideMillis <= 0) {
       return "legacy group-window: window size and slide must be positive";
-    }
-    if (proctime && sizeMillis % slideMillis != 0) {
-      return "legacy group-window: processing-time HOP requires slide to divide size";
     }
     return null;
   }
@@ -192,10 +183,11 @@ final class GroupWindowAggregateMatcher {
           gap(agg).toMillis(),
           timeColumn(agg),
           WindowAggregateMatcher.valueColumns(agg.aggCalls()),
+          WindowAggregateMatcher.filterColumns(agg.aggCalls(), agg.aggCalls().size()),
           keyColumns,
           WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
           WindowAggregateMatcher.kinds(agg.aggCalls()),
-          false,
+          isProctime(agg),
           isLtz(agg));
     }
     long windowMillis = size(agg).toMillis();
@@ -209,7 +201,7 @@ final class GroupWindowAggregateMatcher {
         slide(agg).toMillis(),
         timeColumn(agg),
         WindowAggregateMatcher.valueColumns(agg.aggCalls()),
-        null,
+        WindowAggregateMatcher.filterColumns(agg.aggCalls(), agg.aggCalls().size()),
         keyColumns,
         WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
         WindowAggregateMatcher.kinds(agg.aggCalls()),

@@ -529,6 +529,42 @@
       "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
       "count": 1,
       "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=HEAP, UseTimestampLtz = true, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=HEAP, UseTimestampLtz = true, EnableAsyncState = true",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=HEAP, UseTimestampLtz = false, EnableAsyncState = true",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg",
+      "display_name": "AggPhase=TWO_PHASE, StateBackend=HEAP, UseTimestampLtz = false, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=ROCKSDB, UseTimestampLtz = false, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg",
+      "display_name": "AggPhase=TWO_PHASE, StateBackend=ROCKSDB, UseTimestampLtz = true, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
     }
   ]
 }

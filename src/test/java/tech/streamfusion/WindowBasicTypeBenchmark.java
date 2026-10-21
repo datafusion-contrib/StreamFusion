@@ -28,7 +28,7 @@ class WindowBasicTypeBenchmark {
     for (String value : System.getProperty("window.cases", "boolean,time").split(",")) {
       for (String phase : System.getProperty("window.phases", "ONE_PHASE,TWO_PHASE").split(",")) {
         for (String shape : System.getProperty("window.shapes", "TUMBLE,HOP,CUMULATE").split(",")) {
-          if (shape.equals("SESSION") && phase.equals("TWO_PHASE")) continue;
+          if (shape.endsWith("SESSION") && phase.equals("TWO_PHASE")) continue;
           measure(value, phase, shape);
         }
       }
@@ -51,6 +51,9 @@ class WindowBasicTypeBenchmark {
       case "double": aggregate = "COUNT(DISTINCT CAST(v AS DOUBLE))"; break;
       case "boolean": aggregate = "COUNT(DISTINCT b)"; break;
       case "time": aggregate = "COUNT(DISTINCT clock)"; break;
+      case "filtered_bigint":
+        aggregate = "COUNT(*) FILTER (WHERE b), AVG(v) FILTER (WHERE b), SUM(v) FILTER (WHERE b)";
+        break;
       case "bigint": aggregate = "COUNT(v), AVG(v), SUM(v)"; break;
       case "decimal": aggregate = "COUNT(d), AVG(d), SUM(d)"; break;
       case "count_string": aggregate = "COUNT(s)"; break;
@@ -74,6 +77,7 @@ class WindowBasicTypeBenchmark {
       case "CUMULATE":
         window = "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
         break;
+      case "LEGACY_SESSION":
       case "SESSION":
         window = "SESSION(TABLE src PARTITION BY k, DESCRIPTOR(rt), INTERVAL '10' SECOND)";
         break;
@@ -81,14 +85,23 @@ class WindowBasicTypeBenchmark {
     }
     long offsetSeconds = Long.getLong("window.offsetSeconds", 0L);
     if (offsetSeconds != 0) {
-      if (shape.equals("SESSION")) throw new IllegalArgumentException("SESSION has no offset");
+      if (shape.endsWith("SESSION")) throw new IllegalArgumentException("SESSION has no offset");
       window =
           window.substring(0, window.length() - 1) + ", INTERVAL '" + offsetSeconds + "' SECOND)";
     }
-    String sql = "SELECT k, window_start, window_end, " + aggregate + " FROM TABLE("
-        + window + ") GROUP BY k, window_start, window_end";
+    String sql =
+        shape.equals("LEGACY_SESSION")
+            ? "SELECT k, SESSION_START(rt, INTERVAL '10' SECOND), SESSION_END(rt, INTERVAL '10'"
+                  + " SECOND), "
+                + aggregate
+                + " FROM src GROUP BY k, SESSION(rt, INTERVAL '10' SECOND)"
+            : "SELECT k, window_start, window_end, "
+                + aggregate
+                + " FROM TABLE("
+                + window
+                + ") GROUP BY k, window_start, window_end";
     String operator =
-        shape.equals("SESSION")
+        shape.endsWith("SESSION")
             ? "NativeColumnarSessionWindowAggregate"
             : phase.equals("TWO_PHASE")
                 ? "NativeColumnarGlobalWindowAggregate"
