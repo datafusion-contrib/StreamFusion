@@ -34,6 +34,11 @@ class RetractingSumPartialsBenchmark {
                 + ", COUNT(mx), AVG(mx), SUM(mx) FILTER (WHERE mx > 0)"
                 + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY "
                 + (singleValue ? "k" : "u");
+        if (Boolean.getBoolean("sumretract.extrema")) {
+          query =
+              "INSERT INTO sink SELECT u, MIN(mx), COUNT(mx), AVG(mx), MAX(mx)"
+                  + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY u";
+        }
         double[][] times = new double[2][RUNS];
         var configuration = new Configuration();
         if (rocks)

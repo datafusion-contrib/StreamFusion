@@ -274,6 +274,16 @@ mod distinct_set_tests {
     }
 }
 
+fn group_partial_map(column: &ArrayRef) -> &arrow::array::ListArray {
+    let map = match column.as_any().downcast_ref::<arrow::array::StructArray>() {
+        Some(accumulator) if accumulator.num_columns() == 3 => accumulator.column(2),
+        _ => column,
+    };
+    map.as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .expect("aggregate map partial")
+}
+
 /// Per-(key, aggregate) state. SUM and COUNT fold/retract a single running value (SUM also keeps a
 /// non-null count so it reports NULL once fully retracted). Retracting MIN/MAX cannot use a single
 /// value, so they keep a value→count multiset and read the extreme off its ends — what makes them
@@ -426,6 +436,22 @@ impl GroupAggState {
     }
 
     fn new_local(kind: i64, value_type: &DataType, append_only: bool) -> Self {
+        if matches!(kind, 10 | 11)
+            && !matches!(
+                value_type,
+                DataType::Int64
+                    | DataType::Int32
+                    | DataType::Int16
+                    | DataType::Int8
+                    | DataType::Float64
+                    | DataType::Float32
+                    | DataType::Date32
+                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                    | DataType::Boolean
+            )
+        {
+            return Self::new(kind - 9, value_type);
+        }
         // The local half of an insert-only two-phase aggregate never retracts its inputs. Its
         // fixed-width MIN/MAX partial therefore needs one value, not the global/retracting multiset.
         let running_extreme = append_only
@@ -449,6 +475,43 @@ impl GroupAggState {
             }
         } else {
             Self::new(kind, value_type)
+        }
+    }
+
+    fn merge_extreme_delta(&mut self, key: MinMaxKey, delta: i64, retain_negative: bool) {
+        let Self::Extremes {
+            is_min,
+            counts,
+            journal,
+            extreme,
+            stale,
+        } = self
+        else {
+            unreachable!("extreme delta requires a multiset")
+        };
+        let next = counts.get(&key).copied().unwrap_or(0).wrapping_add(delta);
+        note(journal, &key);
+        if next == 0 || next < 0 && !retain_negative {
+            if journal.is_some() {
+                counts.insert(key.clone(), 0);
+                if !*stale && extreme.as_ref() == Some(&key) {
+                    *extreme = None;
+                    *stale = true;
+                }
+            } else {
+                counts.remove(&key);
+            }
+        } else {
+            if next > 0
+                && journal.is_some()
+                && !*stale
+                && extreme
+                    .as_ref()
+                    .map_or(true, |old| if *is_min { key < *old } else { key > *old })
+            {
+                *extreme = Some(key.clone());
+            }
+            counts.insert(key, next);
         }
     }
 
@@ -965,11 +1028,7 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
         let agg = self.multiset_aggs[table];
         if self.distinct_view_columns[agg] >= 0 {
             // Two-phase distinct merge: the elements are the rows' (value, count) view entries.
-            let list = batch
-                .column(self.distinct_view_columns[agg] as usize)
-                .as_any()
-                .downcast_ref::<arrow::array::ListArray>()
-                .expect("distinct view column must be a list");
+            let list = group_partial_map(batch.column(self.distinct_view_columns[agg] as usize));
             let entries = list
                 .values()
                 .as_any()
@@ -1767,11 +1826,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             ..num_agg)
             .map(|i| {
                 (self.distinct_view_columns[i] >= 0).then(|| {
-                    let list = batch
-                        .column(self.distinct_view_columns[i] as usize)
-                        .as_any()
-                        .downcast_ref::<arrow::array::ListArray>()
-                        .expect("distinct view column must be a list");
+                    let list =
+                        group_partial_map(batch.column(self.distinct_view_columns[i] as usize));
                     let entries = list
                         .values()
                         .as_any()
@@ -1818,7 +1874,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // typed running state for insert-only inputs, or the Extremes multiset otherwise.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                if matches!(self.kinds[i], 1 | 2 | 10 | 11) && self.value_columns[i] >= 0 {
+                if matches!(self.kinds[i], 1 | 2 | 10 | 11)
+                    && self.value_columns[i] >= 0
+                    && self.distinct_view_columns[i] < 0
+                {
                     let col = self.value_columns[i] as usize;
                     let data_type = batch.column(col).data_type();
                     (matches!(
@@ -2136,7 +2195,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     // Two-phase distinct merge: fold the local bundle's (value, count) entries into
                     // the per-key set with multiplicities. The partials are insert-only, so a
                     // retracting row kind cannot reach this path.
-                    if let Some((list, _values, counts)) = view_cols[i] {
+                    if let Some((list, values, counts)) = view_cols[i] {
                         assert!(!retract, "distinct view partials are insert-only");
                         if ordered_views[i].is_some() {
                             continue;
@@ -2145,7 +2204,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         let end = list.value_offsets()[row + 1] as usize;
                         let column = view_values[i].as_ref().expect("distinct view reader");
                         for e in start..end {
-                            if counts.value(e) > 0 {
+                            if matches!(state.aggs[i], GroupAggState::Extremes { .. }) {
+                                let value = ScalarValue::try_from_array(values, e)?;
+                                state.aggs[i].merge_extreme_delta(
+                                    MinMaxKey::from_scalar(&value),
+                                    counts.value(e),
+                                    false,
+                                );
+                            } else if counts.value(e) > 0 {
                                 column.update(&mut state.aggs[i], e, false, counts.value(e));
                             }
                         }
@@ -2996,6 +3062,7 @@ impl GroupAggregator<RocksGroupStore> {
 pub(crate) struct LocalGroupAggregator {
     single: Option<local_single::LocalSingleValue>,
     kinds: Vec<i64>,
+    retracting_extremes: Vec<bool>,
     value_types: Vec<DataType>,
     accumulator_types: Vec<DataType>,
     value_columns: Vec<i64>,
@@ -3090,6 +3157,18 @@ impl LocalGroupAggregator {
         key_columns: Vec<usize>,
         distinct_view_sources: Vec<i64>,
     ) -> Self {
+        let retracting_extremes = kinds
+            .iter()
+            .map(|kind| matches!(kind, 38 | 39))
+            .collect::<Vec<_>>();
+        let kinds = kinds
+            .into_iter()
+            .map(|kind| match kind {
+                38 => 1,
+                39 => 2,
+                other => other,
+            })
+            .collect::<Vec<_>>();
         let value_types: Vec<DataType> = value_types.iter().map(|&c| value_data_type(c)).collect();
         let accumulator_types = kinds
             .iter()
@@ -3141,6 +3220,7 @@ impl LocalGroupAggregator {
                 &distinct_view_sources,
             ),
             kinds,
+            retracting_extremes,
             value_types,
             accumulator_types,
             value_columns,
@@ -3177,7 +3257,10 @@ impl LocalGroupAggregator {
         self.kinds
             .iter()
             .zip(&self.accumulator_types)
-            .map(|(&kind, vt)| GroupAggState::new_local(kind, vt, append_only))
+            .enumerate()
+            .map(|(i, (&kind, vt))| {
+                GroupAggState::new_local(kind, vt, append_only && !self.retracting_extremes[i])
+            })
             .collect()
     }
 
@@ -3543,6 +3626,21 @@ impl LocalGroupAggregator {
                         continue;
                     }
                 }
+                if retract && matches!(self.kinds[i], 10 | 11) {
+                    continue;
+                }
+                if self.retracting_extremes[i] {
+                    let values = batch.column(self.value_columns[i] as usize);
+                    if !values.is_null(row) {
+                        let value = ScalarValue::try_from_array(values, row)?;
+                        entry.states[i].merge_extreme_delta(
+                            MinMaxKey::from_scalar(&value),
+                            if retract { -1 } else { 1 },
+                            true,
+                        );
+                    }
+                    continue;
+                }
                 if let GroupAggState::List(list) = &mut entry.states[i] {
                     assert!(!retract, "local LISTAGG partials require insert-only input");
                     let (values, separators) = list_columns[i].as_ref().expect("LISTAGG columns");
@@ -3748,13 +3846,85 @@ impl LocalGroupAggregator {
             }
             let scalars: Vec<ScalarValue> = order
                 .iter()
-                .map(|key| match key {
-                    LocalGroupKey::Byte(key) => states[key].states[i].emit(rt),
-                    LocalGroupKey::Scalar(key) => scalar_states[key].states[i].emit(rt),
+                .map(|key| {
+                    let state = match key {
+                        LocalGroupKey::Byte(key) => &states[key].states[i],
+                        LocalGroupKey::Scalar(key) => &scalar_states[key].states[i],
+                    };
+                    if self.retracting_extremes[i] {
+                        let GroupAggState::Extremes { is_min, counts, .. } = state else {
+                            unreachable!("local extreme partial")
+                        };
+                        let selected = if *is_min {
+                            counts.iter().find(|(_, count)| **count > 0)
+                        } else {
+                            counts.iter().rev().find(|(_, count)| **count > 0)
+                        };
+                        selected.map_or_else(|| null_scalar(rt), |(value, _)| value.scalar(rt))
+                    } else {
+                        state.emit(rt)
+                    }
                 })
                 .collect();
             fields.push(Field::new(format!("partial{i}"), rt.clone(), true));
             columns.push(scalars_to_array(scalars, rt));
+            if self.retracting_extremes[i] {
+                let mut offsets = vec![0i32];
+                let mut values = ScalarValues::new(&self.value_types[i]);
+                let mut multiplicities = Vec::new();
+                let mut sizes = Vec::with_capacity(order.len());
+                for key in &order {
+                    let entry = match key {
+                        LocalGroupKey::Byte(key) => &states[key],
+                        LocalGroupKey::Scalar(key) => &scalar_states[key],
+                    };
+                    let GroupAggState::Extremes { counts, .. } = &entry.states[i] else {
+                        unreachable!("retractable local extreme state")
+                    };
+                    sizes.push(counts.values().filter(|&&count| count > 0).count() as i64);
+                    for (value, &count) in counts {
+                        if count != 0 {
+                            values.push(value.scalar(&self.value_types[i]));
+                            multiplicities.push(count);
+                        }
+                    }
+                    offsets.push(multiplicities.len() as i32);
+                }
+                let selected = columns.pop().expect("selected extreme partial");
+                fields.pop();
+                let sizes: ArrayRef = Arc::new(Int64Array::from(sizes));
+                let entries = arrow::array::StructArray::new(
+                    distinct_entry_fields(&self.value_types[i]),
+                    vec![values.finish(), Arc::new(Int64Array::from(multiplicities))],
+                    None,
+                );
+                let map = arrow::array::ListArray::new(
+                    Arc::new(Field::new("item", entries.data_type().clone(), false)),
+                    arrow::buffer::OffsetBuffer::new(offsets.into()),
+                    Arc::new(entries),
+                    None,
+                );
+                let accumulator = arrow::array::StructArray::new(
+                    vec![
+                        Arc::new(Field::new(
+                            if self.kinds[i] == 1 { "min" } else { "max" },
+                            rt.clone(),
+                            true,
+                        )),
+                        Arc::new(Field::new("mapSize", DataType::Int64, false)),
+                        Arc::new(Field::new("map", map.data_type().clone(), false)),
+                    ]
+                    .into(),
+                    vec![selected, sizes, Arc::new(map)],
+                    None,
+                );
+                fields.push(Field::new(
+                    format!("partial{i}"),
+                    accumulator.data_type().clone(),
+                    false,
+                ));
+                columns.push(Arc::new(accumulator));
+            }
         }
         for (v, &source) in self.distinct_view_sources.iter().enumerate() {
             let source = source as usize;
@@ -4872,5 +5042,105 @@ mod retracting_partial_lifecycle_tests {
                 .unwrap();
             assert_sum(&aggregate.flush_mini_batch_at(1500).unwrap(), code, 2.0, 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod retracting_extreme_partial_tests {
+    use super::*;
+    #[test]
+    fn local_extreme_maps_preserve_negative_deltas_and_reset_after_flush() {
+        let batch = RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(vec![1, 1])) as ArrayRef),
+            ("v", Arc::new(Int64Array::from(vec![7, 2])) as ArrayRef),
+            (
+                ROW_KIND_COLUMN,
+                Arc::new(Int8Array::from(vec![3, 0])) as ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let mut local = LocalGroupAggregator::new(
+            vec![38, 39],
+            vec![0, 0],
+            vec![1, 1],
+            vec![],
+            vec![0],
+            vec![],
+        );
+        local.update(&batch).unwrap();
+        let output = local.flush();
+        assert_eq!(output.num_columns(), 3);
+        for index in [1, 2] {
+            let accumulator = output
+                .column(index)
+                .as_any()
+                .downcast_ref::<arrow::array::StructArray>()
+                .unwrap();
+            assert_eq!(
+                accumulator
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(0),
+                2
+            );
+            assert_eq!(
+                accumulator
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(0),
+                1
+            );
+            let map = accumulator
+                .column(2)
+                .as_any()
+                .downcast_ref::<arrow::array::ListArray>()
+                .unwrap()
+                .value(0);
+            let entries = map
+                .as_any()
+                .downcast_ref::<arrow::array::StructArray>()
+                .unwrap();
+            assert_eq!(
+                entries
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values()
+                    .as_ref(),
+                &[2, 7]
+            );
+            assert_eq!(
+                entries
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values()
+                    .as_ref(),
+                &[1, -1]
+            );
+        }
+        let empty = local.flush();
+        assert_eq!(empty.num_rows(), 0);
+        assert_eq!(empty.schema(), output.schema());
+        local.update(&batch.slice(1, 1)).unwrap();
+        let next = local.flush();
+        let accumulator = next
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        let map = accumulator
+            .column(2)
+            .as_any()
+            .downcast_ref::<arrow::array::ListArray>()
+            .unwrap()
+            .value(0);
+        assert_eq!(map.len(), 1);
     }
 }

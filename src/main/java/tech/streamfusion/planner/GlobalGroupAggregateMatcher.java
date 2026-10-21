@@ -43,8 +43,8 @@ final class GlobalGroupAggregateMatcher {
       return "global group aggregate: an output column type the boundary cannot carry";
     }
     int[] grouping = agg.grouping();
-    // Retracting SUM carries a separate non-null count, like AVG. MIN/MAX retract maps remain
-    // unsupported; every retracting merge derives per-key liveness from the count1 partial.
+    // Retracting SUM carries a separate non-null count, like AVG. MIN/MAX carry their
+    // structured signed maps; every retracting merge derives liveness from count1.
     boolean needRetraction = agg.needRetraction();
     if (needRetraction && agg.localAggInfoList().getIndexOfCountStar() < 0) {
       return "global group aggregate: a retracting merge without a count1 record counter";
@@ -76,9 +76,11 @@ final class GlobalGroupAggregateMatcher {
                   && kind != WindowAggregateMatcher.KIND_AVG
                   && kind != GroupAggregateMatcher.KIND_SUM_ZERO
                   && kind != WindowAggregateMatcher.KIND_SUM
-                  && kind != 14))) {
+                  && kind != 14
+                  && kind != WindowAggregateMatcher.KIND_MIN
+                  && kind != WindowAggregateMatcher.KIND_MAX))) {
         return "global group aggregate: a retracting merge admits COUNT, AVG, SUM0 and"
-            + " integer/FLOAT/DOUBLE SUM and scalar SINGLE_VALUE";
+            + " integer/FLOAT/DOUBLE SUM, scalar SINGLE_VALUE and mapped MIN/MAX";
       }
       // COUNT/SUM/AVG(DISTINCT x): the merge folds the local bundles' (value, count) view entries
       // into
@@ -150,6 +152,30 @@ final class GlobalGroupAggregateMatcher {
         offset += 2;
         continue;
       }
+      if (LocalGroupAggregateMatcher.isRetractingExtreme(call, needRetraction)
+          && offset < inputType.getFieldCount()
+          && inputType.getFieldList().get(offset).getType().isStruct()) {
+        Long hint = FlinkCompat.singleStateTtl(agg);
+        long retention =
+            hint == null
+                ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
+                    .getIdleStateRetention()
+                    .toMillis()
+                : hint;
+        if (retention > 0)
+          return "global group aggregate: retracting MIN/MAX with TTL require independently"
+              + " expiring map entries";
+        if (call.getArgList().size() != 1
+            || offset >= inputType.getFieldCount()
+            || !LocalGroupAggregateMatcher.supportedExtremePartials(
+                agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType(),
+                inputType.getFieldList().get(offset).getType()))
+          return "global group aggregate: retracting MIN/MAX requires its value/map-size/map"
+              + " accumulator; got "
+              + inputType;
+        offset++;
+        continue;
+      }
       if (LocalGroupAggregateMatcher.isRetractingSum(call, needRetraction)) {
         if (call.getArgList().size() != 1
             || offset + 1 >= inputType.getFieldCount()
@@ -161,7 +187,7 @@ final class GlobalGroupAggregateMatcher {
                 inputType.getFieldList().get(offset).getType(),
                 agg.getRowType().getFieldList().get(grouping.length + i).getType()))
           return "global group aggregate: retracting SUM requires matching primitive numeric sum"
-                     + " and BIGINT count partials";
+              + " and BIGINT count partials";
         offset += 2;
         continue;
       }
@@ -332,6 +358,9 @@ final class GlobalGroupAggregateMatcher {
               agg.aggCalls().apply(i).getAggregation().getKind())
           == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
         columns[i] = offset;
+      } else if (LocalGroupAggregateMatcher.isRetractingExtreme(
+          agg.aggCalls().apply(i), agg.needRetraction())) {
+        columns[i] = -1;
       } else
         columns[i] = spanOf(agg, i) == 2 && !agg.aggCalls().apply(i).isDistinct() ? offset + 1 : -1;
       offset += spanOf(agg, i);
@@ -351,7 +380,11 @@ final class GlobalGroupAggregateMatcher {
     int offset = grouping;
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       AggregateCall call = agg.aggCalls().apply(i);
-      if (call.isDistinct()) {
+      if (mappedExtreme(agg, i)) {
+        codes.add(
+            GroupAggregateMatcher.retainedValueTypeCode(
+                agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType()));
+      } else if (call.isDistinct()) {
         // The distinct set is keyed by the original value (the call's args point into the local's
         // input row), so its code carries that value's own type.
         codes.add(
@@ -416,9 +449,10 @@ final class GlobalGroupAggregateMatcher {
                         ? GroupAggregateMatcher.KIND_SUM_ZERO_DISTINCT
                         : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
       } else {
-        // A MIN/MAX merge is only admitted without retraction (see unsupportedReason), so a
-        // numeric one always runs as the plain running extreme — no retractable multiset.
-        if ((kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
+        // A scalar MIN/MAX partial has no signed map: merge it as a running extreme.
+        // A mapped partial retains the retractable multiset.
+        if (!mappedExtreme(agg, i)
+            && (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
             && GroupAggregateMatcher.runningExtremeType(
                 inputType.getFieldList().get(offset).getType().getSqlTypeName())) {
           kind =
@@ -466,9 +500,14 @@ final class GlobalGroupAggregateMatcher {
       firstView += spanOf(agg, i);
     }
     List<String> seen = new ArrayList<>();
+    int[] primary = valueColumns(agg);
     int[] columns = new int[agg.aggCalls().size()];
     for (int i = 0; i < columns.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
+      if (mappedExtreme(agg, i)) {
+        columns[i] = primary[i];
+        continue;
+      }
       if (!call.isDistinct()) {
         columns[i] = -1;
         continue;
@@ -480,6 +519,14 @@ final class GlobalGroupAggregateMatcher {
       columns[i] = firstView + seen.indexOf(key);
     }
     return columns;
+  }
+
+  private static boolean mappedExtreme(StreamPhysicalGlobalGroupAggregate agg, int index) {
+    int offset = agg.grouping().length;
+    for (int i = 0; i < index; i++) offset += spanOf(agg, i);
+    return LocalGroupAggregateMatcher.isRetractingExtreme(
+            agg.aggCalls().apply(index), agg.needRetraction())
+        && agg.getInput().getRowType().getFieldList().get(offset).getType().isStruct();
   }
 
   /** Positional width: two fields for AVG/SINGLE_VALUE/retracting SUM, one otherwise. */

@@ -1,0 +1,299 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Retracting two-phase MIN/MAX signed partial maps and monotonic scalar layouts",
+  "base_commit": "799c8741",
+  "configuration": {
+    "rows": 1000000,
+    "type": "DOUBLE",
+    "parallelism": 1,
+    "inner_keys": 128,
+    "outer_keys": 16,
+    "backend": "memory",
+    "heap": "2 GiB",
+    "mini_batch_rows": 512,
+    "mini_batch_latency": "1 h",
+    "null_every": 7,
+    "warmups": 2,
+    "measured_trials": 3,
+    "runtime": "JDK 17; release+mimalloc",
+    "query": "SELECT u, MIN(mx), COUNT(mx), AVG(mx), MAX(mx) FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY u",
+    "boundary": "Java RowData runtime source, both transposes, production JNI, state, rowwise blackhole sink and complete job execution; operator setup/planning excluded. No competing own tests or builds during timing."
+  },
+  "measurements": [
+    {
+      "flink_line": "2.2.1",
+      "revision": "candidate",
+      "dso_sha256": "876844c7a4bbab3f4225ac79971d734efb407ea49b5738e421ed1ff3ccfb06b6",
+      "native_aggregate_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.331045789
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.807068275
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.551428532
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.697115159
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.633086819
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.410255937
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.371828539
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.574229092
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.539126276
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.375297908
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.633086819,
+          0.574229092,
+          0.539126276
+        ],
+        "StreamFusion": [
+          0.410255937,
+          0.371828539,
+          0.375297908
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.574229092,
+        "StreamFusion": 0.375297908
+      },
+      "stock_over_streamfusion": 1.5300620647211283
+    },
+    {
+      "flink_line": "1.18.1",
+      "revision": "candidate",
+      "dso_sha256": "876844c7a4bbab3f4225ac79971d734efb407ea49b5738e421ed1ff3ccfb06b6",
+      "native_aggregate_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.252918202
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.739124046
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.518372783
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.801731725
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.587867151
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.393590721
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.367277759
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.553324413
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.558932142
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.359495606
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.587867151,
+          0.553324413,
+          0.558932142
+        ],
+        "StreamFusion": [
+          0.393590721,
+          0.367277759,
+          0.359495606
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.558932142,
+        "StreamFusion": 0.367277759
+      },
+      "stock_over_streamfusion": 1.521824091722363
+    },
+    {
+      "flink_line": "2.2.1",
+      "revision": "d13e9dc4",
+      "dso_sha256": "876844c7a4bbab3f4225ac79971d734efb407ea49b5738e421ed1ff3ccfb06b6",
+      "native_aggregate_route": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.346410114
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.692148595
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.631047595
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.611193354
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.52840563
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.544173712
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.543351059
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.502441833
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.512120902
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.493438584
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.52840563,
+          0.502441833,
+          0.512120902
+        ],
+        "StreamFusion": [
+          0.544173712,
+          0.543351059,
+          0.493438584
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.512120902,
+        "StreamFusion": 0.543351059
+      },
+      "stock_over_streamfusion": 0.942523058559089
+    }
+  ],
+  "optimization_passes": 0,
+  "validation": {
+    "each_released_line": {
+      "typed_raw_changelog_checks": 30,
+      "repeated_memory_and_rocks_recovery_checks": 4,
+      "positive_retention_fallback_checks": 1,
+      "typed_monotonic_direction_checks": 20
+    },
+    "native_partial_unit": "Final full release+mimalloc native suite: 825 passed, two ignored; includes signed local counts, positive selected value, nested wire shape and empty/reset flush.",
+    "native_work": "Each SQL admitted case requires local and global native input consumption; complete-job candidate trials require two local/global pairs. Prior revision asserts aggregate fallback with zero substitutions.",
+    "limitations": [
+      "Positive-TTL mapped extrema require independent map-entry expiry; correctness fallback retained pending the separate retention work.",
+      "Only DOUBLE/memory is timed; other types/backends have parity and recovery evidence, not performance claims.",
+      "Unchanged upstream runtime validation and required CI are pending the consolidated PR."
+    ],
+    "reproduce": "SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -Dnative.build.skip=true -Dnative.resource.directory=<release-library-directory> -Dtest=RetractingSumPartialsBenchmark -Dsumretract.extrema=true -Dsumretract.types=DOUBLE -Dsumretract.backends=memory surefire:test@default-test; add flink-1.18 profile for 1.18.1. Prior d13e9dc4 uses the same benchmark source and -Dsumretract.expectNative=false.",
+    "final_correctness_dso_sha256": "437faaa56cbac18a19e7b8908462c69703cfc6fd12f2f11df79a7741543b94cd",
+    "timing_library_note": "The timed v3 library precedes a typed monotonic local-state initialization fix for non-primitive values. DOUBLE execution is unchanged; all 55 final SQL cases on each release use v4."
+  }
+}

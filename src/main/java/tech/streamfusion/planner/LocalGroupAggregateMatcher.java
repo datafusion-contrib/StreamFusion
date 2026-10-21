@@ -58,7 +58,8 @@ final class LocalGroupAggregateMatcher {
 
   private static int stateWidth(AggregateCall call, boolean retracting) {
     return aggregateKind(call.getAggregation().getKind())
-            == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+                == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+            || isRetractingExtreme(call, retracting)
         ? 1
         : partialWidth(call, retracting);
   }
@@ -66,6 +67,33 @@ final class LocalGroupAggregateMatcher {
   static boolean supportedListAggPartials(RelDataType separator, RelDataType prefix) {
     return GroupAggregateMatcher.isStringType(separator.getSqlTypeName())
         && GroupAggregateMatcher.isStringType(prefix.getSqlTypeName());
+  }
+
+  static boolean isRetractingExtreme(AggregateCall call, boolean retracting) {
+    int kind = aggregateKind(call.getAggregation().getKind());
+    return retracting
+        && !call.isDistinct()
+        && (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX);
+  }
+
+  private static boolean mappedExtreme(StreamPhysicalLocalGroupAggregate agg, int index) {
+    int offset = agg.grouping().length;
+    for (int i = 0; i < index; i++)
+      offset += partialWidth(agg.aggCalls().apply(i), needRetraction(agg));
+    return isRetractingExtreme(agg.aggCalls().apply(index), needRetraction(agg))
+        && agg.getRowType().getFieldList().get(offset).getType().isStruct();
+  }
+
+  static boolean supportedExtremePartials(RelDataType value, RelDataType partial) {
+    if (!partial.isStruct() || partial.getFieldCount() != 3) return false;
+    RelDataType selected = partial.getFieldList().get(0).getType();
+    RelDataType size = partial.getFieldList().get(1).getType();
+    SqlTypeName map = partial.getFieldList().get(2).getType().getSqlTypeName();
+    return WindowAggregateMatcher.supportedAggregateValueType(
+            WindowAggregateMatcher.KIND_MIN, value.getSqlTypeName())
+        && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, selected)
+        && size.getSqlTypeName() == SqlTypeName.BIGINT
+        && (map == SqlTypeName.OTHER || map == SqlTypeName.ANY || map == SqlTypeName.MAP);
   }
 
   static boolean isRetractingSum(AggregateCall call, boolean retracting) {
@@ -104,8 +132,8 @@ final class LocalGroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     // A retracting input (the aggregate consumes another aggregate's changelog, Nexmark q4's
     // shape): the local folds -U/-D rows by subtracting. COUNT, AVG and exact SUM0 use their
-    // append-only layouts, while Flink's retract variants of
-    // MIN/MAX declare value maps the positional walk does not model. SINGLE_VALUE keeps its
+    // append-only layouts, while retracting MIN/MAX declare a structured signed value map.
+    // SINGLE_VALUE keeps its
     // typed value and signed INT count; SUM_RETRACT carries a
     // separate non-null count; a distinct view's map value switches to per-filter counts.
     boolean needRetraction = needRetraction(agg);
@@ -122,7 +150,9 @@ final class LocalGroupAggregateMatcher {
                   && retractKind != WindowAggregateMatcher.KIND_AVG
                   && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
                   && retractKind != WindowAggregateMatcher.KIND_SUM
-                  && retractKind != 14))) {
+                  && retractKind != 14
+                  && retractKind != WindowAggregateMatcher.KIND_MIN
+                  && retractKind != WindowAggregateMatcher.KIND_MAX))) {
         return false;
       }
       // A FILTER is a boolean input column (the planner materializes `IS TRUE(p)` in the Calc
@@ -203,6 +233,17 @@ final class LocalGroupAggregateMatcher {
                 outputType.getFieldList().get(offset).getType(),
                 outputType.getFieldList().get(offset + 1).getType())) return false;
         offset += 2;
+        continue;
+      }
+      if (isRetractingExtreme(call, needRetraction)
+          && offset < outputType.getFieldCount()
+          && outputType.getFieldList().get(offset).getType().isStruct()) {
+        if (call.getArgList().size() != 1
+            || offset >= outputType.getFieldCount()
+            || !supportedExtremePartials(
+                inputType.getFieldList().get(call.getArgList().get(0)).getType(),
+                outputType.getFieldList().get(offset).getType())) return false;
+        offset++;
         continue;
       }
       if (isRetractingSum(call, needRetraction)) {
@@ -496,6 +537,8 @@ final class LocalGroupAggregateMatcher {
                       ? GroupAggregateMatcher.KIND_SUM_ZERO_DISTINCT
                       : KIND_SUM_DISTINCT);
         }
+      } else if (mappedExtreme(agg, i)) {
+        kinds.add(kind == WindowAggregateMatcher.KIND_MIN ? 38 : 39);
       } else if (kind == 14) {
         kinds.add(14);
         kinds.add(21); // SINGLE_VALUE count is INT and includes NULL inputs.
@@ -507,7 +550,14 @@ final class LocalGroupAggregateMatcher {
         kinds.add(WindowAggregateMatcher.KIND_AVG_PARTIAL_SUM);
         kinds.add(WindowAggregateMatcher.KIND_COUNT);
       } else {
-        kinds.add(kind);
+        kinds.add(
+            needRetraction(agg)
+                    && (kind == WindowAggregateMatcher.KIND_MIN
+                        || kind == WindowAggregateMatcher.KIND_MAX)
+                ? (kind == WindowAggregateMatcher.KIND_MIN
+                    ? GroupAggregateMatcher.KIND_MIN_APPEND
+                    : GroupAggregateMatcher.KIND_MAX_APPEND)
+                : kind);
       }
     }
     if (countStarInserted(agg)) {

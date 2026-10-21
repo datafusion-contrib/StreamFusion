@@ -45,3 +45,8 @@ org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#test
 org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithNegativeOffset	*	NativeWindowTableFunctionOperator
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupBySingleValue	*	NativeColumnarGroupAggregateOperator
+
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	aggMode=OFF	NativeColumnarGroupAggregateOperator

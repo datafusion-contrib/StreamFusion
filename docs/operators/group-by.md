@@ -65,7 +65,7 @@ than widening to BIGINT. Single-phase retractions subtract at the same width; MI
 retain duplicate multiplicities until the last occurrence is removed. NULL inputs are
 ignored and all-NULL groups return NULL. FILTER and integer SUM(DISTINCT) preserve these
 rules across batches and checkpoint restore. Retracting two-phase integer/FLOAT/DOUBLE SUM carries a separate non-null count. Retracting
-two-phase MIN/MAX and DECIMAL SUM retain the general fallback described below.
+two-phase mapped MIN/MAX are described below; DECIMAL SUM retains its separate fallback.
 
 FLOAT SUM/MIN/MAX preserve FLOAT input, partial and result widths; FLOAT SUM rounds at
 that width after every addition. Floating SUM starts from its first non-NULL input, preserving
@@ -688,10 +688,9 @@ for the persistent-state-backend angle on this same raw-keyed-state layout.
 Still falling back, specific to the two-phase split: the opt-in `distinct-agg.split.enabled`
 incremental chain (a deliberate non-goal — see [Unsupported operators](unsupported.md)),
 `MIN`/`MAX` with a retained physical `DISTINCT` flag, and — under a
-retracting input — any aggregate other than `COUNT`/`AVG`/`SUM0`/ordinary integer/FLOAT/DOUBLE `SUM`
-(DECIMAL SUM and MIN/MAX retract variants retain unverified layouts, and a monotonicity-exempt `MIN`/`MAX` ignores
-retractions in ways the native fold would not) plus `DISTINCT` (its view value switches to
-per-filter live counts under retraction).
+retracting input — aggregates outside `COUNT`/`AVG`/`SUM0`, ordinary integer/FLOAT/DOUBLE `SUM`,
+scalar `SINGLE_VALUE`, and typed `MIN`/`MAX`. Mapped extrema require zero retention until independent
+MapView entry expiry is implemented. DECIMAL SUM and retracting `DISTINCT` retain separate gates.
 
 ## Type support
 
@@ -1037,7 +1036,7 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
   `MIN`/`MAX` with a retained physical `DISTINCT` flag (Flink normally removes it).
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
-- A retracting input with any aggregate other than plain COUNT/AVG/SUM0/integer/FLOAT/DOUBLE SUM.
+- A retracting input outside COUNT/AVG/SUM0/integer/FLOAT/DOUBLE SUM, scalar SINGLE_VALUE and typed MIN/MAX.
 
 **Global group aggregate (two-phase merge) only:**
 
@@ -1048,8 +1047,9 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
 - An AVG whose partial pair isn't `(bigint, bigint)` for an integer average, `(double, bigint)` for
   float/double, or `(decimal(38, s), bigint)` for decimal.
 - A distinct merge outside the local half's `COUNT`/`SUM(DISTINCT)` scope.
-- A retracting merge with any aggregate other than plain COUNT/AVG/SUM0/integer/FLOAT/DOUBLE SUM (those merge natively, the
-  `count1` partial driving per-key liveness).
+- A retracting merge outside COUNT/AVG/SUM0/integer/FLOAT/DOUBLE SUM, scalar SINGLE_VALUE and typed MIN/MAX.
+  Mapped MIN/MAX with positive retention still require independently expiring map entries.
+  The `count1` partial drives per-key liveness.
 - An unsupported grouping-key or output column type.
 
 ## Narrow integer validation and timing
@@ -1646,3 +1646,32 @@ The actual previous canonical `d13e9dc4` takes stock fallback: paired configured
 are 0.535/0.536 seconds on 2.2.1. No optimization pass was needed for this winning workload.
 [All trials, configuration, library hashes and validation limits](../benchmarks/results/retracting-single-value-2026-10-21.json)
 are retained; these measurements do not establish a speedup for every scalar type or backend.
+
+### Retracting MIN/MAX partials
+
+Two-phase MIN/MAX now transports each retracting accumulator as one Arrow struct containing
+its selected value, positive-entry count and signed value-to-count map. Negative local counts
+must survive a bundle: a deletion can remove a value that was accumulated by an earlier bundle.
+The global merge folds those deltas into its live multiset, so removing the selected minimum
+or maximum reveals the next live value. NULLs are excluded and FILTER applies before the local fold.
+A monotonicity-exempt scalar extreme can share a partial row with a mapped extreme; its local
+fold ignores retractions exactly as Flink does. This internal accumulator layout does not add
+new SQL STRUCTURED payload support.
+
+The 55 checks per released Flink line cover INT, BIGINT, FLOAT, DOUBLE, DECIMAL, STRING, DATE, TIME,
+TIMESTAMP(9) and BOOLEAN at bundle sizes 1/2/4, preserving complete output changelogs and
+types. Repeated restores cover both memory and native RocksDB state. The full native suite passes
+825 checks (two ignored); suite-agent checks pass 50 (one skip), and 35 route-audit checks pass. Positive retention
+keeps a correctness fallback while independent MapView expiry remains outstanding. Unchanged upstream
+`testMinAggRetractWithCondition` and `testMaxAggRetractWithCondition` now have explicit runtime
+contracts/scopes: their one-hour-retention two-phase variants expect this fallback, while
+single-phase variants require native work. Actual upstream runtime validation remains pending.
+
+The million-row updating MAX→MIN/COUNT/AVG/MAX cascade uses 128 inner and 16 outer keys,
+parallelism 1, memory state, 512-row bundles, a 2 GiB Java heap, two warmups and three alternating
+measurements. Both transposes, JNI, state and job completion remain timed. Metrics require two
+native local/global pairs to consume rows. DOUBLE medians are 0.574 s stock versus 0.375 s native
+on Flink 2.2.1 (1.53×), and 0.559 s versus 0.367 s on Flink 1.18.1 (1.52×). Actual canonical `d13e9dc4` falls back, with 0.543 s enabled versus 0.512 s stock in its separate run.
+These are complete-job measurements for this cascade, not isolated extrema throughput claims. Raw trials, the actual
+previous fallback and library hashes are retained in
+[the partial-map artifact](../benchmarks/results/retracting-extrema-partials-2026-10-21.json).
