@@ -295,5 +295,173 @@
     "reproduce": "SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -Dnative.build.skip=true -Dnative.resource.directory=<release-library-directory> -Dtest=RetractingSumPartialsBenchmark -Dsumretract.extrema=true -Dsumretract.types=DOUBLE -Dsumretract.backends=memory surefire:test@default-test; add flink-1.18 profile for 1.18.1. Prior d13e9dc4 uses the same benchmark source and -Dsumretract.expectNative=false.",
     "final_correctness_dso_sha256": "437faaa56cbac18a19e7b8908462c69703cfc6fd12f2f11df79a7741543b94cd",
     "timing_library_note": "The timed v3 library precedes a typed monotonic local-state initialization fix for non-primitive values. DOUBLE execution is unchanged; all 55 final SQL cases on each release use v4."
-  }
+  },
+  "post_sum_merge_validation": [
+    {
+      "flink_line": "2.2.1",
+      "dso_sha256": "18770cf146396c9fbc399db86b86891b2af61df2c59b2a74d780494cec47fe8f",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.326745886
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.780996447
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.488312747
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.844922017
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.60973052
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.398772828
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.360903617
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.554476531
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.506417014
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.367811951
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.60973052,
+          0.554476531,
+          0.506417014
+        ],
+        "StreamFusion": [
+          0.398772828,
+          0.360903617,
+          0.367811951
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.554476531,
+        "StreamFusion": 0.367811951
+      },
+      "stock_over_streamfusion": 1.5075000404214707
+    },
+    {
+      "flink_line": "1.18.1",
+      "dso_sha256": "18770cf146396c9fbc399db86b86891b2af61df2c59b2a74d780494cec47fe8f",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.276784014
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.737667238
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.477993746
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.812089246
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.604882109
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.397192629
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.375729574
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.518275592
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.491687329
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.378980877
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.604882109,
+          0.518275592,
+          0.491687329
+        ],
+        "StreamFusion": [
+          0.397192629,
+          0.375729574,
+          0.378980877
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.518275592,
+        "StreamFusion": 0.378980877
+      },
+      "stock_over_streamfusion": 1.3675507748640308
+    }
+  ]
 }

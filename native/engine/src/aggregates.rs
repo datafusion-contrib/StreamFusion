@@ -12,6 +12,9 @@ mod zero_sum;
 pub(crate) use retracting_window::{HIDDEN_LIVE_COUNT, LIVE_COUNT, RETRACT_COUNT, RETRACT_SUM};
 pub(crate) use timestamp_extreme::TimestampExtremeAccumulator;
 
+pub(crate) const RETRACTING_DECIMAL_SUM: i64 = 40;
+pub(crate) const RAW_SUM_PARTIAL: i64 = 41;
+
 /// Builds a built-in aggregate over an int64 `value` column. SUM/MIN/MAX/COUNT all reduce an int64
 /// column to a single int64 with single-scalar partial state, driven through DataFusion's
 /// accumulator machinery.
@@ -1273,6 +1276,19 @@ impl RunningAgg {
 
     pub(crate) fn new(kind: i64, value_type: &DataType) -> Self {
         use RunningAgg::*;
+        if kind == RAW_SUM_PARTIAL {
+            return Self::new(0, value_type);
+        }
+        if kind == RETRACTING_DECIMAL_SUM {
+            let DataType::Decimal128(_, scale) = value_type else {
+                panic!("retracting decimal sum requires a decimal value");
+            };
+            return SumDecimal {
+                sum: 0,
+                scale: *scale,
+                overflow: true,
+            };
+        }
         if matches!(kind, 22 | 23 | 34) {
             return match value_type {
                 DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {

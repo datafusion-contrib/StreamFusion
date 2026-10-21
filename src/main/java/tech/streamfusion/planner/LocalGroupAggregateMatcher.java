@@ -104,8 +104,9 @@ final class LocalGroupAggregateMatcher {
 
   static boolean supportedRetractingSumPartials(
       RelDataType value, RelDataType sum, RelDataType count) {
-    return GroupAggregateMatcher.isRunningType(value.getSqlTypeName())
-        && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, sum)
+    return (GroupAggregateMatcher.isRunningType(value.getSqlTypeName())
+                && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, sum)
+            || value.getSqlTypeName() == SqlTypeName.DECIMAL && isWidenedDecimal(sum, value))
         && count.getSqlTypeName() == SqlTypeName.BIGINT;
   }
 
@@ -544,7 +545,16 @@ final class LocalGroupAggregateMatcher {
         kinds.add(21); // SINGLE_VALUE count is INT and includes NULL inputs.
       } else if (isRetractingSum(call, needRetraction(agg))) {
         // A zero net contribution count must not erase the bundle's sum adjustment.
-        kinds.add(GroupAggregateMatcher.KIND_SUM_ZERO);
+        kinds.add(
+            agg.getInput()
+                        .getRowType()
+                        .getFieldList()
+                        .get(call.getArgList().get(0))
+                        .getType()
+                        .getSqlTypeName()
+                    == SqlTypeName.DECIMAL
+                ? GroupAggregateMatcher.KIND_RETRACTING_DECIMAL_SUM
+                : GroupAggregateMatcher.KIND_RAW_SUM_PARTIAL);
         kinds.add(WindowAggregateMatcher.KIND_COUNT);
       } else if (kind == WindowAggregateMatcher.KIND_AVG) {
         kinds.add(WindowAggregateMatcher.KIND_AVG_PARTIAL_SUM);

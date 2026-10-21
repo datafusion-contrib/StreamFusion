@@ -26,7 +26,8 @@ class RetractingSumPartialsBenchmark {
     for (String backend : System.getProperty("sumretract.backends", "memory,rocksdb").split(",")) {
       assertTrue(backend.equals("memory") || backend.equals("rocksdb"));
       boolean rocks = backend.equals("rocksdb");
-      for (String type : System.getProperty("sumretract.types", "INT,BIGINT").split(",")) {
+      for (String type :
+          System.getProperty("sumretract.types", "INT,BIGINT").split(",(?=[A-Za-z])")) {
         boolean singleValue = Boolean.getBoolean("sumretract.singleValue");
         String query =
             "INSERT INTO sink SELECT "
@@ -39,6 +40,7 @@ class RetractingSumPartialsBenchmark {
               "INSERT INTO sink SELECT u, MIN(mx), COUNT(mx), AVG(mx), MAX(mx)"
                   + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY u";
         }
+        query = query.replace("MAX(v)", "MAX(CAST(v AS " + type + "))");
         double[][] times = new double[2][RUNS];
         var configuration = new Configuration();
         if (rocks)

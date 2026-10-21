@@ -69,3 +69,7 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetr
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	changelog=false&aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
+
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	changelog=false&aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator

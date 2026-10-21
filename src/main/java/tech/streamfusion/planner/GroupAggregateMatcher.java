@@ -21,6 +21,8 @@ final class GroupAggregateMatcher {
   static final int KIND_SUM_ZERO = 22;
   static final int KIND_SUM_ZERO_MERGE = 23;
   static final int KIND_SUM_ZERO_DISTINCT = 34;
+  static final int KIND_RETRACTING_DECIMAL_SUM = 40;
+  static final int KIND_RAW_SUM_PARTIAL = 41;
   static final int KIND_LISTAGG_APPEND = 24;
   static final int KIND_LISTAGG_RETRACT = 25;
 

@@ -1,3 +1,4 @@
+use crate::aggregates::{RAW_SUM_PARTIAL, RETRACTING_DECIMAL_SUM};
 use crate::*;
 
 mod decimal_map_order;
@@ -629,7 +630,14 @@ impl GroupAggState {
                 *overflow = true;
                 *non_null += if retract { -count } else { count };
             }
-            _ => unreachable!("a NULL AVG sum partial is decimal-only"),
+            GroupAggState::Running {
+                agg: RunningAgg::SumDecimal { .. },
+                non_null,
+            } => {
+                // SUM's merge ignores a NULL partial; its separate signed count still moves.
+                *non_null += if retract { -count } else { count };
+            }
+            _ => unreachable!("a NULL sum partial is decimal-only"),
         }
     }
 
@@ -1347,6 +1355,7 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     staged_key_batches: Vec<RecordBatch>,
     staged_bytes: usize,
     numeric_views: HashMap<ByteKey, Vec<Option<NumericViewBuffer>>>,
+    sum_partials: HashMap<ByteKey, Vec<Option<RunningAgg>>>,
     deferred_batches: Vec<(RecordBatch, usize)>,
     deferred_keys: HashMap<ByteKey, ()>,
     deferred_bytes: usize,
@@ -1494,6 +1503,7 @@ impl GroupAggregator {
             staged_key_batches: Vec::new(),
             staged_bytes: 0,
             numeric_views: HashMap::default(),
+            sum_partials: HashMap::default(),
             deferred_batches: Vec::new(),
             deferred_keys: HashMap::default(),
             deferred_bytes: 0,
@@ -1553,6 +1563,7 @@ impl GroupAggregator {
             staged_key_batches: self.staged_key_batches,
             staged_bytes: self.staged_bytes,
             numeric_views: self.numeric_views,
+            sum_partials: self.sum_partials,
             deferred_batches: self.deferred_batches,
             deferred_keys: self.deferred_keys,
             deferred_bytes: self.deferred_bytes,
@@ -2002,6 +2013,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // One unfiltered SINGLE_VALUE accumulator already holds the complete result.
         let single_value = self.kinds.as_slice() == [14] && self.filter_columns[0] < 0;
         let zero_sum_merges: Vec<bool> = self.kinds.iter().map(|&kind| kind == 23).collect();
+        let sum_merges: Vec<_> = (0..num_agg)
+            .map(|i| {
+                self.mini_batch
+                    && self.count_columns[i] >= 0
+                    && matches!(self.kinds[i], 0 | 4 | RETRACTING_DECIMAL_SUM)
+            })
+            .collect();
         let staged_key_batch = self.staged_key_batches.len();
         let mut retained_key_batch = false;
         let mut staged_delta = 0usize;
@@ -2103,6 +2121,39 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
                 staged_delta += buffer.bytes() - std::mem::size_of::<NumericViewBuffer>() - before;
             }
+            for i in 0..num_agg {
+                if !sum_merges[i]
+                    || filter_cols[i]
+                        .is_some_and(|filter| filter.is_null(row) || !filter.value(row))
+                {
+                    continue;
+                }
+                assert!(!retract, "global sum partials are insert-only");
+                if !self.sum_partials.contains_key(key) {
+                    let buffers = (0..num_agg).map(|_| None).collect::<Vec<_>>();
+                    staged_delta += byte_key_bytes(key)
+                        + buffers.len() * std::mem::size_of::<Option<RunningAgg>>();
+                    self.sum_partials.insert(ByteKey::from(key), buffers);
+                }
+                let buffer = self.sum_partials.get_mut(key).unwrap()[i].get_or_insert_with(|| {
+                    RunningAgg::new(
+                        if self.kinds[i] == 4 { 8 } else { self.kinds[i] },
+                        batch.column(self.value_columns[i] as usize).data_type(),
+                    )
+                });
+                match value_columns[i]
+                    .as_ref()
+                    .expect("sum partial column")
+                    .at(row)
+                {
+                    Some(value) => buffer.fold(value),
+                    None => {
+                        if let RunningAgg::AvgPartialSumDecimal { overflow, .. } = buffer {
+                            *overflow = true;
+                        }
+                    }
+                }
+            }
             result_changed.fill(false);
             let group_alive = {
                 let state = if exists {
@@ -2159,6 +2210,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             } else {
                                 counts.value(row)
                             };
+                            if sum_merges[i] {
+                                let GroupAggState::Running { non_null, .. } = &mut state.aggs[i]
+                                else {
+                                    unreachable!("sum merge requires running state")
+                                };
+                                *non_null += count;
+                                continue;
+                            }
                             match column.at(row) {
                                 Some(num) => {
                                     if retract {
@@ -2504,7 +2563,29 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let ttl_on = self.ttl_ms > 0 && self.ttl_emit_unchanged;
         let cache_output = self.kinds.as_slice() != [14] || self.filter_columns[0] >= 0;
         let mut numeric_views = std::mem::take(&mut self.numeric_views);
+        let mut sum_partials = std::mem::take(&mut self.sum_partials);
         for key in order {
+            if let Some(buffers) = sum_partials.remove(&key) {
+                let state = self
+                    .store
+                    .get_mut(&key.0)
+                    .expect("staged sum key remains resident");
+                for (i, buffer) in buffers.into_iter().enumerate() {
+                    if let Some(buffer) = buffer {
+                        let value = buffer.emit();
+                        if value.is_null() {
+                            if self.kinds[i] == 4 {
+                                state.aggs[i].merge_overflowed(0, false);
+                            }
+                        } else {
+                            state.aggs[i].accumulate_merged(
+                                num_from_scalar(&value).expect("numeric sum partial"),
+                                0,
+                            );
+                        }
+                    }
+                }
+            }
             if let Some(buffers) = numeric_views.remove(&key) {
                 let state = self
                     .store
@@ -3851,7 +3932,12 @@ impl LocalGroupAggregator {
                         LocalGroupKey::Byte(key) => &states[key].states[i],
                         LocalGroupKey::Scalar(key) => &scalar_states[key].states[i],
                     };
-                    if self.retracting_extremes[i] {
+                    if matches!(self.kinds[i], RETRACTING_DECIMAL_SUM | RAW_SUM_PARTIAL) {
+                        let GroupAggState::Running { agg, .. } = state else {
+                            unreachable!("local sum partial")
+                        };
+                        agg.emit()
+                    } else if self.retracting_extremes[i] {
                         let GroupAggState::Extremes { is_min, counts, .. } = state else {
                             unreachable!("local extreme partial")
                         };

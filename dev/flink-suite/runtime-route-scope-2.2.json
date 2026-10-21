@@ -391,6 +391,48 @@
       "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
       "count": 1,
       "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP, EnableAsyncState=true",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP, EnableAsyncState=false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
+      "display_name": "LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
+      "display_name": "LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
+      "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
+      "count": 1,
+      "route": "native"
     }
   ]
 }

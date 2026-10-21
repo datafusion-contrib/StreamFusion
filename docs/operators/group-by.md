@@ -64,8 +64,8 @@ partials of an insert-only two-phase plan. SUM wraps on overflow at 8 or 16 bits
 than widening to BIGINT. Single-phase retractions subtract at the same width; MIN/MAX
 retain duplicate multiplicities until the last occurrence is removed. NULL inputs are
 ignored and all-NULL groups return NULL. FILTER and integer SUM(DISTINCT) preserve these
-rules across batches and checkpoint restore. Retracting two-phase integer/FLOAT/DOUBLE SUM carries a separate non-null count. Retracting
-two-phase mapped MIN/MAX are described below; DECIMAL SUM retains its separate fallback.
+rules across batches and checkpoint restore. Retracting two-phase numeric SUM carries a separate non-null count. Decimal overflow and
+typed mapped MIN/MAX are described below.
 
 FLOAT SUM/MIN/MAX preserve FLOAT input, partial and result widths; FLOAT SUM rounds at
 that width after every addition. Floating SUM starts from its first non-NULL input, preserving
@@ -575,7 +575,8 @@ the cast back to a narrow integer or float result — is byte-identical to the s
 
 Insert-only two-phase `MIN`/`MAX` also admit DATE, TIME, BOOLEAN, `TIMESTAMP` and
 `TIMESTAMP_LTZ`. Both halves carry the complete typed value and timestamp components; a partial must retain the input's logical type and precision.
-Two-phase retracting extrema retain the COUNT/AVG/SUM0/integer/FLOAT/DOUBLE SUM gate described below.
+Retracting two-phase extrema carry signed maps, or scalar partials when Flink proves monotonicity;
+positive-TTL mapped extrema retain their independent-view expiry gate.
 
 Decimal `SUM`/`MIN`/`MAX`/`AVG` carry through the split too: `SUM`'s partial is the i128 running
 sum as `DECIMAL(38, s)` (a bundle overflow emits NULL and latches the merged `AVG` NULL, skipped
@@ -658,21 +659,25 @@ same final output as Flink's shared bitmask view, since a filtered distinct is a
 distinct over the filtered row subset.
 
 **A retracting local input** (the aggregate consumes another aggregate's changelog — Nexmark q4's
-shape) is native for `COUNT`, `AVG`, `SUM0` and ordinary integer/FLOAT/DOUBLE `SUM`.
+shape) is native for `COUNT`, `AVG`, `SUM0`, numeric `SUM`, scalar `SINGLE_VALUE` and typed `MIN`/`MAX`.
 SUM_RETRACT uses a separate `(sum, BIGINT count)` partial pair; the other admitted layouts are invariant under
 retraction. The local subtracts `-U`/`-D` rows, and the appended (or reused) `count1` `COUNT(*)`
 partial drives per-key liveness in the global (`-D` and state drop when the merged count reaches
 zero at the logical bundle flush, Flink's `RecordCounter` semantics).
 
-Ordinary retracting SUM admits TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE with matching declared
-sum partial/result widths and a BIGINT non-null contribution count. Its local sum adjustment
+Ordinary retracting SUM admits TINYINT, SMALLINT, INT, BIGINT, FLOAT, DOUBLE and DECIMAL, with
+matching declared sum partial/result widths (DECIMAL widens to precision 38) and a BIGINT
+non-null contribution count. Its local sum adjustment
 survives a zero-net-count bundle; the global adds the adjustment and updates the non-null count
 separately. A zero non-null count emits NULL, while the separate count1 field controls group
 liveness. Numeric zero is not an empty group. The record counter removes a group only at exactly
 zero at the logical flush, matching Flink even when duplicate retractions make it negative.
 A temporary zero count inside the bundle retains its arithmetic history; clearing it early
-loses floating cancellation residue and changes SUM/AVG results. DECIMAL SUM_RETRACT remains
-on the host until its partial and overflow contracts are implemented.
+loses floating cancellation residue and changes SUM/AVG results. Local SUM preserves a nullable
+raw accumulator, including negative zero and a nonzero adjustment at count zero. The global first
+combines each bundle's partial sums and then merges that temporary sum into retained state.
+This two-level reduction preserves decimal reset-after-overflow and floating rounding order.
+A NULL decimal SUM partial is ignored while its count still merges; AVG overflow remains sticky.
 
 AVG's local sum remains an accumulator even when the bundle's net count is zero: replacing `10`
 with `20` emits a sum adjustment of `10` and a count adjustment of `0`. The global merge applies
@@ -688,9 +693,9 @@ for the persistent-state-backend angle on this same raw-keyed-state layout.
 Still falling back, specific to the two-phase split: the opt-in `distinct-agg.split.enabled`
 incremental chain (a deliberate non-goal — see [Unsupported operators](unsupported.md)),
 `MIN`/`MAX` with a retained physical `DISTINCT` flag, and — under a
-retracting input — aggregates outside `COUNT`/`AVG`/`SUM0`, ordinary integer/FLOAT/DOUBLE `SUM`,
+retracting input — aggregates outside `COUNT`/`AVG`/`SUM0`, ordinary numeric `SUM`,
 scalar `SINGLE_VALUE`, and typed `MIN`/`MAX`. Mapped extrema require zero retention until independent
-MapView entry expiry is implemented. DECIMAL SUM and retracting `DISTINCT` retain separate gates.
+MapView entry expiry is implemented. Retracting `DISTINCT` retains its separate gate.
 
 ## Type support
 
@@ -1036,7 +1041,7 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
   `MIN`/`MAX` with a retained physical `DISTINCT` flag (Flink normally removes it).
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
-- A retracting input outside COUNT/AVG/SUM0/integer/FLOAT/DOUBLE SUM, scalar SINGLE_VALUE and typed MIN/MAX.
+- A retracting input outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE and typed MIN/MAX.
 
 **Global group aggregate (two-phase merge) only:**
 
@@ -1047,7 +1052,7 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
 - An AVG whose partial pair isn't `(bigint, bigint)` for an integer average, `(double, bigint)` for
   float/double, or `(decimal(38, s), bigint)` for decimal.
 - A distinct merge outside the local half's `COUNT`/`SUM(DISTINCT)` scope.
-- A retracting merge outside COUNT/AVG/SUM0/integer/FLOAT/DOUBLE SUM, scalar SINGLE_VALUE and typed MIN/MAX.
+- A retracting merge outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE and typed MIN/MAX.
   Mapped MIN/MAX with positive retention still require independently expiring map entries.
   The `count1` partial drives per-key liveness.
 - An unsupported grouping-key or output column type.
@@ -1518,7 +1523,8 @@ including mixed SUM/COUNT/AVG/FILTER, NULL keys/values, zero, negative record co
 zero-count sum adjustments, deletion/recreation, and signed overflow. A 2,688-row single-key
 case spans multiple Arrow batches with deterministic count-trigger cadence; independent keys
 can alter the global count-trigger cadence when local bundles enumerate keys in a different order.
-DECIMAL SUM_RETRACT retains explicit stock fallback; FLOAT/DOUBLE admission is described below. Operator tests cover
+The later numeric-partial completion below adds DECIMAL SUM_RETRACT and exact two-level merging;
+the preceding INT/BIGINT measurements retain their historical library boundary. Operator tests cover
 memory/RocksDB recovery, backend migration, key-group rescaling and TTL refresh/expiry.
 
 `RetractingSumPartialsBenchmark` runs the updating MAX→SUM/COUNT/AVG/FILTER cascade from a
@@ -1609,8 +1615,8 @@ is retained. The timed v1 build precedes a SINGLE_VALUE-only TTL dispatch correc
 validation uses the corrected v2 build. The SUM benchmark has TTL disabled, so that
 correction does not change its execution path. Each released line passes 20 complete
 numeric changelog checks, 22 controlled retention/recovery checks and 26 focused
-SINGLE_VALUE checks. Decimal retracting SUM and other unsupported retracting partial
-layouts remain explicit fallback.
+SINGLE_VALUE checks. The later decimal-partial completion below extends this historical
+FLOAT/DOUBLE implementation and corrects rounding-sensitive two-level reductions.
 
 
 ### Retracting SINGLE_VALUE partials
@@ -1670,8 +1676,52 @@ single-phase variants require native work. Actual upstream runtime validation re
 The million-row updating MAX→MIN/COUNT/AVG/MAX cascade uses 128 inner and 16 outer keys,
 parallelism 1, memory state, 512-row bundles, a 2 GiB Java heap, two warmups and three alternating
 measurements. Both transposes, JNI, state and job completion remain timed. Metrics require two
-native local/global pairs to consume rows. DOUBLE medians are 0.574 s stock versus 0.375 s native
-on Flink 2.2.1 (1.53×), and 0.559 s versus 0.367 s on Flink 1.18.1 (1.52×). Actual canonical `d13e9dc4` falls back, with 0.543 s enabled versus 0.512 s stock in its separate run.
+native local/global pairs to consume rows. After the shared temporary-sum correction below, DOUBLE medians are 0.554 s stock versus 0.368 s
+native on Flink 2.2.1 (1.51×), and 0.518 s versus 0.379 s on Flink 1.18.1 (1.37×). Actual canonical `d13e9dc4` falls back, with 0.543 s enabled versus 0.512 s stock in its separate run.
 These are complete-job measurements for this cascade, not isolated extrema throughput claims. Raw trials, the actual
 previous fallback and library hashes are retained in
 [the partial-map artifact](../benchmarks/results/retracting-extrema-partials-2026-10-21.json).
+
+### Nullable sums and global temporary partials
+
+Retracting local SUM now emits its nullable running sum and signed non-null count separately.
+It retains negative zero and a sum adjustment when the net contribution count is zero. DECIMAL
+widens the partial to precision 38 at the input scale, resets after arithmetic overflow on the next
+non-null accumulate/retract, and ignores a NULL partial during merge while still merging its count.
+AVG preserves its distinct, sticky decimal overflow semantics.
+
+For each logical global mini-batch, SUM/AVG first combine partial sums in temporary per-key
+accumulators, then merge that result into retained state. Folding each incoming partial directly
+into retained state changes the point of decimal overflow and floating rounding. The temporary
+buffers are memory-accounted, flushed before checkpointing, and used by memory and RocksDB state.
+Positive TTL still reads retained state at the logical flush clock.
+
+Each released Flink line passes 26 new checks: four decimal shapes (12/20/38 digits, including
+scale 38) at three bundle sizes; four repeated decimal recoveries; six FLOAT/DOUBLE rounding,
+signed-zero and non-finite fixtures; and four repeated floating recoveries. They compare complete
+changelogs and result types and require both native phases to consume rows. The prior 19 numeric
+changelog and ten direct state/recovery/rescaling/TTL checks also pass on each line. The full
+release+mimalloc native suite passes 825 tests (two ignored), the suite agent passes 50
+(one skip), and 35 route-audit checks pass.
+
+The unchanged upstream `testPrecisionForSumWithRetractAggregationOnDecimal` now requires
+native local/global work in its two-phase fixture and native grouping in its single-phase fixture,
+with the established Flink 1.18 changelog-state fallback retained. Runtime-route scope is updated;
+actual unchanged upstream execution and required CI remain pending the consolidated PR.
+
+The release+mimalloc million-row MAX→SUM/COUNT/AVG/FILTER cascade retains both transposes,
+JNI, temporary/persistent state and rowwise completion. It uses 128 inner/16 outer keys,
+parallelism 1, memory state, 512-row bundles, a 2 GiB heap, two warmups and three alternating trials.
+Consumed-work metrics require two native local/global pairs.
+
+| Type | Flink 2.2 stock/native median, s | Stock/native | Flink 1.18 stock/native median, s | Stock/native |
+| --- | ---: | ---: | ---: | ---: |
+| FLOAT | 0.588 / 0.384 | 1.53× | 0.478 / 0.374 | 1.28× |
+| DOUBLE | 0.510 / 0.280 | 1.82× | 0.459 / 0.287 | 1.60× |
+| DECIMAL(20,3) | 0.704 / 0.432 | 1.63× | 0.631 / 0.339 | 1.86× |
+
+Actual canonical `d13e9dc4` takes decimal fallback: 0.674 s enabled versus 0.660 s stock in its separate run.
+All measured cases win their complete-job comparison; no optimization pass was needed.
+Warmups, trials, variability, exact boundaries and hashes are retained in
+[the numeric-partial artifact](../benchmarks/results/retracting-decimal-partials-2026-10-21.json).
+Higher decimal scales and RocksDB have parity/recovery coverage, without corresponding throughput claims.

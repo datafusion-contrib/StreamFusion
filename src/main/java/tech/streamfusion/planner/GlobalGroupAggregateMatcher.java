@@ -80,7 +80,7 @@ final class GlobalGroupAggregateMatcher {
                   && kind != WindowAggregateMatcher.KIND_MIN
                   && kind != WindowAggregateMatcher.KIND_MAX))) {
         return "global group aggregate: a retracting merge admits COUNT, AVG, SUM0 and"
-            + " integer/FLOAT/DOUBLE SUM, scalar SINGLE_VALUE and mapped MIN/MAX";
+            + " numeric SUM, scalar SINGLE_VALUE and mapped MIN/MAX";
       }
       // COUNT/SUM/AVG(DISTINCT x): the merge folds the local bundles' (value, count) view entries
       // into
@@ -186,7 +186,7 @@ final class GlobalGroupAggregateMatcher {
             || !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
                 inputType.getFieldList().get(offset).getType(),
                 agg.getRowType().getFieldList().get(grouping.length + i).getType()))
-          return "global group aggregate: retracting SUM requires matching primitive numeric sum"
+          return "global group aggregate: retracting SUM requires matching numeric sum"
               + " and BIGINT count partials";
         offset += 2;
         continue;
@@ -449,6 +449,9 @@ final class GlobalGroupAggregateMatcher {
                         ? GroupAggregateMatcher.KIND_SUM_ZERO_DISTINCT
                         : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
       } else {
+        if (LocalGroupAggregateMatcher.isRetractingSum(call, agg.needRetraction())
+            && inputType.getFieldList().get(offset).getType().getSqlTypeName()
+                == SqlTypeName.DECIMAL) kind = GroupAggregateMatcher.KIND_RETRACTING_DECIMAL_SUM;
         // A scalar MIN/MAX partial has no signed map: merge it as a running extreme.
         // A mapped partial retains the retractable multiset.
         if (!mappedExtreme(agg, i)

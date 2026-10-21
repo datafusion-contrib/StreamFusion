@@ -36,41 +36,6 @@ class FlinkRetractingSumPartialsSqlHarnessTest {
     compare("BIGINT", 4, 128);
   }
 
-  @TestFactory
-  Stream<DynamicTest> unverifiedSumRetractionTypesKeepStockExecution() {
-    return Stream.of("DECIMAL(12,2)")
-        .map(
-            type ->
-                DynamicTest.dynamicTest(
-                    type,
-                    () -> {
-                      try (var metrics = new RecoveryExecutionMetrics()) {
-                        var env = metrics.environment(new Configuration(), 1, 0);
-                        var table = StreamTableEnvironment.create(env);
-                        table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
-                        table.getConfig().set("table.exec.mini-batch.enabled", "true");
-                        table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
-                        table.getConfig().set("table.exec.mini-batch.size", "2");
-                        var rowType = ROW(FIELD("k", INT()), FIELD("v", BIGINT()));
-                        table.createTemporaryView(
-                            "src",
-                            table.fromChangelogStream(
-                                fromData(env, input("BIGINT"), ExternalTypeInfo.<Row>of(rowType)),
-                                Schema.newBuilder().fromRowDataType(rowType).build()));
-                        var scan = NativePlanner.install(table);
-                        var result =
-                            table.executeSql(
-                                "SELECT k, SUM(CAST(v AS " + type + ")) FROM src GROUP BY k");
-                        try (var rows = result.collect()) {
-                          while (rows.hasNext()) rows.next();
-                        }
-                        result.getJobClient().orElseThrow().getJobExecutionResult().get();
-                        assertEquals(0, scan.substitutions(), scan.explainSummary());
-                        assertFalse(scan.fallbackReasons().isEmpty(), scan.explainSummary());
-                      }
-                    }));
-  }
-
   private static void compare(String typeName, int bundle, int repeats) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       List<List<Object>> expected = null;
