@@ -1634,6 +1634,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     ) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
+        if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
+            return self.update_regular(batch, now_ms);
+        }
         if let Some(output) = self.try_update_single_append(batch, now_ms)? {
             return Ok(output);
         }
@@ -1647,15 +1650,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     ) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
-        if self.mini_batch
-            && self.ttl_ms > 0
-            && !self.draining_deferred
-            && self.kinds.iter().enumerate().any(|(i, kind)| {
-                matches!(kind, 9 | 17 | 34)
-                    && self.distinct_view_columns[i] >= 0
-                    && ordered_distinct_type(&self.value_types[i])
-            })
-        {
+        if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
             // The host reads retained global state only when its temporary bundle is merged.
             let mut added = batch.get_array_memory_size() + std::mem::size_of::<RecordBatch>();
             let mut encoder = BinaryRowBatchEncoder::new(
@@ -2220,11 +2215,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 self.store.resolve_multiset_extremes(key)?;
             }
 
-            if self.mini_batch {
-                if self.store.get(key).unwrap().records == 0 {
-                    self.store.remove(key);
-                }
-            } else if self.store.get(key).unwrap().records != 0 {
+            if !self.mini_batch && group_alive {
                 let state = self.store.get_mut(key).expect("key present");
                 if distinct_ordered && prev.is_some() {
                     let mut previous = prev.take().expect("existing ordered output");
@@ -2293,7 +2284,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         }
                     }
                 }
-            } else {
+            } else if !self.mini_batch {
                 // The last record for the key was retracted: delete the group, emitting -D only if
                 // the key ever emitted (a new key whose first merged count1 nets to zero — Flink's
                 // firstRow-and-empty case — is dropped silently).
@@ -2476,6 +2467,15 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
             }
             let staged = &changes[&key];
+            // Flink evaluates group liveness after every partial in this logical bundle merges.
+            // A temporary zero count must not discard floating residuals or overflow history.
+            if let Some(state) = self.store.get(&key.0).filter(|state| state.records == 0) {
+                if self.memory.tracking() {
+                    self.memory
+                        .forget(byte_key_bytes(&key.0) + group_key_state_bytes(state));
+                }
+                self.store.remove(&key.0);
+            }
             let new = self
                 .store
                 .get(&key.0)
@@ -4782,6 +4782,95 @@ mod listagg_partial_tests {
                     assert_eq!(counts.value(row), 2);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod retracting_partial_lifecycle_tests {
+    use super::*;
+    use arrow::array::Float64Array;
+
+    fn partials(code: i64, sums: &[f64], counts: &[i64]) -> RecordBatch {
+        let values: ArrayRef = if code == 6 {
+            Arc::new(Float32Array::from_iter_values(
+                sums.iter().map(|value| *value as f32),
+            ))
+        } else {
+            Arc::new(Float64Array::from_iter_values(sums.iter().copied()))
+        };
+        RecordBatch::try_from_iter(vec![
+            (
+                "k",
+                Arc::new(Int32Array::from(vec![1; sums.len()])) as ArrayRef,
+            ),
+            ("sum", values),
+            (
+                "count",
+                Arc::new(Int64Array::from(counts.to_vec())) as ArrayRef,
+            ),
+        ])
+        .unwrap()
+    }
+
+    fn operator(code: i64) -> GroupAggregator {
+        GroupAggregator::new(vec![0], vec![code], vec![1], vec![0], true)
+            .with_count_columns(vec![2])
+            .with_record_count_column(2)
+            .with_mini_batch()
+            .with_memory_budget(1 << 20)
+            .unwrap()
+    }
+
+    fn assert_sum(batch: &RecordBatch, code: i64, value: f64, kind: i8) {
+        assert_eq!(batch.num_rows(), 1);
+        let expected = if code == 6 {
+            ScalarValue::Float32(Some(value as f32))
+        } else {
+            ScalarValue::Float64(Some(value))
+        };
+        assert_eq!(
+            ScalarValue::try_from_array(batch.column(1), 0).unwrap(),
+            expected
+        );
+        assert_eq!(
+            batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .unwrap()
+                .value(0),
+            kind
+        );
+    }
+
+    #[test]
+    fn temporary_empty_groups_keep_sum_adjustments_until_the_logical_flush() {
+        for code in [6, 1] {
+            let mut aggregate = operator(code);
+            aggregate
+                .update(&partials(code, &[1.0, -1.0, 2.0, 11.0], &[1, -1, 0, 1]), 0)
+                .unwrap();
+            assert_sum(&aggregate.flush_mini_batch().unwrap(), code, 13.0, 0);
+            aggregate
+                .update(&partials(code, &[-13.0], &[-1]), 0)
+                .unwrap();
+            assert_sum(&aggregate.flush_mini_batch().unwrap(), code, 13.0, 3);
+            aggregate.update(&partials(code, &[5.0], &[1]), 0).unwrap();
+            assert_sum(&aggregate.flush_mini_batch().unwrap(), code, 5.0, 0);
+        }
+    }
+
+    #[test]
+    fn retained_global_state_expires_when_the_bundle_merges_not_when_input_arrives() {
+        for code in [6, 1] {
+            let mut aggregate = operator(code).with_state_ttl(1000);
+            aggregate.update(&partials(code, &[1.0], &[1]), 0).unwrap();
+            assert_sum(&aggregate.flush_mini_batch_at(0).unwrap(), code, 1.0, 0);
+            aggregate
+                .update(&partials(code, &[2.0], &[1]), 500)
+                .unwrap();
+            assert_sum(&aggregate.flush_mini_batch_at(1500).unwrap(), code, 2.0, 0);
         }
     }
 }

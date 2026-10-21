@@ -18,7 +18,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * {@link GroupAggregateMatcher} — so it reuses the same native group-aggregate operator. Its input
  * is the local's {@code [grouping.., partial0..]}; the partials are positional, walked with a
  * per-aggregate offset because AVG spans <em>two</em> partial columns (the widened sum, then the
- * bigint count), retracting integer SUM spans its typed sum and bigint non-null count, and
+ * bigint count), retracting primitive SUM spans its typed sum and bigint non-null count, and
  * SINGLE_VALUE spans a typed value and an INT count. Other aggregates span one.
  *
  * <p>Each merge folds a partial into the running result: SUM/MIN/MAX merge as themselves, a COUNT
@@ -76,8 +76,8 @@ final class GlobalGroupAggregateMatcher {
                   && kind != WindowAggregateMatcher.KIND_AVG
                   && kind != GroupAggregateMatcher.KIND_SUM_ZERO
                   && kind != WindowAggregateMatcher.KIND_SUM))) {
-        return "global group aggregate: a retracting merge admits COUNT, AVG, SUM0 and exact"
-            + " integer SUM only";
+        return "global group aggregate: a retracting merge admits COUNT, AVG, SUM0 and"
+            + " integer/FLOAT/DOUBLE SUM only";
       }
       // COUNT/SUM/AVG(DISTINCT x): the merge folds the local bundles' (value, count) view entries
       // into
@@ -159,8 +159,8 @@ final class GlobalGroupAggregateMatcher {
             || !org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
                 inputType.getFieldList().get(offset).getType(),
                 agg.getRowType().getFieldList().get(grouping.length + i).getType()))
-          return "global group aggregate: retracting SUM requires matching exact integer sum and"
-              + " BIGINT count partials";
+          return "global group aggregate: retracting SUM requires matching primitive numeric sum"
+                     + " and BIGINT count partials";
         offset += 2;
         continue;
       }

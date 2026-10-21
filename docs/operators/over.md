@@ -577,7 +577,11 @@ On released Flink 2.2.1/JDK 17, release+mimalloc, one million rows/64 keys, a 2 
 two warmups and three measured trials, all twelve profiles beat stock by 1.45–4.35x. Each
 cell below gives stock/native median seconds. The [raw artifact](../benchmarks/results/over-distinct-selections-2026-10-20.json)
 retains every warmup, measured trial and fallback control. These are complete-job measurements,
-so they include the conversions excluded by the small Rust/Arrow functionality gate.
+so they include the conversions excluded by the small Rust/Arrow functionality gate. The
+actual previous canonical revision `d13e9dc4` also ran the STRING running-frame query
+with native admission disabled by its matcher: median 2.733 s configured StreamFusion
+versus 2.773 s paired stock, compared with 1.027 s for the candidate. The artifact
+retains this separately executed prior-revision control and both library hashes.
 
 | Value type | Running RANGE | Bounded ROWS, 16 preceding |
 | --- | ---: | ---: |

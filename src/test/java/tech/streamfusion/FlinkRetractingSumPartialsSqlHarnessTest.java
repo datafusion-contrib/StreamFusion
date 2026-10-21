@@ -21,7 +21,7 @@ import tech.streamfusion.planner.NativePlanner;
 class FlinkRetractingSumPartialsSqlHarnessTest {
   @TestFactory
   Stream<DynamicTest> exactSumCountsAndRecordLivenessKeepTheCompleteChangelog() {
-    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
+    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
         .flatMap(
             type ->
                 Stream.of(1, 2, 4)
@@ -38,7 +38,7 @@ class FlinkRetractingSumPartialsSqlHarnessTest {
 
   @TestFactory
   Stream<DynamicTest> unverifiedSumRetractionTypesKeepStockExecution() {
-    return Stream.of("DECIMAL(12,2)", "FLOAT", "DOUBLE")
+    return Stream.of("DECIMAL(12,2)")
         .map(
             type ->
                 DynamicTest.dynamicTest(
@@ -87,7 +87,11 @@ class FlinkRetractingSumPartialsSqlHarnessTest {
                 ? TINYINT()
                 : typeName.equals("SMALLINT")
                     ? SMALLINT()
-                    : typeName.equals("INT") ? INT() : BIGINT();
+                    : typeName.equals("INT")
+                        ? INT()
+                        : typeName.equals("FLOAT")
+                            ? FLOAT()
+                            : typeName.equals("DOUBLE") ? DOUBLE() : BIGINT();
         var rowType = ROW(FIELD("k", INT()), FIELD("v", valueType));
         var input = new ArrayList<Row>();
         for (int i = 0; i < repeats; i++) {
@@ -196,6 +200,12 @@ class FlinkRetractingSumPartialsSqlHarnessTest {
         break;
       case "INT":
         converted = (int) value;
+        break;
+      case "FLOAT":
+        converted = (float) value;
+        break;
+      case "DOUBLE":
+        converted = (double) value;
         break;
       default:
         converted = value;

@@ -23,8 +23,10 @@ class RetractingSumPartialsBenchmark {
   @Test
   void completeCascadeRetainsBothTransposesAndExecutesBothHalves() throws Exception {
     assertTrue(ROWS > 0 && WARMUP >= 1 && RUNS >= 3);
-    for (boolean rocks : new boolean[] {false, true}) {
-      for (String type : new String[] {"INT", "BIGINT"}) {
+    for (String backend : System.getProperty("sumretract.backends", "memory,rocksdb").split(",")) {
+      assertTrue(backend.equals("memory") || backend.equals("rocksdb"));
+      boolean rocks = backend.equals("rocksdb");
+      for (String type : System.getProperty("sumretract.types", "INT,BIGINT").split(",")) {
         String query =
             "INSERT INTO sink SELECT u, SUM(mx), COUNT(mx), AVG(mx), SUM(mx) FILTER (WHERE mx > 0)"
                 + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY u";
@@ -43,7 +45,12 @@ class RetractingSumPartialsBenchmark {
               table.getConfig().set("table.exec.mini-batch.enabled", "true");
               table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
               table.getConfig().set("table.exec.mini-batch.size", "512");
-              var valueInfo = type.equals("INT") ? Types.INT : Types.LONG;
+              var valueInfo =
+                  type.equals("INT")
+                      ? Types.INT
+                      : type.equals("FLOAT")
+                          ? Types.FLOAT
+                          : type.equals("DOUBLE") ? Types.DOUBLE : Types.LONG;
               table.createTemporaryView(
                   "src",
                   env.fromSequence(0L, ROWS - 1)
@@ -52,7 +59,14 @@ class RetractingSumPartialsBenchmark {
                             Object value = null;
                             if (i % 7 != 0) {
                               long v = i - ROWS / 2;
-                              value = type.equals("INT") ? (Object) (int) v : (Object) v;
+                              value =
+                                  type.equals("INT")
+                                      ? (Object) (int) v
+                                      : type.equals("FLOAT")
+                                          ? (Object) (float) v
+                                          : type.equals("DOUBLE")
+                                              ? (Object) (double) v
+                                              : (Object) v;
                             }
                             return Row.of((int) (i % 128), (int) (i % 16), value);
                           })

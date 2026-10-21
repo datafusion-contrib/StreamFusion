@@ -1493,5 +1493,84 @@
       "unique_verified_native_tests": 820
     }
   },
-  "optimization_passes": 0
+  "optimization_passes": 0,
+  "actual_previous_control": {
+    "revision": "d13e9dc4",
+    "type": "string",
+    "frame": 0,
+    "native_route": false,
+    "stock_seconds": [
+      2.773291149,
+      2.868884113,
+      2.60804016
+    ],
+    "streamfusion_seconds": [
+      2.733320895,
+      2.738442453,
+      2.729813923
+    ],
+    "dso_sha256": "c3c943f09fe9def73b6a86ce434da99e88c0b9e3c5f0bb8b4dcd4fb0dd36f2c4",
+    "all_trials": [
+      {
+        "engine": "stock",
+        "trial": 0,
+        "warmup": true,
+        "seconds": 3.786968
+      },
+      {
+        "engine": "previous_streamfusion",
+        "trial": 0,
+        "warmup": true,
+        "seconds": 3.019596
+      },
+      {
+        "engine": "previous_streamfusion",
+        "trial": 1,
+        "warmup": true,
+        "seconds": 2.890325
+      },
+      {
+        "engine": "stock",
+        "trial": 1,
+        "warmup": true,
+        "seconds": 2.720914
+      },
+      {
+        "engine": "stock",
+        "trial": 2,
+        "warmup": false,
+        "seconds": 2.773291
+      },
+      {
+        "engine": "previous_streamfusion",
+        "trial": 2,
+        "warmup": false,
+        "seconds": 2.733321
+      },
+      {
+        "engine": "previous_streamfusion",
+        "trial": 3,
+        "warmup": false,
+        "seconds": 2.738442
+      },
+      {
+        "engine": "stock",
+        "trial": 3,
+        "warmup": false,
+        "seconds": 2.868884
+      },
+      {
+        "engine": "stock",
+        "trial": 4,
+        "warmup": false,
+        "seconds": 2.60804
+      },
+      {
+        "engine": "previous_streamfusion",
+        "trial": 4,
+        "warmup": false,
+        "seconds": 2.729814
+      }
+    ]
+  }
 }

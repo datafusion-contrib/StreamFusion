@@ -76,7 +76,7 @@ final class LocalGroupAggregateMatcher {
 
   static boolean supportedRetractingSumPartials(
       RelDataType value, RelDataType sum, RelDataType count) {
-    return GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+    return GroupAggregateMatcher.isRunningType(value.getSqlTypeName())
         && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, sum)
         && count.getSqlTypeName() == SqlTypeName.BIGINT;
   }
