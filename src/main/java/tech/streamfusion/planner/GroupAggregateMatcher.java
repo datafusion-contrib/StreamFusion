@@ -89,8 +89,8 @@ final class GroupAggregateMatcher {
                     .getIdleStateRetention()
                     .toMillis()
                 : hint;
-        if (retention > 0 && (kind == KIND_LISTAGG_RETRACT || call.isDistinct()))
-          return "GROUP BY: DISTINCT or retracting LISTAGG with state TTL is not yet verified";
+        if (retention > 0 && call.isDistinct())
+          return "GROUP BY: DISTINCT LISTAGG with state TTL is not yet verified";
         continue;
       }
       if (kind >= 26 && kind <= 31) {

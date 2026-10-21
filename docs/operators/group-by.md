@@ -157,9 +157,13 @@ native retained-memory accounting includes owned membership keys and table capac
 Ordinary append LISTAGG admits positive state TTL in single-phase, single-phase mini-batch
 and local/global plans. Its separator/prefix accumulator is one TTL value state, so existing
 whole-group expiry and write refresh preserve released behavior, including NULL writes.
-DISTINCT or retracting LISTAGG with positive retention remains fallback because its supporting
-MapView/ListView state has independent lifetimes. DISTINCT/retracting local/global merges
-also remain fallback without retention.
+Ordinary retracting LISTAGG also admits positive retention. Its value list and pending
+retraction list retain per-entry write clocks independently of the enclosing group. A successful
+removal rewrites surviving value timestamps; an absent removal only appends a separately timed
+pending retraction. NULL rows refresh the group without reviving old list entries. Both lists
+and their original deadlines survive memory and direct-RocksDB snapshots. DISTINCT LISTAGG
+with positive retention remains fallback until its shared membership clock is modeled.
+DISTINCT/retracting local/global merges remain a separate completion item.
 Released Flink rejects LISTAGG WITHIN GROUP ordering. Both releases produce real
 local/global plans under TWO_PHASE; ordinary append input now accelerates. The local
 emits the declared pair of STRING fields (separator, prefix), and the global concatenates
@@ -1070,7 +1074,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 
 **Single-phase / either two-phase half in common:**
 
-- DISTINCT or retracting LISTAGG with positive state TTL.
+- DISTINCT LISTAGG with positive state TTL.
   Released Flink rejects LISTAGG WITHIN GROUP ordering and JSON DISTINCT/object-ordering
   syntax; these are host limitations. JSON_ARRAYAGG ordering clauses preserve the
   released host's arrival-order behavior described above.
@@ -1920,3 +1924,37 @@ terminated after its FIRST_VALUE retraction scan exceeded 80 seconds; it contrib
 measured trial. Flink samples arrival clock inside the aggregate while native samples once
 per Arrow call, so clock-bucket density influences this retention-specific result. The
 numbers do not establish general FIRST/LAST speedups.
+
+
+### Retracting LISTAGG entry retention
+
+The released host's ListViews expire individual occurrences and pending retractions, while
+successful removal refreshes the complete surviving value list. The native state retains those
+two timestamp sequences alongside its existing versioned string accumulator, keeping fresh
+TTL-off snapshots unchanged. The focused selection passes 51 SQL/operator checks on each
+release: sixteen new default/literal separator, immediate/mini-batch, heap/native-RocksDB and
+two-restore cases, plus the retained append/split controls. Two native tests independently check
+inclusive deadlines, survivor refresh, unmatched retraction expiry and snapshot clocks. The
+full native suite passes 841 tests, with two diagnostics ignored; the suite agent passes 50
+with one skip and the route-scope checks pass 35.
+
+The unchanged upstream `AggregateITCase.testListAggWithRetraction` passes seven invocations
+on Flink 2.2 and six on 1.18 with explicit routing contracts. Single-phase variants require
+consumed native grouping; two-phase variants retain their declared LISTAGG partial-layout
+fallback. The new entry-retention behavior is qualified by the focused controlled-clock tests.
+[Raw complete-job measurements](../benchmarks/results/retracting-listagg-retention-2026-10-21.json)
+retain warmups, trial ranges, source/DSO hashes and actual previous-planner controls.
+
+Release+mimalloc/JDK 17 complete jobs use p=1, 2 GiB heap, one-hour retention,
+1,024-row transposes, two warmups and three alternating measured trials. The source cycles
+INSERT/INSERT/DELETE per key and supplies NULL every seventh value. Both transposes, JNI,
+string materialization and the rowwise blackhole sink remain timed.
+
+| Rows / keys / string width | Flink 2.2 stock/native median, s | Flink 1.18 stock/native median, s |
+| --- | ---: | ---: |
+| 1,000,000 / 65,536 / 16 bytes | 6.685 / 0.789 | 8.125 / 0.784 |
+| 262,144 / 32,768 / 128 bytes | 1.728 / 0.402 | 1.899 / 0.340 |
+
+The actual canonical `d13e9dc4` fallback takes 6.576/1.561 s on those two 2.2
+profiles (paired stock 6.718/1.583 s). Every candidate requires consumed native work.
+All four profiles win; no slow-case optimization passes or performance opt-ins were needed.

@@ -90,3 +90,7 @@ org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRela
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=false&aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	changelog=false&aggMode=ON	!global LISTAGG requires append-only non-DISTINCT string partials

@@ -60,3 +60,6 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupJsonA
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg	*	NativeColumnarWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	aggMode=ON	!global LISTAGG requires append-only non-DISTINCT string partials

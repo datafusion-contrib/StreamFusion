@@ -1235,3 +1235,10 @@ covers scalar-subquery aggregation and CHAR single-value results; it does not by
 prove every retracting scalar partial. The focused signed SINGLE_VALUE suite supplements
 it with raw changelogs at controlled bundle boundaries, keyless empty results, materialized
 interleaved relations and two restores on each backend and released Flink line.
+
+
+The unchanged `AggregateITCase.testListAggWithRetraction` also has per-phase consumed-work
+contracts. Its one-hour-retention single-phase variants require native grouped aggregation;
+the two-phase variants retain the explicit append-only LISTAGG partial-layout fallback until
+the retracting merge is implemented. Focused operator tests add independent list-entry and
+pending-retraction deadlines, survivor refresh and repeated recovery on both state backends.

@@ -47,7 +47,8 @@ class FlinkListAggRetentionSqlHarnessTest {
 
   @ParameterizedTest
   @CsvSource({"false,true", "true,false"})
-  void independentDistinctAndRetractionStateRetainsItsTtlGuard(boolean updating, boolean distinct) {
+  void independentDistinctStateRetainsItsGuardAndOrdinaryRetractionExecutesNatively(
+      boolean updating, boolean distinct) {
     var removed = row("a");
     removed.setKind(RowKind.DELETE);
     Row[] rows =
@@ -58,7 +59,8 @@ class FlinkListAggRetentionSqlHarnessTest {
         NativeFailureParity.run(
             () -> configure(FlinkStringAggregateHostContractTest.environment(updating, rows), 0),
             "SELECT LISTAGG(" + (distinct ? "DISTINCT " : "") + "v, '::') FROM src");
-    comparison.assertSuccess(NativeFailureParity.Route.FALLBACK);
+    comparison.assertSuccess(
+        distinct ? NativeFailureParity.Route.FALLBACK : NativeFailureParity.Route.NATIVE);
   }
 
   @ParameterizedTest

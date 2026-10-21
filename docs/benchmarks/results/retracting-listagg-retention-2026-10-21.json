@@ -1,0 +1,738 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Independent value/pending-retraction ListView TTL for ordinary single-phase retracting LISTAGG",
+  "base_commit": "2340cccd",
+  "native_dso_sha256": "36ab6952547752a15dd7cd83fac413fa826509fcc081fb76104a789b3f62dc23",
+  "source_sha256": {
+    "native/engine/src/group_agg.rs": "320d7e27c6463dee8d8076932bd56092ee79de54f522b98316ae77670327989a",
+    "native/engine/src/group_agg/list_agg.rs": "f22a90fdfc86a8fc6c6fe13c7dfa21d94f0b88674f204c8b344843fc1715c012",
+    "src/main/java/tech/streamfusion/planner/GroupAggregateMatcher.java": "b2869df381bac77fdc666b3834a6d227c166b971c2defcbb1995d0db2b823dbb",
+    "src/test/java/tech/streamfusion/operator/NativeListAggRetentionParityTest.java": "ed40280a5d33158b432961c1838cbe8c388941c355b9a49966325d878302d824",
+    "src/test/java/tech/streamfusion/FlinkListAggRetentionSqlHarnessTest.java": "079015f4ca1f372e9951cc7790aea00043e37ee3f4805b25fc141095ad95a3d0",
+    "src/test/java/tech/streamfusion/StringAggregateBenchmark.java": "5600b02903b2fe4d68c4e7bf2b3e6f3cba1c671962c2475f052390bd217fd318"
+  },
+  "configuration": {
+    "runtime": "Linux x86_64; JDK17; release+mimalloc",
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "backend": "memory",
+    "retention": "1 h",
+    "phase": "ONE_PHASE",
+    "mini_batch": false,
+    "transpose_rows": 1024,
+    "null_every": 7,
+    "warmups": 2,
+    "measured_trials": 3,
+    "value": "16 recurring string values; hex label repeated to the specified width",
+    "changelog": "Repeated INSERT, INSERT, DELETE cycles per key; DELETE repeats the preceding cycle value and its original NULLness.",
+    "query": "SELECT k,LISTAGG(v, ',') FROM src GROUP BY k",
+    "boundary": "Complete jobs retain source, both row/Arrow transposes, JNI, aggregate state and rowwise blackhole sink. Timer wraps executeSql(insert).await after the explicit query/plan probe. Trials alternate engine order and run alone.",
+    "previous_control": "Actual canonical d13e9dc4 Java planner/runtime, only unchanged benchmark fixture copied and compiled, same compatible candidate DSO; affected native aggregate route asserted absent. Actual previous control measured on 2.2 only."
+  },
+  "measurements": [
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "rows": 1000000,
+      "keys": 65536,
+      "width": 16,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 8.228727
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.137165
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.919755
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.585104
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.484336
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.779658
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.885628
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 7.4035
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.684782
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.788902
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          6.484335757,
+          7.403500157,
+          6.684782115
+        ],
+        "StreamFusion": [
+          0.779657553,
+          0.885627856,
+          0.788902143
+        ]
+      },
+      "median_seconds": {
+        "Flink": 6.684782115,
+        "StreamFusion": 0.788902143
+      },
+      "range_seconds": {
+        "Flink": [
+          6.484335757,
+          7.403500157
+        ],
+        "StreamFusion": [
+          0.779657553,
+          0.885627856
+        ]
+      },
+      "stock_over_native": 8.473525106142347
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18.1",
+      "rows": 1000000,
+      "keys": 65536,
+      "width": 16,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 9.840566
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.15424
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.90939
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 7.663695
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 7.407888
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.796546
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.783712
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 8.125249
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 8.172914
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.776502
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          7.407888144,
+          8.125249355,
+          8.172914456
+        ],
+        "StreamFusion": [
+          0.796546439,
+          0.783712413,
+          0.776502039
+        ]
+      },
+      "median_seconds": {
+        "Flink": 8.125249355,
+        "StreamFusion": 0.783712413
+      },
+      "range_seconds": {
+        "Flink": [
+          7.407888144,
+          8.172914456
+        ],
+        "StreamFusion": [
+          0.776502039,
+          0.796546439
+        ]
+      },
+      "stock_over_native": 10.367641522860502
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "rows": 262144,
+      "keys": 32768,
+      "width": 128,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.889094
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.656715
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.474082
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.818236
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.714396
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.422234
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.402174
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.728355
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.771608
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.350987
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.71439576,
+          1.728354645,
+          1.77160803
+        ],
+        "StreamFusion": [
+          0.422234345,
+          0.402174126,
+          0.350986532
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.728354645,
+        "StreamFusion": 0.402174126
+      },
+      "range_seconds": {
+        "Flink": [
+          1.71439576,
+          1.77160803
+        ],
+        "StreamFusion": [
+          0.350986532,
+          0.422234345
+        ]
+      },
+      "stock_over_native": 4.297528193049396
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18.1",
+      "rows": 262144,
+      "keys": 32768,
+      "width": 128,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.15046
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.618665
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.460102
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.020634
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.898739
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.374255
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.330041
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.939994
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.755028
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.339514
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.898738669,
+          1.939993896,
+          1.755027503
+        ],
+        "StreamFusion": [
+          0.374255066,
+          0.330040749,
+          0.33951435
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.898738669,
+        "StreamFusion": 0.33951435
+      },
+      "range_seconds": {
+        "Flink": [
+          1.755027503,
+          1.939993896
+        ],
+        "StreamFusion": [
+          0.330040749,
+          0.374255066
+        ]
+      },
+      "stock_over_native": 5.592513745000764
+    },
+    {
+      "revision": "d13e9dc4 planner fallback",
+      "flink_line": "2.2.1",
+      "rows": 1000000,
+      "keys": 65536,
+      "width": 16,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 8.641637
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 6.38074
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.978885
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 6.9118
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.648856
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 6.181462
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.783071
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 6.922619
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.718207
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 6.576284
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          6.648856466,
+          6.922619303,
+          6.718206788
+        ],
+        "StreamFusion": [
+          6.181462492,
+          6.783070828,
+          6.57628351
+        ]
+      },
+      "median_seconds": {
+        "Flink": 6.718206788,
+        "StreamFusion": 6.57628351
+      },
+      "range_seconds": {
+        "Flink": [
+          6.648856466,
+          6.922619303
+        ],
+        "StreamFusion": [
+          6.181462492,
+          6.783070828
+        ]
+      },
+      "stock_over_native": 1.02158107657375
+    },
+    {
+      "revision": "d13e9dc4 planner fallback",
+      "flink_line": "2.2.1",
+      "rows": 262144,
+      "keys": 32768,
+      "width": 128,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.947433
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.696601
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.653324
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.806331
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.583089
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.579698
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.560624
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.587686
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.548802
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.55718
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.58308882,
+          1.587685917,
+          1.548801592
+        ],
+        "StreamFusion": [
+          1.579697623,
+          1.560623819,
+          1.557179686
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.58308882,
+        "StreamFusion": 1.560623819
+      },
+      "range_seconds": {
+        "Flink": [
+          1.548801592,
+          1.587685917
+        ],
+        "StreamFusion": [
+          1.557179686,
+          1.579697623
+        ]
+      },
+      "stock_over_native": 1.0143948853826894
+    }
+  ],
+  "validation": {
+    "sql_operator_checks_per_release": 51,
+    "new_controlled_operator_checks_per_release": 16,
+    "controlled_dimensions": [
+      "omitted comma / literal separator",
+      "immediate / mini-batch",
+      "memory / direct native RocksDB",
+      "two successive restores",
+      "independent value and pending-list entry deadlines",
+      "successful survivor refresh",
+      "absent removal does not refresh existing entries",
+      "NULL refresh only at group level",
+      "whole group expiry"
+    ],
+    "native_passed": 841,
+    "native_ignored": 2,
+    "agent": {
+      "run": 51,
+      "passed": 50,
+      "skipped": 1
+    },
+    "route_scope_python_passed": 35,
+    "unchanged_upstream": {
+      "method": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+      "artifact": "Unmodified canonical Maven Central released planner tests JAR with production StreamFusion classes and the existing injection agent.",
+      "flink22_invocations": 7,
+      "flink118_invocations": 6,
+      "records": {
+        "2.2": [
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=8,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "aggMode=ON",
+            "consumed_native": "",
+            "fallbacks": [
+              "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys",
+              "global LISTAGG requires append-only non-DISTINCT string partials"
+            ]
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=14,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=14,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "aggMode=ON",
+            "consumed_native": "",
+            "fallbacks": [
+              "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys",
+              "global LISTAGG requires append-only non-DISTINCT string partials"
+            ]
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=8,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=14,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          }
+        ],
+        "1.18": [
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "changelog=false&aggMode=ON",
+            "consumed_native": "",
+            "fallbacks": [
+              "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys",
+              "global LISTAGG requires append-only non-DISTINCT string partials"
+            ]
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=8,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=14,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "changelog=false&aggMode=ON",
+            "consumed_native": "",
+            "fallbacks": [
+              "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys",
+              "global LISTAGG requires append-only non-DISTINCT string partials"
+            ]
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=8,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=14,NativeColumnarGroupAggregateOperator=9",
+            "fallbacks": []
+          }
+        ]
+      }
+    }
+  },
+  "performance_optimization_passes": 0,
+  "performance_note": "All four candidate release/size/width profiles beat stock Flink. No profiling or measured optimization passes were required for a slow native gate; no performance-only opt-in was added. DISTINCT membership retention and retracting/DISTINCT local/global layouts remain separate scoped work."
+}

@@ -2172,8 +2172,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let state = self.store.get_mut(key).expect("key present");
                 let mut expired_view = false;
                 for agg in &mut state.aggs {
-                    if let GroupAggState::Json(json) = agg {
-                        expired_view |= json.expire(ttl, state.last_write_ms);
+                    match agg {
+                        GroupAggState::Json(json) => {
+                            expired_view |= json.expire(ttl, state.last_write_ms)
+                        }
+                        GroupAggState::List(list) => {
+                            expired_view |= list.expire(ttl, state.last_write_ms)
+                        }
+                        _ => {}
                     }
                 }
                 if expired_view {
@@ -2317,12 +2323,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         continue;
                     }
                     if let GroupAggState::List(list) = &mut state.aggs[i] {
+                        list.expire(ttl, state.last_write_ms);
                         let (value, separator) = list_columns[i].as_ref().expect("LISTAGG columns");
                         let separator = separator
                             .as_ref()
                             .map_or(Some(","), |column| column.at(row))
                             .expect("validated non-null LISTAGG separator");
-                        list.update(value.at(row), separator, retract);
+                        list.update_with_ttl(value.at(row), separator, retract, ttl);
                         continue;
                     }
                     if let GroupAggState::Ordered(ordered) = &mut state.aggs[i] {
