@@ -685,7 +685,7 @@ the cast back to a narrow integer or float result — is byte-identical to the s
 Insert-only two-phase `MIN`/`MAX` also admit DATE, TIME, BOOLEAN, `TIMESTAMP` and
 `TIMESTAMP_LTZ`. Both halves carry the complete typed value and timestamp components; a partial must retain the input's logical type and precision.
 Retracting two-phase extrema carry signed maps, or scalar partials when Flink proves monotonicity;
-positive-TTL mapped extrema retain their independent-view expiry gate.
+mapped extrema support independent entry retention alongside their cached extreme and map-size counter.
 
 Decimal `SUM`/`MIN`/`MAX`/`AVG` carry through the split too: `SUM`'s partial is the i128 running
 sum as `DECIMAL(38, s)` (a bundle overflow emits NULL and latches the merged `AVG` NULL, skipped
@@ -803,8 +803,7 @@ Still falling back, specific to the two-phase split: the opt-in `distinct-agg.sp
 incremental chain (a deliberate non-goal — see [Unsupported operators](unsupported.md)),
 `MIN`/`MAX` with a retained physical `DISTINCT` flag, and — under a
 retracting input — aggregates outside `COUNT`/`AVG`/`SUM0`, ordinary numeric `SUM`,
-scalar `SINGLE_VALUE`, and typed `MIN`/`MAX`. Mapped extrema require zero retention until independent
-MapView entry expiry is implemented. Retracting DISTINCT admits scalar COUNT and numeric
+scalar `SINGLE_VALUE`, and typed `MIN`/`MAX`. Retracting DISTINCT admits scalar COUNT and numeric
 SUM/AVG, including FLOAT/DOUBLE and decimal precision through 38, using ordered shared views.
 
 ## Type support
@@ -1166,7 +1165,7 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
 - A retracting merge outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE and typed MIN/MAX.
   Scalar DISTINCT COUNT and numeric DISTINCT SUM/AVG use signed membership transitions;
   floating/wide-decimal arithmetic retains the released shared-view iteration order.
-  Mapped MIN/MAX with positive retention still require independently expiring map entries.
+  Mapped MIN/MAX preserve cached extrema independently of expiring map entries.
   The `count1` partial drives per-key liveness.
 - An unsupported grouping-key or output column type.
 
@@ -1816,22 +1815,39 @@ are retained; these measurements do not establish a speedup for every scalar typ
 Two-phase MIN/MAX now transports each retracting accumulator as one Arrow struct containing
 its selected value, positive-entry count and signed value-to-count map. Negative local counts
 must survive a bundle: a deletion can remove a value that was accumulated by an earlier bundle.
-The global merge folds those deltas into its live multiset, so removing the selected minimum
-or maximum reveals the next live value. NULLs are excluded and FILTER applies before the local fold.
+The global first combines each key's heap partials, then merges that buffer into retained state.
+NULLs are excluded and FILTER applies before the local fold. Cached extrema and map-size counters
+follow the released accumulator independently of the signed map. In particular, a replacement
+scan includes negative entries, matching Flink even when its cached winner has a negative count.
 A monotonicity-exempt scalar extreme can share a partial row with a mapped extreme; its local
 fold ignores retractions exactly as Flink does. This internal accumulator layout does not add
 new SQL STRUCTURED payload support.
 
 The 55 checks per released Flink line cover INT, BIGINT, FLOAT, DOUBLE, DECIMAL, STRING, DATE, TIME,
 TIMESTAMP(9) and BOOLEAN at bundle sizes 1/2/4, preserving complete output changelogs and
-types. Repeated restores cover both memory and native RocksDB state. The full native suite passes
-825 checks (two ignored); suite-agent checks pass 50 (one skip), and 35 route-audit checks pass. Positive retention
-keeps a correctness fallback while independent MapView expiry remains outstanding. Unchanged upstream
-`testMinAggRetractWithCondition` and `testMaxAggRetractWithCondition` now have explicit runtime
-contracts/scopes: their one-hour-retention two-phase variants expect this fallback, while
-single-phase variants require native work. Actual upstream runtime validation remains pending.
+types. Repeated restores cover both memory and native RocksDB state. Another 32 controlled-clock
+operator checks per release cover BIGINT, DOUBLE, DECIMAL and STRING, append/scalar controls,
+mapped retractions, independent entry/group expiry, flush-time expiry and two successive restores.
+The full native suite passes 878 checks (two ignored); suite-agent checks pass 50 (one skip), and
+35 route-audit checks pass.
 
-The million-row updating MAX→MIN/COUNT/AVG/MAX cascade uses 128 inner and 16 outer keys,
+Positive retention expires map entries independently of the cached extreme and map-size counter.
+An expired entry read behaves as absent; its removal does not rebuild the cached result. Successful
+map writes refresh that entry alone, and a replacement scan removes expired entries before choosing
+a key. Canceled heap partials do not write to retained entries. The cached fields, signed counts
+and original deadlines use native raw keyed snapshots on both backends. Older raw snapshots
+rebuild their previous cached value/count and seed entry deadlines from the saved group write,
+or restore time when no old group timestamp exists. The direct per-element RocksDB codec remains
+in use for ordinary scalar extrema; mapped extrema use the raw keyed representation.
+
+Unchanged released upstream checks pass 21 invocations on 2.2: MIN/MAX retraction-condition and
+DISTINCT-with-retraction fixtures. Flink 1.18 passes twelve decimal MIN/MAX and DISTINCT-with-retraction
+invocations. Admitted split variants require consumed native local and global work. The 1.18 scope
+uses its actual released decimal fixture rather than nonexistent retraction-condition methods;
+its DISTINCT display names are corrected as well. Independent clock semantics are established
+by the focused operator checks above.
+
+The earlier zero-retention million-row updating MAX→MIN/COUNT/AVG/MAX cascade uses 128 inner and 16 outer keys,
 parallelism 1, memory state, 512-row bundles, a 2 GiB Java heap, two warmups and three alternating
 measurements. Both transposes, JNI, state and job completion remain timed. Metrics require two
 native local/global pairs to consume rows. After the shared temporary-sum correction below, DOUBLE medians are 0.554 s stock versus 0.368 s
@@ -1839,6 +1855,32 @@ native on Flink 2.2.1 (1.51×), and 0.518 s versus 0.379 s on Flink 1.18.1 (1.37
 These are complete-job measurements for this cascade, not isolated extrema throughput claims. Raw trials, the actual
 previous fallback and library hashes are retained in
 [the partial-map artifact](../benchmarks/results/retracting-extrema-partials-2026-10-21.json).
+
+The retained implementation has a separate
+[complete-job artifact](../benchmarks/results/mapped-extreme-retention-2026-10-21.json).
+Release+mimalloc/JDK 17 jobs use p=1, 2 GiB heap, one-hour retention, 512-row bundles,
+two warmups and three alternating measured runs. Both native local/global pairs must consume
+input. The numeric outer query computes MIN/COUNT/AVG/MAX; the string query computes
+MIN/COUNT/MAX/COUNT(*). Inner MAX sees ascending values, while inner MIN sees descending
+values, so both pipelines exercise updating results. Every seventh value is NULL.
+
+| Profile; rows, inner/outer keys | Flink 2.2 stock/native median, s | Flink 1.18 stock/native median, s |
+| --- | ---: | ---: |
+| INT MAX→MIN, memory; 1M, 128/16 | 0.549 / 0.374 | 0.521 / 0.371 |
+| DOUBLE MIN→MAX, memory; 1M, 4096/64 | 2.165 / 1.830 | 2.073 / 1.794 |
+| STRING MAX→MIN, memory; 262144, 1024/64 | 0.840 / 0.744 | 0.831 / 0.705 |
+| INT MIN→MAX, RocksDB; 262144, 4096/64 | 4.017 / 1.006 | stock run time-boxed |
+
+All seven completed profiles beat stock; no optimization pass was needed. Actual canonical
+`d13e9dc4` takes planner fallback at 0.484/2.120/0.818/3.350 s on those four 2.2 profiles,
+with paired stock medians 0.508/2.113/0.778/3.158 s. The artifact preserves all trials,
+ranges, source/DSO hashes and consumed-native evidence.
+
+Flink 1.18's stock RocksDB warmup exceeded the 180-second case budget. A smaller matched
+32,768-row/512-inner-key attempt also exhausted its 90-second budget before all three measured
+trials completed. At the second timeout its upstream global aggregate was in `RocksDB.put`
+through TTL value state. Both incomplete attempts and the worker-stack excerpt are retained;
+they contribute no median or RocksDB speedup claim on 1.18.
 
 ### Nullable sums and global temporary partials
 

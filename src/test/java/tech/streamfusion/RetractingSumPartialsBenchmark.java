@@ -17,6 +17,9 @@ class RetractingSumPartialsBenchmark {
   private static final long ROWS = Long.getLong("sumretract.rows", 1_000_000L);
   private static final int WARMUP = Integer.getInteger("sumretract.warmup", 2);
   private static final int RUNS = Integer.getInteger("sumretract.runs", 3);
+  private static final int KEYS = Integer.getInteger("sumretract.keys", 128);
+  private static final int OUTER_KEYS = Integer.getInteger("sumretract.outerKeys", 16);
+  private static final boolean INNER_MIN = Boolean.getBoolean("sumretract.innerMin");
   private static final boolean EXPECT_NATIVE =
       Boolean.parseBoolean(System.getProperty("sumretract.expectNative", "true"));
 
@@ -29,6 +32,7 @@ class RetractingSumPartialsBenchmark {
       for (String type :
           System.getProperty("sumretract.types", "INT,BIGINT").split(",(?=[A-Za-z])")) {
         boolean singleValue = Boolean.getBoolean("sumretract.singleValue");
+        boolean extremaOnly = Boolean.getBoolean("sumretract.extremaOnly");
         String query =
             "INSERT INTO sink SELECT "
                 + (singleValue ? "k, SINGLE_VALUE(mx)" : "u, SUM(mx)")
@@ -39,6 +43,7 @@ class RetractingSumPartialsBenchmark {
           query =
               "INSERT INTO sink SELECT u, MIN(mx), COUNT(mx), AVG(mx), MAX(mx)"
                   + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY u";
+          if (extremaOnly) query = query.replace("AVG(mx), MAX(mx)", "MAX(mx), COUNT(*)");
         }
         if (Boolean.getBoolean("sumretract.distinct")) {
           assertFalse(singleValue || Boolean.getBoolean("sumretract.extrema"));
@@ -50,7 +55,7 @@ class RetractingSumPartialsBenchmark {
         }
         System.out.println(
             "[sum-retract-config] distinct=" + Boolean.getBoolean("sumretract.distinct"));
-        query = query.replace("MAX(v)", "MAX(CAST(v AS " + type + "))");
+        query = query.replace("MAX(v)", (INNER_MIN ? "MIN" : "MAX") + "(CAST(v AS " + type + "))");
         double[][] times = new double[2][RUNS];
         var configuration = new Configuration();
         if (rocks)
@@ -62,16 +67,22 @@ class RetractingSumPartialsBenchmark {
               int engine = (trial + turn) % 2;
               var env = metrics.environment(configuration, 1, 0);
               var table = StreamTableEnvironment.create(env);
+              table
+                  .getConfig()
+                  .setIdleStateRetention(
+                      java.time.Duration.ofMillis(Long.getLong("sumretract.retentionMillis", 0L)));
               table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
               table.getConfig().set("table.exec.mini-batch.enabled", "true");
               table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
               table.getConfig().set("table.exec.mini-batch.size", "512");
               var valueInfo =
-                  type.equals("INT")
-                      ? Types.INT
-                      : type.equals("FLOAT")
-                          ? Types.FLOAT
-                          : type.equals("DOUBLE") ? Types.DOUBLE : Types.LONG;
+                  type.equals("STRING")
+                      ? Types.STRING
+                      : type.equals("INT")
+                          ? Types.INT
+                          : type.equals("FLOAT")
+                              ? Types.FLOAT
+                              : type.equals("DOUBLE") ? Types.DOUBLE : Types.LONG;
               table.createTemporaryView(
                   "src",
                   env.fromSequence(0L, ROWS - 1)
@@ -79,17 +90,25 @@ class RetractingSumPartialsBenchmark {
                           i -> {
                             Object value = null;
                             if (i % 7 != 0) {
-                              long v = i - ROWS / 2;
+                              long v = INNER_MIN ? ROWS / 2 - i : i - ROWS / 2;
                               value =
-                                  type.equals("INT")
-                                      ? (Object) (int) v
-                                      : type.equals("FLOAT")
-                                          ? (Object) (float) v
-                                          : type.equals("DOUBLE")
-                                              ? (Object) (double) v
-                                              : (Object) v;
+                                  type.equals("STRING")
+                                      ? "v"
+                                          + "0"
+                                              .repeat(
+                                                  12
+                                                      - Long.toString(INNER_MIN ? ROWS - 1 - i : i)
+                                                          .length())
+                                          + Long.toString(INNER_MIN ? ROWS - 1 - i : i)
+                                      : type.equals("INT")
+                                          ? (Object) (int) v
+                                          : type.equals("FLOAT")
+                                              ? (Object) (float) v
+                                              : type.equals("DOUBLE")
+                                                  ? (Object) (double) v
+                                                  : (Object) v;
                             }
-                            return Row.of((int) (i % 128), (int) (i % 16), value);
+                            return Row.of((int) (i % KEYS), (int) (i % OUTER_KEYS), value);
                           })
                       .returns(
                           Types.ROW_NAMED(
@@ -100,7 +119,7 @@ class RetractingSumPartialsBenchmark {
                       + ", c BIGINT, a "
                       + type
                       + ", f "
-                      + type
+                      + (extremaOnly ? "BIGINT" : type)
                       + ") WITH ('connector'='blackhole')");
               table.getConfig().set("streamfusion.native.enabled", Boolean.toString(engine == 1));
               var scan = NativePlanner.install(table);

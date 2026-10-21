@@ -351,114 +351,6 @@
       }
     },
     {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
-      "display_name": "testMaxAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
-      "display_name": "testMaxAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
-      "display_name": "testMaxAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
-      "display_name": "testMaxAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
-      "display_name": "testMaxAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=OFF": "native",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
-      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
-      "display_name": "testMaxAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
-      "count": 1,
-      "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
-        "changelog=true": "full_fallback"
-      }
-    },
-    {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal",
       "display_name": "testPrecisionForSumWithRetractAggregationOnDecimal[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
       "count": 1,
@@ -676,7 +568,7 @@
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
+      "display_name": "testDistinctWithRetract[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
         "changelog=false&aggMode=OFF": "native",
@@ -685,7 +577,7 @@
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
+      "display_name": "testDistinctWithRetract[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
         "changelog=false&aggMode=OFF": "native",
@@ -694,16 +586,16 @@
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
+      "display_name": "testDistinctWithRetract[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
+        "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
+      "display_name": "testDistinctWithRetract[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
         "changelog=false&aggMode=OFF": "native",
@@ -712,7 +604,7 @@
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "display_name": "testDistinctWithRetract[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
         "changelog=false&aggMode=OFF": "native",
@@ -721,10 +613,10 @@
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
-      "display_name": "testMinAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "display_name": "testDistinctWithRetract[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
       "count": 1,
       "route_by_contract_variant": {
-        "changelog=false&aggMode=ON": "full_fallback",
+        "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
     },
@@ -779,6 +671,60 @@
       "count": 1,
       "route_by_contract_variant": {
         "changelog=false&aggMode=ON": "full_fallback",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+      "display_name": "testMinMaxWithDecimal[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+      "display_name": "testMinMaxWithDecimal[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+      "display_name": "testMinMaxWithDecimal[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=ON": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+      "display_name": "testMinMaxWithDecimal[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+      "display_name": "testMinMaxWithDecimal[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+      "display_name": "testMinMaxWithDecimal[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
     }

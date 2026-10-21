@@ -10,10 +10,12 @@ use distinct_retention::{
     RETAINED_DISTINCT_COLUMN,
 };
 mod java_map_order;
+mod mapped_extreme;
 mod numeric_map_order;
 #[cfg(test)]
 use decimal_map_order::DecimalMapOrder;
 use java_map_order::JavaMapOrder;
+use mapped_extreme::MappedExtreme;
 use numeric_map_order::NumericMapOrder;
 #[cfg(test)]
 mod floating_tests;
@@ -332,6 +334,7 @@ fn group_partial_map(column: &ArrayRef) -> &arrow::array::ListArray {
 /// its emit needs (the distinct cardinality, the SUM(DISTINCT) fold, the current extreme), which
 /// the backend persists in the main row.
 pub(crate) enum GroupAggState {
+    Mapped(Box<MappedExtreme>),
     Json(Box<JsonAggState>),
     List(ListAggState),
     Ordered(OrderedValueState),
@@ -414,6 +417,7 @@ pub(crate) fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType)
 impl GroupAggState {
     fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
+            38 | 39 => Self::Mapped(Box::new(MappedExtreme::new(kind == 38))),
             26..=31 => Self::Json(Box::new(JsonAggState::new(kind))),
             24 | 25 | 32 | 33 => Self::List(ListAggState::new(kind)),
             12..=16 | 19..=21 => Self::Ordered(OrderedValueState::new(kind, value_type)),
@@ -619,7 +623,8 @@ impl GroupAggState {
                 *non_null += 1;
             }
             GroupAggState::Extremes { .. } => self.accumulate_extreme_key(MinMaxKey::of(value)),
-            GroupAggState::Json(_)
+            GroupAggState::Mapped(_)
+            | GroupAggState::Json(_)
             | GroupAggState::List(_)
             | GroupAggState::Ordered(_)
             | GroupAggState::Distinct { .. }
@@ -684,7 +689,8 @@ impl GroupAggState {
                 *non_null -= 1;
             }
             GroupAggState::Extremes { .. } => self.retract_extreme_key(MinMaxKey::of(value)),
-            GroupAggState::Json(_)
+            GroupAggState::Mapped(_)
+            | GroupAggState::Json(_)
             | GroupAggState::List(_)
             | GroupAggState::Ordered(_)
             | GroupAggState::Distinct { .. }
@@ -762,6 +768,7 @@ impl GroupAggState {
     /// The current output value; SUM and MIN/MAX report NULL when they hold no live non-null input.
     fn emit(&self, result_type: &DataType) -> ScalarValue {
         match self {
+            Self::Mapped(state) => state.emit(result_type),
             Self::Json(_) => unreachable!("JSON output uses fallible materialization"),
             Self::List(state) => state.emit(),
             Self::Ordered(state) => state.emit(),
@@ -806,6 +813,7 @@ impl GroupAggState {
     /// main row; a SUM(DISTINCT) refolds each element into its running sum either way.
     fn import_multiset_entry(&mut self, value: ScalarValue, count: i64) {
         match self {
+            Self::Mapped(state) => state.import_legacy(value, count),
             Self::Json(_) | Self::List(_) => {
                 unreachable!("string aggregate has no element side table")
             }
@@ -860,7 +868,8 @@ impl GroupAggState {
             GroupAggState::Extremes { journal, .. } => *journal = Some(Box::default()),
             GroupAggState::Distinct { set, .. } => set.arm_journal(),
             GroupAggState::DistinctRunning { counts, .. } => counts.arm_journal(),
-            GroupAggState::Json(_)
+            GroupAggState::Mapped(_)
+            | GroupAggState::Json(_)
             | GroupAggState::List(_)
             | GroupAggState::Ordered(_)
             | GroupAggState::Running { .. } => {}
@@ -877,7 +886,8 @@ impl GroupAggState {
             }
             GroupAggState::Distinct { set, .. } => set.insert_restored(value, count),
             GroupAggState::DistinctRunning { counts, .. } => counts.insert_restored(value, count),
-            GroupAggState::Json(_)
+            GroupAggState::Mapped(_)
+            | GroupAggState::Json(_)
             | GroupAggState::List(_)
             | GroupAggState::Ordered(_)
             | GroupAggState::Running { .. } => {
@@ -910,7 +920,8 @@ impl GroupAggState {
             }),
             GroupAggState::Distinct { set, .. } => set.drain_journal(),
             GroupAggState::DistinctRunning { counts, .. } => counts.drain_journal(),
-            GroupAggState::Json(_)
+            GroupAggState::Mapped(_)
+            | GroupAggState::Json(_)
             | GroupAggState::List(_)
             | GroupAggState::Ordered(_)
             | GroupAggState::Running { .. } => {
@@ -1206,6 +1217,7 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             let scalar = ScalarValue::try_from_array(&columns[1 + 2 * i], row)?;
             let mut state = GroupAggState::new(kind, value_type);
             match &mut state {
+                GroupAggState::Mapped(_) => unreachable!("mapped extrema use raw keyed snapshots"),
                 GroupAggState::Json(json) => json.restore(scalar)?,
                 GroupAggState::List(list) => list.restore(scalar)?,
                 GroupAggState::Ordered(ordered) => ordered.restore_value(scalar, count(2 + 2 * i)),
@@ -1257,7 +1269,7 @@ pub(crate) fn group_state_types(kinds: &[i64], value_types: &[DataType]) -> Vec<
         .iter()
         .zip(value_types)
         .map(|(&kind, vt)| {
-            if is_list_agg(kind) || is_json_agg(kind) {
+            if is_list_agg(kind) || is_json_agg(kind) || matches!(kind, 38 | 39) {
                 DataType::Binary
             } else if is_ordered_value(kind) {
                 vt.clone()
@@ -1274,6 +1286,7 @@ pub(crate) fn group_state_types(kinds: &[i64], value_types: &[DataType]) -> Vec<
 impl GroupAggState {
     fn persisted_scalar(&self, state_type: &DataType) -> ScalarValue {
         match self {
+            Self::Mapped(_) => unreachable!("mapped extrema use raw keyed snapshots"),
             Self::Json(state) => state.snapshot(),
             Self::List(state) => state.snapshot(),
             Self::Ordered(state) => state.snapshot_value(),
@@ -1290,6 +1303,7 @@ impl GroupAggState {
 
     fn persisted_count(&self) -> i64 {
         match self {
+            Self::Mapped(_) => 0,
             Self::Json(_) | Self::List(_) => 0,
             Self::Ordered(state) => state.count(),
             Self::Running { non_null, .. } => *non_null,
@@ -1448,6 +1462,7 @@ pub(crate) struct GroupAggregator<S: KeyedStateStore<GroupKeyState> = MemoryGrou
     staged_key_batches: Vec<RecordBatch>,
     staged_bytes: usize,
     numeric_views: HashMap<ByteKey, Vec<Option<NumericViewBuffer>>>,
+    extreme_partials: HashMap<ByteKey, Vec<Option<MappedExtreme>>>,
     sum_partials: HashMap<ByteKey, Vec<Option<RunningAgg>>>,
     deferred_batches: Vec<(RecordBatch, usize)>,
     deferred_keys: HashMap<ByteKey, ()>,
@@ -1476,6 +1491,7 @@ pub(crate) fn group_agg_state_bytes(state: &GroupAggState) -> usize {
         GroupAggState::Ordered(ordered) => {
             ordered.bytes() - std::mem::size_of::<OrderedValueState>()
         }
+        GroupAggState::Mapped(state) => state.bytes(),
         GroupAggState::Running { .. } => 0,
         GroupAggState::Extremes { counts, .. } => counts.len() * MULTISET_ENTRY_BYTES,
         GroupAggState::Distinct { set, .. } => set.len() * MULTISET_ENTRY_BYTES,
@@ -1574,7 +1590,7 @@ impl GroupAggregator {
                     DataType::Int32
                 } else if is_list_agg(kind) || is_json_agg(kind) {
                     DataType::Utf8
-                } else if is_ordered_value(kind) {
+                } else if is_ordered_value(kind) || matches!(kind, 38 | 39) {
                     vt.clone()
                 } else {
                     RunningAgg::new(kind, vt).result_type()
@@ -1611,6 +1627,7 @@ impl GroupAggregator {
             staged_key_batches: Vec::new(),
             staged_bytes: 0,
             numeric_views: HashMap::default(),
+            extreme_partials: HashMap::default(),
             sum_partials: HashMap::default(),
             deferred_batches: Vec::new(),
             deferred_keys: HashMap::default(),
@@ -1673,6 +1690,7 @@ impl GroupAggregator {
             staged_key_batches: self.staged_key_batches,
             staged_bytes: self.staged_bytes,
             numeric_views: self.numeric_views,
+            extreme_partials: self.extreme_partials,
             sum_partials: self.sum_partials,
             deferred_batches: self.deferred_batches,
             deferred_keys: self.deferred_keys,
@@ -2239,6 +2257,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let staged_key_batch = self.staged_key_batches.len();
         let mut retained_key_batch = false;
         let mut staged_delta = 0usize;
+        let mut mapped_delta = 0isize;
         for row in 0..n {
             let key = key_encoder.encode(row);
             // RowKind: 0 +I, 1 -U, 2 +U, 3 -D (absent column ⇒ INSERT). UB/delete retract; I/UA add.
@@ -2333,6 +2352,35 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         key_row: row,
                     },
                 );
+            }
+            for i in 0..num_agg {
+                if !matches!(self.kinds[i], 38 | 39) {
+                    continue;
+                }
+                let incoming = MappedExtreme::from_partial(
+                    batch.column(self.distinct_view_columns[i] as usize),
+                    row,
+                    self.kinds[i] == 38,
+                );
+                if !self.extreme_partials.contains_key(key) {
+                    staged_delta += byte_key_bytes(key)
+                        + num_agg * std::mem::size_of::<Option<MappedExtreme>>();
+                    self.extreme_partials
+                        .insert(ByteKey::from(key), (0..num_agg).map(|_| None).collect());
+                }
+                let slot = &mut self.extreme_partials.get_mut(key).unwrap()[i];
+                let before = slot.as_ref().map_or(0, |state| {
+                    state.bytes() - std::mem::size_of::<MappedExtreme>()
+                });
+                if let Some(buffer) = slot {
+                    buffer.merge(&incoming, StateTtl::new(0, now_ms), 0);
+                } else {
+                    *slot = Some(incoming);
+                }
+                mapped_delta += (slot.as_ref().unwrap().bytes()
+                    - std::mem::size_of::<MappedExtreme>())
+                    as isize
+                    - before as isize;
             }
             for (i, metadata) in ordered_views.iter().enumerate() {
                 if ordered_sources[i] != Some(i) {
@@ -2503,6 +2551,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     retained_touches.push((source, value, None));
                 }
                 for i in 0..num_agg {
+                    if matches!(state.aggs[i], GroupAggState::Mapped(_)) {
+                        continue;
+                    }
                     // FILTER: fold into this aggregate only where its filter is TRUE (NULL/FALSE skip).
                     if let Some(filter) = filter_cols[i] {
                         if filter.is_null(row) || !filter.value(row) {
@@ -2833,9 +2884,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             results: out_results,
             kinds: out_kinds,
         } = output;
-        self.staged_bytes += staged_delta;
+        let staged_delta = staged_delta as isize + mapped_delta;
+        self.staged_bytes = self
+            .staged_bytes
+            .checked_add_signed(staged_delta)
+            .expect("staged aggregate accounting");
         if track {
-            self.memory.record(staged_delta as isize);
+            self.memory.record(staged_delta);
         }
         if !self.mini_batch {
             // Immediate mode: the batch is the whole bundle — the store may release what it
@@ -2947,9 +3002,33 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let ttl_on = self.ttl_ms > 0 && self.ttl_emit_unchanged;
         let cache_output = self.kinds.as_slice() != [14] || self.filter_columns[0] >= 0;
         let mut numeric_views = std::mem::take(&mut self.numeric_views);
+        let mut extreme_partials = std::mem::take(&mut self.extreme_partials);
         let mut sum_partials = std::mem::take(&mut self.sum_partials);
         let ttl = StateTtl::new(self.ttl_ms, self.last_input_ms);
         for key in order {
+            if let Some(buffers) = extreme_partials.remove(&key) {
+                let state = self
+                    .store
+                    .get_mut(&key.0)
+                    .expect("staged extreme key remains resident");
+                let before = if self.memory.tracking() {
+                    group_key_state_bytes(state)
+                } else {
+                    0
+                };
+                for (i, buffer) in buffers.into_iter().enumerate() {
+                    if let Some(buffer) = buffer {
+                        let GroupAggState::Mapped(mapped) = &mut state.aggs[i] else {
+                            unreachable!("mapped global extreme")
+                        };
+                        mapped.merge(&buffer, ttl, state.last_write_ms);
+                    }
+                }
+                if self.memory.tracking() {
+                    self.memory
+                        .record(group_key_state_bytes(state) as isize - before as isize);
+                }
+            }
             if let Some(buffers) = sum_partials.remove(&key) {
                 let state = self
                     .store
@@ -3180,6 +3259,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             }
             for i in 0..num_agg {
                 match &state.aggs[i] {
+                    GroupAggState::Mapped(mapped) => {
+                        state_columns[i].push(mapped.snapshot(&self.value_types[i]));
+                        non_null_columns[i].push(0);
+                    }
                     GroupAggState::Json(json) => {
                         state_columns[i].push(json.snapshot());
                         non_null_columns[i].push(0);
@@ -3298,7 +3381,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             // the retractable representation and a blob round-trips across the two.
             if matches!(
                 self.kinds[i],
-                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20 | 34
+                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20 | 34 | 38 | 39
             ) {
                 let mut f = vec![Field::new("binary_key", DataType::Binary, false)];
                 let mut c: Vec<ArrayRef> = vec![Arc::new(
@@ -3540,6 +3623,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .as_ref()
                 .map_or(restored_at_ms, |ts| ts.value(row));
             for i in 0..num_agg {
+                if let GroupAggState::Mapped(mapped) = &mut state.aggs[i] {
+                    mapped
+                        .restore(ScalarValue::try_from_array(main.column(2 + 2 * i), row).unwrap());
+                }
                 if let GroupAggState::Json(json) = &mut state.aggs[i] {
                     json.restore(
                         ScalarValue::try_from_array(main.column(2 + 2 * i), row)
@@ -3610,7 +3697,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         for i in 0..num_agg {
             if !matches!(
                 self.kinds[i],
-                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20 | 34
+                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20 | 34 | 38 | 39
             ) {
                 continue;
             }
@@ -3702,6 +3789,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         for row in 0..main.num_rows() {
             let state = self.store.get_mut(keys.value(row)).expect("restored group");
+            if self.ttl_ms > 0 {
+                for agg in &mut state.aggs {
+                    if let GroupAggState::Mapped(mapped) = agg {
+                        mapped.seed_clocks(state.last_write_ms);
+                    }
+                }
+            }
             for &(_, column) in &retained_sources {
                 let source = retained_sources
                     .iter()
@@ -3876,14 +3970,7 @@ impl LocalGroupAggregator {
             .iter()
             .map(|kind| matches!(kind, 38 | 39))
             .collect::<Vec<_>>();
-        let kinds = kinds
-            .into_iter()
-            .map(|kind| match kind {
-                38 => 1,
-                39 => 2,
-                other => other,
-            })
-            .collect::<Vec<_>>();
+
         let value_types: Vec<DataType> = value_types.iter().map(|&c| value_data_type(c)).collect();
         let accumulator_types = kinds
             .iter()
@@ -3896,7 +3983,7 @@ impl LocalGroupAggregator {
             .map(|(&kind, vt)| {
                 if kind == 21 {
                     DataType::Int32
-                } else if is_list_agg(kind) || is_ordered_value(kind) {
+                } else if is_list_agg(kind) || is_ordered_value(kind) || matches!(kind, 38 | 39) {
                     vt.clone()
                 } else {
                     RunningAgg::new(kind, vt).result_type()
@@ -4336,11 +4423,10 @@ impl LocalGroupAggregator {
                     let values = batch.column(self.value_columns[i] as usize);
                     if !values.is_null(row) {
                         let value = ScalarValue::try_from_array(values, row)?;
-                        entry.states[i].merge_extreme_delta(
-                            MinMaxKey::from_scalar(&value),
-                            if retract { -1 } else { 1 },
-                            true,
-                        );
+                        let GroupAggState::Mapped(state) = &mut entry.states[i] else {
+                            unreachable!("mapped local extreme")
+                        };
+                        state.update(value, retract);
                     }
                     continue;
                 }
@@ -4603,15 +4689,10 @@ impl LocalGroupAggregator {
                         };
                         agg.emit()
                     } else if self.retracting_extremes[i] {
-                        let GroupAggState::Extremes { is_min, counts, .. } = state else {
+                        let GroupAggState::Mapped(state) = state else {
                             unreachable!("local extreme partial")
                         };
-                        let selected = if *is_min {
-                            counts.iter().find(|(_, count)| **count > 0)
-                        } else {
-                            counts.iter().rev().find(|(_, count)| **count > 0)
-                        };
-                        selected.map_or_else(|| null_scalar(rt), |(value, _)| value.scalar(rt))
+                        state.selected(rt)
                     } else {
                         state.emit(rt)
                     }
@@ -4629,11 +4710,11 @@ impl LocalGroupAggregator {
                         LocalGroupKey::Byte(key) => &states[key],
                         LocalGroupKey::Scalar(key) => &scalar_states[key],
                     };
-                    let GroupAggState::Extremes { counts, .. } = &entry.states[i] else {
+                    let GroupAggState::Mapped(state) = &entry.states[i] else {
                         unreachable!("retractable local extreme state")
                     };
-                    sizes.push(counts.values().filter(|&&count| count > 0).count() as i64);
-                    for (value, &count) in counts {
+                    sizes.push(state.map_size);
+                    for (value, &count) in &state.counts {
                         if count != 0 {
                             values.push(value.scalar(&self.value_types[i]));
                             multiplicities.push(count);
@@ -4658,7 +4739,7 @@ impl LocalGroupAggregator {
                 let accumulator = arrow::array::StructArray::new(
                     vec![
                         Arc::new(Field::new(
-                            if self.kinds[i] == 1 { "min" } else { "max" },
+                            if self.kinds[i] == 38 { "min" } else { "max" },
                             rt.clone(),
                             true,
                         )),

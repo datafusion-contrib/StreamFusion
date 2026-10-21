@@ -155,16 +155,6 @@ final class GlobalGroupAggregateMatcher {
       if (LocalGroupAggregateMatcher.isRetractingExtreme(call, needRetraction)
           && offset < inputType.getFieldCount()
           && inputType.getFieldList().get(offset).getType().isStruct()) {
-        Long hint = FlinkCompat.singleStateTtl(agg);
-        long retention =
-            hint == null
-                ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
-                    .getIdleStateRetention()
-                    .toMillis()
-                : hint;
-        if (retention > 0)
-          return "global group aggregate: retracting MIN/MAX with TTL require independently"
-              + " expiring map entries";
         if (call.getArgList().size() != 1
             || offset >= inputType.getFieldCount()
             || !LocalGroupAggregateMatcher.supportedExtremePartials(
@@ -461,6 +451,9 @@ final class GlobalGroupAggregateMatcher {
                 == SqlTypeName.DECIMAL) kind = GroupAggregateMatcher.KIND_RETRACTING_DECIMAL_SUM;
         // A scalar MIN/MAX partial has no signed map: merge it as a running extreme.
         // A mapped partial retains the retractable multiset.
+        if (mappedExtreme(agg, i)) {
+          kind = kind == WindowAggregateMatcher.KIND_MIN ? 38 : 39;
+        }
         if (!mappedExtreme(agg, i)
             && (kind == WindowAggregateMatcher.KIND_MIN || kind == WindowAggregateMatcher.KIND_MAX)
             && GroupAggregateMatcher.runningExtremeType(

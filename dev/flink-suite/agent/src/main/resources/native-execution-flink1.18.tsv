@@ -68,12 +68,6 @@ org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#test
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupBySingleValue	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupBySingleValue	changelog=false	NativeColumnarGroupAggregateOperator
 
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	changelog=false&aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	changelog=false&aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	changelog=false&aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
@@ -89,8 +83,11 @@ org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRela
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg	changelog=false	NativeColumnarWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=false&aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=false&aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	changelog=false&aggMode=ON	!global LISTAGG requires append-only non-DISTINCT string partials
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal	changelog=false&aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator

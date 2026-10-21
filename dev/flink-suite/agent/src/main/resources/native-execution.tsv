@@ -46,9 +46,9 @@ org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#test
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupBySingleValue	*	NativeColumnarGroupAggregateOperator
 
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition	aggMode=OFF	NativeColumnarGroupAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition	aggMode=OFF	NativeColumnarGroupAggregateOperator
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
@@ -59,7 +59,7 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testJsonArrayA
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupJsonArrayAggAndJsonObjectAggWithOtherAggs	*	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg	*	NativeColumnarWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	aggMode=OFF	NativeColumnarGroupAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithRetraction	aggMode=ON	!global LISTAGG requires append-only non-DISTINCT string partials

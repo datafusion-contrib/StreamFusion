@@ -125,7 +125,7 @@ class FlinkRetractingExtremaPartialsSqlHarnessTest {
   }
 
   @org.junit.jupiter.api.Test
-  void positiveRetentionKeepsStockMapEntryExpiry() {
+  void positiveRetentionUsesIndependentNativeMapEntries() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -142,7 +142,8 @@ class FlinkRetractingExtremaPartialsSqlHarnessTest {
                 return table;
               },
               query("DOUBLE", "src"));
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertWork(metrics.nativeOperators());
     }
   }
 

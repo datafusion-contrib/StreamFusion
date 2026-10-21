@@ -1,0 +1,1488 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Independent mapped MIN/MAX entry retention and cached signed extrema",
+  "base_commit": "13a5dd75",
+  "source_sha256": {
+    "native/engine/src/group_agg.rs": "dee9684990275a3c0cbb5bb9a32b46d107fb7861ad7610c4584c59c1c9877ddc",
+    "native/engine/src/group_agg/mapped_extreme.rs": "7fb2b831066dcc78e711c28083d0b6d4faa1782992b23d13e44f5fcd6d1d5015",
+    "native/engine/src/state/rocks_store/mod.rs": "a9982824d3a98beaf47bf063b657a03502031555173fc8b6c0d4fdeebef53957",
+    "src/main/java/tech/streamfusion/planner/GlobalGroupAggregateMatcher.java": "27b2bc982c50065c1a4599b027ff18e68a663c1c0e710f975d3a01dd149309b3",
+    "src/test/java/tech/streamfusion/operator/NativeGlobalExtremeRetentionParityTest.java": "586f2b20205d72163066b271eb2ab06c12d74f41d0f863d74a2aaef3566eda0f",
+    "src/test/java/tech/streamfusion/FlinkRetractingExtremaPartialsSqlHarnessTest.java": "7da4d9adae168c02997f1fe83b0353e035e047f56ecd0b417cc8157940672742",
+    "src/test/java/tech/streamfusion/RetractingSumPartialsBenchmark.java": "b28209c4790118e6e029c8299e488676751df292043870053ccd70b835c61b01"
+  },
+  "native_dso_sha256": {
+    "candidate": "15f57a6d9f4f238b25d2d2ab458801253969e6b99ec15c82ffe1d1854cd22977",
+    "previous": "522165c63dc014fe24ffaa0ef591777cc075648cdb7e683e42e3c4f25ea60f3b"
+  },
+  "configuration": {
+    "runtime": "Linux x86_64/JDK17",
+    "candidate_native": "release+mimalloc",
+    "previous_java": "Actual canonical d13e9dc4; matching benchmark fixture only copied/compiled, production Java unchanged",
+    "previous_native": "Actual canonical production engine/bridge source-equivalent release/system allocator DSO; prior queries assert complete planner fallback",
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "retention_millis": 3600000,
+    "mini_batch_size": 512,
+    "warmups": 2,
+    "measured_trials": 3,
+    "boundary": "Complete alternating jobs include source, both transposes, JNI, state, blackhole sink and completion; no concurrent builds or tests during measurement.",
+    "numeric_query": "updating inner MAX or MIN -> outer MIN,COUNT,AVG,MAX",
+    "string_query": "updating inner MAX -> outer MIN,COUNT,MAX,COUNT(*)",
+    "source": "Iota rows; two modulo grouping keys; NULL every seventh value; numeric values ascend for innerMAX and descend for innerMIN; strings are 13-byte v-prefixed zero-padded ascending ordinals",
+    "reproduction": "SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -Dnative.build.skip=true -Dtest=RetractingSumPartialsBenchmark -Dsumretract.extrema=true -Dsumretract.types=INT -Dsumretract.backends=memory -Dsumretract.rows=1000000 -Dsumretract.keys=128 -Dsumretract.outerKeys=16 -Dsumretract.retentionMillis=3600000 -Dsumretract.warmup=2 -Dsumretract.runs=3 surefire:test@default-test; other shapes use recorded type/backend/rows/keys and innerMin=true for innerMIN; STRING adds extremaOnly=true;1.18 adds flink-1.18 profile."
+  },
+  "measurements": [
+    {
+      "revision": "candidate",
+      "flink_line": "2.2",
+      "shape": "integer-min",
+      "configuration": {
+        "type": "INT",
+        "backend": "memory",
+        "rows": 1000000,
+        "inner_keys": 128,
+        "outer_keys": 16,
+        "inner": "MAX"
+      },
+      "native_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.334417419
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.779762586
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.506877999
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.819454817
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.60666171
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.397098603
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.366703034
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.548549797
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.531280671
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.374401203
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.60666171,
+          0.548549797,
+          0.531280671
+        ],
+        "StreamFusion": [
+          0.397098603,
+          0.366703034,
+          0.374401203
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.548549797,
+        "StreamFusion": 0.374401203
+      },
+      "range_seconds": {
+        "Flink": [
+          0.531280671,
+          0.60666171
+        ],
+        "StreamFusion": [
+          0.366703034,
+          0.397098603
+        ]
+      },
+      "stock_over_native": 1.4651389808702082,
+      "log_sha256": "8b2cb417c3a230b4058697fdf1f9f07b800176a75fe8d3f2094cb4786f884f3a"
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2",
+      "shape": "double-max",
+      "configuration": {
+        "type": "DOUBLE",
+        "backend": "memory",
+        "rows": 1000000,
+        "inner_keys": 4096,
+        "outer_keys": 64,
+        "inner": "MIN"
+      },
+      "native_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.089089758
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.324829525
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.974066155
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.280677487
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.200994566
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.962745995
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.762283535
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.165393297
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.100188041
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.82988101
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.200994566,
+          2.165393297,
+          2.100188041
+        ],
+        "StreamFusion": [
+          1.962745995,
+          1.762283535,
+          1.82988101
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.165393297,
+        "StreamFusion": 1.82988101
+      },
+      "range_seconds": {
+        "Flink": [
+          2.100188041,
+          2.200994566
+        ],
+        "StreamFusion": [
+          1.762283535,
+          1.962745995
+        ]
+      },
+      "stock_over_native": 1.1833519694266896,
+      "log_sha256": "7e4d0ec8bbc03d1e73f8cc61d68624e246dbf393f75018cf4fc1f10692e67d05"
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2",
+      "shape": "string-min",
+      "configuration": {
+        "type": "STRING",
+        "backend": "memory",
+        "rows": 262144,
+        "inner_keys": 1024,
+        "outer_keys": 64,
+        "inner": "MAX"
+      },
+      "native_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.858115842
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.189507929
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.840507075
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.040772333
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.856546766
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.743820312
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.754132931
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.835027552
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.840283955
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.727516913
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.856546766,
+          0.835027552,
+          0.840283955
+        ],
+        "StreamFusion": [
+          0.743820312,
+          0.754132931,
+          0.727516913
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.840283955,
+        "StreamFusion": 0.743820312
+      },
+      "range_seconds": {
+        "Flink": [
+          0.835027552,
+          0.856546766
+        ],
+        "StreamFusion": [
+          0.727516913,
+          0.754132931
+        ]
+      },
+      "stock_over_native": 1.1296867555829802,
+      "log_sha256": "9bd966e90245d1b93435f558a8c89481a5c85443e8604c3c9b2541ba42283670"
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2",
+      "shape": "rocks-max",
+      "configuration": {
+        "type": "INT",
+        "backend": "rocksdb",
+        "rows": 262144,
+        "inner_keys": 4096,
+        "outer_keys": 64,
+        "inner": "MIN"
+      },
+      "native_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.078530901
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.408765793
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.119204427
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 4.155349492
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 4.409461552
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.006068127
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.969665133
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 4.016795233
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 3.013666366
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.116099981
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          4.409461552,
+          4.016795233,
+          3.013666366
+        ],
+        "StreamFusion": [
+          1.006068127,
+          0.969665133,
+          1.116099981
+        ]
+      },
+      "median_seconds": {
+        "Flink": 4.016795233,
+        "StreamFusion": 1.006068127
+      },
+      "range_seconds": {
+        "Flink": [
+          3.013666366,
+          4.409461552
+        ],
+        "StreamFusion": [
+          0.969665133,
+          1.116099981
+        ]
+      },
+      "stock_over_native": 3.9925678243855147,
+      "log_sha256": "0ab3fc9a5ee833cd4d2be52bdd3f7844aadc20cb235533ed9c8dc5c75367537a"
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18",
+      "shape": "integer-min",
+      "configuration": {
+        "type": "INT",
+        "backend": "memory",
+        "rows": 1000000,
+        "inner_keys": 128,
+        "outer_keys": 16,
+        "inner": "MAX"
+      },
+      "native_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.220329583
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.78646563
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.497736454
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.783865358
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.597111007
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.376658644
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.36648843
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.520901251
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.476144331
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.371383907
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.597111007,
+          0.520901251,
+          0.476144331
+        ],
+        "StreamFusion": [
+          0.376658644,
+          0.36648843,
+          0.371383907
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.520901251,
+        "StreamFusion": 0.371383907
+      },
+      "range_seconds": {
+        "Flink": [
+          0.476144331,
+          0.597111007
+        ],
+        "StreamFusion": [
+          0.36648843,
+          0.376658644
+        ]
+      },
+      "stock_over_native": 1.4025951076011485,
+      "log_sha256": "5cac879e54f404b2c8a06fdcfdbcf3c384707fd6a1416d7ecc13c0fe39b24dda"
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18",
+      "shape": "double-max",
+      "configuration": {
+        "type": "DOUBLE",
+        "backend": "memory",
+        "rows": 1000000,
+        "inner_keys": 4096,
+        "outer_keys": 64,
+        "inner": "MIN"
+      },
+      "native_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.007203879
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.336737959
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.909802263
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.176752828
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.127224023
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.794397333
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.823038392
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.073437792
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.062679483
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.764839803
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.127224023,
+          2.073437792,
+          2.062679483
+        ],
+        "StreamFusion": [
+          1.794397333,
+          1.823038392,
+          1.764839803
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.073437792,
+        "StreamFusion": 1.794397333
+      },
+      "range_seconds": {
+        "Flink": [
+          2.062679483,
+          2.127224023
+        ],
+        "StreamFusion": [
+          1.764839803,
+          1.823038392
+        ]
+      },
+      "stock_over_native": 1.1555065056486016,
+      "log_sha256": "dd981dba9c78c76b424392f9368f2054f49e8fe70c1761f7a52d12d511329af7"
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18",
+      "shape": "string-min",
+      "configuration": {
+        "type": "STRING",
+        "backend": "memory",
+        "rows": 262144,
+        "inner_keys": 1024,
+        "outer_keys": 64,
+        "inner": "MAX"
+      },
+      "native_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.701985337
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.121143629
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.844879239
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.956430557
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.890063781
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.749355693
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.705132531
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.831271858
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.829087467
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.608563224
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.890063781,
+          0.831271858,
+          0.829087467
+        ],
+        "StreamFusion": [
+          0.749355693,
+          0.705132531,
+          0.608563224
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.831271858,
+        "StreamFusion": 0.705132531
+      },
+      "range_seconds": {
+        "Flink": [
+          0.829087467,
+          0.890063781
+        ],
+        "StreamFusion": [
+          0.608563224,
+          0.749355693
+        ]
+      },
+      "stock_over_native": 1.1788874026576432,
+      "log_sha256": "9df879093ba5e0c46abbecf731060cf6c92491d4274d004ae803ffb9637a2d60"
+    },
+    {
+      "revision": "prior",
+      "flink_line": "2.2",
+      "shape": "integer-min",
+      "configuration": {
+        "type": "INT",
+        "backend": "memory",
+        "rows": 1000000,
+        "inner_keys": 128,
+        "outer_keys": 16,
+        "inner": "MAX"
+      },
+      "native_route": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.376744075
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.785339822
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.639825509
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.668971706
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.508368309
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.48443395
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.490234885
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.470957206
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.525180853
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.483395805
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.508368309,
+          0.470957206,
+          0.525180853
+        ],
+        "StreamFusion": [
+          0.48443395,
+          0.490234885,
+          0.483395805
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.508368309,
+        "StreamFusion": 0.48443395
+      },
+      "range_seconds": {
+        "Flink": [
+          0.470957206,
+          0.525180853
+        ],
+        "StreamFusion": [
+          0.483395805,
+          0.490234885
+        ]
+      },
+      "stock_over_native": 1.0494068572196478,
+      "log_sha256": "3a60f94babfd78e09272fb1fb4140b762c42234deb9538e7a4157f25d49df747"
+    },
+    {
+      "revision": "prior",
+      "flink_line": "2.2",
+      "shape": "double-max",
+      "configuration": {
+        "type": "DOUBLE",
+        "backend": "memory",
+        "rows": 1000000,
+        "inner_keys": 4096,
+        "outer_keys": 64,
+        "inner": "MIN"
+      },
+      "native_route": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.158503272
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.363501237
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.19489117
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.172329145
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.11258177
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.151332447
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.119934503
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.136627462
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.103976426
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.084051602
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.11258177,
+          2.136627462,
+          2.103976426
+        ],
+        "StreamFusion": [
+          2.151332447,
+          2.119934503,
+          2.084051602
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.11258177,
+        "StreamFusion": 2.119934503
+      },
+      "range_seconds": {
+        "Flink": [
+          2.103976426,
+          2.136627462
+        ],
+        "StreamFusion": [
+          2.084051602,
+          2.151332447
+        ]
+      },
+      "stock_over_native": 0.9965316225621145,
+      "log_sha256": "66815db2e04eacec8b2c29400103daa1b811989f5d7c83a712cf4f1eada99324"
+    },
+    {
+      "revision": "prior",
+      "flink_line": "2.2",
+      "shape": "string-min",
+      "configuration": {
+        "type": "STRING",
+        "backend": "memory",
+        "rows": 262144,
+        "inner_keys": 1024,
+        "outer_keys": 64,
+        "inner": "MAX"
+      },
+      "native_route": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.883781598
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.028406776
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.890760389
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.859266742
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.824683353
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.863587654
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.818104409
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.77765986
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.767195369
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.790992509
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.824683353,
+          0.77765986,
+          0.767195369
+        ],
+        "StreamFusion": [
+          0.863587654,
+          0.818104409,
+          0.790992509
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.77765986,
+        "StreamFusion": 0.818104409
+      },
+      "range_seconds": {
+        "Flink": [
+          0.767195369,
+          0.824683353
+        ],
+        "StreamFusion": [
+          0.790992509,
+          0.863587654
+        ]
+      },
+      "stock_over_native": 0.9505630961585491,
+      "log_sha256": "69edcc466057d45c379fb509651d317e00df0240279144ba486e808b5e3b2ed3"
+    },
+    {
+      "revision": "prior",
+      "flink_line": "2.2",
+      "shape": "rocks-max",
+      "configuration": {
+        "type": "INT",
+        "backend": "rocksdb",
+        "rows": 262144,
+        "inner_keys": 4096,
+        "outer_keys": 64,
+        "inner": "MIN"
+      },
+      "native_route": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 4.198928341
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.163961109
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 3.179098483
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 3.203680524
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 3.158318457
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 3.017586583
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 3.349858263
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 3.24233132
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 3.112651148
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 3.772839308
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          3.158318457,
+          3.24233132,
+          3.112651148
+        ],
+        "StreamFusion": [
+          3.017586583,
+          3.349858263,
+          3.772839308
+        ]
+      },
+      "median_seconds": {
+        "Flink": 3.158318457,
+        "StreamFusion": 3.349858263
+      },
+      "range_seconds": {
+        "Flink": [
+          3.112651148,
+          3.24233132
+        ],
+        "StreamFusion": [
+          3.017586583,
+          3.772839308
+        ]
+      },
+      "stock_over_native": 0.9428215193115471,
+      "log_sha256": "9030bc1e86ff246dfa49060df2e0a555d4f09b3ace0c06656dbaab300996ce09"
+    }
+  ],
+  "aborted_runs": [
+    {
+      "flink_line": "1.18",
+      "shape": "rocks-max",
+      "rows": 262144,
+      "inner_keys": 4096,
+      "outer_keys": 64,
+      "timeout_seconds": 180,
+      "complete_trials": [],
+      "log_sha256": "da50e9ad6ca8f16b78ca2a2dde3decf8260970204fbb6880c27485b4f9ed4a73",
+      "status": "incomplete; excluded from medians and speedup claims"
+    },
+    {
+      "flink_line": "1.18",
+      "shape": "rocks-small",
+      "rows": 32768,
+      "inner_keys": 512,
+      "outer_keys": 64,
+      "timeout_seconds": 90,
+      "complete_trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 16.417480146
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.49074468
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.453455551
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 53.852252231
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 9.751083676
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.318281868
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.295523044
+        }
+      ],
+      "log_sha256": "c17678d3319d93c8e8aec460eed1a7c4055c8bb3e2f07a754c819dfbb11928de",
+      "status": "incomplete; excluded from medians and speedup claims",
+      "worker_stack_sha256": "fa4cd8363a73a49408b8acaf4101f3fdb27d45825bcc5d80f787e59c9e57d9f3",
+      "worker_stack_excerpt": [
+        "GlobalGroupAggregate -> Calc -> LocalGroupAggregate (stock Flink)",
+        "org.rocksdb.RocksDB.put(Native Method)",
+        "org.apache.flink.contrib.streaming.state.RocksDBValueState.update",
+        "org.apache.flink.runtime.state.ttl.TtlValueState.update",
+        "org.apache.flink.table.runtime.operators.aggregate.MiniBatchGlobalGroupAggFunction.finishBundle"
+      ]
+    }
+  ],
+  "optimization_passes": 0,
+  "validation": {
+    "native_passed": 878,
+    "native_ignored": 2,
+    "sql_checks_per_release": 55,
+    "controlled_clock_checks_per_release": 32,
+    "total_distinct_sql_operator_checks_per_release": 87,
+    "agent_passed": 50,
+    "agent_skipped": 1,
+    "scope_unit_checks": 35,
+    "clock_dimensions": [
+      "cached extreme and map-size independent of map-entry expiry",
+      "inclusive entry deadline",
+      "expiry at logical global flush",
+      "signed negative entries affect replacement scans",
+      "heap partial cancellation does not refresh retained entries",
+      "memory/native raw keyed RocksDB",
+      "two successive restores",
+      "old raw snapshot seeding before NULL-only first bundle"
+    ],
+    "unchanged_upstream": {
+      "2.2": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "aggMode=ON",
+          "consumed_native": "NativeCalcOperator=28,NativeColumnarGroupAggregateOperator=14,NativeColumnarLocalGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
+          "variant": "aggMode=ON",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeColumnarLocalGroupAggregateOperator=7,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
+          "variant": "aggMode=ON",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeColumnarLocalGroupAggregateOperator=6,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=7,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=9,NativeFilterOperator=6",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=78,NativeColumnarGroupAggregateOperator=37",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
+          "variant": "aggMode=ON",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeColumnarLocalGroupAggregateOperator=7,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "aggMode=ON",
+          "consumed_native": "NativeCalcOperator=30,NativeColumnarGroupAggregateOperator=14,NativeColumnarLocalGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=9,NativeFilterOperator=6",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=32,NativeColumnarGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=78,NativeColumnarGroupAggregateOperator=37",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=78,NativeColumnarGroupAggregateOperator=37",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=9,NativeFilterOperator=6",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=7,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=30,NativeColumnarGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
+          "variant": "aggMode=ON",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeColumnarLocalGroupAggregateOperator=6,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeFilterOperator=4",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinAggRetractWithCondition",
+          "variant": "aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=6,NativeFilterOperator=4",
+          "fallbacks": []
+        }
+      ],
+      "1.18": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=11",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=11",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=30,NativeColumnarGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=11",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+          "variant": "changelog=false&aggMode=ON",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=10,NativeColumnarLocalGroupAggregateOperator=11",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=28,NativeColumnarGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "changelog=false&aggMode=ON",
+          "consumed_native": "NativeCalcOperator=26,NativeColumnarGroupAggregateOperator=14,NativeColumnarLocalGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=78,NativeColumnarGroupAggregateOperator=37",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=11",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "changelog=false&aggMode=OFF",
+          "consumed_native": "NativeCalcOperator=78,NativeColumnarGroupAggregateOperator=37",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+          "variant": "changelog=false&aggMode=ON",
+          "consumed_native": "NativeCalcOperator=28,NativeColumnarGroupAggregateOperator=14,NativeColumnarLocalGroupAggregateOperator=23",
+          "fallbacks": []
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWithDecimal",
+          "variant": "changelog=false&aggMode=ON",
+          "consumed_native": "NativeColumnarGroupAggregateOperator=10,NativeColumnarLocalGroupAggregateOperator=11",
+          "fallbacks": []
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Every completed candidate profile beats paired stock; no slow-case optimization pass was needed.",
+    "1.18 stock RocksDB exhausted two bounded attempts; incomplete trials and worker stack retained without a median or speedup claim.",
+    "Candidate DSO precedes only the last cfg(test) legacy snapshot regression; production behavior matches the final source.",
+    "Root user work untouched; all delivery remains on one isolated goal branch."
+  ]
+}
