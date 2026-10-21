@@ -16,7 +16,7 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWi
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithGroupByAndRetract	*	NativeColumnarGroupAggregateOperator+NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithVariableTopSize	*	!Top-N: nullable variable rank bounds require Flink's row-access semantics
-org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRetractPreviousSlicingStateWithSlicingWindow	*	!window aggregate: retracting input supports only aligned event-time TUMBLE/HOP/CUMULATE with grouping-only, numeric SUM/AVG, supported scalar COUNT(value), or COUNT(*) (optional FILTER)
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRetractPreviousSlicingStateWithSlicingWindow	*	!window aggregate: retracting input supports only aligned event-time TUMBLE/HOP/CUMULATE with grouping-only, numeric SUM/AVG, typed MIN/MAX, supported COUNT(value), or COUNT(*) (optional FILTER)
 org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	splitDistinct=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testTumbleWindow	splitDistinct=true	NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowDistinctAggregateITCase#testHopWindow	splitDistinct=false	NativeColumnarWindowAggregateOperator|NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
@@ -71,3 +71,7 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDisti
 # Released LISTAGG DISTINCT keeps ordered string membership.
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+
+# Released legacy fixed windows preserve signed input and extrema.
+org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream	*	NativeColumnarWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow	*	!legacy group-window: early/late firing and allowed lateness are not native

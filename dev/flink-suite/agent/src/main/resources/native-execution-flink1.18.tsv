@@ -101,3 +101,9 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDisti
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	changelog=false&aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+
+# Released legacy fixed windows preserve signed input and extrema.
+org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream	changelog=false	NativeColumnarWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow	changelog=false	!legacy group-window: early/late firing and allowed lateness are not native

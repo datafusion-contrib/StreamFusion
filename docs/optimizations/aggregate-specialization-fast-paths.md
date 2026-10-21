@@ -1,7 +1,7 @@
 # Aggregate specialization fast paths
 
 **Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX; deleted retracting MIN/MAX groups; grouped-value state and
-immediate changelog output; scalar SINGLE_VALUE partials; and mini-batch group-aggregate
+immediate changelog output; updating window string extrema; scalar SINGLE_VALUE partials; and mini-batch group-aggregate
 `DISTINCT` (q15/q16/q17-shaped queries)
 
 Two of the local aggregate's hot leaves were paying for generality their actual input doesn't need:
@@ -1167,3 +1167,28 @@ project their existing UTF-8 child and union the parent's NULL mask, following C
 `GetStructField` projection pattern. Nested payloads retain their original caches; this is a
 physical input correction, not another optimization pass. Logical key descriptors ignore the
 transport-only STRING/copy carriers and keep the logical array-element width.
+
+## Updating string extrema transfer owned keys
+
+A signed MIN/MAX update already owns its `ScalarValue`. Moving a string from that value into
+the multiset key avoids cloning it. The update also records whether the key is the cached
+winner before moving it into the counted map, avoiding another clone merely to compare the
+key after insertion. Cached winner changes still copy the value when they need independent
+ownership. Signed counters, negative entries, winner reseeks and snapshot layout are unchanged.
+This shares the existing GROUP BY multiset with updating window extrema.
+
+The 2026-10-21 CPU profile of million-row STRING window jobs found 4,316 samples beneath
+retracting extrema updates out of 83,275 total JVM/process samples. Allocation, freeing, string
+cloning and B-tree probes were prominent in those native stacks. One measured optimization
+pass reduced the single-phase native median from 0.765 s (0.712–0.828) to 0.634 s
+(0.572–0.677); matched stock Flink measured 0.708 s (0.676–0.713) after the change.
+The two-phase native median changed from 0.358 s to 0.338 s, versus matched stock 0.707 s.
+These are complete-job measurements including Top-1 input, both perimeter transposes, JNI,
+state and a rowwise sink; they are not isolated kernel throughput. The benchmark uses
+Flink 2.2.1, JDK 17, release+mimalloc, one million inputs, 64 keys, 2 s/10 s HOP windows,
+two warmups and three alternating measured engine pairs. The profile includes both phases
+and engines; its timings are excluded from the comparison.
+
+The [window coverage evidence](../benchmarks/results/updating-window-extrema-2026-10-21.json)
+retains the raw trials, preceding implementation, actual previous fallback controls and CPU
+sample summary. One pass was used; no additional optimization pass is required for this case.

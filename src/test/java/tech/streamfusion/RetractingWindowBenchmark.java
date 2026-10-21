@@ -20,12 +20,16 @@ class RetractingWindowBenchmark {
   private static final long ROWS = Long.getLong("window.rows", 1_000_000L);
   private static final int WARMUP = Integer.getInteger("window.warmup", 2);
   private static final int RUNS = Integer.getInteger("window.runs", 5);
+  private static final boolean LEGACY = Boolean.getBoolean("window.legacy");
   private static final boolean GROUPING_ONLY = Boolean.getBoolean("window.groupingOnly");
   private static final boolean FILTERED = Boolean.getBoolean("window.filtered");
   private static final String FILTER = FILTERED ? " FILTER (WHERE MOD(v, 2) = 0)" : "";
   private static final boolean AVERAGE = Boolean.getBoolean("window.average");
   private static final String AVERAGE_TYPE = System.getProperty("window.averageType", "BIGINT");
   private static final String AVERAGE_RESULT_TYPE = averageResultType();
+  private static final String EXTREME_TYPE = System.getProperty("window.extremeType", "");
+  private static final boolean EXPECT_NATIVE =
+      Boolean.parseBoolean(System.getProperty("window.expectNative", "true"));
   private static final String SUM_TYPE = System.getProperty("window.sumType", "BIGINT");
   private static final String SUM_RESULT_TYPE =
       SUM_TYPE.replaceFirst("DECIMAL\\(\\d+,", "DECIMAL(38,");
@@ -33,38 +37,79 @@ class RetractingWindowBenchmark {
       "INSERT INTO sink SELECT k"
           + (GROUPING_ONLY
               ? ""
-              : AVERAGE
-                  ? ", COUNT(v)" + FILTER + ", AVG(CAST(v AS " + AVERAGE_TYPE + "))" + FILTER
-                  : ", COUNT(v)" + FILTER + ", SUM(CAST(v AS " + SUM_TYPE + "))" + FILTER)
-          + " FROM TABLE(HOP(TABLE ranked, DESCRIPTOR(rt), "
-          + "INTERVAL '2' SECOND, INTERVAL '10' SECOND)) GROUP BY k, window_start, window_end";
+              : !EXTREME_TYPE.isEmpty()
+                  ? ", COUNT(v)"
+                      + FILTER
+                      + ", MIN(CAST(v AS "
+                      + EXTREME_TYPE
+                      + "))"
+                      + FILTER
+                      + ", MAX(CAST(v AS "
+                      + EXTREME_TYPE
+                      + "))"
+                      + FILTER
+                  : AVERAGE
+                      ? ", COUNT(v)" + FILTER + ", AVG(CAST(v AS " + AVERAGE_TYPE + "))" + FILTER
+                      : ", COUNT(v)" + FILTER + ", SUM(CAST(v AS " + SUM_TYPE + "))" + FILTER)
+          + (LEGACY
+              ? " FROM ranked GROUP BY k,HOP(rt,INTERVAL '2' SECOND,INTERVAL '10' SECOND)"
+              : " FROM TABLE(HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10'"
+                    + " SECOND)) GROUP BY k, window_start, window_end");
 
   @ParameterizedTest
   @ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
   void retractingWindow(String phase) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        !LEGACY || phase.equals("ONE_PHASE"), "Released legacy windows remain single-phase");
     String plan = NativePlanner.explain(environment(phase), SQL);
-    if (!plan.contains("NativeColumnarTopN")
-        || !plan.contains(
-            phase.equals("TWO_PHASE")
-                ? "NativeColumnarGlobalWindowAggregate"
-                : "NativeColumnarWindowAggregate")
-        || !plan.contains("RowDataToArrow")
-        || !plan.contains("ArrowToRowData")) {
+    if (EXPECT_NATIVE
+        && (!plan.contains("NativeColumnarTopN")
+            || !plan.contains(
+                phase.equals("TWO_PHASE")
+                    ? "NativeColumnarGlobalWindowAggregate"
+                    : "NativeColumnarWindowAggregate")
+            || !plan.contains("RowDataToArrow")
+            || !plan.contains("ArrowToRowData"))) {
       throw new IllegalStateException(
           "Expected native window aggregate and both transposes: " + plan);
     }
+    if (!EXPECT_NATIVE && plan.contains("NativeColumnarWindowAggregate"))
+      throw new IllegalStateException(plan);
+    if (!EXPECT_NATIVE && plan.contains("NativeColumnarGlobalWindowAggregate"))
+      throw new IllegalStateException(plan);
     double[][] times = new double[2][RUNS];
     for (int trial = 0; trial < WARMUP + RUNS; trial++) {
       for (int turn = 0; turn < 2; turn++) {
         int engine = (trial + turn) % 2;
-        var table = environment(phase);
-        var scan = engine == 1 ? NativePlanner.install(table) : null;
-        long start = System.nanoTime();
-        table.executeSql(SQL).await();
-        double seconds = (System.nanoTime() - start) / 1e9;
-        if (scan != null && scan.substitutions() == 0)
-          throw new IllegalStateException(scan.explainSummary());
-        if (trial >= WARMUP) times[engine][trial - WARMUP] = seconds;
+        try (var metrics = new RecoveryExecutionMetrics()) {
+          var table = environment(phase, metrics);
+          var scan = engine == 1 ? NativePlanner.install(table) : null;
+          long start = System.nanoTime();
+          table.executeSql(SQL).await();
+          double seconds = (System.nanoTime() - start) / 1e9;
+          if (EXPECT_NATIVE && scan != null) {
+            if (scan.substitutions() == 0) throw new IllegalStateException(scan.explainSummary());
+            RecoveryExecutionMetrics.assertConsumed(
+                metrics.nativeOperators(),
+                phase.equals("TWO_PHASE")
+                    ? "NativeColumnarGlobalWindowAggregate"
+                    : "NativeColumnarWindowAggregate");
+            if (phase.equals("TWO_PHASE"))
+              RecoveryExecutionMetrics.assertConsumed(
+                  metrics.nativeOperators(), "NativeColumnarLocalWindowAggregate");
+          }
+          System.out.printf(
+              Locale.ROOT,
+              "[retracting-window-trial] extremeType=%s phase=%s engine=%s trial=%d warmup=%s"
+                  + " seconds=%.6f%n",
+              EXTREME_TYPE,
+              phase,
+              engine == 0 ? "Flink" : "StreamFusion",
+              trial,
+              trial < WARMUP,
+              seconds);
+          if (trial >= WARMUP) times[engine][trial - WARMUP] = seconds;
+        }
       }
     }
     double host = median(times[0]);
@@ -72,13 +117,15 @@ class RetractingWindowBenchmark {
     System.out.printf(
         Locale.ROOT,
         "[retracting-window] groupingOnly=%s filtered=%s average=%s averageType=%s sumType=%s"
-            + " phase=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx host_trials=%s"
-            + " native_trials=%s%n",
+            + " extremeType=%s legacy=%s phase=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx"
+            + " host_trials=%s native_trials=%s%n",
         GROUPING_ONLY,
         FILTERED,
         AVERAGE,
         AVERAGE_TYPE,
         SUM_TYPE,
+        EXTREME_TYPE,
+        LEGACY,
         phase,
         ROWS,
         host,
@@ -105,7 +152,14 @@ class RetractingWindowBenchmark {
   }
 
   private static TableEnvironment environment(String phase) {
-    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    return environment(phase, null);
+  }
+
+  private static TableEnvironment environment(String phase, RecoveryExecutionMetrics metrics) {
+    var env =
+        metrics == null
+            ? StreamExecutionEnvironment.getExecutionEnvironment()
+            : metrics.environment(new org.apache.flink.configuration.Configuration(), 2, 0);
     env.setParallelism(2);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(java.time.ZoneOffset.UTC);
@@ -137,7 +191,9 @@ class RetractingWindowBenchmark {
         "CREATE TABLE sink (k BIGINT"
             + (GROUPING_ONLY
                 ? ""
-                : ", c BIGINT, s " + (AVERAGE ? AVERAGE_RESULT_TYPE : SUM_RESULT_TYPE))
+                : !EXTREME_TYPE.isEmpty()
+                    ? ", c BIGINT, lo " + EXTREME_TYPE + ", hi " + EXTREME_TYPE
+                    : ", c BIGINT, s " + (AVERAGE ? AVERAGE_RESULT_TYPE : SUM_RESULT_TYPE))
             + ") WITH ('connector' = 'blackhole')");
     return table;
   }

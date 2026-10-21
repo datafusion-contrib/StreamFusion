@@ -21,6 +21,10 @@ public final class RuntimeCompat {
     return true;
   }
 
+  public static boolean supportsRetractingCharExtrema() {
+    return true;
+  }
+
   public static boolean supportsTemporalOverFirstLast() {
     return true;
   }

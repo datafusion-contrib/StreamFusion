@@ -135,7 +135,7 @@ mod tests {
 }
 
 impl MappedExtreme {
-    pub(super) fn new(is_min: bool) -> Self {
+    pub(crate) fn new(is_min: bool) -> Self {
         Self {
             is_min,
             counts: BTreeMap::new(),
@@ -218,11 +218,11 @@ impl MappedExtreme {
         }
     }
 
-    pub(super) fn update(&mut self, value: ScalarValue, retract: bool) {
+    pub(crate) fn update(&mut self, value: ScalarValue, retract: bool) {
         if value.is_null() {
             return;
         }
-        let key = MinMaxKey::from_scalar(&value);
+        let key = MinMaxKey::from_owned_scalar(value);
         let old = self.counts.get(&key).copied().unwrap_or(0);
         let count = old.wrapping_add(if retract { -1 } else { 1 });
         if !retract
@@ -234,12 +234,13 @@ impl MappedExtreme {
         {
             self.extreme = Some(key.clone());
         }
-        self.put(key.clone(), count, StateTtl::new(0, 0));
+        let removing_winner = self.extreme.as_ref() == Some(&key);
+        self.put(key, count, StateTtl::new(0, 0));
         if retract && count == 0 {
             self.map_size = self.map_size.wrapping_sub(1);
             if self.map_size == 0 {
                 self.extreme = None;
-            } else if self.extreme.as_ref() == Some(&key) {
+            } else if removing_winner {
                 self.reseek(StateTtl::new(0, 0));
             }
         } else if !retract && count == 1 {
@@ -247,7 +248,7 @@ impl MappedExtreme {
         }
     }
 
-    pub(super) fn merge(&mut self, other: &Self, ttl: StateTtl, previous_write: i64) {
+    pub(crate) fn merge(&mut self, other: &Self, ttl: StateTtl, previous_write: i64) {
         if ttl.enabled() {
             self.seed_clocks(previous_write);
         }
@@ -284,7 +285,7 @@ impl MappedExtreme {
             .map_or_else(|| null_scalar(ty), |key| key.scalar(ty))
     }
 
-    pub(super) fn emit(&self, ty: &DataType) -> ScalarValue {
+    pub(crate) fn emit(&self, ty: &DataType) -> ScalarValue {
         if self.map_size > 0 {
             self.selected(ty)
         } else {
@@ -292,7 +293,7 @@ impl MappedExtreme {
         }
     }
 
-    pub(super) fn from_partial(column: &ArrayRef, row: usize, is_min: bool) -> Self {
+    pub(crate) fn from_partial(column: &ArrayRef, row: usize, is_min: bool) -> Self {
         let partial = column
             .as_any()
             .downcast_ref::<arrow::array::StructArray>()
@@ -343,7 +344,7 @@ impl MappedExtreme {
         self.counts.insert(key, count);
     }
 
-    pub(super) fn bytes(&self) -> usize {
+    pub(crate) fn bytes(&self) -> usize {
         let key_bytes = |key: &MinMaxKey| match key {
             MinMaxKey::Str(value) => value.capacity(),
             _ => 0,
@@ -359,6 +360,58 @@ impl MappedExtreme {
                 .written
                 .as_ref()
                 .map_or(0, |times| times.keys().map(|key| 80 + key_bytes(key)).sum())
+    }
+
+    pub(crate) fn partial_type(is_min: bool, value_type: &DataType) -> DataType {
+        DataType::Struct(
+            vec![
+                Field::new(if is_min { "min" } else { "max" }, value_type.clone(), true),
+                Field::new("mapSize", DataType::Int64, false),
+                Field::new(
+                    "map",
+                    DataType::List(Arc::new(Field::new(
+                        "item",
+                        DataType::Struct(distinct_entry_fields(value_type)),
+                        false,
+                    ))),
+                    false,
+                ),
+            ]
+            .into(),
+        )
+    }
+
+    pub(crate) fn partial(&self, value_type: &DataType) -> ScalarValue {
+        let mut values = ScalarValues::new(value_type);
+        let mut counts = Vec::with_capacity(self.counts.len());
+        for (key, &count) in &self.counts {
+            values.push(key.scalar(value_type));
+            counts.push(count);
+        }
+        let entries = arrow::array::StructArray::new(
+            distinct_entry_fields(value_type),
+            vec![values.finish(), Arc::new(Int64Array::from(counts))],
+            None,
+        );
+        let count = entries.len() as i32;
+        let list: ArrayRef = Arc::new(arrow::array::ListArray::new(
+            Arc::new(Field::new("item", entries.data_type().clone(), false)),
+            arrow::buffer::OffsetBuffer::new(vec![0, count].into()),
+            Arc::new(entries),
+            None,
+        ));
+        let DataType::Struct(fields) = Self::partial_type(self.is_min, value_type) else {
+            unreachable!()
+        };
+        ScalarValue::Struct(Arc::new(arrow::array::StructArray::new(
+            fields,
+            vec![
+                self.selected(value_type).to_array().unwrap(),
+                Arc::new(Int64Array::from(vec![self.map_size])),
+                list,
+            ],
+            None,
+        )))
     }
 
     pub(super) fn snapshot(&self, ty: &DataType) -> ScalarValue {

@@ -149,3 +149,13 @@ only that end and retires only its own namespace; ordinary smaller-step CUMULATE
 prefix optimization. Late complete partials compare against their own deadline. Cumulative
 start rendering and the existing shared store/checkpoint layout remain unchanged, preserving
 restore semantics while avoiding a second roll-up of already-final counts.
+
+Updating window extrema reuse the signed value multisets of native GROUP BY. Arroyo's
+`arrow/incremental_aggregator.rs` keeps batch state when an accumulator cannot retract;
+Flink's cached winner and signed map counters instead require a retractable native multiset.
+For local/global windows, Flink's `GlobalAggCombiner` first merges incoming partials into
+a fresh accumulator and then merges that accumulator into retained state. We preserve that
+boundary in a budgeted native temporary view, drained before watermarks and checkpoints.
+Directly merging each partial into retained state can reseek an unmatched negative entry
+when a transient winner cancels, producing a different result. Arrow structured partials
+and snapshots carry the same cached value, map size and value/count entries on either backend.

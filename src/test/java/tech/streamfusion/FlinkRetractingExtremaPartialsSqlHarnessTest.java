@@ -38,8 +38,10 @@ class FlinkRetractingExtremaPartialsSqlHarnessTest {
             "DOUBLE",
             "DECIMAL(20,3)",
             "STRING",
+            "CHAR(8)",
             "DATE",
             "TIME(0)",
+            "TIME(3)",
             "TIMESTAMP(9)",
             "BOOLEAN")
         .filter(type -> type.equals(System.getProperty("extrema.type", type)))
@@ -68,6 +70,14 @@ class FlinkRetractingExtremaPartialsSqlHarnessTest {
                 return configure(table, bundle);
               },
               query(type, "src"));
+      if (type.equals("CHAR(8)")
+          && !tech.streamfusion.compat.RuntimeCompat.supportsRetractingCharExtrema()) {
+        runs.assertFailure(
+            org.apache.flink.table.api.TableException.class,
+            NativeFailureParity.Phase.PLANNING,
+            NativeFailureParity.Route.UNPLANNED);
+        return;
+      }
       runs.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
       assertWork(metrics.nativeOperators());
@@ -84,6 +94,7 @@ class FlinkRetractingExtremaPartialsSqlHarnessTest {
             "STRING",
             "DATE",
             "TIME(0)",
+            "TIME(3)",
             "TIMESTAMP(9)",
             "BOOLEAN")
         .flatMap(type -> Stream.of("MIN", "MAX").map(inner -> Arguments.of(type, inner)));
@@ -226,6 +237,9 @@ class FlinkRetractingExtremaPartialsSqlHarnessTest {
         return java.time.LocalDate.of(1970, 1, 1).plusDays(value).toString();
       case "TIME(0)":
         return java.time.LocalTime.ofSecondOfDay((value + 10) * 997L).toString();
+      case "TIME(3)":
+        return java.time.LocalTime.ofSecondOfDay((value + 10) * 997L)
+            .plusNanos((Math.abs(value) + 1) * 1_000_000L).toString();
       case "TIMESTAMP(9)":
         return java.time.LocalDateTime.of(1970, 1, 1, 0, 0)
             .plusSeconds(value)
@@ -234,6 +248,7 @@ class FlinkRetractingExtremaPartialsSqlHarnessTest {
             .replace('T', ' ');
       case "BOOLEAN":
         return Boolean.toString(value % 2 == 0);
+      case "CHAR(8)":
       case "STRING":
         return "v" + value;
       default:

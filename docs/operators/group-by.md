@@ -89,7 +89,9 @@ the session zone. The declared logical type and precision are retained on output
 
 DATE, TIME and BOOLEAN MIN/MAX use the same retractable multiset. DATE compares epoch
 days, TIME compares its internal milliseconds (including milliseconds retained under a
-TIME(0) declaration), and FALSE sorts before TRUE. Duplicate counts, all-NULL groups,
+TIME(0) declaration), and FALSE sorts before TRUE. Released mapped extrema may resolve the
+cache to TIME(0) for a TIME(3) argument; both phases preserve the stored milliseconds. Retracting
+CHAR MIN/MAX requires Flink 2.2; 1.18 lacks that factory and retains its planning failure. Duplicate counts, all-NULL groups,
 FILTER and typed outputs survive checkpoint/restore. Insert-only two-phase plans carry
 the same typed extrema in their partials. DATE and BOOLEAN extrema use the existing
 per-element RocksDB codec when selected; TIME retains the snapshot-blob state path.
@@ -2438,3 +2440,9 @@ retain the measured variability and exact configurations. Reproduce with `String
 `stringagg.ttl=1 h`, and the corresponding rows/keys/width settings. The retracting profile sets
 `stringagg.updating=true` and `stringagg.literalSeparator=false`; the append profile sets those
 properties to `false` and `true` respectively.
+
+Released TIME extrema may declare a TIME(0) local cache for TIME(3) input even when an
+inner monotonic aggregate uses an ordinary scalar partial. Both scalar and signed-map
+local/global layouts preserve the actual milliseconds in Arrow's millisecond TIME carrier.
+The outer aggregate can share ordinary monotonic extrema with retracting maps without
+forcing a planner fallback solely for that cache precision alias.

@@ -3,7 +3,9 @@ use crate::*;
 use arrow::array::UInt8Array;
 use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
 
+mod extreme_partials;
 mod shared;
+use extreme_partials::PendingWindowExtremes;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -338,6 +340,7 @@ pub(crate) struct TumblingAggregator {
     exact_panes: bool,
     live_count: Option<usize>,
     windows: BTreeMap<i64, AlignedWindow>,
+    pending_extremes: HashMap<(i64, OwnedRow), PendingWindowExtremes>,
     // Groups are keyed by the arrow-row memcomparable encoding of the key columns, not a
     // `Vec<ScalarValue>` — the same trade the non-windowed GROUP BY made: the scalar key's per-row
     // alloc/hash/drop dominates the keyed update loop, byte keys do not. `key_converter` encodes
@@ -409,6 +412,7 @@ impl TumblingAggregator {
                 .iter()
                 .position(|kind| matches!(*kind, LIVE_COUNT | HIDDEN_LIVE_COUNT)),
             windows: BTreeMap::new(),
+            pending_extremes: HashMap::default(),
             key_converter: None,
             key_types: Vec::new(),
             current_watermark: i64::MIN,
@@ -504,6 +508,7 @@ impl TumblingAggregator {
         timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        self.commit_extreme_partials()?;
         self.write_through_store()?;
         let watermark = self.current_watermark;
         self.store
@@ -548,19 +553,20 @@ impl TumblingAggregator {
     /// `state_bytes` tracks. Used once when a budget attaches to restored state (and by tests to
     /// assert the incremental tracking does not drift).
     pub(crate) fn computed_state_bytes(&self) -> usize {
-        let bytes = self
-            .windows
-            .values()
-            .map(|window| {
-                window
-                    .keys
-                    .iter()
-                    .map(|(key, accumulators)| {
-                        owned_row_bytes(key) + accumulators_bytes(accumulators)
-                    })
-                    .sum::<usize>()
-            })
-            .sum::<usize>()
+        let bytes = self.pending_extreme_bytes()
+            + self
+                .windows
+                .values()
+                .map(|window| {
+                    window
+                        .keys
+                        .iter()
+                        .map(|(key, accumulators)| {
+                            owned_row_bytes(key) + accumulators_bytes(accumulators)
+                        })
+                        .sum::<usize>()
+                })
+                .sum::<usize>()
             + self
                 .slice_timers
                 .values()
@@ -1212,6 +1218,7 @@ impl TumblingAggregator {
     /// own output type.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         self.snapshot_cache = None;
+        self.commit_extreme_partials()?;
         self.current_watermark = self.current_watermark.max(watermark);
         if self.shared_slices {
             return self.flush_shared(watermark);
@@ -1497,8 +1504,18 @@ impl TumblingAggregator {
                         None => owned_row_bytes(&key) as isize,
                     };
                 }
+                let staged: Vec<_> = partials
+                    .iter()
+                    .enumerate()
+                    .map(|(i, fields)| {
+                        self.stage_extreme_partial(start, end, &key, i, fields[0], row)
+                    })
+                    .collect();
                 let accumulators = self.accumulators(start, end, key.clone());
                 for (i, accumulator) in accumulators.iter_mut().enumerate() {
+                    if staged[i] {
+                        continue;
+                    }
                     if let Some(column) = &scalar_columns[i] {
                         (accumulator.as_mut() as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
@@ -1792,6 +1809,7 @@ impl TumblingAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        self.commit_extreme_partials()?;
         self.write_through_store()?;
         if self.shared_slices {
             return self.shared_canonical_partitions(max_parallelism, timestamp_precisions);
@@ -1901,6 +1919,8 @@ impl TumblingAggregator {
     }
 
     fn snapshot_batch(&mut self) -> RecordBatch {
+        self.commit_extreme_partials()
+            .expect("combine window extrema before snapshot");
         let state_fields: Vec<Field> = self
             .aggregates
             .iter()
@@ -2016,6 +2036,8 @@ impl TumblingAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) {
+        self.commit_extreme_partials()
+            .expect("combine window extrema before keyed snapshot");
         if self.snapshot_cache.as_ref().is_some_and(|cache| {
             cache.max_parallelism == max_parallelism
                 && cache.timestamp_precisions.as_slice() == timestamp_precisions

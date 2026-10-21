@@ -217,8 +217,25 @@ impl TumblingAggregator {
                 continue;
             };
             let key = encoded.row(row).owned();
+            let staged: Vec<_> = partials
+                .iter()
+                .enumerate()
+                .map(|(i, fields)| {
+                    self.stage_extreme_partial(
+                        target - self.slide_millis,
+                        target,
+                        &key,
+                        i,
+                        fields[0],
+                        row,
+                    )
+                })
+                .collect();
             let accumulators = self.accumulators(target - self.slide_millis, target, key.clone());
-            for (accumulator, columns) in accumulators.iter_mut().zip(&partials) {
+            for (i, (accumulator, columns)) in accumulators.iter_mut().zip(&partials).enumerate() {
+                if staged[i] {
+                    continue;
+                }
                 accumulator.merge_batch(
                     &columns
                         .iter()

@@ -16,8 +16,8 @@ import org.apache.flink.table.planner.plan.logical.WindowingStrategy;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalWindowAggregate;
 
 /**
- * Matches a global window merge over flattened local accumulator fields. SUM/MIN/MAX/COUNT use
- * one partial column; AVG uses a widened sum and count pair. Slice partials fan out into their
+ * Matches a global window merge over flattened local accumulator fields. SUM/MIN/MAX/COUNT use one
+ * partial column; AVG uses a widened sum and count pair. Slice partials fan out into their
  * containing windows; attached-window partials merge into the one window they name.
  */
 final class GlobalWindowAggregateMatcher {
@@ -30,7 +30,8 @@ final class GlobalWindowAggregateMatcher {
   /** The specific reason this global window aggregate is not accelerable, or null if it is. */
   static String unsupportedReason(StreamPhysicalGlobalWindowAggregate aggregate) {
     WindowingStrategy windowing = aggregate.windowing();
-    // Slice-attached: the local emits per-slice partials the global fans into windows. Window-attached
+    // Slice-attached: the local emits per-slice partials the global fans into windows.
+    // Window-attached
     // (q5): the partials already correspond to full windows, so the global merges each into its one
     // window (no fan-out; see slideMillis) and the fan-out divide checks below do not apply.
     boolean attached = windowing instanceof WindowAttachedWindowingStrategy;
@@ -91,6 +92,15 @@ final class GlobalWindowAggregateMatcher {
       int[] columns = partialColumns(aggregate);
       for (int i = 0; i < aggregate.aggCalls().size(); i++) {
         AggregateCall call = aggregate.aggCalls().apply(i);
+        if (call.getAggregation().getKind() == SqlKind.MIN
+            || call.getAggregation().getKind() == SqlKind.MAX) {
+          RelDataType value = call.getType();
+          if (!LocalGroupAggregateMatcher.supportedExtremePartials(
+              value, inputType.getFieldList().get(columns[i]).getType()))
+            return "global window aggregate: retracting MIN/MAX requires a released value/count/map"
+                + " partial";
+          continue;
+        }
         SqlTypeName partialType;
         if (call.getAggregation().getKind() == SqlKind.AVG) {
           switch (call.getType().getSqlTypeName()) {
@@ -129,7 +139,8 @@ final class GlobalWindowAggregateMatcher {
     // does not locate those fields. A COUNT merge
     // carries an empty argList for COUNT(*) and a single arg for COUNT(col); both sum the partial
     // counts via the count accumulator, so an empty argList is allowed only for COUNT.
-    int requiredFields = grouping.length + WindowAggregateMatcher.partialFieldCount(aggregate.aggCalls()) + 1;
+    int requiredFields =
+        grouping.length + WindowAggregateMatcher.partialFieldCount(aggregate.aggCalls()) + 1;
     if (inputType.getFieldCount() < requiredFields) {
       return "global window aggregate: missing accumulator partial fields";
     }
@@ -157,7 +168,8 @@ final class GlobalWindowAggregateMatcher {
       // The partial column carries the aggregate's buffer type: the value type for SUM/MIN/MAX
       // (SUM's partial is Flink's nullable-sum buffer, DECIMAL(38, s) for a decimal SUM), bigint
       // for COUNT. Any single-phase-supported value type merges natively.
-      SqlTypeName partialType = inputType.getFieldList().get(partialColumns[i]).getType().getSqlTypeName();
+      SqlTypeName partialType =
+          inputType.getFieldList().get(partialColumns[i]).getType().getSqlTypeName();
       if (kind == WindowAggregateMatcher.KIND_SUM_ZERO
           && !WindowAggregateMatcher.supportedZeroSumValue(
               inputType.getFieldList().get(partialColumns[i]).getType())) {
@@ -183,15 +195,23 @@ final class GlobalWindowAggregateMatcher {
     for (int i = 0; i < types.length; i++) {
       AggregateCall call = aggregate.aggCalls().apply(i);
       RelDataType partialType = inputType.getFieldList().get(columns[i]).getType();
+      if (!WindowAggregateMatcher.insertOnlyInput(aggregate)
+          && (call.getAggregation().getKind() == SqlKind.MIN
+              || call.getAggregation().getKind() == SqlKind.MAX)) {
+        types[i] = WindowAggregateMatcher.windowValueTypeCode(call.getType());
+        continue;
+      }
       if (call.isDistinct()) {
         types[i] = WindowAggregateMatcher.windowValueTypeCode(partialType.getComponentType());
         continue;
       }
       // Integral and FLOAT AVG sums widen, but their result retains the original value type.
       // Decimal AVG instead needs the partial sum's original scale for its exact division.
-      RelDataType valueType = WindowAggregateMatcher.partialWidth(call) == 2
-              && partialType.getSqlTypeName() != SqlTypeName.DECIMAL
-          ? call.getType() : partialType;
+      RelDataType valueType =
+          WindowAggregateMatcher.partialWidth(call) == 2
+                  && partialType.getSqlTypeName() != SqlTypeName.DECIMAL
+              ? call.getType()
+              : partialType;
       types[i] = WindowAggregateMatcher.windowValueTypeCode(valueType);
     }
     return Arrays.copyOf(types, kinds(aggregate).length);
@@ -216,7 +236,8 @@ final class GlobalWindowAggregateMatcher {
 
   /** The slide in millis: the hopping slide, the cumulative step, or the size for tumbling. */
   static long slideMillis(StreamPhysicalGlobalWindowAggregate aggregate) {
-    // Window-attached: each partial is already a full window, so the global must not fan out — a slide
+    // Window-attached: each partial is already a full window, so the global must not fan out — a
+    // slide
     // equal to the size makes the merge place each partial into exactly one window.
     if (aggregate.windowing() instanceof WindowAttachedWindowingStrategy) {
       return windowMillis(aggregate);

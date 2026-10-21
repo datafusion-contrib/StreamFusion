@@ -3,6 +3,8 @@ package tech.streamfusion.planner;
 import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_HIDDEN_LIVE_COUNT;
 import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_LIVE_COUNT;
 import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_RETRACT_COUNT;
+import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_RETRACT_MAX;
+import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_RETRACT_MIN;
 import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_RETRACT_SUM;
 
 import java.time.Duration;
@@ -844,7 +846,7 @@ final class WindowAggregateMatcher {
     if (!insertOnlyInput(node)) {
       return "window aggregate: retracting input supports only aligned event-time"
           + " TUMBLE/HOP/CUMULATE with grouping-only, numeric SUM/AVG,"
-          + " supported scalar COUNT(value), or COUNT(*) (optional FILTER)";
+          + " typed MIN/MAX, supported COUNT(value), or COUNT(*) (optional FILTER)";
     }
     if (windowing instanceof WindowAttachedWindowingStrategy) {
       if (node instanceof StreamPhysicalWindowAggregate && !admitsAttachedSinglePhase(node)) {
@@ -894,20 +896,31 @@ final class WindowAggregateMatcher {
       int kind = aggregateKind(call.getAggregation().getKind());
       if (call.isDistinct()
           || !supportedFilter(call, inputType)
-          || (kind != KIND_SUM && kind != KIND_SUM_ZERO
-              && kind != KIND_AVG && kind != KIND_COUNT)) return false;
+          || (kind != KIND_SUM
+              && kind != KIND_SUM_ZERO
+              && kind != KIND_AVG
+              && kind != KIND_COUNT
+              && kind != KIND_MIN
+              && kind != KIND_MAX)) return false;
       if (kind == KIND_COUNT && call.getArgList().isEmpty()) continue;
       if (call.getArgList().size() != 1) return false;
       SqlTypeName type =
           inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-      if (kind == KIND_COUNT && supportedAggregateValueType(kind, type)) continue;
+      if ((kind == KIND_MIN || kind == KIND_MAX)
+          && type == SqlTypeName.CHAR
+          && !tech.streamfusion.compat.RuntimeCompat.supportsRetractingCharExtrema()) return false;
+      if ((kind == KIND_COUNT || kind == KIND_MIN || kind == KIND_MAX)
+          && supportedAggregateValueType(kind, type)) continue;
       if (kind == KIND_SUM_ZERO
-          && !supportedZeroSumValue(inputType.getFieldList().get(call.getArgList().get(0)).getType())) {
+          && !supportedZeroSumValue(
+              inputType.getFieldList().get(call.getArgList().get(0)).getType())) {
         return false;
       }
       if ((kind == KIND_SUM || kind == KIND_AVG) && type == SqlTypeName.DECIMAL) continue;
       if ((kind == KIND_SUM || kind == KIND_AVG)
-          && (type == SqlTypeName.FLOAT || type == SqlTypeName.REAL || type == SqlTypeName.DOUBLE)) {
+          && (type == SqlTypeName.FLOAT
+              || type == SqlTypeName.REAL
+              || type == SqlTypeName.DOUBLE)) {
         continue;
       }
       if ((kind == KIND_SUM || kind == KIND_AVG)
@@ -954,7 +967,11 @@ final class WindowAggregateMatcher {
     boolean hasLiveCount = false;
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = calls.apply(i);
-      if (call.getAggregation().getKind() == SqlKind.SUM) {
+      if (call.getAggregation().getKind() == SqlKind.MIN) {
+        kinds[i] = KIND_RETRACT_MIN;
+      } else if (call.getAggregation().getKind() == SqlKind.MAX) {
+        kinds[i] = KIND_RETRACT_MAX;
+      } else if (call.getAggregation().getKind() == SqlKind.SUM) {
         kinds[i] = KIND_RETRACT_SUM;
       } else if (call.getAggregation().getKind() == SqlKind.SUM0) {
         kinds[i] = KIND_SUM_ZERO;

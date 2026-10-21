@@ -156,6 +156,9 @@ final class GroupAggregateMatcher {
             return "GROUP BY: AVG over an unsupported value type";
           }
         } else if (kind == KIND_MIN || kind == KIND_MAX) {
+          if (valueType == SqlTypeName.CHAR
+              && !tech.streamfusion.compat.RuntimeCompat.supportsRetractingCharExtrema())
+            return "GROUP BY: this released Flink line has no retracting CHAR MIN/MAX factory";
           // MIN/MAX retain typed values in a multiset, including temporal and Boolean values.
           if (!isRunningType(valueType)
               && valueType != SqlTypeName.DECIMAL

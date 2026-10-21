@@ -194,12 +194,11 @@ class FlinkTimestampWindowSqlHarnessTest {
   }
 
   @Test
-  void legacyWindowOverRetractingInputFallsBack() throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void legacyWindowOverRetractingInputUsesNativeAggregates() throws Exception {
+    NativeParity.assertParity(
         FlinkTimestampWindowSqlHarnessTest::retractingEnvironment,
         "SELECT k, SUM(`value`) AS s, TUMBLE_START(ts, INTERVAL '10' SECOND) AS starttime "
-            + "FROM changes GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)",
-        "retracting or updating input");
+            + "FROM changes GROUP BY k, TUMBLE(ts, INTERVAL '10' SECOND)");
   }
 
   private static TableEnvironment environment() {

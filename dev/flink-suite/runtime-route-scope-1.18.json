@@ -835,6 +835,78 @@
         "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "testMinMaxWithTumblingWindow[StateBackend=HEAP, UseTimestampLtz = true]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "full_fallback",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "testWindowAggregateOnRetractStream[StateBackend=HEAP, UseTimestampLtz = true]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "testMinMaxWithTumblingWindow[StateBackend=HEAP, UseTimestampLtz = false]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "full_fallback",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "testWindowAggregateOnRetractStream[StateBackend=HEAP, UseTimestampLtz = false]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "testMinMaxWithTumblingWindow[StateBackend=ROCKSDB, UseTimestampLtz = true]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "full_fallback",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "testWindowAggregateOnRetractStream[StateBackend=ROCKSDB, UseTimestampLtz = true]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "testMinMaxWithTumblingWindow[StateBackend=ROCKSDB, UseTimestampLtz = false]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "full_fallback",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "testWindowAggregateOnRetractStream[StateBackend=ROCKSDB, UseTimestampLtz = false]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
     }
   ]
 }

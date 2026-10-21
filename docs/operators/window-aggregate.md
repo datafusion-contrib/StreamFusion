@@ -108,8 +108,8 @@ at their declared width, integer averages truncate, and decimal overflow remains
 local/global merging and checkpoints. A NULL decimal partial carries overflow and must not
 be discarded as though it were a NULL input. The single-field SUM0 buffer also supports the
 existing updating aligned event-time windows, with their separate live-row counter.
-Append-only session and legacy windows use the same accumulator factory; attached bounds
-retain their existing two-phase-only gate. SQL comparisons cover these layouts as well.
+Session and legacy windows use the same accumulator factory. Supported append-only attached
+bounds admit both single-phase and local/global execution. SQL comparisons cover these layouts as well.
 
 Released Flink cannot initialize AVG/SUM0 over `DECIMAL(38,38)`. That shape stays on Flink,
 including its planning failure. Floating SUM0 uses typed zero-initialized state; DISTINCT SUM0
@@ -325,8 +325,8 @@ all-NULL groups, empty strings, long strings, prefixes, embedded NUL, combining 
 supplementary Unicode characters. Native and operator tests retain string partials across
 checkpoints and memory/RocksDB backend transitions.
 
-Existing window/time and FILTER restrictions still apply. In particular, MIN/MAX over updating
-input remains unsupported. Ordinary COUNT(string) uses the existing validity-count accumulator;
+Existing window/time and FILTER restrictions still apply. Updating MIN/MAX runs in the fixed
+windows described under [Retracting extrema](#retracting-extrema-and-legacy-fixed-windows). Ordinary COUNT(string) uses the existing validity-count accumulator;
 SUM(string) and AVG(string) are outside the admitted numeric reductions.
 
 `StringWindowBenchmark` is an opt-in complete-job comparison with a rowwise generated source,
@@ -513,7 +513,7 @@ them in one or two phases. Rejected rows still establish and extend session memb
 
 Aligned event-time TUMBLE, HOP and CUMULATE accept updating input, including native Top-N,
 for SUM/AVG over all numeric types, COUNT over the
-supported numeric value columns, COUNT(*), and grouping-only windows without aggregate
+supported value columns (including nullable collection parents), COUNT(*), and grouping-only windows without aggregate
 functions. Both single-phase and local/global execution remain columnar.
 
 Every input retains its INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE sign. SUM carries Flink's
@@ -757,11 +757,12 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - Slicing TVF `HOP` slide / `CUMULATE` step that doesn't divide size; released Flink rejects them.
 - Legacy row-count `TUMBLE`/`HOP` windows from the Table API.
 - Legacy early/late firing or allowed lateness.
-- A legacy group window over retracting or updating input.
+- A legacy SESSION group window over retracting or updating input. Legacy fixed windows accept
+  the signed COUNT/SUM/AVG/MIN/MAX forms described below.
 - A grouping key outside the [verified scalar types](#scalar-grouping-and-partition-keys).
 - A value type/aggregate mismatch.
-  DATE/TIME/BOOLEAN and TIMESTAMP/TIMESTAMP_LTZ values are admitted for insert-only MIN/MAX
-  and COUNT(DISTINCT).
+  DATE/TIME/BOOLEAN and TIMESTAMP/TIMESTAMP_LTZ values are admitted for append MIN/MAX
+  and COUNT(DISTINCT); updating MIN/MAX uses the fixed-window forms below.
   Ordinary COUNT(value) also admits character, VARBINARY, both interval families, DATE, TIME, BOOLEAN, timestamp, ARRAY, MAP, ROW and MULTISET values;
   it counts validity without interpreting the payload.
 - Single-phase string MIN/MAX when explicitly disabled with
@@ -773,11 +774,10 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - Windowed DISTINCT other than single-argument COUNT over the types listed above:
   SUM/AVG DISTINCT and complex values.
   Non-windowed DISTINCT has separate coverage; see [GROUP BY](group-by.md).
-- Filtered MIN/MAX on updating input.
 - Retracting input outside aligned event-time TUMBLE/HOP/CUMULATE with grouping-only,
-  numeric SUM/AVG (including shared exact SUM0), admitted COUNT(value), and COUNT(*) with optional FILTER.
-  DISTINCT, MIN/MAX, processing-time, attached, session
-  and legacy windows still fall back on updating input. Admission checks the **input**
+  numeric SUM/AVG (including shared exact SUM0), admitted COUNT(value), typed MIN/MAX, and COUNT(*)
+  with optional FILTER; legacy fixed TUMBLE/HOP also admits these forms on both clocks.
+  DISTINCT, processing-time TVFs, attached bounds and SESSION still fall back on updating input. Admission checks the **input**
   changelog even when final output is append-only.
   The diagnostic names the supported retracting forms. Remaining coverage is tracked in
   [#99](https://github.com/datafusion-contrib/StreamFusion/issues/99).
@@ -1848,3 +1848,81 @@ actual canonical `d13e9dc4` window fallback measures 0.798 s against paired stoc
 timed. [Raw trials, ranges, hashes and scope](../benchmarks/results/processing-window-contexts-2026-10-21.json)
 retain the precise protocol and distinguish this session comparison from the earlier
 Rust/Arrow assignment admission gate.
+
+
+## Retracting extrema and legacy fixed windows
+
+Updating MIN/MAX admits integer widths, FLOAT/DOUBLE, DECIMAL, VARCHAR, BOOLEAN, DATE,
+TIME, TIMESTAMP and TIMESTAMP_LTZ. Flink 2.2 additionally admits CHAR; Flink 1.18 has no
+retracting CHAR extrema factory, so its native planner preserves that released planning error.
+All admitted types retain duplicate counts, cached winners and signed pending entries. Removing
+a winner reseeks the remaining keys with Flink's comparison rules, including negative map entries.
+The existing GROUP BY extrema state supplies those rules; windows keep the same owned multiset.
+
+Flink 2.2 slicing TUMBLE/HOP/CUMULATE supports single-phase and local/global execution. A local
+extreme is one Arrow structured column containing the cached value, map size and value/count
+list. The global combines incoming partials in a temporary native multiset before merging once
+into retained state at a watermark or checkpoint, matching Flink’s global combiner. A transient
+insert/delete pair must cancel before it can change a retained cached winner or trigger a reseek.
+The temporary views count against the native memory budget and drain before memory/RocksDB
+snapshots; no JVM MapView or per-entry JNI callback is used.
+Snapshots carry the same structure through memory and RocksDB-backend restores. The structured
+state uses the backend’s snapshot compatibility path; direct Rust RocksDB row storage is not
+admitted for this shape. Timestamp values
+retain fractional nanoseconds. Released TIME aggregates may declare a TIME(0) cache for TIME(3)
+input; the common scalar carrier preserves the actual milliseconds rather than truncating them.
+
+Legacy fixed TUMBLE/HOP accepts updating COUNT/SUM/AVG/MIN/MAX on both releases, including
+non-dividing and gapped HOP grids. It uses the same signed native accumulators and live-row
+counter as slicing windows. COUNT over nullable complex parents reads validity; all-rejected
+filters retain a live group, and only a zero total input count suppresses the final result.
+Legacy plans remain one phase when TWO_PHASE is requested. Existing processing-time assignment
+and timer handling apply to admitted legacy fixed windows.
+
+Updating SESSION and processing-time TVFs remain separate changelog restrictions; they are
+still tracked under the original full aggregate/window goal. Early/late firing and allowed
+lateness retain their explicit fallback. Flink 1.18 cannot execute updating slicing TVFs.
+
+Exact comparisons cover fifteen types across three slicing shapes and both phases on 2.2,
+four legacy fixed grids on both releases, independent FILTERs, nullable keys/values, unmatched
+deletes, complete group removal and interleaved aggregate partials. Two restores exercise
+VARCHAR, DECIMAL and nanosecond timestamps on memory and the native RocksDB backend’s
+snapshot compatibility path, through both TVF phases on 2.2 and legacy HOP on both releases.
+The 1.18 CHAR cases compare the expected host planning failure rather than claiming native execution. Unchanged upstream legacy window tests
+require consumed native input for the retracting fixed-window case and explicit fallback for
+the early-firing MIN/MAX control.
+
+### Updating extrema complete-job measurements
+
+One million inputs feed an updating Top-1 with 64 keys, followed by COUNT/MIN/MAX over
+2 s/10 s HOP windows and a rowwise blackhole sink. These release+mimalloc, JDK 17 jobs
+retain both perimeter transposes, exchange, JNI and state. Parallelism is one with two
+task slots and a 2 GiB heap; two warmups precede three alternating measured engine pairs.
+Native trials require consumed final windows, and consumed local/global operators for
+TWO_PHASE. These are complete-job diagnostics; no Java timer around JNI is presented
+as the Rust/Arrow small-functionality gate.
+
+| Flink / shape / type / phase | Stock median (s) | Native median (s) | Stock/native |
+|---|---:|---:|---:|
+| 1.18 / legacy HOP / BIGINT / ONE_PHASE | 1.160 | 0.448 | 2.59x |
+| 1.18 / legacy HOP / STRING / ONE_PHASE | 1.281 | 0.566 | 2.26x |
+| 2.2 / TVF HOP / BIGINT / ONE_PHASE | 0.624 | 0.534 | 1.17x |
+| 2.2 / TVF HOP / BIGINT / TWO_PHASE | 0.585 | 0.290 | 2.02x |
+| 2.2 / TVF HOP / DECIMAL(38,8) / ONE_PHASE | 0.658 | 0.593 | 1.11x |
+| 2.2 / TVF HOP / DECIMAL(38,8) / TWO_PHASE | 0.632 | 0.358 | 1.76x |
+| 2.2 / legacy HOP / STRING / ONE_PHASE | 1.270 | 0.610 | 2.08x |
+| 2.2 / TVF HOP / STRING / ONE_PHASE | 0.708 | 0.634 | 1.12x |
+| 2.2 / TVF HOP / STRING / TWO_PHASE | 0.707 | 0.338 | 2.09x |
+
+Actual previous canonical production code (44a99949), with only the identical benchmark
+fixture copied in, kept these windows on Flink. Its StreamFusion fallback medians were
+0.587/0.573 s for BIGINT TVF ONE_PHASE/TWO_PHASE, and 1.281 s for legacy STRING HOP
+on 2.2. The paired stock medians were 0.564/0.587/1.246 s. These controls preserve the
+previous runtime and planner rather than simulating it by changing candidate settings.
+
+A CPU profile of the first implementation identified repeated string copies and allocator
+work. One measured ownership-transfer optimization pass improved STRING; no second pass
+was needed. The [optimization ledger](../optimizations/aggregate-specialization-fast-paths.md#updating-string-extrema-transfer-owned-keys)
+explains that change. The [evidence artifact](../benchmarks/results/updating-window-extrema-2026-10-21.json)
+retains every measured trial and range, binary/source hashes, previous controls, CPU sample
+summary, parity/recovery checks and unchanged upstream native-execution evidence.

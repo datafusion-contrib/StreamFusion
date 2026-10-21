@@ -2,6 +2,9 @@ use crate::*;
 
 mod floating_distinct;
 mod floating_extreme;
+mod retracting_extreme;
+pub(crate) use retracting_extreme::RetractingExtremeAccumulator;
+pub(crate) use retracting_extreme::{RETRACT_MAX, RETRACT_MIN};
 mod retracting_window;
 mod scalar_extreme;
 mod timestamp_extreme;
@@ -661,6 +664,7 @@ pub(crate) enum WindowAggregate {
     ZeroSum(DataType),
     RetractingSum(DataType),
     RetractingCount,
+    RetractingExtreme { minimum: bool, value_type: DataType },
     Builtin(AggregateFunctionExpr),
     FloatingDistinctCount(AggregateFunctionExpr, DataType),
     IntegerAvg(DataType),
@@ -716,6 +720,10 @@ impl WindowAggregate {
 
     fn new(kind: i64, value_type: &DataType) -> Self {
         match (kind, value_type) {
+            (RETRACT_MIN | RETRACT_MAX, _) => Self::RetractingExtreme {
+                minimum: kind == RETRACT_MIN,
+                value_type: value_type.clone(),
+            },
             (
                 22,
                 DataType::Int8
@@ -808,6 +816,12 @@ impl WindowAggregate {
             WindowAggregate::RetractingCount => {
                 Box::new(retracting_window::RetractingWindowAccumulator::new(None))
             }
+            WindowAggregate::RetractingExtreme {
+                minimum,
+                value_type,
+            } => Box::new(retracting_extreme::RetractingExtremeAccumulator::new(
+                *minimum, value_type,
+            )),
             WindowAggregate::FloatingDistinctCount(_, value_type) => Box::new(
                 floating_distinct::FloatingDistinctCountAccumulator::new(value_type),
             ),
@@ -853,6 +867,14 @@ impl WindowAggregate {
                 Field::new("count", DataType::Int64, false),
             ],
             WindowAggregate::RetractingCount => vec![Field::new("count", DataType::Int64, false)],
+            WindowAggregate::RetractingExtreme {
+                minimum,
+                value_type,
+            } => vec![Field::new(
+                "extreme",
+                crate::group_agg::MappedExtreme::partial_type(*minimum, value_type),
+                false,
+            )],
             WindowAggregate::Builtin(aggregate)
             | WindowAggregate::FloatingDistinctCount(aggregate, _) => aggregate
                 .state_fields()
@@ -905,6 +927,7 @@ impl WindowAggregate {
             WindowAggregate::ZeroSum(value_type) => RunningAgg::new(22, value_type).result_type(),
             WindowAggregate::RetractingSum(value_type) => value_type.clone(),
             WindowAggregate::RetractingCount => DataType::Int64,
+            WindowAggregate::RetractingExtreme { value_type, .. } => value_type.clone(),
             WindowAggregate::Builtin(aggregate)
             | WindowAggregate::FloatingDistinctCount(aggregate, _) => {
                 aggregate.field().data_type().clone()

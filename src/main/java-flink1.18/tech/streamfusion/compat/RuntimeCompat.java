@@ -21,6 +21,10 @@ public final class RuntimeCompat {
     return "MIN".equals(function) && !retracting;
   }
 
+  public static boolean supportsRetractingCharExtrema() {
+    return false;
+  }
+
   public static boolean supportsTemporalOverFirstLast() {
     return false;
   }

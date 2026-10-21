@@ -733,6 +733,54 @@
       "display_name": "LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB, EnableAsyncState=false",
       "count": 1,
       "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "StateBackend=HEAP, UseTimestampLtz = true",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "StateBackend=HEAP, UseTimestampLtz = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "StateBackend=ROCKSDB, UseTimestampLtz = true",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+      "display_name": "StateBackend=ROCKSDB, UseTimestampLtz = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "StateBackend=HEAP, UseTimestampLtz = true",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "StateBackend=HEAP, UseTimestampLtz = false",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "StateBackend=ROCKSDB, UseTimestampLtz = true",
+      "count": 1,
+      "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+      "display_name": "StateBackend=ROCKSDB, UseTimestampLtz = false",
+      "count": 1,
+      "route": "full_fallback"
     }
   ]
 }

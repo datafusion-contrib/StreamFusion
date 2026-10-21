@@ -17,7 +17,7 @@ mod string_map_order;
 #[cfg(test)]
 use decimal_map_order::DecimalMapOrder;
 use java_map_order::JavaMapOrder;
-use mapped_extreme::MappedExtreme;
+pub(crate) use mapped_extreme::MappedExtreme;
 use numeric_map_order::NumericMapOrder;
 #[cfg(test)]
 mod floating_tests;
@@ -115,6 +115,15 @@ impl MinMaxKey {
             Num::F64(v) => MinMaxKey::F64(OrdF64::new(v)),
             Num::I128(v) => MinMaxKey::Decimal128(v),
             Num::F32(v) => MinMaxKey::F32(OrdF64::new(v as f64)),
+        }
+    }
+
+    fn from_owned_scalar(value: ScalarValue) -> Self {
+        match value {
+            ScalarValue::Utf8(Some(value))
+            | ScalarValue::LargeUtf8(Some(value))
+            | ScalarValue::Utf8View(Some(value)) => Self::Str(value),
+            value => Self::from_scalar(&value),
         }
     }
 

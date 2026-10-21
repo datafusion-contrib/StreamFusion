@@ -49,6 +49,8 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatefulOperator<OUT> {
 
+  public static final int KIND_RETRACT_MIN = 23;
+  public static final int KIND_RETRACT_MAX = 24;
   public static final int KIND_RETRACT_SUM = 9;
   public static final int KIND_RETRACT_COUNT = 10;
   public static final int KIND_LIVE_COUNT = 11;

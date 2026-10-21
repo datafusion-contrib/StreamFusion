@@ -123,7 +123,8 @@ remain tracked in
   windows, sessions, rank, and the window and interval joins run direct too. Every native operator
   now reads and writes RocksDB per key; the generic snapshot path remains only as the fallback for
   a shape whose state has no fixed-type native codec (a DISTINCT over a value type with no faithful
-  type code), which keeps its memory-resident state and replaces key-group snapshot payloads in
+  type code, or an updating window MIN/MAX with structured cached-value/count-map state),
+  which keeps its memory-resident state and replaces key-group snapshot payloads in
   RocksDB at each checkpoint;
 - the native stores' shared cache and write-buffer manager live in StreamFusion's own RocksDB
   library, sized by the same Flink options and formulas but leased separately from the delegate

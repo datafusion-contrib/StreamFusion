@@ -63,6 +63,39 @@ class FlinkRetractingWindowSqlHarnessTest {
   private static final Map<String, RecoveryProof> RECOVERY = new ConcurrentHashMap<>();
 
   @ParameterizedTest
+  @CsvSource({"ONE_PHASE,BIGINT", "TWO_PHASE,BIGINT", "TWO_PHASE,TIME(3)"})
+  void releasedUpdatingExtremaLayout(String phase, String type) throws Exception {
+    var table = (StreamTableEnvironment) environment(phase);
+    String value = type.equals("TIME(3)") ? "CAST(TO_TIMESTAMP_LTZ(v,3) AS TIME(3))" : "v";
+    String sql =
+        "SELECT k, window_end, MIN(" + value + "), MAX(" + value + "), COUNT(*) FROM TABLE("
+            + "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)) "
+            + "GROUP BY k, window_start, window_end";
+    var pending = new java.util.ArrayDeque<org.apache.flink.api.dag.Transformation<?>>();
+    pending.add(table.toChangelogStream(table.sqlQuery(sql)).getTransformation());
+    boolean found = false;
+    while (!pending.isEmpty()) {
+      var next = pending.removeFirst();
+      if (next.getName().contains("WindowAggregate")) {
+        System.out.println(
+            "[updating-extrema-layout] "
+                + phase
+                + " "
+                + next.getName()
+                + " "
+                + ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>)
+                        next.getOutputType())
+                    .toRowType()
+                    .asSummaryString());
+        found = true;
+      }
+      pending.addAll(next.getInputs());
+    }
+    assertTrue(found);
+    assertTrue(!collect(environment(phase), sql).rows().isEmpty());
+  }
+
+  @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
   void updatingWindowsWithNonzeroOffsetUseNativePartials(String phase) throws Exception {
     String sql =
@@ -355,15 +388,92 @@ class FlinkRetractingWindowSqlHarnessTest {
     }
   }
 
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments>
+      updatingExtremaTypes() {
+    return java.util.stream.Stream.of(
+            "TINYINT",
+            "SMALLINT",
+            "INT",
+            "BIGINT",
+            "FLOAT",
+            "DOUBLE",
+            "DECIMAL(12,2)",
+            "DECIMAL(38,8)",
+            "STRING",
+            "CHAR(8)",
+            "BOOLEAN",
+            "DATE",
+            "TIME(3)",
+            "TIMESTAMP(9)",
+            "TIMESTAMP_LTZ(9)")
+        .flatMap(
+            type ->
+                java.util.stream.Stream.of("ONE_PHASE", "TWO_PHASE")
+                    .map(phase -> org.junit.jupiter.params.provider.Arguments.of(phase, type)));
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.MethodSource("updatingExtremaTypes")
+  void updatingTypedExtremaKeepFilteredNullGroupsAndMixedPartials(String phase, String type)
+      throws Exception {
+    String value;
+    switch (type) {
+      case "BOOLEAN":
+        value = "MOD(v,2)=0";
+        break;
+      case "DATE":
+        value = "CAST(TO_TIMESTAMP_LTZ(v*86400000,3) AS DATE)";
+        break;
+      case "TIME(3)":
+        value = "CAST(TO_TIMESTAMP_LTZ(v,3) AS TIME(3))";
+        break;
+      case "TIMESTAMP(9)":
+        value = "CASE WHEN v IS NULL THEN CAST(NULL AS TIMESTAMP(9)) WHEN MOD(v,2)=0 "
+            + "THEN CAST('1970-01-01 00:00:00.123456789' AS TIMESTAMP(9)) "
+            + "ELSE CAST('1970-01-01 00:00:00.123456788' AS TIMESTAMP(9)) END";
+        break;
+      case "TIMESTAMP_LTZ(9)":
+        value = "CAST(CASE WHEN v IS NULL THEN CAST(NULL AS TIMESTAMP(9)) WHEN MOD(v,2)=0 "
+            + "THEN CAST('1970-01-01 00:00:00.123456789' AS TIMESTAMP(9)) "
+            + "ELSE CAST('1970-01-01 00:00:00.123456788' AS TIMESTAMP(9)) END AS TIMESTAMP_LTZ(9))";
+        break;
+      default:
+        value = "CAST(v AS " + type + ")";
+    }
+    for (String shape :
+        List.of(
+            "TUMBLE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND)",
+            "HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '10' SECOND)",
+            "CUMULATE(TABLE ranked, DESCRIPTOR(rt), INTERVAL '5' SECOND, INTERVAL '15' SECOND)")) {
+      String sql =
+          "SELECT k,window_end,MIN("
+              + value
+              + "),MAX("
+              + value
+              + "),COUNT(*),"
+              + "MIN("
+              + value
+              + ") FILTER(WHERE v>10),MAX("
+              + value
+              + ") FILTER(WHERE v<0),SUM(v) "
+              + "FROM TABLE("
+              + shape
+              + ") GROUP BY k,window_start,window_end";
+      var host = collect(environment(phase), sql);
+      var table = environment(phase);
+      var scan = NativePlanner.install(table);
+      var actual = collect(table, sql);
+      assertEquals(host.rows(), actual.rows(), phase + " " + type + " " + shape);
+      assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
+      assertWindowRows(actual.job(), phase);
+    }
+  }
+
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
-  void unsupportedFilteredWindowsRemainOnFlink(String phase) throws Exception {
+  void filteredWindowsKeepTheirVerifiedNativeOrFallbackRoutes(String phase) throws Exception {
     for (String sql :
         List.of(
-            "SELECT k, MIN(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE ranked,"
-                + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
-            "SELECT k, MAX(v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE ranked,"
-                + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
             "SELECT k, COUNT(DISTINCT v) FILTER (WHERE v > 10) FROM TABLE(TUMBLE(TABLE ranked,"
                 + " DESCRIPTOR(rt), INTERVAL '5' SECOND)) GROUP BY k, window_start, window_end",
             "SELECT k, COUNT(*) FILTER (WHERE v > 10) FROM TABLE(SESSION(TABLE src PARTITION BY k,"
@@ -374,8 +484,13 @@ class FlinkRetractingWindowSqlHarnessTest {
       var table = environment(phase);
       var scan = NativePlanner.install(table);
       assertEquals(host, collect(table, sql).rows());
-      assertEquals(0, scan.substitutions(), sql);
-      assertTrue(!scan.fallbackReasons().isEmpty(), sql);
+      if (sql.contains("COUNT(DISTINCT")) {
+        assertEquals(0, scan.substitutions(), sql);
+        assertTrue(!scan.fallbackReasons().isEmpty(), sql);
+      } else {
+        assertTrue(scan.substitutions() > 0, scan.explainSummary());
+        assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
+      }
     }
   }
 

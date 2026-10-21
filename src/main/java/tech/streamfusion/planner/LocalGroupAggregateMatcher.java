@@ -147,13 +147,19 @@ final class LocalGroupAggregateMatcher {
   }
 
   static boolean supportedExtremePartials(RelDataType value, RelDataType partial) {
+    if (value.getSqlTypeName() == SqlTypeName.CHAR
+        && !tech.streamfusion.compat.RuntimeCompat.supportsRetractingCharExtrema()) return false;
     if (!partial.isStruct() || partial.getFieldCount() != 3) return false;
     RelDataType selected = partial.getFieldList().get(0).getType();
     RelDataType size = partial.getFieldList().get(1).getType();
     SqlTypeName map = partial.getFieldList().get(2).getType().getSqlTypeName();
     return WindowAggregateMatcher.supportedAggregateValueType(
             WindowAggregateMatcher.KIND_MIN, value.getSqlTypeName())
-        && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, selected)
+        && (org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(value, selected)
+            // Released TIME extrema declare a TIME(0) cache while preserving input milliseconds.
+            || value.getSqlTypeName() == SqlTypeName.TIME
+                && selected.getSqlTypeName() == SqlTypeName.TIME
+                && selected.getPrecision() == 0)
         && size.getSqlTypeName() == SqlTypeName.BIGINT
         && (map == SqlTypeName.OTHER || map == SqlTypeName.ANY || map == SqlTypeName.MAP);
   }
@@ -400,7 +406,10 @@ final class LocalGroupAggregateMatcher {
         continue;
       }
       if (isTemporalBooleanExtreme(kind, valueType)) {
-        if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(partialRel, valueRel)) {
+        if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(partialRel, valueRel)
+            && !(valueType == SqlTypeName.TIME
+                && partialType == SqlTypeName.TIME
+                && partialRel.getPrecision() == 0)) {
           return false;
         }
         continue;

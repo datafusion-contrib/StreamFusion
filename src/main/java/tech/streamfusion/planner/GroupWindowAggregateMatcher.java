@@ -56,8 +56,12 @@ final class GroupWindowAggregateMatcher {
     if (agg.emitStrategy().produceUpdates() || agg.emitStrategy().getAllowLateness() > 0) {
       return "legacy group-window: early/late firing and allowed lateness are not native";
     }
-    if (!ChangelogPlanUtils.inputInsertOnly(agg)) {
-      return "legacy group-window: retracting or updating input is not native";
+    if (!ChangelogPlanUtils.inputInsertOnly(agg)
+        && (session
+            || !WindowAggregateMatcher.supportedRetractingAggregates(
+                agg.aggCalls(), agg.getInput().getRowType()))) {
+      return "legacy group-window: updating input requires a fixed window and supported retracting"
+          + " aggregates";
     }
     if (!supportedProperties(agg.namedWindowProperties(), proctime)) {
       return "legacy group-window: unsupported window-property order";
@@ -191,6 +195,19 @@ final class GroupWindowAggregateMatcher {
           isLtz(agg));
     }
     long windowMillis = size(agg).toMillis();
+    int[] kinds =
+        ChangelogPlanUtils.inputInsertOnly(agg)
+            ? WindowAggregateMatcher.kinds(agg.aggCalls())
+            : WindowAggregateMatcher.retractingKinds(agg.aggCalls());
+    int[] values = WindowAggregateMatcher.valueColumns(agg.aggCalls());
+    if (kinds.length > values.length) {
+      values = java.util.Arrays.copyOf(values, kinds.length);
+      values[values.length - 1] = -1;
+    }
+    int[] types =
+        java.util.Arrays.copyOf(
+            WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
+            kinds.length);
     return new StreamPhysicalNativeColumnarWindowAggregate(
         agg.getCluster(),
         agg.getTraitSet(),
@@ -200,11 +217,11 @@ final class GroupWindowAggregateMatcher {
         windowMillis,
         slide(agg).toMillis(),
         timeColumn(agg),
-        WindowAggregateMatcher.valueColumns(agg.aggCalls()),
-        WindowAggregateMatcher.filterColumns(agg.aggCalls(), agg.aggCalls().size()),
+        values,
+        WindowAggregateMatcher.filterColumns(agg.aggCalls(), kinds.length),
         keyColumns,
-        WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
-        WindowAggregateMatcher.kinds(agg.aggCalls()),
+        types,
+        kinds,
         isProctime(agg),
         isLtz(agg));
   }

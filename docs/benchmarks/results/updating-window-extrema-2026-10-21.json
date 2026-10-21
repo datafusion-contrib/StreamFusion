@@ -1,0 +1,1148 @@
+{
+  "feature": "Typed updating window extrema, temporary partial combination and legacy fixed changelogs",
+  "date": "2026-10-21",
+  "candidate_base_commit": "44a9994906c88c6297bde58fa820a301cd12dc64",
+  "previous_production_commit": "44a9994906c88c6297bde58fa820a301cd12dc64",
+  "configuration": {
+    "flink_versions": [
+      "2.2.1",
+      "1.18.1"
+    ],
+    "jdk": 17,
+    "native": "release + mimalloc",
+    "parallelism": 1,
+    "task_slots": 2,
+    "heap_gib": 2,
+    "rows": 1000000,
+    "keys": 64,
+    "window": "HOP 2 s / 10 s",
+    "query": "COUNT(v), MIN(CAST(v AS type)), MAX(CAST(v AS type)) over an updating Top-1 input",
+    "warmups": 2,
+    "measured_runs": 3,
+    "order": "Alternating engines each pair; profiles run serially with no other owned heavy builds or tests",
+    "boundary": "Complete executeSql INSERT await jobs; production source RowData, both perimeter Arrow transposes, native exchange, JNI and rowwise blackhole sink retained. This is a conversion-inclusive job diagnostic, not a Rust-side small-function gate.",
+    "native_execution": "Planner requires native TopN and native final window plus both transposes; every native measurement requires consumed native final aggregate, and consumed local+global for TWO_PHASE. Legacy stays ONE_PHASE on both releases.",
+    "previous_control": "Actual previous canonical planner/runtime/POM unchanged, only identical benchmark fixture copied/compiled. Old DSO d6787a924552fa94b74aace08b2077f507d3a03d129b178d5c2c64b51403d600; assertions require no native window replacement."
+  },
+  "native_libraries": {
+    "libstreamfusion_fluss.so": "779f14a688fd3d3da73143496db2543e6b7f34252ab11aa4e801d41cfd512283",
+    "libstreamfusion_avro.so": "a96b6ef6beab8ccc7780c8d7c3bc98ef777aad812c7b47570cca355e708b1235",
+    "libstreamfusion_parquet.so": "2f808dc8bd0575f7e21d76618878426187357dd13870cd01cb8f5a64c98028ee",
+    "libstreamfusion_kafka.so": "49cf28503f972f8438889bde2ac8d48025c505f4705984c135c46e70085b823a",
+    "libstreamfusion_iceberg.so": "69f4635177986b63030eb2af30562b91cf24638835755f7ee938b6914dcc93f3",
+    "libstreamfusion_protobuf.so": "cd9ade03adc3e5223f1c5c0bdb5ff8ed1c88370b07304508795325e8931453d0",
+    "libstreamfusion_csv.so": "0f0981a1f9d0fda2a921d239a9992d3ea4076f1bcbf859949863ea7031b088d6",
+    "libstreamfusion_orc.so": "a3164f75d24b911395604f186070d59aa1e53057698f128e6b16b6e315ae48d4",
+    "libstreamfusion_raw.so": "79570fd359e4ce97caeadf3fcfddfc93fb6a8970ea6aac341a143961fe3617df",
+    "libstreamfusion.so": "ea40149098e911563efb7c85122070ce815548be90ff0b10f015cf0327e60e2a",
+    "libstreamfusion_paimon.so": "42cdb1493dd2fbe5ab9c768c4df2efe7f788847b5cc35396654c016f02d6bb11",
+    "libstreamfusion_json.so": "6bcb0566d9266ba5abdc7590b637c1368db589d26f29b6c81f17eb842eba1fd7"
+  },
+  "source_sha256": {
+    "dev/flink-suite/agent/src/main/resources/native-execution-flink1.18-state.tsv": "69f39c52e565e614e79aa3a9811f5f636b78681cab894d5064803511b9b31985",
+    "dev/flink-suite/agent/src/main/resources/native-execution-flink1.18.tsv": "a9ab2ffb7b76636a645ddac7863d3ce59f0a7e6f4bab7995a062c5c51795a24a",
+    "dev/flink-suite/agent/src/main/resources/native-execution.tsv": "d2e828a4b6e90c51132736dc4fddd23f39b14f47b7bd291ad1131aec93af5249",
+    "dev/flink-suite/runtime-route-scope-1.18.json": "4aa67165ea59fc5f22ddd18cf7018258620f00a51c239d586cc5b109ad601e01",
+    "dev/flink-suite/runtime-route-scope-2.2.json": "f1b05a3ceb9f12e60bf9224741e1f694a0c70241ba5ca6af520569c35cc0d85c",
+    "native/engine/src/aggregates.rs": "a9f0c4371cf000e75dbe3c8cf44ef558340fbb98fc77559b7056f1d1add9d7cc",
+    "native/engine/src/aggregates/retracting_extreme.rs": "1f1e44bf36f7e8c28354341632247b29b06be468bf04207fec58658517c4a7f2",
+    "native/engine/src/group_agg.rs": "1bd8679bc7c5338fa5b6220a85a11619a101a2b060595ec54242f0e32e28633b",
+    "native/engine/src/group_agg/mapped_extreme.rs": "c532b60cb1403d318cf7f3e7b459f7f361eec8afdd7bed47ba243cf3c8f5478d",
+    "native/engine/src/window_agg.rs": "0a1c5207d0b81b168601b7afceb092ddfbfeae3010ec7a27b191dad26ea13d9f",
+    "native/engine/src/window_agg/extreme_partials.rs": "55676d9fdc1698af4905df630bf7385311405ed04329e8995ce9c41ab68c698b",
+    "native/engine/src/window_agg/shared.rs": "0ca20f2c09bad3f733cf2c79e6f2edcb77f55d6293ddc4ab60db0c09b6955036",
+    "src/main/java-flink1.18/tech/streamfusion/compat/RuntimeCompat.java": "0052d5a48ac9b4259c663edfde31ec7970916a0ce29225ef2d8b57c7cddb84f9",
+    "src/main/java-flink2.2/tech/streamfusion/compat/RuntimeCompat.java": "23443372a52ff820001dbee4af88ca495c8816eb4e8dce8f650ef30fcbc74c37",
+    "src/main/java/tech/streamfusion/operator/NativeWindowOperatorCore.java": "4a86275e4d6f6f5e6537336021eb6bfcf83e6364ab90234c80715db6733949da",
+    "src/main/java/tech/streamfusion/planner/GlobalWindowAggregateMatcher.java": "6ab91d4d6b1ffc22166993f09dd6cff89ffe37787ff43d329740ebd7bf69d04f",
+    "src/main/java/tech/streamfusion/planner/GroupAggregateMatcher.java": "9eedcd67a4b9125e29a76e56113b956886e3ad53923811137fde4f0e536619bf",
+    "src/main/java/tech/streamfusion/planner/GroupWindowAggregateMatcher.java": "a73e6af140977c9e11cec8b5be96ee5c71d70941adb23d1893444fdd5cda2504",
+    "src/main/java/tech/streamfusion/planner/LocalGroupAggregateMatcher.java": "a62c6369f280da8e09c605803913c7190e2039863826585f043ef164104f7eb3",
+    "src/main/java/tech/streamfusion/planner/WindowAggregateMatcher.java": "f0c3d68bd5d44d77848f69f1a835aeea45e19b09f3d6b61b7f713cc9bd20b6da",
+    "src/test/java/tech/streamfusion/FlinkLegacyUpdatingWindowSqlHarnessTest.java": "fdbd34e36efe5903a69455ba81059df3b60f584dda8ecbcc102b5d85e4d365dd",
+    "src/test/java/tech/streamfusion/FlinkRetractingExtremaPartialsSqlHarnessTest.java": "401bab7fc53bece2cf92beca663f094bbd8655d38e159a5aa74be5ff84d9fd73",
+    "src/test/java/tech/streamfusion/FlinkRetractingWindowSqlHarnessTest.java": "e0335ebd348a2e44a5858812f762b62ac139e141f03a96f995260bacf8b6aa92",
+    "src/test/java/tech/streamfusion/FlinkTimestampWindowSqlHarnessTest.java": "428acc718e5149be307537b9e854c7ad2da3acbf0c93bb52898a83f6d5991f27",
+    "src/test/java/tech/streamfusion/FlinkUpdatingWindowExtremaRecoveryTest.java": "89320dc0b7bc21eaca16efc4101c46fc9d25098c17243bd207972cbe3adc6dbc",
+    "src/test/java/tech/streamfusion/FlinkWindowExtremeCombineContractTest.java": "5c79f280ff51f024f27ef905318fc83b0debb9b4e6baee5bd023802dbac190c7",
+    "src/test/java/tech/streamfusion/RetractingWindowBenchmark.java": "d861dfe20ffe764339c9e1d401a0d7bec8999bb8a8a6343d2ec0f1ae4f97e722"
+  },
+  "optimization_passes": 1,
+  "pass1_diagnostic": [
+    {
+      "log": "streamfusion-window-extrema-owned-string-pass1-2.2.log",
+      "log_sha256": "536fbbf0216a582d53322bcd578e8e8be311318304fb1d2d31bd65898c6c31fb",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.765014147,
+        0.745489225,
+        0.733054697
+      ],
+      "streamfusion_seconds": [
+        0.707067769,
+        0.627926571,
+        0.648691838
+      ],
+      "host_median_seconds": 0.745489225,
+      "streamfusion_median_seconds": 0.648691838,
+      "host_over_native": 1.1492193693980162,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=false phase=ONE_PHASE rows=1000000 Flink=0.745489s Native=0.648692s ratio=1.149x host_trials=[0.765014147, 0.745489225, 0.733054697] native_trials=[0.707067769, 0.627926571, 0.648691838]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-pass1-2.2.log",
+      "log_sha256": "536fbbf0216a582d53322bcd578e8e8be311318304fb1d2d31bd65898c6c31fb",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.794649588,
+        0.728185623,
+        0.719958594
+      ],
+      "streamfusion_seconds": [
+        0.334760566,
+        0.331096747,
+        0.417505361
+      ],
+      "host_median_seconds": 0.728185623,
+      "streamfusion_median_seconds": 0.334760566,
+      "host_over_native": 2.175243134820127,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=false phase=TWO_PHASE rows=1000000 Flink=0.728186s Native=0.334761s ratio=2.175x host_trials=[0.794649588, 0.728185623, 0.719958594] native_trials=[0.334760566, 0.331096747, 0.417505361]"
+    }
+  ],
+  "before_optimization": [
+    {
+      "log": "streamfusion-window-extrema-final-bench-1.18-bigint-legacy.log",
+      "log_sha256": "eeee10730b1c29fd98634d4444fb27e5aa5eb200f088a3ad63469551795e126d",
+      "flink_line": "1.18",
+      "type": "BIGINT",
+      "legacy": true,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        1.237417415,
+        1.197690156,
+        1.231770397
+      ],
+      "streamfusion_seconds": [
+        0.513153876,
+        0.493150618,
+        0.438860468
+      ],
+      "host_median_seconds": 1.231770397,
+      "streamfusion_median_seconds": 0.493150618,
+      "host_over_native": 2.4977569773622386,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=true phase=ONE_PHASE rows=1000000 Flink=1.231770s Native=0.493151s ratio=2.498x host_trials=[1.237417415, 1.197690156, 1.231770397] native_trials=[0.513153876, 0.493150618, 0.438860468]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-1.18-string-legacy.log",
+      "log_sha256": "fd3f47b10fe51f047af80b38dd7beb963af1f6b6e18e968506111518e11b5f81",
+      "flink_line": "1.18",
+      "type": "STRING",
+      "legacy": true,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        1.274249244,
+        1.241406995,
+        1.26665153
+      ],
+      "streamfusion_seconds": [
+        0.739131747,
+        0.705478481,
+        0.65775524
+      ],
+      "host_median_seconds": 1.26665153,
+      "streamfusion_median_seconds": 0.705478481,
+      "host_over_native": 1.79545027114725,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=true phase=ONE_PHASE rows=1000000 Flink=1.266652s Native=0.705478s ratio=1.795x host_trials=[1.274249244, 1.241406995, 1.26665153] native_trials=[0.739131747, 0.705478481, 0.65775524]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-2.2-bigint-tvf.log",
+      "log_sha256": "c05793bdbfb180e7d59c1fe9b2347bf8581ba0afb9fbea88666127631fd4cda9",
+      "flink_line": "2.2",
+      "type": "BIGINT",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.619693965,
+        0.565837168,
+        0.602178976
+      ],
+      "streamfusion_seconds": [
+        0.5469987,
+        0.505045771,
+        0.41458909
+      ],
+      "host_median_seconds": 0.602178976,
+      "streamfusion_median_seconds": 0.505045771,
+      "host_over_native": 1.192325548648144,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=false phase=ONE_PHASE rows=1000000 Flink=0.602179s Native=0.505046s ratio=1.192x host_trials=[0.619693965, 0.565837168, 0.602178976] native_trials=[0.5469987, 0.505045771, 0.41458909]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-2.2-bigint-tvf.log",
+      "log_sha256": "c05793bdbfb180e7d59c1fe9b2347bf8581ba0afb9fbea88666127631fd4cda9",
+      "flink_line": "2.2",
+      "type": "BIGINT",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.68844302,
+        0.58731887,
+        0.576137009
+      ],
+      "streamfusion_seconds": [
+        0.42220465,
+        0.285367269,
+        0.364821368
+      ],
+      "host_median_seconds": 0.58731887,
+      "streamfusion_median_seconds": 0.364821368,
+      "host_over_native": 1.6098806745332968,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=false phase=TWO_PHASE rows=1000000 Flink=0.587319s Native=0.364821s ratio=1.610x host_trials=[0.68844302, 0.58731887, 0.576137009] native_trials=[0.42220465, 0.285367269, 0.364821368]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-2.2-decimal38-8-tvf.log",
+      "log_sha256": "ee6536ada1653b4109c648169df15e6e8c8d500bfbde0f73b8b348221c5fa7d4",
+      "flink_line": "2.2",
+      "type": "DECIMAL(38,8)",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.720326979,
+        0.635212878,
+        0.691376271
+      ],
+      "streamfusion_seconds": [
+        0.619904617,
+        0.584395261,
+        0.564471349
+      ],
+      "host_median_seconds": 0.691376271,
+      "streamfusion_median_seconds": 0.584395261,
+      "host_over_native": 1.1830627610103086,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=DECIMAL(38,8) legacy=false phase=ONE_PHASE rows=1000000 Flink=0.691376s Native=0.584395s ratio=1.183x host_trials=[0.720326979, 0.635212878, 0.691376271] native_trials=[0.619904617, 0.584395261, 0.564471349]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-2.2-decimal38-8-tvf.log",
+      "log_sha256": "ee6536ada1653b4109c648169df15e6e8c8d500bfbde0f73b8b348221c5fa7d4",
+      "flink_line": "2.2",
+      "type": "DECIMAL(38,8)",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.74900649,
+        0.637874001,
+        0.626276726
+      ],
+      "streamfusion_seconds": [
+        0.436024628,
+        0.34247072,
+        0.421496556
+      ],
+      "host_median_seconds": 0.637874001,
+      "streamfusion_median_seconds": 0.421496556,
+      "host_over_native": 1.5133551909733753,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=DECIMAL(38,8) legacy=false phase=TWO_PHASE rows=1000000 Flink=0.637874s Native=0.421497s ratio=1.513x host_trials=[0.74900649, 0.637874001, 0.626276726] native_trials=[0.436024628, 0.34247072, 0.421496556]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-2.2-string-legacy.log",
+      "log_sha256": "1e12b63664112c3200111c72f9835ed8cef1bcca6feaacf07218d0e2d5788498",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": true,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        1.317879636,
+        1.317430532,
+        1.298758005
+      ],
+      "streamfusion_seconds": [
+        0.659134958,
+        0.826795163,
+        0.672039133
+      ],
+      "host_median_seconds": 1.317430532,
+      "streamfusion_median_seconds": 0.672039133,
+      "host_over_native": 1.9603479430118247,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=true phase=ONE_PHASE rows=1000000 Flink=1.317431s Native=0.672039s ratio=1.960x host_trials=[1.317879636, 1.317430532, 1.298758005] native_trials=[0.659134958, 0.826795163, 0.672039133]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-2.2-string-tvf.log",
+      "log_sha256": "692a242b5b30b2462de754aab4af49f9a4f92464fedf3d8d943862974add5bd2",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.754294433,
+        0.671010224,
+        0.703408188
+      ],
+      "streamfusion_seconds": [
+        0.827617687,
+        0.712000775,
+        0.765492959
+      ],
+      "host_median_seconds": 0.703408188,
+      "streamfusion_median_seconds": 0.765492959,
+      "host_over_native": 0.9188956994704376,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=false phase=ONE_PHASE rows=1000000 Flink=0.703408s Native=0.765493s ratio=0.919x host_trials=[0.754294433, 0.671010224, 0.703408188] native_trials=[0.827617687, 0.712000775, 0.765492959]"
+    },
+    {
+      "log": "streamfusion-window-extrema-final-bench-2.2-string-tvf.log",
+      "log_sha256": "692a242b5b30b2462de754aab4af49f9a4f92464fedf3d8d943862974add5bd2",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.798265673,
+        0.722647064,
+        0.689854685
+      ],
+      "streamfusion_seconds": [
+        0.358121599,
+        0.354458088,
+        0.441963883
+      ],
+      "host_median_seconds": 0.722647064,
+      "streamfusion_median_seconds": 0.358121599,
+      "host_over_native": 2.017881820079777,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=false phase=TWO_PHASE rows=1000000 Flink=0.722647s Native=0.358122s ratio=2.018x host_trials=[0.798265673, 0.722647064, 0.689854685] native_trials=[0.358121599, 0.354458088, 0.441963883]"
+    }
+  ],
+  "previous_fallback_controls": [
+    {
+      "log": "streamfusion-updating-window-extrema-bench-prior-2.2-bigint-tvf.log",
+      "log_sha256": "3762ee00b018384aeeaaed1399180d13125b2d0089d52fdab2aed6ff5099142e",
+      "flink_line": "2.2",
+      "type": "BIGINT",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.662613594,
+        0.538752056,
+        0.56423627
+      ],
+      "streamfusion_seconds": [
+        0.586888159,
+        0.63818715,
+        0.570484676
+      ],
+      "host_median_seconds": 0.56423627,
+      "streamfusion_median_seconds": 0.586888159,
+      "host_over_native": 0.9614033974742366,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=false phase=ONE_PHASE rows=1000000 Flink=0.564236s Native=0.586888s ratio=0.961x host_trials=[0.662613594, 0.538752056, 0.56423627] native_trials=[0.586888159, 0.63818715, 0.570484676]"
+    },
+    {
+      "log": "streamfusion-updating-window-extrema-bench-prior-2.2-bigint-tvf.log",
+      "log_sha256": "3762ee00b018384aeeaaed1399180d13125b2d0089d52fdab2aed6ff5099142e",
+      "flink_line": "2.2",
+      "type": "BIGINT",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.58984539,
+        0.543600602,
+        0.586509215
+      ],
+      "streamfusion_seconds": [
+        0.572848185,
+        0.58170687,
+        0.560055878
+      ],
+      "host_median_seconds": 0.586509215,
+      "streamfusion_median_seconds": 0.572848185,
+      "host_over_native": 1.0238475574466557,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=false phase=TWO_PHASE rows=1000000 Flink=0.586509s Native=0.572848s ratio=1.024x host_trials=[0.58984539, 0.543600602, 0.586509215] native_trials=[0.572848185, 0.58170687, 0.560055878]"
+    },
+    {
+      "log": "streamfusion-updating-window-extrema-bench-prior-2.2-string-legacy.log",
+      "log_sha256": "494f269136a0c846b49e5d712711bf57a9f4bb5dec08f6f49577a5ffebc4a7a1",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": true,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        1.298018392,
+        1.245995225,
+        1.212246707
+      ],
+      "streamfusion_seconds": [
+        1.280559309,
+        1.290957516,
+        1.226081825
+      ],
+      "host_median_seconds": 1.245995225,
+      "streamfusion_median_seconds": 1.280559309,
+      "host_over_native": 0.9730086035398146,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=true phase=ONE_PHASE rows=1000000 Flink=1.245995s Native=1.280559s ratio=0.973x host_trials=[1.298018392, 1.245995225, 1.212246707] native_trials=[1.280559309, 1.290957516, 1.226081825]"
+    }
+  ],
+  "candidate": [
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-1.18-bigint-legacy.log",
+      "log_sha256": "983fb2a8c8bf78ad2defc3de05f8ee593cb9d0ad7a799e715df46037988acf06",
+      "flink_line": "1.18",
+      "type": "BIGINT",
+      "legacy": true,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        1.187930918,
+        1.159596537,
+        1.145010048
+      ],
+      "streamfusion_seconds": [
+        0.512689045,
+        0.428767187,
+        0.447858277
+      ],
+      "host_median_seconds": 1.159596537,
+      "streamfusion_median_seconds": 0.447858277,
+      "host_over_native": 2.589204211581424,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=true phase=ONE_PHASE rows=1000000 Flink=1.159597s Native=0.447858s ratio=2.589x host_trials=[1.187930918, 1.159596537, 1.145010048] native_trials=[0.512689045, 0.428767187, 0.447858277]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-1.18-string-legacy.log",
+      "log_sha256": "bde9edbabb6ccd914f90593d993dd70e3be7abf36365e2ee7e95598724936281",
+      "flink_line": "1.18",
+      "type": "STRING",
+      "legacy": true,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        1.259884331,
+        1.280567323,
+        1.309817933
+      ],
+      "streamfusion_seconds": [
+        0.569108372,
+        0.548297788,
+        0.5660708
+      ],
+      "host_median_seconds": 1.280567323,
+      "streamfusion_median_seconds": 0.5660708,
+      "host_over_native": 2.2622034611218247,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=true phase=ONE_PHASE rows=1000000 Flink=1.280567s Native=0.566071s ratio=2.262x host_trials=[1.259884331, 1.280567323, 1.309817933] native_trials=[0.569108372, 0.548297788, 0.5660708]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-2.2-bigint-tvf.log",
+      "log_sha256": "6e98bb0249af160579d3727b3fe8a0d41ba319261bd764db85a0e41d8ee76da4",
+      "flink_line": "2.2",
+      "type": "BIGINT",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.626735503,
+        0.584063733,
+        0.624003783
+      ],
+      "streamfusion_seconds": [
+        0.631600694,
+        0.498311531,
+        0.534453366
+      ],
+      "host_median_seconds": 0.624003783,
+      "streamfusion_median_seconds": 0.534453366,
+      "host_over_native": 1.167555155785098,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=false phase=ONE_PHASE rows=1000000 Flink=0.624004s Native=0.534453s ratio=1.168x host_trials=[0.626735503, 0.584063733, 0.624003783] native_trials=[0.631600694, 0.498311531, 0.534453366]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-2.2-bigint-tvf.log",
+      "log_sha256": "6e98bb0249af160579d3727b3fe8a0d41ba319261bd764db85a0e41d8ee76da4",
+      "flink_line": "2.2",
+      "type": "BIGINT",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.630594337,
+        0.585424679,
+        0.562140239
+      ],
+      "streamfusion_seconds": [
+        0.304210386,
+        0.289667094,
+        0.286334102
+      ],
+      "host_median_seconds": 0.585424679,
+      "streamfusion_median_seconds": 0.289667094,
+      "host_over_native": 2.0210258297409505,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=BIGINT legacy=false phase=TWO_PHASE rows=1000000 Flink=0.585425s Native=0.289667s ratio=2.021x host_trials=[0.630594337, 0.585424679, 0.562140239] native_trials=[0.304210386, 0.289667094, 0.286334102]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-2.2-decimal38-8-tvf.log",
+      "log_sha256": "f3ef2b17fed488c1184f969d9656526f0c4261d38a7afcd6b00ed9917936eb9e",
+      "flink_line": "2.2",
+      "type": "DECIMAL(38,8)",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.697223335,
+        0.630516239,
+        0.658259224
+      ],
+      "streamfusion_seconds": [
+        0.64430245,
+        0.569643745,
+        0.593218725
+      ],
+      "host_median_seconds": 0.658259224,
+      "streamfusion_median_seconds": 0.593218725,
+      "host_over_native": 1.109639996613391,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=DECIMAL(38,8) legacy=false phase=ONE_PHASE rows=1000000 Flink=0.658259s Native=0.593219s ratio=1.110x host_trials=[0.697223335, 0.630516239, 0.658259224] native_trials=[0.64430245, 0.569643745, 0.593218725]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-2.2-decimal38-8-tvf.log",
+      "log_sha256": "f3ef2b17fed488c1184f969d9656526f0c4261d38a7afcd6b00ed9917936eb9e",
+      "flink_line": "2.2",
+      "type": "DECIMAL(38,8)",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.703457835,
+        0.632294379,
+        0.625693061
+      ],
+      "streamfusion_seconds": [
+        0.358465417,
+        0.346407823,
+        0.421415129
+      ],
+      "host_median_seconds": 0.632294379,
+      "streamfusion_median_seconds": 0.358465417,
+      "host_over_native": 1.763892272486637,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=DECIMAL(38,8) legacy=false phase=TWO_PHASE rows=1000000 Flink=0.632294s Native=0.358465s ratio=1.764x host_trials=[0.703457835, 0.632294379, 0.625693061] native_trials=[0.358465417, 0.346407823, 0.421415129]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-2.2-string-legacy.log",
+      "log_sha256": "49f98c233acf3946f31e3147a1f58f5f5304e65c2a8c0ec66f7bead26ff549f6",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": true,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        1.26952986,
+        1.268184563,
+        1.28187208
+      ],
+      "streamfusion_seconds": [
+        0.562267048,
+        0.624855404,
+        0.609716476
+      ],
+      "host_median_seconds": 1.26952986,
+      "streamfusion_median_seconds": 0.609716476,
+      "host_over_native": 2.082164268101556,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=true phase=ONE_PHASE rows=1000000 Flink=1.269530s Native=0.609716s ratio=2.082x host_trials=[1.26952986, 1.268184563, 1.28187208] native_trials=[0.562267048, 0.624855404, 0.609716476]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-2.2-string-tvf.log",
+      "log_sha256": "f83a3f60a2b80179f2fec9cee584bb888f3d31ab827f786f15b2ff73a28d8da7",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": false,
+      "phase": "ONE_PHASE",
+      "host_seconds": [
+        0.712563763,
+        0.708159306,
+        0.675871146
+      ],
+      "streamfusion_seconds": [
+        0.677199918,
+        0.634033513,
+        0.572357595
+      ],
+      "host_median_seconds": 0.708159306,
+      "streamfusion_median_seconds": 0.634033513,
+      "host_over_native": 1.1169114746778377,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=false phase=ONE_PHASE rows=1000000 Flink=0.708159s Native=0.634034s ratio=1.117x host_trials=[0.712563763, 0.708159306, 0.675871146] native_trials=[0.677199918, 0.634033513, 0.572357595]"
+    },
+    {
+      "log": "streamfusion-window-extrema-owned-string-bench-2.2-string-tvf.log",
+      "log_sha256": "f83a3f60a2b80179f2fec9cee584bb888f3d31ab827f786f15b2ff73a28d8da7",
+      "flink_line": "2.2",
+      "type": "STRING",
+      "legacy": false,
+      "phase": "TWO_PHASE",
+      "host_seconds": [
+        0.75414292,
+        0.707076098,
+        0.695353937
+      ],
+      "streamfusion_seconds": [
+        0.347899907,
+        0.338292461,
+        0.336596298
+      ],
+      "host_median_seconds": 0.707076098,
+      "streamfusion_median_seconds": 0.338292461,
+      "host_over_native": 2.090132590924041,
+      "raw_summary": "[retracting-window] groupingOnly=false filtered=false average=false averageType=BIGINT sumType=BIGINT extremeType=STRING legacy=false phase=TWO_PHASE rows=1000000 Flink=0.707076s Native=0.338292s ratio=2.090x host_trials=[0.75414292, 0.707076098, 0.695353937] native_trials=[0.347899907, 0.338292461, 0.336596298]"
+    }
+  ],
+  "profile": {
+    "total_cpu_samples": 83275,
+    "mapped_extrema_cpu_samples": 4316,
+    "mapped_extrema_self": [
+      [
+        "streamfusion::group_agg::mapped_extreme::MappedExtreme::update",
+        557
+      ],
+      [
+        "malloc",
+        449
+      ],
+      [
+        "<streamfusion::aggregates::retracting_extreme::RetractingExtremeAccumulator as datafusion_expr_common::accumulator::Accumulator>::update_batch",
+        407
+      ],
+      [
+        "mi_free",
+        283
+      ],
+      [
+        "alloc::collections::btree::search::<impl alloc::collections::btree::node::NodeRef<BorrowType,K,V,alloc::collections::btree::node::marker::LeafOrInternal>>::search_tree",
+        248
+      ],
+      [
+        "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        247
+      ],
+      [
+        "datafusion_common::scalar::ScalarValue::try_from_array",
+        231
+      ],
+      [
+        "alloc::collections::btree::map::BTreeMap<K,V,A>::insert",
+        174
+      ],
+      [
+        "alloc::collections::btree::map::BTreeMap<K,V,A>::get",
+        162
+      ],
+      [
+        "_mi_arena_contains",
+        149
+      ],
+      [
+        "<alloc::string::String as core::clone::Clone>::clone",
+        127
+      ],
+      [
+        "__tls_get_addr",
+        95
+      ],
+      [
+        "alloc::collections::btree::remove::<impl alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf>,alloc::collections::btree::node::marker::KV>>::remove_leaf_kv",
+        91
+      ],
+      [
+        "<alloc::sync::Arc<dyn arrow_array::array::Array> as arrow_array::array::Array>::is_null",
+        89
+      ],
+      [
+        "mi_is_in_heap_region",
+        84
+      ],
+      [
+        "alloc::raw_vec::RawVecInner<A>::try_allocate_in",
+        83
+      ],
+      [
+        "alloc::collections::btree::map::entry::VacantEntry<K,V,A>::insert_entry",
+        81
+      ],
+      [
+        "datafusion_common::cast::as_string_array",
+        77
+      ],
+      [
+        "arrow_array::array::Array::is_null",
+        61
+      ],
+      [
+        "sf_free",
+        61
+      ],
+      [
+        "streamfusion::group_agg::MinMaxKey::from_scalar",
+        57
+      ],
+      [
+        "arrow_array::array::byte_array::GenericByteArray<T>::value",
+        54
+      ],
+      [
+        "alloc::collections::btree::map::BTreeMap<K,V,A>::remove",
+        54
+      ],
+      [
+        "core::ptr::drop_in_place<datafusion_common::scalar::ScalarValue>",
+        53
+      ],
+      [
+        "__rustc::__rust_no_alloc_shim_is_unstable_v2",
+        49
+      ]
+    ],
+    "mapped_extrema_inclusive": [
+      [
+        "org/apache/flink/streaming/runtime/tasks/StreamTask.runMailboxLoop",
+        4316
+      ],
+      [
+        "org/apache/flink/streaming/runtime/tasks/StreamTask.invoke",
+        4316
+      ],
+      [
+        "org/apache/flink/runtime/taskmanager/Task.run",
+        4316
+      ],
+      [
+        "org/apache/flink/streaming/runtime/tasks/mailbox/MailboxProcessor.runMailboxLoop",
+        4316
+      ],
+      [
+        "org/apache/flink/runtime/taskmanager/Task.doRun",
+        4316
+      ],
+      [
+        "org/apache/flink/streaming/runtime/io/AbstractStreamTaskNetworkInput.emitNext",
+        4316
+      ],
+      [
+        "java/lang/Thread.run",
+        4316
+      ],
+      [
+        "org/apache/flink/streaming/runtime/io/AbstractStreamTaskNetworkInput.processElement",
+        4316
+      ],
+      [
+        "org/apache/flink/streaming/runtime/tasks/StreamTask$$Lambda$3774.0x0000765ec8f3e0f0.runDefaultAction",
+        4316
+      ],
+      [
+        "org/apache/flink/runtime/taskmanager/Task.restoreAndInvoke",
+        4316
+      ],
+      [
+        "org/apache/flink/streaming/runtime/io/StreamOneInputProcessor.processInput",
+        4316
+      ],
+      [
+        "org/apache/flink/runtime/taskmanager/Task$$Lambda$4091.0x0000765ec8fbc3f0.run",
+        4316
+      ],
+      [
+        "org/apache/flink/streaming/runtime/tasks/StreamTask.processInput",
+        4316
+      ],
+      [
+        "org/apache/flink/runtime/taskmanager/Task.runWithSystemExitMonitoring",
+        4316
+      ],
+      [
+        "streamfusion::window_agg::TumblingAggregator::accumulate_grouped",
+        4309
+      ],
+      [
+        "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnarInternal",
+        4309
+      ],
+      [
+        "org/apache/flink/streaming/runtime/io/RecordProcessorUtils.lambda$getRecordProcessor$0",
+        4309
+      ],
+      [
+        "org/apache/flink/streaming/runtime/io/RecordProcessorUtils$$Lambda$3903.0x0000765ec8f69090.accept",
+        4309
+      ],
+      [
+        "streamfusion::window_agg::TumblingAggregator::update_window_batch",
+        4309
+      ],
+      [
+        "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnar",
+        4309
+      ],
+      [
+        "org/apache/flink/streaming/runtime/tasks/OneInputStreamTask$StreamTaskNetworkOutput.emitRecord",
+        4299
+      ],
+      [
+        "<streamfusion::aggregates::retracting_extreme::RetractingExtremeAccumulator as datafusion_expr_common::accumulator::Accumulator>::update_batch",
+        4271
+      ],
+      [
+        "tech/streamfusion/Native.updateTumblingAggregator",
+        3635
+      ],
+      [
+        "tech/streamfusion/operator/NativeColumnarWindowAggregateOperator.updateHandle",
+        3635
+      ],
+      [
+        "tech/streamfusion/operator/NativeWindowOperatorCore.updateHandle",
+        3635
+      ],
+      [
+        "tech/streamfusion/operator/NativeColumnarWindowAggregateOperator.processElement",
+        3635
+      ],
+      [
+        "Java_tech_streamfusion_Native_updateTumblingAggregator",
+        3635
+      ],
+      [
+        "streamfusion::group_agg::mapped_extreme::MappedExtreme::update",
+        2842
+      ],
+      [
+        "datafusion_common::scalar::ScalarValue::try_from_array",
+        936
+      ],
+      [
+        "tech/streamfusion/operator/NativeColumnarTopNOperator$$Lambda$4473.0x0000765ec904b360.accept",
+        674
+      ]
+    ]
+  },
+  "profile_configuration": "async-profiler 4.6 CPU 1ms cstack=dwarf, complete benchmark JVM, both phases and engines, 1 warmup + 3 measured million-row pairs per phase; profiled timings excluded from comparison",
+  "limitations": [
+    "Updating SESSION and processing-time TVF changelogs remain under the original E/J audit.",
+    "Mapped extrema use the native RocksDB backend snapshot compatibility path; structured state is explicitly rejected by direct typed row storage.",
+    "No current-goal consolidated PR or merge is established by this artifact."
+  ],
+  "verification": {
+    "2.2": {
+      "latest_class_reports": [
+        {
+          "class": "FlinkTimestampWindowSqlHarnessTest",
+          "tests": "1",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "4.974",
+          "report_sha256": "94399ab340cdb6779a3e9851a1f534c344085d6f37c406f0b2aafd9dc80903ed"
+        },
+        {
+          "class": "FlinkWindowStringExtremaSqlHarnessTest",
+          "tests": "36",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "26.903",
+          "report_sha256": "8e92f751d1bc0960da0608c80ab3f1fd0bd96eea66b4697c92917c1e69be0968"
+        },
+        {
+          "class": "operator.NativeGlobalExtremeRetentionParityTest",
+          "tests": "32",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "7.965",
+          "report_sha256": "964d415f3015161e61ed2e0f7f9d4e3b5086a3cd6011337ed55422b39a60aadf"
+        },
+        {
+          "class": "FlinkWindowScalarExtremaSqlHarnessTest",
+          "tests": "19",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "10.25",
+          "report_sha256": "09fcbf30679887cce10d0a62f58b10ce309074bf0f72ff33b254974f92c7ba7c"
+        },
+        {
+          "class": "FlinkWindowCountTypesSqlHarnessTest",
+          "tests": "18",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "9.039",
+          "report_sha256": "a459846a6da357dd989120030135842a423e56f5a733fdf739ab54b76f52aa54"
+        },
+        {
+          "class": "FlinkUpdatingWindowExtremaRecoveryTest",
+          "tests": "18",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "9.726",
+          "report_sha256": "38aed44813f5a151317daf5f40e90e635008ec21f383e01d0aec1e68879f1a06"
+        },
+        {
+          "class": "FlinkRetractingExtremaPartialsSqlHarnessTest",
+          "tests": "63",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "51.751",
+          "report_sha256": "0e6f1397399c92d05e0e7fc44057ae6823db30777ab0f3da5674836942392b7b"
+        },
+        {
+          "class": "FlinkLegacyUpdatingWindowSqlHarnessTest",
+          "tests": "15",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "19.191",
+          "report_sha256": "a00fd38d76a06655ee36aa5f11f426ba1a6890cf3f0995b11b3a2e82dbe0b16f"
+        },
+        {
+          "class": "FlinkWindowExtremeCombineContractTest",
+          "tests": "19",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.047",
+          "report_sha256": "6b1b13426c676e522ddca3f00284b8b1893d70351883afbaad75c7ecd5934cb6"
+        },
+        {
+          "class": "FlinkWindowTemporalExtremaSqlHarnessTest",
+          "tests": "99",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "37.743",
+          "report_sha256": "06b988beb26f936c167d03218513a32601ab3633d78d13cb9c333ab0813909b9"
+        }
+      ],
+      "tests": 320,
+      "skipped": 0,
+      "note": "Related v3 run followed by full 63-case GROUP BY rerun after fixing ordinary TIME cache alias, plus the updated legacy signed-SUM regression; all latest class reports must pass. These checks include host factory errors and explicit released-host skips."
+    },
+    "1.18": {
+      "latest_class_reports": [
+        {
+          "class": "FlinkTimestampWindowSqlHarnessTest",
+          "tests": "1",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "4.532",
+          "report_sha256": "a2050054b86dd606ab0d302676066a7e164b0d97f51c911a14df90144e9041f1"
+        },
+        {
+          "class": "FlinkWindowStringExtremaSqlHarnessTest",
+          "tests": "36",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "1",
+          "time": "25.301",
+          "report_sha256": "114ff96ace0da961fad48895f1b99276b244d7113f6887532d15b3abfa1a5f34"
+        },
+        {
+          "class": "operator.NativeGlobalExtremeRetentionParityTest",
+          "tests": "32",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "8.148",
+          "report_sha256": "90b5391d8d84a3fafdacc497774a02bb34fd82c26ffd7075747936c85cab6541"
+        },
+        {
+          "class": "FlinkWindowScalarExtremaSqlHarnessTest",
+          "tests": "19",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "3",
+          "time": "8.927",
+          "report_sha256": "f79310591b952642fcd55febac3dce75d198bd3a8eca28b71b9901af95c7307c"
+        },
+        {
+          "class": "FlinkWindowCountTypesSqlHarnessTest",
+          "tests": "18",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "6",
+          "time": "4.237",
+          "report_sha256": "7131139cdbb41005a98a6542c186fc88db661c1053a23a5ba60ce20a894a4d1e"
+        },
+        {
+          "class": "FlinkUpdatingWindowExtremaRecoveryTest",
+          "tests": "18",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "12",
+          "time": "3.388",
+          "report_sha256": "c18db7c4da4bfa585165d5a42bc30b50d1b9cbf269e1b5c160c72d00ef0fc44e"
+        },
+        {
+          "class": "FlinkRetractingExtremaPartialsSqlHarnessTest",
+          "tests": "63",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "46.549",
+          "report_sha256": "b9361ed70a4dc4fd298692774b4eb2f369bbd9e6baa30bca3a16487b4b604324"
+        },
+        {
+          "class": "FlinkLegacyUpdatingWindowSqlHarnessTest",
+          "tests": "15",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "18.129",
+          "report_sha256": "bfd4a77317f058edb7549447d085a5f66fbd3249e3b492329bab3d14856f5418"
+        },
+        {
+          "class": "FlinkWindowExtremeCombineContractTest",
+          "tests": "19",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.033",
+          "report_sha256": "c32593fe9bf5284eb470e8b8df5e5edf520b7ad232890fa8fc00e3b63d580135"
+        },
+        {
+          "class": "FlinkWindowTemporalExtremaSqlHarnessTest",
+          "tests": "99",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "3",
+          "time": "33.212",
+          "report_sha256": "172d6a892990bebe75a992e2fe3e4f3911833cf0fae71a6ea5cda8fc6c1206fc"
+        }
+      ],
+      "tests": 320,
+      "skipped": 25,
+      "note": "Related v3 run followed by full 63-case GROUP BY rerun after fixing ordinary TIME cache alias, plus the updated legacy signed-SUM regression; all latest class reports must pass. These checks include host factory errors and explicit released-host skips."
+    },
+    "rust": {
+      "passed": 900,
+      "ignored": 2,
+      "failed": 0,
+      "log_sha256": "a98ad0aa38df4155022e385aa98c89226975e0e1d612a8d21ff9a62d9899340b"
+    },
+    "window_changelog_suite": {
+      "passed": 259,
+      "failed": 0,
+      "native_build": "v2; before ownership-only optimization",
+      "log_sha256": "84d3eaf831e7070016a0cbc325a11a8309c8000e1cbec42993c96fb058c6665c"
+    },
+    "upstream": {
+      "2.2": {
+        "passed": 8,
+        "failed": 0,
+        "native_expected": 4,
+        "early_firing_fallback_expected": 4,
+        "log_sha256": "fe61dd95685d9c6c4023875bf1f13d3b19a7cf02568c4d053e9e365fce36b2ea",
+        "execution_evidence": [
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "*",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "*",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "*",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "*",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "*",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "*",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "*",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "*",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          }
+        ]
+      },
+      "1.18": {
+        "passed": 8,
+        "failed": 0,
+        "native_expected": 4,
+        "early_firing_fallback_expected": 4,
+        "log_sha256": "605c563e0561445ddb787a54450b48cf081abd75994bdbc2087b0a11bb34027b",
+        "execution_evidence": [
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "changelog=false",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "changelog=false",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "changelog=false",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "changelog=false",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow",
+            "variant": "changelog=false",
+            "native_operator_counts": "",
+            "fallback_reasons": "legacy group-window: early/late firing and allowed lateness are not native"
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "changelog=false",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "changelog=false",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          },
+          {
+            "method": "org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream",
+            "variant": "changelog=false",
+            "native_operator_counts": "NativeCalcOperator=23,NativeColumnarWindowAggregateOperator=11",
+            "fallback_reasons": ""
+          }
+        ]
+      }
+    },
+    "coverage_tooling": {
+      "agent_passed": 50,
+      "agent_skipped": 1,
+      "scope_passed": 35
+    }
+  }
+}
