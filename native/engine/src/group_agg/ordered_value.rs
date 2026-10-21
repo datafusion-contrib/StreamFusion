@@ -24,6 +24,10 @@ impl<'a> OrderedValueColumn<'a> {
         Self { column, timestamp }
     }
 
+    pub(super) fn is_null(&self, row: usize) -> bool {
+        self.column.is_null(row)
+    }
+
     pub(super) fn value(&self, row: usize) -> Result<ScalarValue, DataFusionError> {
         if let Some(values) = &self.timestamp {
             return Ok(ScalarValue::Decimal128(
@@ -89,6 +93,10 @@ impl OrderedValueState {
         }
     }
 
+    pub(super) fn skips_value(&self, is_null: bool) -> bool {
+        self.kind == 12 && !self.value.is_null() || is_null && !matches!(self.kind, 14 | 21)
+    }
+
     /// False guarantees that the selected value and its payload are unchanged.
     pub(super) fn update(
         &mut self,
@@ -145,6 +153,15 @@ impl OrderedValueState {
                 }
                 15 | 16 => {
                     if retract {
+                        // Released generic binary MapView keys use byte-array identity.
+                        if matches!(
+                            value,
+                            ScalarValue::Binary(_)
+                                | ScalarValue::LargeBinary(_)
+                                | ScalarValue::FixedSizeBinary(..)
+                        ) {
+                            return Ok(false);
+                        }
                         if let Some(index) = self
                             .values
                             .iter()

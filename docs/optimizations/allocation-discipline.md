@@ -10,6 +10,21 @@ kernel instead of a row loop at all.
 
 ## Per-row allocation cuts
 
+Grouped FIRST/LAST skips extracting an append-only FIRST value once its non-NULL result
+is fixed, and skips NULL inputs for NULL-ignoring ordered aggregates. Nested result equality
+first checks shared non-floating Arrow scalar arrays, then compares primitive children,
+validity and list/map offsets directly without constructing `ArrayData` for every comparison.
+Unsupported physical children retain DataFusion equality; floating children retain the
+previous equality behavior. SINGLE_VALUE still observes NULL cardinality.
+
+On one million append rows, these two measured passes reduced ARRAY elapsed time from
+1.940 to 0.753 s, ROW from 5.780 to 1.794 s and MAP from 7.043 to 3.081 s. They still lose
+to stock Flink (0.508, 0.573 and 0.867 s respectively). A 131072-row retracting ARRAY job
+improved from 0.399 to 0.268 s versus stock 0.347 s. These are complete jobs with both
+transposes, release+mimalloc, JDK 17, p=1, two warmups and three trials. See the
+[raw measurements](../benchmarks/results/generic-first-last-2026-10-21.json) and
+[remaining work](https://github.com/datafusion-contrib/StreamFusion/issues/443).
+
 - Reuse the per-row window buffer instead of allocating one per row (**26%** on tumbling, `3833e8d`).
 - Move the grouping key into its last window instead of cloning it (**~18%** keyed, `ffec81e`).
 - Reach existing groups by `get_mut` and clone the key only on insert (**~8%** on string keys,

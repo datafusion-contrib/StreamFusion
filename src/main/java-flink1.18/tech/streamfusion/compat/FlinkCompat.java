@@ -10,6 +10,8 @@ import org.apache.flink.table.planner.plan.logical.WindowSpec;
 public final class FlinkCompat {
   private FlinkCompat() {}
 
+  public static final boolean GENERIC_ORDERED_VALUES = false;
+
   public static long miniBatchSize(org.apache.flink.configuration.ReadableConfig config) {
     org.apache.flink.table.planner.plan.utils.AggregateUtil.createMiniBatchTrigger(config);
     return config.get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);

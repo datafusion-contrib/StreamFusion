@@ -13,8 +13,8 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 /**
  * Columnar form of the non-windowed {@code GROUP BY} aggregate: Arrow batches in and out ({@link
  * ColumnarInput} and {@link ColumnarOutput}), so it flows Arrow between native operators with no
- * transpose — substituted when the aggregate's keyed input is kept columnar across the exchange. The
- * emitted changelog carries its kind on the batch's {@code $row_kind$} column.
+ * transpose — substituted when the aggregate's keyed input is kept columnar across the exchange.
+ * The emitted changelog carries its kind on the batch's {@code $row_kind$} column.
  */
 public class StreamPhysicalNativeColumnarGroupAggregate extends StreamPhysicalNativeSingleRel
     implements ColumnarInput, ColumnarOutput {
@@ -58,6 +58,19 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends StreamPhysicalNa
     this.recordCountColumn = recordCountColumn;
     this.generateUpdateBefore = generateUpdateBefore;
     this.stateTtlHintMillis = stateTtlHintMillis;
+  }
+
+  boolean preservesCollections() {
+    for (int i = 0; i < aggregateKinds.length; i++) {
+      if (valueTypes[i] == 100
+          && (aggregateKinds[i] == 12
+              || aggregateKinds[i] == 13
+              || aggregateKinds[i] == 15
+              || aggregateKinds[i] == 16
+              || aggregateKinds[i] == 19
+              || aggregateKinds[i] == 20)) return true;
+    }
+    return false;
   }
 
   @Override

@@ -2,10 +2,15 @@ package tech.streamfusion.planner;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
+import org.apache.calcite.rel.core.Exchange;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalDropUpdateBefore;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalMiniBatchAssigner;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWatermarkAssigner;
 
 /**
  * Restricts representation-dependent values to boundaries verified to carry their Java semantics.
@@ -75,6 +80,8 @@ final class CollectionValueIdentity {
     if (node instanceof StreamPhysicalRowDataToArrow)
       return !((StreamPhysicalRowDataToArrow) node).preservesCollections();
     if (node instanceof StreamPhysicalNativeGeneratedUnnest) return false;
+    if (node instanceof StreamPhysicalNativeColumnarGroupAggregate
+        && ((StreamPhysicalNativeColumnarGroupAggregate) node).preservesCollections()) return false;
     if (node instanceof StreamPhysicalNativeCalc
         && !((StreamPhysicalNativeCalc) node).preservesCollections()) return true;
     if (node instanceof StreamPhysicalNativeCalc
@@ -111,6 +118,10 @@ final class CollectionValueIdentity {
     if (node instanceof StreamPhysicalNativeGeneratedUnnest
         && node.getRowType().getFieldList().stream().anyMatch(field -> sensitive(field.getType())))
       return true;
+    if (node instanceof StreamPhysicalNativeColumnarGroupAggregate
+        && ((StreamPhysicalNativeColumnarGroupAggregate) node).preservesCollections()
+        && node.getRowType().getFieldList().stream().anyMatch(field -> sensitive(field.getType())))
+      return true;
     if (node instanceof StreamPhysicalNativeCalc) {
       var calc = (StreamPhysicalNativeCalc) node;
       if (calc.preservesCollections()
@@ -142,11 +153,13 @@ final class CollectionValueIdentity {
   }
 
   static boolean crossesBoundary(RelNode root, boolean finalOutput) {
-    return crossesBoundary(root, null, finalOutput);
+    return crossesBoundary(root, null, finalOutput, false);
   }
 
-  private static boolean crossesBoundary(RelNode node, RelNode parent, boolean finalOutput) {
+  private static boolean crossesBoundary(
+      RelNode node, RelNode parent, boolean finalOutput, boolean orderedConsumer) {
     if (node instanceof Calc
+        && !orderedConsumer
         && !(parent == null && finalOutput)
         && !(parent instanceof StreamPhysicalSink)
         && !(parent
@@ -161,6 +174,14 @@ final class CollectionValueIdentity {
           && program.getProjectList().stream().anyMatch(ref -> sensitive(ref.getType())))
         return true;
     }
-    return node.getInputs().stream().anyMatch(input -> crossesBoundary(input, node, false));
+    boolean next =
+        node instanceof StreamPhysicalGroupAggregate
+                && GroupAggregateMatcher.preservesComplexValues((StreamPhysicalGroupAggregate) node)
+            || orderedConsumer
+                && (node instanceof Exchange
+                    || node instanceof StreamPhysicalMiniBatchAssigner
+                    || node instanceof StreamPhysicalDropUpdateBefore
+                    || node instanceof StreamPhysicalWatermarkAssigner);
+    return node.getInputs().stream().anyMatch(input -> crossesBoundary(input, node, false, next));
   }
 }

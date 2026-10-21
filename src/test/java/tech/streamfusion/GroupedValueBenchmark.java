@@ -165,6 +165,30 @@ class GroupedValueBenchmark {
     }
     org.apache.flink.table.types.DataType dataType;
     switch (type) {
+      case "BINARY":
+        dataType = DataTypes.BINARY(4);
+        break;
+      case "BYTES":
+        dataType = DataTypes.BYTES();
+        break;
+      case "ARRAY":
+        dataType = DataTypes.ARRAY(DataTypes.INT());
+        break;
+      case "MAP":
+        dataType = DataTypes.MAP(DataTypes.STRING(), DataTypes.INT());
+        break;
+      case "ROW":
+        dataType =
+            DataTypes.ROW(
+                DataTypes.FIELD("f0", DataTypes.INT()), DataTypes.FIELD("f1", DataTypes.STRING()));
+        break;
+      case "NESTED_ARRAY":
+        dataType =
+            DataTypes.ARRAY(
+                DataTypes.ROW(
+                    DataTypes.FIELD("f0", DataTypes.INT()),
+                    DataTypes.FIELD("f1", DataTypes.STRING())));
+        break;
       case "STRING":
         dataType = DataTypes.STRING();
         break;
@@ -213,6 +237,22 @@ class GroupedValueBenchmark {
     }
     org.apache.flink.api.common.typeinfo.TypeInformation<?> valueType;
     switch (type) {
+      case "BINARY":
+      case "BYTES":
+        valueType = Types.PRIMITIVE_ARRAY(Types.BYTE);
+        break;
+      case "ARRAY":
+        valueType = Types.OBJECT_ARRAY(Types.INT);
+        break;
+      case "MAP":
+        valueType = Types.MAP(Types.STRING, Types.INT);
+        break;
+      case "ROW":
+        valueType = Types.ROW(Types.INT, Types.STRING);
+        break;
+      case "NESTED_ARRAY":
+        valueType = Types.OBJECT_ARRAY(Types.ROW(Types.INT, Types.STRING));
+        break;
       case "STRING":
       case "CHAR":
         valueType = Types.STRING;
@@ -265,6 +305,35 @@ class GroupedValueBenchmark {
                     selectedValue = null;
                   } else {
                     switch (type) {
+                      case "BINARY":
+                        selectedValue = new byte[] {(byte) (i % CARDINALITY), 0, 1, 2};
+                        break;
+                      case "BYTES":
+                        selectedValue =
+                            ("value-" + (i % CARDINALITY))
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        break;
+                      case "ARRAY":
+                        selectedValue =
+                            new Integer[] {(int) (i % CARDINALITY), null, -(int) (i % CARDINALITY)};
+                        break;
+                      case "MAP":
+                        var map = new java.util.HashMap<String, Integer>();
+                        map.put("n", (int) (i % CARDINALITY));
+                        map.put("null", null);
+                        selectedValue = map;
+                        break;
+                      case "ROW":
+                        selectedValue =
+                            Row.of((int) (i % CARDINALITY), "value-" + (i % CARDINALITY));
+                        break;
+                      case "NESTED_ARRAY":
+                        selectedValue =
+                            new Row[] {
+                              Row.of((int) (i % CARDINALITY), null),
+                              Row.of(-(int) (i % CARDINALITY), "value-" + (i % CARDINALITY))
+                            };
+                        break;
                       case "STRING":
                       case "CHAR":
                         selectedValue = "value-" + (i % CARDINALITY);

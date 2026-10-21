@@ -1,7 +1,9 @@
 //! Java boxed floating equality canonicalizes NaN payloads but preserves signed zero.
 //! Scalar grouping keys intentionally keep their raw bits instead.
 
-use arrow::array::{ArrayRef, AsArray};
+mod nested_equal;
+
+use arrow::array::{Array, ArrayRef, AsArray};
 use arrow::datatypes::{DataType, Float32Type, Float64Type};
 use datafusion::common::ScalarValue;
 use std::sync::Arc;
@@ -42,7 +44,37 @@ pub(crate) fn boxed_equal(left: &ScalarValue, right: &ScalarValue) -> bool {
         (ScalarValue::Float64(Some(a)), ScalarValue::Float64(Some(b))) => {
             canonical_f64(*a).to_bits() == canonical_f64(*b).to_bits()
         }
-        _ => left == right,
+        _ => nested_equal::equal(left, right).unwrap_or_else(|| left == right),
+    }
+}
+
+fn contains_floating(data_type: &DataType) -> bool {
+    match data_type {
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => true,
+        DataType::Struct(fields) => fields
+            .iter()
+            .any(|field| contains_floating(field.data_type())),
+        DataType::List(field)
+        | DataType::LargeList(field)
+        | DataType::FixedSizeList(field, _)
+        | DataType::Map(field, _) => contains_floating(field.data_type()),
+        _ => false,
+    }
+}
+
+fn shared_reflexive_array(left: &ScalarValue, right: &ScalarValue) -> bool {
+    macro_rules! shared {
+        ($left:expr, $right:expr) => {
+            Arc::ptr_eq($left, $right) && !contains_floating($left.data_type())
+        };
+    }
+    match (left, right) {
+        (ScalarValue::Struct(a), ScalarValue::Struct(b)) => shared!(a, b),
+        (ScalarValue::List(a), ScalarValue::List(b)) => shared!(a, b),
+        (ScalarValue::LargeList(a), ScalarValue::LargeList(b)) => shared!(a, b),
+        (ScalarValue::FixedSizeList(a), ScalarValue::FixedSizeList(b)) => shared!(a, b),
+        (ScalarValue::Map(a), ScalarValue::Map(b)) => shared!(a, b),
+        _ => false,
     }
 }
 
@@ -51,7 +83,10 @@ pub(crate) fn record_equal(left: &ScalarValue, right: &ScalarValue) -> bool {
     match (left, right) {
         (ScalarValue::Float32(Some(a)), ScalarValue::Float32(Some(b))) => a == b,
         (ScalarValue::Float64(Some(a)), ScalarValue::Float64(Some(b))) => a == b,
-        _ => left == right,
+        _ => {
+            shared_reflexive_array(left, right)
+                || nested_equal::equal(left, right).unwrap_or_else(|| left == right)
+        }
     }
 }
 

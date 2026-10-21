@@ -53,3 +53,5 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMaxAggRetr
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testPrecisionForSumWithRetractAggregationOnDecimal	aggMode=OFF	NativeColumnarGroupAggregateOperator
+
+org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression	*	NativeColumnarGroupAggregateOperator

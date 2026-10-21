@@ -35,10 +35,9 @@ pub(crate) fn value_data_type(code: i64) -> DataType {
         8 => DataType::Date32,
         9 => DataType::Time32(arrow::datatypes::TimeUnit::Millisecond),
         10 => DataType::Boolean,
-        // A COUNT(DISTINCT) value whose Flink type has no faithful code (TIME, BOOLEAN, complex
-        // types): the fold reads the actual column and the distinct set keys scalars, so the
-        // declared type is immaterial there — but a fixed-type persistent element codec cannot be
-        // built for it, and Null keeps such aggregates off the per-element RocksDB path.
+        // A retained value whose full type travels in Arrow. DISTINCT keys the actual scalar;
+        // FIRST/LAST bind their schema from input or checkpoint fields before creating state.
+        // Null also keeps these states off a fixed-type persistent element codec.
         100 => DataType::Null,
         // Decimal packs precision/scale into the code (2000 + precision*100 + scale), matching the
         // JVM side, so the per-aggregate value type carries them without a wider signature.

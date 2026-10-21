@@ -458,7 +458,11 @@ stock, previous fallback and native comparison, raw trials, workload limits and 
 The one-argument forms run natively in the single-phase plan over TINYINT, SMALLINT,
 INT, BIGINT, FLOAT, DOUBLE, DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP and
 TIMESTAMP_LTZ. Results follow Flink's declared type, precision and value semantics.
-FIRST_VALUE/LAST_VALUE support per-aggregate FILTER.
+FIRST_VALUE/LAST_VALUE support per-aggregate FILTER. On Flink 2.2, they additionally admit
+BINARY/VARBINARY, ARRAY, MAP, ROW, MULTISET and both interval families through the existing
+Arrow bridge. DISTINCT additionally admits ARRAY and intervals; the released planner rejects
+DISTINCT binary, MAP, ROW and MULTISET values. SINGLE_VALUE retains its released scalar factory
+limits. These additions preserve the single-phase plan even when TWO_PHASE is requested.
 Flink 1.18.1 cannot plan CHAR or temporal FIRST_VALUE/LAST_VALUE and fails a type assertion for
 SINGLE_VALUE over TIME(0), including string casts to TIME(3) that resolve to TIME(0);
 those host limitations remain unavailable on that release. Typed TIME(3) input is supported.
@@ -466,13 +470,14 @@ those host limitations remain unavailable on that release. Typed TIME(3) input i
 FIRST_VALUE and LAST_VALUE skip NULLs and follow arrival order within a key. Append-only
 input retains one scalar. Retracting input retains the ordered non-NULL occurrences;
 a retraction removes the oldest matching occurrence, including when values repeat across
-Arrow batches. Floating retractions use Java boxed equality: NaN payloads match, while opposite
+Arrow batches. Generic binary FIRST/LAST follow the released byte-array identity behavior:
+in the verified plans, equal newly decoded binary values do not remove a cached occurrence. Floating retractions use Java boxed equality: NaN payloads match, while opposite
 zero signs do not. Removing every contributing value yields NULL, and removing the last
 record deletes the group. Results depend on arrival order, so SQL parity fixtures use a
 controlled source rather than asserting equal results from independently reordered inputs.
 
 `FIRST_VALUE(DISTINCT value)` and `LAST_VALUE(DISTINCT value)` also run in a single
-phase over the same scalar types as their ordinary forms. They retain the arrival order of unique live values and their
+phase over the same scalar types as their ordinary forms, plus ARRAY and intervals on Flink 2.2. They retain the arrival order of unique live values and their
 multiplicities: inserting a duplicate does not move its position, and only the last
 retraction removes it. Reinsertion after complete removal gives it a new position. NULLs
 are ignored, and filtered instances have independent membership. Checkpoints retain both
@@ -542,6 +547,37 @@ the native aggregate and both transposes before measuring.
 The integer case shows a small local gain; the string case is slower. This adds coverage
 within columnar pipelines and does not establish a general speedup. Retracting state and
 SINGLE_VALUE were validated for correctness but are not measured by this benchmark.
+
+Generic Flink 2.2 FIRST/LAST coverage was measured separately on Linux x86_64, JDK 17,
+release+mimalloc, p=1, memory state, 2 GiB heap, 64 keys, cardinality 1024 and NULL every
+eighth row. Complete jobs retain both transposes, JNI and a rowwise sink, with two warmups
+and three interleaved measured trials. Each trial requires consumed native aggregate work.
+
+| Input/profile | Rows | Stock seconds | Initial native | Final native |
+| --- | ---: | ---: | ---: | ---: |
+| ARRAY append | 1,000,000 | 0.508 | 1.940 | 0.753 |
+| ROW append | 1,000,000 | 0.573 | 5.780 | 1.794 |
+| MAP append | 1,000,000 | 0.867 | 7.043 | 3.081 |
+| BYTES append | 1,000,000 | 0.416 | 0.502 | 0.466 |
+| ARRAY DISTINCT | 1,000,000 | 0.453 | 2.729 | 1.758 |
+| ARRAY retracting | 131,072 | 0.347 | 0.399 | 0.268 |
+
+The matched canonical `d13e9dc4` ARRAY fallback takes 0.471 s (stock 0.484 s).
+The initial profile located allocation-heavy nested equality and scalar extraction in
+the native update loop. Two measured passes skip unused FIRST/NULL inputs, reuse shared
+non-floating values and compare nested children through borrowed arrays. The slower
+results remain enabled as correctness-verified groundwork under the maintainer's bounded
+coverage agreement, without claiming acceleration. Further scalar extraction and nested
+output work is tracked in [issue #443](https://github.com/datafusion-contrib/StreamFusion/issues/443).
+The [raw artifact](../benchmarks/results/generic-first-last-2026-10-21.json) retains every
+warmup/trial, variability, profile counts and library hashes. These are complete-job
+diagnostics; they do not substitute a Java timer for the Rust/Arrow small-function boundary.
+
+The final generic implementation passes 84 released 2.2 phase/type/recovery checks,
+including explicit host rejections for unavailable DISTINCT types. Another 16 immediate
+changelog and 12 immediate recovery checks cover the untimed initial implementation.
+Flink 1.18 passes 72 explicit factory/planning-failure checks; its 12 generic recovery
+cases are unavailable. Typed snapshots restore the Arrow value schema before state.
 
 **Idle-state TTL.** `table.exec.state.ttl` runs natively here (and on the two-phase global merge
 below — the local half is transient and holds no TTL-eligible state). Semantics match Flink
@@ -1725,3 +1761,24 @@ All measured cases win their complete-job comparison; no optimization pass was n
 Warmups, trials, variability, exact boundaries and hashes are retained in
 [the numeric-partial artifact](../benchmarks/results/retracting-decimal-partials-2026-10-21.json).
 Higher decimal scales and RocksDB have parity/recovery coverage, without corresponding throughput claims.
+
+### Generic FIRST/LAST values
+
+The native accumulator binds generic value schemas from the input Arrow field and from typed
+checkpoint fields on restore. It retains nested fields, nullability, element representation and
+row kinds through selection and repeated recovery. Constructed complex values can cross a
+projection and exchange into a verified FIRST/LAST consumer; the enclosing aggregate retains
+its representation metadata. Other representation-dependent operator and columnar-sink gates
+remain in place. These are existing ARRAY/MAP/ROW bridge types, not new SQL STRUCTURED support.
+
+The supported release matters: Flink 2.2 uses generic FIRST/LAST factories, while Flink 1.18
+rejects these extra types. The planner also rejects DISTINCT binary, MAP, ROW and MULTISET on
+both lines. The SQL checks preserve those planning failures rather than inventing new dialects.
+Positive-retention DISTINCT/retracting first/last still require independent view expiry and
+remain a separate completion item.
+
+The unchanged upstream Table API `testGroupAggregateWithExpression` now requires consumed
+native grouping in both state-backend fixtures, with Flink 1.18's established changelog-state
+fallback retained. It protects the mixed scalar FIRST/LAST context; dedicated SQL fixtures
+establish the new value types. Actual unchanged upstream runtime validation is reserved for
+consolidated delivery.

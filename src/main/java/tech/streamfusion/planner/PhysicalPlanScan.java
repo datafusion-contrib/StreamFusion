@@ -837,10 +837,14 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             : consumesColumnar(node) && emitsColumnar(node) ? inheritedBatchRows : 1024;
     boolean preserve =
         node instanceof StreamPhysicalNativeGeneratedUnnest
+            || node instanceof StreamPhysicalNativeColumnarGroupAggregate
+                && ((StreamPhysicalNativeColumnarGroupAggregate) node).preservesCollections()
             || node instanceof StreamPhysicalNativeCalc
                 && ((StreamPhysicalNativeCalc) node).preservesCollections()
             || preserveCollections
                 && (node instanceof StreamPhysicalNativeMiniBatchAssigner
+                    || node instanceof StreamPhysicalNativeColumnarExchange
+                    || node instanceof StreamPhysicalNativeCalc
                     || node instanceof StreamPhysicalNativeDropUpdateBefore
                     || node instanceof StreamPhysicalNativeWatermarkAssigner);
     List<RelNode> inputs = new ArrayList<>(node.getInputs().size());

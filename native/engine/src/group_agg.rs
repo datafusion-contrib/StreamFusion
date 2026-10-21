@@ -1697,11 +1697,30 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     /// Folds the batch's rows into per-key state in input order, honoring each row's `RowKind`, and
     /// returns the changelog rows produced, in emission order. `now_ms` is the host's wall-clock
     /// reading for this call (only read when state TTL is on).
+    fn bind_ordered_value_type(&mut self, index: usize, data_type: &DataType) {
+        if self.value_types[index] == DataType::Null
+            && matches!(self.kinds[index], 12 | 13 | 15 | 16 | 19 | 20)
+        {
+            self.value_types[index] = data_type.clone();
+            self.accumulator_types[index] = data_type.clone();
+            self.result_types[index] = data_type.clone();
+            self.state_types[index] = data_type.clone();
+        }
+    }
+
     pub(crate) fn update(
         &mut self,
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        for i in 0..self.kinds.len() {
+            if self.value_columns[i] >= 0 {
+                self.bind_ordered_value_type(
+                    i,
+                    batch.column(self.value_columns[i] as usize).data_type(),
+                );
+            }
+        }
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
         if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
@@ -2189,6 +2208,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         continue;
                     }
                     if let GroupAggState::Ordered(ordered) = &mut state.aggs[i] {
+                        if ordered.skips_value(
+                            ordered_columns[i]
+                                .as_ref()
+                                .is_some_and(|column| column.is_null(row)),
+                        ) {
+                            result_changed[i] = false;
+                            continue;
+                        }
                         let value = ordered_columns[i]
                             .as_ref()
                             .expect("ordered value column")
@@ -2974,6 +3001,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // stamps every group with the restore time — a full retention from now, Flink's
         // enable-TTL migration — instead of 0, which would expire everything on first touch.
         let main = &batches[0];
+        for i in 0..num_agg {
+            self.bind_ordered_value_type(i, main.column(2 + 2 * i).data_type());
+        }
         let preserved_distinct: Vec<_> = (0..num_agg)
             .map(|i| {
                 self.kinds[i] == 17

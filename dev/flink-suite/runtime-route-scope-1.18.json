@@ -511,6 +511,24 @@
         "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression",
+      "display_name": "testGroupAggregateWithExpression[StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression",
+      "display_name": "testGroupAggregateWithExpression[StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
     }
   ]
 }

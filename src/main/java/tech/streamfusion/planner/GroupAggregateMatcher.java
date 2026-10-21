@@ -138,7 +138,13 @@ final class GroupAggregateMatcher {
         }
         SqlTypeName valueType =
             inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        if (!orderedValueType(valueType)) {
+        if (!orderedValueType(valueType)
+            && !(kind != 14
+                && tech.streamfusion.compat.FlinkCompat.GENERIC_ORDERED_VALUES
+                && genericOrderedValueType(valueType)
+                && (!call.isDistinct()
+                    || valueType == SqlTypeName.ARRAY
+                    || intervalValueType(valueType)))) {
           return "GROUP BY: FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over an unsupported value type";
         }
         continue;
@@ -218,6 +224,39 @@ final class GroupAggregateMatcher {
       default:
         return false;
     }
+  }
+
+  static boolean preservesComplexValues(StreamPhysicalGroupAggregate agg) {
+    if (!tech.streamfusion.compat.FlinkCompat.GENERIC_ORDERED_VALUES || !matches(agg)) return false;
+    RelDataType input = agg.getInput().getRowType();
+    for (int key : agg.grouping())
+      if (genericOrderedValueType(input.getFieldList().get(key).getType().getSqlTypeName()))
+        return false;
+    for (int i = 0; i < agg.aggCalls().size(); i++) {
+      AggregateCall call = agg.aggCalls().apply(i);
+      if ((call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.FIRST_VALUE
+              || call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.LAST_VALUE)
+          && call.getArgList().size() == 1
+          && genericOrderedValueType(
+              input.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName()))
+        return true;
+    }
+    return false;
+  }
+
+  private static boolean intervalValueType(SqlTypeName type) {
+    return type.getFamily() == org.apache.calcite.sql.type.SqlTypeFamily.INTERVAL_YEAR_MONTH
+        || type.getFamily() == org.apache.calcite.sql.type.SqlTypeFamily.INTERVAL_DAY_TIME;
+  }
+
+  private static boolean genericOrderedValueType(SqlTypeName type) {
+    return type == SqlTypeName.BINARY
+        || type == SqlTypeName.VARBINARY
+        || type == SqlTypeName.ARRAY
+        || type == SqlTypeName.MAP
+        || type == SqlTypeName.ROW
+        || type == SqlTypeName.MULTISET
+        || intervalValueType(type);
   }
 
   static boolean isIntegerType(SqlTypeName type) {
@@ -485,7 +524,15 @@ final class GroupAggregateMatcher {
   }
 
   static int retainedValueTypeCode(RelDataType type) {
+    if (intervalValueType(type.getSqlTypeName())) return 100;
     switch (type.getSqlTypeName()) {
+      case BINARY:
+      case VARBINARY:
+      case ARRAY:
+      case MAP:
+      case ROW:
+      case MULTISET:
+        return 100;
       case TIME:
         return 9;
       case BOOLEAN:

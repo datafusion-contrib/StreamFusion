@@ -10356,3 +10356,122 @@ fn session_selected_strings_keep_distinct_nulls_and_owned_slices() {
         }
     }
 }
+
+mod generic_value_equality_tests {
+    use crate::flink_float::{boxed_equal, record_equal};
+    use arrow::array::{
+        Array, ArrayRef, FixedSizeListArray, Int32Array, Int32Builder, ListArray, MapBuilder,
+        StringBuilder, StructArray,
+    };
+    use arrow::datatypes::{DataType, Field, Float64Type, Int32Type};
+    use datafusion::common::ScalarValue;
+    use std::sync::Arc;
+
+    fn scalar(array: ArrayRef, row: usize) -> ScalarValue {
+        ScalarValue::try_from_array(&array, row).unwrap()
+    }
+
+    #[test]
+    fn nested_slices_compare_values_and_ignore_children_of_null_parents() {
+        let rows = |values: Vec<Option<Vec<Option<i32>>>>, ids: Vec<i32>| -> ArrayRef {
+            let lists = Arc::new(ListArray::from_iter_primitive::<Int32Type, _, _>(values));
+            Arc::new(StructArray::new(
+                vec![
+                    Arc::new(Field::new("items", lists.data_type().clone(), true)),
+                    Arc::new(Field::new("id", DataType::Int32, false)),
+                ]
+                .into(),
+                vec![lists, Arc::new(Int32Array::from(ids))],
+                Some(arrow::buffer::NullBuffer::from(vec![true, false, true])),
+            ))
+        };
+        let left = rows(
+            vec![
+                Some(vec![Some(1), None, Some(3)]),
+                Some(vec![Some(8)]),
+                Some(vec![]),
+            ],
+            vec![4, 99, 6],
+        );
+        let right = rows(
+            vec![
+                Some(vec![Some(7)]),
+                Some(vec![Some(-9)]),
+                Some(vec![Some(1), None, Some(3)]),
+            ],
+            vec![9, -5, 4],
+        );
+        let selected = scalar(left.clone(), 0);
+        assert!(record_equal(&selected, &scalar(right.clone(), 2)));
+        assert!(boxed_equal(&selected, &scalar(right.clone(), 2)));
+        assert!(record_equal(
+            &scalar(left.clone(), 1),
+            &scalar(right.clone(), 1)
+        ));
+        assert!(!record_equal(&selected, &scalar(right, 0)));
+        assert!(!record_equal(&selected, &scalar(left, 2)));
+    }
+
+    #[test]
+    fn fixed_size_list_scalar_offsets_keep_null_elements() {
+        let array = |values| -> ArrayRef {
+            Arc::new(
+                FixedSizeListArray::try_new(
+                    Arc::new(Field::new("item", DataType::Int32, true)),
+                    2,
+                    Arc::new(Int32Array::from(values)),
+                    None,
+                )
+                .unwrap(),
+            )
+        };
+        let left = array(vec![Some(9), Some(8), Some(1), None, Some(5), Some(6)]);
+        let right = array(vec![Some(1), None, Some(1), Some(0)]);
+        let selected = scalar(left, 1);
+        assert!(record_equal(&selected, &scalar(right.clone(), 0)));
+        assert!(!record_equal(&selected, &scalar(right, 1)));
+    }
+
+    #[test]
+    fn map_scalar_offsets_keep_entry_order_and_nullable_values() {
+        let maps = |prefix: bool, value: i32| -> ArrayRef {
+            let mut builder = MapBuilder::new(None, StringBuilder::new(), Int32Builder::new());
+            if prefix {
+                builder.keys().append_value("prefix");
+                builder.values().append_value(9);
+                builder.append(true).unwrap();
+            }
+            builder.keys().append_value("a");
+            builder.values().append_value(value);
+            builder.keys().append_value("z");
+            builder.values().append_null();
+            builder.append(true).unwrap();
+            Arc::new(builder.finish())
+        };
+        let selected = scalar(maps(true, 1), 1);
+        assert!(record_equal(&selected, &scalar(maps(false, 1), 0)));
+        assert!(boxed_equal(&selected, &scalar(maps(false, 1), 0)));
+        assert!(!record_equal(&selected, &scalar(maps(false, 2), 0)));
+    }
+
+    #[test]
+    fn floating_children_keep_existing_arrow_equality_and_scalar_nan_is_nonreflexive() {
+        let array = |value| -> ArrayRef {
+            Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+                Some(vec![Some(value)]),
+            ]))
+        };
+        for (a, b) in [
+            (f64::NAN, f64::NAN),
+            (-0.0, 0.0),
+            (f64::INFINITY, f64::INFINITY),
+        ] {
+            let left = scalar(array(a), 0);
+            let right = scalar(array(b), 0);
+            assert_eq!(record_equal(&left, &right), left == right);
+            assert_eq!(boxed_equal(&left, &right), left == right);
+        }
+        let nan = ScalarValue::Float64(Some(f64::NAN));
+        assert!(!record_equal(&nan, &nan));
+    }
+}
