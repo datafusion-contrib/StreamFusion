@@ -26,6 +26,7 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
   private static final String TRANSFORMATION = "native-window-table-function";
 
   private String calendarZoneId;
+  private long assignmentOffsetMillis;
   private final int timeColumn;
   private final long windowMillis;
   private final long slideMillis;
@@ -59,6 +60,11 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     this.proctime = proctime;
   }
 
+  public NativeWindowTableFunctionExecNode withAssignmentOffset(long offsetMillis) {
+    assignmentOffsetMillis = offsetMillis;
+    return this;
+  }
+
   public NativeWindowTableFunctionExecNode withCalendarZone(String zoneId) {
     calendarZoneId = zoneId;
     return this;
@@ -75,7 +81,8 @@ public class NativeWindowTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
         createTransformationMeta(TRANSFORMATION, config),
         new NativeWindowTableFunctionOperator(
                 timeColumn, windowMillis, slideMillis, cumulative, proctime, boundaryOffsetMillis)
-            .withCalendarZone(calendarZoneId),
+            .withCalendarZone(calendarZoneId)
+            .withAssignmentOffset(assignmentOffsetMillis),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

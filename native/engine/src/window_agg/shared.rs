@@ -8,7 +8,9 @@ impl TumblingAggregator {
     }
 
     fn shared_base(&self, end: i64) -> i64 {
-        (end - 1).div_euclid(self.window_millis) * self.window_millis
+        (end + self.assignment_offset_millis - 1).div_euclid(self.window_millis)
+            * self.window_millis
+            - self.assignment_offset_millis
     }
 
     fn shared_assignments(&mut self, slice_ends: &[i64]) -> Vec<Option<(i64, i64)>> {
@@ -115,7 +117,12 @@ impl TumblingAggregator {
         let ends = column_i64(batch, "ts")
             .values()
             .iter()
-            .map(|time| time.div_euclid(self.slide_millis) * self.slide_millis + self.slide_millis)
+            .map(|time| {
+                (time + self.assignment_offset_millis).div_euclid(self.slide_millis)
+                    * self.slide_millis
+                    + self.slide_millis
+                    - self.assignment_offset_millis
+            })
             .collect::<Vec<_>>();
         let assignments = if discard_closed_windows {
             self.shared_assignments(&ends)
@@ -660,6 +667,44 @@ mod tests {
             assert_eq!(
                 states[0].evaluate().unwrap(),
                 ScalarValue::Int64(Some(expected))
+            );
+        }
+    }
+    #[test]
+    fn offset_shared_slices_and_cumulative_bases_survive_restore() {
+        for (offset, ends, bases) in [
+            (1000, vec![2000, 5000, 11000], vec![-1000, -1000, 8000]),
+            (-1000, vec![1000, 4000, 10000], vec![-8000, 1000, 1000]),
+        ] {
+            let batch = RecordBatch::try_from_iter(vec![
+                (
+                    "ts",
+                    Arc::new(Int64Array::from(vec![-1000, 0, 2000, 8000])) as ArrayRef,
+                ),
+                (
+                    "key0",
+                    Arc::new(Int64Array::from(vec![1, 1, 1, 1])) as ArrayRef,
+                ),
+                (
+                    "value0",
+                    Arc::new(Int64Array::from(vec![1, 1, 1, 1])) as ArrayRef,
+                ),
+            ])
+            .unwrap();
+            let mut before = TumblingAggregator::new(9000, 3000, true, vec![0], vec![3]);
+            before.set_assignment_offset(offset);
+            before.shared_slices = true;
+            before.update_shared(&batch, false).unwrap();
+            assert_eq!(before.windows.keys().copied().collect::<Vec<_>>(), ends);
+            let bytes = before.snapshot();
+            let restored = TumblingAggregator::restore(9000, 3000, true, vec![0], vec![3], &bytes);
+            assert!(restored.shared_slices);
+            assert_eq!(restored.windows.keys().copied().collect::<Vec<_>>(), ends);
+            assert_eq!(
+                ends.iter()
+                    .map(|&end| restored.shared_base(end))
+                    .collect::<Vec<_>>(),
+                bases
             );
         }
     }

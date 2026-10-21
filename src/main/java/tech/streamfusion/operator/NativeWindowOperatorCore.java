@@ -292,6 +292,12 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     flushPending();
   }
 
+  private long assignmentOffsetMillis;
+
+  public final void setAssignmentOffsetMillis(long assignmentOffsetMillis) {
+    this.assignmentOffsetMillis = assignmentOffsetMillis;
+  }
+
   @Override
   public void open() throws Exception {
     super.open();
@@ -300,11 +306,13 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     if (fixedBoundaryOffset) {
       fixedAssignmentOffsetMillis = WindowTimeDomain.offsetMillis(timeZoneId);
       if (usesAlignedWindowAssignment()) {
-        Native.setFixedWindowAssignmentOffset(handle, fixedAssignmentOffsetMillis);
+        Native.setFixedWindowAssignmentOffset(
+            handle, Math.subtractExact(fixedAssignmentOffsetMillis, assignmentOffsetMillis));
       }
     } else if (usesAlignedWindowAssignment() && permitsRegionalCalendar()) {
       regionalAssignmentZone = zone;
       Native.setFixedWindowCalendar(handle, new WindowCalendar(timeZoneId));
+      Native.setFixedWindowAssignmentOffset(handle, Math.negateExact(assignmentOffsetMillis));
     }
   }
 
@@ -332,7 +340,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   }
 
   protected final long fixedGridStart(long epochMillis, long gridMillis) {
-    return WindowTimeDomain.gridStart(epochMillis, gridMillis, fixedAssignmentOffsetMillis);
+    return WindowTimeDomain.gridStart(
+        epochMillis,
+        gridMillis,
+        Math.subtractExact(fixedAssignmentOffsetMillis, assignmentOffsetMillis));
   }
 
   @Override
@@ -472,21 +483,52 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       int[] keyColumns,
       int[] keyTypes,
       boolean finalPhase) {
+    updateColumnarAttached(
+        in,
+        windowStartColumn,
+        windowEndColumn,
+        valueColumns,
+        null,
+        keyColumns,
+        keyTypes,
+        finalPhase);
+  }
+
+  protected final void updateColumnarAttached(
+      VectorSchemaRoot in,
+      int windowStartColumn,
+      int windowEndColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] keyTypes,
+      boolean finalPhase) {
     int rows = in.getRowCount();
     BigIntVector windowStart = new BigIntVector("window_start", allocator);
     BigIntVector windowEnd = new BigIntVector("window_end", allocator);
     FieldVector[] values = new FieldVector[valueColumns.length];
     FieldVector[] srcValues = new FieldVector[valueColumns.length];
     boolean[] sharedValues = new boolean[valueColumns.length];
+    boolean[] countValues = new boolean[valueColumns.length];
+    BitVector[] filters = new BitVector[valueColumns.length];
     FieldVector[] keys = new FieldVector[keyColumns.length];
     List<FieldVector> vectors = new ArrayList<>();
     vectors.add(windowStart);
     vectors.add(windowEnd);
     for (int a = 0; a < valueColumns.length; a++) {
-      values[a] = newValueVector("value" + a, valueTypes[a]);
+      countValues[a] = aggregateKinds[a] == KIND_COUNT || aggregateKinds[a] == KIND_RETRACT_COUNT;
+      values[a] =
+          countValues[a]
+              ? new BigIntVector("value" + a, allocator)
+              : newValueVector("value" + a, valueTypes[a]);
+      if (filterColumns != null && filterColumns[a] >= 0) {
+        filters[a] = (BitVector) in.getVector(filterColumns[a]);
+      }
       srcValues[a] = valueColumns[a] < 0 ? null : in.getFieldVectors().get(valueColumns[a]);
       sharedValues[a] =
-          values[a] instanceof BigIntVector
+          !countValues[a]
+              && filters[a] == null
+              && values[a] instanceof BigIntVector
               && srcValues[a] instanceof BigIntVector
               && srcValues[a].getAllocator().getRoot() == allocator.getRoot();
       vectors.add(values[a]);
@@ -516,8 +558,13 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
             usesLocalWindowBounds() ? srcEnd.getMillis(i) : toEpochFromLocal(srcEnd.getMillis(i)));
         for (int a = 0; a < valueColumns.length; a++) {
           if (sharedValues[a]) continue;
-          if (valueColumns[a] < 0) {
+          if (filters[a] != null && (filters[a].isNull(i) || filters[a].get(i) == 0)) {
+            values[a].setNull(i);
+          } else if (valueColumns[a] < 0) {
             ((BigIntVector) values[a]).setSafe(i, 1L); // COUNT(*): a non-null constant counts rows
+          } else if (countValues[a]) {
+            if (srcValues[a].isNull(i)) values[a].setNull(i);
+            else ((BigIntVector) values[a]).setSafe(i, 1L);
           } else {
             copyValue(values[a], i, srcValues[a], valueTypes[a]);
           }

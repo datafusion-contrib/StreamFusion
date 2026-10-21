@@ -60,6 +60,23 @@ impl Filter {
     }
 }
 
+/// Stateless assignment with a SQL offset; production fan-out and output allocation remain timed.
+pub fn assign_fixed_windows(input: &RecordBatch, shape: &str, offset: i64) -> RecordBatch {
+    crate::window_agg::assign_windows_with_calendar(
+        input,
+        1,
+        9000,
+        if shape == "TUMBLE" { 9000 } else { 3000 },
+        shape == "CUMULATE",
+        None,
+        &streamfusion_bridge::timestamp::timestamp_type(),
+        0,
+        offset,
+        None,
+    )
+    .expect("fixed TVF assignment")
+}
+
 /// Stateless regional assignment through the production Arrow and calendar boundary.
 pub fn assign_calendar_windows(
     input: &RecordBatch,
@@ -79,6 +96,7 @@ pub fn assign_calendar_windows(
         cumulative,
         now,
         &streamfusion_bridge::timestamp::timestamp_type(),
+        0,
         0,
         Some(&calendar),
     )

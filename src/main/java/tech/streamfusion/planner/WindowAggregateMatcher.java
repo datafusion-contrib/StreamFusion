@@ -77,28 +77,18 @@ final class WindowAggregateMatcher {
           && matchesAttachedLocal(node, windowing, grouping, aggCalls, inputType);
     }
     WindowSpec spec = windowing.getWindow();
-    boolean aligned;
-    if (spec instanceof TumblingWindowSpec) {
-      Duration offset = ((TumblingWindowSpec) spec).getOffset();
-      aligned = offset == null || offset.isZero();
-    } else if (spec instanceof HoppingWindowSpec) {
-      Duration offset = ((HoppingWindowSpec) spec).getOffset();
-      aligned = offset == null || offset.isZero();
-    } else if (spec instanceof CumulativeWindowSpec) {
-      // The native cumulative assignment buckets on the max size from epoch, so only a zero offset
-      // matches the host.
-      Duration offset = ((CumulativeWindowSpec) spec).getOffset();
-      aligned = offset == null || offset.isZero();
-    } else {
-      aligned = false;
-    }
+    boolean aligned =
+        spec instanceof TumblingWindowSpec
+            || spec instanceof HoppingWindowSpec
+            || spec instanceof CumulativeWindowSpec;
     if (windowing.isProctime()) {
-      // Proctime windows fire on a processing-time timer chained at each slide boundary and assign by
+      // Proctime windows fire on a processing-time timer chained at each slide boundary and assign
+      // by
       // the clock. The timer walks slide boundaries, so the slide must divide the size for every
       // window end to land on one — true for tumbling (slide == size) and the aligned hopping/
       // cumulative cases (a non-dividing hop falls back). Single-phase only. Sessions are not a
       // fixed-grid shape (aligned is false) and are handled by matchesSession instead.
-      if (!aligned) {
+      if (!aligned || assignmentOffset(windowing) != 0) {
         return false;
       }
       long slide = windowSlide(windowing);
@@ -172,9 +162,6 @@ final class WindowAggregateMatcher {
       return false;
     }
     HoppingWindowSpec hop = (HoppingWindowSpec) windowing.getWindow();
-    if (hop.getOffset() != null && !hop.getOffset().isZero()) {
-      return false;
-    }
     long slide = hop.getSlide().toMillis();
     if (slide == 0 || hop.getSize().toMillis() % slide != 0) {
       return false;
@@ -196,7 +183,6 @@ final class WindowAggregateMatcher {
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
     if (!insertOnlyInput(node)
-        || hasFilters(aggCalls)
         || !(windowing instanceof WindowAttachedWindowingStrategy)
         || !windowing.isRowtime()) {
       return false;
@@ -242,6 +228,20 @@ final class WindowAggregateMatcher {
       scala.collection.Seq<AggregateCall> aggCalls, RelDataType inputType) {
     int[] user = valueTypeCodes(aggCalls, inputType);
     return Arrays.copyOf(user, user.length + 1); // copyOf pads the new slot with 0 (bigint)
+  }
+
+  /** SQL grid offset, independent of the time-zone offset used to render boundaries. */
+  static long assignmentOffset(WindowingStrategy windowing) {
+    WindowSpec spec = windowing.getWindow();
+    Duration offset =
+        spec instanceof TumblingWindowSpec
+            ? ((TumblingWindowSpec) spec).getOffset()
+            : spec instanceof HoppingWindowSpec
+                ? ((HoppingWindowSpec) spec).getOffset()
+                : spec instanceof CumulativeWindowSpec
+                    ? ((CumulativeWindowSpec) spec).getOffset()
+                    : null;
+    return offset == null ? 0L : offset.toMillis();
   }
 
   /**
@@ -703,7 +703,8 @@ final class WindowAggregateMatcher {
         WindowAggregateMatcher.isProctime(agg.windowing()),
         WindowAggregateMatcher.isLtz(agg.windowing()),
         attached ? WindowAggregateMatcher.windowStartColumn(agg.windowing()) : -1,
-        attached ? WindowAggregateMatcher.windowEndColumn(agg.windowing()) : -1);
+        attached ? WindowAggregateMatcher.windowEndColumn(agg.windowing()) : -1,
+        attached ? 0 : assignmentOffset(agg.windowing()));
   }
 
   static RelNode substituteSession(StreamPhysicalWindowAggregate agg, PlanContext ctx) {
@@ -798,7 +799,8 @@ final class WindowAggregateMatcher {
         WindowAggregateMatcher.keyColumns(agg.grouping()),
         valueTypes,
         kinds,
-        WindowAggregateMatcher.isLtz(agg.windowing()));
+        WindowAggregateMatcher.isLtz(agg.windowing()),
+        attached ? 0 : assignmentOffset(agg.windowing()));
   }
 
   private static int distinctViewCount(scala.collection.Seq<AggregateCall> calls) {

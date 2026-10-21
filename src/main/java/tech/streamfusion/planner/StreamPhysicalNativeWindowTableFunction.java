@@ -24,6 +24,7 @@ public class StreamPhysicalNativeWindowTableFunction extends StreamPhysicalNativ
     implements ColumnarInput, ColumnarOutput {
 
   private String calendarZoneId;
+  private long assignmentOffsetMillis;
   private final int timeColumn;
   private final long windowMillis;
   private final long slideMillis;
@@ -51,6 +52,11 @@ public class StreamPhysicalNativeWindowTableFunction extends StreamPhysicalNativ
     this.proctime = proctime;
   }
 
+  public StreamPhysicalNativeWindowTableFunction withAssignmentOffset(long offsetMillis) {
+    assignmentOffsetMillis = offsetMillis;
+    return this;
+  }
+
   public StreamPhysicalNativeWindowTableFunction withCalendarZone(String zoneId) {
     calendarZoneId = zoneId;
     return this;
@@ -74,7 +80,8 @@ public class StreamPhysicalNativeWindowTableFunction extends StreamPhysicalNativ
             cumulative,
             proctime,
             boundaryOffsetMillis)
-        .withCalendarZone(calendarZoneId);
+        .withCalendarZone(calendarZoneId)
+        .withAssignmentOffset(assignmentOffsetMillis);
   }
 
   @Override
@@ -90,6 +97,7 @@ public class StreamPhysicalNativeWindowTableFunction extends StreamPhysicalNativ
             cumulative,
             proctime,
             boundaryOffsetMillis)
-        .withCalendarZone(calendarZoneId);
+        .withCalendarZone(calendarZoneId)
+        .withAssignmentOffset(assignmentOffsetMillis);
   }
 }

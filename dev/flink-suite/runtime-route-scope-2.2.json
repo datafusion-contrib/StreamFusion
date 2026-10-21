@@ -205,6 +205,66 @@
       "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=2",
       "count": 1,
       "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=HEAP, UseTimestampLtz = true, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=HEAP, UseTimestampLtz = true, EnableAsyncState = true",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=HEAP, UseTimestampLtz = false, EnableAsyncState = true",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset",
+      "display_name": "AggPhase=TWO_PHASE, StateBackend=HEAP, UseTimestampLtz = false, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset",
+      "display_name": "AggPhase=ONE_PHASE, StateBackend=ROCKSDB, UseTimestampLtz = false, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset",
+      "display_name": "AggPhase=TWO_PHASE, StateBackend=ROCKSDB, UseTimestampLtz = true, EnableAsyncState = false",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithOffset",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithOffset",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithNegativeOffset",
+      "display_name": "StateBackend=HEAP",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithNegativeOffset",
+      "display_name": "StateBackend=ROCKSDB",
+      "count": 1,
+      "route": "native"
     }
   ]
 }

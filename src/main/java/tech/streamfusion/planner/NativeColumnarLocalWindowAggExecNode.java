@@ -36,6 +36,7 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
   private final int[] valueTypes;
   private final int[] aggregateKinds;
   private final boolean timestampLtz;
+  private final long assignmentOffsetMillis;
   private final int[] keyTimestampPrecisions;
 
   public NativeColumnarLocalWindowAggExecNode(
@@ -54,6 +55,42 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
       int[] aggregateKinds,
       boolean timestampLtz,
       int[] keyTimestampPrecisions) {
+    this(
+        tableConfig,
+        inputProperty,
+        outputType,
+        description,
+        sliceMillis,
+        timeColumn,
+        windowStartColumn,
+        windowEndColumn,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        valueTypes,
+        aggregateKinds,
+        timestampLtz,
+        keyTimestampPrecisions,
+        0L);
+  }
+
+  public NativeColumnarLocalWindowAggExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      long sliceMillis,
+      int timeColumn,
+      int windowStartColumn,
+      int windowEndColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      boolean timestampLtz,
+      int[] keyTimestampPrecisions,
+      long assignmentOffsetMillis) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-local-window-aggregate_1"),
@@ -71,6 +108,7 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
     this.timestampLtz = timestampLtz;
+    this.assignmentOffsetMillis = assignmentOffsetMillis;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
@@ -92,25 +130,28 @@ public class NativeColumnarLocalWindowAggExecNode extends ExecNodeBase<ArrowBatc
     // operator sets its own subtask-local key context in open(). This selector exists only so
     // Flink creates the keyed backend for the raw-state plumbing and is never consulted.
     ConstantArrowBatchKeySelector stateKeySelector = new ConstantArrowBatchKeySelector(0);
+    NativeColumnarLocalWindowAggregateOperator operator =
+        new NativeColumnarLocalWindowAggregateOperator(
+            sliceMillis,
+            sliceMillis,
+            timeColumn,
+            windowStartColumn,
+            windowEndColumn,
+            valueColumns,
+            filterColumns,
+            keyColumns,
+            NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
+            valueTypes,
+            aggregateKinds,
+            timeZoneId,
+            keyTimestampPrecisions,
+            maxParallelism);
+    operator.setAssignmentOffsetMillis(assignmentOffsetMillis);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarLocalWindowAggregateOperator(
-                sliceMillis,
-                sliceMillis,
-                timeColumn,
-                windowStartColumn,
-                windowEndColumn,
-                valueColumns,
-                filterColumns,
-                keyColumns,
-                NativeWindowOperatorCore.keyTypes((RowType) getOutputType(), keyColumns.length),
-                valueTypes,
-                aggregateKinds,
-                timeZoneId,
-                keyTimestampPrecisions,
-                maxParallelism),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

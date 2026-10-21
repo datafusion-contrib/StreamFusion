@@ -272,7 +272,14 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     try (var in = element.getValue().root()) {
       if (windowEndColumn >= 0) {
         updateColumnarAttached(
-            in, windowStartColumn, windowEndColumn, valueColumns, keyColumns, keyTypes, true);
+            in,
+            windowStartColumn,
+            windowEndColumn,
+            valueColumns,
+            filterColumns,
+            keyColumns,
+            keyTypes,
+            true);
         reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
       } else if (proctime) {
         long now = getProcessingTimeService().getCurrentProcessingTime();

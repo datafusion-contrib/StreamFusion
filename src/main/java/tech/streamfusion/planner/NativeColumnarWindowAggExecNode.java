@@ -39,6 +39,7 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] aggregateKinds;
   private final boolean proctime;
   private final boolean timestampLtz;
+  private final long assignmentOffsetMillis;
   private final int[] keyTimestampPrecisions;
   private final int windowStartColumn;
   private final int windowEndColumn;
@@ -100,6 +101,48 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
       int[] keyTimestampPrecisions,
       int windowStartColumn,
       int windowEndColumn) {
+    this(
+        tableConfig,
+        inputProperty,
+        outputType,
+        description,
+        cumulative,
+        windowMillis,
+        slideMillis,
+        timeColumn,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        valueTypes,
+        aggregateKinds,
+        proctime,
+        timestampLtz,
+        keyTimestampPrecisions,
+        windowStartColumn,
+        windowEndColumn,
+        0L);
+  }
+
+  public NativeColumnarWindowAggExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      boolean cumulative,
+      long windowMillis,
+      long slideMillis,
+      int timeColumn,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      boolean proctime,
+      boolean timestampLtz,
+      int[] keyTimestampPrecisions,
+      int windowStartColumn,
+      int windowEndColumn,
+      long assignmentOffsetMillis) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-window-aggregate_1"),
@@ -118,6 +161,7 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
     this.aggregateKinds = aggregateKinds;
     this.proctime = proctime;
     this.timestampLtz = timestampLtz;
+    this.assignmentOffsetMillis = assignmentOffsetMillis;
     this.windowStartColumn = windowStartColumn;
     this.windowEndColumn = windowEndColumn;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
@@ -136,30 +180,33 @@ public class NativeColumnarWindowAggExecNode extends ExecNodeBase<ArrowBatch>
     RowType outputType = (RowType) getOutputType();
     int maxParallelism =
         FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+    NativeColumnarWindowAggregateOperator operator =
+        new NativeColumnarWindowAggregateOperator(
+            cumulative,
+            windowMillis,
+            slideMillis,
+            timeColumn,
+            valueColumns,
+            filterColumns,
+            keyColumns,
+            NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
+            valueTypes,
+            aggregateKinds,
+            timeZoneId,
+            timestampLtz,
+            planner.getTableConfig().getLocalTimeZone().getId(),
+            outputType,
+            proctime,
+            keyTimestampPrecisions,
+            maxParallelism,
+            windowStartColumn,
+            windowEndColumn);
+    operator.setAssignmentOffsetMillis(assignmentOffsetMillis);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarWindowAggregateOperator(
-                cumulative,
-                windowMillis,
-                slideMillis,
-                timeColumn,
-                valueColumns,
-                filterColumns,
-                keyColumns,
-                NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
-                valueTypes,
-                aggregateKinds,
-                timeZoneId,
-                timestampLtz,
-                planner.getTableConfig().getLocalTimeZone().getId(),
-                outputType,
-                proctime,
-                keyTimestampPrecisions,
-                maxParallelism,
-                windowStartColumn,
-                windowEndColumn),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

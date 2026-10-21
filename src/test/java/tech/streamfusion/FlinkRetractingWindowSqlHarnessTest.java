@@ -64,7 +64,7 @@ class FlinkRetractingWindowSqlHarnessTest {
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
-  void updatingWindowsWithNonzeroOffsetStayOnFlink(String phase) throws Exception {
+  void updatingWindowsWithNonzeroOffsetUseNativePartials(String phase) throws Exception {
     String sql =
         "SELECT k, window_end, SUM(v) FROM TABLE(HOP(TABLE ranked, DESCRIPTOR(rt),"
             + " INTERVAL '5' SECOND, INTERVAL '10' SECOND, INTERVAL '1' SECOND))"
@@ -72,11 +72,11 @@ class FlinkRetractingWindowSqlHarnessTest {
     var host = collect(environment(phase), sql);
     var table = environment(phase);
     var scan = NativePlanner.install(table);
-    assertEquals(host.rows(), collect(table, sql).rows());
-    assertEquals(0, scan.substitutions());
-    assertTrue(
-        scan.fallbackReasons().stream().anyMatch(reason -> reason.contains("aligned event-time")),
-        scan.fallbackReasons().toString());
+    var nativeResult = collect(table, sql);
+    assertEquals(host.rows(), nativeResult.rows());
+    assertTrue(scan.substitutions() > 0, scan.explainSummary());
+    assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
+    assertWindowRows(nativeResult.job(), phase);
   }
 
   @ParameterizedTest

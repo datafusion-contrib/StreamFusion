@@ -373,6 +373,7 @@ public final class Native {
 
   /**
    * Assigns local calendar windows and converts their window-time properties using released Flink.
+   *
    * @param inArrayAddress input Arrow array
    * @param inSchemaAddress input Arrow schema
    * @param outArrayAddress output Arrow array
@@ -384,10 +385,21 @@ public final class Native {
    * @param proctime whether the operator clock supplies assignment time
    * @param nowMillis current processing time
    * @param calendar batched released-Flink local/epoch conversion
+   * @param assignmentOffsetMillis SQL window-grid offset
    */
-  public static native void assignCalendarWindows(long inArrayAddress, long inSchemaAddress,
-      long outArrayAddress, long outSchemaAddress, int timeColumn, long windowMillis,
-      long slideMillis, boolean cumulative, boolean proctime, long nowMillis, Object calendar);
+  public static native void assignCalendarWindows(
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      int timeColumn,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative,
+      boolean proctime,
+      long nowMillis,
+      Object calendar,
+      long assignmentOffsetMillis);
 
   /**
    * Runs a batch the JVM exported through the stateless windowing table function, writing the
@@ -407,6 +419,7 @@ public final class Native {
    * @param proctimeNowMillis the processing-time clock (epoch millis) to assign every row by when
    *     {@code proctime} is set; ignored otherwise
    * @param boundaryOffsetMillis fixed session-zone offset for LTZ, zero for plain timestamps
+   * @param assignmentOffsetMillis SQL window-grid offset, independent of zone rendering
    */
   public static native void assignWindows(
       long inArrayAddress,
@@ -419,7 +432,8 @@ public final class Native {
       boolean cumulative,
       boolean proctime,
       long proctimeNowMillis,
-      long boundaryOffsetMillis);
+      long boundaryOffsetMillis,
+      long assignmentOffsetMillis);
 
   /** Discards UPDATE_BEFORE rows while preserving the full Arrow schema and retained row order. */
   public static native void dropUpdateBefore(

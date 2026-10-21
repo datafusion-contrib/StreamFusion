@@ -143,6 +143,7 @@ pub(crate) fn assign_windows(
         proctime_now_millis,
         window_type,
         boundary_offset_millis,
+        0,
         None,
     )
 }
@@ -156,6 +157,7 @@ pub(crate) fn assign_windows_with_calendar(
     proctime_now_millis: Option<i64>,
     window_type: &DataType,
     boundary_offset_millis: i64,
+    assignment_offset_millis: i64,
     calendar: Option<&WindowCalendar>,
 ) -> Result<RecordBatch, DataFusionError> {
     let schema = input.schema();
@@ -214,6 +216,7 @@ pub(crate) fn assign_windows_with_calendar(
         windows_for(
             time_millis
                 .checked_add(boundary_offset_millis)
+                .and_then(|time| time.checked_sub(assignment_offset_millis))
                 .ok_or_else(|| {
                     DataFusionError::Execution("Window local timestamp overflow".into())
                 })?,
@@ -224,8 +227,14 @@ pub(crate) fn assign_windows_with_calendar(
         );
         for &(start, end) in &windows {
             take_indices.push(row as u32);
-            starts.push(start);
-            ends.push(end);
+            starts.push(start.checked_add(assignment_offset_millis).ok_or_else(|| {
+                DataFusionError::Execution("Window start offset overflow".into())
+            })?);
+            ends.push(
+                end.checked_add(assignment_offset_millis).ok_or_else(|| {
+                    DataFusionError::Execution("Window end offset overflow".into())
+                })?,
+            );
         }
     }
     let indices = UInt32Array::from(take_indices);
@@ -419,10 +428,6 @@ impl TumblingAggregator {
     }
 
     pub(crate) fn set_calendar(&mut self, callback: jni::objects::GlobalRef) {
-        assert_eq!(
-            self.assignment_offset_millis, 0,
-            "regional window assignment is local"
-        );
         self.shared_slices = self.cumulative || self.window_millis != self.slide_millis;
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut self.store {
@@ -2217,12 +2222,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_assignWindows<'local>(
     proctime: jboolean,
     proctime_now_millis: jlong,
     boundary_offset_millis: jlong,
+    assignment_offset_millis: jlong,
 ) {
     crate::bridge::jni_guard(env, move |env| {
         // Release the imported JVM buffers before installing a pending Java exception.
         let result = {
             let batch = import_record_batch(in_array_address, in_schema_address);
-            assign_windows(
+            assign_windows_with_calendar(
                 &batch,
                 time_col as usize,
                 window_millis,
@@ -2231,6 +2237,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_assignWindows<'local>(
                 (proctime != 0).then_some(proctime_now_millis),
                 &streamfusion_bridge::timestamp::timestamp_type(),
                 boundary_offset_millis,
+                assignment_offset_millis,
+                None,
             )
         };
         match result {
@@ -2258,6 +2266,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_assignCalendarWindows<'loca
     proctime: jboolean,
     proctime_now_millis: jlong,
     callback: jni::objects::JObject<'local>,
+    assignment_offset_millis: jlong,
 ) {
     crate::bridge::jni_guard(env, move |env| {
         let calendar = WindowCalendar::new(
@@ -2275,6 +2284,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_assignCalendarWindows<'loca
                 (proctime != 0).then_some(proctime_now_millis),
                 &streamfusion_bridge::timestamp::timestamp_type(),
                 0,
+                assignment_offset_millis,
                 Some(&calendar),
             )
         };

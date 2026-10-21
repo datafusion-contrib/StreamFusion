@@ -44,7 +44,10 @@ class AttachedWindowOnePhaseBenchmark {
               "INSERT INTO sink SELECT "
                   + (Boolean.getBoolean("attached.mixed")
                       ? "SUM(n), MIN(n), MAX(n), AVG(n), COUNT(*)"
-                      : "MAX(n)")
+                      : "MAX(n)"
+                          + (Boolean.getBoolean("attached.filtered")
+                              ? " FILTER (WHERE n > 1)"
+                              : ""))
                   + ", wstart, wend FROM (SELECT k, COUNT(*) AS n,"
                   + " window_start AS wstart, window_end AS wend FROM TABLE("
                   + window

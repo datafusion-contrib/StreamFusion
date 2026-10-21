@@ -129,7 +129,14 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
     try (VectorSchemaRoot in = element.getValue().root()) {
       if (windowEndColumn >= 0) {
         updateColumnarAttached(
-            in, windowStartColumn, windowEndColumn, valueColumns, keyColumns, keyTypes);
+            in,
+            windowStartColumn,
+            windowEndColumn,
+            valueColumns,
+            filterColumns,
+            keyColumns,
+            keyTypes,
+            false);
       } else {
         updateColumnar(in, timeColumn, valueColumns, filterColumns, keyColumns, keyTypes);
       }

@@ -60,21 +60,39 @@ class WindowBasicTypeBenchmark {
       case "count_date": aggregate = "COUNT(CAST(t AS DATE))"; break;
       case "extrema_boolean": aggregate = "MIN(b), MAX(b), COUNT(*)"; break;
       case "extrema_time": aggregate = "MIN(clock), MAX(clock), COUNT(*)"; break;
-      case "extrema_date": aggregate = "MIN(CAST(t AS DATE)), MAX(CAST(t AS DATE)), COUNT(*)"; break;
+      case "extrema_date":
+        aggregate = "MIN(CAST(t AS DATE)), MAX(CAST(t AS DATE)), COUNT(*)";
+        break;
       default: throw new IllegalArgumentException("Unknown window.cases entry " + value);
     }
     String window;
     switch (shape) {
       case "TUMBLE": window = "TUMBLE(TABLE src, DESCRIPTOR(rt), INTERVAL '10' SECOND)"; break;
-      case "HOP": window = "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)"; break;
-      case "CUMULATE": window = "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)"; break;
-      case "SESSION": window = "SESSION(TABLE src PARTITION BY k, DESCRIPTOR(rt), INTERVAL '10' SECOND)"; break;
+      case "HOP":
+        window = "HOP(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
+        break;
+      case "CUMULATE":
+        window = "CUMULATE(TABLE src, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10' SECOND)";
+        break;
+      case "SESSION":
+        window = "SESSION(TABLE src PARTITION BY k, DESCRIPTOR(rt), INTERVAL '10' SECOND)";
+        break;
       default: throw new IllegalArgumentException("Unknown window.shapes entry " + shape);
+    }
+    long offsetSeconds = Long.getLong("window.offsetSeconds", 0L);
+    if (offsetSeconds != 0) {
+      if (shape.equals("SESSION")) throw new IllegalArgumentException("SESSION has no offset");
+      window =
+          window.substring(0, window.length() - 1) + ", INTERVAL '" + offsetSeconds + "' SECOND)";
     }
     String sql = "SELECT k, window_start, window_end, " + aggregate + " FROM TABLE("
         + window + ") GROUP BY k, window_start, window_end";
-    String operator = shape.equals("SESSION") ? "NativeColumnarSessionWindowAggregate" : phase.equals("TWO_PHASE")
-        ? "NativeColumnarGlobalWindowAggregate" : "NativeColumnarWindowAggregate";
+    String operator =
+        shape.equals("SESSION")
+            ? "NativeColumnarSessionWindowAggregate"
+            : phase.equals("TWO_PHASE")
+                ? "NativeColumnarGlobalWindowAggregate"
+                : "NativeColumnarWindowAggregate";
     try (var metrics = new RecoveryExecutionMetrics()) {
       for (int trial = 0; trial < warmup + runs; trial++) {
         for (int turn = 0; turn < 2; turn++) {
@@ -95,11 +113,16 @@ class WindowBasicTypeBenchmark {
           table.getConfig().set("table.exec.mini-batch.enabled", "true");
           table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
           table.getConfig().set("table.exec.mini-batch.size", "1024");
-          var type = DataTypes.ROW(DataTypes.FIELD("k", DataTypes.INT()),
-              DataTypes.FIELD("s", DataTypes.STRING()), DataTypes.FIELD("t", DataTypes.TIMESTAMP(9)),
-              DataTypes.FIELD("b", DataTypes.BOOLEAN()), DataTypes.FIELD("clock", DataTypes.TIME(3)),
-              DataTypes.FIELD("v", DataTypes.BIGINT()), DataTypes.FIELD("d", DataTypes.DECIMAL(12, 2)),
-              DataTypes.FIELD("ts", DataTypes.BIGINT()));
+          var type =
+              DataTypes.ROW(
+                  DataTypes.FIELD("k", DataTypes.INT()),
+                  DataTypes.FIELD("s", DataTypes.STRING()),
+                  DataTypes.FIELD("t", DataTypes.TIMESTAMP(9)),
+                  DataTypes.FIELD("b", DataTypes.BOOLEAN()),
+                  DataTypes.FIELD("clock", DataTypes.TIME(3)),
+                  DataTypes.FIELD("v", DataTypes.BIGINT()),
+                  DataTypes.FIELD("d", DataTypes.DECIMAL(12, 2)),
+                  DataTypes.FIELD("ts", DataTypes.BIGINT()));
           int width = Integer.getInteger("window.stringWidth", 8);
           var input = env.fromSequence(0, rows - 1).map(i -> {
             boolean missing = i % 7 == 0;
@@ -126,10 +149,15 @@ class WindowBasicTypeBenchmark {
               .schema(Schema.newBuilder().fromResolvedSchema(query.getResolvedSchema()).build()).build());
           String insert = "INSERT INTO sink " + sql;
           String plan = table.explainSql(insert);
-          if (engine == 1 && expectNative && (!plan.contains(operator) || !plan.contains("RowDataToArrow")
-              || !plan.contains("ArrowToRowData") || (phase.equals("TWO_PHASE")
-                  && !plan.contains("NativeColumnarLocalWindowAggregate")))) {
-            throw new IllegalStateException("Expected typed native windows and both transposes: " + plan);
+          if (engine == 1
+              && expectNative
+              && (!plan.contains(operator)
+                  || !plan.contains("RowDataToArrow")
+                  || !plan.contains("ArrowToRowData")
+                  || (phase.equals("TWO_PHASE")
+                      && !plan.contains("NativeColumnarLocalWindowAggregate")))) {
+            throw new IllegalStateException(
+                "Expected typed native windows and both transposes: " + plan);
           }
           if (engine == 1 && !expectNative && plan.contains(operator)) {
             throw new IllegalStateException("Expected previous window aggregate fallback: " + plan);
@@ -143,19 +171,39 @@ class WindowBasicTypeBenchmark {
           long start = System.nanoTime();
           table.executeSql(insert).await();
           double seconds = (System.nanoTime() - start) / 1e9;
-          System.out.printf(Locale.ROOT,
-              "[basic-window-trial] case=%s phase=%s shape=%s engine=%s trial=%d warmup=%s seconds=%.6f%n",
-              value, phase, shape, engine == 0 ? "Flink" : "StreamFusion", trial, trial < warmup, seconds);
+          System.out.printf(
+              Locale.ROOT,
+              "[basic-window-trial] case=%s phase=%s shape=%s engine=%s trial=%d warmup=%s"
+                  + " seconds=%.6f%n",
+              value,
+              phase,
+              shape,
+              engine == 0 ? "Flink" : "StreamFusion",
+              trial,
+              trial < warmup,
+              seconds);
           if (trial >= warmup) times[engine][trial - warmup] = seconds;
         }
       }
       if (expectNative) RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), operator);
       if (expectNative && phase.equals("TWO_PHASE"))
-        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeColumnarLocalWindowAggregate");
+        RecoveryExecutionMetrics.assertConsumed(
+            metrics.nativeOperators(), "NativeColumnarLocalWindowAggregate");
     }
-    System.out.printf(Locale.ROOT,
-        "[basic-window] case=%s phase=%s shape=%s backend=%s native_expected=%s rows=%d keys=%d host_mean=%.6fs native_mean=%.6fs host_trials=%s native_trials=%s%n",
-        value, phase, shape, backend, expectNative, rows, keys, Arrays.stream(times[0]).average().orElseThrow(),
-        Arrays.stream(times[1]).average().orElseThrow(), Arrays.toString(times[0]), Arrays.toString(times[1]));
+    System.out.printf(
+        Locale.ROOT,
+        "[basic-window] case=%s phase=%s shape=%s backend=%s native_expected=%s rows=%d keys=%d"
+            + " host_mean=%.6fs native_mean=%.6fs host_trials=%s native_trials=%s%n",
+        value,
+        phase,
+        shape,
+        backend,
+        expectNative,
+        rows,
+        keys,
+        Arrays.stream(times[0]).average().orElseThrow(),
+        Arrays.stream(times[1]).average().orElseThrow(),
+        Arrays.toString(times[0]),
+        Arrays.toString(times[1]));
   }
 }

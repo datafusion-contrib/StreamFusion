@@ -58,3 +58,9 @@ org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testUserDefinedFu
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testMultipleUserDefinedFunctions	*	NativeFilterOperator|NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	changelog=false	NativeOverAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset	changelog=false&aggPhase=ONE_PHASE	NativeColumnarWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset	changelog=false&aggPhase=TWO_PHASE	NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithOffset	*	NativeWindowTableFunctionOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithNegativeOffset	*	NativeWindowTableFunctionOperator

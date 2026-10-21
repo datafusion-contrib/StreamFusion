@@ -1746,3 +1746,49 @@ fn fixed_offset_local_partials_merge_on_the_global_shifted_grid() {
         );
     }
 }
+
+#[test]
+fn tvf_assignment_offset_preserves_payload_and_separates_window_time_from_local_bounds() {
+    let batch = input(Arc::new(TimestampMillisecondArray::from(vec![
+        Some(-1),
+        Some(250),
+        None,
+    ])));
+    for boundary_offset in [0, 37] {
+        for now in [None, Some(500)] {
+            let output = assign_windows_with_calendar(
+                &batch,
+                1,
+                1000,
+                1000,
+                false,
+                now,
+                &streamfusion_bridge::timestamp::timestamp_type(),
+                boundary_offset,
+                250,
+                None,
+            )
+            .unwrap();
+            assert_eq!(output.num_rows(), if now.is_some() { 3 } else { 2 });
+            let start = TimestampColumn::try_new(output.column(2).as_ref()).unwrap();
+            let end = TimestampColumn::try_new(output.column(3).as_ref()).unwrap();
+            let time = TimestampColumn::try_new(output.column(4).as_ref()).unwrap();
+            for row in 0..output.num_rows() {
+                let first = now.is_none() && row == 0;
+                assert_eq!(
+                    start.value(row).unwrap().millis(),
+                    if first { -750 } else { 250 }
+                );
+                assert_eq!(
+                    end.value(row).unwrap().millis(),
+                    if first { 250 } else { 1250 }
+                );
+                assert_eq!(
+                    time.value(row).unwrap().millis(),
+                    (if first { 249 } else { 1249 }) - boundary_offset
+                );
+            }
+            assert_eq!(output.column(1).null_count(), usize::from(now.is_some()));
+        }
+    }
+}

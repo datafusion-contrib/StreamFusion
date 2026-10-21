@@ -96,12 +96,12 @@ class FlinkPlainTimestampTvfSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"TUMBLE", "HOP"})
-  void nonzeroOffsetFallsBack(String shape) throws Exception {
+  @ValueSource(strings = {"TUMBLE", "HOP", "CUMULATE"})
+  void nonzeroOffsetUsesNativeAssignment(String shape) throws Exception {
     String table = tvf(shape);
     table = table.substring(0, table.length() - 2) + ", INTERVAL '1' SECOND))";
-    NativeParity.assertFallbackReasonContains(
-        () -> environment("UTC", false), "SELECT * FROM " + table, "zero offset");
+    assertNativeParity(
+        () -> environment("UTC", false), "SELECT * FROM " + table, "NativeWindowTableFunction");
   }
 
   @ParameterizedTest

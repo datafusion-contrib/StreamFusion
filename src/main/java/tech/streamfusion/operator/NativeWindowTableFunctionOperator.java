@@ -37,6 +37,7 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
   private final boolean proctime;
   private final long boundaryOffsetMillis;
   private String calendarZoneId;
+  private long assignmentOffsetMillis;
   private transient WindowCalendar calendar;
 
   private transient BufferAllocator allocator;
@@ -85,6 +86,11 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
     this.boundaryOffsetMillis = boundaryOffsetMillis;
   }
 
+  public NativeWindowTableFunctionOperator withAssignmentOffset(long offsetMillis) {
+    assignmentOffsetMillis = offsetMillis;
+    return this;
+  }
+
   public NativeWindowTableFunctionOperator withCalendarZone(String zoneId) {
     calendarZoneId = zoneId;
     return this;
@@ -130,7 +136,8 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
             cumulative,
             proctime,
             now,
-            calendar);
+            calendar,
+            assignmentOffsetMillis);
       } else {
         Native.assignWindows(
             inArray.memoryAddress(),
@@ -143,7 +150,8 @@ public class NativeWindowTableFunctionOperator extends FlinkStreamOperator<Arrow
             cumulative,
             proctime,
             now,
-            boundaryOffsetMillis);
+            boundaryOffsetMillis,
+            assignmentOffsetMillis);
       }
       assigned = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
     } finally {

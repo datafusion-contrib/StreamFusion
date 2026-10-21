@@ -64,7 +64,8 @@ class NativeFixedOffsetWindowOperatorsTest {
     RowType input = RowType.of(new BigIntType(), new LocalZonedTimestampType(3));
     try (var harness =
         new OneInputStreamOperatorTestHarness<>(
-            new NativeWindowTableFunctionOperator(1, 1000, 1000, false, true, offset))) {
+            new NativeWindowTableFunctionOperator(1, 1000, 1000, false, true, offset)
+                .withAssignmentOffset(250))) {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
       harness.setProcessingTime(500);
@@ -83,9 +84,9 @@ class NativeFixedOffsetWindowOperatorsTest {
             emitted += root.getRowCount();
             assertEquals(1, root.getRowCount());
             assertEquals(1, root.getVector(1).getNullCount());
-            assertEquals(offset, new TimestampAccessor(root.getVector(2)).getMillis(0));
-            assertEquals(offset + 1000, new TimestampAccessor(root.getVector(3)).getMillis(0));
-            assertEquals(999, new TimestampAccessor(root.getVector(4)).getMillis(0));
+            assertEquals(offset + 250, new TimestampAccessor(root.getVector(2)).getMillis(0));
+            assertEquals(offset + 1250, new TimestampAccessor(root.getVector(3)).getMillis(0));
+            assertEquals(1249, new TimestampAccessor(root.getVector(4)).getMillis(0));
           }
         }
       }

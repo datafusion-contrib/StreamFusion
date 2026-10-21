@@ -123,9 +123,10 @@ class FlinkAttachedWindowOnePhaseSqlHarnessTest {
                                 })));
   }
 
-  @Test
-  void filteredAttachedAggregationKeepsStockExecution() throws Exception {
-    validateOtherPlans("FILTER");
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
+  void filteredAttachedAggregationKeepsNullOnlyAssignedWindows(String phase) throws Exception {
+    validateOtherPlans("FILTER", phase);
   }
 
   @Test
@@ -155,6 +156,10 @@ class FlinkAttachedWindowOnePhaseSqlHarnessTest {
   }
 
   private static void validateOtherPlans(String mode) throws Exception {
+    validateOtherPlans(mode, "ONE_PHASE");
+  }
+
+  private static void validateOtherPlans(String mode, String phase) throws Exception {
     boolean session = mode.equals("SESSION");
     boolean regional = mode.equals("REGIONAL");
     boolean mixed = mode.equals("MIXED");
@@ -162,7 +167,7 @@ class FlinkAttachedWindowOnePhaseSqlHarnessTest {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var env = metrics.environment(new Configuration(), 1, 0);
       var table = StreamTableEnvironment.create(env);
-      table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+      table.getConfig().set("table.optimizer.agg-phase-strategy", phase);
       if (regional) table.getConfig().setLocalTimeZone(ZoneId.of("America/Los_Angeles"));
       if (!regional && !mixed && !wide)
         table
@@ -208,7 +213,7 @@ class FlinkAttachedWindowOnePhaseSqlHarnessTest {
       String sql =
           "SELECT MAX(n)"
               + (mixed ? " + MAX(mx)" : "")
-              + (mode.equals("FILTER") ? " FILTER (WHERE n > 1)" : "")
+              + (mode.equals("FILTER") ? " FILTER (WHERE n > 2)" : "")
               + ", window_start, window_end FROM (SELECT k, COUNT(*) n"
               + (mixed ? ", MAX(v) mx" : "")
               + ", window_start, window_end"
@@ -231,10 +236,15 @@ class FlinkAttachedWindowOnePhaseSqlHarnessTest {
                 Row.of(
                     2L, LocalDateTime.of(2020, 1, 1, 0, 0), LocalDateTime.of(2020, 1, 1, 0, 0, 3))),
             actual);
-      } else if (regional || mixed || wide) {
+      } else if (regional || mixed || wide || mode.equals("FILTER")) {
         assertTrue(
             scan.substitutions() > 0 && scan.fallbackReasons().isEmpty(), scan.explainSummary());
-        assertTrue(plan.contains("NativeColumnarWindowAggregate"), plan);
+        assertTrue(
+            plan.contains(
+                phase.equals("TWO_PHASE")
+                    ? "NativeColumnarGlobalWindowAggregate"
+                    : "NativeColumnarWindowAggregate"),
+            plan);
         if (wide) {
           var expected = new java.util.HashSet<Row>();
           for (int start = -28; start <= 0; start += 2)
@@ -248,7 +258,11 @@ class FlinkAttachedWindowOnePhaseSqlHarnessTest {
         } else {
           var start =
               regional ? LocalDateTime.of(2019, 12, 31, 16, 0) : LocalDateTime.of(2020, 1, 1, 0, 0);
-          assertEquals(List.of(Row.of(mixed ? 5L : 2L, start, start.plusSeconds(2))), actual);
+          assertEquals(
+              List.of(
+                  Row.of(
+                      mode.equals("FILTER") ? null : mixed ? 5L : 2L, start, start.plusSeconds(2))),
+              actual);
         }
         String job = result.getJobClient().orElseThrow().getJobID().toString();
         assertTrue(

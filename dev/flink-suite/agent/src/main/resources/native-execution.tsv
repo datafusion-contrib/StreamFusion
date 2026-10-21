@@ -38,3 +38,8 @@ org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testScalarFunctio
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testInlineScalarFunction	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.table.CalcITCase#testNonStaticObjectScalarFunction	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testProcTimeDistinctUnboundedPartitionedRowsOver	*	NativeOverAggregateOperator
+
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset	aggPhase=ONE_PHASE	NativeColumnarWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset	aggPhase=TWO_PHASE	NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithOffset	*	NativeWindowTableFunctionOperator
+org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithNegativeOffset	*	NativeWindowTableFunctionOperator

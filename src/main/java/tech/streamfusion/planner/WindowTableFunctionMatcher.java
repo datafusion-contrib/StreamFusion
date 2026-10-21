@@ -1,6 +1,5 @@
 package tech.streamfusion.planner;
 
-import java.time.Duration;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.logical.CumulativeWindowSpec;
 import org.apache.flink.table.planner.plan.logical.HoppingWindowSpec;
@@ -12,8 +11,8 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalW
 
 /**
  * Recognizes the windowing table functions the native operator implements: an event-time
- * TUMBLE/HOP/CUMULATE (zero offset) over a timestamp rowtime, whose input columns the row/Arrow
- * conversion can all carry. The window assignment math is shared with the window aggregate ({@link
+ * TUMBLE/HOP/CUMULATE over a timestamp rowtime, whose input columns the row/Arrow conversion can
+ * all carry. The window assignment math is shared with the window aggregate ({@link
  * WindowAggregateMatcher#windowSize}/{@link WindowAggregateMatcher#windowSlide}/ {@link
  * WindowAggregateMatcher#isCumulative}/{@link WindowAggregateMatcher#timeColumn}), so a TVF feeding
  * a window join or aggregate assigns windows identically to a fused window aggregate.
@@ -41,19 +40,10 @@ final class WindowTableFunctionMatcher {
     return tvf.windowing().isProctime();
   }
 
-  /** The native assignment grid is anchored at the epoch. */
   private static boolean aligned(WindowSpec spec) {
-    Duration offset;
-    if (spec instanceof TumblingWindowSpec) {
-      offset = ((TumblingWindowSpec) spec).getOffset();
-    } else if (spec instanceof HoppingWindowSpec) {
-      offset = ((HoppingWindowSpec) spec).getOffset();
-    } else if (spec instanceof CumulativeWindowSpec) {
-      offset = ((CumulativeWindowSpec) spec).getOffset();
-    } else {
-      return false;
-    }
-    return offset == null || offset.isZero();
+    return spec instanceof TumblingWindowSpec
+        || spec instanceof HoppingWindowSpec
+        || spec instanceof CumulativeWindowSpec;
   }
 
   static int timeColumn(StreamPhysicalWindowTableFunction tvf) {
@@ -77,7 +67,7 @@ final class WindowTableFunctionMatcher {
     if (zoneReason != null) {
       return "windowing table function: " + zoneReason;
     }
-    return "windowing table function: needs an event-time TUMBLE/HOP/CUMULATE (zero offset) over a"
+    return "windowing table function: needs an event-time TUMBLE/HOP/CUMULATE over a"
         + " TIMESTAMP or TIMESTAMP_LTZ rowtime, with input columns the Arrow conversion supports";
   }
 
@@ -93,6 +83,7 @@ final class WindowTableFunctionMatcher {
             WindowTableFunctionMatcher.cumulative(tvf),
             WindowTableFunctionMatcher.isProctime(tvf),
             WindowZoneGate.boundaryOffsetMillis(tvf, tvf.windowing()))
-        .withCalendarZone(WindowZoneGate.calendarZoneId(tvf, tvf.windowing()));
+        .withCalendarZone(WindowZoneGate.calendarZoneId(tvf, tvf.windowing()))
+        .withAssignmentOffset(WindowAggregateMatcher.assignmentOffset(tvf.windowing()));
   }
 }

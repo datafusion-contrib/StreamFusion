@@ -1214,3 +1214,14 @@ The per-invocation contracts for `CalcITCase.testInlineScalarFunction`,
 check constructor-bound and instance function values with positive native input metrics.
 The exact heap/RocksDB runtime scope records its mixed native/host route on both release lines.
 An obsolete `AS` fallback expectation must not mask that native execution.
+
+
+The original aggregate/window completion also pins the unchanged
+`WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset` and positive/negative
+`WindowTableFunctionITCase` offset cases on both released lines. The cascade requires native
+single-phase or local/global work according to its aggregation-phase fixture; standalone
+assignment requires `NativeWindowTableFunctionOperator`. Exact runtime-route scopes retain
+heap/RocksDB, timestamp mode and 2.2 async-state variants, plus the existing explicit 1.18
+changelog-state fallback. Focused SQL supplements cover HOP/CUMULATE offsets, independent
+attached FILTER masks, negative epochs, regional DST and repeated recovery; declared contracts
+still require their actual unchanged upstream runtime run during consolidated validation.

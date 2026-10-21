@@ -284,6 +284,7 @@ final class GlobalWindowAggregateMatcher {
         keyColumns,
         GlobalWindowAggregateMatcher.valueTypes(agg),
         GlobalWindowAggregateMatcher.kinds(agg),
-        WindowAggregateMatcher.isLtz(agg.windowing()));
+        WindowAggregateMatcher.isLtz(agg.windowing()),
+        WindowAggregateMatcher.assignmentOffset(agg.windowing()));
   }
 }

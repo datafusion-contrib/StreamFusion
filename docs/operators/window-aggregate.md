@@ -506,7 +506,8 @@ cover selected/rejected NaNs, infinities and signed-zero ties. Memory and RocksD
 checks retain independent extrema and windows whose predicates reject every value.
 
 Updating input still requires a retractable extrema state and falls back. Processing-time,
-attached, session and legacy filtered windows also retain their current gates.
+session and legacy filtered windows also retain their current gates. Attached windows apply
+the same per-aggregate masks in one or two phases.
 
 ## Retracting COUNT/SUM/AVG and grouping-only windows
 
@@ -621,8 +622,8 @@ This uses the existing Arrow validity masks and distinct list state, without a n
 checkpoint format. SQL tests cover the admitted types, independent filters, nullable keys
 and values, duplicates across batches and tasks, late watermarks, both aggregation phases,
 and checkpoint continuation on memory and RocksDB. Native work is required from each window
-stage. Updating input, filtered processing-time/attached/session/legacy windows, and the
-split-distinct rewrite remain outside this extension.
+stage. Updating input and filtered processing-time/session/legacy windows remain outside this
+extension; attached windows use the same independent masks and shared membership state.
 
 Timestamp distinct keys follow Flink's serialized key representation: precision 0–3 uses
 milliseconds; precision 4–9 retains the fractional nanos. This matters when an internal cast
@@ -655,7 +656,10 @@ property are native as well.
 
 ## Event-time assignment
 
-`TUMBLE`, `HOP`, and `CUMULATE` are native only at **zero offset**; `SESSION` needs no offset. The
+`TUMBLE`, `HOP`, and `CUMULATE` aggregates admit explicit positive and negative SQL offsets
+in one or two phases; `SESSION` needs no offset. Assignment offsets shift the aggregation
+grid independently of time-zone rendering. Regional HOP/CUMULATE shared slices use the same
+shifted grid and cumulative bucket base, including after restoration. The
 window bounds render differently depending on the rowtime attribute's type: in the session time zone
 for a local-time-zone attribute, in UTC (the raw wall-clock value) for a plain `TIMESTAMP`.
 
@@ -689,15 +693,15 @@ execution are tested, but the result is not byte-compared against Flink.
 
 The windowing TVF assigns rows to windows the same way as the aggregate above — by rowtime for
 event-time, by the processing-time clock instead of a rowtime column for proctime — and is native
-under the same **zero-offset** `TUMBLE`/`HOP`/`CUMULATE` restriction; both its event-time and
-proctime assignment paths are native.
+with positive, negative or zero SQL offsets for `TUMBLE`/`HOP`/`CUMULATE`; both event-time and
+proctime assignment paths use the same shifted grid. SQL offsets do not shift the input payload
+or get added a second time to the emitted window-time instant.
 
 Standalone event-time TVFs accept both `TIMESTAMP(3)` and `TIMESTAMP_LTZ(3)` rowtime.
 Plain `TIMESTAMP` retains its wall-clock boundaries in every session zone, including downstream
 window Top-N and window deduplication. Native assignment preserves hidden sub-millisecond input
 fractions while emitting millisecond window boundaries; negative epochs and years 0001/9999 are
-covered by runtime SQL parity tests. TUMBLE and HOP with an explicit nonzero offset fall back,
-matching the existing aggregate and CUMULATE restriction.
+covered by runtime SQL parity tests, including explicit positive and negative assignment offsets.
 
 The TVF emits `window_start`/`window_end` as local wall-clock TIMESTAMP values, while
 `window_time` stays an instant for LTZ input. Fixed offsets, including offsets not aligned with
@@ -742,9 +746,10 @@ enables columnar composition with downstream consumers; it is not a standalone t
 
 ## Matcher declines
 
-- Window not event-time `TUMBLE`/`HOP`/`CUMULATE` (zero offset) over a local-time-zone or plain
+- Window not event-time `TUMBLE`/`HOP`/`CUMULATE` over a local-time-zone or plain
   `TIMESTAMP` rowtime.
-- Proctime: anything other than a single-phase `TUMBLE`/`HOP`/`CUMULATE` with slide dividing size, or
+- Proctime: a nonzero SQL offset, or anything other than a single-phase
+  `TUMBLE`/`HOP`/`CUMULATE` with slide dividing size, or
   a single-phase `SESSION` — the two-phase local/global path isn't yet native on proctime.
 - `HOP` slide / `CUMULATE` step that doesn't divide the window size.
 - Legacy row-count `TUMBLE`/`HOP` windows from the Table API.
@@ -762,13 +767,13 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - Single-phase string MIN/MAX when explicitly disabled with
   `streamfusion.window.string-extrema.single-phase.enabled=false`. All otherwise supported
   shapes default native; local/global admission is unchanged.
-- Attached bounds outside append-only event-time TUMBLE/HOP/CUMULATE, or with FILTER.
+- Attached bounds outside append-only event-time TUMBLE/HOP/CUMULATE.
   Otherwise supported single-phase attached bounds are admitted by default;
   `streamfusion.window.attached.single-phase.enabled=false` forces stock execution.
 - Windowed DISTINCT other than single-argument COUNT over the types listed above:
   SUM/AVG DISTINCT and complex values.
   Non-windowed DISTINCT has separate coverage; see [GROUP BY](group-by.md).
-- Filtered MIN/MAX on updating input, and filtered aggregates in processing-time, attached,
+- Filtered MIN/MAX on updating input, and filtered aggregates in processing-time,
   session or legacy windows.
 - Retracting input outside aligned event-time TUMBLE/HOP/CUMULATE with grouping-only,
   numeric SUM/AVG (including shared exact SUM0), admitted COUNT(value), and COUNT(*) with optional FILTER.
@@ -1750,3 +1755,70 @@ checkpoint I/O, periodic-watermark processing and full-job boundaries are not ti
 
 The matching high-cardinality Flink 1.18 HOP cohort measures 30.91 ms Rust versus 152.73 ms
 stock, with complete output/RowKind parity. Every warmup and stock cohort is retained in the artifact.
+
+### Offset and attached FILTER verification
+
+The focused offset matrix compares exact values and result widths on released Flink 1.18.1
+and 2.2.1, requiring actual single/local/global native work. It covers TUMBLE/HOP/CUMULATE,
+both phases, NULL keys and values, filtered string extrema, DISTINCT counts, negative epochs,
+plain TIMESTAMP and LTZ in UTC, Kathmandu and New York. Four additional memory/RocksDB
+cases each recover twice across a DST overlap. Flink 2.2 updating offset windows verify both
+phases; Flink 1.18 rejects updating TVFs. Both releases reject non-dividing/gapped slicing
+TVFs before execution; legacy group windows have separate assignment rules.
+
+Attached one/two-phase aggregation applies each FILTER mask before accumulation while keeping
+the assigned window alive even when every value is filtered out. Ordinary COUNT reads parent
+validity without interpreting its payload. The shared BIGINT transfer optimization applies only
+when no mask or COUNT validity conversion is needed. Fused proctime aggregate offsets,
+session FILTER and other documented changelog restrictions remain separate pending contexts.
+Standalone TVFs admit offsets for both clocks; their output can feed attached aggregates without
+falling out of the native island. The global cumulative merge retains the original offset when
+reconstructing the start from a local partial's window end.
+
+
+The release/mimalloc complete-job comparison uses one million rows, JDK 17, a 2 GiB heap,
+memory state, two warmups and three alternating trials. HOP computes COUNT/AVG/SUM over
+BIGINT with a one-second offset, size ten seconds, slide two seconds, 64 keys and parallelism
+two. The attached COUNT-to-filtered-MAX cascade uses parallelism one, 64 nullable keys and
+TUMBLE ten seconds. Both retain the RowData runtime source, both transposes, native state,
+JNI and rowwise blackhole sink; metrics require actual native window input.
+
+| Flink / query | Stock median, s | Native median, s | Stock/native |
+| --- | ---: | ---: | ---: |
+| 2.2.1 / offset HOP, one phase | 0.827 | 0.714 | 1.16× |
+| 2.2.1 / offset HOP, two phases | 0.887 | 0.549 | 1.62× |
+| 2.2.1 / attached FILTER | 0.311 | 0.170 | 1.83× |
+| 1.18.1 / offset HOP, one phase | 0.820 | 0.659 | 1.24× |
+| 1.18.1 / offset HOP, two phases | 0.879 | 0.563 | 1.56× |
+| 1.18.1 / attached FILTER | 0.327 | 0.170 | 1.92× |
+
+Actual previous canonical `d13e9dc4` uses the stock window path for all three cases:
+configured StreamFusion medians are 0.815/0.857/0.303 seconds versus paired stock
+0.811/0.851/0.305 seconds. These are separately executed controls, not interchangeable
+paired trials. [Every warmup, measurement and library hash](../benchmarks/results/window-context-offset-filter-2026-10-20.json)
+is retained. No optimization pass was necessary for these winning complete-job cases.
+These results describe aggregates and attached aggregation, not standalone TVF throughput.
+
+
+`WindowAssignmentAdmissionBenchmark` exports exactly matching Arrow input for the
+`window_assignment` Rust example. The small functionality timer starts in Java on prebuilt
+GenericRowData for Flink's released TVF operator, and inside Rust on prebuilt Arrow batches
+for StreamFusion. Assignment, payload fan-out, allocation and consumption of all five output
+columns remain timed; setup, IPC input reading and perimeter JNI/transposes are excluded.
+With 131,072 rows, 1,024-row Arrow batches, 4,096 cyclic timestamps straddling epoch zero,
+one NULL timestamp per seven rows, SQL offset -1 s, size 9 s and slide/step 3 s, three warmups
+and seven trials produce the following medians. Output counts and wrapping checksums match
+exactly on both released lines, whose exported Arrow inputs are byte-identical.
+
+| Shape | Flink 2.2.1, ms | Flink 1.18.1, ms | Rust, ms |
+| --- | ---: | ---: | ---: |
+| TUMBLE | 17.625 | 11.680 | 3.184 |
+| HOP | 20.512 | 21.188 | 8.181 |
+| CUMULATE | 14.529 | 15.745 | 5.740 |
+
+This gate establishes 2.51–5.53× / 2.59–3.67× measured improvements over 2.2.1 / 1.18.1
+for this native-input boundary. It does not revise the conversion-inclusive standalone TVF
+measurements above. Five controlled-clock cases per release additionally check proctime
+assignment offsets with NULL payload timestamps and positive/negative time-zone offsets.
+Forty-four focused Rust window checks pass. The artifact retains all trials, input hashes,
+release library and driver hashes, and the separately measured actual previous-revision controls.

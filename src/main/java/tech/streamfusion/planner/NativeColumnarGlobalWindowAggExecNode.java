@@ -1,9 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator;
-import tech.streamfusion.operator.NativeWindowOperatorCore;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -17,6 +13,10 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator;
+import tech.streamfusion.operator.NativeWindowOperatorCore;
 
 /**
  * Wraps the columnar global (merge) window operator into the plan: partial-state Arrow batches in,
@@ -34,6 +34,7 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
   private final int[] valueTypes;
   private final int[] aggregateKinds;
   private final boolean timestampLtz;
+  private final long assignmentOffsetMillis;
   private final int[] keyTimestampPrecisions;
 
   public NativeColumnarGlobalWindowAggExecNode(
@@ -49,6 +50,36 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
       int[] aggregateKinds,
       boolean timestampLtz,
       int[] keyTimestampPrecisions) {
+    this(
+        tableConfig,
+        inputProperty,
+        outputType,
+        description,
+        windowMillis,
+        slideMillis,
+        cumulative,
+        keyColumns,
+        valueTypes,
+        aggregateKinds,
+        timestampLtz,
+        keyTimestampPrecisions,
+        0L);
+  }
+
+  public NativeColumnarGlobalWindowAggExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative,
+      int[] keyColumns,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      boolean timestampLtz,
+      int[] keyTimestampPrecisions,
+      long assignmentOffsetMillis) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-global-window-aggregate_1"),
@@ -63,6 +94,7 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
     this.valueTypes = valueTypes;
     this.aggregateKinds = aggregateKinds;
     this.timestampLtz = timestampLtz;
+    this.assignmentOffsetMillis = assignmentOffsetMillis;
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
@@ -79,23 +111,26 @@ public class NativeColumnarGlobalWindowAggExecNode extends ExecNodeBase<ArrowBat
         keyColumns.length == 0
             ? 1
             : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+    NativeColumnarGlobalWindowAggregateOperator operator =
+        new NativeColumnarGlobalWindowAggregateOperator(
+            windowMillis,
+            slideMillis,
+            cumulative,
+            NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
+            valueTypes,
+            aggregateKinds,
+            timeZoneId,
+            timestampLtz,
+            planner.getTableConfig().getLocalTimeZone().getId(),
+            outputType,
+            keyTimestampPrecisions,
+            maxParallelism);
+    operator.setAssignmentOffsetMillis(assignmentOffsetMillis);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeColumnarGlobalWindowAggregateOperator(
-                windowMillis,
-                slideMillis,
-                cumulative,
-                NativeWindowOperatorCore.keyTypes(outputType, keyColumns.length),
-                valueTypes,
-                aggregateKinds,
-                timeZoneId,
-                timestampLtz,
-                planner.getTableConfig().getLocalTimeZone().getId(),
-                outputType,
-                keyTimestampPrecisions,
-                maxParallelism),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
