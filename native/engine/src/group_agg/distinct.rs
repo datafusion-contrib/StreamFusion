@@ -547,6 +547,9 @@ impl DistinctSet {
 
     pub(crate) fn scalar_count(&self, value: &ScalarValue) -> i64 {
         match (self, value) {
+            (Self::Timestamp(m), ScalarValue::Decimal128(Some(nanos), 38, 0)) => {
+                m.counts.get(nanos).copied().unwrap_or(0)
+            }
             (Self::I64(m), ScalarValue::Int64(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
             (Self::I32(m), ScalarValue::Int32(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
             (Self::I16(m), ScalarValue::Int16(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
@@ -617,6 +620,9 @@ impl DistinctSet {
 
     fn change_scalar(&mut self, value: &ScalarValue, change: Change) -> bool {
         match (self, value) {
+            (Self::Timestamp(m), ScalarValue::Decimal128(Some(nanos), 38, 0)) => {
+                m.change_owned(*nanos, change)
+            }
             (Self::I64(m), ScalarValue::Int64(Some(v))) => m.change_owned(*v, change),
             (Self::I32(m), ScalarValue::Int32(Some(v))) => m.change_owned(*v, change),
             (Self::I16(m), ScalarValue::Int16(Some(v))) => m.change_owned(*v, change),
@@ -683,6 +689,13 @@ impl DistinctSet {
     pub(super) fn add_scalar_n(&mut self, v: ScalarValue, n: i64) -> bool {
         self.change_value(v, Change::Add(n))
     }
+    pub(super) fn forget_scalar(&mut self, value: &ScalarValue) {
+        let count = self.scalar_count(value);
+        if count != 0 {
+            self.change_scalar(value, Change::Delta(count.wrapping_neg()));
+        }
+    }
+
     pub(super) fn merge_scalar_delta(&mut self, value: &ScalarValue, delta: i64) -> bool {
         self.change_scalar(value, Change::Delta(delta))
     }

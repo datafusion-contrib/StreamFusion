@@ -195,6 +195,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorSuppo
 ) -> jboolean {
     crate::bridge::jni_guard(env, move |env| {
         let kinds = read_int_array(&env, &kinds);
+        if kinds
+            .iter()
+            .any(|kind| kind & crate::group_agg::RETAINED_DISTINCT != 0)
+        {
+            return 0;
+        }
         let values: Vec<_> = read_int_array(&env, &values)
             .into_iter()
             .map(value_data_type)

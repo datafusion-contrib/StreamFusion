@@ -19,10 +19,10 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class FlinkRetractingDistinctPartialsSqlHarnessTest {
-  private static final org.apache.flink.api.common.typeinfo.TypeInformation<Row> INPUT_TYPE =
+  static final org.apache.flink.api.common.typeinfo.TypeInformation<Row> INPUT_TYPE =
       Types.ROW_NAMED(
           new String[] {"k", "raw_value", "keep_row"}, Types.INT, Types.STRING, Types.BOOLEAN);
-  private static final Schema SCHEMA =
+  static final Schema SCHEMA =
       Schema.newBuilder()
           .column("k", DataTypes.INT())
           .column("raw_value", DataTypes.STRING())
@@ -154,7 +154,7 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
     return table;
   }
 
-  private static String query(String type, String source) {
+  static String query(String type, String source) {
     String expression =
         type.equals("TIMESTAMP_LTZ")
             ? "TO_TIMESTAMP_LTZ(CAST(raw_value AS BIGINT),3)"
@@ -196,7 +196,7 @@ class FlinkRetractingDistinctPartialsSqlHarnessTest {
     return new String[] {"7", "-4", "13"};
   }
 
-  private static List<Row> rows(String type) {
+  static List<Row> rows(String type) {
     String[] v = values(type);
     return List.of(
         row(RowKind.INSERT, null, false),

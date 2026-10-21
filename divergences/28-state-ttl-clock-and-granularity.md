@@ -25,6 +25,12 @@ unchanged. This does not substitute a whole-group lifetime for those supporting 
 controlled operator tests separate host arrival-clock samples and independently steer the TTL
 provider; native unit checks cover equal-clock buckets and their survivor refresh behavior.
 
+Scalar/numeric single-phase DISTINCT membership uses that sampled clock with independent
+per-value deadlines shared by filtered aggregates over the same argument. Expiry leaves
+cached inner aggregates unchanged. Append-only duplicate reads do not refresh membership;
+setting another filter bit does. Retracting counters write on admitted updates. Native raw
+keyed snapshots preserve both the shared deadlines and cached values independently.
+
 ## Temporal join and OVER: lazy check for the cleanup timer
 
 Flink retention-bounds the temporal join not with per-value TTL but with one per-key

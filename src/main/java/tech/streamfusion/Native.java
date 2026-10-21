@@ -12,6 +12,9 @@ import org.slf4j.LoggerFactory;
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
 
+  public static final int AGGREGATE_DISTINCT_TTL = 1 << 10;
+  public static final int AGGREGATE_DISTINCT_APPEND = 1 << 11;
+
   /** Synchronously imports a batch from borrowed C structs; imported buffers have independent ownership. */
   @FunctionalInterface
   public interface BatchReceiver {

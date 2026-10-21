@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone)]
-struct ValueKey(ScalarValue);
+pub(super) struct ValueKey(pub(super) ScalarValue);
 
 impl PartialEq for ValueKey {
     fn eq(&self, other: &Self) -> bool {
@@ -20,6 +20,18 @@ impl Hash for ValueKey {
             ScalarValue::Float64(Some(value)) => crate::flink_float::canonical_f64(*value)
                 .to_bits()
                 .hash(state),
+            ScalarValue::Struct(array)
+                if streamfusion_bridge::timestamp::is_component_timestamp(array.data_type()) =>
+            {
+                let column =
+                    streamfusion_bridge::timestamp::TimestampColumn::try_new(array.as_ref())
+                        .expect("retained timestamp key");
+                column
+                    .value(0)
+                    .expect("non-null timestamp key")
+                    .nanos()
+                    .hash(state);
+            }
             // Type buckets let borrowed Flink equality compare nested values without
             // allocating a canonical copy. Collisions affect lookup cost, not membership.
             ScalarValue::List(_)

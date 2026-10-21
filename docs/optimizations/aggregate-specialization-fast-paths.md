@@ -1063,3 +1063,27 @@ rows still retain that cache. Hash capacity and owned string bytes enter native 
 accounting. Measuring growth on the already-borrowed aggregate state avoids extra key probes.
 See [OVER](../operators/over.md#string-and-timestamp-distinct-counts) for complete-job comparisons,
 including an unchanged decimal distinct-count control for the memory-accounting change.
+
+### Hash retained timestamp values by their components
+
+A shared DISTINCT TTL view keeps a write timestamp for each logical member. Component
+timestamps must hash their millisecond/nanosecond value: hashing only their Arrow STRUCT type
+puts every timestamp into the same bucket. The generic nested-value fallback remains useful
+for types requiring borrowed Flink equality, but lossless timestamp components already have
+a compact exact hash.
+
+The initial one-million-row, 64-key retained COUNT/COUNT/SUM DISTINCT complete job took
+7.773 s natively versus 1.475 s in Flink 2.2. CPU profiling recorded 12,501 of 15,169 native
+update samples in membership-clock preparation, including 12,202 in boxed equality.
+Hashing timestamp components removes those avoidable collision chains while preserving
+the complete timestamp range and the existing checkpoint representation.
+
+The first measured pass reduced that native job to 1.652 s. Its CPU profile still recorded
+607 scalar-reconstruction samples and 954 clock-lookup samples among 2,944 native update
+samples. A timestamp reader bound once per input batch now supplies an exact `i128` clock
+key, avoiding temporary Arrow STRUCT values and nested equality. Clock snapshots retain that
+full-range carrier; typed aggregate membership and user-visible timestamps keep their types.
+The second and final pass takes 0.846 s versus paired stock 1.425 s. Flink 1.18 measures
+0.837 versus 1.406 s. These are conversion-inclusive complete jobs; the
+[artifact](../benchmarks/results/shared-distinct-retention-2026-10-21.json) retains all trials,
+previous-native controls, DSO/source hashes and inclusive CPU sample counts.

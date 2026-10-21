@@ -130,6 +130,10 @@ class DistinctAggregateBenchmark {
     var table = StreamTableEnvironment.create(env);
     table
         .getConfig()
+        .setIdleStateRetention(
+            java.time.Duration.ofMillis(Long.getLong("distinct.retentionMillis", 0L)));
+    table
+        .getConfig()
         .set("table.optimizer.agg-phase-strategy", TWO_PHASE ? "TWO_PHASE" : "ONE_PHASE");
     table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(TWO_PHASE));
     table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");

@@ -322,6 +322,13 @@ final class GroupAggregateMatcher {
   static int[] kinds(StreamPhysicalGroupAggregate agg) {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     int[] kinds = new int[aggCalls.size()];
+    Long hint = FlinkCompat.singleStateTtl(agg);
+    long retention =
+        hint == null
+            ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
+                .getIdleStateRetention()
+                .toMillis()
+            : hint;
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       int kind = aggregateKind(agg, call);
@@ -350,6 +357,11 @@ final class GroupAggregateMatcher {
                   .getType()
                   .getSqlTypeName())) {
         kind = kind == KIND_MIN ? KIND_MIN_APPEND : KIND_MAX_APPEND;
+      }
+      if (retention > 0 && (kind == 7 || kind == 9 || kind == 17 || kind == 18 || kind == 34)) {
+        kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_TTL;
+        if (ChangelogPlanUtils.inputInsertOnly(agg))
+          kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_APPEND;
       }
       kinds[i] = kind;
     }

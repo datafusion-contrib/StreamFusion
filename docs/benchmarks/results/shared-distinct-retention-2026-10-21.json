@@ -1,0 +1,988 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Single-phase scalar/numeric shared DISTINCT entry TTL",
+  "base_commit": "9674beb7",
+  "source_sha256": {
+    "native/engine/src/group_agg.rs": "ab7852595857eec3caa3e0ac387f4399d26ab6d0d74e815756350fa57b1e5cb7",
+    "native/engine/src/group_agg/distinct.rs": "82f3b5a47279bd29e3454345257a03dd28e5c84687e53a36ab8de24ee640b5b3",
+    "native/engine/src/group_agg/distinct_retention.rs": "3206ffe91f250ddd3b535270c78478fce30b748dfe04997a28daecedb6c639f7",
+    "native/engine/src/group_agg/ordered_retention.rs": "023f9be2e8223b84f88f670f9fdab6a82a48c35fed9605d8895d219c4575ae4b",
+    "native/engine/src/state/rocks_jni.rs": "ccc826e5f0a03be63d1138b82e591652c39bbb0096967a03cdb31716c933edf7",
+    "src/main/java/tech/streamfusion/Native.java": "37fe25fe1b117164f4429aef912dc85af288d7a7b1130ff2282a1240a81c3d44",
+    "src/main/java/tech/streamfusion/planner/GroupAggregateMatcher.java": "454124e50ab3fe8a64c8b065a078f3d491487f7cfbed6b52170e12a222bf138d",
+    "src/test/java/tech/streamfusion/DistinctAggregateBenchmark.java": "a8cd53696cc99860bc754a2f036e821e476a9016907e29239e6004ba08ed739d",
+    "src/test/java/tech/streamfusion/FlinkSharedDistinctRetentionSqlHarnessTest.java": "33f0f5b8a28af65f5b174ecaf59b5fb4f582df9ed0ff57333fc5bf6cf9442132",
+    "src/test/java/tech/streamfusion/operator/NativeSharedDistinctRetentionParityTest.java": "f1244fb2ac5d723d81639e3a37c3ec9a2e7876a48bb7ad2264943320ba6b08cb"
+  },
+  "native_dso_sha256": {
+    "initial": "2c6047da0da062496e3e481eb0fc433da685c66abfac6443b90cdc7b4a20456c",
+    "pass1": "01c88542342c6e986da7ecab47030f9c81b70d6cecd76ffc230385b0fa647ab0",
+    "pass2": "be0904089e7906560ac93b811d36e9dd42510365f9513664bc471df9ee3c9c8c",
+    "final": "8136cd72bacc933c5c30c22b517f569213cdd12ce065c3c68796e24d5654748a",
+    "previous": "522165c63dc014fe24ffaa0ef591777cc075648cdb7e683e42e3c4f25ea60f3b"
+  },
+  "configuration": {
+    "runtime": "JDK17/Linux x86_64",
+    "candidate_native": "release+mimalloc",
+    "previous_native": "Existing release DSO built with default,rocksdb-state features and system allocator. Production engine/bridge sources, manifests and lock are identical between its e8910de1 source checkout and canonical d13e9dc4 (verified with git diff).",
+    "previous_java": "Actual canonical d13e9dc4 planner/runtime, only matching benchmark fixture copied and compiled; both profiles consume native aggregate work.",
+    "rows": 1000000,
+    "keys": 64,
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "backend": "memory",
+    "retention_millis": 3600000,
+    "phase": "ONE_PHASE",
+    "mini_batch": false,
+    "null_every": 7,
+    "warmups": 2,
+    "trials": 3,
+    "boundary": "Alternating complete jobs; source, both row/Arrow transposes, JNI, state, and blackhole sink are included. No builds or tests run concurrently with timings.",
+    "typed_query": "COUNT(DISTINCT BOOLEAN), COUNT(DISTINCT TIMESTAMP_LTZ(9)), SUM(DISTINCT DECIMAL(20,2))",
+    "floating_query": "AVG(DISTINCT FLOAT), AVG(DISTINCT DOUBLE), SUM(DISTINCT FLOAT), SUM(DISTINCT DOUBLE)",
+    "reproduction": "SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -Dnative.build.skip=true -Dtest=DistinctAggregateBenchmark -Ddistinct.rows=1000000 -Ddistinct.keys=64 -Ddistinct.twoPhase=false -Ddistinct.retentionMillis=3600000 -Ddistinct.warmup=2 -Ddistinct.runs=3 surefire:test@default-test; floating adds -Ddistinct.floating=true -Ddistinct.floatingSum=true; Flink 1.18 adds profile flink-1.18."
+  },
+  "measurements": [
+    {
+      "revision": "initial",
+      "flink_line": "2.2",
+      "shape": "typed",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.687152
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 8.261462
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 7.783736
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.770643
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.475199
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 7.773335
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 8.518248
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.409488
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.483646
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 7.664784
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.475198985,
+          1.409487908,
+          1.483646208
+        ],
+        "StreamFusion": [
+          7.773335055,
+          8.518247882,
+          7.664784085
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.475198985,
+        "StreamFusion": 7.773335055
+      },
+      "range_seconds": {
+        "Flink": [
+          1.409487908,
+          1.483646208
+        ],
+        "StreamFusion": [
+          7.664784085,
+          8.518247882
+        ]
+      },
+      "stock_over_native": 0.18977684283030044
+    },
+    {
+      "revision": "pass1",
+      "flink_line": "2.2",
+      "shape": "typed",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.607735
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.191821
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.807327
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.732218
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.508456
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.652468
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.65454
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.42463
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.377502
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.640116
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.508455874,
+          1.424629857,
+          1.377501646
+        ],
+        "StreamFusion": [
+          1.652467585,
+          1.654539582,
+          1.64011597
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.424629857,
+        "StreamFusion": 1.652467585
+      },
+      "range_seconds": {
+        "Flink": [
+          1.377501646,
+          1.508455874
+        ],
+        "StreamFusion": [
+          1.64011597,
+          1.654539582
+        ]
+      },
+      "stock_over_native": 0.8621227247855516
+    },
+    {
+      "revision": "pass2",
+      "flink_line": "2.2",
+      "shape": "typed",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.589153
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.396755
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.031901
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.772351
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.504865
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.846268
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.861331
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.405185
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.425415
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.829301
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.504864527,
+          1.405184988,
+          1.425414847
+        ],
+        "StreamFusion": [
+          0.846268062,
+          0.86133055,
+          0.829300842
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.425414847,
+        "StreamFusion": 0.846268062
+      },
+      "range_seconds": {
+        "Flink": [
+          1.405184988,
+          1.504864527
+        ],
+        "StreamFusion": [
+          0.829300842,
+          0.86133055
+        ]
+      },
+      "stock_over_native": 1.6843538247577161
+    },
+    {
+      "revision": "pass2",
+      "flink_line": "2.2",
+      "shape": "floating",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.261562
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.307676
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.068089
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 4.335435
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 4.324339
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.878788
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.872904
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 4.325069
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 4.295542
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.875176
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          4.324338829,
+          4.325069347,
+          4.295542232
+        ],
+        "StreamFusion": [
+          0.878787739,
+          0.872904237,
+          0.875175518
+        ]
+      },
+      "median_seconds": {
+        "Flink": 4.324338829,
+        "StreamFusion": 0.875175518
+      },
+      "range_seconds": {
+        "Flink": [
+          4.295542232,
+          4.325069347
+        ],
+        "StreamFusion": [
+          0.872904237,
+          0.878787739
+        ]
+      },
+      "stock_over_native": 4.941110371645474
+    },
+    {
+      "revision": "pass2",
+      "flink_line": "1.18",
+      "shape": "typed",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 8.304613
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.363019
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.930815
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.694307
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.406352
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.837406
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.84969
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.376291
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.453872
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.810745
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.406352384,
+          1.376290958,
+          1.453872203
+        ],
+        "StreamFusion": [
+          0.837406379,
+          0.849689974,
+          0.810744737
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.406352384,
+        "StreamFusion": 0.837406379
+      },
+      "range_seconds": {
+        "Flink": [
+          1.376290958,
+          1.453872203
+        ],
+        "StreamFusion": [
+          0.810744737,
+          0.849689974
+        ]
+      },
+      "stock_over_native": 1.6794144626404859
+    },
+    {
+      "revision": "pass2",
+      "flink_line": "1.18",
+      "shape": "floating",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.057875
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.282109
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.046441
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 4.285477
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 4.298908
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.913818
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.864659
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 4.291006
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 4.255377
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.891771
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          4.298907502,
+          4.291006497,
+          4.255377224
+        ],
+        "StreamFusion": [
+          0.913817993,
+          0.864659146,
+          0.891770871
+        ]
+      },
+      "median_seconds": {
+        "Flink": 4.291006497,
+        "StreamFusion": 0.891770871
+      },
+      "range_seconds": {
+        "Flink": [
+          4.255377224,
+          4.298907502
+        ],
+        "StreamFusion": [
+          0.864659146,
+          0.913817993
+        ]
+      },
+      "stock_over_native": 4.811781407693008
+    },
+    {
+      "revision": "canonical previous native",
+      "flink_line": "2.2",
+      "shape": "typed",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.598657
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.053721
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.644803
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.681808
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.444842
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.569664
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.553005
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.425102
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.42225
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.539762
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.444842138,
+          1.425102335,
+          1.422249542
+        ],
+        "StreamFusion": [
+          0.569664339,
+          0.553005483,
+          0.539762312
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.425102335,
+        "StreamFusion": 0.553005483
+      },
+      "range_seconds": {
+        "Flink": [
+          1.422249542,
+          1.444842138
+        ],
+        "StreamFusion": [
+          0.539762312,
+          0.569664339
+        ]
+      },
+      "stock_over_native": 2.5770130293626767
+    },
+    {
+      "revision": "canonical previous native",
+      "flink_line": "2.2",
+      "shape": "floating",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 5.341195
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.289619
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.024754
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 4.42827
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 4.249253
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.872745
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.90084
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 4.314305
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 4.240644
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.907563
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          4.249253316,
+          4.31430505,
+          4.240644222
+        ],
+        "StreamFusion": [
+          0.872744827,
+          0.900839574,
+          0.907563311
+        ]
+      },
+      "median_seconds": {
+        "Flink": 4.249253316,
+        "StreamFusion": 0.900839574
+      },
+      "range_seconds": {
+        "Flink": [
+          4.240644222,
+          4.31430505
+        ],
+        "StreamFusion": [
+          0.872744827,
+          0.907563311
+        ]
+      },
+      "stock_over_native": 4.716992279915091
+    }
+  ],
+  "profiles": {
+    "v1": {
+      "sha256": "f68f7ea11bd396a36fbe7770a0bacbfb09e1658af554d1836e71460f202b8ca6",
+      "total_samples": 48144,
+      "inclusive_samples": {
+        "streamfusion::group_agg::GroupAggregator<S>::update": 15170,
+        "streamfusion::group_agg::GroupAggregator<S>::update_regular": 15169,
+        "streamfusion::group_agg::distinct_retention::DistinctViewRetention::prepare": 12501,
+        "streamfusion::flink_float::boxed_equal": 12202,
+        "streamfusion::flink_float::nested_equal::equal": 7416,
+        "streamfusion::flink_float::nested_equal::value_equal": 4339,
+        "datafusion_common::scalar::ScalarValue::try_from_array": 656,
+        "streamfusion::group_agg::distinct::DistinctSet::scalar_count": 398,
+        "streamfusion::flink_float::contains_floating": 395,
+        "streamfusion::group_agg::distinct::DistinctColumn::merge_delta": 309,
+        "streamfusion::group_agg::distinct::Multiplicities<K>::change_owned": 283,
+        "streamfusion::group_agg::distinct::DistinctColumn::change": 232,
+        "streamfusion::group_agg::GroupChanges::push_ref": 229,
+        "datafusion_common::scalar::ScalarValue::try_new_null": 226,
+        "streamfusion::group_agg::values::ScalarValues::push_ref": 225,
+        "<arrow_array::array::struct_array::StructArray as arrow_array::array::Array>::slice": 181,
+        "streamfusion::group_agg::distinct_retention::DistinctViewRetention::finish": 180,
+        "arrow_array::array::struct_array::StructArray::slice": 173,
+        "streamfusion::group_agg::output_of": 156,
+        "streamfusion::group_agg::group_key_state_bytes": 81,
+        "datafusion_common::scalar::ScalarValue::iter_to_array": 75,
+        "streamfusion::aggregates::scalars_to_array": 75,
+        "streamfusion::group_agg::values::ScalarValues::finish": 75,
+        "<arrow_array::array::struct_array::StructArray as arrow_array::array::Array>::as_any": 64
+      },
+      "event": "cpu",
+      "interval": "1ms",
+      "stack": "dwarf",
+      "profiled_rows": 1000000,
+      "warmups": 1,
+      "measured_trials": 1
+    },
+    "pass1": {
+      "sha256": "ec51fced9cf1dc5d67f6081ad48d54f035ddb5905f4eac198d382cf608f6ef9e",
+      "total_samples": 34613,
+      "inclusive_samples": {
+        "streamfusion::group_agg::GroupAggregator<S>::update": 2945,
+        "streamfusion::group_agg::GroupAggregator<S>::update_regular": 2944,
+        "streamfusion::group_agg::distinct_retention::DistinctViewRetention::prepare": 954,
+        "datafusion_common::scalar::ScalarValue::try_from_array": 607,
+        "streamfusion::flink_float::boxed_equal": 512,
+        "streamfusion::group_agg::distinct::DistinctSet::scalar_count": 344,
+        "<arrow_array::array::struct_array::StructArray as arrow_array::array::Array>::slice": 206,
+        "arrow_array::array::struct_array::StructArray::slice": 200,
+        "datafusion_common::scalar::ScalarValue::try_new_null": 180,
+        "streamfusion::group_agg::distinct::DistinctColumn::merge_delta": 168,
+        "streamfusion::flink_float::nested_equal::equal": 158,
+        "streamfusion::group_agg::output_of": 150,
+        "streamfusion::group_agg::distinct::Multiplicities<K>::change_owned": 149,
+        "streamfusion::flink_float::nested_equal::value_equal": 129,
+        "streamfusion::group_agg::distinct::DistinctColumn::change": 111,
+        "streamfusion::group_agg::GroupChanges::push_ref": 76,
+        "streamfusion::group_agg::values::ScalarValues::push_ref": 70,
+        "<arrow_array::array::struct_array::StructArray as core::clone::Clone>::clone": 58,
+        "<arrow_array::array::struct_array::StructArray as core::convert::From<arrow_data::data::ArrayData>>::from": 52,
+        "datafusion_common::scalar::ScalarValue::iter_to_array": 48,
+        "streamfusion::aggregates::scalars_to_array": 48,
+        "streamfusion::group_agg::values::ScalarValues::finish": 48,
+        "core::ptr::drop_in_place<arrow_array::array::struct_array::StructArray>": 39,
+        "streamfusion::group_agg::group_key_state_bytes": 30
+      },
+      "event": "cpu",
+      "interval": "1ms",
+      "stack": "dwarf",
+      "profiled_rows": 1000000,
+      "warmups": 1,
+      "measured_trials": 1
+    }
+  },
+  "optimization_passes": 2,
+  "optimization": [
+    "Hash timestamp membership by its value instead of one shared STRUCT-type bucket.",
+    "Bind timestamp component readers once per Arrow batch and use exact i128 clock keys, avoiding temporary Arrow scalar reconstruction."
+  ],
+  "validation": {
+    "native_passed": 847,
+    "native_ignored": 2,
+    "sql_operator_checks_per_release": 108,
+    "typed_sql_profiles_per_release": 68,
+    "typed_double_restore_checks_per_release": 24,
+    "controlled_operator_checks_per_release": 16,
+    "clock_dimensions": [
+      "append bitset versus retracting signed counters",
+      "shared filtered memberships",
+      "duplicate read versus new filter-bit write",
+      "independent entry and group expiry",
+      "inclusive deadline",
+      "cached aggregate preserved after membership expiry",
+      "two successive restores",
+      "memory/native raw-keyed RocksDB",
+      "TTL disabled after restore",
+      "old snapshot migration",
+      "full-range component timestamps"
+    ],
+    "unchanged_upstream": {
+      "method": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+      "invocations": {
+        "2.2": [
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "aggMode=ON",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=10,NativeColumnarLocalGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "aggMode=ON",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=10,NativeColumnarLocalGroupAggregateOperator=21",
+            "fallbacks": []
+          }
+        ],
+        "1.18": [
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "changelog=false&aggMode=OFF",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "changelog=false&aggMode=ON",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=10,NativeColumnarLocalGroupAggregateOperator=21",
+            "fallbacks": []
+          },
+          {
+            "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter",
+            "variant": "changelog=false&aggMode=ON",
+            "consumed_native": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=10,NativeColumnarLocalGroupAggregateOperator=21",
+            "fallbacks": []
+          }
+        ]
+      }
+    }
+  },
+  "note": "Every final profile beats stock. The typed query adds entry-clock work versus the previously native whole-group-only lifetime; the previous native result remains faster in that no-expiry profile. Final native adds only old-snapshot migration to the measured pass2 code; the production update path is unchanged. No performance opt-in or permission request was added. Ordered/list DISTINCT and global membership TTL remain separate completion items."
+}

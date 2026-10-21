@@ -634,6 +634,24 @@ Mini-batch operators read retained state at the logical bundle flush and use tha
 clock for expiry and writes. Input Arrow buffers remain reserved until that merge; receiving
 a partial before expiry does not revive state that has expired by the flush.
 
+### Shared DISTINCT entry retention
+
+Single-phase scalar COUNT DISTINCT and numeric SUM/AVG DISTINCT retain each membership
+entry independently of the cached aggregate and the group's own idle deadline. Expiring an
+entry forgets membership without undoing the previously accumulated result. Filtered
+aggregates sharing an argument share the entry deadline: a newly set append-only filter bit
+refreshes it, while duplicate-only reads do not. Retracting counters write on every admitted
+update and retain negative counts after an expired value is retracted.
+
+Checkpoints preserve cached COUNT/SUM/AVG values separately from live membership, plus the
+original shared deadlines. With the native RocksDB backend these combinations use native raw
+keyed snapshots, keeping the shared clock together rather than assigning unrelated clocks
+to each aggregate's element table. Fresh zero-retention snapshots keep their previous format.
+An older snapshot without membership clocks seeds each member from the saved group-write
+time, or the restore time when the old snapshot had no TTL timestamp.
+DISTINCT FIRST/LAST, DISTINCT LISTAGG and local/global membership retention remain separately
+qualified contexts.
+
 ## Two-phase / mini-batch
 
 The mini-batch plan splits the aggregate into four cooperating operators, all of them native:
@@ -1958,3 +1976,33 @@ string materialization and the rowwise blackhole sink remain timed.
 The actual canonical `d13e9dc4` fallback takes 6.576/1.561 s on those two 2.2
 profiles (paired stock 6.718/1.583 s). Every candidate requires consumed native work.
 All four profiles win; no slow-case optimization passes or performance opt-ins were needed.
+
+### Shared DISTINCT retention comparison
+
+The single-phase retention checks pass 108 SQL/operator cases on each released Flink line:
+68 typed append/retract/mini-batch combinations, 24 typed cases with two restores on memory
+and native RocksDB, and 16 controlled-clock operator comparisons. Native tests additionally
+pin cached results after entry expiry, disabled retention after restore, legacy snapshot
+migration and timestamp keys spanning the complete millisecond range. The unchanged released
+`AggregateITCase#testDistinctWithMultiFilter` consumes native grouping in all seven 2.2 and
+six 1.18 invocations; split variants also consume the existing native local stage.
+
+The [raw measurement and profile artifact](../benchmarks/results/shared-distinct-retention-2026-10-21.json)
+records one million rows, 64 keys, p=1, a 2 GiB heap, one-hour retention, single-phase
+execution, two warmups and three alternating measured complete jobs. Source, both transposes,
+JNI and the rowwise blackhole sink remain timed.
+
+| Query profile | Flink 2.2 stock/native median, s | Flink 1.18 stock/native median, s |
+| --- | ---: | ---: |
+| BOOLEAN/timestamp COUNT DISTINCT and decimal SUM DISTINCT | 1.425 / 0.846 | 1.406 / 0.837 |
+| FLOAT/DOUBLE SUM and AVG DISTINCT | 4.324 / 0.875 | 4.291 / 0.892 |
+
+Exactly two measured optimization passes reduced the first native profile from 7.773 to
+1.652 to 0.846 s. CPU profiles identified timestamp hash collisions, then temporary Arrow
+scalar reconstruction; direct component hashing and compact `i128` clock keys remove those
+costs. The actual canonical previous Java runtime, with its unchanged production-native
+sources, takes 0.553/0.901 s on the two 2.2 profiles (paired stock 1.425/4.249 s). Its existing
+release DSO uses the system allocator; the candidate uses release+mimalloc. The typed query
+adds independently retained entry state to the previous whole-group lifetime. It still beats
+stock, but this no-expiry workload does not claim an improvement over the old native path.
+The final DSO adds only old-snapshot migration to the measured second-pass update path.
