@@ -50,7 +50,7 @@ pub(super) fn accumulator_type(kind: i64, value_type: &DataType) -> DataType {
     }
 }
 
-fn compact_value(value: ScalarValue) -> ScalarValue {
+pub(super) fn compact_value(value: ScalarValue) -> ScalarValue {
     if let ScalarValue::Struct(array) = &value {
         if streamfusion_bridge::timestamp::is_component_timestamp(array.data_type()) {
             let values = streamfusion_bridge::timestamp::TimestampColumn::try_new(array.as_ref())

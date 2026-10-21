@@ -435,6 +435,13 @@ final class GlobalGroupAggregateMatcher {
   static int[] kinds(StreamPhysicalGlobalGroupAggregate agg) {
     RelDataType inputType = agg.getInput().getRowType();
     int[] kinds = new int[agg.aggCalls().size()];
+    Long hint = FlinkCompat.singleStateTtl(agg);
+    long retention =
+        hint == null
+            ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
+                .getIdleStateRetention()
+                .toMillis()
+            : hint;
     int offset = agg.grouping().length;
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
@@ -469,6 +476,10 @@ final class GlobalGroupAggregateMatcher {
                 : kind == GroupAggregateMatcher.KIND_SUM_ZERO
                     ? GroupAggregateMatcher.KIND_SUM_ZERO_MERGE
                     : kind;
+      }
+      if (retention > 0 && call.isDistinct()) {
+        kinds[i] |= tech.streamfusion.Native.AGGREGATE_DISTINCT_TTL;
+        if (!agg.needRetraction()) kinds[i] |= tech.streamfusion.Native.AGGREGATE_DISTINCT_APPEND;
       }
       offset += spanOf(agg, i);
     }

@@ -639,7 +639,7 @@ a partial before expiry does not revive state that has expired by the flush.
 
 ### Shared DISTINCT entry retention
 
-Single-phase scalar COUNT DISTINCT and numeric SUM/AVG DISTINCT retain each membership
+Single-phase and local/global scalar COUNT DISTINCT and numeric SUM/AVG DISTINCT retain each membership
 entry independently of the cached aggregate and the group's own idle deadline. Expiring an
 entry forgets membership without undoing the previously accumulated result. Filtered
 aggregates sharing an argument share the entry deadline: a newly set append-only filter bit
@@ -653,7 +653,13 @@ to each aggregate's element table. Fresh zero-retention snapshots keep their pre
 An older snapshot without membership clocks seeds each member from the saved group-write
 time, or the restore time when the old snapshot had no TTL timestamp.
 FIRST/LAST use the same shared membership policy while retaining their own inner selections.
-DISTINCT LISTAGG and local/global membership retention remain separately qualified contexts.
+DISTINCT LISTAGG retention remains a separate unsupported context.
+
+Local partials remain transient and have no entry TTL. At the global bundle flush, shared
+filtered views expire together before their deltas fold into cached results. Floating and
+wide-decimal merges retain the released map iteration order and zero-entry behavior.
+Restoring older global snapshots seeds missing entry clocks before the first new bundle
+refreshes the group timestamp. The global view layout is configured before loading partitions.
 
 ## Two-phase / mini-batch
 
@@ -2008,6 +2014,40 @@ release DSO uses the system allocator; the candidate uses release+mimalloc. The 
 adds independently retained entry state to the previous whole-group lifetime. It still beats
 stock, but this no-expiry workload does not claim an improvement over the old native path.
 The final DSO adds only old-snapshot migration to the measured second-pass update path.
+
+### Global DISTINCT entry retention
+
+Both released Flink lines pass 116 local/global retention checks: 68 typed append/retract
+profiles with one- and four-row bundles, 24 typed jobs with two memory/native-RocksDB restores,
+and 24 controlled-clock operator comparisons, including two successive restores. The latter
+compare operators extracted from actual released plans and separately advance partial arrival
+and global flush clocks. BIGINT, DOUBLE and wide DECIMAL cover exact and ordered merge paths.
+The complete native suite passes 854 tests, with two diagnostics ignored. Native regression
+checks additionally preserve old entry deadlines when the first restored bundle contains only
+NULL arguments. Existing upstream multi-filter DISTINCT contracts remain unchanged and consume
+native grouping in seven released 2.2 and six 1.18 invocations.
+
+The [complete-job artifact](../benchmarks/results/global-distinct-retention-2026-10-21.json)
+records one million rows, 64 keys, p=1, 2 GiB heap, one-hour TTL, 1,024-row mini-batches,
+two warmups and three alternating measured runs. Source, both transposes, JNI and the
+rowwise blackhole sink remain timed. No builds or tests compete with measurements.
+
+| Query profile | Flink 2.2 stock/native median, s | Flink 1.18 stock/native median, s |
+| --- | ---: | ---: |
+| BOOLEAN/timestamp COUNT DISTINCT and DECIMAL(38,2) SUM DISTINCT | 1.222 / 0.992 | 1.149 / 1.003 |
+| FLOAT/DOUBLE SUM and AVG DISTINCT | 3.552 / 1.232 | 3.574 / 1.216 |
+
+The initial typed native job took 1.348 s versus stock 1.199 s. Its CPU profile found
+422 compact-key and 317 scalar-reconstruction samples among 1,257 native group-update
+samples; these inclusive counts overlap. One measured optimization pass reads timestamp
+components from the already-bound view reader and reduces the native job to 0.992 s.
+All four final profiles beat stock, so no second optimization pass was needed.
+
+Actual canonical `d13e9dc4` takes 0.768 s for the already-native typed query and 3.646 s
+for its floating fallback (paired stock 1.150/3.614 s). The earlier native path has only
+whole-group retention and uses a release/system-allocator DSO; the candidate adds entry
+clocks and uses release+mimalloc. This no-expiry workload does not claim an improvement
+over that faster previous typed path. Controlled-clock tests qualify the new semantics.
 
 ### Independent DISTINCT FIRST/LAST retention
 

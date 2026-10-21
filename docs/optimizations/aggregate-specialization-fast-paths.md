@@ -1088,6 +1088,17 @@ The second and final pass takes 0.846 s versus paired stock 1.425 s. Flink 1.18 
 [artifact](../benchmarks/results/shared-distinct-retention-2026-10-21.json) retains all trials,
 previous-native controls, DSO/source hashes and inclusive CPU sample counts.
 
+The same reader binding applies to global DISTINCT partial views. Reconstructing an Arrow
+timestamp scalar and compacting it for every view entry accounted for 422 compact-key and
+317 scalar-reconstruction samples among 1,257 native group-update samples, with inclusive
+overlap. Reading components through the view's existing timestamp reader removes these
+temporary objects. One measured pass reduces the million-row, 64-key typed local/global
+job from 1.348 to 0.992 s versus paired stock 1.222 s; Flink 1.18 measures 1.003 versus
+1.149 s. The [global retention artifact](../benchmarks/results/global-distinct-retention-2026-10-21.json)
+retains all samples and actual canonical controls, including the previous faster typed
+whole-group-only retention path. Cached aggregates and checkpoint deadlines are unchanged
+by this optimization.
+
 ### Borrowed nested DISTINCT keys and retained output
 
 Retained FIRST/LAST probes membership before and after signed counter updates. The generic

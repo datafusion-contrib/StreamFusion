@@ -60,6 +60,35 @@ impl DistinctViewRetention {
             view.timestamps.insert(key, written);
         }
     }
+    pub(super) fn prepare_global(
+        &mut self,
+        source: usize,
+        value: &ValueKey,
+        targets: &[usize],
+        states: &mut [GroupAggState],
+        ttl: StateTtl,
+        previous_write: i64,
+    ) {
+        self.seed_shared(source, targets, states, previous_write);
+        self.prepare(source, value, targets, states, ttl);
+    }
+
+    pub(super) fn seed_shared(
+        &mut self,
+        source: usize,
+        targets: &[usize],
+        states: &[GroupAggState],
+        previous_write: i64,
+    ) {
+        if !self.contains_view(source) {
+            for &target in targets {
+                for (value, _) in states[target].distinct_entries() {
+                    self.seed(source, value, previous_write);
+                }
+            }
+        }
+    }
+
     pub(super) fn prepare(
         &mut self,
         source: usize,
@@ -524,6 +553,188 @@ mod tests {
                 push(&mut state, 3000, Some(10), true, false),
                 vec![Some(10), Some(10), Some(3), Some(4)]
             );
+        }
+    }
+
+    fn global(append: bool, retained: bool, code: i64) -> GroupAggregator {
+        let flags = if retained {
+            RETAINED_DISTINCT | if append { APPEND_DISTINCT } else { 0 }
+        } else {
+            0
+        };
+        GroupAggregator::new(
+            vec![9 | flags, 7 | flags, 3],
+            vec![code, code, 0],
+            vec![1, 2, 3],
+            vec![0],
+            true,
+        )
+        .with_distinct_view_columns(vec![4, 5, -1])
+        .with_record_count_column(3)
+        .with_state_ttl(1000)
+        .with_mini_batch()
+    }
+
+    fn partial(value: Option<i64>, code: i64, retract: bool) -> RecordBatch {
+        let value = if code == 0 {
+            ScalarValue::Int64(value)
+        } else {
+            ScalarValue::Decimal128(value.map(i128::from), 38, 0)
+        };
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, false),
+                Field::new("value", value.data_type(), true),
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![1])),
+                value.to_array_of_size(1).unwrap(),
+                Arc::new(Int8Array::from(vec![if retract { 3 } else { 0 }])),
+            ],
+        )
+        .unwrap();
+        let mut local = super::super::LocalGroupAggregator::new(
+            vec![9, 7, 3],
+            vec![code, code, 0],
+            vec![1, 1, -1],
+            vec![],
+            vec![0],
+            vec![0, 1],
+        );
+        local.update(&batch).unwrap();
+        local.flush()
+    }
+
+    fn global_output(state: &mut GroupAggregator, now: i64) -> (i128, i64) {
+        let output = state.flush_mini_batch_at(now).unwrap();
+        let row = output.num_rows() - 1;
+        let sum = match ScalarValue::try_from_array(output.column(1), row).unwrap() {
+            ScalarValue::Int64(Some(value)) => i128::from(value),
+            ScalarValue::Decimal128(Some(value), _, _) => value,
+            value => panic!("unexpected global sum {value:?}"),
+        };
+        let count = output
+            .column(2)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        (sum, count.value(row))
+    }
+
+    #[test]
+    fn global_retention_expires_shared_membership_at_flush_and_preserves_cached_results() {
+        for code in [0, 5800] {
+            for append in [false, true] {
+                let mut state = global(append, true, code);
+                for (now, value) in [(1000, Some(10)), (1500, Some(20)), (1900, None)] {
+                    state.update(&partial(value, code, false), now).unwrap();
+                    global_output(&mut state, now);
+                }
+                let snapshot = state.snapshot();
+                state = global(append, true, code);
+                state.load_snapshot(&snapshot, 1900);
+                state
+                    .update(&partial(Some(10), code, !append), 1950)
+                    .unwrap();
+                assert_eq!(
+                    global_output(&mut state, 2100),
+                    if append { (40, 3) } else { (30, 2) }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_global_clocks_seed_from_the_saved_group_before_a_new_bundle_refreshes_it() {
+        for code in [0, 5800] {
+            for append in [false, true] {
+                let mut state = global(append, false, code);
+                for (now, value) in [(1000, Some(10)), (1500, Some(20)), (1900, None)] {
+                    state.update(&partial(value, code, false), now).unwrap();
+                    global_output(&mut state, now);
+                }
+                let snapshot = state.snapshot();
+                state = global(append, true, code);
+                state.load_snapshot(&snapshot, 2000);
+                state.update(&partial(None, code, false), 2500).unwrap();
+                assert_eq!(global_output(&mut state, 2500), (30, 2));
+                state.update(&partial(Some(10), code, false), 2900).unwrap();
+                assert_eq!(global_output(&mut state, 2900), (40, 3));
+            }
+        }
+    }
+
+    #[test]
+    fn global_timestamp_clocks_keep_full_range_keys_and_signed_counts_after_restore() {
+        for append in [false, true] {
+            let flags = RETAINED_DISTINCT | if append { APPEND_DISTINCT } else { 0 };
+            let configured = || {
+                GroupAggregator::new(vec![7 | flags, 3], vec![1009, 0], vec![1, 2], vec![0], true)
+                    .with_distinct_view_columns(vec![3, -1])
+                    .with_record_count_column(2)
+                    .with_state_ttl(1000)
+                    .with_mini_batch()
+            };
+            let mut local = super::super::LocalGroupAggregator::new(
+                vec![7, 3],
+                vec![1009, 0],
+                vec![1, -1],
+                vec![],
+                vec![0],
+                vec![0],
+            );
+            let mut push = |state: &mut GroupAggregator,
+                            arrival: i64,
+                            flush: i64,
+                            present: bool,
+                            retract: bool| {
+                let value = present.then(|| {
+                    streamfusion_bridge::timestamp::TimestampValue::new(i64::MAX - 1, 123_456)
+                        .unwrap()
+                });
+                let batch = RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("key", DataType::Int64, false),
+                        Field::new(
+                            "value",
+                            streamfusion_bridge::timestamp::timestamp_type(),
+                            true,
+                        ),
+                        Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+                    ])),
+                    vec![
+                        Arc::new(Int64Array::from(vec![1])),
+                        Arc::new(streamfusion_bridge::timestamp::timestamp_array([value])),
+                        Arc::new(Int8Array::from(vec![if retract { 3 } else { 0 }])),
+                    ],
+                )
+                .unwrap();
+                local.update(&batch).unwrap();
+                state.update(&local.flush(), arrival).unwrap();
+                let output = state.flush_mini_batch_at(flush).unwrap();
+                output
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(output.num_rows() - 1)
+            };
+            let mut state = configured();
+            assert_eq!(push(&mut state, 1000, 1000, true, false), 1);
+            assert_eq!(push(&mut state, 1900, 1900, false, false), 1);
+            assert_eq!(
+                push(&mut state, 1950, 2000, true, !append),
+                if append { 2 } else { 1 }
+            );
+            let snapshot = state.snapshot();
+            state = configured();
+            state.load_snapshot(&snapshot, 2050);
+            assert_eq!(
+                push(&mut state, 2100, 2100, true, false),
+                if append { 2 } else { 1 }
+            );
+            assert_eq!(push(&mut state, 2200, 2200, true, false), 2);
         }
     }
 }
