@@ -874,8 +874,7 @@ class FlinkRetractingWindowSqlHarnessTest {
         scan.fallbackReasons().stream()
             .anyMatch(
                 reason ->
-                    reason.contains(
-                        "retracting input supports only aligned event-time TUMBLE/HOP/CUMULATE")),
+                    reason.contains("retracting input requires grouping-only, numeric SUM/AVG")),
         scan.fallbackReasons().toString());
   }
 

@@ -301,3 +301,8 @@ Previously admitted scalar schemas and bytes are unchanged; these MAP-bearing sh
 fell back. Updating Top-N/LIMIT and MAP-bearing updating join inputs still use stock execution until the retained-row
 contract in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) is implemented.
 Join/partition/order/unique-key contracts remain separately checked.
+
+Attached processing-time windows recover their next firing from the actual retained window
+ends. A fixed-zone range scan records the first future end in each key group, so native
+RocksDB can schedule the same intermediate HOP/CUMULATE endpoints as the memory backend.
+Zero-count sessions remain mergeable until closure and are removed without final output.

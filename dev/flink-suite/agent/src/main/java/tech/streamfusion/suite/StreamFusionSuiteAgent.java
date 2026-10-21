@@ -175,6 +175,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
+                "tech.streamfusion.operator.NativeWindowTableFunctionOperator",
                 "tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) -> {

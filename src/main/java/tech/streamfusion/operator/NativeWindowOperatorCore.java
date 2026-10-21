@@ -549,6 +549,12 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
       keys[j] = newKeyVector("key" + j, keyTypes[j]);
       vectors.add(keys[j]);
     }
+    TinyIntVector sourceKinds = (TinyIntVector) in.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
+    TinyIntVector changes =
+        sourceKinds == null
+            ? null
+            : new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, allocator);
+    if (changes != null) vectors.add(changes);
     TimestampAccessor srcStart = new TimestampAccessor(in.getVector(windowStartColumn));
     TimestampAccessor srcEnd = new TimestampAccessor(in.getVector(windowEndColumn));
     try (VectorSchemaRoot root = new VectorSchemaRoot(vectors);
@@ -558,6 +564,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
         if (sharedValues[a]) srcValues[a].makeTransferPair(values[a]).splitAndTransfer(0, rows);
       }
       for (int i = 0; i < rows; i++) {
+        if (changes != null) changes.setSafe(i, sourceKinds.get(i));
         // The upstream boundaries are session-zone wall-clock (see toEpochFromLocal); fold on epoch
         // millis so this aggregate's own boundary rendering shifts them exactly once, not twice.
         windowStart.setSafe(

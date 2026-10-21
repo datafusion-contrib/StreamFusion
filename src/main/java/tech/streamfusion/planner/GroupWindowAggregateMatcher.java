@@ -57,11 +57,9 @@ final class GroupWindowAggregateMatcher {
       return "legacy group-window: early/late firing and allowed lateness are not native";
     }
     if (!ChangelogPlanUtils.inputInsertOnly(agg)
-        && (session
-            || !WindowAggregateMatcher.supportedRetractingAggregates(
-                agg.aggCalls(), agg.getInput().getRowType()))) {
-      return "legacy group-window: updating input requires a fixed window and supported retracting"
-          + " aggregates";
+        && !WindowAggregateMatcher.supportedRetractingAggregates(
+            agg.aggCalls(), agg.getInput().getRowType())) {
+      return "legacy group-window: updating input requires supported retracting" + " aggregates";
     }
     if (!supportedProperties(agg.namedWindowProperties(), proctime)) {
       return "legacy group-window: unsupported window-property order";
@@ -178,23 +176,6 @@ final class GroupWindowAggregateMatcher {
 
   static RelNode substitute(StreamPhysicalGroupWindowAggregate agg, PlanContext ctx) {
     int[] keyColumns = WindowAggregateMatcher.keyColumns(agg.grouping());
-    if (agg.window() instanceof SessionGroupWindow) {
-      return new StreamPhysicalNativeColumnarSessionWindowAggregate(
-          agg.getCluster(),
-          agg.getTraitSet(),
-          ctx.columnarInput(agg.getInputs().get(0), keyColumns),
-          agg.getRowType(),
-          gap(agg).toMillis(),
-          timeColumn(agg),
-          WindowAggregateMatcher.valueColumns(agg.aggCalls()),
-          WindowAggregateMatcher.filterColumns(agg.aggCalls(), agg.aggCalls().size()),
-          keyColumns,
-          WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
-          WindowAggregateMatcher.kinds(agg.aggCalls()),
-          isProctime(agg),
-          isLtz(agg));
-    }
-    long windowMillis = size(agg).toMillis();
     int[] kinds =
         ChangelogPlanUtils.inputInsertOnly(agg)
             ? WindowAggregateMatcher.kinds(agg.aggCalls())
@@ -208,6 +189,23 @@ final class GroupWindowAggregateMatcher {
         java.util.Arrays.copyOf(
             WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
             kinds.length);
+    if (agg.window() instanceof SessionGroupWindow) {
+      return new StreamPhysicalNativeColumnarSessionWindowAggregate(
+          agg.getCluster(),
+          agg.getTraitSet(),
+          ctx.columnarInput(agg.getInputs().get(0), keyColumns),
+          agg.getRowType(),
+          gap(agg).toMillis(),
+          timeColumn(agg),
+          values,
+          WindowAggregateMatcher.filterColumns(agg.aggCalls(), kinds.length),
+          keyColumns,
+          types,
+          kinds,
+          isProctime(agg),
+          isLtz(agg));
+    }
+    long windowMillis = size(agg).toMillis();
     return new StreamPhysicalNativeColumnarWindowAggregate(
         agg.getCluster(),
         agg.getTraitSet(),

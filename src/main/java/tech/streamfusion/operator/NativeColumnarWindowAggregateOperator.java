@@ -198,7 +198,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
     super.open();
     registeredTimer = Long.MIN_VALUE;
     maxOpenEnd = restoredProcessingTimeTimerDeadline();
-    if (proctime && usesLocalWindowBounds()) {
+    if (proctime && (usesLocalWindowBounds() || windowEndColumn >= 0)) {
       emitClosedWindows(Long.MIN_VALUE);
       long next = Native.fixedWindowNextTimerDeadline(handle);
       long now = getProcessingTimeService().getCurrentProcessingTime();
@@ -280,7 +280,13 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
             keyColumns,
             keyTypes,
             true);
-        reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
+        if (proctime) {
+          long now = getProcessingTimeService().getCurrentProcessingTime();
+          emitClosedWindows(now);
+          scheduleNextTimer(now);
+        } else {
+          reportLateRecords(Native.tumblingAggregatorLateDrops(handle));
+        }
       } else if (proctime) {
         long now = getProcessingTimeService().getCurrentProcessingTime();
         updateColumnarProctime(in, now, valueColumns, filterColumns, keyColumns, keyTypes);
@@ -305,7 +311,9 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
 
   @Override
   protected long processingTimeTimerDeadlineForSnapshot() {
-    return proctime ? (usesLocalWindowBounds() ? registeredTimer : maxOpenEnd) : Long.MIN_VALUE;
+    return proctime
+        ? (usesLocalWindowBounds() || windowEndColumn >= 0 ? registeredTimer : maxOpenEnd)
+        : Long.MIN_VALUE;
   }
 
   /**
@@ -314,7 +322,7 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
    * start grid shifted by the window size, including legacy non-dividing and gapped windows.
    */
   private void scheduleNextTimer(long now) {
-    if (usesLocalWindowBounds()) {
+    if (usesLocalWindowBounds() || windowEndColumn >= 0) {
       long next = Native.fixedWindowNextTimerDeadline(handle);
       if (next != Long.MIN_VALUE && next != registeredTimer)
         getProcessingTimeService().registerTimer(next, this);

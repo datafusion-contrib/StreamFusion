@@ -10,7 +10,7 @@
     ],
     "jdk": 17,
     "native": "release + mimalloc",
-    "parallelism": 1,
+    "parallelism": 2,
     "task_slots": 2,
     "heap_gib": 2,
     "rows": 1000000,

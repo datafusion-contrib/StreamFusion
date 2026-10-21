@@ -39,8 +39,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.state.RocksDBNativeStateBackendFactory;
 
 class FlinkNativeRegionalSessionWindowTest {
-  private static final RowType INPUT = RowType.of(new BigIntType(), new LocalZonedTimestampType(3));
-  private static final RowType OUTPUT =
+  static final RowType INPUT = RowType.of(new BigIntType(), new LocalZonedTimestampType(3));
+  static final RowType OUTPUT =
       RowType.of(
           new BigIntType(),
           new BigIntType(),
@@ -202,7 +202,7 @@ class FlinkNativeRegionalSessionWindowTest {
     compareOutput(stock, nativeOperator, "clock=" + time);
   }
 
-  private static void compareOutput(
+  static void compareOutput(
       KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> stock,
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeOperator,
       String stage) {
@@ -278,8 +278,13 @@ class FlinkNativeRegionalSessionWindowTest {
     }
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
-      nativeHarness(String zone, long gap, boolean rocks, boolean proctime) throws Exception {
+  static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
+      String zone, long gap, boolean rocks, boolean proctime) throws Exception {
+    return nativeHarness(zone, gap, rocks, proctime, 3);
+  }
+
+  static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
+      String zone, long gap, boolean rocks, boolean proctime, int kind) throws Exception {
     var operator =
         new NativeColumnarSessionWindowAggregateOperator(
             gap,
@@ -288,7 +293,7 @@ class FlinkNativeRegionalSessionWindowTest {
             new int[] {0},
             new int[] {0},
             new int[] {0},
-            new int[] {3},
+            new int[] {kind},
             zone,
             true,
             zone,
@@ -308,8 +313,14 @@ class FlinkNativeRegionalSessionWindowTest {
   }
 
   @SuppressWarnings("unchecked")
-  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> stock(
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> stock(
       String zone, long gap, boolean rocks, boolean proctime) throws Exception {
+    return stock(zone, gap, rocks, proctime, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> stock(
+      String zone, long gap, boolean rocks, boolean proctime, boolean retracting) throws Exception {
     Class<?> builders;
     try {
       builders =
@@ -326,6 +337,7 @@ class FlinkNativeRegionalSessionWindowTest {
         (Object) new LogicalType[] {new BigIntType(), new BigIntType()});
     configure(builder, "withShiftTimezone", ZoneId.of(zone));
     configure(builder, "session", Duration.ofMillis(gap));
+    if (retracting) configure(builder, "withInputCountIndex", 0);
     if (proctime) configure(builder, "withProcessingTime");
     else configure(builder, "withEventTime", 1);
     RecordEqualiser equaliser = (left, right) -> left.getLong(0) == right.getLong(0);

@@ -1,7 +1,7 @@
 # Aggregate specialization fast paths
 
 **Applies to:** insert-only numeric, DATE, TIME and BOOLEAN MIN/MAX; deleted retracting MIN/MAX groups; grouped-value state and
-immediate changelog output; updating window string extrema; scalar SINGLE_VALUE partials; and mini-batch group-aggregate
+immediate changelog output; updating window string extrema and SESSION state; scalar SINGLE_VALUE partials; and mini-batch group-aggregate
 `DISTINCT` (q15/q16/q17-shaped queries)
 
 Two of the local aggregate's hot leaves were paying for generality their actual input doesn't need:
@@ -1192,3 +1192,25 @@ and engines; its timings are excluded from the comparison.
 The [window coverage evidence](../benchmarks/results/updating-window-extrema-2026-10-21.json)
 retains the raw trials, preceding implementation, actual previous fallback controls and CPU
 sample summary. One pass was used; no additional optimization pass is required for this case.
+
+## Updating SESSION retains its existing accumulators
+
+A session update normally extends one retained window. The signed path keeps that window's
+accumulator and merges only additional overlapping namespaces, matching Flink's merging-window
+state lifecycle. Rebuilding a fresh accumulator for each arrival serialized retained maps into
+Arrow partials merely to import them again, adding allocation, reference-count traffic and
+state-array construction. Retaining the accumulator removes that round trip.
+
+A CPU profile of the first implementation recorded 2,465 samples under session updates out of
+33,955 total process samples, with allocation, Arrow ownership teardown and state materialization
+prominent in those stacks. One measured pass reduced the million-row updating STRING SESSION
+median from 1.221 s (1.166–1.289) to 0.492 s (0.446–0.534), versus matched stock Flink
+0.927 s (0.909–0.933). No second optimization pass was needed. The query uses native Top-1
+input and COUNT/MIN/MAX over a ten-second SESSION at 64 keys, parallelism two, JDK 17,
+release+mimalloc, two warmups and three alternating measured engine pairs. Both perimeter
+transposes, JNI, exchange, state and the rowwise blackhole sink remain in the complete job.
+The profile uses a separate cold run; profiled timings are excluded from the comparison.
+
+The [updating window evidence](../benchmarks/results/updating-window-changelogs-2026-10-21.json)
+retains final trials on both releases, the actual previous production controls, source/binary
+hashes, the CPU summary and parity/recovery/upstream execution checks.

@@ -363,6 +363,7 @@ impl RocksWindowAggStore {
         watermark: i64,
         calendar: Option<&crate::window_calendar::WindowCalendar>,
     ) -> Result<Vec<StoredWindowGroup>, DataFusionError> {
+        self.next_exclusive_end = None;
         let mut closed: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)> = Vec::new();
         let mut candidates = Vec::new();
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
@@ -386,6 +387,10 @@ impl RocksWindowAggStore {
                     continue;
                 }
                 if end > watermark {
+                    self.next_exclusive_end = Some(
+                        self.next_exclusive_end
+                            .map_or(end, |previous| previous.min(end)),
+                    );
                     break;
                 }
                 let start = i64::from_le_bytes(value[..8].try_into().expect("window start"));

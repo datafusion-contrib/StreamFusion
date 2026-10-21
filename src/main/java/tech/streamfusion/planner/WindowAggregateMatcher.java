@@ -184,9 +184,8 @@ final class WindowAggregateMatcher {
       int[] grouping,
       scala.collection.Seq<AggregateCall> aggCalls,
       RelDataType inputType) {
-    if (!insertOnlyInput(node)
-        || !(windowing instanceof WindowAttachedWindowingStrategy)
-        || !windowing.isRowtime()) {
+    if (!supportedInput(node, windowing, aggCalls, inputType)
+        || !(windowing instanceof WindowAttachedWindowingStrategy)) {
       return false;
     }
     if (!WindowZoneGate.admits(node, windowing)) {
@@ -264,7 +263,7 @@ final class WindowAggregateMatcher {
       RelDataType inputType) {
     if (!(windowing instanceof TimeAttributeWindowingStrategy)
         || singlePhaseStringExtremaReason(node, windowing, aggCalls, inputType) != null
-        || !insertOnlyInput(node)
+        || !supportedInput(node, windowing, aggCalls, inputType)
         || !(FlinkCompat.isSessionWindow(windowing.getWindow()))) {
       return false;
     }
@@ -710,6 +709,14 @@ final class WindowAggregateMatcher {
 
   static RelNode substituteSession(StreamPhysicalWindowAggregate agg, PlanContext ctx) {
     int[] keyColumns = WindowAggregateMatcher.keyColumns(agg.grouping());
+    int[] kinds = insertOnlyInput(agg) ? kinds(agg.aggCalls()) : retractingKinds(agg.aggCalls());
+    int[] values = valueColumns(agg.aggCalls());
+    if (kinds.length > values.length) {
+      values = Arrays.copyOf(values, kinds.length);
+      values[values.length - 1] = -1;
+    }
+    int[] types =
+        Arrays.copyOf(valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()), kinds.length);
     // Always columnar: the keyed shuffle stays Arrow where it sits on a columnar
     // producer, otherwise the transition pass transposes at the boundary.
     return new StreamPhysicalNativeColumnarSessionWindowAggregate(
@@ -719,11 +726,11 @@ final class WindowAggregateMatcher {
         agg.getRowType(),
         WindowAggregateMatcher.gapMillis(agg.windowing()),
         WindowAggregateMatcher.timeColumn(agg.windowing()),
-        WindowAggregateMatcher.valueColumns(agg.aggCalls()),
-        filterColumns(agg.aggCalls(), agg.aggCalls().size()),
+        values,
+        filterColumns(agg.aggCalls(), kinds.length),
         keyColumns,
-        WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), agg.getInput().getRowType()),
-        WindowAggregateMatcher.kinds(agg.aggCalls()),
+        types,
+        kinds,
         WindowAggregateMatcher.isProctime(agg.windowing()),
         WindowAggregateMatcher.isLtz(agg.windowing()));
   }
@@ -844,8 +851,7 @@ final class WindowAggregateMatcher {
    */
   static String unsupportedReason(RelNode node, WindowingStrategy windowing) {
     if (!insertOnlyInput(node)) {
-      return "window aggregate: retracting input supports only aligned event-time"
-          + " TUMBLE/HOP/CUMULATE with grouping-only, numeric SUM/AVG,"
+      return "window aggregate: retracting input requires grouping-only, numeric SUM/AVG,"
           + " typed MIN/MAX, supported COUNT(value), or COUNT(*) (optional FILTER)";
     }
     if (windowing instanceof WindowAttachedWindowingStrategy) {
@@ -854,8 +860,8 @@ final class WindowAggregateMatcher {
             + ATTACHED_SINGLE_PHASE.key()
             + "=false";
       }
-      return "window aggregate: attached bounds require append-only event-time input, no FILTER,"
-            + " and supported aggregate/key types";
+      return "window aggregate: attached bounds require TUMBLE/HOP/CUMULATE with supported"
+          + " aggregate/key types";
     }
     String zoneReason = WindowZoneGate.unsupportedReason(node, windowing);
     if (zoneReason != null) {
@@ -885,8 +891,7 @@ final class WindowAggregateMatcher {
       WindowingStrategy windowing,
       scala.collection.Seq<AggregateCall> calls,
       RelDataType inputType) {
-    return insertOnlyInput(node)
-        || (windowing.isRowtime() && supportedRetractingAggregates(calls, inputType));
+    return insertOnlyInput(node) || supportedRetractingAggregates(calls, inputType);
   }
 
   static boolean supportedRetractingAggregates(

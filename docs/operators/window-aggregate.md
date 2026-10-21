@@ -751,14 +751,13 @@ enables columnar composition with downstream consumers; it is not a standalone t
 
 ## Matcher declines
 
-- Window not event-time `TUMBLE`/`HOP`/`CUMULATE` over a local-time-zone or plain
-  `TIMESTAMP` rowtime.
+- Fixed-window assignments outside the supported TUMBLE/HOP/CUMULATE shapes or timestamp attributes.
+- Standalone SESSION TVFs and SESSION attached-bound consumers. Fused SESSION aggregates
+  are native; the remaining assignment contexts stay under the original window-context audit.
 - Internal processing-time local/global plans; both released planners retain one phase.
 - Slicing TVF `HOP` slide / `CUMULATE` step that doesn't divide size; released Flink rejects them.
 - Legacy row-count `TUMBLE`/`HOP` windows from the Table API.
 - Legacy early/late firing or allowed lateness.
-- A legacy SESSION group window over retracting or updating input. Legacy fixed windows accept
-  the signed COUNT/SUM/AVG/MIN/MAX forms described below.
 - A grouping key outside the [verified scalar types](#scalar-grouping-and-partition-keys).
 - A value type/aggregate mismatch.
   DATE/TIME/BOOLEAN and TIMESTAMP/TIMESTAMP_LTZ values are admitted for append MIN/MAX
@@ -768,17 +767,17 @@ enables columnar composition with downstream consumers; it is not a standalone t
 - Single-phase string MIN/MAX when explicitly disabled with
   `streamfusion.window.string-extrema.single-phase.enabled=false`. All otherwise supported
   shapes default native; local/global admission is unchanged.
-- Attached bounds outside append-only event-time TUMBLE/HOP/CUMULATE.
+- Attached bounds outside TUMBLE/HOP/CUMULATE with admitted aggregates.
   Otherwise supported single-phase attached bounds are admitted by default;
   `streamfusion.window.attached.single-phase.enabled=false` forces stock execution.
 - Windowed DISTINCT other than single-argument COUNT over the types listed above:
   SUM/AVG DISTINCT and complex values.
   Non-windowed DISTINCT has separate coverage; see [GROUP BY](group-by.md).
-- Retracting input outside aligned event-time TUMBLE/HOP/CUMULATE with grouping-only,
-  numeric SUM/AVG (including shared exact SUM0), admitted COUNT(value), typed MIN/MAX, and COUNT(*)
-  with optional FILTER; legacy fixed TUMBLE/HOP also admits these forms on both clocks.
-  DISTINCT, processing-time TVFs, attached bounds and SESSION still fall back on updating input. Admission checks the **input**
-  changelog even when final output is append-only.
+- Updating DISTINCT windows. Other updating windows admit grouping-only, numeric SUM/AVG
+  (including shared exact SUM0), typed MIN/MAX and ordinary COUNT with optional FILTER.
+  Fixed and SESSION windows support both clocks; released Flink 1.18 still rejects updating TVFs.
+  Attached bounds retain their assigned window and row kinds. Admission checks the **input** changelog
+  even when final output is append-only.
   The diagnostic names the supported retracting forms. Remaining coverage is tracked in
   [#99](https://github.com/datafusion-contrib/StreamFusion/issues/99).
 - Unverified physical layouts from Flink's optional
@@ -1879,9 +1878,9 @@ filters retain a live group, and only a zero total input count suppresses the fi
 Legacy plans remain one phase when TWO_PHASE is requested. Existing processing-time assignment
 and timer handling apply to admitted legacy fixed windows.
 
-Updating SESSION and processing-time TVFs remain separate changelog restrictions; they are
-still tracked under the original full aggregate/window goal. Early/late firing and allowed
-lateness retain their explicit fallback. Flink 1.18 cannot execute updating slicing TVFs.
+SESSION windows admit the same signed forms on both clocks. Processing-time fixed TVFs
+admit them on Flink 2.2; Flink 1.18 cannot execute updating TVFs. Early/late firing and allowed
+lateness retain their explicit fallback.
 
 Exact comparisons cover fifteen types across three slicing shapes and both phases on 2.2,
 four legacy fixed grids on both releases, independent FILTERs, nullable keys/values, unmatched
@@ -1896,7 +1895,7 @@ the early-firing MIN/MAX control.
 
 One million inputs feed an updating Top-1 with 64 keys, followed by COUNT/MIN/MAX over
 2 s/10 s HOP windows and a rowwise blackhole sink. These release+mimalloc, JDK 17 jobs
-retain both perimeter transposes, exchange, JNI and state. Parallelism is one with two
+retain both perimeter transposes, exchange, JNI and state. Parallelism is two with two
 task slots and a 2 GiB heap; two warmups precede three alternating measured engine pairs.
 Native trials require consumed final windows, and consumed local/global operators for
 TWO_PHASE. These are complete-job diagnostics; no Java timer around JNI is presented
@@ -1926,3 +1925,72 @@ was needed. The [optimization ledger](../optimizations/aggregate-specialization-
 explains that change. The [evidence artifact](../benchmarks/results/updating-window-extrema-2026-10-21.json)
 retains every measured trial and range, binary/source hashes, previous controls, CPU sample
 summary, parity/recovery checks and unchanged upstream native-execution evidence.
+
+## Updating SESSION and processing-time windows
+
+SESSION keeps signed COUNT/SUM/AVG and typed MIN/MAX state, including independent FILTERs,
+all-NULL groups and complete deletion. A zero total input count suppresses final output; the
+empty namespace still participates in session merging until its timer closes. Flink 2.2 admits
+updating SESSION TVFs; both releases admit legacy SESSION. Requesting TWO_PHASE retains the
+released single-phase SESSION plan. Processing-time fixed TVFs on 2.2 use the same signed
+fixed-window kernels with clock assignment and timers.
+
+Retractions preserve arrival order across session bridges. Sorting all incoming rows by time
+and merging a whole connected component before applying its rows could move a merge ahead of
+an earlier deletion and change a cached winner. The updating path batches only equal timestamps,
+which share an assignment. It retains the first existing accumulator and merges other overlapping
+sessions into it, preserving Flink's retained-state boundary while avoiding unnecessary Arrow
+partial materialization. Append-only sessions keep their existing larger connected runs.
+
+Checkpoint tests cover signed sessions on memory and the native RocksDB backend, two SQL
+restores with STRING/DECIMAL/nanosecond extrema, and event/processing-time COUNT with backend
+transitions. COUNT uses direct typed RocksDB state; mapped extrema retain the snapshot
+compatibility path. Controlled clocks test processing-time firing independently of live-job
+wall-clock timing, and SQL tests require consumed native operators on admitted paths.
+
+Assigned-window consumers retain the Arrow row-kind sidecar when preparing their aggregate
+batches. Standalone TVFs are changelog-safe: 2.2 preserves input row kinds, while 1.18 retains
+its released insert-only output behavior. Attached event-time windows admit signed local/global
+state, including filters that depend on assigned bounds. Processing-time attached consumers
+register the native state's actual earliest window end and reconstruct it on restore, so HOP
+and CUMULATE fire at each assigned end rather than only a fixed enclosing grid boundary.
+Their released processing-time plan remains single-phase.
+
+A predicate that calls on processing-time window bounds makes released Flink lower the
+query to ordinary GROUP BY over the assigned columns, rather than a window aggregate.
+StreamFusion retains that lowering and requires native assignment plus the native group
+aggregate. Event-time bounds-dependent predicates retain the attached window aggregate.
+
+### Updating SESSION and attached-window measurements
+
+Release+mimalloc, JDK 17, one million inputs, 64 keys, parallelism two with two task slots
+and a 2 GiB heap; two warmups and three alternating measured engine pairs. SESSION uses a
+ten-second gap. Attached HOP uses a 2 s/10 s grid and an aggregate FILTER that references
+window_start, retaining standalone assignment. Complete jobs include native Top-1 input,
+both perimeter transposes, JNI, exchange/state and a rowwise blackhole sink. Every candidate
+requires consumed native final windows; attached splits require consumed local/global and
+assignment operators. These diagnostics do not substitute a Java JNI timer for the small
+Rust/Arrow functionality boundary.
+
+| Flink / context / type / phase | Stock median (s) | Native median (s) | Stock/native |
+|---|---:|---:|---:|
+| 1.18 / legacy SESSION / BIGINT / ONE_PHASE | 0.886 | 0.398 | 2.23x |
+| 1.18 / legacy SESSION / STRING / ONE_PHASE | 0.938 | 0.495 | 1.90x |
+| 2.2 / attached HOP / BIGINT / ONE_PHASE | 1.491 | 0.992 | 1.50x |
+| 2.2 / attached HOP / BIGINT / TWO_PHASE | 1.635 | 0.675 | 2.42x |
+| 2.2 / SESSION TVF / BIGINT / ONE_PHASE | 0.839 | 0.493 | 1.70x |
+| 2.2 / SESSION TVF / DECIMAL(38,8) / ONE_PHASE | 0.864 | 0.508 | 1.70x |
+| 2.2 / legacy SESSION / STRING / ONE_PHASE | 0.936 | 0.498 | 1.88x |
+| 2.2 / SESSION TVF / STRING / ONE_PHASE | 0.919 | 0.512 | 1.80x |
+
+Actual previous production code at 06813ae3 retained SESSION and updating attached windows
+on Flink. Previous StreamFusion medians were 0.890 s for STRING SESSION TVF and 0.942 s
+for legacy STRING SESSION. Attached BIGINT HOP measured 1.531/1.621 s in ONE_PHASE/TWO_PHASE,
+versus candidate 0.992/0.675 s. Only the identical
+benchmark fixture was copied and compiled for these controls; its planner/runtime/POM and
+previous native DSO were preserved. The [evidence artifact](../benchmarks/results/updating-window-changelogs-2026-10-21.json)
+retains each previous-control trial alongside the candidate, stock and pre-optimization
+trials, source/binary hashes, CPU sample summary and exact execution/recovery checks.
+One measured optimization pass removed redundant SESSION accumulator reconstruction;
+no second pass was needed. Processing-time tests use controlled clocks and make no separate
+throughput claim for live-job timer scheduling.

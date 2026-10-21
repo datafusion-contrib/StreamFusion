@@ -58,6 +58,7 @@ pub(crate) struct SessionAggregator {
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
     aggregates: Vec<WindowAggregate>,
+    live_count: Option<usize>,
     // Keyed by the arrow-row memcomparable key encoding, like the other aggregators (see
     // `TumblingAggregator::key_converter`).
     sessions: HashMap<OwnedRow, BTreeMap<i64, Session>>,
@@ -101,6 +102,9 @@ impl SessionAggregator {
             calendar: None,
             next_timer_deadline: i64::MIN,
             aggregates: build_aggregates(&kinds, &value_types),
+            live_count: kinds
+                .iter()
+                .position(|kind| matches!(*kind, LIVE_COUNT | HIDDEN_LIVE_COUNT)),
             sessions: HashMap::default(),
             key_converter: None,
             key_types: Vec::new(),
@@ -205,6 +209,10 @@ impl SessionAggregator {
 
     pub(crate) fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let ts = column_i64(batch, "ts");
+        let retracting = self.live_count.is_some();
+        let changes = self
+            .live_count
+            .and_then(|_| batch.column_by_name(ROW_KIND_COLUMN));
         // One value column per aggregate (value0, value1, …); each accumulator reads its own.
         let values: Vec<&ArrayRef> = (0..self.aggregates.len())
             .map(|i| {
@@ -316,13 +324,21 @@ impl SessionAggregator {
                 }
             }
             let mut rows = accepted;
-            rows.sort_by_key(|&row| ts.value(row as usize));
+            // Retractions observe session merges in arrival order. Only identical timestamps can
+            // share an updating run without moving a merge ahead of an earlier input row.
+            if !retracting {
+                rows.sort_by_key(|&row| ts.value(row as usize));
+            }
             let mut run_start = 0;
             while run_start < rows.len() {
                 let mut run_end = run_start + 1;
                 let mut last_ts = ts.value(rows[run_start] as usize);
                 while run_end < rows.len()
-                    && ts.value(rows[run_end] as usize) <= last_ts + self.gap_millis
+                    && if retracting {
+                        ts.value(rows[run_end] as usize) == last_ts
+                    } else {
+                        ts.value(rows[run_end] as usize) <= last_ts + self.gap_millis
+                    }
                 {
                     last_ts = ts.value(rows[run_end] as usize);
                     run_end += 1;
@@ -334,6 +350,9 @@ impl SessionAggregator {
                 let mut run_rows = rows[run_start..run_end].to_vec();
                 run_rows.sort_unstable();
                 let indices = UInt32Array::from(run_rows);
+                let run_changes = changes
+                    .map(|kinds| take(kinds, &indices, None))
+                    .transpose()?;
                 let run_values: Vec<Option<ArrayRef>> = values
                     .iter()
                     .zip(&timestamps)
@@ -365,11 +384,22 @@ impl SessionAggregator {
 
                 let mut start = candidate_start;
                 let mut end = candidate_end;
-                let mut accumulators: Vec<Box<dyn Accumulator>> = self
-                    .aggregates
-                    .iter()
-                    .map(WindowAggregate::create_accumulator)
-                    .collect();
+                let mut overlapping = overlapping.into_iter();
+                let retained = if retracting { overlapping.next() } else { None };
+                let mut accumulators: Vec<Box<dyn Accumulator>> = if let Some(overlap) = retained {
+                    let session = map.remove(&overlap).expect("retained session");
+                    if track {
+                        delta -= session_bytes(&session) as isize;
+                    }
+                    start = start.min(overlap);
+                    end = end.max(session.end);
+                    session.accumulators
+                } else {
+                    self.aggregates
+                        .iter()
+                        .map(WindowAggregate::create_accumulator)
+                        .collect()
+                };
                 for overlap in overlapping {
                     let session = map.remove(&overlap).expect("session present");
                     if track {
@@ -394,11 +424,13 @@ impl SessionAggregator {
                             .update_rows(column, indices.values())?;
                         continue;
                     }
-                    accumulator
-                        .update_batch(std::slice::from_ref(
-                            run_values[i].as_ref().expect("selected values"),
-                        ))
-                        .expect("update");
+                    let values = run_values[i].as_ref().expect("selected values");
+                    match &run_changes {
+                        Some(changes) => {
+                            accumulator.update_batch(&[values.clone(), changes.clone()])?
+                        }
+                        None => accumulator.update_batch(std::slice::from_ref(values))?,
+                    }
                 }
                 let session = Session { end, accumulators };
                 if track {
@@ -461,6 +493,9 @@ impl SessionAggregator {
                 if track {
                     freed += session_bytes(&session);
                 }
+                if !Self::is_live(self.live_count, &mut session.accumulators)? {
+                    continue;
+                }
                 let results = session
                     .accumulators
                     .iter_mut()
@@ -512,6 +547,9 @@ impl SessionAggregator {
         let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::with_capacity(fired.len());
         for session in &fired {
             let mut accumulators = self.accumulators_from_scalars(&session.state);
+            if !Self::is_live(self.live_count, &mut accumulators)? {
+                continue;
+            }
             let results = accumulators
                 .iter_mut()
                 .map(|a| a.evaluate().expect("failed to finalize"))
@@ -524,6 +562,16 @@ impl SessionAggregator {
             ));
         }
         Ok(self.emitted_batch(rows))
+    }
+
+    fn is_live(
+        live_count: Option<usize>,
+        accumulators: &mut [Box<dyn Accumulator>],
+    ) -> Result<bool, DataFusionError> {
+        match live_count {
+            Some(index) => Ok(accumulators[index].evaluate()? != ScalarValue::Int64(Some(0))),
+            None => Ok(true),
+        }
     }
 
     /// The fired-session output batch `[key.., window_start, window_end, result0..]`.
@@ -1199,4 +1247,94 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreSessionAggregatorPar
                 .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
     })
+}
+
+#[cfg(test)]
+mod updating_tests {
+    use super::*;
+
+    fn batch() -> RecordBatch {
+        let values: ArrayRef = Arc::new(Int64Array::from(vec![1, 5, 9, 3, 3, 2, 5, 4, 7, 0, 9, 1]));
+        RecordBatch::try_from_iter(vec![
+            (
+                "ts",
+                Arc::new(Int64Array::from(vec![
+                    0, 10000, 10000, 5000, 5000, 30000, 10000, 20000, 25000, 15000, 10000, 15000,
+                ])) as ArrayRef,
+            ),
+            ("value0", values.clone()),
+            ("value1", values.clone()),
+            ("value2", values),
+            (
+                "value3",
+                Arc::new(Int64Array::from(vec![1; 12])) as ArrayRef,
+            ),
+            (
+                ROW_KIND_COLUMN,
+                Arc::new(Int8Array::from(vec![3, 0, 0, 0, 3, 0, 3, 0, 0, 0, 3, 0])) as ArrayRef,
+            ),
+        ])
+        .unwrap()
+    }
+
+    fn accounted(aggregate: &SessionAggregator) {
+        let bytes: usize = aggregate
+            .sessions
+            .iter()
+            .map(|(key, windows)| {
+                owned_row_bytes(key) + windows.values().map(session_bytes).sum::<usize>()
+            })
+            .sum();
+        assert_eq!(aggregate.memory.state_bytes, bytes);
+    }
+
+    #[test]
+    fn signed_bridges_preserve_winners_and_reservations_across_restore() {
+        let input = batch();
+        for chunk in [1, 3, 64] {
+            let mut aggregate = SessionAggregator::new(5000, vec![0; 4], vec![23, 24, 9, 12])
+                .with_memory_budget(1 << 20)
+                .unwrap();
+            for start in (0..6).step_by(chunk) {
+                aggregate
+                    .update(&input.slice(start, chunk.min(6 - start)))
+                    .unwrap();
+                accounted(&aggregate);
+            }
+            let snapshot = aggregate.snapshot();
+            aggregate =
+                SessionAggregator::restore(5000, vec![0; 4], vec![23, 24, 9, 12], &snapshot)
+                    .with_memory_budget(1 << 20)
+                    .unwrap();
+            for start in (6..12).step_by(chunk) {
+                aggregate
+                    .update(&input.slice(start, chunk.min(12 - start)))
+                    .unwrap();
+                accounted(&aggregate);
+            }
+            let output = aggregate.flush(40000).unwrap();
+            assert_eq!(output.num_rows(), 1);
+            for (name, expected) in [
+                ("result0", 0),
+                ("result1", 7),
+                ("result2", 13),
+                ("result3", 4),
+            ] {
+                assert_eq!(column_i64(&output, name).value(0), expected);
+            }
+            assert_eq!(aggregate.memory.state_bytes, 0);
+        }
+    }
+
+    #[test]
+    fn zero_live_sessions_release_state_without_emitting() {
+        let input = batch();
+        let mut aggregate = SessionAggregator::new(5000, vec![0; 4], vec![23, 24, 9, 12])
+            .with_memory_budget(1 << 20)
+            .unwrap();
+        aggregate.update(&input.slice(3, 2)).unwrap();
+        accounted(&aggregate);
+        assert_eq!(aggregate.flush(20000).unwrap().num_rows(), 0);
+        assert_eq!(aggregate.memory.state_bytes, 0);
+    }
 }

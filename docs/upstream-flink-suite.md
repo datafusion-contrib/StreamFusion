@@ -1242,3 +1242,8 @@ contracts. Its one-hour-retention single-phase variants require native grouped a
 the two-phase variants retain the explicit append-only LISTAGG partial-layout fallback until
 the retracting merge is implemented. Focused operator tests add independent list-entry and
 pending-retraction deadlines, survivor refresh and repeated recovery on both state backends.
+
+Standalone native window assignment participates in the execution witness: the agent binds
+the window table-function operator on open and records the Arrow input row count only after
+a successful batch call. A native Calc downstream does not satisfy a window-assignment
+contract. This covers ordinary and changelog inputs with the released row-kind behavior.

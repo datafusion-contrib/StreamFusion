@@ -20,10 +20,17 @@ class RetractingWindowBenchmark {
   private static final long ROWS = Long.getLong("window.rows", 1_000_000L);
   private static final int WARMUP = Integer.getInteger("window.warmup", 2);
   private static final int RUNS = Integer.getInteger("window.runs", 5);
+  private static final boolean SESSION = Boolean.getBoolean("window.session");
   private static final boolean LEGACY = Boolean.getBoolean("window.legacy");
   private static final boolean GROUPING_ONLY = Boolean.getBoolean("window.groupingOnly");
-  private static final boolean FILTERED = Boolean.getBoolean("window.filtered");
-  private static final String FILTER = FILTERED ? " FILTER (WHERE MOD(v, 2) = 0)" : "";
+  private static final boolean ATTACHED = Boolean.getBoolean("window.attached");
+  private static final boolean FILTERED = ATTACHED || Boolean.getBoolean("window.filtered");
+  private static final String FILTER =
+      FILTERED
+          ? " FILTER (WHERE MOD(v, 2) = 0"
+              + (ATTACHED ? " AND window_start<TIMESTAMP '1970-01-01 00:00:05'" : "")
+              + ")"
+          : "";
   private static final boolean AVERAGE = Boolean.getBoolean("window.average");
   private static final String AVERAGE_TYPE = System.getProperty("window.averageType", "BIGINT");
   private static final String AVERAGE_RESULT_TYPE = averageResultType();
@@ -51,29 +58,34 @@ class RetractingWindowBenchmark {
                   : AVERAGE
                       ? ", COUNT(v)" + FILTER + ", AVG(CAST(v AS " + AVERAGE_TYPE + "))" + FILTER
                       : ", COUNT(v)" + FILTER + ", SUM(CAST(v AS " + SUM_TYPE + "))" + FILTER)
-          + (LEGACY
-              ? " FROM ranked GROUP BY k,HOP(rt,INTERVAL '2' SECOND,INTERVAL '10' SECOND)"
-              : " FROM TABLE(HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL '10'"
-                    + " SECOND)) GROUP BY k, window_start, window_end");
+          + (SESSION
+              ? LEGACY
+                  ? " FROM ranked GROUP BY k,SESSION(rt,INTERVAL '10' SECOND)"
+                  : " FROM TABLE(SESSION(TABLE ranked PARTITION BY k,DESCRIPTOR(rt),INTERVAL '10'"
+                      + " SECOND)) GROUP BY k,window_start,window_end"
+              : LEGACY
+                  ? " FROM ranked GROUP BY k,HOP(rt,INTERVAL '2' SECOND,INTERVAL '10' SECOND)"
+                  : " FROM TABLE(HOP(TABLE ranked, DESCRIPTOR(rt), INTERVAL '2' SECOND, INTERVAL"
+                      + " '10' SECOND)) GROUP BY k, window_start, window_end");
 
   @ParameterizedTest
   @ValueSource(strings = {"ONE_PHASE", "TWO_PHASE"})
   void retractingWindow(String phase) throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(
-        !LEGACY || phase.equals("ONE_PHASE"), "Released legacy windows remain single-phase");
+        (!LEGACY && !SESSION) || phase.equals("ONE_PHASE"),
+        "Released legacy windows remain single-phase");
     String plan = NativePlanner.explain(environment(phase), SQL);
     if (EXPECT_NATIVE
         && (!plan.contains("NativeColumnarTopN")
-            || !plan.contains(
-                phase.equals("TWO_PHASE")
-                    ? "NativeColumnarGlobalWindowAggregate"
-                    : "NativeColumnarWindowAggregate")
+            || !plan.contains(windowOperator(phase))
             || !plan.contains("RowDataToArrow")
             || !plan.contains("ArrowToRowData"))) {
       throw new IllegalStateException(
           "Expected native window aggregate and both transposes: " + plan);
     }
-    if (!EXPECT_NATIVE && plan.contains("NativeColumnarWindowAggregate"))
+    if (EXPECT_NATIVE && ATTACHED && !plan.contains("NativeWindowTableFunction"))
+      throw new IllegalStateException(plan);
+    if (!EXPECT_NATIVE && plan.contains(windowOperator(phase)))
       throw new IllegalStateException(plan);
     if (!EXPECT_NATIVE && plan.contains("NativeColumnarGlobalWindowAggregate"))
       throw new IllegalStateException(plan);
@@ -90,10 +102,10 @@ class RetractingWindowBenchmark {
           if (EXPECT_NATIVE && scan != null) {
             if (scan.substitutions() == 0) throw new IllegalStateException(scan.explainSummary());
             RecoveryExecutionMetrics.assertConsumed(
-                metrics.nativeOperators(),
-                phase.equals("TWO_PHASE")
-                    ? "NativeColumnarGlobalWindowAggregate"
-                    : "NativeColumnarWindowAggregate");
+                metrics.nativeOperators(), windowOperator(phase));
+            if (ATTACHED)
+              RecoveryExecutionMetrics.assertConsumed(
+                  metrics.nativeOperators(), "NativeWindowTableFunction");
             if (phase.equals("TWO_PHASE"))
               RecoveryExecutionMetrics.assertConsumed(
                   metrics.nativeOperators(), "NativeColumnarLocalWindowAggregate");
@@ -117,8 +129,8 @@ class RetractingWindowBenchmark {
     System.out.printf(
         Locale.ROOT,
         "[retracting-window] groupingOnly=%s filtered=%s average=%s averageType=%s sumType=%s"
-            + " extremeType=%s legacy=%s phase=%s rows=%d Flink=%.6fs Native=%.6fs ratio=%.3fx"
-            + " host_trials=%s native_trials=%s%n",
+            + " extremeType=%s legacy=%s session=%s attached=%s phase=%s rows=%d Flink=%.6fs"
+            + " Native=%.6fs ratio=%.3fx host_trials=%s native_trials=%s%n",
         GROUPING_ONLY,
         FILTERED,
         AVERAGE,
@@ -126,6 +138,8 @@ class RetractingWindowBenchmark {
         SUM_TYPE,
         EXTREME_TYPE,
         LEGACY,
+        SESSION,
+        ATTACHED,
         phase,
         ROWS,
         host,
@@ -133,6 +147,14 @@ class RetractingWindowBenchmark {
         host / nativeTime,
         Arrays.toString(times[0]),
         Arrays.toString(times[1]));
+  }
+
+  private static String windowOperator(String phase) {
+    return SESSION
+        ? "NativeColumnarSessionWindowAggregate"
+        : phase.equals("TWO_PHASE")
+            ? "NativeColumnarGlobalWindowAggregate"
+            : "NativeColumnarWindowAggregate";
   }
 
   private static String averageResultType() {

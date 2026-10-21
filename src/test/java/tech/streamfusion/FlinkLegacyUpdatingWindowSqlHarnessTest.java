@@ -87,7 +87,8 @@ class FlinkLegacyUpdatingWindowSqlHarnessTest {
                 + "SUM(v),AVG(CAST(v AS DECIMAL(38,4))) FROM src GROUP BY k,"
                 + window;
         var comparison = NativeFailureParity.run(() -> environment(metrics), sql);
-        if (type.equals("CHAR(8)") && !tech.streamfusion.compat.RuntimeCompat.supportsRetractingCharExtrema()) {
+        if (type.equals("CHAR(8)")
+            && !tech.streamfusion.compat.RuntimeCompat.supportsRetractingCharExtrema()) {
           comparison.assertFailure(org.apache.flink.table.api.TableException.class,
               NativeFailureParity.Phase.PLANNING, NativeFailureParity.Route.FALLBACK);
           continue;
@@ -103,7 +104,7 @@ class FlinkLegacyUpdatingWindowSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment environment(RecoveryExecutionMetrics metrics) {
+  static TableEnvironment environment(RecoveryExecutionMetrics metrics) {
     var env = metrics.environment(new Configuration(), 1, 0);
     var table = StreamTableEnvironment.create(env);
     table.getConfig().setLocalTimeZone(ZoneOffset.UTC);

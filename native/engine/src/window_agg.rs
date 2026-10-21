@@ -674,6 +674,12 @@ impl TumblingAggregator {
             closed.sort_by_key(|end| (deadlines[end], *end));
             return closed;
         }
+        self.next_timer_deadline = self
+            .windows
+            .keys()
+            .copied()
+            .find(|end| *end > watermark)
+            .map_or(i64::MIN, |end| end.saturating_sub(1));
         self.windows
             .keys()
             .copied()
@@ -1273,14 +1279,12 @@ impl TumblingAggregator {
             .as_mut()
             .expect("window-aggregate rocksdb store")
             .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
-        if self.calendar.is_some() {
-            self.next_timer_deadline = self
-                .store
-                .as_ref()
-                .unwrap()
-                .next_exclusive_end()
-                .map_or(i64::MIN, |end| end.saturating_sub(1));
-        }
+        self.next_timer_deadline = self
+            .store
+            .as_ref()
+            .unwrap()
+            .next_exclusive_end()
+            .map_or(i64::MIN, |end| end.saturating_sub(1));
         let mut keys: Vec<OwnedRow> = Vec::with_capacity(fired.len());
         let mut starts = Vec::with_capacity(fired.len());
         let mut ends = Vec::with_capacity(fired.len());

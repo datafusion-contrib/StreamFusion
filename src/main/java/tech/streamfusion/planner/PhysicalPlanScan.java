@@ -446,7 +446,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
     // (the `$row_kind$` tag rides through), so — like Expand — it is exempt from the insert-only
     // guard.
     entries.add(
-        Substitution.of(StreamPhysicalCorrelate.class, "tableFunction", TableFunctionMatcher::substitute)
+        Substitution.of(
+                StreamPhysicalCorrelate.class, "tableFunction", TableFunctionMatcher::substitute)
             .shaped(TableFunctionMatcher::isUserTableFunction)
             .matching(TableFunctionMatcher::matches)
             .reason(TableFunctionMatcher::unsupportedReason)
@@ -517,17 +518,21 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .reason(TemporalSortMatcher::unsupportedReason));
 
     // A windowing table function assigns each row to its window(s) and appends
-    // window_start/window_end/window_time — a stateless per-row map, so it is columnar in and out and
+    // window_start/window_end/window_time — a stateless per-row map, so it is columnar in and out
+    // and
     // never appears fused into a window aggregate (Flink collapses TVF + windowed GROUP BY into one
-    // node); it survives standalone only feeding a window join/Top-N. Its rewritten input is wrapped
-    // by the transition pass at the perimeter (the TVF does not shuffle, so no keyed exchange here).
+    // node); it survives standalone only feeding a window join/Top-N. Its rewritten input is
+    // wrapped
+    // by the transition pass at the perimeter (the TVF does not shuffle, so no keyed exchange
+    // here).
     entries.add(
         Substitution.of(
                 StreamPhysicalWindowTableFunction.class,
                 "windowTableFunction",
                 WindowTableFunctionMatcher::substitute)
             .matching(WindowTableFunctionMatcher::matches)
-            .reason(WindowTableFunctionMatcher::unsupportedReason));
+            .reason(WindowTableFunctionMatcher::unsupportedReason)
+            .changelogSafe());
 
     // Window Top-N over a windowing-TVF input: per window and partition key, keep the top-N rows by
     // the order key and emit them when a watermark closes the window. Append-only; the keyed
@@ -617,7 +622,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             .changelogSafe());
 
     entries.add(
-        Substitution.of(StreamPhysicalOverAggregate.class, "over", NonTimeRowNumberMatcher::substitute)
+        Substitution.of(
+                StreamPhysicalOverAggregate.class, "over", NonTimeRowNumberMatcher::substitute)
             .shaped(NonTimeRowNumberMatcher::hasShape)
             .keyedState()
             .matching(NonTimeRowNumberMatcher::matches)

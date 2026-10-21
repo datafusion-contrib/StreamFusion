@@ -76,8 +76,7 @@ final class GlobalWindowAggregateMatcher {
     }
     boolean retracting = !WindowAggregateMatcher.insertOnlyInput(aggregate);
     if (retracting) {
-      if (attached
-          || !windowing.isRowtime()
+      if (!windowing.isRowtime()
           || !WindowAggregateMatcher.supportedRetractingAggregates(
               aggregate.aggCalls(), aggregate.inputRowTypeOfLocalAgg())) {
         return "global window aggregate: retracting input requires grouping-only,"

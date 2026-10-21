@@ -159,3 +159,12 @@ boundary in a budgeted native temporary view, drained before watermarks and chec
 Directly merging each partial into retained state can reseek an unmatched negative entry
 when a transient winner cancels, producing a different result. Arrow structured partials
 and snapshots carry the same cached value, map size and value/count entries on either backend.
+
+Updating SESSION windows preserve the arrival order of namespace merges. Arroyo sorts batch
+rows into connected runs before re-aggregation; that remains our append-only path. Signed
+accumulators instead follow Flink's merging-window state lifecycle, batching only identical
+timestamps and retaining the first existing accumulator before merging the other namespaces.
+This avoids moving a bridge ahead of a prior retraction. It also avoids reconstructing retained
+state through Arrow partials on every update; the CPU profile and measured one-pass improvement
+are recorded with updating window benchmark evidence. Zero input-count namespaces remain
+mergeable but do not emit a final result.
