@@ -82,15 +82,6 @@ final class GroupAggregateMatcher {
         if (call.getArgList().size() == 2
             && !literalStringColumn(agg.getInput(), call.getArgList().get(1)))
           return "GROUP BY: LISTAGG requires a non-null character literal separator";
-        Long hint = FlinkCompat.singleStateTtl(agg);
-        long retention =
-            hint == null
-                ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
-                    .getIdleStateRetention()
-                    .toMillis()
-                : hint;
-        if (retention > 0 && call.isDistinct())
-          return "GROUP BY: DISTINCT LISTAGG with state TTL is not yet verified";
         continue;
       }
       if (kind >= 26 && kind <= 31) {
@@ -358,7 +349,9 @@ final class GroupAggregateMatcher {
               || kind == 18
               || kind == 19
               || kind == 20
-              || kind == 34)) {
+              || kind == 34
+              || kind == KIND_LISTAGG_DISTINCT_APPEND
+              || kind == KIND_LISTAGG_DISTINCT_RETRACT)) {
         kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_TTL;
         if (ChangelogPlanUtils.inputInsertOnly(agg))
           kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_APPEND;

@@ -127,3 +127,15 @@ Both store versioned accumulator snapshots. Flink 1.18 NULL-key serialization fa
 are deferred until materialization; structured errors cross JNI only after the imported
 Arrow batch has been dropped. The cold legacy failure delegates to the released Flink
 aggregate, preserving its wrapped exception without reconstructing JDK-specific messages.
+
+Single-phase retained LISTAGG DISTINCT now uses the shared DISTINCT entry clock alongside
+its existing ordered accumulator. The released generated wrapper writes append membership
+only when a filter bit changes; retracting counters write on each admitted non-NULL update.
+Expiry removes only membership, leaving the cached prefix and inner ListView entries intact.
+One-argument LISTAGG may share a clock with COUNT DISTINCT, while an explicit separator is
+a second DISTINCT argument and separates its view from one-argument consumers. Existing raw
+keyed snapshots retain these clocks and the list's independent deadlines together. Migration
+from a snapshot without clocks seeds each full argument view separately from the saved group
+clock, or the restore time for an old snapshot without a group clock. This reuses
+the established incremental state machinery after consulting Arroyo's incremental aggregator;
+its unordered batch recomputation still cannot preserve LISTAGG's observable arrival order.

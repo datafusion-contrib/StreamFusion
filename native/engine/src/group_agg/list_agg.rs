@@ -91,12 +91,12 @@ impl ListAggState {
         separator: &str,
         retract: bool,
         ttl: StateTtl,
-    ) {
+    ) -> bool {
         let old_len = self.values.len();
         let old_pending = self.pending_retractions.len();
-        self.update(value, separator, retract);
+        let changed = self.update(value, separator, retract);
         let Some(times) = &mut self.timestamps else {
-            return;
+            return changed;
         };
         if self.values.len() > old_len {
             times.values.push_back(ttl.now());
@@ -108,10 +108,11 @@ impl ListAggState {
         if self.pending_retractions.len() > old_pending {
             times.pending_retractions.push_back(ttl.now());
         }
+        changed
     }
 
-    pub(super) fn update(&mut self, value: Option<&str>, separator: &str, retract: bool) {
-        let Some(value) = value else { return };
+    pub(super) fn update(&mut self, value: Option<&str>, separator: &str, retract: bool) -> bool {
+        let Some(value) = value else { return false };
         if let Some(counts) = &mut self.distinct {
             assert!(
                 !self.append_only || !retract,
@@ -119,7 +120,7 @@ impl ListAggState {
             );
             let next = if let Some(count) = counts.get_mut(value) {
                 if self.append_only {
-                    return;
+                    return false;
                 }
                 *count = count.wrapping_add(if retract { -1 } else { 1 });
                 *count
@@ -135,7 +136,7 @@ impl ListAggState {
                 self.distinct_bytes -= key.capacity();
             }
             if (retract && next != 0) || (!retract && next != 1) {
-                return;
+                return false;
             }
         }
         if self.separator.as_deref() != Some(separator) {
@@ -162,6 +163,37 @@ impl ListAggState {
             let value = value.to_owned();
             self.element_bytes += value.capacity();
             self.values.push_back(value);
+        }
+        true
+    }
+
+    pub(super) fn forget_distinct(&mut self, value: &ScalarValue) {
+        if let ScalarValue::Utf8(Some(value)) = value {
+            if let Some((key, _)) = self.distinct.as_mut().unwrap().remove_entry(value.as_str()) {
+                self.distinct_bytes -= key.capacity();
+            }
+        }
+    }
+
+    pub(super) fn distinct_entries(&self) -> Vec<(ScalarValue, i64)> {
+        self.distinct
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|(value, count)| (ScalarValue::Utf8(Some(value.clone())), *count))
+            .collect()
+    }
+
+    pub(super) fn distinct_count(&self, value: &ScalarValue) -> i64 {
+        match value {
+            ScalarValue::Utf8(Some(value)) => self
+                .distinct
+                .as_ref()
+                .unwrap()
+                .get(value.as_str())
+                .copied()
+                .unwrap_or(0),
+            _ => 0,
         }
     }
 
@@ -278,6 +310,85 @@ impl<'a> StringColumn<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clockless_list_membership_restores_with_separate_separator_arguments() {
+        use super::super::GroupAggregator;
+        for kind in [32, 33] {
+            let make = |retained: bool| {
+                let flags = if retained {
+                    super::super::distinct_retention::RETAINED_DISTINCT
+                        | if kind == 32 {
+                            super::super::distinct_retention::APPEND_DISTINCT
+                        } else {
+                            0
+                        }
+                } else {
+                    0
+                };
+                let mut state = GroupAggregator::new(
+                    vec![kind | flags, 7 | flags],
+                    vec![3, 3],
+                    vec![1, 1],
+                    vec![0],
+                    true,
+                )
+                .with_count_columns(vec![2, -1]);
+                state.ttl_ms = if retained { 1000 } else { 0 };
+                state
+            };
+            let batch = |value: Option<&str>| {
+                RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("k", DataType::Int64, false),
+                        Field::new("v", DataType::Utf8, true),
+                        Field::new("sep", DataType::Utf8, false),
+                    ])),
+                    vec![
+                        Arc::new(Int64Array::from(vec![1])),
+                        Arc::new(StringArray::from(vec![value])),
+                        Arc::new(StringArray::from(vec!["::"])),
+                    ],
+                )
+                .unwrap()
+            };
+            let mut old = make(false);
+            old.update(&batch(Some("a")), 1000).unwrap();
+            old.update(&batch(None), 1900).unwrap();
+            let mut restored = make(true);
+            restored.load_snapshot(&old.snapshot(), 2000);
+            restored.update(&batch(None), 2500).unwrap();
+            let output = restored.update(&batch(Some("a")), 3000).unwrap();
+            let row = output.num_rows() - 1;
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(1), row).unwrap(),
+                ScalarValue::Utf8(Some(if kind == 32 { "a::a" } else { "a" }.into()))
+            );
+            assert_eq!(
+                ScalarValue::try_from_array(output.column(2), row).unwrap(),
+                ScalarValue::Int64(Some(2))
+            );
+        }
+    }
+
+    #[test]
+    fn forgotten_distinct_membership_preserves_cached_result_and_reinsertion() {
+        for kind in [32, 33] {
+            let mut state = ListAggState::new(kind);
+            assert!(state.update(Some("é🚀"), "::", false));
+            assert!(!state.update(Some("é🚀"), "::", false));
+            let value = ScalarValue::Utf8(Some("é🚀".into()));
+            assert_eq!(state.distinct_count(&value), if kind == 32 { 1 } else { 2 });
+            state.forget_distinct(&value);
+            assert_eq!(state.distinct_bytes, 0);
+            assert!(state.distinct_entries().is_empty());
+            assert_eq!(state.emit(), value);
+            let mut restored = ListAggState::new(kind);
+            restored.restore(state.snapshot()).unwrap();
+            assert!(restored.update(Some("é🚀"), "::", false));
+            assert_eq!(restored.emit(), ScalarValue::Utf8(Some("é🚀::é🚀".into())));
+        }
+    }
 
     #[test]
     fn retained_lists_expire_independently_and_successful_removal_refreshes_survivors() {

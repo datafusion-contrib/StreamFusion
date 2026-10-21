@@ -40,7 +40,8 @@ import tech.streamfusion.state.RocksDBNativeStateBackendFactory;
 
 @ExtendWith(CoalescingOff.class)
 class NativeListAggRetentionParityTest {
-  private static final RowType OUTPUT = RowType.of(new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH));
+  private static final RowType OUTPUT =
+      RowType.of(new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH));
   private static final long TTL = 1000;
 
   @BeforeAll
@@ -186,6 +187,82 @@ class NativeListAggRetentionParityTest {
     pair.push(9400, 1, null);
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "false,false,false,false", "false,false,false,true", "false,false,true,false",
+        "false,false,true,true",
+    "false,true,false,false", "false,true,false,true", "false,true,true,false",
+        "false,true,true,true",
+    "true,false,false,false", "true,false,false,true", "true,false,true,false",
+        "true,false,true,true",
+    "true,true,false,false", "true,true,false,true", "true,true,true,false", "true,true,true,true"
+  })
+  void distinctMembershipExpiresIndependently(
+      boolean retracting, boolean literal, boolean rocks, boolean miniBatch) throws Exception {
+    try (var pair = new Pair(false, literal, rocks, null, null, miniBatch, retracting, true)) {
+      distinctPrefix(pair);
+      distinctMiddle(pair);
+      distinctSuffix(pair, retracting);
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "false,false,false,false", "false,false,false,true", "false,false,true,false",
+        "false,false,true,true",
+    "false,true,false,false", "false,true,false,true", "false,true,true,false",
+        "false,true,true,true",
+    "true,false,false,false", "true,false,false,true", "true,false,true,false",
+        "true,false,true,true",
+    "true,true,false,false", "true,true,false,true", "true,true,true,false", "true,true,true,true"
+  })
+  void twoRestoresPreserveDistinctAndInnerListDeadlines(
+      boolean retracting, boolean literal, boolean rocks, boolean miniBatch) throws Exception {
+    OperatorSubtaskState hostState, nativeState;
+    try (var pair = new Pair(false, literal, rocks, null, null, miniBatch, retracting, true)) {
+      distinctPrefix(pair);
+      hostState = pair.host.snapshot(1, 6200);
+      nativeState = pair.nativeHarness.snapshot(1, 6200);
+    }
+    try (var pair =
+        new Pair(false, literal, rocks, hostState, nativeState, miniBatch, retracting, true)) {
+      distinctMiddle(pair);
+      hostState = pair.host.snapshot(2, 6900);
+      nativeState = pair.nativeHarness.snapshot(2, 6900);
+    }
+    try (var pair =
+        new Pair(false, literal, rocks, hostState, nativeState, miniBatch, retracting, true)) {
+      distinctSuffix(pair, retracting);
+    }
+  }
+
+  private static void distinctPrefix(Pair pair) throws Exception {
+    pair.push(5000, 1, "a");
+    pair.push(5500, 1, "a");
+    pair.push(5900, 1, null);
+    pair.push(6000, 1, "a");
+    pair.push(6200, 1, "b");
+  }
+
+  private static void distinctMiddle(Pair pair) throws Exception {
+    pair.push(6500, 1, "a");
+    pair.push(6900, 1, null);
+  }
+
+  private static void distinctSuffix(Pair pair, boolean retracting) throws Exception {
+    pair.push(7000, 1, "a");
+    if (retracting) {
+      pair.push(7100, 1, "a", true);
+      pair.push(7150, 1, "a", true);
+      pair.push(7199, 1, "a", true);
+    }
+    pair.push(7200, 1, "a");
+    pair.push(7500, 1, "é🚀");
+    pair.push(8100, 1, null);
+    pair.push(8200, 1, "a");
+    pair.push(9000, 1, "");
+  }
+
   private static final class Pair implements AutoCloseable {
     final KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> host;
     final KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness;
@@ -223,18 +300,40 @@ class NativeListAggRetentionParityTest {
         boolean miniSingle,
         boolean retracting)
         throws Exception {
+      this(split, literal, rocks, hostState, nativeState, miniSingle, retracting, false);
+    }
+
+    Pair(
+        boolean split,
+        boolean literal,
+        boolean rocks,
+        OperatorSubtaskState hostState,
+        OperatorSubtaskState nativeState,
+        boolean miniSingle,
+        boolean retracting,
+        boolean distinct)
+        throws Exception {
       this.split = split;
       this.literal = literal;
       miniBatch = split || miniSingle;
-      host = host(split, literal, miniBatch, retracting);
+      host = host(split, literal, miniBatch, retracting, distinct);
       input =
           split || literal
-              ? RowType.of(new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH), new VarCharType(VarCharType.MAX_LENGTH))
+              ? RowType.of(
+                  new BigIntType(),
+                  new VarCharType(VarCharType.MAX_LENGTH),
+                  new VarCharType(VarCharType.MAX_LENGTH))
               : OUTPUT;
       int[] secondary = split ? new int[] {1} : literal ? new int[] {2} : new int[0];
       var operator =
           new NativeColumnarGroupAggregateOperator(
-              new int[] {retracting ? 25 : 24},
+              new int[] {
+                distinct
+                    ? (retracting ? 33 : 32)
+                        | tech.streamfusion.Native.AGGREGATE_DISTINCT_TTL
+                        | (retracting ? 0 : tech.streamfusion.Native.AGGREGATE_DISTINCT_APPEND)
+                    : retracting ? 25 : 24
+              },
               new int[] {3},
               new int[] {split ? 2 : 1},
               new int[] {0},
@@ -321,7 +420,8 @@ class NativeListAggRetentionParityTest {
 
   @SuppressWarnings("unchecked")
   private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> host(
-      boolean split, boolean literal, boolean miniBatch, boolean retracting) throws Exception {
+      boolean split, boolean literal, boolean miniBatch, boolean retracting, boolean distinct)
+      throws Exception {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     var table = StreamTableEnvironment.create(env);
@@ -342,7 +442,12 @@ class NativeListAggRetentionParityTest {
                 org.apache.flink.table.connector.ChangelogMode.all())
             : table.fromDataStream(source));
     var query =
-        table.sqlQuery("SELECT k, LISTAGG(v" + (literal ? ", '::'" : "") + ") FROM src GROUP BY k");
+        table.sqlQuery(
+            "SELECT k, LISTAGG("
+                + (distinct ? "DISTINCT " : "")
+                + "v"
+                + (literal ? ", '::'" : "")
+                + ") FROM src GROUP BY k");
     var pending = new ArrayDeque<Transformation<?>>();
     pending.add(table.toChangelogStream(query).getTransformation());
     while (!pending.isEmpty()) {

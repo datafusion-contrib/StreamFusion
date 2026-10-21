@@ -745,6 +745,7 @@ impl GroupAggState {
             Self::Distinct { set, .. } => set.forget_scalar(value),
             Self::DistinctRunning { counts, .. } => counts.forget_scalar(value),
             Self::Ordered(ordered) => ordered.forget_distinct(value),
+            Self::List(list) => list.forget_distinct(value),
             _ => unreachable!("retained distinct state"),
         }
     }
@@ -755,6 +756,7 @@ impl GroupAggState {
                 set.scalar_entries()
             }
             Self::Ordered(ordered) => ordered.snapshot_entries(),
+            Self::List(list) => list.distinct_entries(),
             _ => unreachable!("distinct membership"),
         }
     }
@@ -764,6 +766,7 @@ impl GroupAggState {
             Self::Distinct { set, .. } => set,
             Self::DistinctRunning { counts, .. } => counts,
             Self::Ordered(ordered) => return ordered.distinct_count(value),
+            Self::List(list) => return list.distinct_count(value),
             _ => unreachable!("membership on a non-distinct aggregate"),
         };
         set.scalar_count(value)
@@ -1707,6 +1710,17 @@ impl GroupAggregator {
 }
 
 impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
+    fn distinct_arguments(&self, index: usize) -> (i64, i64) {
+        (
+            self.value_columns[index],
+            if is_list_agg(self.kinds[index]) {
+                self.count_columns.get(index).copied().unwrap_or(-1)
+            } else {
+                -1
+            },
+        )
+    }
+
     pub(crate) fn with_mini_batch(mut self) -> Self {
         self.mini_batch = true;
         self
@@ -2174,7 +2188,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         self.distinct_view_columns[*source] >= 0 && same_view(*source, i)
                     } else {
                         self.distinct_view_columns[*source] < 0
-                            && self.value_columns[*source] == self.value_columns[i]
+                            && self.distinct_arguments(*source) == self.distinct_arguments(i)
                     }
                 }) {
                     targets.push(i);
@@ -2586,7 +2600,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             .as_ref()
                             .map_or(Some(","), |column| column.at(row))
                             .expect("validated non-null LISTAGG separator");
-                        list.update_with_ttl(value.at(row), separator, retract, ttl);
+                        result_changed[i] =
+                            list.update_with_ttl(value.at(row), separator, retract, ttl);
                         continue;
                     }
                     if let GroupAggState::Ordered(ordered) = &mut state.aggs[i] {
@@ -3792,7 +3807,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         let retained_sources: Vec<_> = (0..num_agg)
             .filter(|&i| self.distinct_modes[i].is_some() && self.distinct_view_columns[i] < 0)
-            .map(|i| (i, self.value_columns[i]))
+            .map(|i| (i, self.distinct_arguments(i)))
             .collect();
         for row in 0..main.num_rows() {
             let state = self.store.get_mut(keys.value(row)).expect("restored group");
@@ -3818,14 +3833,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let mut values = Vec::new();
                 for &(target, other_column) in &retained_sources {
                     if column == other_column {
-                        values.extend(match &state.aggs[target] {
-                            GroupAggState::Distinct { set, .. }
-                            | GroupAggState::DistinctRunning { counts: set, .. } => {
-                                set.scalar_entries()
-                            }
-                            GroupAggState::Ordered(ordered) => ordered.snapshot_entries(),
-                            _ => unreachable!("retained distinct membership"),
-                        });
+                        values.extend(state.aggs[target].distinct_entries());
                     }
                 }
                 for (value, _) in values {

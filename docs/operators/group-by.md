@@ -162,7 +162,13 @@ retraction list retain per-entry write clocks independently of the enclosing gro
 removal rewrites surviving value timestamps; an absent removal only appends a separately timed
 pending retraction. NULL rows refresh the group without reviving old list entries. Both lists
 and their original deadlines survive memory and direct-RocksDB snapshots. DISTINCT LISTAGG
-with positive retention remains fallback until its shared membership clock is modeled.
+also admits positive retention. Membership expires independently of the cached prefix or
+inner value/pending lists. Append duplicates do not refresh the shared membership clock;
+retracting counters refresh on each admitted non-NULL update. Filtered aggregates with the
+same argument list share this clock, including one-argument COUNT DISTINCT. An explicit
+separator makes a two-argument DISTINCT key and therefore a separate membership view.
+Restoring a snapshot without membership deadlines seeds each argument view from the saved
+group-write time, or the restore time when the snapshot had no TTL clock.
 DISTINCT/retracting local/global merges remain a separate completion item.
 Released Flink rejects LISTAGG WITHIN GROUP ordering. Both releases produce real
 local/global plans under TWO_PHASE; ordinary append input now accelerates. The local
@@ -653,7 +659,8 @@ to each aggregate's element table. Fresh zero-retention snapshots keep their pre
 An older snapshot without membership clocks seeds each member from the saved group-write
 time, or the restore time when the old snapshot had no TTL timestamp.
 FIRST/LAST use the same shared membership policy while retaining their own inner selections.
-DISTINCT LISTAGG retention remains a separate unsupported context.
+Single-phase DISTINCT LISTAGG uses the same membership clock; explicit-separator calls
+share only with the same two-argument view. Its inner ordered lists retain their own clocks.
 
 Local partials remain transient and have no entry TTL. At the global bundle flush, shared
 filtered views expire together before their deltas fold into cached results. Floating and
@@ -1100,8 +1107,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 
 **Single-phase / either two-phase half in common:**
 
-- DISTINCT LISTAGG with positive state TTL.
-  Released Flink rejects LISTAGG WITHIN GROUP ordering and JSON DISTINCT/object-ordering
+- Released Flink rejects LISTAGG WITHIN GROUP ordering and JSON DISTINCT/object-ordering
   syntax; these are host limitations. JSON_ARRAYAGG ordering clauses preserve the
   released host's arrival-order behavior described above.
 - A UDAF outside the verified synchronous single-phase JVM boundary described above.
@@ -2242,3 +2248,38 @@ SQL/operator checks on each release. The latter include 116 generic COUNT contra
 released `testCountDistinctArrayType` consumes native work in all seven Flink 2.2 and six
 Flink 1.18 invocations. Final small gates and complete jobs were repeated after the STRING
 carrier correctness fix; earlier two-pass measurements remain separately identified.
+
+### DISTINCT LISTAGG membership retention
+
+Positive-TTL single-phase LISTAGG DISTINCT uses the shared DISTINCT write policy above.
+Its cached append prefix survives membership expiry; retracting input retains the existing
+independent ordered-value and pending-retraction clocks. One-argument LISTAGG and COUNT
+DISTINCT may share a membership clock. A literal separator is a second DISTINCT argument,
+so its clock is shared only with consumers of that same argument pair.
+
+The SQL and released-operator harnesses cover append/retract input, omitted/literal separators,
+filtered shared views, separate argument views, immediate/mini-batch execution, and two
+successive restores on memory/native RocksDB. The native migration regression restores an
+older snapshot without entry clocks and verifies the new deadlines and cached COUNT separately.
+The unchanged released `AggregateITCase#testListAggWithDistinct` consumes native grouping
+in single-phase variants on both lines; split variants retain their explicit layout fallback.
+This change does not admit DISTINCT/retracting local/global LISTAGG.
+
+[Raw measurements and execution evidence](../benchmarks/results/listagg-distinct-retention-2026-10-21.json)
+retain the complete-job trials against stock Flink and the actual canonical previous planner
+(`d13e9dc4`), with both row/Arrow transposes, JNI and a rowwise sink. Runs use JDK 17, one task,
+a 2 GiB heap, release+mimalloc, one-hour retention, two warmups and three measured trials.
+Each trial asserts positive native aggregate work; previous-version controls assert fallback.
+The strings contain sixteen recurring labels, NULL every seventh input, and the configured
+16/128-byte widths. No performance optimization passes were needed for these profiles.
+
+Final-library complete-job medians (seconds):
+
+| Released Flink / input | Rows / keys / bytes | Stock | Native |
+| --- | --- | ---: | ---: |
+| 2.2.1 append | 1,000,000 / 65,536 / 16 | 12.676 | 1.168 |
+| 1.18.1 retracting | 262,144 / 32,768 / 128 | 4.033 | 0.485 |
+| 2.2.1 duplicate-heavy append | 1,000,000 / 4,096 / 16 | 5.680 | 0.974 |
+
+These final profiles improve 5.83–10.85x over stock. The artifact also retains the
+initial four release/shape profiles and separately paired previous-version fallback controls.

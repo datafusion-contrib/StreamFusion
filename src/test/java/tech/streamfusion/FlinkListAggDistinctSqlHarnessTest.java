@@ -10,6 +10,38 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class FlinkListAggDistinctSqlHarnessTest {
   @ParameterizedTest
+  @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+  void retainedSharedAndSeparateArgumentViewsCompose(boolean updating, boolean miniBatch) {
+    var input = new ArrayList<Row>();
+    for (String value : new String[] {null, "a", "a", "b", "", "é🚀", "a"}) input.add(row(value));
+    var ignored = row("b");
+    ignored.setField(4, false);
+    input.add(ignored);
+    if (updating) {
+      var removed = row("a");
+      removed.setKind(RowKind.DELETE);
+      input.add(removed);
+    }
+    var comparison =
+        NativeFailureParity.run(
+            () -> {
+              var table =
+                  FlinkStringAggregateHostContractTest.environment(
+                      updating, input.toArray(Row[]::new));
+              table.getConfig().set("table.exec.state.ttl", "1 h");
+              table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+              table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+              table.getConfig().set("table.exec.mini-batch.size", "3");
+              table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+              return table;
+            },
+            "SELECT json_key, LISTAGG(DISTINCT v), LISTAGG(DISTINCT v, '::'), "
+                + "LISTAGG(DISTINCT v, '::') FILTER (WHERE keep_row), "
+                + "COUNT(DISTINCT v) FILTER (WHERE keep_row), COUNT(*) FROM src GROUP BY json_key");
+    comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+  }
+
+  @ParameterizedTest
   @CsvSource({
     "ONE_PHASE,false,false",
     "ONE_PHASE,false,true",

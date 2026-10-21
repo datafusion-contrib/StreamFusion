@@ -67,3 +67,7 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWit
 # Generic ARRAY membership in released COUNT DISTINCT local/global plans.
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDistinctArrayType	aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDistinctArrayType	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+
+# Released LISTAGG DISTINCT keeps ordered string membership.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=ON	!global LISTAGG requires append-only non-DISTINCT string partials

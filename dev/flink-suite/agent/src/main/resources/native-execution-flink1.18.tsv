@@ -96,3 +96,8 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testMinMaxWith
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDistinctArrayType	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDistinctArrayType	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDistinctArrayType	changelog=false&aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+
+# Released LISTAGG DISTINCT keeps ordered string membership.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	changelog=false&aggMode=ON	!global LISTAGG requires append-only non-DISTINCT string partials
