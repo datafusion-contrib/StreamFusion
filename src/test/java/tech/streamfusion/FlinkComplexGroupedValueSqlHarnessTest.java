@@ -65,6 +65,22 @@ class FlinkComplexGroupedValueSqlHarnessTest {
   @MethodSource("fixtures")
   void firstAndLastKeepComplexValuesAndReleasedPhaseContracts(
       String type, String phase, boolean distinct, boolean retract) {
+    verifyValues(type, phase, distinct, retract, 0);
+  }
+
+  static Stream<Arguments> retainedFixtures() {
+    return fixtures().filter(args -> !(boolean) args.get()[2] && (boolean) args.get()[3]);
+  }
+
+  @ParameterizedTest
+  @MethodSource("retainedFixtures")
+  void retainedComplexRetractionsPreserveSelections(
+      String type, String phase, boolean distinct, boolean retract) {
+    verifyValues(type, phase, distinct, retract, 3_600_000);
+  }
+
+  private static void verifyValues(
+      String type, String phase, boolean distinct, boolean retract, long retention) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -108,7 +124,7 @@ class FlinkComplexGroupedValueSqlHarnessTest {
                     retract
                         ? table.fromChangelogStream(input, sourceSchema, ChangelogMode.all())
                         : table.fromDataStream(input, sourceSchema));
-                return configure(table, phase);
+                return configure(table, phase, retention);
               },
               query(type, distinct, "src"));
       if (!FlinkCompat.GENERIC_ORDERED_VALUES
@@ -154,6 +170,22 @@ class FlinkComplexGroupedValueSqlHarnessTest {
   @MethodSource("recoveries")
   void selectedValuesAndDistinctMembershipSurviveTwoRestores(
       String type, boolean distinct, String backend) throws Exception {
+    verifyRecovery(type, distinct, backend, 0);
+  }
+
+  static Stream<Arguments> retainedRecoveries() {
+    return recoveries().filter(args -> !(boolean) args.get()[1]);
+  }
+
+  @ParameterizedTest
+  @MethodSource("retainedRecoveries")
+  void retainedComplexViewsSurviveTwoRestores(String type, boolean distinct, String backend)
+      throws Exception {
+    verifyRecovery(type, distinct, backend, 3_600_000);
+  }
+
+  private static void verifyRecovery(String type, boolean distinct, String backend, long retention)
+      throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(
         FlinkCompat.GENERIC_ORDERED_VALUES,
         "Released Flink 1.18 FIRST/LAST factories reject collection and ROW inputs");
@@ -162,8 +194,8 @@ class FlinkComplexGroupedValueSqlHarnessTest {
             .withExecutionMetrics()) {
       var runs =
           NativeFailureParity.runRecovery(
-              () -> configure(recovery.uninterrupted(), "TWO_PHASE"),
-              () -> configure(recovery.get(), "TWO_PHASE"),
+              () -> configure(recovery.uninterrupted(), "TWO_PHASE", retention),
+              () -> configure(recovery.get(), "TWO_PHASE", retention),
               query(type, distinct, "recovery_input"));
       runs.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
@@ -173,7 +205,8 @@ class FlinkComplexGroupedValueSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment configure(TableEnvironment table, String phase) {
+  private static TableEnvironment configure(TableEnvironment table, String phase, long retention) {
+    table.getConfig().setIdleStateRetention(java.time.Duration.ofMillis(retention));
     table.getConfig().set("table.optimizer.agg-phase-strategy", phase);
     table
         .getConfig()

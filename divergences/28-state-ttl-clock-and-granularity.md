@@ -16,6 +16,15 @@ service's clock, so expiry is deterministically testable at the operator level w
 hooks. Corollary: the mini-batch flush paths replay staged work under the bundle's last ingest
 clock instead of widening the flush ABI with a second clock argument.
 
+
+Grouped retracting FIRST/LAST uses that same sampled clock for its arrival-order buckets.
+Flink samples `System.currentTimeMillis()` inside the aggregate; a native Arrow call shares
+one order clock while preserving row order within its bucket. Value-to-order and order-to-value
+entries still own independent write timestamps, and expiry leaves the cached selected scalar
+unchanged. This does not substitute a whole-group lifetime for those supporting maps. The
+controlled operator tests separate host arrival-clock samples and independently steer the TTL
+provider; native unit checks cover equal-clock buckets and their survivor refresh behavior.
+
 ## Temporal join and OVER: lazy check for the cleanup timer
 
 Flink retention-bounds the temporal join not with per-value TTL but with one per-key

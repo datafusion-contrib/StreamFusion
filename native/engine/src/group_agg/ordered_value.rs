@@ -74,6 +74,7 @@ pub(crate) struct OrderedValueState {
     values: VecDeque<ScalarValue>,
     value_bytes: usize,
     distinct: Option<Box<DistinctSet>>,
+    retained: Option<Box<super::ordered_retention::RetainedOrderedValues>>,
 }
 
 impl OrderedValueState {
@@ -88,6 +89,7 @@ impl OrderedValueState {
             count: 0,
             values: VecDeque::new(),
             value_bytes: 0,
+            retained: None,
             distinct: matches!(kind, 19 | 20)
                 .then(|| Box::new(DistinctSet::new(&accumulator_type(kind, value_type)))),
         }
@@ -95,6 +97,56 @@ impl OrderedValueState {
 
     pub(super) fn skips_value(&self, is_null: bool) -> bool {
         self.kind == 12 && !self.value.is_null() || is_null && !matches!(self.kind, 14 | 21)
+    }
+
+    pub(super) fn update_with_ttl(
+        &mut self,
+        value: ScalarValue,
+        retract: bool,
+        ttl: StateTtl,
+        previous_write: i64,
+    ) -> Result<bool, DataFusionError> {
+        if !matches!(self.kind, 15 | 16) || !ttl.enabled() && self.retained.is_none() {
+            return self.update(value, retract);
+        }
+        let last = self.kind == 16;
+        if self.retained.is_none() {
+            let mut retained = super::ordered_retention::RetainedOrderedValues::new();
+            let mut selected = null_scalar(&self.value.data_type());
+            for old in self.values.drain(..) {
+                retained.update(
+                    &mut selected,
+                    old,
+                    false,
+                    last,
+                    StateTtl::new(i64::MAX, previous_write),
+                );
+            }
+            self.value = selected;
+            self.value_bytes = 0;
+            self.retained = Some(Box::new(retained));
+        }
+        Ok(self.retained.as_mut().unwrap().update(
+            &mut self.value,
+            compact_value(value),
+            retract,
+            last,
+            ttl,
+        ))
+    }
+
+    pub(super) fn retention_snapshot(&self) -> Option<Vec<u8>> {
+        self.retained
+            .as_ref()
+            .map(|state| state.snapshot(&self.value.data_type()))
+    }
+
+    pub(super) fn restore_retention(&mut self, bytes: &[u8]) {
+        self.values.clear();
+        self.value_bytes = 0;
+        self.retained = Some(Box::new(
+            super::ordered_retention::RetainedOrderedValues::restore(bytes),
+        ));
     }
 
     /// False guarantees that the selected value and its payload are unchanged.
@@ -251,6 +303,7 @@ impl OrderedValueState {
             std::mem::size_of_val(counts.as_ref()) + payload + counts.capacity_bytes()
         });
         distinct_bytes
+            + self.retained.as_ref().map_or(0, |state| state.bytes())
             + std::mem::size_of::<Self>()
             + self.value.size()
             + self.value_bytes
@@ -261,6 +314,104 @@ impl OrderedValueState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn independent_retention_keeps_cached_values_and_original_map_deadlines() {
+        for kind in [15, 16] {
+            for restore in [false, true] {
+                let mut state = OrderedValueState::new(kind, &DataType::Int64);
+                let one = ScalarValue::Int64(Some(1));
+                let two = ScalarValue::Int64(Some(2));
+                state
+                    .update_with_ttl(one.clone(), false, StateTtl::new(1000, 1000), 0)
+                    .unwrap();
+                state
+                    .update_with_ttl(two.clone(), false, StateTtl::new(1000, 1500), 1000)
+                    .unwrap();
+                if kind == 16 {
+                    state
+                        .update_with_ttl(one.clone(), false, StateTtl::new(1000, 1700), 1500)
+                        .unwrap();
+                }
+                if restore {
+                    let bytes = state.retention_snapshot().unwrap();
+                    let selected = state.snapshot_value();
+                    state = OrderedValueState::new(kind, &DataType::Int64);
+                    state.restore_value(selected, 0);
+                    state.restore_retention(&bytes);
+                }
+                state
+                    .update_with_ttl(one.clone(), true, StateTtl::new(1000, 2100), 1700)
+                    .unwrap();
+                assert_eq!(state.emit(), one);
+                if kind == 15 {
+                    state
+                        .update_with_ttl(one.clone(), false, StateTtl::new(1000, 2150), 2100)
+                        .unwrap();
+                }
+                state
+                    .update_with_ttl(one, true, StateTtl::new(1000, 2200), 2150)
+                    .unwrap();
+                assert_eq!(state.emit(), two);
+            }
+        }
+    }
+
+    #[test]
+    fn disabling_retention_preserves_cached_selection_and_surviving_maps() {
+        let mut state = OrderedValueState::new(15, &DataType::Int64);
+        let one = ScalarValue::Int64(Some(1));
+        let two = ScalarValue::Int64(Some(2));
+        state
+            .update_with_ttl(one.clone(), false, StateTtl::new(1000, 1000), 0)
+            .unwrap();
+        state
+            .update_with_ttl(two.clone(), false, StateTtl::new(1000, 1500), 1000)
+            .unwrap();
+        state
+            .update_with_ttl(one.clone(), true, StateTtl::new(1000, 2100), 1500)
+            .unwrap();
+        let bytes = state.retention_snapshot().unwrap();
+        let selected = state.snapshot_value();
+        state = OrderedValueState::new(15, &DataType::Int64);
+        state.restore_value(selected, 0);
+        state.restore_retention(&bytes);
+        state
+            .update_with_ttl(one.clone(), false, StateTtl::new(0, 3000), 2100)
+            .unwrap();
+        assert_eq!(state.emit(), one);
+        state
+            .update_with_ttl(one, true, StateTtl::new(0, 3100), 3000)
+            .unwrap();
+        assert_eq!(state.emit(), two);
+    }
+
+    #[test]
+    fn same_order_retraction_refreshes_surviving_bucket_entries() {
+        let mut state = OrderedValueState::new(15, &DataType::Int64);
+        let one = ScalarValue::Int64(Some(1));
+        let two = ScalarValue::Int64(Some(2));
+        state
+            .update_with_ttl(one.clone(), false, StateTtl::new(1000, 1000), 0)
+            .unwrap();
+        state
+            .update_with_ttl(two.clone(), false, StateTtl::new(1000, 1000), 1000)
+            .unwrap();
+        state
+            .update_with_ttl(one.clone(), false, StateTtl::new(1000, 1500), 1000)
+            .unwrap();
+        state
+            .update_with_ttl(two, true, StateTtl::new(1000, 1900), 1500)
+            .unwrap();
+        state
+            .update_with_ttl(one.clone(), true, StateTtl::new(1000, 2100), 1900)
+            .unwrap();
+        assert_eq!(state.emit(), one);
+        state
+            .update_with_ttl(one, true, StateTtl::new(1000, 2200), 2100)
+            .unwrap();
+        assert!(state.emit().is_null());
+    }
 
     #[test]
     fn distinct_floating_order_uses_boxed_membership_and_original_payloads() {

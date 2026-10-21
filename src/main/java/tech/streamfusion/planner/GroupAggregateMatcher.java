@@ -119,8 +119,8 @@ final class GroupAggregateMatcher {
                       .getIdleStateRetention()
                       .toMillis()
                   : hint;
-          if (retention > 0) {
-            return "GROUP BY: DISTINCT or retracting FIRST_VALUE/LAST_VALUE with TTL require"
+          if (retention > 0 && call.isDistinct()) {
+            return "GROUP BY: DISTINCT FIRST_VALUE/LAST_VALUE with TTL require"
                 + " independently expiring value/order maps";
           }
         }

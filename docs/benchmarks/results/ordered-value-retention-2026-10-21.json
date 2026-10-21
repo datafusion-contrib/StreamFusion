@@ -1,0 +1,1153 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Independent retained value/order maps for ordinary retracting FIRST_VALUE/LAST_VALUE",
+  "base_commit": "a448d590",
+  "measured_native_dso_sha256": "b1832dc7e15fa9a27b735b11b251745ac6605aefd353b6a29508938230ca729f",
+  "validated_native_dso_sha256": "a2960df3ed3055c080b895db9a9121f0d3311824bc496ee3c2544bde376241d9",
+  "source_sha256": {
+    "native/engine/src/group_agg.rs": "dc49c7a81b68ce5c5541ad3e39f7f7314121d415216298fc04a27bef4af2cf65",
+    "native/engine/src/group_agg/ordered_value.rs": "1d5197cc98c3e7b72540e0b6dfb00cd4b19be31ae9429f44ab44f3a4ba3b270e",
+    "native/engine/src/group_agg/ordered_retention.rs": "29671947f6a9230fcf5e71a68a6cec7acab5bb016427e07aa39cd4eaffb439ee",
+    "src/main/java/tech/streamfusion/planner/GroupAggregateMatcher.java": "efb281156ded2207d311d85d940983948dc2fecd3399ff3aa25cf3c9968d3160",
+    "src/test/java/tech/streamfusion/GroupedValueBenchmark.java": "bd2ba402123f3dc2859c7001c7c97ce6986e2020cab50352d145ec38aad8c99e",
+    "src/test/java/tech/streamfusion/operator/NativeOrderedValueRetentionParityTest.java": "f3a62bcc8ba153ad6c7642f4a81c631b9eef31a11d71e522522f5198802a0cdb"
+  },
+  "build_note": "The final build adds preservation of retained maps when TTL is disabled after restore and a clarifying hash comment. Enabled-TTL behavior in every timed profile is unchanged. Final native/unit/operator/SQL checks use the validated DSO; upstream mixed FIRST/LAST fixture uses the measured DSO.",
+  "configuration": {
+    "runtime": "Linux x86_64; JDK 17; release+mimalloc",
+    "rows": 131072,
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "backend": "memory",
+    "keys": 1024,
+    "cardinality": 4096,
+    "null_every": "one eighth: input id / 64 % 8 == 0",
+    "changelog": "First three quarters INSERT; last quarter DELETE the identical first-quarter records.",
+    "retention_ms": 3600000,
+    "mini_batch": false,
+    "warmups": 2,
+    "measured_trials": 3,
+    "query": "SELECT k,FIRST_VALUE(v),LAST_VALUE(v) FROM inputs GROUP BY k",
+    "boundary": "Complete jobs: timer begins before executeSql and stops after awaited rowwise blackhole completion; planning, source, both row/Arrow transposes, JNI and aggregate state remain included. Trials alternate engine order and run alone.",
+    "previous_control": "Actual canonical d13e9dc4 Java planner/runtime, same copied benchmark and compatible candidate native library; affected native aggregate route asserted absent.",
+    "clock": "Native uses the existing per-Arrow-call processing clock for arrival buckets and independent TTL writes. Flink samples wall clock in its aggregate and TTL state. These retention-specific timings depend on processing-clock bucket density; they do not establish general FIRST/LAST speedups."
+  },
+  "measurements": [
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "type": "BIGINT",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.108779
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.421434
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.226586
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.178532
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.041661
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.176476
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.159434
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.892317
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.069046
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.165006
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.041661096,
+          1.892317109,
+          2.069045934
+        ],
+        "StreamFusion": [
+          0.176475514,
+          0.159433528,
+          0.165005687
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.041661096,
+        "StreamFusion": 0.165005687
+      },
+      "range_seconds": {
+        "Flink": [
+          1.892317109,
+          2.069045934
+        ],
+        "StreamFusion": [
+          0.159433528,
+          0.176475514
+        ]
+      },
+      "stock_over_native": 12.373277146502227
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "type": "STRING",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.736282
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.245752
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.224467
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.78556
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.811699
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.20722
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.218789
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.528769
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.711365
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.224858
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.811699024,
+          2.528768562,
+          2.711364856
+        ],
+        "StreamFusion": [
+          0.207219814,
+          0.218788762,
+          0.224858004
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.711364856,
+        "StreamFusion": 0.218788762
+      },
+      "range_seconds": {
+        "Flink": [
+          2.528768562,
+          2.811699024
+        ],
+        "StreamFusion": [
+          0.207219814,
+          0.224858004
+        ]
+      },
+      "stock_over_native": 12.3926148272643
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "type": "DOUBLE",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.992717
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.180744
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.17923
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.038836
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.99489
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.15383
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.157982
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.096912
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.170463
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.168225
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.994890235,
+          2.096911553,
+          2.170463142
+        ],
+        "StreamFusion": [
+          0.153830155,
+          0.157982407,
+          0.168225114
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.096911553,
+        "StreamFusion": 0.157982407
+      },
+      "range_seconds": {
+        "Flink": [
+          1.994890235,
+          2.170463142
+        ],
+        "StreamFusion": [
+          0.153830155,
+          0.168225114
+        ]
+      },
+      "stock_over_native": 13.27307003874172
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "2.2.1",
+      "type": "ARRAY",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.520803
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.39475
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.361091
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.575054
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.627419
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.355797
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.363223
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.618653
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.778544
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.355807
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.627418545,
+          2.61865285,
+          2.778544283
+        ],
+        "StreamFusion": [
+          0.355797012,
+          0.36322301,
+          0.355806711
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.627418545,
+        "StreamFusion": 0.355806711
+      },
+      "range_seconds": {
+        "Flink": [
+          2.61865285,
+          2.778544283
+        ],
+        "StreamFusion": [
+          0.355797012,
+          0.36322301
+        ]
+      },
+      "stock_over_native": 7.384398505625713
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18.1",
+      "type": "BIGINT",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.971054
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.394494
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.205553
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.131775
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.07404
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.175657
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.179538
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.001586
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.038792
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.171048
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.074039654,
+          2.001586499,
+          2.038792236
+        ],
+        "StreamFusion": [
+          0.175656867,
+          0.179537603,
+          0.171048253
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.038792236,
+        "StreamFusion": 0.175656867
+      },
+      "range_seconds": {
+        "Flink": [
+          2.001586499,
+          2.074039654
+        ],
+        "StreamFusion": [
+          0.171048253,
+          0.179537603
+        ]
+      },
+      "stock_over_native": 11.606675394022597
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18.1",
+      "type": "STRING",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.754748
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.244167
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.20469
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.522229
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.665395
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.216685
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.226649
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.656411
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.635456
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.207908
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.665394968,
+          2.656411482,
+          2.635456044
+        ],
+        "StreamFusion": [
+          0.216685412,
+          0.22664883,
+          0.207907856
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.656411482,
+        "StreamFusion": 0.216685412
+      },
+      "range_seconds": {
+        "Flink": [
+          2.635456044,
+          2.665394968
+        ],
+        "StreamFusion": [
+          0.207907856,
+          0.22664883
+        ]
+      },
+      "stock_over_native": 12.259300049234511
+    },
+    {
+      "revision": "candidate",
+      "flink_line": "1.18.1",
+      "type": "DOUBLE",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.030584
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.174104
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.167965
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.963852
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.26273
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.158286
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.16424
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.052883
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.007629
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.1574
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.262729762,
+          2.052882508,
+          2.007629164
+        ],
+        "StreamFusion": [
+          0.158286153,
+          0.164239982,
+          0.157400125
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.052882508,
+        "StreamFusion": 0.158286153
+      },
+      "range_seconds": {
+        "Flink": [
+          2.007629164,
+          2.262729762
+        ],
+        "StreamFusion": [
+          0.157400125,
+          0.164239982
+        ]
+      },
+      "stock_over_native": 12.969438381637843
+    },
+    {
+      "revision": "d13e9dc4 planner fallback",
+      "flink_line": "2.2.1",
+      "type": "BIGINT",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 3.009765
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.219698
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.083423
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 1.973865
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.884479
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.983531
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.935114
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.907648
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.005492
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.974846
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.884479427,
+          1.907648218,
+          2.005492033
+        ],
+        "StreamFusion": [
+          1.983530637,
+          1.935114036,
+          1.974845564
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.907648218,
+        "StreamFusion": 1.974845564
+      },
+      "range_seconds": {
+        "Flink": [
+          1.884479427,
+          2.005492033
+        ],
+        "StreamFusion": [
+          1.935114036,
+          1.983530637
+        ]
+      },
+      "stock_over_native": 0.9659733666140995
+    },
+    {
+      "revision": "d13e9dc4 planner fallback",
+      "flink_line": "2.2.1",
+      "type": "STRING",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.698369
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.556504
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.636543
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.488084
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.807778
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.698255
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.514852
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.510366
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.674764
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.612
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.807777649,
+          2.510365616,
+          2.674763907
+        ],
+        "StreamFusion": [
+          2.698254875,
+          2.514851858,
+          2.612000289
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.674763907,
+        "StreamFusion": 2.612000289
+      },
+      "range_seconds": {
+        "Flink": [
+          2.510365616,
+          2.807777649
+        ],
+        "StreamFusion": [
+          2.514851858,
+          2.698254875
+        ]
+      },
+      "stock_over_native": 1.0240289475710698
+    },
+    {
+      "revision": "d13e9dc4 planner fallback",
+      "flink_line": "2.2.1",
+      "type": "DOUBLE",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.011744
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.015741
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.036285
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.059315
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.984536
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 1.968293
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.047666
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 1.99495
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 1.977861
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.080248
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          1.984535939,
+          1.99494999,
+          1.977860921
+        ],
+        "StreamFusion": [
+          1.968293275,
+          2.047665521,
+          2.080248244
+        ]
+      },
+      "median_seconds": {
+        "Flink": 1.984535939,
+        "StreamFusion": 2.047665521
+      },
+      "range_seconds": {
+        "Flink": [
+          1.977860921,
+          1.99494999
+        ],
+        "StreamFusion": [
+          1.968293275,
+          2.080248244
+        ]
+      },
+      "stock_over_native": 0.9691699736345759
+    },
+    {
+      "revision": "d13e9dc4 planner fallback",
+      "flink_line": "2.2.1",
+      "type": "ARRAY",
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.500912
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 2.553204
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.57199
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 2.694615
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.663821
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 2.941712
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.700603
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 2.708217
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.494618
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 2.578031
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          2.663820599,
+          2.708216759,
+          2.49461829
+        ],
+        "StreamFusion": [
+          2.941712132,
+          2.700603232,
+          2.578030743
+        ]
+      },
+      "median_seconds": {
+        "Flink": 2.663820599,
+        "StreamFusion": 2.700603232
+      },
+      "range_seconds": {
+        "Flink": [
+          2.49461829,
+          2.708216759
+        ],
+        "StreamFusion": [
+          2.578030743,
+          2.941712132
+        ]
+      },
+      "stock_over_native": 0.9863798455974002
+    }
+  ],
+  "validation": {
+    "native_passed": 839,
+    "native_ignored": 2,
+    "controlled_operator_checks_per_release": 16,
+    "controlled_types": [
+      "BIGINT",
+      "STRING"
+    ],
+    "controlled_dimensions": [
+      "immediate/mini-batch",
+      "memory/native RocksDB",
+      "two successive restores",
+      "expired value map with stale cached selection",
+      "expired order bucket with retained value orders",
+      "NULL group refresh",
+      "inclusive whole-group expiry"
+    ],
+    "new_typed_sql_profiles": 13,
+    "new_typed_sql_phase_choices": 2,
+    "flink118_unavailable_typed_profiles": 4,
+    "new_complex_sql_profiles": 18,
+    "new_complex_recovery_profiles": 8,
+    "flink118_complex": "18 released factory rejections; eight recovery cases skipped because released factories do not exist.",
+    "broad_suite": {
+      "2.2.1": {
+        "passed": 272,
+        "skipped": 0
+      },
+      "1.18.1": {
+        "passed": 212,
+        "skipped": 60
+      }
+    },
+    "broad_suite_note": "Complex grouped SQL (110), controlled operator retention (16), and grouped state/recovery (10) pass together; scalar/grouped SQL (136) was rerun after updating the two obsolete fallback expectations to require native work. Its Flink 1.18 run skips 40 existing host-capability cases. Actual TTL-hint queries now require consumed native work.",
+    "unchanged_upstream": {
+      "method": "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression",
+      "artifact": "Unchanged canonical Maven Central released planner tests JAR with production StreamFusion classes and existing suite agent; no upstream sources rewritten.",
+      "invocations_per_release": 2,
+      "consumed_native_reports": {
+        "2.2": [
+          "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression\t*\tNativeCalcOperator=37,NativeColumnarGroupAggregateOperator=15",
+          "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression\t*\tNativeCalcOperator=37,NativeColumnarGroupAggregateOperator=15"
+        ],
+        "1.18": [
+          "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression\tchangelog=false\tNativeCalcOperator=37,NativeColumnarGroupAggregateOperator=15",
+          "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testGroupAggregateWithExpression\tchangelog=false\tNativeCalcOperator=37,NativeColumnarGroupAggregateOperator=15"
+        ]
+      },
+      "note": "This mixed append FIRST/LAST/LISTAGG fixture protects common aggregate integration. The focused controlled-clock tests establish the new retracting TTL behavior. The first 1.18 launcher attempt lacked the released Scala API JAR; adding that dependency resolved it."
+    }
+  },
+  "aborted_stock_warmup": {
+    "rows": 1000000,
+    "keys": 64,
+    "cardinality": 1024,
+    "type": "BIGINT",
+    "retention_ms": 3600000,
+    "measured_trials": 0,
+    "excluded_from_comparisons": true,
+    "reason": "The first stock warmup exceeded 80 seconds in the released FIRST_VALUE retraction map scan. Captured its task stack and terminated the diagnostic run; both engines were then matched at the smaller, more numerous-group configuration.",
+    "captured_stack": [
+      "\"GroupAggregate[9] -> sink[10]: Writer (1/1)#0\" #135 prio=5 os_prio=0 cpu=73519.75ms elapsed=82.62s tid=0x0000765b7c058090 nid=0x25893e runnable  [0x0000765af3bfb000]",
+      "   java.lang.Thread.State: RUNNABLE",
+      "\tat org.apache.flink.table.runtime.functions.aggregate.FirstValueWithRetractAggFunction.retract(FirstValueWithRetractAggFunction.java:218)",
+      "\tat org.apache.flink.table.runtime.functions.aggregate.FirstValueWithRetractAggFunction.retract(FirstValueWithRetractAggFunction.java:185)",
+      "\tat GroupAggsHandler$28.retract(Unknown Source)",
+      "\tat org.apache.flink.table.runtime.operators.aggregate.utils.GroupAggHelper.processElement(GroupAggHelper.java:96)",
+      "\tat org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.processElement(GroupAggFunction.java:88)",
+      "\tat org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.processElement(GroupAggFunction.java:33)",
+      "\tat org.apache.flink.streaming.api.operators.KeyedProcessOperator.processElement(KeyedProcessOperator.java:87)",
+      "\tat org.apache.flink.streaming.runtime.io.RecordProcessorUtils.lambda$getRecordProcessor$0(RecordProcessorUtils.java:64)",
+      "\tat org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3442/0x0000765cc4ec4d58.accept(Unknown Source)",
+      "\tat org.apache.flink.streaming.runtime.tasks.OneInputStreamTask$StreamTaskNetworkOutput.emitRecord(OneInputStreamTask.java:247)",
+      "\tat org.apache.flink.streaming.runtime.io.AbstractStreamTaskNetworkInput.processElement(AbstractStreamTaskNetworkInput.java:206)",
+      "\tat org.apache.flink.streaming.runtime.io.AbstractStreamTaskNetworkInput.emitNext(AbstractStreamTaskNetworkInput.java:163)",
+      "\tat org.apache.flink.streaming.runtime.io.StreamOneInputProcessor.processInput(StreamOneInputProcessor.java:65)",
+      "\tat org.apache.flink.streaming.runtime.tasks.StreamTask.processInput(StreamTask.java:646)"
+    ]
+  },
+  "performance_optimization_passes": 0,
+  "performance_note": "All seven valid candidate type/release profiles beat stock Flink. No slow native gate or measured optimization passes were required; no performance-only opt-in was added. ARRAY factory exists only on Flink 2.2."
+}

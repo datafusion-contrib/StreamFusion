@@ -557,9 +557,16 @@ both one-row physical batches and a multi-row batch, followed by finish, checkpo
 and watermark callbacks, and verifies that no partial output escapes.
 
 Checkpoints preserve the scalar/count or ordered occurrences. Append-only first/last and
-SINGLE_VALUE support the enclosing group's TTL. Retracting FIRST_VALUE/LAST_VALUE with a
-positive retention, including a STATE_TTL hint, fall back: Flink independently expires its
-value-to-order and order-to-value map entries, which a single group lifetime does not model.
+SINGLE_VALUE support the enclosing group's TTL. Retracting FIRST_VALUE/LAST_VALUE also admit
+positive retention, including STATE_TTL hints. Their cached selection, value-to-order map and
+order-to-value map have separate lifetimes. Expired supporting entries do not recompute the
+cached FIRST/LAST scalar. A successful map write refreshes that entry; reads do not. Removing
+the oldest occurrence refreshes surviving orders for that value and surviving values in its
+arrival bucket, matching the released functions. NULL rows refresh only the group accumulator.
+Optional framed Arrow checkpoint extensions retain both map clocks, order lists and the cached
+selection without changing fresh TTL-off snapshots. Disabling retention after restore keeps
+the cached selection and supporting maps while ignoring their expiry clocks. The processing clock is sampled per native batch,
+as in the existing TTL policy; within-bucket arrival order remains stable.
 These aggregate states use the existing raw keyed snapshot path with both memory and RocksDB
 backends; the direct RocksDB accumulator-row codec does not yet encode ordered occurrences.
 FIRST_VALUE/LAST_VALUE have no merge implementation on the supported released Flink lines:
@@ -1077,7 +1084,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 - An approximate aggregate.
 - FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over a value type outside the single-phase list above,
   or with more than one argument.
-- DISTINCT or retracting FIRST_VALUE/LAST_VALUE with positive state TTL.
+- DISTINCT FIRST_VALUE/LAST_VALUE with positive state TTL.
 - An unsupported grouping-key or value column type.
 
 The released-host string aggregate baseline passes 18 checks on each of Flink 2.2.1 and
@@ -1859,11 +1866,57 @@ remain in place. These are existing ARRAY/MAP/ROW bridge types, not new SQL STRU
 The supported release matters: Flink 2.2 uses generic FIRST/LAST factories, while Flink 1.18
 rejects these extra types. The planner also rejects DISTINCT binary, MAP, ROW and MULTISET on
 both lines. The SQL checks preserve those planning failures rather than inventing new dialects.
-Positive-retention DISTINCT/retracting first/last still require independent view expiry and
-remain a separate completion item.
+Positive-retention ordinary retracting first/last now retain independent value/order maps.
+DISTINCT first/last still require independently retained shared membership and remain a
+separate completion item.
 
 The unchanged upstream Table API `testGroupAggregateWithExpression` now requires consumed
 native grouping in both state-backend fixtures, with Flink 1.18's established changelog-state
 fallback retained. It protects the mixed scalar FIRST/LAST context; dedicated SQL fixtures
 establish the new value types. Actual unchanged upstream runtime validation is reserved for
 consolidated delivery.
+
+
+### Independent FIRST/LAST retention
+
+Controlled-clock operator comparisons against released Flink cover BIGINT/STRING,
+immediate/mini-batch and memory/native-RocksDB state: sixteen cases on each line, including
+two successive restores, independent entry deadlines, stale cached selections, duplicate
+removals, NULL-only group refresh and whole-group expiry. The host fixture separates real
+arrival-clock samples while controlling the TTL provider, so bucket collisions cannot make
+this deterministic deadline test flaky. Native unit checks separately exercise shared-clock
+buckets and refresh of surviving values. Thirteen typed SQL profiles run each immediate and
+requested TWO_PHASE choice with positive retention, FILTER and consumed native work. Flink
+1.18 skips its four unavailable FIRST/LAST factories. FIRST/LAST has no released merge
+implementation, so its requested TWO_PHASE shape remains single phase. The native suite
+passes 839 checks, with two diagnostics ignored.
+
+The [retention measurements](../benchmarks/results/ordered-value-retention-2026-10-21.json)
+retain complete-job trial boundaries, source/DSO hashes, previous-planner controls and the
+aborted large stock warmup diagnostic. Both engines receive identical rows, groups, NULLs,
+changelog and resources; row/Arrow conversions, JNI and the rowwise sink remain timed.
+
+The broader selected suite verifies 272 cases on Flink 2.2; Flink 1.18 passes 212 and skips
+60 explicit released-host capability cases. This includes eighteen new complex retained SQL
+profiles and eight new complex recoveries on 2.2. Actual positive STATE_TTL hints require
+native execution. The unchanged upstream mixed FIRST/LAST/LISTAGG Table API fixture passes
+two backend invocations per release with consumed native aggregate work; its append input
+protects shared integration rather than establishing the new retention semantics alone.
+
+At 131,072 rows, 1,024 groups, cardinality 4,096, one-eighth NULLs, one-hour retention,
+p=1, memory state and 2 GiB heap, two warmups and three alternating measured runs give:
+
+| Type | Flink 2.2 stock/native median, s | Flink 1.18 stock/native median, s |
+| --- | ---: | ---: |
+| BIGINT | 2.042 / 0.165 | 2.039 / 0.176 |
+| STRING | 2.711 / 0.219 | 2.656 / 0.217 |
+| DOUBLE | 2.097 / 0.158 | 2.053 / 0.158 |
+| ARRAY | 2.627 / 0.356 | released factory unavailable |
+
+The actual `d13e9dc4` planner fallback takes 1.975/2.612/2.048/2.701 s for those four
+2.2 profiles (paired stock 1.908/2.675/1.985/2.664 s). These specific native jobs win;
+no optimization passes were needed. An initial million-row/64-group stock warmup was
+terminated after its FIRST_VALUE retraction scan exceeded 80 seconds; it contributes no
+measured trial. Flink samples arrival clock inside the aggregate while native samples once
+per Arrow call, so clock-bucket density influences this retention-specific result. The
+numbers do not establish general FIRST/LAST speedups.

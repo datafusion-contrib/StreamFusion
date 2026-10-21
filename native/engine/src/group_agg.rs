@@ -13,6 +13,7 @@ use numeric_map_order::NumericMapOrder;
 mod floating_tests;
 mod json_agg;
 mod local_single;
+mod ordered_retention;
 mod ordered_value;
 mod single_append;
 use json_agg::{is_json_agg, JsonAggState, JsonAggregateError};
@@ -2340,7 +2341,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         if let Some(counts) = single_count_cols[i] {
                             ordered.merge_single(value, counts.value(row))?;
                         } else {
-                            result_changed[i] = ordered.update(value, retract)?;
+                            result_changed[i] = ordered.update_with_ttl(
+                                value,
+                                retract,
+                                ttl,
+                                state.last_write_ms,
+                            )?;
                         }
                         continue;
                     }
@@ -2860,6 +2866,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let mut multiset_keys: Vec<Vec<&[u8]>> = vec![Vec::new(); num_agg];
         let mut multiset_values: Vec<Vec<ScalarValue>> = vec![Vec::new(); num_agg];
         let mut multiset_counts: Vec<Vec<i64>> = vec![Vec::new(); num_agg];
+        let mut retained_keys = Vec::new();
+        let mut retained_aggs = Vec::new();
+        let mut retained_values = Vec::new();
         for key in selected {
             let state = self
                 .store
@@ -2879,6 +2888,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         non_null_columns[i].push(0);
                     }
                     GroupAggState::Ordered(ordered) => {
+                        if let Some(bytes) = ordered.retention_snapshot() {
+                            retained_keys.push(key.0.as_ref());
+                            retained_aggs.push(i as i64);
+                            retained_values.push(bytes);
+                        }
                         state_columns[i].push(ordered.snapshot_value());
                         non_null_columns[i].push(ordered.count());
                         for (value, count) in ordered.entries() {
@@ -2995,6 +3009,23 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     RecordBatch::try_new(Arc::new(Schema::new(f)), c).expect("multiset snapshot"),
                 );
             }
+        }
+        if !retained_keys.is_empty() {
+            batches.push(
+                RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![
+                        Field::new("ordered_retention_key", DataType::Binary, false),
+                        Field::new("aggregate", DataType::Int64, false),
+                        Field::new("retained_views", DataType::Binary, false),
+                    ])),
+                    vec![
+                        Arc::new(arrow::array::BinaryArray::from_iter_values(retained_keys)),
+                        Arc::new(Int64Array::from(retained_aggs)),
+                        Arc::new(arrow::array::BinaryArray::from_iter_values(retained_values)),
+                    ],
+                )
+                .expect("ordered retention snapshot extension"),
+            );
         }
         write_framed(&batches)
     }
@@ -3235,6 +3266,36 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     }
                 }
             }
+        }
+        if let Some(retained) = batches.get(frame) {
+            assert_eq!(retained.schema().field(0).name(), "ordered_retention_key");
+            let keys = retained
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow::array::BinaryArray>()
+                .unwrap();
+            let indices = retained
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let values = retained
+                .column(2)
+                .as_any()
+                .downcast_ref::<arrow::array::BinaryArray>()
+                .unwrap();
+            for row in 0..retained.num_rows() {
+                let state = self
+                    .store
+                    .get_mut(keys.value(row))
+                    .expect("retained ordered group");
+                let GroupAggState::Ordered(ordered) = &mut state.aggs[indices.value(row) as usize]
+                else {
+                    unreachable!("retained ordered aggregate")
+                };
+                ordered.restore_retention(values.value(row));
+            }
+            assert_eq!(batches.len(), frame + 1, "group snapshot extensions");
         }
     }
 }

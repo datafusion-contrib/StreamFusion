@@ -157,6 +157,10 @@ class GroupedValueBenchmark {
     table.getConfig().setLocalTimeZone(java.time.ZoneId.of("America/New_York"));
     table
         .getConfig()
+        .setIdleStateRetention(
+            java.time.Duration.ofMillis(Long.getLong("grouped.value.retentionMillis", 0L)));
+    table
+        .getConfig()
         .set("table.optimizer.agg-phase-strategy", TWO_PHASE ? "TWO_PHASE" : "ONE_PHASE");
     if (TWO_PHASE) {
       table.getConfig().set("table.exec.mini-batch.enabled", "true");
