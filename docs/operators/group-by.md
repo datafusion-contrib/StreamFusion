@@ -634,13 +634,15 @@ map, then update their independent durable accumulators in the verified merge or
 The [floating partial measurements](../optimizations/aggregate-specialization-fast-paths.md#ordered-floating-distinct-partials)
 separate Rust/Arrow functionality admission from conversion-inclusive complete-job costs.
 
-Insert-only two-phase `SINGLE_VALUE` over the single-phase scalar value types retains a typed
+Two-phase `SINGLE_VALUE` over the single-phase scalar value types, including retracting input,
+retains a typed
 value and an INT count in each local bundle. NULL increments the count. Both local accumulation and global merging
 raise Flink's cardinality exception on a second element; global checkpoints preserve that
 count even when the value is NULL. The global consumes the count partial, rather than
 counting bundles. The declared value partial must match the input type, and its count must
 be INT. Flink may declare a TIME(3) partial for TIME(0) input; both use millisecond storage
-and preserve the input value. Retracting SINGLE_VALUE splits remain on Flink.
+and preserve the input value. Signed local value/count partials merge through the same
+released SINGLE_VALUE rule; deleting and recreating a group preserves NULL and count-zero cases.
 Local execution failures use the same Flink exception mapping as global aggregation, after
 releasing imported Arrow input, so cardinality failures are not reported as memory limits.
 
@@ -1609,3 +1611,38 @@ correction does not change its execution path. Each released line passes 20 comp
 numeric changelog checks, 22 controlled retention/recovery checks and 26 focused
 SINGLE_VALUE checks. Decimal retracting SUM and other unsupported retracting partial
 layouts remain explicit fallback.
+
+
+### Retracting SINGLE_VALUE partials
+
+The local/global value-and-INT-count layout also accepts updating inputs. The existing native
+merge applies Flink's signed count rule, preserves NULL values, removes/recreates keyed groups
+and keeps a keyless global aggregate's empty result. This is planner admission over the existing
+scalar state. Released 1.18.1 and 2.2.1 factories reject binary and collection/ROW SINGLE_VALUE;
+those type roots do not establish missing native coverage. SQL DISTINCT lowering and the
+released SINGLE_VALUE FILTER rejection remain as described above.
+
+Each release passes 36 complete changelog cases across nine scalar families, nullable keys,
+NULL-producing projections and logical bundles of one/three; two interleaved materialized
+relation checks; two keyless empty-result checks; and four memory/RocksDB cases that recover
+twice. Per-key cycles and recovery cuts align both mini-batch stages for raw changelog
+comparisons. Interleaved keys can change the count-trigger cadence through local map order,
+so their deterministic materialized relation is compared separately. Every admitted test
+requires native local and global input consumption.
+
+`RetractingSumPartialsBenchmark -Dsumretract.singleValue=true` selects an updating
+MAX-to-SINGLE_VALUE/COUNT/AVG/filtered-SUM cascade. One million DOUBLE rows, 128 inner and
+128 outer keys, parallelism one, memory state, a 2 GiB heap, 512-row mini-batches, JDK 17,
+release+mimalloc, two warmups and three alternating measurements retain both conversions,
+production JNI/state, the runtime RowData source and rowwise blackhole sink. Metrics require
+both native local/global pairs to consume input.
+
+| Flink | Stock median, s | Native median, s | Stock/native |
+| --- | ---: | ---: | ---: |
+| 2.2.1 | 0.541 | 0.382 | 1.42× |
+| 1.18.1 | 0.541 | 0.367 | 1.47× |
+
+The actual previous canonical `d13e9dc4` takes stock fallback: paired configured/stock medians
+are 0.535/0.536 seconds on 2.2.1. No optimization pass was needed for this winning workload.
+[All trials, configuration, library hashes and validation limits](../benchmarks/results/retracting-single-value-2026-10-21.json)
+are retained; these measurements do not establish a speedup for every scalar type or backend.

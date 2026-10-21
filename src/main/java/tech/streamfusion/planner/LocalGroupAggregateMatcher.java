@@ -26,10 +26,10 @@ import tech.streamfusion.operator.RowDataArrowConverter;
  * the value's own type (Flink's SUM partial does not widen — verified against the planner), COUNT
  * is bigint, and an AVG contributes <em>two</em> partial columns — the widened running sum (bigint
  * for integer inputs, double for double, Flink's {@code AvgAggFunction}) and the bigint non-null
- * count. Retracting integer SUM also carries a bigint non-null count beside its typed sum. Partials
- * are positional, so the accessors below expand an AVG into its two native states (a widened-sum
- * state plus a COUNT over the same column) and the type checks walk the output row with a
- * per-aggregate offset. The global reads each partial by its declared (Flink) type, so every
+ * count. Retracting integer/FLOAT/DOUBLE SUM also carries a bigint non-null count beside its typed
+ * sum. Partials are positional, so the accessors below expand an AVG into its two native states (a
+ * widened-sum state plus a COUNT over the same column) and the type checks walk the output row with
+ * a per-aggregate offset. The global reads each partial by its declared (Flink) type, so every
  * declared partial column must equal what the native side emits — anything else falls back cleanly
  * rather than mismatching at the boundary.
  */
@@ -105,7 +105,8 @@ final class LocalGroupAggregateMatcher {
     // A retracting input (the aggregate consumes another aggregate's changelog, Nexmark q4's
     // shape): the local folds -U/-D rows by subtracting. COUNT, AVG and exact SUM0 use their
     // append-only layouts, while Flink's retract variants of
-    // MIN/MAX declare value maps the positional walk does not model. SUM_RETRACT carries a
+    // MIN/MAX declare value maps the positional walk does not model. SINGLE_VALUE keeps its
+    // typed value and signed INT count; SUM_RETRACT carries a
     // separate non-null count; a distinct view's map value switches to per-filter counts.
     boolean needRetraction = needRetraction(agg);
     int offset = grouping.length;
@@ -120,7 +121,8 @@ final class LocalGroupAggregateMatcher {
               || (retractKind != WindowAggregateMatcher.KIND_COUNT
                   && retractKind != WindowAggregateMatcher.KIND_AVG
                   && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
-                  && retractKind != WindowAggregateMatcher.KIND_SUM))) {
+                  && retractKind != WindowAggregateMatcher.KIND_SUM
+                  && retractKind != 14))) {
         return false;
       }
       // A FILTER is a boolean input column (the planner materializes `IS TRUE(p)` in the Calc
@@ -664,9 +666,9 @@ final class LocalGroupAggregateMatcher {
       }
     }
     return "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values"
-               + " with no widening of the partial, MIN/MAX over"
-               + " string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or"
-               + " insert-only SINGLE_VALUE over supported scalar values, and"
-               + " bigint/int/string/boolean/date/timestamp/decimal grouping keys";
+        + " with no widening of the partial, MIN/MAX over"
+        + " string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or"
+        + " SINGLE_VALUE over supported scalar values, and"
+        + " bigint/int/string/boolean/date/timestamp/decimal grouping keys";
   }
 }

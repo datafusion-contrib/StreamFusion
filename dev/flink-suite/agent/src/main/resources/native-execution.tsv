@@ -43,3 +43,5 @@ org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCasc
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset	aggPhase=TWO_PHASE	NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithOffset	*	NativeWindowTableFunctionOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithNegativeOffset	*	NativeWindowTableFunctionOperator
+
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupBySingleValue	*	NativeColumnarGroupAggregateOperator

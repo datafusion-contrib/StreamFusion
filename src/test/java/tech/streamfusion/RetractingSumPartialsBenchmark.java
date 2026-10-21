@@ -27,9 +27,13 @@ class RetractingSumPartialsBenchmark {
       assertTrue(backend.equals("memory") || backend.equals("rocksdb"));
       boolean rocks = backend.equals("rocksdb");
       for (String type : System.getProperty("sumretract.types", "INT,BIGINT").split(",")) {
+        boolean singleValue = Boolean.getBoolean("sumretract.singleValue");
         String query =
-            "INSERT INTO sink SELECT u, SUM(mx), COUNT(mx), AVG(mx), SUM(mx) FILTER (WHERE mx > 0)"
-                + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY u";
+            "INSERT INTO sink SELECT "
+                + (singleValue ? "k, SINGLE_VALUE(mx)" : "u, SUM(mx)")
+                + ", COUNT(mx), AVG(mx), SUM(mx) FILTER (WHERE mx > 0)"
+                + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY "
+                + (singleValue ? "k" : "u");
         double[][] times = new double[2][RUNS];
         var configuration = new Configuration();
         if (rocks)

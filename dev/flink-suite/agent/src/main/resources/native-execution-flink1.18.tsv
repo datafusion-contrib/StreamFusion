@@ -64,3 +64,6 @@ org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCasc
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testCascadeEventTimeTumbleWindowWithOffset	changelog=false&aggPhase=TWO_PHASE	NativeColumnarLocalWindowAggregateOperator+NativeColumnarGlobalWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithOffset	*	NativeWindowTableFunctionOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowTableFunctionITCase#testTumbleWindowTVFWithNegativeOffset	*	NativeWindowTableFunctionOperator
+
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupBySingleValue	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupBySingleValue	changelog=false	NativeColumnarGroupAggregateOperator

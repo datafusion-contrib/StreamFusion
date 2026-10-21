@@ -75,9 +75,10 @@ final class GlobalGroupAggregateMatcher {
               || (kind != WindowAggregateMatcher.KIND_COUNT
                   && kind != WindowAggregateMatcher.KIND_AVG
                   && kind != GroupAggregateMatcher.KIND_SUM_ZERO
-                  && kind != WindowAggregateMatcher.KIND_SUM))) {
+                  && kind != WindowAggregateMatcher.KIND_SUM
+                  && kind != 14))) {
         return "global group aggregate: a retracting merge admits COUNT, AVG, SUM0 and"
-            + " integer/FLOAT/DOUBLE SUM only";
+            + " integer/FLOAT/DOUBLE SUM and scalar SINGLE_VALUE";
       }
       // COUNT/SUM/AVG(DISTINCT x): the merge folds the local bundles' (value, count) view entries
       // into

@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "feature": "Retracting two-phase SINGLE_VALUE scalar partials",
+  "base_commit": "e0619752",
+  "configuration": {
+    "rows": 1000000,
+    "type": "DOUBLE",
+    "parallelism": 1,
+    "inner_keys": 128,
+    "outer_keys": 128,
+    "backend": "memory",
+    "heap": "2 GiB",
+    "mini_batch_rows": 512,
+    "mini_batch_latency": "1 h",
+    "null_every": 7,
+    "warmups": 2,
+    "measured_trials": 3,
+    "runtime": "JDK 17; release+mimalloc",
+    "query": "SELECT k, SINGLE_VALUE(mx), COUNT(mx), AVG(mx), SUM(mx) FILTER (WHERE mx > 0) FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY k",
+    "boundary": "Runtime RowData source, both transposes, production JNI and state, two native local/global pairs, rowwise blackhole sink; startup/planning/execution retained"
+  },
+  "measurements": [
+    {
+      "flink_line": "2.2.1",
+      "revision": "candidate",
+      "dso_sha256": "6941f1ef5dc2add803d7d57bf58b197a0b6d4415185d5f056b3b000dc6811a0c",
+      "native_aggregate_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.372878917
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.825443946
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.500459386
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.686137967
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.541495434
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.427232833
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.381558713
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.551016248
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.539050737
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.346559634
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.541495434,
+          0.551016248,
+          0.539050737
+        ],
+        "StreamFusion": [
+          0.427232833,
+          0.381558713,
+          0.346559634
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.541495434,
+        "StreamFusion": 0.381558713
+      },
+      "stock_over_streamfusion": 1.4191667377806676
+    },
+    {
+      "flink_line": "1.18.1",
+      "revision": "candidate",
+      "dso_sha256": "6941f1ef5dc2add803d7d57bf58b197a0b6d4415185d5f056b3b000dc6811a0c",
+      "native_aggregate_route": true,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.208621254
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.759996259
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.502395393
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.660836487
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.557253026
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.440508433
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.365738657
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.540568566
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.52263042
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.366708114
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.557253026,
+          0.540568566,
+          0.52263042
+        ],
+        "StreamFusion": [
+          0.440508433,
+          0.365738657,
+          0.366708114
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.540568566,
+        "StreamFusion": 0.366708114
+      },
+      "stock_over_streamfusion": 1.4741112764142439
+    },
+    {
+      "flink_line": "2.2.1",
+      "revision": "d13e9dc4",
+      "dso_sha256": "c3c943f09fe9def73b6a86ce434da99e88c0b9e3c5f0bb8b4dcd4fb0dd36f2c4",
+      "native_aggregate_route": false,
+      "trials": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 1.32864126
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "seconds": 0.681619501
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.585051925
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "seconds": 0.587359499
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.536053485
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "seconds": 0.551468375
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.534627705
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "seconds": 0.551671109
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.499944496
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "seconds": 0.533409599
+        }
+      ],
+      "measured_seconds": {
+        "Flink": [
+          0.536053485,
+          0.551671109,
+          0.499944496
+        ],
+        "StreamFusion": [
+          0.551468375,
+          0.534627705,
+          0.533409599
+        ]
+      },
+      "median_seconds": {
+        "Flink": 0.536053485,
+        "StreamFusion": 0.534627705
+      },
+      "stock_over_streamfusion": 1.0026668651599342
+    }
+  ],
+  "optimization_passes": 0,
+  "validation": {
+    "each_released_line": {
+      "typed_raw_changelog_checks": 36,
+      "interleaved_materialized_relation_checks": 2,
+      "global_empty_result_checks": 2,
+      "repeated_recovery_checks": 4,
+      "types": [
+        "BIGINT",
+        "FLOAT",
+        "DOUBLE",
+        "DECIMAL(20,3)",
+        "STRING",
+        "DATE",
+        "TIME(0)",
+        "TIMESTAMP(9)",
+        "BOOLEAN"
+      ]
+    },
+    "cadence": "Raw changelogs use 15-row per-key cycles and logical bundle sizes 1/3. Recovery cuts at source prefixes 9/27 align both stages. Interleaved key order changes global count-trigger cadence, so its deterministic materialized multiset is checked separately; no runtime ordering claim is inferred.",
+    "released_factory_audit": "Both released factories admit scalar SINGLE_VALUE types and reject binary/ARRAY/MAP/ROW; SQL removes DISTINCT and rejects FILTER. Existing 12 DISTINCT and 14 compact scalar checks per release retained.",
+    "native_changes": "None: existing ordered value/signed INT count merge; this change widens planner admission.",
+    "contracts": "Agent 50 passed, one skipped; Python execution contract checks 35 passed; declarations and exact scopes updated for unchanged AggregateITCase#testGroupBySingleValue. Actual upstream runtime/required CI pending consolidated validation."
+  }
+}
