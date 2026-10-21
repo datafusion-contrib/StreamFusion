@@ -52,7 +52,7 @@ class FlinkListAggDistinctSqlHarnessTest {
     "TWO_PHASE,true,false",
     "TWO_PHASE,true,true"
   })
-  void releasedPhasePlansKeepVerifiedNativeAndFallbackRoutes(
+  void releasedPhasePlansConsumeNativeAggregation(
       String phase, boolean updating, boolean distinct) {
     var rows = new ArrayList<Row>();
     for (String value : new String[] {null, "a", "a", "b", "", "é🚀", "\0", "\ud800", "?"})
@@ -85,10 +85,7 @@ class FlinkListAggDistinctSqlHarnessTest {
             "SELECT json_key, LISTAGG("
                 + (distinct ? "DISTINCT " : "")
                 + "v, '::'), COUNT(*) FROM src GROUP BY json_key");
-    comparison.assertSuccess(
-        (phase.equals("ONE_PHASE") || !distinct)
-            ? NativeFailureParity.Route.NATIVE
-            : NativeFailureParity.Route.FALLBACK);
+    comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
     assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
     assertEquals(
         phase.equals("TWO_PHASE"), comparison.host().plan().contains("LocalGroupAggregate"));

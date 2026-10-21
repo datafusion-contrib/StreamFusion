@@ -186,8 +186,13 @@ impl ListAggState {
         let old_len = self.values.len();
         let old_pending = self.pending_retractions.len();
         let changed = self.update(value, separator, retract);
+        self.update_timestamps(old_len, old_pending, ttl);
+        changed
+    }
+
+    fn update_timestamps(&mut self, old_len: usize, old_pending: usize, ttl: StateTtl) {
         let Some(times) = &mut self.timestamps else {
-            return changed;
+            return;
         };
         if self.values.len() > old_len {
             times.values.push_back(ttl.now());
@@ -199,7 +204,42 @@ impl ListAggState {
         if self.pending_retractions.len() > old_pending {
             times.pending_retractions.push_back(ttl.now());
         }
-        changed
+    }
+
+    pub(super) fn merge_distinct(
+        &mut self,
+        value: Option<&str>,
+        separator: &str,
+        delta: i64,
+        ttl: StateTtl,
+    ) -> bool {
+        let Some(value) = value else { return false };
+        let counts = self.distinct.as_mut().expect("LISTAGG DISTINCT membership");
+        let old = counts.get(value).copied().unwrap_or(0);
+        let next = if self.append_only {
+            i64::from(old != 0 || delta != 0)
+        } else {
+            old.wrapping_add(delta)
+        };
+        if next == 0 {
+            if let Some((key, _)) = counts.remove_entry(value) {
+                self.distinct_bytes -= key.capacity();
+            }
+        } else if let Some(count) = counts.get_mut(value) {
+            *count = next;
+        } else {
+            let key = value.to_owned();
+            self.distinct_bytes += key.capacity();
+            counts.insert(key, next);
+        }
+        if (old > 0) == (next > 0) {
+            return false;
+        }
+        let old_len = self.values.len();
+        let old_pending = self.pending_retractions.len();
+        self.update_value(value, separator, next <= 0);
+        self.update_timestamps(old_len, old_pending, ttl);
+        true
     }
 
     pub(super) fn update(&mut self, value: Option<&str>, separator: &str, retract: bool) -> bool {
@@ -230,6 +270,11 @@ impl ListAggState {
                 return false;
             }
         }
+        self.update_value(value, separator, retract);
+        true
+    }
+
+    fn update_value(&mut self, value: &str, separator: &str, retract: bool) {
         if self.separator.as_deref() != Some(separator) {
             self.separator = Some(separator.to_owned());
         }
@@ -255,7 +300,6 @@ impl ListAggState {
             self.element_bytes += value.capacity();
             self.values.push_back(value);
         }
-        true
     }
 
     pub(super) fn forget_distinct(&mut self, value: &ScalarValue) {
@@ -289,10 +333,19 @@ impl ListAggState {
     }
 
     pub(super) fn update_local(&mut self, value: Option<&str>, separator: &str) {
+        self.update_local_retract(value, separator, false);
+    }
+
+    pub(super) fn update_local_retract(
+        &mut self,
+        value: Option<&str>,
+        separator: &str,
+        retract: bool,
+    ) {
         if self.separator.as_deref() != Some(separator) {
             self.separator = Some(separator.to_owned());
         }
-        self.update(value, separator, false);
+        self.update(value, separator, retract);
     }
 
     pub(super) fn separator(&self) -> ScalarValue {
@@ -401,6 +454,47 @@ impl<'a> StringColumn<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn distinct_partial_counts_replay_only_positive_membership_crossings() {
+        let mut state = ListAggState::new(33);
+        let ttl = StateTtl::new(1000, 1000);
+        state.expire(ttl, 0);
+        assert!(!state.merge_distinct(Some("a"), "::", -3, ttl));
+        assert!(!state.merge_distinct(Some("a"), "::", 2, ttl));
+        assert!(state.merge_distinct(Some("a"), "::", 5, ttl));
+        assert!(state.merge_distinct(Some("b"), "::", 2, ttl));
+        assert!(!state.merge_distinct(Some("a"), "::", -2, ttl));
+        assert_eq!(state.emit(), ScalarValue::Utf8(Some("a::b".into())));
+        assert!(state.merge_distinct(Some("a"), "::", -4, StateTtl::new(1000, 1500)));
+        assert_eq!(state.emit(), ScalarValue::Utf8(Some("b".into())));
+        assert!(!state.expire(StateTtl::new(1000, 2000), 1500));
+        let mut restored = ListAggState::new(33);
+        restored.restore(state.snapshot()).unwrap();
+        assert!(restored.merge_distinct(Some("a"), "::", 3, StateTtl::new(1000, 2100)));
+        assert_eq!(restored.emit(), ScalarValue::Utf8(Some("b::a".into())));
+        assert_eq!(
+            restored.distinct_count(&ScalarValue::Utf8(Some("a".into()))),
+            1
+        );
+        assert!(restored.expire(StateTtl::new(1000, 2500), 2100));
+        assert_eq!(restored.emit(), ScalarValue::Utf8(Some("a".into())));
+    }
+
+    #[test]
+    fn append_distinct_partials_merge_membership_bits_without_repeating_values() {
+        let mut state = ListAggState::new(32);
+        let ttl = StateTtl::new(0, 0);
+        assert!(state.merge_distinct(Some(""), "é🚀", 1, ttl));
+        assert!(!state.merge_distinct(Some(""), "é🚀", 1, ttl));
+        assert!(!state.merge_distinct(None, "é🚀", 1, ttl));
+        assert!(state.merge_distinct(Some("a"), "é🚀", 1, ttl));
+        assert_eq!(state.emit(), ScalarValue::Utf8(Some("é🚀a".into())));
+        assert_eq!(
+            state.distinct_count(&ScalarValue::Utf8(Some("a".into()))),
+            1
+        );
+    }
 
     #[test]
     fn a_single_local_partial_normalizes_pending_retractions_before_retained_values() {

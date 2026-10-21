@@ -237,8 +237,7 @@ final class LocalGroupAggregateMatcher {
         continue;
       }
       if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
-        if (call.isDistinct()
-            || !call.getCollation().getFieldCollations().isEmpty()
+        if (!call.getCollation().getFieldCollations().isEmpty()
             || call.getArgList().isEmpty()
             || call.getArgList().size() > 2
             || !GroupAggregateMatcher.isStringType(
@@ -609,9 +608,9 @@ final class LocalGroupAggregateMatcher {
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
       int kind = aggregateKind(call.getAggregation().getKind());
-      if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
-          && needRetraction(agg)
-          && !call.isDistinct()) {
+      if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && call.isDistinct()) {
+        kinds.add(needRetraction(agg) ? 33 : 32);
+      } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && needRetraction(agg)) {
         kinds.add(call.getArgList().size() == 2 ? 47 : 46);
       } else if (kind == 42) {
         kinds.add(jsonObjectKind(call));

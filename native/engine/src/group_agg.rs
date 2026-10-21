@@ -13,6 +13,7 @@ mod java_map_order;
 mod mapped_extreme;
 mod nested_hash;
 mod numeric_map_order;
+mod string_map_order;
 #[cfg(test)]
 use decimal_map_order::DecimalMapOrder;
 use java_map_order::JavaMapOrder;
@@ -1340,10 +1341,12 @@ fn ordered_distinct_type(data_type: &DataType) -> bool {
 }
 
 const DISTINCT_VIEW_SOURCE: &str = "streamfusion.distinct-view-source";
+const DISTINCT_VIEW_SEPARATOR: &str = "streamfusion.distinct-view-separator";
 
 struct NumericViewBuffer {
     order: NumericMapOrder,
     counts: Vec<Option<DistinctSet>>,
+    separator: Option<String>,
 }
 
 impl NumericViewBuffer {
@@ -1351,19 +1354,20 @@ impl NumericViewBuffer {
         Self {
             order: NumericMapOrder::new(data_type),
             counts: Vec::new(),
+            separator: None,
         }
     }
 
     fn merge_entry(&mut self, value: &ScalarValue, deltas: &[(usize, i64)]) {
         for &(target, delta) in deltas {
+            if self.counts.len() <= target {
+                self.counts.resize_with(target + 1, || None);
+            }
+            let set =
+                self.counts[target].get_or_insert_with(|| DistinctSet::new(self.order.data_type()));
             if value.is_null() {
                 self.order.add_null_count(target, delta);
             } else {
-                if self.counts.len() <= target {
-                    self.counts.resize_with(target + 1, || None);
-                }
-                let set = self.counts[target]
-                    .get_or_insert_with(|| DistinctSet::new(self.order.data_type()));
                 set.merge_scalar_delta(value, delta);
             }
         }
@@ -1386,6 +1390,7 @@ impl NumericViewBuffer {
 
     fn bytes(&self) -> usize {
         std::mem::size_of::<Self>() + self.order.bytes() - std::mem::size_of::<NumericMapOrder>()
+            + self.separator.as_ref().map_or(0, String::capacity)
             + self.counts.capacity() * std::mem::size_of::<Option<DistinctSet>>()
             + self
                 .counts
@@ -1958,11 +1963,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .iter()
             .enumerate()
             .map(|(i, kind)| {
-                (matches!(kind, 7 | 9 | 17 | 34)
+                (matches!(kind, 7 | 9 | 17 | 32 | 33 | 34)
                     && self.distinct_view_columns[i] >= 0
-                    && ordered_distinct_type(&self.value_types[i])
+                    && (ordered_distinct_type(&self.value_types[i])
+                        || self.value_types[i] == DataType::Utf8)
                     && (0..num_agg).any(|j| {
-                        matches!(self.kinds[j], 9 | 17 | 34)
+                        matches!(self.kinds[j], 9 | 17 | 32 | 33 | 34)
                             && self.distinct_view_columns[j] >= 0
                             && self.value_types[j] == self.value_types[i]
                             && same_view(i, j)
@@ -2106,14 +2112,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         let list_columns: Vec<_> = (0..num_agg)
             .map(|i| {
-                (is_list_agg(self.kinds[i]) && !list_agg::is_merge(self.kinds[i])).then(|| {
-                    (
-                        StringColumn::new(batch.column(self.value_columns[i] as usize)),
-                        (self.count_columns[i] >= 0).then(|| {
-                            StringColumn::new(batch.column(self.count_columns[i] as usize))
-                        }),
-                    )
-                })
+                (is_list_agg(self.kinds[i])
+                    && !list_agg::is_merge(self.kinds[i])
+                    && self.distinct_view_columns[i] < 0)
+                    .then(|| {
+                        (
+                            StringColumn::new(batch.column(self.value_columns[i] as usize)),
+                            (self.count_columns[i] >= 0).then(|| {
+                                StringColumn::new(batch.column(self.count_columns[i] as usize))
+                            }),
+                        )
+                    })
             })
             .collect();
         let list_partials: Vec<_> = (0..num_agg)
@@ -2474,6 +2483,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     buffer.bytes() - std::mem::size_of::<NumericViewBuffer>()
                 });
                 let buffer = buffers[i].get_or_insert_with(|| NumericViewBuffer::new(data_type));
+                if data_type == &DataType::Utf8 && buffer.separator.is_none() {
+                    let separator = batch
+                        .schema_ref()
+                        .field(self.distinct_view_columns[i] as usize)
+                        .metadata()
+                        .get(DISTINCT_VIEW_SEPARATOR);
+                    buffer
+                        .order
+                        .set_string_separator(separator.map(String::as_str));
+                    buffer.separator = Some(separator.map_or(",", String::as_str).to_owned());
+                }
                 for entry in
                     list.value_offsets()[row] as usize..list.value_offsets()[row + 1] as usize
                 {
@@ -2651,7 +2671,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         continue;
                     }
                     if let GroupAggState::List(list) = &mut state.aggs[i] {
-                        if list_partials[i].is_some() {
+                        if list_partials[i].is_some() || ordered_views[i].is_some() {
                             continue;
                         }
                         list.expire(ttl, state.last_write_ms);
@@ -3171,6 +3191,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             .filter_map(|(target, counts)| counts.as_ref().map(|_| target))
                             .collect();
                         let retained = ttl.enabled() && self.distinct_modes[source].is_some();
+                        for &target in &targets {
+                            if let GroupAggState::List(list) = &mut state.aggs[target] {
+                                list.expire(ttl, state.last_write_ms);
+                            }
+                        }
                         for value in buffer.order.iter() {
                             if value.is_null() {
                                 continue;
@@ -3202,7 +3227,19 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             for (target, set) in buffer.counts.iter().enumerate() {
                                 let count = set.as_ref().map_or(0, |set| set.scalar_count(&value));
                                 if count != 0 {
-                                    state.aggs[target].merge_distinct(value.clone(), count);
+                                    if let GroupAggState::List(list) = &mut state.aggs[target] {
+                                        let ScalarValue::Utf8(value) = &value else {
+                                            unreachable!("LISTAGG membership type")
+                                        };
+                                        list.merge_distinct(
+                                            value.as_deref(),
+                                            buffer.separator.as_deref().unwrap(),
+                                            count,
+                                            ttl,
+                                        );
+                                    } else {
+                                        state.aggs[target].merge_distinct(value.clone(), count);
+                                    }
                                 }
                             }
                             if retained {
@@ -3976,6 +4013,7 @@ pub(crate) struct LocalGroupAggregator {
     // the global merge is filter-blind because the partials are already filtered here.
     filter_columns: Vec<i64>,
     auxiliary_columns: Vec<i64>,
+    argument_separators: Vec<Option<String>>,
     key_columns: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
     result_types: Vec<DataType>,
@@ -4052,6 +4090,32 @@ impl LocalGroupAggregator {
             "local arguments must be configured before input"
         );
         self.auxiliary_columns = columns;
+        self.rebuild_ordered_view_groups();
+    }
+
+    fn rebuild_ordered_view_groups(&mut self) {
+        self.ordered_view_groups.clear();
+        let mut arguments = Vec::new();
+        for (i, &kind) in self.kinds.iter().enumerate() {
+            let argument = (self.value_columns[i], self.auxiliary_columns[i]);
+            if ((matches!(kind, 9 | 18 | 34) && ordered_distinct_type(&self.value_types[i]))
+                || matches!(kind, 32 | 33))
+                && !arguments.contains(&argument)
+            {
+                arguments.push(argument);
+                let sources: Vec<_> = self
+                    .distinct_view_sources
+                    .iter()
+                    .map(|&source| source as usize)
+                    .filter(|&source| {
+                        (self.value_columns[source], self.auxiliary_columns[source]) == argument
+                    })
+                    .collect();
+                if !sources.is_empty() {
+                    self.ordered_view_groups.push(sources);
+                }
+            }
+        }
     }
 
     pub(crate) fn new(
@@ -4098,8 +4162,8 @@ impl LocalGroupAggregator {
         let mut ordered_view_groups = Vec::new();
         let mut columns = Vec::new();
         for (i, &kind) in kinds.iter().enumerate() {
-            if matches!(kind, 9 | 18 | 34)
-                && ordered_distinct_type(&value_types[i])
+            if (matches!(kind, 9 | 18 | 34) && ordered_distinct_type(&value_types[i])
+                || matches!(kind, 32 | 33))
                 && !columns.contains(&value_columns[i])
             {
                 columns.push(value_columns[i]);
@@ -4127,6 +4191,7 @@ impl LocalGroupAggregator {
             accumulator_types,
             value_columns,
             filter_columns,
+            argument_separators: vec![None; auxiliary_columns.len()],
             auxiliary_columns,
             key_timestamp_precisions: vec![-1; key_columns.len()],
             key_columns,
@@ -4339,6 +4404,18 @@ impl LocalGroupAggregator {
                 })
             })
             .collect();
+        if n > 0 {
+            for i in 0..num_agg {
+                if matches!(self.kinds[i], 32 | 33)
+                    && self.auxiliary_columns[i] >= 0
+                    && self.argument_separators[i].is_none()
+                {
+                    let (_, separator) = list_columns[i].as_ref().unwrap();
+                    self.argument_separators[i] =
+                        separator.as_ref().unwrap().at(0).map(str::to_owned);
+                }
+            }
+        }
         // `None` is a COUNT(*) aggregate (no argument); a present column folds/counts non-null rows.
         let cols: Vec<Option<ValueColumn>> = (0..num_agg)
             .map(|i| {
@@ -4565,7 +4642,9 @@ impl LocalGroupAggregator {
                         .as_ref()
                         .map_or(Some(","), |column| column.at(row))
                         .expect("validated LISTAGG separator");
-                    if list_agg::is_merge(self.kinds[i]) {
+                    if matches!(self.kinds[i], 32 | 33) {
+                        list.update_local_retract(values.at(row), separator, retract);
+                    } else if list_agg::is_merge(self.kinds[i]) {
                         list.update(values.at(row), separator, retract);
                     } else {
                         list.update_local(values.at(row), separator);
@@ -4643,6 +4722,14 @@ impl LocalGroupAggregator {
             if let Some(orders) = &mut entry.numeric_orders {
                 for (order, sources) in orders.iter_mut().zip(&self.ordered_view_groups) {
                     let column = batch.column(self.value_columns[sources[0]] as usize);
+                    if let Some(&source) = sources
+                        .iter()
+                        .find(|&&source| self.auxiliary_columns[source] >= 0)
+                    {
+                        let (_, separator) =
+                            list_columns[source].as_ref().expect("LISTAGG arguments");
+                        order.set_string_separator(separator.as_ref().unwrap().at(row));
+                    }
                     let value = ScalarValue::try_from_array(column, row)?;
                     let mut touched = false;
                     for &source in sources {
@@ -4787,7 +4874,7 @@ impl LocalGroupAggregator {
             columns
         };
         for (i, rt) in self.result_types.iter().enumerate() {
-            if list_agg::is_merge(self.kinds[i]) {
+            if list_agg::is_merge(self.kinds[i]) || self.kinds[i] == 33 {
                 let partials = list_agg::partials(order.iter().map(|key| {
                     let entry = match key {
                         LocalGroupKey::Byte(key) => &states[key],
@@ -4980,13 +5067,22 @@ impl LocalGroupAggregator {
                 Arc::new(entries),
                 None,
             );
+            let arguments = if self.auxiliary_columns[source] >= 0 {
+                format!(
+                    "{},{}",
+                    self.value_columns[source], self.auxiliary_columns[source]
+                )
+            } else {
+                self.value_columns[source].to_string()
+            };
+            let mut metadata =
+                std::collections::HashMap::from([(DISTINCT_VIEW_SOURCE.to_owned(), arguments)]);
+            if let Some(separator) = &self.argument_separators[source] {
+                metadata.insert(DISTINCT_VIEW_SEPARATOR.to_owned(), separator.clone());
+            }
             fields.push(
-                Field::new(format!("distinct{v}"), list.data_type().clone(), false).with_metadata(
-                    std::collections::HashMap::from([(
-                        DISTINCT_VIEW_SOURCE.to_owned(),
-                        self.value_columns[source].to_string(),
-                    )]),
-                ),
+                Field::new(format!("distinct{v}"), list.data_type().clone(), false)
+                    .with_metadata(metadata),
             );
             columns.push(Arc::new(list));
         }

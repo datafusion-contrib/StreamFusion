@@ -64,11 +64,10 @@ final class GlobalGroupAggregateMatcher {
         continue;
       }
       if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
-        if (call.isDistinct()
-            || !call.getCollation().getFieldCollations().isEmpty()
+        if (!call.getCollation().getFieldCollations().isEmpty()
             || call.getArgList().isEmpty()
             || call.getArgList().size() > 2)
-          return "global LISTAGG requires verified non-DISTINCT partials";
+          return "global LISTAGG requires verified string partials";
         if (needRetraction) {
           if (offset >= inputType.getFieldCount()
               || !LocalGroupAggregateMatcher.supportedRetractingListPartial(
@@ -457,9 +456,9 @@ final class GlobalGroupAggregateMatcher {
     for (int i = 0; i < kinds.length; i++) {
       AggregateCall call = agg.aggCalls().apply(i);
       int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
-      if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
-          && agg.needRetraction()
-          && !call.isDistinct()) {
+      if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && call.isDistinct()) {
+        kinds[i] = agg.needRetraction() ? 33 : 32;
+      } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && agg.needRetraction()) {
         kinds[i] = call.getArgList().size() == 2 ? 47 : 46;
       } else if (kind == 42) {
         kinds[i] = LocalGroupAggregateMatcher.jsonObjectKind(call);

@@ -4,6 +4,7 @@ use crate::*;
 enum Order {
     Decimal(DecimalMapOrder),
     Floating(JavaMapOrder<Option<FloatingKey>>),
+    String(super::string_map_order::StringMapOrder),
 }
 
 #[derive(Clone, Copy)]
@@ -49,6 +50,7 @@ impl NumericMapOrder {
                 DataType::Float32 | DataType::Float64 => {
                     Order::Floating(JavaMapOrder::with_capacity(16))
                 }
+                DataType::Utf8 => Order::String(super::string_map_order::StringMapOrder::new()),
                 other => panic!("unsupported ordered numeric view: {other:?}"),
             },
         }
@@ -76,12 +78,19 @@ impl NumericMapOrder {
                 let hash = (bits ^ (bits >> 32)) as u32;
                 order.insert(key, (hash ^ (hash >> 16)) as i32);
             }
+            (Order::String(order), ScalarValue::Utf8(value)) => order.insert(value.as_deref()),
             _ => panic!("numeric view key does not match its type"),
         }
     }
 
     pub(super) fn data_type(&self) -> &DataType {
         &self.data_type
+    }
+
+    pub(super) fn set_string_separator(&mut self, separator: Option<&str>) {
+        if let Order::String(order) = &mut self.order {
+            order.set_separator(separator);
+        }
     }
 
     pub(super) fn remove(&mut self, value: &ScalarValue) {
@@ -106,6 +115,7 @@ impl NumericMapOrder {
                 let hash = (bits ^ (bits >> 32)) as u32;
                 order.remove(key, (hash ^ (hash >> 16)) as i32);
             }
+            (Order::String(order), ScalarValue::Utf8(value)) => order.remove(value.as_deref()),
             _ => panic!("numeric view key does not match its type"),
         }
     }
@@ -128,6 +138,7 @@ impl NumericMapOrder {
     pub(super) fn copy_if_reordered(&self) -> Option<Self> {
         let order = match &self.order {
             Order::Decimal(order) => Order::Decimal(order.copy_if_reordered()?),
+            Order::String(order) => Order::String(order.copy_if_reordered()?),
             Order::Floating(order) => {
                 let size = order.len();
                 let required = if size <= 2 {
@@ -166,6 +177,10 @@ impl NumericMapOrder {
             Order::Floating(order) => Some(order.iter()),
             _ => None,
         };
+        let strings = match &self.order {
+            Order::String(order) => Some(order.iter()),
+            _ => None,
+        };
         decimal
             .into_iter()
             .flatten()
@@ -189,12 +204,19 @@ impl NumericMapOrder {
                         _ => unreachable!(),
                     }),
             )
+            .chain(
+                strings
+                    .into_iter()
+                    .flatten()
+                    .map(|value| ScalarValue::Utf8(value.map(str::to_owned))),
+            )
     }
 
     pub(super) fn len(&self) -> usize {
         match &self.order {
             Order::Decimal(order) => order.len(),
             Order::Floating(order) => order.len(),
+            Order::String(order) => order.len(),
         }
     }
 
@@ -205,6 +227,9 @@ impl NumericMapOrder {
                 Order::Decimal(order) => order.bytes() - std::mem::size_of::<DecimalMapOrder>(),
                 Order::Floating(order) => {
                     order.bytes() - std::mem::size_of::<JavaMapOrder<Option<FloatingKey>>>()
+                }
+                Order::String(order) => {
+                    order.bytes() - std::mem::size_of::<super::string_map_order::StringMapOrder>()
                 }
             }
     }

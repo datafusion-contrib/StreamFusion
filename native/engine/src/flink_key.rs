@@ -846,6 +846,47 @@ pub(crate) fn binary_row_hash(
     BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions).hash(row)
 }
 
+pub(crate) fn string_distinct_map_hash(value: Option<&str>, separator: Option<&str>) -> i32 {
+    let hash = if let Some(separator) = separator {
+        let mut writer = BinaryRowWriter::new(2);
+        if let Some(value) = value {
+            writer.write_bytes(0, value.as_bytes());
+        } else {
+            writer.set_null(0);
+        }
+        writer.write_bytes(1, separator.as_bytes());
+        hash_bytes_by_words(writer.row_bytes()) as u32
+    } else {
+        let Some(value) = value else { return 0 };
+        let bytes = value.as_bytes();
+        let mix = |hash: u32, key: u32| {
+            let key = key
+                .wrapping_mul(0xcc9e2d51)
+                .rotate_left(15)
+                .wrapping_mul(0x1b873593);
+            (hash ^ key)
+                .rotate_left(13)
+                .wrapping_mul(5)
+                .wrapping_add(0xe6546b64)
+        };
+        let mut hash = DEFAULT_SEED;
+        let mut words = bytes.chunks_exact(4);
+        for word in &mut words {
+            hash = mix(hash, u32::from_ne_bytes(word.try_into().unwrap()));
+        }
+        for &byte in words.remainder() {
+            hash = mix(hash, (byte as i8 as i32) as u32);
+        }
+        hash ^= bytes.len() as u32;
+        hash ^= hash >> 16;
+        hash = hash.wrapping_mul(0x85ebca6b);
+        hash ^= hash >> 13;
+        hash = hash.wrapping_mul(0xc2b2ae35);
+        hash ^ (hash >> 16)
+    };
+    (hash ^ (hash >> 16)) as i32
+}
+
 /// Flink's `MurmurHashUtils.hashBytesByWords`: BinaryRow byte lengths are always word-aligned.
 pub(crate) fn hash_bytes_by_words(bytes: &[u8]) -> i32 {
     assert_eq!(bytes.len() % 4, 0, "BinaryRow bytes must be word aligned");

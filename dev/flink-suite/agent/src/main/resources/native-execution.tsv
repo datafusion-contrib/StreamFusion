@@ -70,4 +70,4 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDisti
 
 # Released LISTAGG DISTINCT keeps ordered string membership.
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=OFF	NativeColumnarGroupAggregateOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=ON	!global LISTAGG requires verified non-DISTINCT partials
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator

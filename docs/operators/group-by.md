@@ -136,10 +136,10 @@ secondary input metadata does not determine the emission mode.
 ### LISTAGG
 
 Single-phase LISTAGG runs over CHAR/VARCHAR for append and retracting input, and
-ordinary LISTAGG also admits local/global plans for both input modes. Both forms use an
+ordinary and DISTINCT LISTAGG also admit local/global plans for both input modes. Both forms use an
 omitted comma separator or a verified non-null character literal. Empty, quoted and
-multi-byte separators are supported. NULL values are skipped; empty strings and
-duplicates contribute in arrival order. A retraction removes the first matching
+multi-byte separators are supported. NULL values are skipped. In ordinary LISTAGG, empty strings
+and duplicates contribute in arrival order. A retraction removes the first matching
 occurrence. FILTER, numeric aggregate composition and single-phase mini-batching
 retain Flink's result types and changelog behavior.
 
@@ -169,9 +169,10 @@ same argument list share this clock, including one-argument COUNT DISTINCT. An e
 separator makes a two-argument DISTINCT key and therefore a separate membership view.
 Restoring a snapshot without membership deadlines seeds each argument view from the saved
 group-write time, or the restore time when the snapshot had no TTL clock.
-DISTINCT local/global merges remain a separate completion item.
+DISTINCT local/global merges replay the ordered shared membership view, including filtered
+consumers and the full value/separator argument identity.
 Released Flink rejects LISTAGG WITHIN GROUP ordering. Both releases produce real
-local/global plans under TWO_PHASE. For append input, the local
+local/global plans under TWO_PHASE. For ordinary append input, the local
 emits the declared pair of STRING fields (separator, prefix), and the global concatenates
 prefixes using each incoming separator. FILTER, default and literal separators, CHAR
 casts, mixed numeric aggregates and adjacent DISTINCT-count views retain their positional
@@ -1152,8 +1153,8 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
 **Local group aggregate (two-phase local half) only:**
 
 - Any aggregate other than SUM/MIN/MAX/COUNT/AVG/SUM0, typed SINGLE_VALUE over the
-  supported single-phase scalar types, ordinary LISTAGG over the append string pair or retracting
-  list partial, or JSON_OBJECTAGG over its map partial.
+  supported single-phase scalar types, ordinary or DISTINCT LISTAGG over the append string pair or
+  retracting list partial with its membership view, or JSON_OBJECTAGG over its map partial.
 - A SUM/MIN/MAX value type outside bigint/int/smallint/tinyint/float/double/decimal (MIN/MAX also admit
   strings, DATE, TIME, BOOLEAN and timestamps), or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal.
@@ -1165,22 +1166,22 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
 - A retracting input outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE, typed MIN/MAX,
-  ordinary LISTAGG and JSON_OBJECTAGG.
+  ordinary/DISTINCT LISTAGG and JSON_OBJECTAGG.
   DISTINCT COUNT admits the scalar, ARRAY and interval types above; DISTINCT SUM/AVG admits integers,
   FLOAT/DOUBLE and DECIMAL precision through 38 with the declared partial layout.
 
 **Global group aggregate (two-phase merge) only:**
 
 - Any merge other than SUM/MIN/MAX/COUNT/AVG/SUM0, the typed SINGLE_VALUE split, or
-  ordinary LISTAGG with its append (separator, prefix) pair or retracting list partial, or
+  ordinary/DISTINCT LISTAGG with its append (separator, prefix) pair or retracting list partial, or
   JSON_OBJECTAGG with its map partial.
 - A partial column outside bigint/int/smallint/tinyint/float/double/decimal, except the typed
   MIN/MAX, SINGLE_VALUE, LISTAGG and JSON_OBJECTAGG partials described above.
 - An AVG whose partial pair isn't `(bigint, bigint)` for an integer average, `(double, bigint)` for
   float/double, or `(decimal(38, s), bigint)` for decimal.
-- A distinct merge outside the local half's `COUNT`/`SUM(DISTINCT)` scope.
+- A distinct merge outside the local half's `COUNT`/`SUM`/`AVG`/`LISTAGG` scope.
 - A retracting merge outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE, typed MIN/MAX,
-  ordinary LISTAGG and JSON_OBJECTAGG.
+  ordinary/DISTINCT LISTAGG and JSON_OBJECTAGG.
   Scalar DISTINCT COUNT and numeric DISTINCT SUM/AVG use signed membership transitions;
   floating/wide-decimal arithmetic retains the released shared-view iteration order.
   Mapped MIN/MAX preserve cached extrema independently of expiring map entries.
@@ -2264,7 +2265,7 @@ carrier correctness fix; earlier two-pass measurements remain separately identif
 
 ### DISTINCT LISTAGG membership retention
 
-Positive-TTL single-phase LISTAGG DISTINCT uses the shared DISTINCT write policy above.
+Positive-TTL single-phase and local/global LISTAGG DISTINCT use the shared DISTINCT write policy above.
 Its cached append prefix survives membership expiry; retracting input retains the existing
 independent ordered-value and pending-retraction clocks. One-argument LISTAGG and COUNT
 DISTINCT may share a membership clock. A literal separator is a second DISTINCT argument,
@@ -2275,8 +2276,8 @@ filtered shared views, separate argument views, immediate/mini-batch execution, 
 successive restores on memory/native RocksDB. The native migration regression restores an
 older snapshot without entry clocks and verifies the new deadlines and cached COUNT separately.
 The unchanged released `AggregateITCase#testListAggWithDistinct` consumes native grouping
-in single-phase variants on both lines; split variants retain their explicit layout fallback.
-DISTINCT local/global LISTAGG remains a separate restriction.
+in single-phase and split variants on both lines. Split variants require consumed local
+and global native work; Flink 1.18 changelog-state variants retain their existing backend restriction.
 
 [Raw measurements and execution evidence](../benchmarks/results/listagg-distinct-retention-2026-10-21.json)
 retain the complete-job trials against stock Flink and the actual canonical previous planner
@@ -2364,14 +2365,14 @@ RocksDB. SQL recovery comparisons restore both engines at offsets 24 and 72: che
 bundle drains can change released retracting LISTAGG order, so a recovering run is compared
 with the same checkpoint cuts rather than an independently bundled uninterrupted run.
 
-DISTINCT LISTAGG local/global membership replay remains a separate original-scope restriction.
+DISTINCT LISTAGG local/global membership replay uses the separate shared-view path below.
 
 The focused final selection passes 179 SQL/operator checks on each released Flink line,
 including eight released layout contracts, twenty-two new split SQL checks and eight
 controlled-clock/recovery profiles. The native suite passes 894 tests with two diagnostics
 ignored. The unchanged upstream retracting/distinct LISTAGG tests pass fourteen invocations
 on 2.2.1 and twelve on 1.18.1: ordinary retracting splits now require consumed native local
-and global operators, while DISTINCT splits keep their explicit fallback contract.
+and global operators; DISTINCT splits now require both operators as described below.
 
 Complete-job medians include source/sink row conversion, JNI, list state and the Arrow
 exchange. Runs use one task, JDK 17, release+mimalloc, a 2 GiB heap, one-hour TTL,
@@ -2391,3 +2392,49 @@ also include separately paired actual previous-planner fallback controls.
 Reproduce with `StringAggregateBenchmark`, `stringagg.phase=TWO_PHASE`,
 `stringagg.updating=true`, `stringagg.ttl=1 h`, and `stringagg.literalSeparator=false`
 for the omitted separator (the default `true` selects a literal comma).
+
+### DISTINCT LISTAGG local/global membership replay
+
+The local operator carries each shared DISTINCT argument view as ordered string/count entries.
+It preserves released StringData hashing for one argument and BinaryRow hashing for a literal
+separator argument, NULL membership positions, map copies, removals and reinsertion. Separator
+literals travel with the Arrow view schema even when every row is NULL or a consumer's FILTER
+rejects the entire partial; a cached list accumulator cannot supply that argument reliably.
+
+The global first combines transient views in released map order, then replays only positive
+membership crossings against retained state. Append membership uses presence bits; retracting
+membership retains signed counts, including negative pending counts. It does not concatenate
+DISTINCT list partials. Shared filtered consumers retain their independent counters and common
+membership deadline, and an explicit separator keeps its distinct argument view separate from
+one-argument COUNT DISTINCT. Inner retracting lists retain their own entry clocks; successful
+removal refreshes survivors without refreshing entries on duplicate membership updates.
+
+Exact SQL and controlled-clock checks cover both released Flink lines, both input modes,
+default/empty/Unicode separators, shared filters, nullable keys/values, mixed aggregate layouts,
+and two restores through memory and native RocksDB state.
+
+Complete-job measurements use JDK 17, release+mimalloc, one task, a 2 GiB heap, one-hour
+retention and 1,024-row local/global mini-batches. Both perimeter conversions, JNI, state,
+Arrow exchange and the rowwise sink remain inside timing. Each profile runs alone with two
+warmups and three alternating-engine measured trials; both native stages must consume rows.
+
+| Flink | Input; rows / keys / string bytes | Stock seconds | Native seconds | Stock / native |
+| --- | --- | ---: | ---: | ---: |
+| 2.2.1 | Retracting, omitted separator; 1M / 65,536 / 16 | 13.489 | 3.091 | 4.36x |
+| 2.2.1 | Append, literal comma; 262,144 / 32,768 / 128 | 3.985 | 1.371 | 2.91x |
+| 1.18.1 | Retracting, omitted separator; 1M / 65,536 / 16 | 14.359 | 3.063 | 4.69x |
+| 1.18.1 | Append, literal comma; 262,144 / 32,768 / 128 | 3.852 | 1.325 | 2.91x |
+
+The actual previous canonical planner falls back for these split queries. Its medians on 2.2.1
+are 14.071 s for the retracting profile and 4.113 s for the wide append profile, with unchanged
+production source and only the identical benchmark fixture copied. All four candidate profiles
+beat stock without a performance optimization pass. The focused current reports pass 348
+SQL/operator checks per release; the Rust suite passes 897 tests with two diagnostics ignored.
+Unchanged upstream retracting/distinct LISTAGG tests pass fourteen invocations on 2.2.1 and twelve
+on 1.18.1, requiring consumed native local/global work for split variants.
+[Raw trials, source/library hashes, previous-planner controls and execution evidence](../benchmarks/results/distinct-listagg-partials-2026-10-21.json)
+retain the measured variability and exact configurations. Reproduce with `StringAggregateBenchmark`,
+`stringagg.function=LISTAGG`, `stringagg.distinct=true`, `stringagg.phase=TWO_PHASE`,
+`stringagg.ttl=1 h`, and the corresponding rows/keys/width settings. The retracting profile sets
+`stringagg.updating=true` and `stringagg.literalSeparator=false`; the append profile sets those
+properties to `false` and `true` respectively.
