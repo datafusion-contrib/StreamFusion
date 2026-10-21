@@ -948,17 +948,19 @@ start and replaces a matched group's comparison key with the latest row's key. C
 NaNs can make the retained group order nonmonotonic. A total floating sort or one permanently
 canonical NaN key would produce different rank updates.
 
-The existing ranker preserves that group order, scans actual last-member keys using the host
+The ranker preserves that group order, scans retained comparison keys using the host
 comparison, and emits the inserted row before each shifted row's UPDATE_BEFORE/UPDATE_AFTER.
-Every row keeps its original key/payload bytes, including NaN payloads and signed zeros.
+Each group carries its comparison key on its last member, independently of that row's payload;
+the key survives deletion of the row that supplied it. Every row keeps its original payload
+bytes, including NaN payloads and signed zeros.
 Tagged group lengths use the existing optional count metadata: `-(length + 2)` identifies a
 floating OVER group header; `-1` remains absent and nonnegative OFFSET counts retain their
 existing meaning. Raw/canonical restore preserves these headers and group order rather than
 sorting them again. Existing scalar/complex non-floating ranks and filtered Top-N keep their
 previous contracts. See the [rank-state decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/11-over-incremental-vs-window-exec.md).
 
-Admission still requires insert-only input, one ascending key, ROWS UNBOUNDED PRECEDING through
-CURRENT ROW and disabled idle-state TTL. Floating ARRAY/ROW children retain fallback. Released
+Admission requires one ascending key, ROWS UNBOUNDED PRECEDING through CURRENT ROW and
+disabled idle-state TTL. Both insert-only and updating input are admitted. Floating ARRAY/ROW children retain fallback. Released
 Flink 1.18's ordinary non-time factory rejection is preserved for every type; explicit FLOAT,
 DOUBLE and existing BIGINT controls verify failure class, message and phase with native planning.
 
