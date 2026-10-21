@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 pub(crate) const RETAINED_DISTINCT: i64 = 1 << 10;
 pub(super) const APPEND_DISTINCT: i64 = 1 << 11;
 pub(super) const RETAINED_DISTINCT_COLUMN: &str = "distinct_retention_key";
+pub(super) const PRESERVED_DISTINCT_APPEND: &str = "streamfusion.distinct-retained-append";
 pub(super) const PRESERVED_DISTINCT_STATE: &str = "streamfusion.distinct-retained-state";
 
 struct View {
@@ -393,6 +394,135 @@ mod tests {
             assert_eq!(
                 push(&mut state, expiry, Some(10), true, false),
                 vec![Some(2), Some(20), Some(10), Some(2)]
+            );
+        }
+    }
+
+    fn ordered_kinds(append: bool, enabled: bool) -> Vec<i64> {
+        let flags = if enabled {
+            RETAINED_DISTINCT | if append { APPEND_DISTINCT } else { 0 }
+        } else {
+            0
+        };
+        vec![19 | flags, 20 | flags, 7 | flags, 3]
+    }
+
+    fn ordered(append: bool, enabled: bool) -> GroupAggregator {
+        let mut state = GroupAggregator::new(
+            ordered_kinds(append, enabled),
+            vec![0; 4],
+            vec![1, 1, 1, -1],
+            vec![0],
+            true,
+        );
+        state.ttl_ms = if enabled { 1000 } else { 0 };
+        state
+    }
+
+    fn restore_ordered(
+        state: &mut GroupAggregator,
+        append: bool,
+        now: i64,
+        ttl: i64,
+    ) -> GroupAggregator {
+        let mut restored = GroupAggregator::restore(
+            ordered_kinds(append, ttl > 0),
+            vec![0; 4],
+            vec![1, 1, 1, -1],
+            vec![0],
+            true,
+            &state.snapshot(),
+            now,
+        );
+        restored.ttl_ms = ttl;
+        restored
+    }
+
+    #[test]
+    fn append_distinct_ordered_selection_survives_membership_expiry_and_restore() {
+        let mut state = ordered(true, true);
+        assert_eq!(
+            push(&mut state, 1000, Some(10), true, false),
+            vec![Some(10), Some(10), Some(1), Some(1)]
+        );
+        assert_eq!(
+            push(&mut state, 1500, Some(20), true, false),
+            vec![Some(10), Some(20), Some(2), Some(2)]
+        );
+        push(&mut state, 1900, None, true, false);
+        assert_eq!(
+            push(&mut state, 2000, Some(10), true, false),
+            vec![Some(10), Some(10), Some(3), Some(4)]
+        );
+        assert_eq!(
+            push(&mut state, 2100, Some(20), true, false),
+            vec![Some(10), Some(10), Some(3), Some(5)]
+        );
+        assert_eq!(
+            push(&mut state, 2500, Some(20), true, false),
+            vec![Some(10), Some(20), Some(4), Some(6)]
+        );
+        state = restore_ordered(&mut state, true, 2600, 1000);
+        assert_eq!(
+            push(&mut state, 3000, Some(10), true, false),
+            vec![Some(10), Some(10), Some(5), Some(7)]
+        );
+    }
+
+    #[test]
+    fn retracting_distinct_keeps_inner_order_and_outer_signed_counts_independent() {
+        let mut state = ordered(false, true);
+        push(&mut state, 1000, Some(10), true, false);
+        push(&mut state, 1500, Some(20), true, false);
+        push(&mut state, 1900, None, true, false);
+        assert_eq!(
+            push(&mut state, 2000, Some(10), true, true),
+            vec![Some(10), Some(20), Some(2), Some(2)]
+        );
+        push(&mut state, 2100, Some(10), true, false);
+        assert_eq!(
+            push(&mut state, 2200, Some(10), true, false),
+            vec![Some(10), Some(10), Some(3), Some(4)]
+        );
+        assert_eq!(
+            push(&mut state, 2300, Some(10), true, true),
+            vec![Some(20), Some(20), Some(2), Some(3)]
+        );
+        push(&mut state, 2400, Some(30), true, false);
+        state = restore_ordered(&mut state, false, 2450, 1000);
+        assert_eq!(
+            push(&mut state, 2500, Some(20), true, true),
+            vec![Some(20), Some(30), Some(3), Some(3)]
+        );
+        push(&mut state, 2600, Some(20), true, false);
+        push(&mut state, 2700, Some(20), true, false);
+        assert_eq!(
+            push(&mut state, 2800, Some(20), true, true),
+            vec![Some(30), Some(30), Some(3), Some(4)]
+        );
+        state = restore_ordered(&mut state, false, 2850, 0);
+        assert_eq!(
+            push(&mut state, 5000, Some(40), true, false),
+            vec![Some(30), Some(40), Some(4), Some(5)]
+        );
+        state = restore_ordered(&mut state, false, 5050, 0);
+        assert_eq!(
+            push(&mut state, 5100, Some(40), true, true),
+            vec![Some(30), Some(30), Some(3), Some(4)]
+        );
+    }
+
+    #[test]
+    fn ordered_distinct_legacy_snapshots_migrate_selection_and_membership_separately() {
+        for append in [false, true] {
+            let mut state = ordered(append, false);
+            push(&mut state, 1000, Some(10), true, false);
+            push(&mut state, 1500, Some(20), true, false);
+            state = restore_ordered(&mut state, append, 2000, 1000);
+            push(&mut state, 2500, None, true, false);
+            assert_eq!(
+                push(&mut state, 3000, Some(10), true, false),
+                vec![Some(10), Some(10), Some(3), Some(4)]
             );
         }
     }

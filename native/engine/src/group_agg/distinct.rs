@@ -1,3 +1,4 @@
+use super::ordered_retention::ValueKey;
 use super::*;
 use std::borrow::Borrow;
 use std::hash::Hash;
@@ -414,7 +415,7 @@ pub(crate) enum DistinctSet {
     String(Multiplicities<String>),
     Boolean(Multiplicities<bool>),
     Timestamp(Multiplicities<i128>),
-    Scalar(Multiplicities<ScalarValue>),
+    Scalar(Multiplicities<ValueKey>),
 }
 
 macro_rules! each_map {
@@ -498,7 +499,7 @@ impl DistinctSet {
             Self::String(m) => m.entries(|v| ScalarValue::Utf8(Some(v.clone()))),
             Self::Boolean(m) => m.entries(|v| ScalarValue::Boolean(Some(*v))),
             Self::Timestamp(m) => m.entries(|v| timestamp_scalar(*v)),
-            Self::Scalar(m) => m.entries(Clone::clone),
+            Self::Scalar(m) => m.entries(|value| value.0.clone()),
         }
     }
     #[cfg(feature = "rocksdb-state")]
@@ -516,7 +517,7 @@ impl DistinctSet {
             Self::String(m) => m.drain(|v| ScalarValue::Utf8(Some(v.clone()))),
             Self::Boolean(m) => m.drain(|v| ScalarValue::Boolean(Some(*v))),
             Self::Timestamp(m) => m.drain(|v| timestamp_scalar(*v)),
-            Self::Scalar(m) => m.drain(Clone::clone),
+            Self::Scalar(m) => m.drain(|value| value.0.clone()),
         }
     }
 
@@ -592,7 +593,7 @@ impl DistinctSet {
             (Self::Scalar(m), value) => {
                 let canonical = crate::flink_float::canonical_scalar(value);
                 m.counts
-                    .get(canonical.as_ref().unwrap_or(value))
+                    .get(&ValueKey(canonical.as_ref().unwrap_or(value).clone()))
                     .copied()
                     .unwrap_or(0)
             }
@@ -605,7 +606,10 @@ impl DistinctSet {
         #[cfg(feature = "rocksdb-state")]
         let journal = if self.journaled() {
             Some(Box::new(
-                self.drain_journal().into_iter().map(|(v, _)| v).collect(),
+                self.drain_journal()
+                    .into_iter()
+                    .map(|(v, _)| ValueKey(v))
+                    .collect(),
             ))
         } else {
             None
@@ -613,7 +617,10 @@ impl DistinctSet {
         #[cfg(not(feature = "rocksdb-state"))]
         let journal = None;
         *self = Self::Scalar(Multiplicities {
-            counts: entries.into_iter().collect(),
+            counts: entries
+                .into_iter()
+                .map(|(value, count)| (ValueKey(value), count))
+                .collect(),
             journal,
         });
     }
@@ -653,7 +660,7 @@ impl DistinctSet {
             }
             (Self::Scalar(m), v) => {
                 let canonical = crate::flink_float::canonical_scalar(v);
-                m.change(canonical.as_ref().unwrap_or(v), change)
+                m.change(&ValueKey(canonical.as_ref().unwrap_or(v).clone()), change)
             }
             (set, v) => {
                 set.promote();
@@ -664,7 +671,7 @@ impl DistinctSet {
     fn change_value(&mut self, value: ScalarValue, change: Change) -> bool {
         if let Self::Scalar(map) = self {
             let value = crate::flink_float::canonical_scalar(&value).unwrap_or(value);
-            map.change_owned(value, change)
+            map.change_owned(ValueKey(value), change)
         } else {
             self.change_scalar(&value, change)
         }
@@ -725,6 +732,42 @@ impl DistinctSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_membership_hashes_logical_integer_arrays_across_slices_and_restore() {
+        use arrow::datatypes::Int32Type;
+        use std::hash::Hasher;
+        let values: ArrayRef = Arc::new(arrow::array::ListArray::from_iter_primitive::<
+            Int32Type,
+            _,
+            _,
+        >([
+            Some(vec![Some(1), None, Some(2)]),
+            Some(vec![Some(3), None, Some(4)]),
+            Some(vec![Some(1), None, Some(2)]),
+        ]));
+        let first = ScalarValue::try_from_array(&values, 0).unwrap();
+        let other = ScalarValue::try_from_array(&values, 1).unwrap();
+        let sliced = ScalarValue::try_from_array(&values.slice(2, 1), 0).unwrap();
+        let hash = |value: &ScalarValue| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            ValueKey(value.clone()).hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(hash(&first), hash(&sliced));
+        assert_ne!(hash(&first), hash(&other));
+        let mut set = DistinctSet::new(values.data_type());
+        assert!(set.add_scalar(first.clone()));
+        assert!(!set.add_scalar(sliced.clone()));
+        assert_eq!(set.scalar_count(&sliced), 2);
+        let mut restored = DistinctSet::new(values.data_type());
+        for (value, count) in set.scalar_entries() {
+            restored.insert_imported(value, count);
+        }
+        assert!(!restored.remove_scalar(&sliced));
+        assert!(restored.remove_scalar(&first));
+        assert!(restored.is_empty());
+    }
 
     #[test]
     fn signed_membership_keeps_negative_counts_and_only_crosses_positive_membership() {

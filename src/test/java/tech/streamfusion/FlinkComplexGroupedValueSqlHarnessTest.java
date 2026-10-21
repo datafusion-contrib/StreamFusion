@@ -69,7 +69,7 @@ class FlinkComplexGroupedValueSqlHarnessTest {
   }
 
   static Stream<Arguments> retainedFixtures() {
-    return fixtures().filter(args -> !(boolean) args.get()[2] && (boolean) args.get()[3]);
+    return fixtures().filter(args -> (boolean) args.get()[2] || (boolean) args.get()[3]);
   }
 
   @ParameterizedTest
@@ -174,7 +174,7 @@ class FlinkComplexGroupedValueSqlHarnessTest {
   }
 
   static Stream<Arguments> retainedRecoveries() {
-    return recoveries().filter(args -> !(boolean) args.get()[1]);
+    return recoveries();
   }
 
   @ParameterizedTest

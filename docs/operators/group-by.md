@@ -524,8 +524,11 @@ order and multiplicities. Floating membership treats all NaN payloads as one val
 distinguishes the two zero signs; the ordered queue preserves the first inserted payload.
 Typed maps retain integer widths, physical DATE/TIME values, exact decimals and inline
 timestamp nanoseconds.
-These DISTINCT forms require zero state retention because
-Flink's separate membership/order maps can expire independently.
+Positive retention keeps the shared DISTINCT membership clock separate from the cached
+selection and, for retracting input, the inner value/order maps. Membership expiry does not
+remove an already selected value. Append-only duplicates do not refresh membership; a new
+filter bit does. Retracting views preserve signed counts when an expired value is retracted.
+The cached scalar, membership and inner maps retain their independent state across restores.
 
 Ordered aggregate state now resides inline in the existing per-aggregate storage, avoiding a
 separate allocation for every group; dynamic strings and retraction queues remain accounted
@@ -649,8 +652,8 @@ keyed snapshots, keeping the shared clock together rather than assigning unrelat
 to each aggregate's element table. Fresh zero-retention snapshots keep their previous format.
 An older snapshot without membership clocks seeds each member from the saved group-write
 time, or the restore time when the old snapshot had no TTL timestamp.
-DISTINCT FIRST/LAST, DISTINCT LISTAGG and local/global membership retention remain separately
-qualified contexts.
+FIRST/LAST use the same shared membership policy while retaining their own inner selections.
+DISTINCT LISTAGG and local/global membership retention remain separately qualified contexts.
 
 ## Two-phase / mini-batch
 
@@ -1106,7 +1109,6 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 - An approximate aggregate.
 - FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over a value type outside the single-phase list above,
   or with more than one argument.
-- DISTINCT FIRST_VALUE/LAST_VALUE with positive state TTL.
 - An unsupported grouping-key or value column type.
 
 The released-host string aggregate baseline passes 18 checks on each of Flink 2.2.1 and
@@ -1889,8 +1891,8 @@ The supported release matters: Flink 2.2 uses generic FIRST/LAST factories, whil
 rejects these extra types. The planner also rejects DISTINCT binary, MAP, ROW and MULTISET on
 both lines. The SQL checks preserve those planning failures rather than inventing new dialects.
 Positive-retention ordinary retracting first/last now retain independent value/order maps.
-DISTINCT first/last still require independently retained shared membership and remain a
-separate completion item.
+DISTINCT first/last also admit positive retention, with shared filtered membership kept
+separate from cached selections and inner arrival-order views.
 
 The unchanged upstream Table API `testGroupAggregateWithExpression` now requires consumed
 native grouping in both state-backend fixtures, with Flink 1.18's established changelog-state
@@ -2006,3 +2008,60 @@ release DSO uses the system allocator; the candidate uses release+mimalloc. The 
 adds independently retained entry state to the previous whole-group lifetime. It still beats
 stock, but this no-expiry workload does not claim an improvement over the old native path.
 The final DSO adds only old-snapshot migration to the measured second-pass update path.
+
+### Independent DISTINCT FIRST/LAST retention
+
+Positive retention admits DISTINCT FIRST/LAST across the released scalar types and Flink 2.2
+ARRAY/interval types. The shared outer membership follows append bitsets or signed retracting
+counters; it expires independently of the cached selected scalar. Retracting selections also
+keep independent value-to-order and order-to-value deadlines. A newly reintroduced membership
+can therefore fold into an older cached selection, matching released Flink rather than
+reconstructing the answer from the surviving membership set.
+
+Raw keyed checkpoints preserve membership, cached selections and inner ordered views separately.
+They record the append/retract mode so disabling TTL after restore keeps the same accumulator
+semantics. Older zero-retention snapshots migrate their ordered queue before enabling retained
+views. Memory and native RocksDB share this raw representation. FIRST/LAST still have no
+released merge implementation; asking for TWO_PHASE produces the supported single-phase plan.
+
+The broad SQL/operator selection passes 400 checks on Flink 2.2. Flink 1.18 passes 300 with
+100 explicit released-host capability skips. It includes 16 controlled-clock append/retract,
+immediate/mini-batch and memory/RocksDB comparisons, with two successive restores, plus
+60 new typed retention profiles and 30 typed retained recovery profiles. Complex retained
+profiles cover ARRAY, nested ARRAY and intervals where Flink supplies the function, and retain
+its explicit DISTINCT binary/MAP/ROW/MULTISET planning failures. Unchanged released upstream
+mixed FIRST/LAST and multi-filter DISTINCT fixtures consume native grouping on both lines.
+
+The [complete-job artifact](../benchmarks/results/distinct-ordered-retention-2026-10-21.json)
+retains 15 final candidate and nine actual canonical previous-fallback profiles, all warmups,
+measured samples, ranges, source/DSO hashes and CPU profiles. Jobs use release+mimalloc,
+JDK 17, p=1, a 2 GiB heap, one-hour retention and both transposes. Two warmups precede three
+alternating measurements. Retraction profiles use 131,072 rows/1,024 keys and global value
+cardinalities 4,096 or 65,536; append profiles use one million rows/64 keys/cardinality 128.
+The source's key/value correlation yields four or 64 value IDs per retracting key and two
+per append key. Some retracting keys are all-NULL. Controlled-clock tests separately establish
+expiry; the one-hour timed jobs do not expire entries.
+
+Thirteen final profiles beat paired stock. Scalar append/retract profiles win 1.13–2.20x;
+the higher-cardinality profiles win 4.73–7.88x across both releases. ARRAY's two low-cardinality
+profiles remain slower after exactly two measured optimization passes:
+
+| Flink 2.2 ARRAY workload | Stock median, s | Initial native, s | First pass, s | Final native, s |
+| --- | ---: | ---: | ---: | ---: |
+| Retractions, four value IDs/key | 0.304 | 0.971 | 0.380 | 0.352 |
+| Append, two value IDs/key | 0.700 | 3.036 | 1.558 | 1.445 |
+| Retractions, 64 value IDs/key | 2.331 | — | — | 0.493 |
+
+The remaining append ARRAY CPU profile records 660 scalar-extraction samples, 625 retained
+selection samples and 207 output-reconstruction samples among 2,489 native update samples.
+Coverage ships under the accepted bounded groundwork policy, with the remaining array costs
+tracked under [#443](https://github.com/datafusion-contrib/StreamFusion/issues/443). There is
+no performance-only opt-in and no third optimization pass. NaNs, both zero signs, infinities
+and original selected payloads are compared with retention off/on and through two restores.
+
+Canonical previous ARRAY fallback medians are 0.293 s for low-cardinality retractions,
+0.685 s for append, and 1.879 s for higher-cardinality retractions (paired stock
+0.299/0.693/1.863 s). The raw artifact retains every range, including variation in the
+higher-cardinality stock controls. The two slower native ARRAY profiles are also slower
+than those previous fallback controls; their admission is accepted groundwork rather than
+a claim of acceleration.

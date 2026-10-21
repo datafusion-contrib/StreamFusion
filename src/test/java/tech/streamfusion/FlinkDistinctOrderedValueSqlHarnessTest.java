@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.DataTypes;
@@ -15,7 +16,8 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDistinctOrderedValueSqlHarnessTest {
@@ -25,10 +27,17 @@ class FlinkDistinctOrderedValueSqlHarnessTest {
   private static final String REDUCTIONS =
       ORDERED + ", COUNT(DISTINCT f), COUNT(DISTINCT d), COUNT(*)";
 
+  static Stream<Arguments> profiles() {
+    return Stream.of(false, true)
+        .flatMap(
+            retract ->
+                Stream.of(0L, 3_600_000L).map(retention -> Arguments.of(retract, retention)));
+  }
+
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void floatingFirstOccurrencesSurviveDuplicateRemovalsAndGroupRecreation(boolean retract)
-      throws Exception {
+  @MethodSource("profiles")
+  void floatingFirstOccurrencesSurviveDuplicateRemovalsAndGroupRecreation(
+      boolean retract, long retention) throws Exception {
     Supplier<TableEnvironment> setup =
         () -> {
           var env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -50,7 +59,7 @@ class FlinkDistinctOrderedValueSqlHarnessTest {
               retract
                   ? table.fromChangelogStream(stream, schema())
                   : table.fromDataStream(stream, schema()));
-          configure(table);
+          configure(table, retention);
           return table;
         };
     for (String reductions :
@@ -61,9 +70,16 @@ class FlinkDistinctOrderedValueSqlHarnessTest {
     }
   }
 
+  static Stream<Arguments> recoveries() {
+    return Stream.of("hashmap", "tech.streamfusion.state.RocksDBNativeStateBackendFactory")
+        .flatMap(
+            backend ->
+                Stream.of(0L, 3_600_000L).map(retention -> Arguments.of(backend, retention)));
+  }
+
   @ParameterizedTest
-  @ValueSource(strings = {"hashmap", "tech.streamfusion.state.RocksDBNativeStateBackendFactory"})
-  void restoredFloatingMembershipRetainsArrivalOrderAndMultiplicity(String backend)
+  @MethodSource("recoveries")
+  void restoredFloatingMembershipRetainsArrivalOrderAndMultiplicity(String backend, long retention)
       throws Exception {
     List<Row> input = new ArrayList<>();
     for (int id = 0; id < 96; id++) {
@@ -84,8 +100,8 @@ class FlinkDistinctOrderedValueSqlHarnessTest {
               .withExecutionMetrics()) {
         var result =
             NativeFailureParity.runRecovery(
-                () -> configure(recovery.uninterrupted()),
-                () -> configure(recovery.get()),
+                () -> configure(recovery.uninterrupted(), retention),
+                () -> configure(recovery.get(), retention),
                 "SELECT k, " + reductions + " FROM recovery_input GROUP BY k");
         result.assertSuccess(NativeFailureParity.Route.NATIVE);
         assertEquals(result.host().resultTypes(), result.nativeRun().resultTypes());
@@ -97,7 +113,8 @@ class FlinkDistinctOrderedValueSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment configure(TableEnvironment table) {
+  private static TableEnvironment configure(TableEnvironment table, long retention) {
+    table.getConfig().setIdleStateRetention(java.time.Duration.ofMillis(retention));
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     table.getConfig().set("table.exec.mini-batch.enabled", "false");
     return table;

@@ -1087,3 +1087,30 @@ The second and final pass takes 0.846 s versus paired stock 1.425 s. Flink 1.18 
 0.837 versus 1.406 s. These are conversion-inclusive complete jobs; the
 [artifact](../benchmarks/results/shared-distinct-retention-2026-10-21.json) retains all trials,
 previous-native controls, DSO/source hashes and inclusive CPU sample counts.
+
+### Borrowed nested DISTINCT keys and retained output
+
+Retained FIRST/LAST probes membership before and after signed counter updates. The generic
+scalar map now uses the same borrowed boxed equality as the ordered views, avoiding Arrow
+array reconstruction during comparisons. Integer-array keys hash their logical child values
+and NULL positions directly, including sliced arrays. Other nested key types retain their
+existing equality rules. This applies to aggregate state; serialized values keep their logical
+types and original arrival order.
+
+A CPU profile of retained ARRAY FIRST/LAST recorded 915 generic scalar-equality samples
+among 1,743 native update samples. The first measured pass reduces the 131,072-row retracting
+job from 0.971 to 0.380 s and the million-row append job from 3.036 to 1.558 s. These still
+trail paired stock at 0.297 and 0.710 s. The second pass extends the existing cached typed
+output path to retained DISTINCT groups and preserves the unconditional TTL update pairs.
+The STRING profile identified result cloning and scalar output materialization as avoidable
+work; selected cells are now rebuilt only after their aggregate changes.
+
+The second and final pass takes STRING append from 0.820 to 0.621 s versus stock 0.703 s.
+ARRAY improves from 0.971 to 0.352 s for low-cardinality retractions and from 3.036 to
+1.445 s for append input, still slower than stock 0.304/0.700 s. At 64 value IDs per key,
+retracting ARRAY measures 0.493 s versus stock 2.331 s. All 15 final candidate profiles and
+nine canonical previous-fallback controls, including variability and remaining scalar/output
+costs, are retained in the
+[artifact](../benchmarks/results/distinct-ordered-retention-2026-10-21.json). The slower
+array cases remain accepted coverage groundwork under the original goal's two-pass limit;
+[#443](https://github.com/datafusion-contrib/StreamFusion/issues/443) tracks follow-up.

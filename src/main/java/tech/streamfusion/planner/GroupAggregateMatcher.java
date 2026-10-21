@@ -111,19 +111,6 @@ final class GroupAggregateMatcher {
         return "GROUP BY: only single-argument aggregates";
       }
       if (kind >= 12 && kind <= 16) {
-        if (kind >= 15 || call.isDistinct()) {
-          Long hint = FlinkCompat.singleStateTtl(agg);
-          long retention =
-              hint == null
-                  ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
-                      .getIdleStateRetention()
-                      .toMillis()
-                  : hint;
-          if (retention > 0 && call.isDistinct()) {
-            return "GROUP BY: DISTINCT FIRST_VALUE/LAST_VALUE with TTL require"
-                + " independently expiring value/order maps";
-          }
-        }
         if ((call.isDistinct() && kind == 14) || call.getArgList().size() != 1) {
           return "GROUP BY: ordered values require one argument; SINGLE_VALUE DISTINCT is"
               + " unsupported";
@@ -358,7 +345,14 @@ final class GroupAggregateMatcher {
                   .getSqlTypeName())) {
         kind = kind == KIND_MIN ? KIND_MIN_APPEND : KIND_MAX_APPEND;
       }
-      if (retention > 0 && (kind == 7 || kind == 9 || kind == 17 || kind == 18 || kind == 34)) {
+      if (retention > 0
+          && (kind == 7
+              || kind == 9
+              || kind == 17
+              || kind == 18
+              || kind == 19
+              || kind == 20
+              || kind == 34)) {
         kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_TTL;
         if (ChangelogPlanUtils.inputInsertOnly(agg))
           kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_APPEND;

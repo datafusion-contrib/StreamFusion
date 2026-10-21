@@ -6,7 +6,8 @@ mod distinct;
 mod distinct_retention;
 pub(crate) use distinct_retention::RETAINED_DISTINCT;
 use distinct_retention::{
-    DistinctViewRetention, APPEND_DISTINCT, PRESERVED_DISTINCT_STATE, RETAINED_DISTINCT_COLUMN,
+    DistinctViewRetention, APPEND_DISTINCT, PRESERVED_DISTINCT_APPEND, PRESERVED_DISTINCT_STATE,
+    RETAINED_DISTINCT_COLUMN,
 };
 mod java_map_order;
 mod numeric_map_order;
@@ -733,6 +734,7 @@ impl GroupAggState {
         match self {
             Self::Distinct { set, .. } => set.forget_scalar(value),
             Self::DistinctRunning { counts, .. } => counts.forget_scalar(value),
+            Self::Ordered(ordered) => ordered.forget_distinct(value),
             _ => unreachable!("retained distinct state"),
         }
     }
@@ -741,6 +743,7 @@ impl GroupAggState {
         let set = match self {
             Self::Distinct { set, .. } => set,
             Self::DistinctRunning { counts, .. } => counts,
+            Self::Ordered(ordered) => return ordered.distinct_count(value),
             _ => unreachable!("membership on a non-distinct aggregate"),
         };
         set.scalar_count(value)
@@ -2162,7 +2165,6 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let retained_modes = self.distinct_modes.clone();
         let preserved_states = self.preserve_distinct_state.clone();
         let distinct_ordered = !self.mini_batch
-            && !ttl.enabled()
             && self.kinds.iter().any(|kind| matches!(kind, 19 | 20))
             && self.kinds.iter().enumerate().all(|(i, kind)| {
                 matches!(kind, 19 | 20 | 7)
@@ -2454,12 +2456,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         if let Some(counts) = single_count_cols[i] {
                             ordered.merge_single(value, counts.value(row))?;
                         } else {
-                            result_changed[i] = ordered.update_with_ttl(
-                                value,
-                                retract,
-                                ttl,
-                                state.last_write_ms,
-                            )?;
+                            result_changed[i] = if let Some(append) = retained_modes[i] {
+                                ordered.update_retained_distinct(
+                                    value,
+                                    retract,
+                                    ttl,
+                                    state.last_write_ms,
+                                    append,
+                                )?
+                            } else {
+                                ordered.update_with_ttl(value, retract, ttl, state.last_write_ms)?
+                            };
                         }
                         continue;
                     }
@@ -2635,7 +2642,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let state = self.store.get_mut(key).expect("key present");
                 if distinct_ordered && prev.is_some() {
                     let mut previous = prev.take().expect("existing ordered output");
-                    let mut changed = !crate::flink_float::record_row_reflexive(&previous);
+                    let mut changed =
+                        ttl.enabled() || !crate::flink_float::record_row_reflexive(&previous);
                     for i in 0..num_agg {
                         if result_changed[i] {
                             let value = state.aggs[i].emit(&self.result_types[i]);
@@ -3046,9 +3054,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         }
                         state_columns[i].push(ordered.snapshot_value());
                         non_null_columns[i].push(ordered.count());
-                        for (value, count) in ordered.entries() {
+                        for (value, count) in ordered.snapshot_entries() {
                             multiset_keys[i].push(&key.0);
-                            multiset_values[i].push(value.clone());
+                            multiset_values[i].push(value);
                             multiset_counts[i].push(count);
                         }
                     }
@@ -3117,6 +3125,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             }
             if self.preserve_distinct_state[i] {
                 metadata.insert(PRESERVED_DISTINCT_STATE.to_owned(), "1".to_owned());
+            }
+            if let Some(append) = self.distinct_modes[i] {
+                metadata.insert(PRESERVED_DISTINCT_APPEND.to_owned(), append.to_string());
             }
             if !metadata.is_empty() {
                 field = field.with_metadata(metadata);
@@ -3350,6 +3361,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .get(PRESERVED_DISTINCT_STATE)
                 .is_some_and(|version| version == "1");
         }
+        for i in 0..num_agg {
+            if let Some(append) = main
+                .schema()
+                .field(2 + 2 * i)
+                .metadata()
+                .get(PRESERVED_DISTINCT_APPEND)
+            {
+                self.distinct_modes[i] =
+                    Some(append.parse().expect("retained DISTINCT input mode"));
+            }
+        }
+        let retained_modes = self.distinct_modes.clone();
         let write_timestamps = (main.num_columns() > 2 + 2 * num_agg).then(|| {
             assert_eq!(
                 main.schema().field(2 + 2 * num_agg).name(),
@@ -3401,6 +3424,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     );
                 }
                 if preserved_distinct[i] {
+                    if let GroupAggState::Ordered(ordered) = &mut state.aggs[i] {
+                        if let Some(append) = retained_modes[i] {
+                            ordered.enable_distinct_retention(append, state.last_write_ms);
+                        }
+                    }
                     if let GroupAggState::Distinct { live, .. } = &mut state.aggs[i] {
                         let ScalarValue::Int64(Some(value)) =
                             ScalarValue::try_from_array(main.column(2 + 2 * i), row).unwrap()
@@ -3464,10 +3492,26 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                             | GroupAggState::Distinct { set, .. } => {
                                 set.insert_imported(value, counts.value(row))
                             }
+                            GroupAggState::Ordered(ordered) => {
+                                ordered.restore_distinct_entry(value, counts.value(row))
+                            }
                             _ => unreachable!("preserved distinct state"),
                         }
                     } else {
                         state.aggs[i].import_multiset_entry(value, counts.value(row));
+                    }
+                }
+            }
+        }
+        for row in 0..main.num_rows() {
+            let state = self
+                .store
+                .get_mut(keys.value(row))
+                .expect("restored ordered group");
+            for i in 0..num_agg {
+                if let GroupAggState::Ordered(ordered) = &mut state.aggs[i] {
+                    if let Some(append) = retained_modes[i] {
+                        ordered.enable_distinct_retention(append, state.last_write_ms);
                     }
                 }
             }
@@ -3531,12 +3575,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 let mut values = Vec::new();
                 for &(target, other_column) in &retained_sources {
                     if column == other_column {
-                        let set = match &state.aggs[target] {
+                        values.extend(match &state.aggs[target] {
                             GroupAggState::Distinct { set, .. }
-                            | GroupAggState::DistinctRunning { counts: set, .. } => set,
+                            | GroupAggState::DistinctRunning { counts: set, .. } => {
+                                set.scalar_entries()
+                            }
+                            GroupAggState::Ordered(ordered) => ordered.snapshot_entries(),
                             _ => unreachable!("retained distinct membership"),
-                        };
-                        values.extend(set.scalar_entries());
+                        });
                     }
                 }
                 for (value, _) in values {

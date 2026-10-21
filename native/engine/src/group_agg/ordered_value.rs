@@ -75,6 +75,8 @@ pub(crate) struct OrderedValueState {
     value_bytes: usize,
     distinct: Option<Box<DistinctSet>>,
     retained: Option<Box<super::ordered_retention::RetainedOrderedValues>>,
+    distinct_retention_mode: Option<bool>,
+    distinct_payload: usize,
 }
 
 impl OrderedValueState {
@@ -90,6 +92,8 @@ impl OrderedValueState {
             values: VecDeque::new(),
             value_bytes: 0,
             retained: None,
+            distinct_retention_mode: None,
+            distinct_payload: 0,
             distinct: matches!(kind, 19 | 20)
                 .then(|| Box::new(DistinctSet::new(&accumulator_type(kind, value_type)))),
         }
@@ -139,6 +143,127 @@ impl OrderedValueState {
         self.retained
             .as_ref()
             .map(|state| state.snapshot(&self.value.data_type()))
+    }
+
+    pub(super) fn enable_distinct_retention(&mut self, append: bool, previous_write: i64) {
+        if self.distinct_retention_mode.is_some() {
+            return;
+        }
+        assert!(matches!(self.kind, 19 | 20));
+        self.distinct_payload = self
+            .distinct
+            .as_ref()
+            .unwrap()
+            .scalar_entries()
+            .iter()
+            .map(|(value, _)| value.size() - std::mem::size_of::<ScalarValue>())
+            .sum();
+        if append {
+            self.value = self.emit();
+            self.values.clear();
+        } else {
+            let mut retained = super::ordered_retention::RetainedOrderedValues::new();
+            let mut selected = if self.values.is_empty() {
+                self.value.clone()
+            } else {
+                null_scalar(&self.value.data_type())
+            };
+            for value in self.values.drain(..) {
+                retained.update(
+                    &mut selected,
+                    value,
+                    false,
+                    self.kind == 20,
+                    StateTtl::new(i64::MAX, previous_write),
+                );
+            }
+            self.value = selected;
+            self.retained = Some(Box::new(retained));
+        }
+        self.value_bytes = 0;
+        self.distinct_retention_mode = Some(append);
+    }
+
+    pub(super) fn update_retained_distinct(
+        &mut self,
+        value: ScalarValue,
+        retract: bool,
+        ttl: StateTtl,
+        previous_write: i64,
+        append: bool,
+    ) -> Result<bool, DataFusionError> {
+        self.enable_distinct_retention(append, previous_write);
+        let value = compact_value(value);
+        if value.is_null() {
+            return Ok(false);
+        }
+        let counts = self.distinct.as_mut().unwrap();
+        let before = counts.scalar_count(&value);
+        if append && before > 0 {
+            return Ok(false);
+        }
+        assert!(!append || !retract, "append-only DISTINCT cannot retract");
+        let changed = counts.merge_scalar_delta(&value, if retract { -1 } else { 1 });
+        let after = counts.scalar_count(&value);
+        let payload = value.size() - std::mem::size_of::<ScalarValue>();
+        if before == 0 && after != 0 {
+            self.distinct_payload += payload;
+        }
+        if before != 0 && after == 0 {
+            self.distinct_payload -= payload;
+        }
+        if !changed {
+            return Ok(false);
+        }
+        if append {
+            if self.kind == 20 || self.value.is_null() {
+                self.value = value;
+            }
+        } else {
+            self.retained.as_mut().unwrap().update(
+                &mut self.value,
+                value,
+                retract,
+                self.kind == 20,
+                ttl,
+            );
+        }
+        Ok(true)
+    }
+
+    pub(super) fn forget_distinct(&mut self, value: &ScalarValue) {
+        let value = compact_value(value.clone());
+        let counts = self.distinct.as_mut().unwrap();
+        if counts.scalar_count(&value) != 0 {
+            self.distinct_payload -= value.size() - std::mem::size_of::<ScalarValue>();
+            counts.forget_scalar(&value);
+        }
+    }
+
+    pub(super) fn distinct_count(&self, value: &ScalarValue) -> i64 {
+        self.distinct
+            .as_ref()
+            .unwrap()
+            .scalar_count(&compact_value(value.clone()))
+    }
+
+    pub(super) fn snapshot_entries(&self) -> Vec<(ScalarValue, i64)> {
+        if self.distinct_retention_mode.is_some() {
+            self.distinct.as_ref().unwrap().scalar_entries()
+        } else {
+            self.entries()
+                .map(|(value, count)| (value.clone(), count))
+                .collect()
+        }
+    }
+
+    pub(super) fn restore_distinct_entry(&mut self, value: ScalarValue, count: i64) {
+        let value = compact_value(value);
+        let set = self.distinct.as_mut().unwrap();
+        if set.scalar_count(&value) == 0 && count != 0 {
+            self.distinct_payload += value.size() - std::mem::size_of::<ScalarValue>();
+        }
+        set.insert_imported(value, count);
     }
 
     pub(super) fn restore_retention(&mut self, bytes: &[u8]) {
@@ -299,7 +424,11 @@ impl OrderedValueState {
 
     pub(super) fn bytes(&self) -> usize {
         let distinct_bytes = self.distinct.as_ref().map_or(0, |counts| {
-            let payload = self.value_bytes - self.values.len() * std::mem::size_of::<ScalarValue>();
+            let payload = if self.distinct_retention_mode.is_some() {
+                self.distinct_payload
+            } else {
+                self.value_bytes - self.values.len() * std::mem::size_of::<ScalarValue>()
+            };
             std::mem::size_of_val(counts.as_ref()) + payload + counts.capacity_bytes()
         });
         distinct_bytes

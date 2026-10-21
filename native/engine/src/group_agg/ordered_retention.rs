@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone)]
-pub(super) struct ValueKey(pub(super) ScalarValue);
+pub(crate) struct ValueKey(pub(super) ScalarValue);
 
 impl PartialEq for ValueKey {
     fn eq(&self, other: &Self) -> bool {
@@ -31,6 +31,26 @@ impl Hash for ValueKey {
                     .expect("non-null timestamp key")
                     .nanos()
                     .hash(state);
+            }
+            ScalarValue::List(array) if array.value_type() == DataType::Int32 => {
+                let null = array.is_null(0);
+                null.hash(state);
+                if !null {
+                    let start = array.value_offsets()[0] as usize;
+                    let end = array.value_offsets()[1] as usize;
+                    (end - start).hash(state);
+                    let values = array
+                        .values()
+                        .as_any()
+                        .downcast_ref::<Int32Array>()
+                        .unwrap();
+                    for index in start..end {
+                        values.is_null(index).hash(state);
+                        if !values.is_null(index) {
+                            values.value(index).hash(state);
+                        }
+                    }
+                }
             }
             // Type buckets let borrowed Flink equality compare nested values without
             // allocating a canonical copy. Collisions affect lookup cost, not membership.
