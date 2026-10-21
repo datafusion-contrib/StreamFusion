@@ -44,7 +44,7 @@ pub(crate) fn boxed_equal(left: &ScalarValue, right: &ScalarValue) -> bool {
         (ScalarValue::Float64(Some(a)), ScalarValue::Float64(Some(b))) => {
             canonical_f64(*a).to_bits() == canonical_f64(*b).to_bits()
         }
-        _ => nested_equal::equal(left, right).unwrap_or_else(|| left == right),
+        _ => nested_equal::boxed_equal(left, right).unwrap_or_else(|| left == right),
     }
 }
 

@@ -839,10 +839,13 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         node instanceof StreamPhysicalNativeGeneratedUnnest
             || node instanceof StreamPhysicalNativeColumnarGroupAggregate
                 && ((StreamPhysicalNativeColumnarGroupAggregate) node).preservesCollections()
+            || node instanceof StreamPhysicalNativeColumnarLocalGroupAggregate
+                && ((StreamPhysicalNativeColumnarLocalGroupAggregate) node).preservesCollections()
             || node instanceof StreamPhysicalNativeCalc
                 && ((StreamPhysicalNativeCalc) node).preservesCollections()
             || preserveCollections
-                && (node instanceof StreamPhysicalNativeMiniBatchAssigner
+                && (node instanceof StreamPhysicalNativeUnion
+                    || node instanceof StreamPhysicalNativeMiniBatchAssigner
                     || node instanceof StreamPhysicalNativeColumnarExchange
                     || node instanceof StreamPhysicalNativeCalc
                     || node instanceof StreamPhysicalNativeDropUpdateBefore

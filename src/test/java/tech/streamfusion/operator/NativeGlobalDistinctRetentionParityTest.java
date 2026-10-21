@@ -43,7 +43,15 @@ class NativeGlobalDistinctRetentionParityTest {
   }
 
   static Stream<Arguments> profiles() {
-    return Stream.of("BIGINT", "DOUBLE", "DECIMAL(20,3)")
+    return Stream.of(
+            "BIGINT",
+            "DOUBLE",
+            "DECIMAL(20,3)",
+            "ARRAY",
+            "ARRAY_DOUBLE",
+            "ARRAY_STRING",
+            "INTERVAL_MONTH",
+            "INTERVAL_DAY")
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -195,6 +203,16 @@ class NativeGlobalDistinctRetentionParityTest {
                   : type.startsWith("DECIMAL")
                       ? DecimalData.fromBigDecimal(BigDecimal.valueOf(value, 0).setScale(3), 20, 3)
                       : value;
+      if (value != null) {
+        if (type.equals("ARRAY"))
+          typed = new GenericArrayData(new Integer[] {value.intValue(), null});
+        if (type.equals("ARRAY_DOUBLE"))
+          typed = new GenericArrayData(new Double[] {value.doubleValue(), null});
+        if (type.equals("ARRAY_STRING"))
+          typed =
+              new GenericArrayData(new Object[] {StringData.fromString(value.toString()), null});
+        if (type.equals("INTERVAL_MONTH")) typed = value.intValue();
+      }
       var row = GenericRowData.of(1L, typed, keep);
       row.setRowKind(retract ? RowKind.DELETE : RowKind.INSERT);
       hostLocal.processElement(new StreamRecord<>(row));
@@ -293,15 +311,54 @@ class NativeGlobalDistinctRetentionParityTest {
             .column("v", dataType)
             .column("keep_row", DataTypes.BOOLEAN())
             .build();
+    boolean generic = type.startsWith("ARRAY") || type.startsWith("INTERVAL");
     table.createTemporaryView(
-        "src",
+        generic ? "typed_source" : "src",
         append
             ? table.fromDataStream(source, schema)
             : table.fromChangelogStream(source, schema, ChangelogMode.all()));
+    if (generic) {
+      String expression;
+      switch (type) {
+        case "ARRAY":
+          expression = "ARRAY[CAST(v AS INT),CAST(NULL AS INT)]";
+          break;
+        case "ARRAY_DOUBLE":
+          expression = "ARRAY[CAST(v AS DOUBLE),CAST(NULL AS DOUBLE)]";
+          break;
+        case "ARRAY_STRING":
+          expression = "ARRAY[CAST(v AS STRING),CAST(NULL AS STRING)]";
+          break;
+        case "INTERVAL_MONTH":
+          expression = "INTERVAL '1' MONTH * CAST(v AS INT)";
+          break;
+        case "INTERVAL_DAY":
+          expression = "INTERVAL '0.001' SECOND * v";
+          break;
+        default:
+          throw new IllegalArgumentException(type);
+      }
+      String absent =
+          type.equals("ARRAY")
+              ? "CAST(NULL AS ARRAY<INT>)"
+              : type.equals("ARRAY_DOUBLE")
+                  ? "CAST(NULL AS ARRAY<DOUBLE>)"
+                  : type.equals("ARRAY_STRING") ? "CAST(NULL AS ARRAY<STRING>)" : "NULL";
+      table.createTemporaryView(
+          "src",
+          table.sqlQuery(
+              "SELECT k,CASE WHEN v IS NULL THEN "
+                  + absent
+                  + " ELSE "
+                  + expression
+                  + " END AS v,keep_row FROM typed_source"));
+    }
     if (nativeExecution) NativePlanner.install(table);
     var query =
         table.sqlQuery(
-            "SELECT k,COUNT(DISTINCT v),SUM(DISTINCT v),COUNT(DISTINCT v) FILTER(WHERE"
+            "SELECT k,COUNT(DISTINCT v)"
+                + (generic ? "" : ",SUM(DISTINCT v)")
+                + ",COUNT(DISTINCT v) FILTER(WHERE"
                 + " keep_row),COUNT(*) FROM src GROUP BY k");
     var pending = new ArrayDeque<Transformation<?>>();
     pending.add(table.toChangelogStream(query).getTransformation());

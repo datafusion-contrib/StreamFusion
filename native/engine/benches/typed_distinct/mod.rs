@@ -18,6 +18,11 @@ pub fn bench_typed_distinct(c: &mut Criterion) {
             ("timestamp", 7),
             ("string8", 3),
             ("string256", 3),
+            ("array_int", 100),
+            ("array_double", 100),
+            ("array_string", 100),
+            ("interval_month", 100),
+            ("interval_day", 100),
         ] {
             let values: Vec<Option<i64>> = (0..ROWS)
                 .map(|i| (i % 7 != 0).then_some(((i / 16) % cardinality) as i64 - 128))
@@ -80,6 +85,48 @@ pub fn bench_typed_distinct(c: &mut Criterion) {
                             .unwrap()
                         })
                     }),
+                )),
+                "array_int" => Arc::new(arrow::array::ListArray::from_iter_primitive::<
+                    arrow::datatypes::Int32Type,
+                    _,
+                    _,
+                >(
+                    values.iter().map(|v| v.map(|v| vec![Some(v as i32), None])),
+                )),
+                "array_double" => Arc::new(arrow::array::ListArray::from_iter_primitive::<
+                    arrow::datatypes::Float64Type,
+                    _,
+                    _,
+                >(
+                    values.iter().map(|v| v.map(|v| vec![Some(v as f64), None])),
+                )),
+                "array_string" => {
+                    let mut builder =
+                        arrow::array::ListBuilder::new(arrow::array::StringBuilder::new());
+                    for value in &values {
+                        if let Some(value) = value {
+                            builder.values().append_value(format!("{value:08}"));
+                            builder.values().append_null();
+                        }
+                        builder.append(value.is_some());
+                    }
+                    Arc::new(builder.finish())
+                }
+                "interval_month" => Arc::new(arrow::array::IntervalYearMonthArray::from(
+                    values
+                        .iter()
+                        .map(|v| v.map(|v| v as i32))
+                        .collect::<Vec<_>>(),
+                )),
+                "interval_day" => Arc::new(arrow::array::IntervalDayTimeArray::from(
+                    values
+                        .iter()
+                        .map(|v| {
+                            v.map(|v| {
+                                arrow::datatypes::IntervalDayTimeType::make_value(v as i32, 7)
+                            })
+                        })
+                        .collect::<Vec<_>>(),
                 )),
                 _ => {
                     let width = if name == "string8" { 8 } else { 256 };
@@ -148,6 +195,26 @@ pub fn bench_typed_distinct(c: &mut Criterion) {
                         );
                     }
                 });
+            }
+            if code == 100 {
+                let keys = output
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                let counts = output
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                for row in 0..output.num_rows() {
+                    let expected: std::collections::HashSet<_> = (0..ROWS)
+                        .filter(|i| *i % 16 == keys.value(row) as usize && *i % 7 != 0)
+                        .map(|i| (i / 16) % cardinality)
+                        .collect();
+                    assert_eq!(counts.value(row), expected.len() as i64);
+                }
+                continue;
             }
             let single = RecordBatch::try_new(
                 batch.schema(),

@@ -11,6 +11,7 @@ use distinct_retention::{
 };
 mod java_map_order;
 mod mapped_extreme;
+mod nested_hash;
 mod numeric_map_order;
 #[cfg(test)]
 use decimal_map_order::DecimalMapOrder;
@@ -19,11 +20,14 @@ use mapped_extreme::MappedExtreme;
 use numeric_map_order::NumericMapOrder;
 #[cfg(test)]
 mod floating_tests;
+#[cfg(test)]
+mod generic_distinct_tests;
 mod json_agg;
 mod local_single;
 mod ordered_retention;
 mod ordered_value;
 mod single_append;
+mod string_input;
 use json_agg::{is_json_agg, JsonAggState, JsonAggregateError};
 mod list_agg;
 use distinct::DistinctColumn;
@@ -1842,6 +1846,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        let canonical = string_input::canonical(batch)?;
+        let batch = canonical.as_ref();
         for i in 0..self.kinds.len() {
             if self.value_columns[i] >= 0 {
                 self.bind_ordered_value_type(
@@ -3394,7 +3400,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     if values.is_empty() {
                         new_empty_array(&DataType::Int64) // 0 rows — type is immaterial on restore
                     } else {
-                        ScalarValue::iter_to_array(values).expect("distinct value column")
+                        let data_type = values[0].data_type();
+                        scalars_to_array(values, &data_type)
                     }
                 } else {
                     scalars_to_array(values, &self.result_types[i])
@@ -4195,6 +4202,18 @@ impl LocalGroupAggregator {
     /// bundle's partial can go negative and the global's merge folds it back out). Nothing is
     /// emitted until a flush.
     pub(crate) fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let canonical = string_input::canonical(batch)?;
+        let batch = canonical.as_ref();
+        for i in 0..self.kinds.len() {
+            if self.value_types[i] == DataType::Null && self.kinds[i] == 7 {
+                let data_type = batch
+                    .column(self.value_columns[i] as usize)
+                    .data_type()
+                    .clone();
+                self.value_types[i] = data_type.clone();
+                self.accumulator_types[i] = data_type;
+            }
+        }
         if let Some(single) = &mut self.single {
             return single.update(
                 batch,

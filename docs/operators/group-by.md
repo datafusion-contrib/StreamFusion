@@ -712,7 +712,7 @@ set travels as a trailing view column — its distinct `(value, count)` entries 
 structs, the Arrow form of Flink's serialized `MapView` partial — and the global folds the entries
 into its per-key distinct state with multiplicities, so a value repeating across bundles counts
 once. Scope: `COUNT(DISTINCT)` over bigint/int/smallint/tinyint/float/double/string/decimal,
-BOOLEAN, DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ; `SUM(DISTINCT)` over bigint/int/smallint/tinyint/float/double and DECIMAL
+BOOLEAN, DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ, ARRAY and both interval families; `SUM(DISTINCT)` over bigint/int/smallint/tinyint/float/double and DECIMAL
 with precision up to 38.
 Decimal sum partials must be DECIMAL(38, input-scale), while the distinct view preserves each
 input value's original precision and scale. Boolean and timestamp views retain their Arrow
@@ -1143,14 +1143,14 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
   strings, DATE, TIME, BOOLEAN and timestamps), or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal.
 - A `COUNT(DISTINCT)` value type outside bigint/int/smallint/tinyint/float/double/string/decimal/
-  BOOLEAN/DATE/TIME/TIMESTAMP/TIMESTAMP_LTZ, or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint/FLOAT/DOUBLE/DECIMAL;
+  BOOLEAN/DATE/TIME/TIMESTAMP/TIMESTAMP_LTZ/ARRAY/intervals, or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint/FLOAT/DOUBLE/DECIMAL;
   DECIMAL sum partials with a different scale/precision other than 38;
   `AVG(DISTINCT)` outside integers/FLOAT/DOUBLE/DECIMAL or with incorrectly widened partials;
   `MIN`/`MAX` with a retained physical `DISTINCT` flag (Flink normally removes it).
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.
 - A retracting input outside COUNT/AVG/SUM0/numeric SUM, scalar SINGLE_VALUE and typed MIN/MAX.
-  DISTINCT COUNT admits the scalar types above; DISTINCT SUM/AVG admits integers,
+  DISTINCT COUNT admits the scalar, ARRAY and interval types above; DISTINCT SUM/AVG admits integers,
   FLOAT/DOUBLE and DECIMAL precision through 38 with the declared partial layout.
 
 **Global group aggregate (two-phase merge) only:**
@@ -2147,3 +2147,98 @@ Canonical previous ARRAY fallback medians are 0.293 s for low-cardinality retrac
 higher-cardinality stock controls. The two slower native ARRAY profiles are also slower
 than those previous fallback controls; their admission is accepted groundwork rather than
 a claim of acceleration.
+
+## Generic DISTINCT local/global views
+
+`COUNT(DISTINCT)` admits ARRAY and both interval families in single-phase and local/global
+plans on Flink 1.18.1 and 2.2.1, including retracting input. The local operator binds its
+view element type from the Arrow input before creating a group, so empty and all-NULL
+bundles retain the declared nested/interval schema. Shared unfiltered and independently
+filtered counts merge signed multiplicities through the existing DISTINCT view.
+Nested Arrow child field names and nullability are not membership values; transport aligns
+those fields before combining values from input batches, partials and restored snapshots.
+Floating ARRAY members use Java boxed equality: NaN payloads share membership while signed
+zeros remain distinct. Original payloads remain in the view.
+
+Representation-preserving collection projections can feed these verified DISTINCT consumers;
+the planner retains the collection representation through the local aggregate and transposes.
+Primitive STRING columns emitted by a collection Calc use their existing UTF-8 bytes at the
+aggregate boundary, with the parent NULL mask applied. The UTF-8 buffers remain shared;
+ARRAY/ROW/MAP payloads retain their nested string caches. Key hashing treats the represented
+STRING and array-element copy carriers as their logical types, so they consume the same
+precision descriptors and fixed slot widths as Flink. This preserves nullable STRING keys,
+scalar string aggregate composition and memory/native RocksDB recovery.
+Other collection boundary restrictions remain in force. Runtime coverage compares RowKinds,
+resolved schemas and consumed native local/global work for ARRAY of INT, FLOAT, DOUBLE,
+STRING, DECIMAL, ROW and ARRAY, plus year-month/day-time intervals. Recovery covers memory
+and native RocksDB state with two successive restores, with retention enabled and disabled.
+
+Released Flink's `AggregateUtil.createDistinctKeyType` rejects single-argument DISTINCT
+BINARY, VARBINARY, MAP, ROW and MULTISET keys on both supported lines. These retain the
+same planning failure rather than being counted as missing native local/global functions.
+Flink 2.2's additional VARIANT root is outside this task's existing type scope.
+
+### Measurements and accepted limits
+
+The small functionality gate compares **131,072 prebuilt Java BinaryRowData rows with the
+same 131,072 rows already in Rust Arrow buffers**, at 64 keys, 128 values per key and
+1,024-row bundles. Preparation, Arrow IPC loading and operator setup are outside timing.
+Production local/global accumulation, partial copying/packing and an identical RowKind/count
+digest are timed in each runtime. Every row count and checksum matches. TTL is disabled in
+this small gate; the separate complete jobs enable one-hour retention and retain all transposes,
+JNI, state, source/sink work and completion. Both use release+mimalloc, JDK17, parallelism one,
+a 2 GiB Java heap, NULL every seventh value, two warmups and three measured trials.
+
+| Small gate, count-only | Flink 2.2 / Rust, s | Flink 1.18 / Rust, s |
+| --- | ---: | ---: |
+| ARRAY INT | 0.04764 / 0.08693 | 0.06005 / 0.09025 |
+| ARRAY DOUBLE | 0.05185 / 0.09554 | 0.05229 / 0.09633 |
+| ARRAY STRING | 0.06292 / 0.10091 | 0.05323 / 0.10077 |
+| INTERVAL MONTH | 0.03129 / 0.01278 | 0.02886 / 0.01365 |
+| INTERVAL DAY | 0.03520 / 0.01277 | 0.03520 / 0.01330 |
+
+All eight interval comparisons, including independently filtered shared counts, beat stock
+by 1.68–2.76x. ARRAY remains slower in all twelve isolated comparisons: this is accepted
+native coverage groundwork after the maintainer's two measured optimization passes, not a
+claim of acceleration. The new paths are enabled under that accepted timebox, without a
+performance opt-in. [Follow-up #446](https://github.com/datafusion-contrib/StreamFusion/issues/446)
+tracks the remaining scalar, view and retained-entry work.
+
+| Flink 2.2 complete job | Initial native, s | First pass, s | Final native / stock, s |
+| --- | ---: | ---: | ---: |
+| ARRAY INT, 1M rows / 64 keys / 128 values | 3.172 | 3.195 | 2.969 / 0.943 |
+| ARRAY DOUBLE, 262144 rows / 256 keys / 128 values | 7.208 | 1.086 | 1.055 / 0.606 |
+| ARRAY STRING, 262144 rows / 256 keys / 32 values | 5.917 | 2.367 | 1.658 / 0.474 |
+| INTERVAL DAY, 1M rows / 1024 keys / 128 values | 1.743 | 1.752 | 1.642 / 3.609 |
+
+Flink 1.18 complete-job native/stock medians are 2.993/1.072, 1.061/0.574,
+1.655/0.499 and 1.560/3.547 s for the same four shapes. Actual canonical `d13e9dc4`
+fallback controls take 0.976/0.612/0.477/3.610 s. These observations preserve the unfavorable
+ARRAY end-to-end results. The
+[artifact](../benchmarks/results/generic-distinct-partials-2026-10-21.json) retains all
+initial, intermediate, final and previous trials, ranges, DSO/source hashes, native CPU
+profiles, planner configurations and digest evidence. The
+[optimization ledger](../optimizations/aggregate-specialization-fast-paths.md#hash-nested-distinct-values-without-copying-arrow-cells)
+explains the two passes.
+
+To reproduce the small gate, build the release `distinct_partials_admission` example, then run
+`FloatingDistinctPartialsAdmissionBenchmark` with `SF_BENCHMARK=true`, Maven's `bench` profile,
+`-Dpartials.types=array_int,array_double,array_string,interval_month,interval_day`,
+`-Dpartials.rows=131072 -Dpartials.keys=64 -Dpartials.cardinality=128 -Dpartials.bundle=1024`,
+`-Dpartials.warmups=2 -Dpartials.runs=3 -Dpartials.export=/tmp/generic-distinct`.
+For each exported type/shape pair, run the Rust example with the matching `.arrow` and `.json`
+files followed by `2 3`; its timer starts after reading Arrow and preparing the operator.
+The Flink 1.18 run adds Maven's `flink-1.18` profile. Complete jobs use
+`DistinctAggregateBenchmark -Ddistinct.generic=ARRAY_DOUBLE -Ddistinct.rows=262144
+-Ddistinct.keys=256 -Ddistinct.cardinality=128 -Ddistinct.retentionMillis=3600000
+-Ddistinct.warmup=2 -Ddistinct.runs=3` with `SF_BENCHMARK=true` and the `bench` profile;
+other shapes use the table's type/rows/keys/cardinality. Criterion's `typed_group_values`
+adds nullable ARRAY INT/DOUBLE/STRING and both interval families at four/256 values,
+with setup outside its Rust timer and independent distinct-count checks before timing.
+
+Final verification passes 886 native tests (two ignored), 130 Criterion fixtures and 236
+SQL/operator checks on each release. The latter include 116 generic COUNT contracts,
+64 controlled expiry/recovery profiles and 56 related FIRST/LAST regressions. The unchanged
+released `testCountDistinctArrayType` consumes native work in all seven Flink 2.2 and six
+Flink 1.18 invocations. Final small gates and complete jobs were repeated after the STRING
+carrier correctness fix; earlier two-pass measurements remain separately identified.

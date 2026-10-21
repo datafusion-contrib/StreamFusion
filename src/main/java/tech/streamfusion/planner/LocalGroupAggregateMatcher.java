@@ -37,6 +37,20 @@ final class LocalGroupAggregateMatcher {
 
   private LocalGroupAggregateMatcher() {}
 
+  static boolean preservesComplexValues(StreamPhysicalLocalGroupAggregate agg) {
+    if (!matches(agg)) return false;
+    RelDataType input = agg.getInput().getRowType();
+    for (int i = 0; i < agg.aggCalls().size(); i++) {
+      AggregateCall call = agg.aggCalls().apply(i);
+      if (call.isDistinct()
+          && call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.COUNT
+          && call.getArgList().size() == 1
+          && input.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName()
+              == SqlTypeName.ARRAY) return true;
+    }
+    return false;
+  }
+
   static int aggregateKind(org.apache.calcite.sql.SqlKind kind) {
     if (kind == org.apache.calcite.sql.SqlKind.LISTAGG)
       return GroupAggregateMatcher.KIND_LISTAGG_APPEND;
@@ -397,7 +411,11 @@ final class LocalGroupAggregateMatcher {
    * types would mis-key the specialized set, so they decline).
    */
   static boolean supportedDistinctValueType(SqlTypeName type) {
+    if (type.getFamily() == org.apache.calcite.sql.type.SqlTypeFamily.INTERVAL_DAY_TIME
+        || type.getFamily() == org.apache.calcite.sql.type.SqlTypeFamily.INTERVAL_YEAR_MONTH)
+      return true;
     switch (type) {
+      case ARRAY:
       case BIGINT:
       case INTEGER:
       case SMALLINT:

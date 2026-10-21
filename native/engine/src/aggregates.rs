@@ -971,6 +971,17 @@ pub(crate) fn compact_timestamp_scalar(
     )
 }
 
+fn nested_scalar_type(value: &ScalarValue) -> Option<&DataType> {
+    match value {
+        ScalarValue::List(a) => Some(a.data_type()),
+        ScalarValue::LargeList(a) => Some(a.data_type()),
+        ScalarValue::FixedSizeList(a) => Some(a.data_type()),
+        ScalarValue::Struct(a) => Some(a.data_type()),
+        ScalarValue::Map(a) => Some(a.data_type()),
+        _ => None,
+    }
+}
+
 /// Builds an array from per-row scalars, using the given type for the empty case (where the
 /// element type cannot be inferred from the values).
 pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) -> ArrayRef {
@@ -1001,6 +1012,38 @@ pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) 
                 .expect("timestamp scalar schema"),
         );
     }
+    let uniform_nested_schema = scalars
+        .first()
+        .and_then(nested_scalar_type)
+        .is_some_and(|ty| {
+            scalars
+                .iter()
+                .all(|value| nested_scalar_type(value) == Some(ty))
+        });
+    let scalars = if !uniform_nested_schema
+        && matches!(
+            data_type,
+            DataType::List(_)
+                | DataType::LargeList(_)
+                | DataType::FixedSizeList(_, _)
+                | DataType::Struct(_)
+                | DataType::Map(_, _)
+        ) {
+        scalars
+            .into_iter()
+            .map(|value| {
+                if value.data_type() == *data_type {
+                    value
+                } else {
+                    let array = arrow::compute::cast(&value.to_array().unwrap(), data_type)
+                        .expect("nested scalar schema");
+                    ScalarValue::try_from_array(&array, 0).unwrap()
+                }
+            })
+            .collect()
+    } else {
+        scalars
+    };
     let array = ScalarValue::iter_to_array(scalars).expect("failed to build array");
     // For scalars the reconstructed type already equals `data_type` (no-op). For a nested type
     // (List/Struct/Map), ScalarValue reconstruction names the inner field generically (e.g. "item",

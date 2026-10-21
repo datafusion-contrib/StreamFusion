@@ -1125,3 +1125,45 @@ costs, are retained in the
 [artifact](../benchmarks/results/distinct-ordered-retention-2026-10-21.json). The slower
 array cases remain accepted coverage groundwork under the original goal's two-pass limit;
 [#443](https://github.com/datafusion-contrib/StreamFusion/issues/443) tracks follow-up.
+
+### Hash nested DISTINCT values without copying Arrow cells
+
+Generic DISTINCT membership hashes borrowed ARRAY/ROW/MAP contents, including child NULL
+positions and list lengths. It ignores child field names and schema nullability, which are
+transport metadata rather than values. Nested floating leaves canonicalize NaNs for hashing
+without changing the retained payload; opposite zero signs remain distinct. The existing
+integer-array specialization remains in place. Unknown leaf encodings retain an equality-checked
+type bucket rather than relying on a representation-dependent hash.
+
+The previous generic hash placed every key of one nested type into a single bucket. In the
+262,144-row ARRAY DOUBLE local/global DISTINCT job, 12,700 of 14,242 grouped-aggregation CPU
+samples passed through value equality, with repeated schema comparison and child scans.
+The borrowed hash removes those linear membership searches without allocating normalized
+Arrow copies or changing state serialization. The associated coverage and complete-job
+measurements are recorded on the [GROUP BY page](../operators/group-by.md#generic-distinct-localglobal-views).
+
+The first measured hash pass reduces ARRAY DOUBLE from 7.208 to 1.086 s and ARRAY STRING
+from 5.917 to 2.367 s. ARRAY INT already had a content hash and stays at 3.172/3.195 s.
+A subsequent ARRAY STRING CPU profile records 1,564 samples in nested output construction,
+including 814 in per-cell casts, among 4,629 grouped-aggregation samples. The second pass
+concatenates homogeneous nested scalar schemas before one final column cast; mixed schemas
+retain the pre-concatenation alignment needed for restored or differently named fields.
+Borrowed membership equality also compares logical child types without cloning or casting
+cells to compare transport field names. Primitive result-change equality remains separate.
+
+After the second and final pass, complete-job ARRAY INT/DOUBLE/STRING medians are
+2.969/1.055/1.658 s versus stock 0.943/0.606/0.474 s on Flink 2.2, retaining the one-hour
+entry-TTL work and both transposes. Isolated Rust/Arrow versus Java/RowData measurements
+also remain slower for ARRAY, while interval COUNT DISTINCT wins 1.68–2.76x.
+The accepted ARRAY groundwork and all unfavorable trials are preserved in the
+[artifact](../benchmarks/results/generic-distinct-partials-2026-10-21.json);
+[#446](https://github.com/datafusion-contrib/StreamFusion/issues/446) tracks further work after
+this goal's exhausted two-pass optimization limit. These shared leaves also serve retained
+FIRST/LAST, but those earlier benchmarks have not been rerun or relabeled by this change.
+
+The final correctness checks additionally cover nullable STRING grouping keys and mixed scalar
+string aggregates, with two restores in memory and native RocksDB. Preserved primitive strings
+project their existing UTF-8 child and union the parent's NULL mask, following Comet's
+`GetStructField` projection pattern. Nested payloads retain their original caches; this is a
+physical input correction, not another optimization pass. Logical key descriptors ignore the
+transport-only STRING/copy carriers and keep the logical array-element width.

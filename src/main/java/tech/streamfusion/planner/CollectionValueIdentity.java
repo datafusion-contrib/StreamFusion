@@ -8,8 +8,10 @@ import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalDropUpdateBefore;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalMiniBatchAssigner;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalUnion;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWatermarkAssigner;
 
 /**
@@ -191,8 +193,13 @@ final class CollectionValueIdentity {
     boolean next =
         node instanceof StreamPhysicalGroupAggregate
                 && GroupAggregateMatcher.preservesComplexValues((StreamPhysicalGroupAggregate) node)
+            || node instanceof StreamPhysicalLocalGroupAggregate
+                && LocalGroupAggregateMatcher.preservesComplexValues(
+                    (StreamPhysicalLocalGroupAggregate) node)
             || orderedConsumer
-                && (node instanceof Exchange
+                && (node instanceof StreamPhysicalUnion
+                        && UnionMatcher.matches((StreamPhysicalUnion) node)
+                    || node instanceof Exchange
                     || node instanceof StreamPhysicalMiniBatchAssigner
                     || node instanceof StreamPhysicalDropUpdateBefore
                     || node instanceof StreamPhysicalWatermarkAssigner);

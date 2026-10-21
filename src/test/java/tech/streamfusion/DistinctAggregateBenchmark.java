@@ -21,6 +21,8 @@ class DistinctAggregateBenchmark {
   private static final int KEYS = Integer.getInteger("distinct.keys", 64);
   private static final int WARMUP = Integer.getInteger("distinct.warmup", 2);
   private static final int RUNS = Integer.getInteger("distinct.runs", 5);
+  private static final String GENERIC = System.getProperty("distinct.generic", "");
+  private static final int CARDINALITY = Integer.getInteger("distinct.cardinality", 128);
   private static final boolean FLOATING = Boolean.getBoolean("distinct.floating");
   private static final boolean FLOATING_SUM = Boolean.getBoolean("distinct.floatingSum");
   private static final boolean AVERAGE = FLOATING || Boolean.getBoolean("distinct.average");
@@ -31,26 +33,66 @@ class DistinctAggregateBenchmark {
   private static final int DECIMAL_PRECISION =
       Integer.getInteger("distinct.precision", TWO_PHASE ? 19 : 20);
   private static final String SQL =
-      FLOATING
-          ? "INSERT INTO sink SELECT k, AVG(DISTINCT CAST(t AS FLOAT)),"
-              + " AVG(DISTINCT CAST(b AS DOUBLE))"
-              + (FLOATING_SUM
-                  ? ", SUM(DISTINCT CAST(t AS FLOAT)), SUM(DISTINCT CAST(b AS DOUBLE))"
-                  : "")
-              + " FROM src GROUP BY k"
-          : AVERAGE
-              ? "INSERT INTO sink SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT amount)"
-                    + " FROM src GROUP BY k"
-              : "INSERT INTO sink SELECT k, COUNT(DISTINCT b), COUNT(DISTINCT ts),"
-                  + " SUM(DISTINCT amount) FROM src GROUP BY k";
+      !GENERIC.isEmpty()
+          ? genericSql()
+          : FLOATING
+              ? "INSERT INTO sink SELECT k, AVG(DISTINCT CAST(t AS FLOAT)),"
+                  + " AVG(DISTINCT CAST(b AS DOUBLE))"
+                  + (FLOATING_SUM
+                      ? ", SUM(DISTINCT CAST(t AS FLOAT)), SUM(DISTINCT CAST(b AS DOUBLE))"
+                      : "")
+                  + " FROM src GROUP BY k"
+              : AVERAGE
+                  ? "INSERT INTO sink SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT"
+                        + " amount) FROM src GROUP BY k"
+                  : "INSERT INTO sink SELECT k, COUNT(DISTINCT b), COUNT(DISTINCT ts),"
+                      + " SUM(DISTINCT amount) FROM src GROUP BY k";
+
+  private static String genericSql() {
+    String value;
+    switch (GENERIC) {
+      case "ARRAY":
+        value = "ARRAY[n, CAST(NULL AS INT), -n]";
+        break;
+      case "ARRAY_STRING":
+        value = "ARRAY[CAST(n AS STRING), CAST(NULL AS STRING)]";
+        break;
+      case "ARRAY_DOUBLE":
+        value = "ARRAY[CAST(n AS DOUBLE), CAST(NULL AS DOUBLE)]";
+        break;
+      case "INTERVAL_MONTH":
+        value = "INTERVAL '1' MONTH * n";
+        break;
+      case "INTERVAL_DAY":
+        value = "INTERVAL '1' DAY * n";
+        break;
+      default:
+        throw new IllegalArgumentException(GENERIC);
+    }
+    String absent =
+        GENERIC.equals("ARRAY")
+            ? "CAST(NULL AS ARRAY<INT>)"
+            : GENERIC.equals("ARRAY_DOUBLE")
+                ? "CAST(NULL AS ARRAY<DOUBLE>)"
+                : GENERIC.equals("ARRAY_STRING") ? "CAST(NULL AS ARRAY<STRING>)" : "NULL";
+    return "INSERT INTO sink SELECT k, COUNT(DISTINCT v), COUNT(DISTINCT v) FILTER (WHERE b),"
+        + " COUNT(DISTINCT v) FILTER (WHERE NOT b) FROM (SELECT k,b,"
+        + " CASE WHEN n IS NULL THEN "
+        + absent
+        + " ELSE "
+        + value
+        + " END AS v FROM"
+        + " (SELECT k,b,CAST(amount * 100 AS INT) AS n FROM src) numbers) typed GROUP BY k";
+  }
 
   @Test
   void groupedDistinctTypes() throws Exception {
     String plan = NativePlanner.explain(environment(), SQL);
-    if (EXPECT_NATIVE && (!plan.contains("NativeColumnarGroupAggregate")
-        || !plan.contains("RowDataToArrow")
-        || !plan.contains("ArrowToRowData")
-        || TWO_PHASE && !plan.contains("NativeColumnarLocalGroupAggregate"))) {
+    if (EXPECT_NATIVE
+        && (!plan.contains("NativeColumnarGroupAggregate")
+            || !plan.contains("RowDataToArrow")
+            || !plan.contains("ArrowToRowData")
+            || TWO_PHASE && !plan.contains("NativeColumnarLocalGroupAggregate"))) {
       throw new IllegalStateException("Expected native aggregation and both transposes: " + plan);
     }
     if (!EXPECT_NATIVE && plan.contains("NativeColumnarGroupAggregate")) {
@@ -99,8 +141,9 @@ class DistinctAggregateBenchmark {
     }
     System.out.printf(
         Locale.ROOT,
-        "[distinct-aggregate] floating=%s average=%s two_phase=%s precision=%d rows=%d keys=%d"
-            + " Flink=%.6fs Native=%.6fs flink_trials=%s native_trials=%s%n",
+        "[distinct-aggregate] generic=%s floating=%s average=%s two_phase=%s precision=%d rows=%d"
+            + " keys=%d Flink=%.6fs Native=%.6fs flink_trials=%s native_trials=%s%n",
+        GENERIC,
         FLOATING,
         AVERAGE,
         TWO_PHASE,
@@ -144,7 +187,10 @@ class DistinctAggregateBenchmark {
             .map(
                 i -> {
                   boolean missing = i % 7 == 0;
-                  BigDecimal amount = missing ? null : BigDecimal.valueOf(i / KEYS % 128 - 64, 2);
+                  BigDecimal amount =
+                      missing
+                          ? null
+                          : BigDecimal.valueOf(i / KEYS % CARDINALITY - CARDINALITY / 2, 2);
                   return AVERAGE
                       ? Row.of(
                           (int) (i % KEYS),
@@ -185,13 +231,15 @@ class DistinctAggregateBenchmark {
                 .column("amount", DataTypes.DECIMAL(DECIMAL_PRECISION, 2))
                 .build());
     table.executeSql(
-        (FLOATING
-                ? "CREATE TABLE sink (k INT, av_t FLOAT, ab DOUBLE"
-                    + (FLOATING_SUM ? ", st FLOAT, sb DOUBLE" : "")
-                    + ")"
-                : AVERAGE
-                    ? "CREATE TABLE sink (k INT, av_t TINYINT, ab BIGINT, ad DECIMAL(38,6))"
-                    : "CREATE TABLE sink (k INT, cb BIGINT, ct BIGINT, sa DECIMAL(38,2))")
+        (!GENERIC.isEmpty()
+                ? "CREATE TABLE sink (k INT, ca BIGINT, cb BIGINT, cc BIGINT)"
+                : FLOATING
+                    ? "CREATE TABLE sink (k INT, av_t FLOAT, ab DOUBLE"
+                        + (FLOATING_SUM ? ", st FLOAT, sb DOUBLE" : "")
+                        + ")"
+                    : AVERAGE
+                        ? "CREATE TABLE sink (k INT, av_t TINYINT, ab BIGINT, ad DECIMAL(38,6))"
+                        : "CREATE TABLE sink (k INT, cb BIGINT, ct BIGINT, sa DECIMAL(38,2))")
             + " WITH ('connector' = 'blackhole')");
     return table;
   }

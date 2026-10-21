@@ -206,14 +206,20 @@ final class GroupAggregateMatcher {
   }
 
   static boolean preservesComplexValues(StreamPhysicalGroupAggregate agg) {
-    if (!tech.streamfusion.compat.FlinkCompat.GENERIC_ORDERED_VALUES || !matches(agg)) return false;
+    if (!matches(agg)) return false;
     RelDataType input = agg.getInput().getRowType();
     for (int key : agg.grouping())
       if (genericOrderedValueType(input.getFieldList().get(key).getType().getSqlTypeName()))
         return false;
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       AggregateCall call = agg.aggCalls().apply(i);
-      if ((call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.FIRST_VALUE
+      if (call.isDistinct()
+          && call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.COUNT
+          && call.getArgList().size() == 1
+          && input.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName()
+              == SqlTypeName.ARRAY) return true;
+      if (tech.streamfusion.compat.FlinkCompat.GENERIC_ORDERED_VALUES
+          && (call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.FIRST_VALUE
               || call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.LAST_VALUE)
           && call.getArgList().size() == 1
           && genericOrderedValueType(

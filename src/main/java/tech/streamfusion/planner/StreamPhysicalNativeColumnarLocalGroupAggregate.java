@@ -74,6 +74,12 @@ public class StreamPhysicalNativeColumnarLocalGroupAggregate extends StreamPhysi
     this.distinctViewSources = distinctViewSources;
   }
 
+  boolean preservesCollections() {
+    for (int i = 0; i < aggregateKinds.length; i++)
+      if (aggregateKinds[i] == 7 && valueTypes[i] == 100) return true;
+    return false;
+  }
+
   @Override
   public boolean requireWatermark() {
     return false;

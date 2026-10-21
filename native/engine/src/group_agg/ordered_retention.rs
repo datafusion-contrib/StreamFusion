@@ -10,6 +10,7 @@ impl PartialEq for ValueKey {
         crate::flink_float::boxed_equal(&self.0, &other.0)
     }
 }
+
 impl Eq for ValueKey {}
 impl Hash for ValueKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -52,13 +53,13 @@ impl Hash for ValueKey {
                     }
                 }
             }
-            // Type buckets let borrowed Flink equality compare nested values without
-            // allocating a canonical copy. Collisions affect lookup cost, not membership.
-            ScalarValue::List(_)
-            | ScalarValue::LargeList(_)
-            | ScalarValue::FixedSizeList(_)
-            | ScalarValue::Struct(_)
-            | ScalarValue::Map(_) => self.0.data_type().hash(state),
+            ScalarValue::List(array) => super::nested_hash::value(array.as_ref(), 0, state),
+            ScalarValue::LargeList(array) => super::nested_hash::value(array.as_ref(), 0, state),
+            ScalarValue::FixedSizeList(array) => {
+                super::nested_hash::value(array.as_ref(), 0, state)
+            }
+            ScalarValue::Struct(array) => super::nested_hash::value(array.as_ref(), 0, state),
+            ScalarValue::Map(array) => super::nested_hash::value(array.as_ref(), 0, state),
             value => value.hash(state),
         }
     }

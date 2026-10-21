@@ -11,6 +11,20 @@ use streamfusion_bridge::timestamp::{is_timestamp, TimestampColumn, TimestampVal
 const DEFAULT_SEED: u32 = 42;
 const MAX_INLINE_BYTES: usize = 7;
 
+pub(crate) fn represented_string(data_type: &DataType) -> bool {
+    matches!(data_type, DataType::Struct(fields)
+        if (2..=3).contains(&fields.len())
+            && fields[0].name() == "utf8" && fields[0].data_type() == &DataType::Utf8
+            && fields[0].metadata().get("streamfusion.nested-string").is_some_and(|v| v == "1")
+            && fields[1].name() == "java" && matches!(fields[1].data_type(), DataType::List(_)))
+}
+
+fn represented_element(data_type: &DataType) -> bool {
+    matches!(data_type, DataType::Struct(fields)
+        if fields.len() == 2 && fields[0].name() == "value"
+            && fields[1].metadata().get("streamfusion.array-element").is_some_and(|v| v == "1"))
+}
+
 /// The logical shape of one key field. Arrow supplies the physical type tree; the parallel
 /// precision stream supplies the one detail Arrow loses: Flink timestamp precision.
 struct KeyTypeSchema {
@@ -20,6 +34,12 @@ struct KeyTypeSchema {
 }
 
 fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize) -> KeyTypeSchema {
+    if represented_element(data_type) {
+        let DataType::Struct(fields) = data_type else {
+            unreachable!()
+        };
+        return key_type_schema(fields[0].data_type(), precisions, cursor);
+    }
     let row_kind = match data_type {
         DataType::Struct(fields) => nested_row_kind_index(fields),
         _ => None,
@@ -29,7 +49,7 @@ fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize)
         .expect("missing Flink key type descriptor");
     *cursor += 1;
     let children = match data_type {
-        _ if is_timestamp(data_type) => Vec::new(),
+        _ if is_timestamp(data_type) || represented_string(data_type) => Vec::new(),
         DataType::List(field) | DataType::LargeList(field) => {
             vec![key_type_schema(field.data_type(), precisions, cursor)]
         }
@@ -298,6 +318,12 @@ fn time_millis(array: &ArrayRef, row: usize) -> i32 {
 }
 
 fn array_element_size(data_type: &DataType) -> usize {
+    if represented_element(data_type) {
+        let DataType::Struct(fields) = data_type else {
+            unreachable!()
+        };
+        return array_element_size(fields[0].data_type());
+    }
     match data_type {
         DataType::Boolean | DataType::Int8 => 1,
         DataType::Int16 => 2,
@@ -366,6 +392,14 @@ fn write_array_value(
 ) {
     if array.is_null(row) {
         writer.set_null(pos);
+        return;
+    }
+    if represented_element(array.data_type()) || represented_string(array.data_type()) {
+        let array = array
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("represented key");
+        write_array_value(writer, pos, array.column(0), row, schema);
         return;
     }
     match array.data_type() {
@@ -564,6 +598,14 @@ fn write_value(
 ) {
     if array.is_null(row) {
         writer.set_null(pos);
+        return;
+    }
+    if represented_element(array.data_type()) || represented_string(array.data_type()) {
+        let array = array
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("represented key");
+        write_value(writer, pos, array.column(0), row, schema);
         return;
     }
     match array.data_type() {

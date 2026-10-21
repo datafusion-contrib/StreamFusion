@@ -63,7 +63,8 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends StreamPhysicalNa
   boolean preservesCollections() {
     for (int i = 0; i < aggregateKinds.length; i++) {
       if (valueTypes[i] == 100
-          && (aggregateKinds[i] == 12
+          && (aggregateKinds[i] == 7
+              || aggregateKinds[i] == 12
               || aggregateKinds[i] == 13
               || aggregateKinds[i] == 15
               || aggregateKinds[i] == 16
