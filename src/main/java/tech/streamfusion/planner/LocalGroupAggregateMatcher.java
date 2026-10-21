@@ -98,7 +98,6 @@ final class LocalGroupAggregateMatcher {
 
   static boolean isRetractingSum(AggregateCall call, boolean retracting) {
     return retracting
-        && !call.isDistinct()
         && aggregateKind(call.getAggregation().getKind()) == WindowAggregateMatcher.KIND_SUM;
   }
 
@@ -146,14 +145,13 @@ final class LocalGroupAggregateMatcher {
       }
       int retractKind = aggregateKind(call.getAggregation().getKind());
       if (needRetraction
-          && (call.isDistinct()
-              || (retractKind != WindowAggregateMatcher.KIND_COUNT
-                  && retractKind != WindowAggregateMatcher.KIND_AVG
-                  && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
-                  && retractKind != WindowAggregateMatcher.KIND_SUM
-                  && retractKind != 14
-                  && retractKind != WindowAggregateMatcher.KIND_MIN
-                  && retractKind != WindowAggregateMatcher.KIND_MAX))) {
+          && (retractKind != WindowAggregateMatcher.KIND_COUNT
+              && retractKind != WindowAggregateMatcher.KIND_AVG
+              && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
+              && retractKind != WindowAggregateMatcher.KIND_SUM
+              && retractKind != 14
+              && retractKind != WindowAggregateMatcher.KIND_MIN
+              && retractKind != WindowAggregateMatcher.KIND_MAX)) {
         return false;
       }
       // A FILTER is a boolean input column (the planner materializes `IS TRUE(p)` in the Calc
@@ -206,7 +204,13 @@ final class LocalGroupAggregateMatcher {
         }
         RelDataType value = inputType.getFieldList().get(call.getArgList().get(0)).getType();
         SqlTypeName valueType = value.getSqlTypeName();
-        int width = kind == WindowAggregateMatcher.KIND_AVG ? 2 : 1;
+        if (needRetraction
+            && kind != WindowAggregateMatcher.KIND_COUNT
+            && (valueType == SqlTypeName.FLOAT
+                || valueType == SqlTypeName.REAL
+                || valueType == SqlTypeName.DOUBLE
+                || valueType == SqlTypeName.DECIMAL && value.getPrecision() > 19)) return false;
+        int width = partialWidth(call, needRetraction);
         if (offset + width > outputType.getFieldCount()) return false;
         RelDataType partial = outputType.getFieldList().get(offset).getType();
         SqlTypeName partialType = partial.getSqlTypeName();
@@ -218,7 +222,8 @@ final class LocalGroupAggregateMatcher {
           }
         } else if (kind == WindowAggregateMatcher.KIND_SUM
             || kind == GroupAggregateMatcher.KIND_SUM_ZERO) {
-          if (!supportedDistinctSumPartial(value, partial)) return false;
+          if (!supportedDistinctSumPartial(value, partial)
+              || count != null && count.getSqlTypeName() != SqlTypeName.BIGINT) return false;
         } else if (kind == WindowAggregateMatcher.KIND_AVG) {
           if (!supportedDistinctAveragePartials(value, partial, count)) return false;
         } else {
@@ -537,6 +542,7 @@ final class LocalGroupAggregateMatcher {
                   : kind == GroupAggregateMatcher.KIND_SUM_ZERO
                       ? GroupAggregateMatcher.KIND_SUM_ZERO_DISTINCT
                       : KIND_SUM_DISTINCT);
+          if (isRetractingSum(call, needRetraction(agg))) kinds.add(KIND_COUNT_DISTINCT);
         }
       } else if (mappedExtreme(agg, i)) {
         kinds.add(kind == WindowAggregateMatcher.KIND_MIN ? 38 : 39);
@@ -625,7 +631,7 @@ final class LocalGroupAggregateMatcher {
             GroupAggregateMatcher.retainedValueTypeCode(
                 inputType.getFieldList().get(call.getArgList().get(0)).getType());
         codes.add(code);
-        if (kind == WindowAggregateMatcher.KIND_AVG) codes.add(code);
+        if (stateWidth(call, needRetraction(agg)) == 2) codes.add(code);
       } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND) {
         codes.add(3);
       } else if (kind == 14) {

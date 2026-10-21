@@ -40,6 +40,16 @@ class RetractingSumPartialsBenchmark {
               "INSERT INTO sink SELECT u, MIN(mx), COUNT(mx), AVG(mx), MAX(mx)"
                   + " FROM (SELECT k, u, MAX(v) AS mx FROM src GROUP BY k, u) GROUP BY u";
         }
+        if (Boolean.getBoolean("sumretract.distinct")) {
+          assertFalse(singleValue || Boolean.getBoolean("sumretract.extrema"));
+          query =
+              query
+                  .replace("SUM(mx)", "SUM(DISTINCT mx)")
+                  .replace("COUNT(mx)", "COUNT(DISTINCT mx)")
+                  .replace("AVG(mx)", "AVG(DISTINCT mx)");
+        }
+        System.out.println(
+            "[sum-retract-config] distinct=" + Boolean.getBoolean("sumretract.distinct"));
         query = query.replace("MAX(v)", "MAX(CAST(v AS " + type + "))");
         double[][] times = new double[2][RUNS];
         var configuration = new Configuration();

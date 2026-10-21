@@ -82,3 +82,6 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupJsonA
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupJsonArrayAggAndJsonObjectAggWithOtherAggs	changelog=false	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRelaxFormProctimeCascadeWindowAgg	changelog=false	NativeColumnarWindowAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=false&aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract	changelog=false&aggMode=ON	!global group aggregate: retracting MIN/MAX with TTL require independently expiring map entries

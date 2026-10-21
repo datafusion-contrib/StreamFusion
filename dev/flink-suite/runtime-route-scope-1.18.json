@@ -673,6 +673,60 @@
         "changelog=true": "full_fallback",
         "changelog=false&aggPhase=TWO_PHASE": "native"
       }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+      "display_name": "testMinAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=ON": "full_fallback",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+      "display_name": "testMinAggRetractWithCondition[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=OFF": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithRetract",
+      "display_name": "testMinAggRetractWithCondition[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "count": 1,
+      "route_by_contract_variant": {
+        "changelog=false&aggMode=ON": "full_fallback",
+        "changelog=true": "full_fallback"
+      }
     }
   ]
 }

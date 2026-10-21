@@ -50,12 +50,7 @@ impl<'a> DistinctColumn<'a> {
         }
     }
 
-    fn change(&self, set: &mut DistinctSet, row: usize, retract: bool, count: i64) -> bool {
-        let change = if retract {
-            Change::Remove
-        } else {
-            Change::Add(count)
-        };
+    fn change(&self, set: &mut DistinctSet, row: usize, change: Change) -> bool {
         macro_rules! primitive {
             ($array:expr, $variant:ident, $scalar:ident) => {{
                 let array = $array;
@@ -128,7 +123,17 @@ impl<'a> DistinctColumn<'a> {
                     _ => set.change_scalar(&timestamp_scalar(value), change),
                 }
             }
-            Self::String(a) => !a.is_null(row) && set.change_string(a.value(row), retract, count),
+            Self::String(a) => {
+                if a.is_null(row) {
+                    return false;
+                }
+                match set {
+                    DistinctSet::String(map) => map.change(a.value(row), change),
+                    _ => {
+                        set.change_scalar(&ScalarValue::Utf8(Some(a.value(row).to_owned())), change)
+                    }
+                }
+            }
             Self::Scalar(a) => {
                 !a.is_null(row)
                     && set.change_value(
@@ -137,6 +142,34 @@ impl<'a> DistinctColumn<'a> {
                     )
             }
         }
+    }
+
+    pub(super) fn merge_delta(
+        &self,
+        state: &mut GroupAggState,
+        row: usize,
+        delta: i64,
+        fold: bool,
+    ) -> bool {
+        let (set, live) = match state {
+            GroupAggState::Distinct { set, live } => (set, live),
+            GroupAggState::DistinctRunning { counts, live, .. } => (counts, live),
+            _ => unreachable!("distinct signed merge"),
+        };
+        let changed = self.change(set, row, Change::Delta(delta));
+        if changed {
+            *live += if delta > 0 { 1 } else { -1 };
+            if fold {
+                if let GroupAggState::DistinctRunning { agg, .. } = state {
+                    if delta > 0 {
+                        agg.fold(self.num(row));
+                    } else {
+                        agg.retract(self.num(row));
+                    }
+                }
+            }
+        }
+        changed
     }
 
     fn num(&self, row: usize) -> Num {
@@ -187,7 +220,15 @@ impl<'a> DistinctColumn<'a> {
             GroupAggState::DistinctRunning { counts, live, .. } => (counts, live),
             _ => unreachable!("distinct state"),
         };
-        let changed = self.change(set, row, retract, count);
+        let changed = self.change(
+            set,
+            row,
+            if retract {
+                Change::Remove
+            } else {
+                Change::Add(count)
+            },
+        );
         if changed {
             *live += if retract { -1 } else { 1 };
         }
@@ -246,6 +287,7 @@ impl ScalarValues {
 #[derive(Clone, Copy)]
 enum Change {
     Add(i64),
+    Delta(i64),
     Remove,
     Restore(i64),
     Import(i64),
@@ -304,6 +346,18 @@ impl<K: Eq + Hash + Clone> Multiplicities<K> {
             }
         }
         match change {
+            Change::Delta(delta) => {
+                let old = self.counts.get(key).copied().unwrap_or(0);
+                let next = old.wrapping_add(delta);
+                if next == 0 {
+                    self.counts.remove(key);
+                } else if let Some(count) = self.counts.get_mut(key) {
+                    *count = next;
+                } else {
+                    self.counts.insert(key.to_owned(), next);
+                }
+                (old > 0) != (next > 0)
+            }
             Change::Add(n) => {
                 if let Some(count) = self.counts.get_mut(key) {
                     *count += n;
@@ -655,6 +709,42 @@ impl DistinctSet {
 mod tests {
     use super::*;
 
+    #[test]
+    fn signed_membership_keeps_negative_counts_and_only_crosses_positive_membership() {
+        for value in samples() {
+            let mut set = DistinctSet::new(&value.data_type());
+            for (delta, count, transition) in [
+                (-3, -3, false),
+                (2, -1, false),
+                (2, 1, true),
+                (1, 2, false),
+                (-5, -3, true),
+                (3, 0, false),
+                (1, 1, true),
+                (-1, 0, true),
+            ] {
+                assert_eq!(set.change_scalar(&value, Change::Delta(delta)), transition);
+                assert_eq!(set.scalar_count(&value), count);
+                assert_eq!(set.is_empty(), count == 0);
+            }
+        }
+    }
+
+    #[test]
+    fn imported_negative_membership_does_not_increment_the_retained_count() {
+        for value in samples() {
+            let mut state = GroupAggState::new(7, &value.data_type());
+            state.import_multiset_entry(value.clone(), -2);
+            assert_eq!(state.emit(&DataType::Int64), ScalarValue::Int64(Some(0)));
+            let array = value.to_array().unwrap();
+            let column = DistinctColumn::new(&array);
+            assert!(!column.merge_delta(&mut state, 0, 2, true));
+            assert_eq!(state.emit(&DataType::Int64), ScalarValue::Int64(Some(0)));
+            assert!(column.merge_delta(&mut state, 0, 1, true));
+            assert_eq!(state.emit(&DataType::Int64), ScalarValue::Int64(Some(1)));
+        }
+    }
+
     fn samples() -> Vec<ScalarValue> {
         vec![
             ScalarValue::Int64(Some(i64::MIN)),
@@ -701,10 +791,10 @@ mod tests {
         let column = DistinctColumn::new(&array);
         let mut set = DistinctSet::new(array.data_type());
         for row in 0..values.len() {
-            assert!(column.change(&mut set, row, false, 1));
-            assert!(!column.change(&mut set, row, false, 2));
+            assert!(column.change(&mut set, row, Change::Add(1)));
+            assert!(!column.change(&mut set, row, Change::Add(2)));
         }
-        assert!(!column.change(&mut set, values.len(), false, 1));
+        assert!(!column.change(&mut set, values.len(), Change::Add(1)));
         assert!(matches!(set, DistinctSet::Timestamp(_)));
         let mut restored = DistinctSet::new(array.data_type());
         for (value, count) in set.scalar_entries() {
@@ -723,9 +813,9 @@ mod tests {
         assert_eq!(actual, values);
         assert_eq!(counts, vec![3; values.len()]);
         for row in 0..values.len() {
-            assert!(!column.change(&mut restored, row, true, 1));
-            assert!(!column.change(&mut restored, row, true, 1));
-            assert!(column.change(&mut restored, row, true, 1));
+            assert!(!column.change(&mut restored, row, Change::Remove));
+            assert!(!column.change(&mut restored, row, Change::Remove));
+            assert!(column.change(&mut restored, row, Change::Remove));
         }
         assert!(restored.is_empty());
     }

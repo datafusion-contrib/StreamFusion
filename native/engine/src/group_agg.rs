@@ -773,12 +773,14 @@ impl GroupAggState {
             }
             GroupAggState::Distinct { set, live } => {
                 set.insert_imported(value, count);
-                *live += 1;
+                *live += i64::from(count > 0);
             }
             GroupAggState::DistinctRunning { counts, agg, live } => {
-                agg.fold(distinct_num(&value));
+                if count > 0 {
+                    agg.fold(distinct_num(&value));
+                }
                 counts.insert_imported(value, count);
-                *live += 1;
+                *live += i64::from(count > 0);
             }
             // An insert-only MIN/MAX (kind 10/11) restoring a blob written by the retractable
             // multiset representation: fold each element back into the running extreme, counting
@@ -2312,8 +2314,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                                     counts.value(e),
                                     false,
                                 );
-                            } else if counts.value(e) > 0 {
-                                column.update(&mut state.aggs[i], e, false, counts.value(e));
+                            } else {
+                                column.merge_delta(&mut state.aggs[i], e, counts.value(e), true);
                             }
                         }
                         continue;
@@ -3810,9 +3812,19 @@ impl LocalGroupAggregator {
                 if let Some(column) = &distinct_columns[i] {
                     if view_only[i] {
                         // The global re-accumulates from the shared view, never these partials.
-                        column.update_membership(&mut entry.states[i], row, retract, 1);
+                        column.merge_delta(
+                            &mut entry.states[i],
+                            row,
+                            if retract { -1 } else { 1 },
+                            false,
+                        );
                     } else {
-                        column.update(&mut entry.states[i], row, retract, 1);
+                        column.merge_delta(
+                            &mut entry.states[i],
+                            row,
+                            if retract { -1 } else { 1 },
+                            true,
+                        );
                     }
                     continue;
                 }

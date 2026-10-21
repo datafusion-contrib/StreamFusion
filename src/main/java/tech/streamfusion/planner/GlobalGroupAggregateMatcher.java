@@ -71,14 +71,13 @@ final class GlobalGroupAggregateMatcher {
         return "global group aggregate: only SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE merges";
       }
       if (needRetraction
-          && (call.isDistinct()
-              || (kind != WindowAggregateMatcher.KIND_COUNT
-                  && kind != WindowAggregateMatcher.KIND_AVG
-                  && kind != GroupAggregateMatcher.KIND_SUM_ZERO
-                  && kind != WindowAggregateMatcher.KIND_SUM
-                  && kind != 14
-                  && kind != WindowAggregateMatcher.KIND_MIN
-                  && kind != WindowAggregateMatcher.KIND_MAX))) {
+          && (kind != WindowAggregateMatcher.KIND_COUNT
+              && kind != WindowAggregateMatcher.KIND_AVG
+              && kind != GroupAggregateMatcher.KIND_SUM_ZERO
+              && kind != WindowAggregateMatcher.KIND_SUM
+              && kind != 14
+              && kind != WindowAggregateMatcher.KIND_MIN
+              && kind != WindowAggregateMatcher.KIND_MAX)) {
         return "global group aggregate: a retracting merge admits COUNT, AVG, SUM0 and"
             + " numeric SUM, scalar SINGLE_VALUE and mapped MIN/MAX";
       }
@@ -94,7 +93,7 @@ final class GlobalGroupAggregateMatcher {
         }
         RelDataType value =
             agg.localAggInputRowType().getFieldList().get(call.getArgList().get(0)).getType();
-        int width = kind == WindowAggregateMatcher.KIND_AVG ? 2 : 1;
+        int width = spanOf(agg, i);
         if (offset + width > inputType.getFieldCount())
           return "global group aggregate: incomplete distinct partials";
         RelDataType partial = inputType.getFieldList().get(offset).getType();
@@ -105,13 +104,22 @@ final class GlobalGroupAggregateMatcher {
             && !LocalGroupAggregateMatcher.supportedDistinctValueType(value.getSqlTypeName())) {
           return "global group aggregate: unsupported COUNT(DISTINCT) value type " + value;
         }
+        if (needRetraction
+            && kind != WindowAggregateMatcher.KIND_COUNT
+            && (value.getSqlTypeName() == SqlTypeName.FLOAT
+                || value.getSqlTypeName() == SqlTypeName.REAL
+                || value.getSqlTypeName() == SqlTypeName.DOUBLE
+                || value.getSqlTypeName() == SqlTypeName.DECIMAL && value.getPrecision() > 19))
+          return "global group aggregate: retracting ordered numeric DISTINCT views are not yet"
+              + " verified";
         boolean countDistinct =
             kind == WindowAggregateMatcher.KIND_COUNT
                 && partialType == SqlTypeName.BIGINT
                 && LocalGroupAggregateMatcher.supportedDistinctValueType(value.getSqlTypeName());
         boolean sumDistinct =
             (kind == WindowAggregateMatcher.KIND_SUM || kind == GroupAggregateMatcher.KIND_SUM_ZERO)
-                && LocalGroupAggregateMatcher.supportedDistinctSumPartial(value, partial);
+                && LocalGroupAggregateMatcher.supportedDistinctSumPartial(value, partial)
+                && (count == null || count.getSqlTypeName() == SqlTypeName.BIGINT);
         RelDataType result = agg.getRowType().getFieldList().get(grouping.length + i).getType();
         boolean averageDistinct =
             kind == WindowAggregateMatcher.KIND_AVG
@@ -502,6 +510,7 @@ final class GlobalGroupAggregateMatcher {
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       firstView += spanOf(agg, i);
     }
+    if (agg.localAggInfoList().countStarInserted()) firstView++;
     List<String> seen = new ArrayList<>();
     int[] primary = valueColumns(agg);
     int[] columns = new int[agg.aggCalls().size()];

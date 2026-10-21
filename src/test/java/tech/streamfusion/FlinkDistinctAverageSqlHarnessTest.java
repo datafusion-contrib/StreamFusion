@@ -61,7 +61,8 @@ class FlinkDistinctAverageSqlHarnessTest {
         "SELECT AVG(DISTINCT CAST(b AS DOUBLE)), AVG(DISTINCT CAST(b AS FLOAT)) FROM src");
     compare(
         retract,
-        "SELECT AVG(DISTINCT CAST(b AS DOUBLE)), AVG(DISTINCT CAST(b AS FLOAT)) FROM src WHERE k < 0");
+        "SELECT AVG(DISTINCT CAST(b AS DOUBLE)), AVG(DISTINCT CAST(b AS FLOAT)) FROM src WHERE k <"
+            + " 0");
   }
 
   @ParameterizedTest
@@ -125,7 +126,8 @@ class FlinkDistinctAverageSqlHarnessTest {
       org.junit.jupiter.api.Assertions.assertEquals(result.host().resultTypes(),
           result.nativeRun().resultTypes());
       recovery.verifyRepeatedRecovery();
-      RecoveryExecutionMetrics.assertConsumed(recovery.nativeExecution(), "NativeColumnarGroupAggregate");
+      RecoveryExecutionMetrics.assertConsumed(
+          recovery.nativeExecution(), "NativeColumnarGroupAggregate");
     }
   }
 
@@ -174,11 +176,9 @@ class FlinkDistinctAverageSqlHarnessTest {
   }
 
   @org.junit.jupiter.api.Test
-  void twoPhaseRetractingDistinctKeepsFallback() throws Exception {
-    NativeParity.assertFallbackReasonContains(
-        () -> twoPhaseEnvironment(true),
-        "SELECT k, AVG(DISTINCT b) FROM src GROUP BY k",
-        "retracting merge admits COUNT, AVG, SUM0 and exact integer SUM only");
+  void twoPhaseRetractingDistinctMergesSignedViews() throws Exception {
+    NativeParity.assertChangelogParity(
+        () -> twoPhaseEnvironment(true), "SELECT k, AVG(DISTINCT b) FROM src GROUP BY k");
   }
 
   private static TableEnvironment twoPhaseEnvironment(boolean retract) {
