@@ -290,11 +290,12 @@ still consume and emit Arrow batches, and existing Top-N slot updates remain unc
 
 Admission includes the verified ordinary scalar keys and exact TIMESTAMP/TIMESTAMP_LTZ
 precision, one ascending key, and one ROW_NUMBER over ROWS UNBOUNDED PRECEDING
-through CURRENT ROW, insert-only input and disabled TTL. NULL placement is explicit; ties remain
+through CURRENT ROW. Signed input uses the same buffer; positive idle retention remains gated.
+NULL placement is explicit; ties remain
 stable across physical batches and recovery. Every row remains in state; there is no implicit
 Top-N truncation. Accounted off-heap limits fail normally rather than discarding retained ranks.
-Updating input, TTL, other order specifications and other non-time analytic functions retain
-fallback. Flink 1.18 rejects this query at its released factory boundary; native admission
+Other order specifications and other non-time analytic functions retain fallback. Flink 1.18
+rejects this query at its released factory boundary; native admission
 preserves that failure for all ordinary sort types.
 
 The released heap operator failed an injected restore with a NULL prior accumulator in its
@@ -375,3 +376,14 @@ mutations, and checks complete emitted identities across snapshots. Released raw
 RocksDB recovery, mini-batch and shuffle tests qualify the final implementation. Flink 1.18
 receives an explicit compatibility gate: native substitution must not bypass its non-time
 OVER factory rejection. Performance evidence and remaining gates live on the OVER page.
+
+### Signed ordinary rank state
+
+Retractions remove the first full payload match within the selected sort group, emit DELETE
+at its old rank, then update each survivor's row identity. INSERT/UPDATE_AFTER keep their
+input kind. The existing raw row/sort state carries a floating group's last assigned comparison
+key even after its supplier is deleted, matching Flink's retained sort-key list. No per-row Java state, new C Data protocol, or per-entry JNI call is introduced.
+Released 2.2.1 uses independent state TTLs, unlike the newer sibling checkout's whole-key cleanup
+timer; positive idle retention remains a separate native contract. Arroyo's timestamp-bucket
+window exec remains
+unsuitable for this unbounded non-time input; the retained-buffer choice above still applies.

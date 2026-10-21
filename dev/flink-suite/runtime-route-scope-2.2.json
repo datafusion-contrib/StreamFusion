@@ -781,6 +781,30 @@
       "display_name": "StateBackend=ROCKSDB, UseTimestampLtz = false",
       "count": 1,
       "route": "full_fallback"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+      "display_name": "StateBackend=HEAP, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=1",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+      "display_name": "StateBackend=ROCKSDB, unboundedOverVersion2=2",
+      "count": 1,
+      "route": "native"
     }
   ]
 }

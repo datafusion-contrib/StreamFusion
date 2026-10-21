@@ -12,10 +12,9 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalOverAggregate;
-import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
-import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -63,9 +62,6 @@ final class NonTimeRowNumberMatcher {
         || !group.upperBound.isCurrentRow()) {
       return "non-time ROW_NUMBER: requires ROWS UNBOUNDED PRECEDING through CURRENT ROW";
     }
-    if (!ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) over.getInput())) {
-      return "non-time ROW_NUMBER: updating inputs require a separate retained-row contract";
-    }
     if (ShortcutUtils.unwrapTableConfig(over).getIdleStateRetention().toMillis() > 0) {
       return "non-time ROW_NUMBER: requires disabled idle-state TTL";
     }
@@ -98,6 +94,9 @@ final class NonTimeRowNumberMatcher {
   }
 
   private static boolean supportedOrderType(RelDataType type, boolean allowFloating) {
+    SqlTypeFamily family = type.getSqlTypeName().getFamily();
+    if (family == SqlTypeFamily.INTERVAL_DAY_TIME || family == SqlTypeFamily.INTERVAL_YEAR_MONTH)
+      return true;
     switch (type.getSqlTypeName()) {
       case ARRAY:
         return supportedOrderType(type.getComponentType(), false);
@@ -107,6 +106,8 @@ final class NonTimeRowNumberMatcher {
       case REAL:
       case DOUBLE:
         return allowFloating;
+      case BINARY:
+      case VARBINARY:
       case TINYINT:
       case SMALLINT:
       case INTEGER:

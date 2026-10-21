@@ -107,3 +107,5 @@ org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAg
 org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream	changelog=false	NativeColumnarWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow	changelog=false	!legacy group-window: early/late firing and allowed lateness are not native
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver	changelog=false	NativeOverAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state

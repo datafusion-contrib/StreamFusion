@@ -14,7 +14,7 @@ import tech.streamfusion.compat.FlinkTestSources;
 
 class FlinkNonTimeComplexRankSqlHarnessTest {
   static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> cases() {
-    return java.util.stream.Stream.of("array", "row", "nested_array", "row_array")
+    return java.util.stream.Stream.of("array", "row", "nested_array", "row_array", "fixed_binary")
         .flatMap(
             type ->
                 java.util.stream.Stream.of("FIRST", "LAST")
@@ -73,7 +73,7 @@ class FlinkNonTimeComplexRankSqlHarnessTest {
   }
 
   static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> recoveryCases() {
-    return java.util.stream.Stream.of("array", "row", "nested_array", "row_array")
+    return java.util.stream.Stream.of("array", "row", "nested_array", "row_array", "fixed_binary")
         .flatMap(
             type ->
                 java.util.stream.Stream.of("FIRST", "LAST")
@@ -148,6 +148,17 @@ class FlinkNonTimeComplexRankSqlHarnessTest {
     org.apache.flink.table.types.DataType dataType;
     Object[] payloads;
     switch (type) {
+      case "fixed_binary":
+        info = Types.PRIMITIVE_ARRAY(Types.BYTE);
+        dataType = DataTypes.BINARY(4);
+        payloads =
+            new Object[] {
+              new byte[] {0, 0, 0, 0}, new byte[] {-1, 0, 0, 0}, new byte[] {-128, 0, 0, 0},
+              new byte[] {127, -1, -1, -1}, null, new byte[] {0, 0, 0, 1},
+              new byte[] {-1, 0, 0, 0}, new byte[] {0, 0, 0, 0}
+            };
+        break;
+
       case "array":
         info = Types.OBJECT_ARRAY(Types.LONG);
         dataType = DataTypes.ARRAY(DataTypes.BIGINT());

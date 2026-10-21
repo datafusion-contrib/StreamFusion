@@ -28,11 +28,14 @@ control the input order separately.
 ## Ordinary ROW_NUMBER (Flink 2.2)
 
 An unfiltered `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY v ASC)` also runs over an ordinary
-TINYINT, SMALLINT, INT, BIGINT, FLOAT, DOUBLE, DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP or
-TIMESTAMP_LTZ column. Timestamp ordering retains all declared fractional nanoseconds.
+TINYINT, SMALLINT, INT, BIGINT, FLOAT, DOUBLE, DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP,
+TIMESTAMP_LTZ, BINARY/VARBINARY, or day-time/year-month interval column. Binary order is
+unsigned lexicographic; intervals retain their signed physical integer order. Timestamp ordering
+retains all declared fractional nanoseconds.
 This separate matcher requires one ROW_NUMBER group with ROWS UNBOUNDED
-PRECEDING through CURRENT ROW, insert-only input, supported partition/payload types and disabled
-idle-state TTL. NULLS FIRST/LAST are preserved. Flink 1.18 rejects ordinary non-time ordering;
+PRECEDING through CURRENT ROW and supported partition/payload types. Updating input uses the
+same retained-row path. Positive idle-state TTL remains gated. NULLS FIRST/LAST are preserved.
+Flink 1.18 rejects ordinary non-time ordering;
 its validation is unchanged. Other non-time analytic functions and order specifications retain
 fallback, including MAP/MULTISET. Descending ordinary
 OVER ordering and multiple ORDER BY columns are rejected by released Flink itself,
@@ -85,8 +88,12 @@ not establish a universal speedup or bounded retained state.
 
 Every input row remains in state, including duplicate rows; state grows with the input rather
 than a configured Top-N bound. Watermarks do not retire this rank state. Native memory
-accounting and configured off-heap limits apply. Updating input and positive TTL retain fallback
-until their separate contracts are verified. MAP/MULTISET payloads, including nested descendants,
+accounting and configured off-heap limits apply. A retraction removes the first full-row match
+from its sort group and emits DELETE followed by rank updates for surviving rows. Inserts keep
+the incoming INSERT or UPDATE_AFTER kind. Positive idle retention remains a pending contract: released 2.2.1 expires the retained
+sort-list, row values, IDs and accumulators independently. The sibling source checkout now uses
+a whole-key timer instead; its behavior must not substitute for the released runtime.
+MAP/MULTISET payloads, including nested descendants,
 use the tagged map-list transport also used by Top-N. MAP/MULTISET sort or partition fields
 retain their separate key-contract gates.
 
@@ -1135,3 +1142,51 @@ or year-month interval arguments using the numeric membership carrier), validity
 typed default-or-NULL value before persistence. The original payload columns remain intact.
 Matching physical types retain the existing raw-column path. Checkpoint encoding is unchanged;
 canonical memory/RocksDB transitions and aligned RocksDB recovery preserve these counts.
+
+## Updating ordinary ROW_NUMBER and binary/interval orders
+
+The native unbounded rank path also handles signed input.
+Binary and both interval families reuse Arrow sort/payload encoding, including verified nested
+ARRAY/ROW orders. Scalar floating sort groups retain Flink's non-transitive NaN comparison: a
+group's last assigned comparison key survives deletion of the row that supplied it. That key
+travels in the existing retained sort field; snapshots do not reconstruct it from payload.
+Nested floating sort keys remain a separate pending coverage item.
+
+The operator oracle compares two native restores and all memory/RocksDB transitions
+against uninterrupted released Flink: the released host's known NULL-prior-accumulator restore
+failure is preserved as a host limitation. Tests cover empty/missing deletions, duplicate
+identities, NULL placement and UPDATE_AFTER.
+Flink 1.18 still rejects ordinary non-time OVER at its released factory boundary.
+
+The upstream execution agent now binds the OVER operator itself. Its unchanged
+`OverAggregateITCase#testRowNumberOnOver` contract requires consumed native OVER batches on
+both released lines, with the existing 1.18 changelog-backend fallback. This is a processing-time
+counter control; dedicated ordinary-order SQL fixtures establish the new non-time coverage.
+
+Release+mimalloc complete-job measurements on Flink 2.2.1/JDK 17 use parallelism one, a
+2 GiB heap, NULLs every 31 identities, two warmups and three alternating measured engine
+pairs. Both row/Arrow transposes, production JNI/state, runtime input generation and the
+rowwise blackhole sink remain inside the job timer. These are complete-job diagnostics,
+not the Rust/Arrow small-functionality timer.
+
+| Order / input | Rows / keys | Stock Flink (s) | Native (s) | Previous fallback (s) | Speedup |
+| --- | --- | ---: | ---: | ---: | ---: |
+| VARBINARY / append | 131,072 / 1,024 | 3.382 | 0.837 | 3.572 | 4.04x |
+| Year-month interval / append | 262,144 / 4,096 | 1.364 | 0.359 | 1.345 | 3.80x |
+| Day-time interval / descending arrival | 131,072 / 1,024 | 5.925 | 1.757 | 6.421 | 3.37x |
+| BIGINT / updating | 393,216 / 1,024 | 1.475 | 0.392 | 1.476 | 3.77x |
+| VARBINARY / updating | 196,608 / 1,024 | 1.428 | 0.371 | 1.555 | 3.85x |
+
+All five profiles improve over stock; no measured optimization pass was needed. The
+[raw evidence](../benchmarks/results/updating-ordinary-rank-2026-10-21.json) retains every
+warmup/trial, ranges, actual previous-production controls, source/library hashes, released
+validation results and consumed upstream OVER input. These representative jobs do not
+establish a universal speedup or bounded retained state.
+
+Validation retains 905 passing Rust tests (two ignored), 24 new native Criterion oracle
+fixtures, 148 passing related SQL/operator checks on 2.2 (three host-capability skips), and
+19 passing checks/62 explicit unavailable-host skips on 1.18. Fixed BINARY includes unsigned
+high-byte ordering and NULLs; updating FLOAT/DOUBLE, NaN groups, interval families and
+binary orders include repeated memory/RocksDB recovery. The six unchanged upstream counter
+controls each consumed 15 native OVER input rows. Agent tests, runtime-scope checks and
+strict documentation validation also pass. Positive TTL and nested floating orders remain open.

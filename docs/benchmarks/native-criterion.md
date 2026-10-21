@@ -137,12 +137,13 @@ measures complete two-phase Flink jobs, including both transposes and production
 
 ## Running and comparing
 
-The `non_time_row_number` target includes 120 production-kernel fixtures across
+The `non_time_row_number` target includes 144 production-kernel fixtures across
 16/1,024-row batches, partition domains of one/64 non-NULL values plus a NULL group,
 and ascending/descending arrival, with nullable BIGINT/INT/SMALLINT/TINYINT, DECIMAL,
-DATE, TIME, BOOLEAN, TIMESTAMP(9) and 8/256-byte string order columns. Timestamp values
+DATE, TIME, BOOLEAN, TIMESTAMP(9), 8/256-byte string and 8-byte binary order columns, plus
+the signed INT32/INT64 physical carriers of year-month/day-time intervals. Timestamp values
 span the epoch and retain distinct sub-millisecond values. Allocation and Arrow-buffer reports
-accompany all 88 cases. SQL checks additionally cover TIMESTAMP_LTZ(9), both NULL placements
+accompany all 112 non-floating cases. SQL checks additionally cover TIMESTAMP_LTZ(9), both NULL placements
 and two memory/RocksDB restores. Fixture setup and a separate
 inversion-count cardinality oracle stay
 outside timing. Each measurement creates an empty ranker, processes the batch and materializes

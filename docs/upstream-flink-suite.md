@@ -217,6 +217,8 @@ that any particular query ran natively.
 
 The agent binds each runtime operator to the test invocation in which it opens and counts nonempty
 input rows only after a method that performs native evaluation or aggregation returns successfully.
+Explicit bindings include OVER's Arrow input method. The unchanged processing-time ROW_NUMBER
+fixture requires consumed OVER input on both released lines; Calc alone cannot satisfy it.
 Opening an operator, accepting an empty batch, or buffering input before a native update earns no
 credit. Task retries stay within the invocation; late work from an operator belonging to a finished
 invocation cannot satisfy a later one. Tests within a fork must remain serial. A missing required

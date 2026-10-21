@@ -8,10 +8,26 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkNonTimeRowNumberTypeSqlHarnessTest {
   @ParameterizedTest
-  @ValueSource(strings = {
-    "CAST(-n AS TINYINT)", "CAST(-n AS SMALLINT)", "CAST(-n AS DECIMAL(20,2))",
-    "s", "CAST(s AS CHAR(8))", "day_value", "time_value", "flag", "t", "instant_value"
-  })
+  @ValueSource(
+      strings = {
+        "CAST(-n AS TINYINT)",
+        "CAST(-n AS SMALLINT)",
+        "CAST(-n AS DECIMAL(20,2))",
+        "s",
+        "CAST(s AS CHAR(8))",
+        "day_value",
+        "time_value",
+        "flag",
+        "t",
+        "instant_value",
+        "CASE WHEN n IS NULL THEN CAST(NULL AS VARBINARY) WHEN MOD(n,4)=0 THEN X'FF00' WHEN"
+            + " MOD(n,4)=1 THEN X'80' WHEN MOD(n,4)=2 THEN X'00FF' ELSE X'' END",
+        "CAST(n AS INT) * INTERVAL '1' MONTH",
+        "n * INTERVAL '0.001' SECOND",
+        "ARRAY[CASE WHEN n IS NULL THEN CAST(NULL AS VARBINARY) WHEN MOD(n,2)=0 THEN X'FF' ELSE"
+            + " X'00' END]",
+        "ROW(CAST(n AS INT) * INTERVAL '1' MONTH, n * INTERVAL '0.001' SECOND)"
+      })
   void ascendingScalarOrdersPreserveEveryRankUpdateAndNullPlacement(String order) throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(
         tech.streamfusion.compat.FlinkTestCapabilities.NON_TIME_OVER);
@@ -28,13 +44,22 @@ class FlinkNonTimeRowNumberTypeSqlHarnessTest {
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.CsvSource({
-    "hashmap,STRING", "hashmap,'DECIMAL(20,2)'", "hashmap,DATE",
-    "hashmap,TIME(3)", "hashmap,BOOLEAN",
+    "hashmap,STRING",
+    "hashmap,'DECIMAL(20,2)'",
+    "hashmap,DATE",
+    "hashmap,TIME(3)",
+    "hashmap,BOOLEAN",
+    "hashmap,BINARY",
+    "hashmap,MONTH",
+    "hashmap,MILLIS",
     "tech.streamfusion.state.RocksDBNativeStateBackendFactory,STRING",
     "tech.streamfusion.state.RocksDBNativeStateBackendFactory,'DECIMAL(20,2)'",
     "tech.streamfusion.state.RocksDBNativeStateBackendFactory,DATE",
     "tech.streamfusion.state.RocksDBNativeStateBackendFactory,TIME(3)",
-    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,BOOLEAN"
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,BOOLEAN",
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,BINARY",
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,MONTH",
+    "tech.streamfusion.state.RocksDBNativeStateBackendFactory,MILLIS"
   })
   void repeatedRecoveryPreservesTypedKeysAndStableTies(String backend, String type)
       throws Exception {
@@ -46,6 +71,17 @@ class FlinkNonTimeRowNumberTypeSqlHarnessTest {
         .collect(tech.streamfusion.compat.ListCollectors.toList());
     String order;
     switch (type) {
+      case "BINARY":
+        order =
+            "CASE WHEN v IS NULL THEN CAST(NULL AS VARBINARY) WHEN MOD(v,3)=0 THEN X'FF' WHEN"
+                + " MOD(v,3)=1 THEN X'00' ELSE X'' END";
+        break;
+      case "MONTH":
+        order = "CAST(v AS INT) * INTERVAL '1' MONTH";
+        break;
+      case "MILLIS":
+        order = "v * INTERVAL '0.001' SECOND";
+        break;
       case "DATE": order = "CAST(TO_TIMESTAMP_LTZ(v * 86400000, 3) AS DATE)"; break;
       case "TIME(3)": order = "CAST(TO_TIMESTAMP_LTZ(v, 3) AS TIME(3))"; break;
       case "BOOLEAN": order = "MOD(v, 2) = 0"; break;

@@ -213,7 +213,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
             || firstBound
             || stateTtlMillis > 0)) {
       throw new IllegalArgumentException(
-          "non-time ROW_NUMBER requires unbounded insert-only state without TTL or net diff");
+          "non-time ROW_NUMBER requires unbounded row-identity state without TTL or net diff");
     }
     this.rankEndColumn = rankEndColumn;
     this.firstBound = firstBound;

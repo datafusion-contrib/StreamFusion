@@ -75,3 +75,4 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWit
 # Released legacy fixed windows preserve signed input and extrema.
 org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testWindowAggregateOnRetractStream	*	NativeColumnarWindowAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.GroupWindowITCase#testMinMaxWithTumblingWindow	*	!legacy group-window: early/late firing and allowed lateness are not native
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver	*	NativeOverAggregateOperator

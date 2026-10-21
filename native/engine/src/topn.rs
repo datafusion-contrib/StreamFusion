@@ -984,6 +984,10 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                     batch.column(self.sort_columns[0].index).data_type(),
                 )
             });
+        let changes = self
+            .non_time_row_number
+            .then(|| row_kind_column(batch))
+            .flatten();
         let track = self.memory.tracking();
         let mut delta = 0isize;
         let groups = &mut self.groups;
@@ -1024,6 +1028,56 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
             if ttl.enabled() && !pruned.contains(part) {
                 delta -= prune_expired_topn_rows(buffer, ttl, track);
                 pruned.insert(ByteKey::from(part));
+            }
+            let input_kind = changes.map_or(0, |kinds| kinds.value(row));
+            if matches!(input_kind, 1 | 3) {
+                let range = floating_row_number.as_ref().map_or_else(
+                    || {
+                        let start = buffer.partition_point(|entry| entry.sort.row() < key_row);
+                        let end = buffer.partition_point(|entry| entry.sort.row() <= key_row);
+                        start..end
+                    },
+                    |order| {
+                        let (position, equal_start) = order.position(buffer, key_row);
+                        let start = equal_start.unwrap_or(position);
+                        // Flink probes the first group comparing equal OR greater. A NaN
+                        // group can contain the payload even after its key became greater.
+                        if start < buffer.len() {
+                            start..start + floating_group_size(&buffer[start])
+                        } else {
+                            0..0
+                        }
+                    },
+                );
+                if let Some(pos) = range
+                    .clone()
+                    .find(|index| buffer[*index].payload.row() == payloads.row(row))
+                {
+                    let removed = buffer.remove(pos);
+                    if track {
+                        delta -= topn_entry_bytes(&removed) as isize;
+                    }
+                    if floating_row_number.is_some() && range.len() > 1 {
+                        if pos + 1 == range.end {
+                            // Deleting the latest row does not replace Flink's retained
+                            // comparison key. Keep it on the new last row of the group.
+                            buffer[range.end - 2].sort = removed.sort;
+                        }
+                        buffer[range.start].sort_count = Some(-((range.len() - 1) as i64) - 2);
+                    }
+                    out_rows.push(removed.payload);
+                    out_kinds.push(3);
+                    out_ranks.push((pos + 1) as i64);
+                    for (index, shifted) in buffer.iter().enumerate().skip(pos) {
+                        out_rows.push(shifted.payload.clone());
+                        out_kinds.push(1);
+                        out_ranks.push((index + 2) as i64);
+                        out_rows.push(shifted.payload.clone());
+                        out_kinds.push(2);
+                        out_ranks.push((index + 1) as i64);
+                    }
+                }
+                continue;
             }
             // Insert after any rows that order equal-or-before, preserving arrival order for ties
             // (byte compare of the memcomparable sort key).
@@ -1076,7 +1130,7 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                     // Non-time OVER updates the same row's rank, rather than replacing the
                     // occupant of a Top-N slot. The inserted row precedes shifted-row updates.
                     out_rows.push(buffer[pos].payload.clone());
-                    out_kinds.push(0);
+                    out_kinds.push(input_kind);
                     out_ranks.push((pos + 1) as i64);
                     for (index, shifted) in buffer.iter().enumerate().skip(pos + 1) {
                         out_rows.push(shifted.payload.clone());

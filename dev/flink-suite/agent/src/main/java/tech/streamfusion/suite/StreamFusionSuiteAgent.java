@@ -174,6 +174,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
+                "tech.streamfusion.operator.NativeOverAggregateOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
                 "tech.streamfusion.operator.NativeWindowTableFunctionOperator",
                 "tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator"))

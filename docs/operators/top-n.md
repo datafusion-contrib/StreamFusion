@@ -48,7 +48,7 @@ details. This does not change changelog, TTL or checkpoint encodings.
 Unfiltered scalar ROW_NUMBER on Flink 2.2 uses the same retained-row representation through
 [a separate OVER matcher](over.md#ordinary-row_number-flink-22). It retains every row and
 emits updates by row identity, rather than changing occupants of bounded rank slots. Its narrower
-input/TTL gates do not change the filtered Top-N admission described here.
+order/TTL gates do not change the filtered Top-N admission described here.
 
 Idle-state TTL is native across all three — see [TTL semantics](index.md#idle-state-ttl) and
 [Configuration](../configuration.md) for the flag surface.

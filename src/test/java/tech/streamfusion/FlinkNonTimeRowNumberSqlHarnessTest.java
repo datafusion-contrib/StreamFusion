@@ -123,13 +123,10 @@ class FlinkNonTimeRowNumberSqlHarnessTest {
   }
 
   @Test
-  void updatingSourceKeepsTheReleasedHostOperator() throws Exception {
+  void updatingSourcePreservesEveryRowIdentityAndOriginalInsertKind() throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(
         tech.streamfusion.compat.FlinkTestCapabilities.NON_TIME_OVER);
-    NativeParity.assertFallbackReasonContains(
-        () -> environment(false, true, 1),
-        SQL,
-        "updating inputs require a separate retained-row contract");
+    NativeParity.assertOrderedKindedParity(() -> environment(false, true, 1), SQL);
   }
 
   @Test

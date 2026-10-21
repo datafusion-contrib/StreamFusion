@@ -29,6 +29,7 @@ class NonTimeRowNumberBenchmark {
 
   private static void measure(String shape, String orderType) throws Exception {
     assertTrue(shape.equals("ascending") || shape.equals("descending"));
+    boolean updating = Boolean.getBoolean("rank.updating");
     int rows = Integer.getInteger("rank.rows", 131072);
     int keys = Integer.getInteger("rank.keys", 1024);
     int nullEvery = Integer.getInteger("rank.nullEvery", 31);
@@ -44,6 +45,15 @@ class NonTimeRowNumberBenchmark {
       case "DECIMAL(20,2)":
       case "CHAR(8)":
       case "STRING": order = "CAST(v AS " + orderType + ")"; break;
+      case "BINARY":
+        order = "CAST(CAST(v AS STRING) AS BYTES)";
+        break;
+      case "MONTH":
+        order = "CAST(v AS INT) * INTERVAL '1' MONTH";
+        break;
+      case "MILLIS":
+        order = "v * INTERVAL '0.001' SECOND";
+        break;
       case "BOOLEAN": order = "MOD(v, 2) = 0"; break;
       case "DATE": order = "CAST(TO_TIMESTAMP_LTZ(v * 86400000, 3) AS DATE)"; break;
       case "TIME": order = "CAST(TO_TIMESTAMP_LTZ(v, 3) AS TIME(3))"; break;
@@ -64,6 +74,7 @@ class NonTimeRowNumberBenchmark {
           env.setParallelism(1);
           var table = StreamTableEnvironment.create(env);
           table.getConfig().setLocalTimeZone(java.time.ZoneOffset.UTC);
+          table.getConfig().set("table.exec.state.ttl", System.getProperty("rank.ttl", "0 ms"));
           var type =
               DataTypes.ROW(
                   DataTypes.FIELD("k", DataTypes.BIGINT()),
@@ -72,18 +83,29 @@ class NonTimeRowNumberBenchmark {
           var source =
               env.fromSequence(0, rows - 1)
                   .map(
-                      i ->
-                          Row.of(
-                              i % keys,
-                              nullEvery > 0 && i % nullEvery == 0
-                                  ? null
-                                  : Long.valueOf(
-                                      (shape.equals("descending") ? rows - i : i) / keys),
-                              i))
+                      i -> {
+                        long identity = updating ? i / 3 : i;
+                        long value =
+                            (shape.equals("descending") ? rows - identity : identity) / keys;
+                        if (updating && i % 3 == 2) value++;
+                        return Row.ofKind(
+                            !updating || i % 3 == 0
+                                ? org.apache.flink.types.RowKind.INSERT
+                                : i % 3 == 1
+                                    ? org.apache.flink.types.RowKind.UPDATE_BEFORE
+                                    : org.apache.flink.types.RowKind.UPDATE_AFTER,
+                            identity % keys,
+                            nullEvery > 0 && identity % nullEvery == 0 ? null : Long.valueOf(value),
+                            identity);
+                      })
                   .returns(ExternalTypeInfo.<Row>of(type));
           table.createTemporaryView(
               "src",
-              table.fromDataStream(source, Schema.newBuilder().fromRowDataType(type).build()));
+              updating
+                  ? table.fromChangelogStream(
+                      source, Schema.newBuilder().fromRowDataType(type).build())
+                  : table.fromDataStream(
+                      source, Schema.newBuilder().fromRowDataType(type).build()));
           var scan = engine == 1 ? NativePlanner.install(table) : null;
           var query = table.sqlQuery(sql);
           table.createTemporaryTable(
@@ -108,7 +130,7 @@ class NonTimeRowNumberBenchmark {
           System.out.printf(
               Locale.ROOT,
               "[non-time-rank-trial] case=%s engine=%s trial=%d warmup=%s rows=%d keys=%d"
-                  + " nullEvery=%d type=%s seconds=%.6f%n",
+                  + " nullEvery=%d type=%s updating=%s seconds=%.6f%n",
               shape,
               engine == 0 ? "Flink" : "StreamFusion",
               trial,
@@ -117,6 +139,7 @@ class NonTimeRowNumberBenchmark {
               keys,
               nullEvery,
               orderType,
+              updating,
               seconds);
           if (trial >= warmups) times[engine][trial - warmups] = seconds;
           if (engine == 1 && nativeExpected)

@@ -256,3 +256,129 @@ fn floating_groups_follow_linear_host_comparison_across_restores() {
         }
     }
 }
+
+#[test]
+fn signed_updates_remove_first_full_identity_and_shift_each_survivor() {
+    fn signed(values: Vec<Option<i64>>, kinds: Vec<i8>) -> RecordBatch {
+        RecordBatch::try_from_iter(vec![
+            ("v", Arc::new(Int64Array::from(values)) as ArrayRef),
+            (
+                ROW_KIND_COLUMN,
+                Arc::new(Int8Array::from(kinds)) as ArrayRef,
+            ),
+        ])
+        .unwrap()
+    }
+    let mut original = ranker();
+    original
+        .push(&batch(vec![Some(30), Some(10), Some(10)]), 0)
+        .unwrap();
+    let snapshots: Vec<_> = original.snapshot_partitions(128).into_values().collect();
+    let mut restored = TopNRanker::restore_partitions(
+        vec![],
+        vec![],
+        original.sort_columns.clone(),
+        i64::MAX,
+        true,
+        false,
+        &snapshots,
+        0,
+    );
+    restored.enable_non_time_row_number();
+    let suffix = signed(
+        vec![Some(10), Some(99), Some(30), Some(20), None],
+        vec![3, 3, 1, 2, 0],
+    );
+    let expected = vec![
+        (3, Some(10), 1),
+        (1, Some(10), 2),
+        (2, Some(10), 1),
+        (1, Some(30), 3),
+        (2, Some(30), 2),
+        (3, Some(30), 2),
+        (2, Some(20), 2),
+        (0, None, 1),
+        (1, Some(10), 1),
+        (2, Some(10), 2),
+        (1, Some(20), 2),
+        (2, Some(20), 3),
+    ];
+    assert_eq!(changes(&original.push(&suffix, 0).unwrap()), expected);
+    assert_eq!(changes(&restored.push(&suffix, 0).unwrap()), expected);
+}
+
+#[test]
+fn deleting_the_latest_nan_keeps_the_groups_last_assigned_comparison_key() {
+    let mut ranker = ranker();
+    let input = |values, kinds| {
+        RecordBatch::try_from_iter(vec![
+            ("v", Arc::new(Float64Array::from(values)) as ArrayRef),
+            (
+                ROW_KIND_COLUMN,
+                Arc::new(Int8Array::from(kinds)) as ArrayRef,
+            ),
+        ])
+        .unwrap()
+    };
+    ranker
+        .push(&input(vec![1.0, f64::NAN], vec![0, 0]), 0)
+        .unwrap();
+    let snapshots: Vec<_> = ranker.snapshot_partitions(128).into_values().collect();
+    let mut restored = TopNRanker::restore_partitions(
+        vec![],
+        vec![],
+        ranker.sort_columns.clone(),
+        i64::MAX,
+        true,
+        false,
+        &snapshots,
+        0,
+    );
+    restored.enable_non_time_row_number();
+    for operator in [&mut ranker, &mut restored] {
+        let output = operator
+            .push(&input(vec![f64::NAN, 0.0], vec![3, 0]), 0)
+            .unwrap();
+        assert_eq!(output.num_rows(), 2);
+        assert_eq!(row_kind_column(&output).unwrap().values(), &[3, 0]);
+        assert_eq!(
+            output
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values(),
+            &[2, 2]
+        );
+    }
+}
+
+#[test]
+fn retractions_probe_the_first_greater_nan_group_for_the_full_payload() {
+    let mut operator = ranker();
+    let input = |values, kinds| {
+        RecordBatch::try_from_iter(vec![
+            ("v", Arc::new(Float64Array::from(values)) as ArrayRef),
+            (
+                ROW_KIND_COLUMN,
+                Arc::new(Int8Array::from(kinds)) as ArrayRef,
+            ),
+        ])
+        .unwrap()
+    };
+    operator
+        .push(&input(vec![0.0, f64::NAN, 2.0], vec![0, 0, 0]), 0)
+        .unwrap();
+    let output = operator.push(&input(vec![0.0], vec![3]), 0).unwrap();
+    assert_eq!(output.num_rows(), 5);
+    assert_eq!(row_kind_column(&output).unwrap().values(), &[3, 1, 2, 1, 2]);
+    assert_eq!(
+        output
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .values(),
+        &[1, 2, 1, 3, 2]
+    );
+}

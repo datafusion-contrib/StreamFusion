@@ -1,0 +1,1631 @@
+{
+  "date": "2026-10-21",
+  "feature": "Updating ordinary ROW_NUMBER and binary/interval sort types",
+  "parent_commit": "d63e7e4a269058eee10dae82d27aaacd26938032",
+  "previous_production_commit": "06813ae32034da1895ac942c2f23db5a415ebb67",
+  "configuration": {
+    "flink": "2.2.1",
+    "jdk": "17",
+    "profile": "bench, release+mimalloc",
+    "heap": "2 GiB",
+    "parallelism": 1,
+    "warmups": 2,
+    "measured_pairs": 3,
+    "engine_order": "alternating",
+    "boundary": "Complete table.executeSql(insert).await jobs, including runtime input generation, RowData-to-Arrow, production state/JNI and any planned exchange, Arrow-to-RowData and rowwise blackhole sink.",
+    "is_small_functionality_timer": false
+  },
+  "native_library_sha256": "90f27240463943420235145bbe2ddb3f35cd178421206bef07f0911660e038fa",
+  "previous_library_sha256": "ea40149098e911563efb7c85122070ce815548be90ff0b10f015cf0327e60e2a",
+  "benchmark_source_sha256": "33bee2dab22f67482cbd212e30399bd4cedc5d51740d37d25028785c7b6c73ee",
+  "previous_benchmark_source_sha256": "33bee2dab22f67482cbd212e30399bd4cedc5d51740d37d25028785c7b6c73ee",
+  "profiles": [
+    {
+      "name": "binary",
+      "type": "BINARY",
+      "updating": false,
+      "input_order": "ascending",
+      "rows": 131072,
+      "keys": 1024,
+      "final": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 4.354348
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 1.114177
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 0.951214
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.467569
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.173875
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 0.845282
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 0.817796
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.382752
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.382316
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 0.836811
+          }
+        ],
+        "median_seconds": {
+          "Flink": 3.382316,
+          "StreamFusion": 0.836811
+        },
+        "range_seconds": {
+          "Flink": [
+            3.173875,
+            3.382752
+          ],
+          "StreamFusion": [
+            0.817796,
+            0.845282
+          ]
+        },
+        "log_sha256": "48c77c99602fe96a49224d67727a4d5546d07a9fc20c7034be3611a5ab6aae26"
+      },
+      "prior": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 4.461255
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.661846
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.576036
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.570548
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.662487
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.5993
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.57203
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.516381
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.514072
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "false",
+            "seconds": 3.539874
+          }
+        ],
+        "median_seconds": {
+          "Flink": 3.516381,
+          "StreamFusion": 3.57203
+        },
+        "range_seconds": {
+          "Flink": [
+            3.514072,
+            3.662487
+          ],
+          "StreamFusion": [
+            3.539874,
+            3.5993
+          ]
+        },
+        "log_sha256": "4395c57fffcc6212bc795859cd691ff6b53d084518c9e163449de91c1238777b"
+      },
+      "speedup_over_stock": 4.041911494949278
+    },
+    {
+      "name": "months",
+      "type": "MONTH",
+      "updating": false,
+      "input_order": "ascending",
+      "rows": 262144,
+      "keys": 4096,
+      "final": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 2.165157
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 0.609408
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 0.457359
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.273991
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.363518
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 0.374824
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 0.358843
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.316603
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.442244
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 0.286672
+          }
+        ],
+        "median_seconds": {
+          "Flink": 1.363518,
+          "StreamFusion": 0.358843
+        },
+        "range_seconds": {
+          "Flink": [
+            1.316603,
+            1.442244
+          ],
+          "StreamFusion": [
+            0.286672,
+            0.374824
+          ]
+        },
+        "log_sha256": "2e72de273c6c1a9bc529b4040b5d527af29fa3b0a3c92f0e39a06bdd5f64f436"
+      },
+      "prior": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 2.118265
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.373297
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.222557
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.323211
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.378253
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.371984
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.309547
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.450827
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.270608
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "262144",
+            "keys": "4096",
+            "nullEvery": "31",
+            "type": "MONTH",
+            "updating": "false",
+            "seconds": 1.344645
+          }
+        ],
+        "median_seconds": {
+          "Flink": 1.378253,
+          "StreamFusion": 1.344645
+        },
+        "range_seconds": {
+          "Flink": [
+            1.270608,
+            1.450827
+          ],
+          "StreamFusion": [
+            1.309547,
+            1.371984
+          ]
+        },
+        "log_sha256": "4df5dd1e534bd4c9bdafbdeae5ac514714f749f5985b993e062eb99bc4d680e2"
+      },
+      "speedup_over_stock": 3.799762012913725
+    },
+    {
+      "name": "millis",
+      "type": "MILLIS",
+      "updating": false,
+      "input_order": "descending",
+      "rows": 131072,
+      "keys": 1024,
+      "final": {
+        "trials": [
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 7.102884
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 2.019273
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 1.820926
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.065359
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 5.925254
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 1.779269
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 1.757364
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 5.939038
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 5.901439
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 1.715734
+          }
+        ],
+        "median_seconds": {
+          "Flink": 5.925254,
+          "StreamFusion": 1.757364
+        },
+        "range_seconds": {
+          "Flink": [
+            5.901439,
+            5.939038
+          ],
+          "StreamFusion": [
+            1.715734,
+            1.779269
+          ]
+        },
+        "log_sha256": "aa6ff396191456717137c0e7be769931e5c5528f9e63f2d787f4c0a634f99ee3"
+      },
+      "prior": {
+        "trials": [
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 7.627381
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.494779
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.382422
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.30889
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.375206
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.352343
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.421172
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.588389
+          },
+          {
+            "case": "descending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.606691
+          },
+          {
+            "case": "descending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "131072",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "MILLIS",
+            "updating": "false",
+            "seconds": 6.635881
+          }
+        ],
+        "median_seconds": {
+          "Flink": 6.588389,
+          "StreamFusion": 6.421172
+        },
+        "range_seconds": {
+          "Flink": [
+            6.375206,
+            6.606691
+          ],
+          "StreamFusion": [
+            6.352343,
+            6.635881
+          ]
+        },
+        "log_sha256": "6a479386ff102c270bde7aed495eff4678b34675e70434c831850e1f5439ee9d"
+      },
+      "speedup_over_stock": 3.3716714351722237
+    },
+    {
+      "name": "signed-bigint",
+      "type": "BIGINT",
+      "updating": true,
+      "input_order": "ascending",
+      "rows": 393216,
+      "keys": 1024,
+      "final": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 2.222786
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 0.771917
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 0.51021
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.683999
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.475159
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 0.404076
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 0.384867
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.467665
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.602778
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 0.391777
+          }
+        ],
+        "median_seconds": {
+          "Flink": 1.475159,
+          "StreamFusion": 0.391777
+        },
+        "range_seconds": {
+          "Flink": [
+            1.467665,
+            1.602778
+          ],
+          "StreamFusion": [
+            0.384867,
+            0.404076
+          ]
+        },
+        "log_sha256": "0685fae101e42cb60ac8d0fe8e49f68490bd2020d836718a79a75e3aceb5cd3f"
+      },
+      "prior": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 2.250435
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.575904
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.501922
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.627427
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.443948
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.488821
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.47572
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.469837
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.37889
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "393216",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BIGINT",
+            "updating": "true",
+            "seconds": 1.427465
+          }
+        ],
+        "median_seconds": {
+          "Flink": 1.443948,
+          "StreamFusion": 1.47572
+        },
+        "range_seconds": {
+          "Flink": [
+            1.37889,
+            1.469837
+          ],
+          "StreamFusion": [
+            1.427465,
+            1.488821
+          ]
+        },
+        "log_sha256": "7c006bea7bebf346e71aec9b5e67dc1bde5beebbcef4aceb783391508181c3be"
+      },
+      "speedup_over_stock": 3.7653027104704977
+    },
+    {
+      "name": "signed-binary",
+      "type": "BINARY",
+      "updating": true,
+      "input_order": "ascending",
+      "rows": 196608,
+      "keys": 1024,
+      "final": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 2.389746
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 0.639444
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 0.520199
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.658543
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.410288
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 0.380902
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 0.363099
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.432831
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.428162
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 0.370723
+          }
+        ],
+        "median_seconds": {
+          "Flink": 1.428162,
+          "StreamFusion": 0.370723
+        },
+        "range_seconds": {
+          "Flink": [
+            1.410288,
+            1.432831
+          ],
+          "StreamFusion": [
+            0.363099,
+            0.380902
+          ]
+        },
+        "log_sha256": "a876b2a242eaea742d5c5926996906d9f2b09e92dd11579027b88a6850be6dfa"
+      },
+      "prior": {
+        "trials": [
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 0,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 2.371687
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 0,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.781571
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 1,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.616375
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 1,
+            "warmup": true,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.576914
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 2,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.550909
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 2,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.555303
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 3,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.617421
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 3,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.562832
+          },
+          {
+            "case": "ascending",
+            "engine": "Flink",
+            "trial": 4,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.482045
+          },
+          {
+            "case": "ascending",
+            "engine": "StreamFusion",
+            "trial": 4,
+            "warmup": false,
+            "rows": "196608",
+            "keys": "1024",
+            "nullEvery": "31",
+            "type": "BINARY",
+            "updating": "true",
+            "seconds": 1.477827
+          }
+        ],
+        "median_seconds": {
+          "Flink": 1.550909,
+          "StreamFusion": 1.555303
+        },
+        "range_seconds": {
+          "Flink": [
+            1.482045,
+            1.562832
+          ],
+          "StreamFusion": [
+            1.477827,
+            1.617421
+          ]
+        },
+        "log_sha256": "dc6bfbce610c52310c03dcc88276f4a6f04863538057c4a948af7072ee7c6a92"
+      },
+      "speedup_over_stock": 3.85236955894293
+    }
+  ],
+  "validation": {
+    "2.2": [
+      {
+        "name": "FlinkNonTimeRowNumberSqlHarnessTest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1,
+        "library_build": "streamfusion-rank-updating-native-v4",
+        "report_sha256": "448f273d7a63bd74bc4cacdeddd2bba910c150a4f68c4fd0e75a7623df88432d"
+      },
+      {
+        "name": "FlinkNonTimeOrderHostLimitSqlHarnessTest",
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "library_build": "streamfusion-rank-updating-native-v4",
+        "report_sha256": "af78888b72a26b106cf1f959f60b67251a8c4134dba7c6026e7615661c35fa05"
+      },
+      {
+        "name": "FlinkNonTimeRowNumberTypeSqlHarnessTest",
+        "tests": 31,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "1c495609df11fc3cb6e60a6baa3a10fe479613a363021cf9ec72c14ad471331f"
+      },
+      {
+        "name": "FlinkNonTimeComplexRankSqlHarnessTest",
+        "tests": 40,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "dee35ebd7c6157505953bbcc3630f78a0cb9b19ac8cbcf4443d095477b61ee09"
+      },
+      {
+        "name": "FlinkFloatingNonTimeRankSqlHarnessTest",
+        "tests": 30,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "library_build": "streamfusion-rank-updating-native-v4",
+        "report_sha256": "ef5569fa5a4f6d43d137b88a8e6e8dfaba0bdf7e5d075e68a0f63b47b3c28856"
+      },
+      {
+        "name": "FlinkUpdatingNonTimeRowNumberSqlHarnessTest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "fb236a38c52f322d643b062755f4b0fdb45076f6c85d420acdd44cc8ddfbbd22"
+      },
+      {
+        "name": "FlinkNativeNonTimeRowNumberTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "d84e2516acbb1087d70541577245bfd9ccca79bf7070135b47a574a32e943f82"
+      }
+    ],
+    "1.18": [
+      {
+        "name": "FlinkNonTimeRowNumberSqlHarnessTest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 12,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "ad77565c055813e0d66be1a50e9a23878567824fdcecd5ec41c91c8734b2724f"
+      },
+      {
+        "name": "FlinkNonTimeOrderHostLimitSqlHarnessTest",
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "bd7fb860ba2912918a8305868c485fed4e8d696866ddd6e2531d6187f5a256b5"
+      },
+      {
+        "name": "FlinkNonTimeRowNumberTypeSqlHarnessTest",
+        "tests": 31,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 31,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "3c0de3138a3ad65af6241ca8ff53db8e8b2733aef43714acf5cd99cd8c361825"
+      },
+      {
+        "name": "FlinkUpdatingNonTimeRowNumberSqlHarnessTest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 15,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "f4d1814cfe0e58730deccc1421ee3a821d084213c7125e30812c5dcc03728682"
+      },
+      {
+        "name": "FlinkNativeNonTimeRowNumberTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 4,
+        "library_build": "streamfusion-rank-updating-native-v5",
+        "report_sha256": "76e3979359f7a70aae89bffa7cb36ce42d447d98fe8f5b4706c9f3d503ed4a56"
+      }
+    ]
+  },
+  "native_tests": {
+    "passed": 905,
+    "ignored": 2,
+    "log_sha256": "b1fbe73c00dfd9e1e02e9d18663f0f41468eb596a3f3f75f1a6c384b8f6b59f7"
+  },
+  "upstream": {
+    "2.2": {
+      "selector": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+      "records": [
+        [
+          "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+          "*",
+          "NativeCalcOperator=30,NativeOverAggregateOperator=15"
+        ],
+        [
+          "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+          "*",
+          "NativeCalcOperator=30,NativeOverAggregateOperator=15"
+        ],
+        [
+          "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+          "*",
+          "NativeCalcOperator=30,NativeOverAggregateOperator=15"
+        ],
+        [
+          "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+          "*",
+          "NativeCalcOperator=30,NativeOverAggregateOperator=15"
+        ]
+      ],
+      "scope": "Unchanged processing-time ROW_NUMBER regression control; ordinary-order coverage uses dedicated released SQL fixtures."
+    },
+    "1.18": {
+      "selector": "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+      "records": [
+        [
+          "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+          "changelog=false",
+          "NativeCalcOperator=30,NativeOverAggregateOperator=15"
+        ],
+        [
+          "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowNumberOnOver",
+          "changelog=false",
+          "NativeCalcOperator=30,NativeOverAggregateOperator=15"
+        ]
+      ],
+      "scope": "Unchanged processing-time ROW_NUMBER regression control; ordinary-order coverage uses dedicated released SQL fixtures."
+    }
+  },
+  "remaining_I_gaps": [
+    "Independent TTL views in released 2.2.1; sibling checkout uses a different whole-key timer.",
+    "Nested floating sort-group comparison."
+  ],
+  "optimization_passes": 0,
+  "criterion_smoke": {
+    "new_fixtures": 24,
+    "log_sha256": "9e4fd46c03aa1105280ede6a0a498dfd91c6fa5c2fbcfcac15cea442689dfd93"
+  }
+}

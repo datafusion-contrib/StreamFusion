@@ -1,6 +1,6 @@
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Date32Array, Decimal128Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, RecordBatch, StringArray, Time32MillisecondArray,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, Int16Array,
+    Int32Array, Int64Array, Int8Array, RecordBatch, StringArray, Time32MillisecondArray,
 };
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use std::sync::Arc;
@@ -21,8 +21,8 @@ fn sort_value(ty: &str, value: i64) -> SortValue {
         "tinyint" => SortValue::Number(value as i8 as i128),
         "smallint" => SortValue::Number(value as i16 as i128),
         "boolean" => SortValue::Number(i128::from(value % 2 == 0)),
-        "string8" | "string256" => {
-            let width = if ty == "string8" { 8 } else { 256 };
+        "binary8" | "string8" | "string256" => {
+            let width = if ty == "string256" { 256 } else { 8 };
             SortValue::Text(format!("{value:0width$}"))
         }
         "timestamp9" => SortValue::Number(i128::from(value) * 1001 - 999999),
@@ -41,7 +41,7 @@ fn column(ty: &str, values: &[Option<i64>]) -> ArrayRef {
         "smallint" => Arc::new(Int16Array::from_iter(
             values.iter().map(|v| v.map(|v| v as i16)),
         )),
-        "int" => Arc::new(Int32Array::from_iter(
+        "int" | "months" => Arc::new(Int32Array::from_iter(
             values.iter().map(|v| v.map(|v| v as i32)),
         )),
         "date" => Arc::new(Date32Array::from_iter(
@@ -62,6 +62,11 @@ fn column(ty: &str, values: &[Option<i64>]) -> ArrayRef {
             .with_precision_and_scale(20, 2)
             .unwrap(),
         ),
+        "binary8" => Arc::new(BinaryArray::from_iter(
+            values
+                .iter()
+                .map(|v| v.map(|v| format!("{v:08}").into_bytes())),
+        )),
         "string8" | "string256" => Arc::new(StringArray::from_iter(values.iter().map(|v| {
             v.map(|v| {
                 let SortValue::Text(text) = sort_value(ty, v) else {
@@ -90,6 +95,9 @@ fn bench_non_time_row_number(c: &mut Criterion) {
                     "date",
                     "time",
                     "boolean",
+                    "binary8",
+                    "months",
+                    "millis",
                     "string8",
                     "string256",
                 ] {
