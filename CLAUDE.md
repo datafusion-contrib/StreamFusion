@@ -164,6 +164,16 @@ optimization, obtain explicit maintainer agreement on the tradeoff, document its
 issue, and keep stock Flink as the default for the affected cases until the tradeoff is accepted or performance
 is demonstrated.
 
+**Aggregate/window coverage completion is time-boxed.** For the maintainer's original eleven
+aggregate/window context items, profile a slow case and allow at most two measured optimization
+passes. The maintainer has accepted shipping correctness-verified groundwork after those passes,
+including slower cases, without another permission request or a performance-only opt-in. Record
+the stock/previous/native measurements, remaining bottleneck and follow-up work; do not describe
+a slower path as accelerated. Keep correctness, native-execution, recovery and required CI checks.
+Close each bounded implementation item, consolidate broad validation, and deliver the eleven-item
+scope in one PR merged into canonical main. This agreement does not expand the scope into user
+functions or unrelated catalog features.
+
 The `readme.md` is a **lean landing page**, not the full spec. Keep it to: what we accelerate (a short prose
 overview, not a per-operator chart), where we take inspiration from, the headline Nexmark benchmark table, how to
 run and configure, related work, and the license. It must NOT enumerate every accelerated operator with its terms,

@@ -16,6 +16,8 @@ pub(super) enum DistinctColumn<'a> {
     I32(&'a Int32Array),
     I16(&'a arrow::array::Int16Array),
     I8(&'a Int8Array),
+    F32(&'a arrow::array::Float32Array),
+    F64(&'a arrow::array::Float64Array),
     Date(&'a arrow::array::Date32Array),
     Time(&'a arrow::array::Time32MillisecondArray),
     Decimal(&'a Decimal128Array),
@@ -32,6 +34,8 @@ impl<'a> DistinctColumn<'a> {
             DataType::Int32 => Self::I32(array.as_any().downcast_ref().unwrap()),
             DataType::Int16 => Self::I16(array.as_any().downcast_ref().unwrap()),
             DataType::Int8 => Self::I8(array.as_any().downcast_ref().unwrap()),
+            DataType::Float32 => Self::F32(array.as_any().downcast_ref().unwrap()),
+            DataType::Float64 => Self::F64(array.as_any().downcast_ref().unwrap()),
             DataType::Date32 => Self::Date(array.as_any().downcast_ref().unwrap()),
             DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => {
                 Self::Time(array.as_any().downcast_ref().unwrap())
@@ -70,6 +74,30 @@ impl<'a> DistinctColumn<'a> {
             Self::I32(a) => primitive!(a, I32, Int32),
             Self::I16(a) => primitive!(a, I16, Int16),
             Self::I8(a) => primitive!(a, I8, Int8),
+            Self::F32(a) => {
+                if a.is_null(row) {
+                    return false;
+                }
+                let value = a.value(row);
+                match set {
+                    DistinctSet::F32(map) => {
+                        map.change_owned(crate::flink_float::canonical_f32(value).to_bits(), change)
+                    }
+                    _ => set.change_scalar(&ScalarValue::Float32(Some(value)), change),
+                }
+            }
+            Self::F64(a) => {
+                if a.is_null(row) {
+                    return false;
+                }
+                let value = a.value(row);
+                match set {
+                    DistinctSet::F64(map) => {
+                        map.change_owned(crate::flink_float::canonical_f64(value).to_bits(), change)
+                    }
+                    _ => set.change_scalar(&ScalarValue::Float64(Some(value)), change),
+                }
+            }
             Self::Date(a) => primitive!(a, Date, Date32),
             Self::Time(a) => primitive!(a, Time, Time32Millisecond),
             Self::Boolean(a) => primitive!(a, Boolean, Boolean),
@@ -117,6 +145,8 @@ impl<'a> DistinctColumn<'a> {
             Self::I32(a) => Num::I32(a.value(row)),
             Self::I16(a) => Num::I16(a.value(row)),
             Self::I8(a) => Num::I8(a.value(row)),
+            Self::F32(a) => Num::F32(a.value(row)),
+            Self::F64(a) => Num::F64(a.value(row)),
             Self::Decimal(a) => Num::I128(a.value(row)),
             Self::Scalar(a) => {
                 distinct_num(&ScalarValue::try_from_array(a, row).expect("distinct numeric value"))
@@ -132,6 +162,26 @@ impl<'a> DistinctColumn<'a> {
         retract: bool,
         count: i64,
     ) -> bool {
+        let changed = self.update_membership(state, row, retract, count);
+        if changed {
+            if let GroupAggState::DistinctRunning { agg, .. } = state {
+                if retract {
+                    agg.retract(self.num(row));
+                } else {
+                    agg.fold(self.num(row));
+                }
+            }
+        }
+        changed
+    }
+
+    pub(super) fn update_membership(
+        &self,
+        state: &mut GroupAggState,
+        row: usize,
+        retract: bool,
+        count: i64,
+    ) -> bool {
         let (set, live) = match state {
             GroupAggState::Distinct { set, live } => (set, live),
             GroupAggState::DistinctRunning { counts, live, .. } => (counts, live),
@@ -140,13 +190,6 @@ impl<'a> DistinctColumn<'a> {
         let changed = self.change(set, row, retract, count);
         if changed {
             *live += if retract { -1 } else { 1 };
-            if let GroupAggState::DistinctRunning { agg, .. } = state {
-                if retract {
-                    agg.retract(self.num(row));
-                } else {
-                    agg.fold(self.num(row));
-                }
-            }
         }
         changed
     }
@@ -167,6 +210,18 @@ impl ScalarValues {
             (Self::I32(b), DistinctSet::I32(m)) => append!(b, m),
             (Self::I16(b), DistinctSet::I16(m)) => append!(b, m),
             (Self::I8(b), DistinctSet::I8(m)) => append!(b, m),
+            (Self::F32(builder), DistinctSet::F32(map)) => {
+                for (bits, count) in &map.counts {
+                    builder.append_value(f32::from_bits(*bits));
+                    counts.push(*count);
+                }
+            }
+            (Self::F64(builder), DistinctSet::F64(map)) => {
+                for (bits, count) in &map.counts {
+                    builder.append_value(f64::from_bits(*bits));
+                    counts.push(*count);
+                }
+            }
             (Self::Date(b), DistinctSet::Date(m)) => append!(b, m),
             (Self::Time(b), DistinctSet::Time(m)) => append!(b, m),
             (Self::Decimal(b), DistinctSet::Decimal(m, _, _)) => append!(b, m),
@@ -297,6 +352,8 @@ pub(crate) enum DistinctSet {
     I32(Multiplicities<i32>),
     I16(Multiplicities<i16>),
     I8(Multiplicities<i8>),
+    F32(Multiplicities<u32>),
+    F64(Multiplicities<u64>),
     Date(Multiplicities<i32>),
     Time(Multiplicities<i32>),
     Decimal(Multiplicities<i128>, u8, i8),
@@ -313,6 +370,8 @@ macro_rules! each_map {
             DistinctSet::I32($map) => $body,
             DistinctSet::I16($map) => $body,
             DistinctSet::I8($map) => $body,
+            DistinctSet::F32($map) => $body,
+            DistinctSet::F64($map) => $body,
             DistinctSet::Date($map) => $body,
             DistinctSet::Time($map) => $body,
             DistinctSet::Decimal($map, _, _) => $body,
@@ -331,6 +390,8 @@ impl DistinctSet {
             DataType::Int32 => Self::I32(Multiplicities::new()),
             DataType::Int16 => Self::I16(Multiplicities::new()),
             DataType::Int8 => Self::I8(Multiplicities::new()),
+            DataType::Float32 => Self::F32(Multiplicities::new()),
+            DataType::Float64 => Self::F64(Multiplicities::new()),
             DataType::Date32 => Self::Date(Multiplicities::new()),
             DataType::Time32(arrow::datatypes::TimeUnit::Millisecond) => {
                 Self::Time(Multiplicities::new())
@@ -375,6 +436,8 @@ impl DistinctSet {
             Self::I32(m) => m.entries(|v| ScalarValue::Int32(Some(*v))),
             Self::I16(m) => m.entries(|v| ScalarValue::Int16(Some(*v))),
             Self::I8(m) => m.entries(|v| ScalarValue::Int8(Some(*v))),
+            Self::F32(m) => m.entries(|bits| ScalarValue::Float32(Some(f32::from_bits(*bits)))),
+            Self::F64(m) => m.entries(|bits| ScalarValue::Float64(Some(f64::from_bits(*bits)))),
             Self::Date(m) => m.entries(|v| ScalarValue::Date32(Some(*v))),
             Self::Time(m) => m.entries(|v| ScalarValue::Time32Millisecond(Some(*v))),
             Self::Decimal(m, p, s) => m.entries(|v| ScalarValue::Decimal128(Some(*v), *p, *s)),
@@ -391,6 +454,8 @@ impl DistinctSet {
             Self::I32(m) => m.drain(|v| ScalarValue::Int32(Some(*v))),
             Self::I16(m) => m.drain(|v| ScalarValue::Int16(Some(*v))),
             Self::I8(m) => m.drain(|v| ScalarValue::Int8(Some(*v))),
+            Self::F32(m) => m.drain(|bits| ScalarValue::Float32(Some(f32::from_bits(*bits)))),
+            Self::F64(m) => m.drain(|bits| ScalarValue::Float64(Some(f64::from_bits(*bits)))),
             Self::Date(m) => m.drain(|v| ScalarValue::Date32(Some(*v))),
             Self::Time(m) => m.drain(|v| ScalarValue::Time32Millisecond(Some(*v))),
             Self::Decimal(m, p, s) => m.drain(|v| ScalarValue::Decimal128(Some(*v), *p, *s)),
@@ -426,16 +491,22 @@ impl DistinctSet {
         }
     }
 
-    pub(super) fn decimal_count(&self, value: &ScalarValue) -> i64 {
-        self.scalar_count(value)
-    }
-
     pub(super) fn scalar_count(&self, value: &ScalarValue) -> i64 {
         match (self, value) {
             (Self::I64(m), ScalarValue::Int64(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
             (Self::I32(m), ScalarValue::Int32(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
             (Self::I16(m), ScalarValue::Int16(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
             (Self::I8(m), ScalarValue::Int8(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
+            (Self::F32(m), ScalarValue::Float32(Some(v))) => m
+                .counts
+                .get(&crate::flink_float::canonical_f32(*v).to_bits())
+                .copied()
+                .unwrap_or(0),
+            (Self::F64(m), ScalarValue::Float64(Some(v))) => m
+                .counts
+                .get(&crate::flink_float::canonical_f64(*v).to_bits())
+                .copied()
+                .unwrap_or(0),
             (Self::Date(m), ScalarValue::Date32(Some(v))) => m.counts.get(v).copied().unwrap_or(0),
             (Self::Time(m), ScalarValue::Time32Millisecond(Some(v))) => {
                 m.counts.get(v).copied().unwrap_or(0)
@@ -496,6 +567,12 @@ impl DistinctSet {
             (Self::I32(m), ScalarValue::Int32(Some(v))) => m.change_owned(*v, change),
             (Self::I16(m), ScalarValue::Int16(Some(v))) => m.change_owned(*v, change),
             (Self::I8(m), ScalarValue::Int8(Some(v))) => m.change_owned(*v, change),
+            (Self::F32(m), ScalarValue::Float32(Some(v))) => {
+                m.change_owned(crate::flink_float::canonical_f32(*v).to_bits(), change)
+            }
+            (Self::F64(m), ScalarValue::Float64(Some(v))) => {
+                m.change_owned(crate::flink_float::canonical_f64(*v).to_bits(), change)
+            }
             (Self::Date(m), ScalarValue::Date32(Some(v))) => m.change_owned(*v, change),
             (Self::Time(m), ScalarValue::Time32Millisecond(Some(v))) => m.change_owned(*v, change),
             (Self::Decimal(m, p, s), ScalarValue::Decimal128(Some(v), vp, vs))

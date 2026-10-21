@@ -1025,6 +1025,30 @@ pub fn split_by_key(
 pub struct GroupBy(GroupAggregator);
 
 impl GroupBy {
+    pub fn with_budget(self, bytes: i64) -> Self {
+        Self(
+            self.0
+                .with_memory_budget(bytes)
+                .expect("group aggregate budget"),
+        )
+    }
+
+    pub fn distinct_partial_merge(
+        kinds: Vec<i64>,
+        value_types: Vec<i64>,
+        value_columns: Vec<i64>,
+        key_columns: Vec<usize>,
+        count_columns: Vec<i64>,
+        distinct_view_columns: Vec<i64>,
+    ) -> Self {
+        Self(
+            GroupAggregator::new(kinds, value_types, value_columns, key_columns, true)
+                .with_count_columns(count_columns)
+                .with_distinct_view_columns(distinct_view_columns)
+                .with_mini_batch(),
+        )
+    }
+
     pub fn single_value_partials(value_type: i64) -> Self {
         Self(
             GroupAggregator::new(vec![14], vec![value_type], vec![1], vec![0], true)
@@ -1358,6 +1382,14 @@ impl Normalize {
 pub struct LocalGroupBy(LocalGroupAggregator);
 
 impl LocalGroupBy {
+    pub fn with_budget(self, bytes: i64) -> Self {
+        Self(
+            self.0
+                .with_memory_budget(bytes)
+                .expect("local aggregate budget"),
+        )
+    }
+
     pub fn listagg(separator_column: i64) -> Self {
         let mut local = LocalGroupAggregator::new(
             vec![24, 3],

@@ -343,7 +343,11 @@ per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
 
 The matcher declines:
 
-- Direct `AVG` outside DECIMAL. Flink can lower some other AVG forms to SUM/COUNT aggregates.
+- A physical `AVG` call outside DECIMAL. This defensive matcher restriction does not exclude
+  SQL primitive averages on the supported releases: Flink lowers TINYINT, SMALLINT, INT,
+  BIGINT, FLOAT and DOUBLE `AVG` and `AVG(DISTINCT)` into admitted reductions. SQL execution
+  contracts cover all six types together across all seven supported rowtime/proctime frames,
+  require positive native OVER input, and compare resolved result widths and NULL results.
 - A non-numeric value column outside DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP
   and TIMESTAMP_LTZ, except ordinary COUNT also admits VARBINARY, day-time/year-month intervals
   and ARRAY/ROW/MAP/MULTISET. Processing-time COUNT also admits MAP/MULTISET descendants

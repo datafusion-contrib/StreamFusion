@@ -15,6 +15,14 @@ native work and unexpected fallback fails. The exhaustive native Criterion smoke
 not a CI gate; see the [CI policy](ci.md#native-execution-checks-instead-of-exhaustive-benchmark-smoke).
 Native execution evidence does not measure throughput.
 
+The unchanged `AggregateITCase.testDistinctGroupBy` and `testDistinctWithMultiFilter`
+fixtures require consumed native group-aggregate work, including both local and global
+stages when their released fixture enables splitting. Runtime-route scopes retain every
+backend/phase invocation and Flink 1.18's explicit changelog-backend fallback. These upstream
+fixtures exercise shared DISTINCT infrastructure with integer/string inputs. Floating
+SUM/AVG DISTINCT additionally uses focused SQL, map-order and repeated-recovery contracts
+against each released Flink line; the upstream fixtures alone do not establish floating parity.
+
 ## Runner and suite selection
 
 StreamFusion can run Flink's own table planner runtime integration tests with native acceleration

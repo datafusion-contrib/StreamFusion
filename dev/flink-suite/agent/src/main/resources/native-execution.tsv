@@ -10,6 +10,10 @@ org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testSearch	*	Native
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLikeWithConditionContainsDoubleQuotationMark	*	NativeFilterOperator|NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testNonMergeableRandCall	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg	*	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctGroupBy	aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctGroupBy	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter	aggMode=OFF	NativeColumnarGroupAggregateOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testDistinctWithMultiFilter	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithGroupByAndRetract	*	NativeColumnarGroupAggregateOperator+NativeColumnarTopNOperator
 org.apache.flink.table.planner.runtime.stream.sql.RankITCase#testTopNWithVariableTopSize	*	!Top-N: nullable variable rank bounds require Flink's row-access semantics
 org.apache.flink.table.planner.runtime.stream.sql.WindowAggregateITCase#testRetractPreviousSlicingStateWithSlicingWindow	*	!window aggregate: retracting input supports only aligned event-time TUMBLE/HOP/CUMULATE with grouping-only, numeric SUM/AVG, supported scalar COUNT(value), or COUNT(*) (optional FILTER)

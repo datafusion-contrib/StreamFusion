@@ -20,6 +20,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 final class GroupAggregateMatcher {
   static final int KIND_SUM_ZERO = 22;
   static final int KIND_SUM_ZERO_MERGE = 23;
+  static final int KIND_SUM_ZERO_DISTINCT = 34;
   static final int KIND_LISTAGG_APPEND = 24;
   static final int KIND_LISTAGG_RETRACT = 25;
 
@@ -62,7 +63,7 @@ final class GroupAggregateMatcher {
       }
       int kind = aggregateKind(agg, call);
       if (kind < 0 && call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.SUM0) {
-        return "GROUP BY: SUM0 requires a non-DISTINCT numeric value";
+        return "GROUP BY: SUM0 requires one supported numeric value";
       }
       if (kind < 0) {
         return "GROUP BY: only SUM/MIN/MAX/COUNT/AVG/FIRST_VALUE/LAST_VALUE/SINGLE_VALUE"
@@ -297,6 +298,8 @@ final class GroupAggregateMatcher {
         kind = KIND_SUM_DISTINCT;
       } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_AVG) {
         kind = KIND_AVG_DISTINCT;
+      } else if (call.isDistinct() && kind == KIND_SUM_ZERO) {
+        kind = KIND_SUM_ZERO_DISTINCT;
       }
       if (call.isDistinct() && kind == KIND_LISTAGG_APPEND) kind = KIND_LISTAGG_DISTINCT_APPEND;
       if (call.isDistinct() && kind == KIND_LISTAGG_RETRACT) kind = KIND_LISTAGG_DISTINCT_RETRACT;
@@ -365,7 +368,7 @@ final class GroupAggregateMatcher {
     if (call.getAggregation().getKind() != org.apache.calcite.sql.SqlKind.SUM0) {
       return WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
     }
-    if (call.getArgList().size() != 1 || call.isDistinct()) return -1;
+    if (call.getArgList().size() != 1) return -1;
     var value = agg.getInput().getRowType().getFieldList().get(call.getArgList().get(0)).getType();
     switch (value.getSqlTypeName()) {
       case FLOAT:

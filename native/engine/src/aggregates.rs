@@ -1273,7 +1273,7 @@ impl RunningAgg {
 
     pub(crate) fn new(kind: i64, value_type: &DataType) -> Self {
         use RunningAgg::*;
-        if matches!(kind, 22 | 23) {
+        if matches!(kind, 22 | 23 | 34) {
             return match value_type {
                 DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
                     ZeroSumInt {
@@ -1297,30 +1297,7 @@ impl RunningAgg {
                     DataType::Int64
                 }
                 DataType::Decimal128(_, scale) => DataType::Decimal128(38, *scale),
-                other => panic!("unsupported distinct average partial type: {other:?}"),
-            };
-            return Self::new(8, &sum_type);
-        }
-        if matches!(kind, 10 | 11)
-            && matches!(
-                value_type,
-                DataType::Date32
-                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
-                    | DataType::Boolean
-            )
-        {
-            return TypedExtreme {
-                value: None,
-                is_min: kind == 10,
-                data_type: value_type.clone(),
-            };
-        }
-        if kind == 18 {
-            let sum_type = match value_type {
-                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                    DataType::Int64
-                }
-                DataType::Decimal128(_, scale) => DataType::Decimal128(38, *scale),
+                DataType::Float32 | DataType::Float64 => DataType::Float64,
                 other => panic!("unsupported distinct average partial type: {other:?}"),
             };
             return Self::new(8, &sum_type);

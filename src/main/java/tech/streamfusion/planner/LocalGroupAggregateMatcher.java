@@ -159,16 +159,14 @@ final class LocalGroupAggregateMatcher {
         if (value.getSqlTypeName() == SqlTypeName.DECIMAL && value.getScale() == 38) return false;
       }
       if (kind == GroupAggregateMatcher.KIND_SUM_ZERO
-          && (call.isDistinct()
-              || call.getArgList().size() != 1
+          && (call.getArgList().size() != 1
               || !WindowAggregateMatcher.supportedZeroSumValue(
                   inputType.getFieldList().get(call.getArgList().get(0)).getType()))) return false;
       // COUNT/SUM/AVG(DISTINCT x): the partial is the bundle's distinct count / distinct sum, and
       // the
       // bundle's (value, count) set rides a trailing view column (Flink's MapView partial) that the
-      // global merges with multiplicities. SUM/AVG admit exact arithmetic only — the merge folds in
-      // set-iteration order, so floating sums/averages and wide decimal sums/averages stay on
-      // the host. MIN/MAX DISTINCT still fall back two-phase.
+      // global merges with multiplicities. Floating and wide decimal reductions retain the host's
+      // membership-map iteration order. MIN/MAX DISTINCT still fall back two-phase.
       if (call.isDistinct()) {
         if (call.getArgList().size() != 1) {
           return false;
@@ -185,7 +183,8 @@ final class LocalGroupAggregateMatcher {
           if (partialType != SqlTypeName.BIGINT || !supportedDistinctValueType(valueType)) {
             return false;
           }
-        } else if (kind == WindowAggregateMatcher.KIND_SUM) {
+        } else if (kind == WindowAggregateMatcher.KIND_SUM
+            || kind == GroupAggregateMatcher.KIND_SUM_ZERO) {
           if (!supportedDistinctSumPartial(value, partial)) return false;
         } else if (kind == WindowAggregateMatcher.KIND_AVG) {
           if (!supportedDistinctAveragePartials(value, partial, count)) return false;
@@ -414,6 +413,9 @@ final class LocalGroupAggregateMatcher {
   static boolean supportedDistinctSumPartial(RelDataType value, RelDataType partial) {
     return (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
             && partial.getSqlTypeName() == value.getSqlTypeName())
+        || ((value.getSqlTypeName() == SqlTypeName.FLOAT
+                || value.getSqlTypeName() == SqlTypeName.DOUBLE)
+            && partial.getSqlTypeName() == value.getSqlTypeName())
         || (value.getSqlTypeName() == SqlTypeName.DECIMAL && isWidenedDecimal(partial, value));
   }
 
@@ -422,6 +424,9 @@ final class LocalGroupAggregateMatcher {
     return count.getSqlTypeName() == SqlTypeName.BIGINT
         && ((GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
                 && sum.getSqlTypeName() == SqlTypeName.BIGINT)
+            || ((value.getSqlTypeName() == SqlTypeName.FLOAT
+                    || value.getSqlTypeName() == SqlTypeName.DOUBLE)
+                && sum.getSqlTypeName() == SqlTypeName.DOUBLE)
             || (value.getSqlTypeName() == SqlTypeName.DECIMAL && isWidenedDecimal(sum, value)));
   }
 
@@ -483,7 +488,11 @@ final class LocalGroupAggregateMatcher {
           kinds.add(KIND_COUNT_DISTINCT);
         } else {
           kinds.add(
-              kind == WindowAggregateMatcher.KIND_COUNT ? KIND_COUNT_DISTINCT : KIND_SUM_DISTINCT);
+              kind == WindowAggregateMatcher.KIND_COUNT
+                  ? KIND_COUNT_DISTINCT
+                  : kind == GroupAggregateMatcher.KIND_SUM_ZERO
+                      ? GroupAggregateMatcher.KIND_SUM_ZERO_DISTINCT
+                      : KIND_SUM_DISTINCT);
         }
       } else if (kind == 14) {
         kinds.add(14);

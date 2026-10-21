@@ -21,8 +21,9 @@ including global aggregation and per-aggregate FILTER. This lets shared `COUNT(v
 at zero and emits zero when no non-NULL input contributes; the host-planned Calc uses
 COUNT to restore NULL for AVG/SUM. Integer accumulation wraps at the declared width.
 DECIMAL uses a widened `(38, input-scale)` accumulator whose overflow stays NULL;
-ordinary SUM's reset-after-overflow rule is deliberately different. DISTINCT SUM0 remains
-unsupported. Floating SUM0 starts from positive zero and rounds each addition/subtraction at
+ordinary SUM's reset-after-overflow rule is deliberately different. DISTINCT SUM0 uses the
+same accumulator with distinct membership, including the shared SUM0/COUNT lowering of
+DISTINCT averages. Floating SUM0 starts from positive zero and rounds each addition/subtraction at
 the declared FLOAT/DOUBLE width; ordinary floating SUM still starts at the first non-NULL value.
 Released Flink's invalid DECIMAL(38,38) SUM0 initializer remains on the host.
 
@@ -55,8 +56,8 @@ The running sum and distinct count are checkpointed directly alongside membershi
 does not refold an overflow-sensitive decimal sum in map order. Both memory and typed RocksDB
 state retain this contract, including migrations between the two. Floating averages accumulate
 in DOUBLE and retain the input result width; DISTINCT uses Java boxed equality, canonicalizing
-NaNs and distinguishing opposite zero signs. Insert-only two-phase AVG DISTINCT supports integers and DECIMAL precision
-up to 38, as described below.
+NaNs and distinguishing opposite zero signs. Insert-only two-phase SUM/AVG DISTINCT supports
+integers, FLOAT, DOUBLE and DECIMAL precision up to 38, as described below.
 
 `TINYINT` and `SMALLINT` `SUM`/`MIN`/`MAX` retain their input width, including the local
 partials of an insert-only two-phase plan. SUM wraps on overflow at 8 or 16 bits rather
@@ -521,8 +522,11 @@ positive retention, including a STATE_TTL hint, fall back: Flink independently e
 value-to-order and order-to-value map entries, which a single group lifetime does not model.
 These aggregate states use the existing raw keyed snapshot path with both memory and RocksDB
 backends; the direct RocksDB accumulator-row codec does not yet encode ordered occurrences.
-Two-phase FIRST_VALUE/LAST_VALUE plans, physical SINGLE_VALUE with a retained DISTINCT flag,
-two-argument value/order dialects, and other value types retain explicit fallback gates.
+FIRST_VALUE/LAST_VALUE have no merge implementation on the supported released Flink lines:
+requesting TWO_PHASE retains a single-phase aggregate, which runs natively, including DISTINCT.
+Execution contracts verify the selected phase, values, result types and consumed native work.
+Internal physical split FIRST_VALUE/LAST_VALUE plans, physical SINGLE_VALUE with a retained
+DISTINCT flag, two-argument value/order dialects, and other value types retain explicit gates.
 
 `GroupedValueBenchmark` measures append-only FIRST_VALUE/LAST_VALUE with a release native
 build (`-Pbench`, mimalloc), 2 million rows, 64 keys, one-eighth NULL values, parallelism 1,
@@ -595,12 +599,15 @@ set travels as a trailing view column — its distinct `(value, count)` entries 
 structs, the Arrow form of Flink's serialized `MapView` partial — and the global folds the entries
 into its per-key distinct state with multiplicities, so a value repeating across bundles counts
 once. Scope: `COUNT(DISTINCT)` over bigint/int/smallint/tinyint/float/double/string/decimal,
-BOOLEAN, DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ; `SUM(DISTINCT)` over bigint/int/smallint/tinyint and DECIMAL
+BOOLEAN, DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ; `SUM(DISTINCT)` over bigint/int/smallint/tinyint/float/double and DECIMAL
 with precision up to 38.
 Decimal sum partials must be DECIMAL(38, input-scale), while the distinct view preserves each
 input value's original precision and scale. Boolean and timestamp views retain their Arrow
-value types, including fractional timestamp nanoseconds. The merge folds in set-iteration
-order, so order-sensitive float/double sums stay on the host.
+value types, including fractional timestamp nanoseconds. Floating sums preserve the released
+Java map's iteration order through local insertion, serialized copies and each global logical
+bundle, including shared and independently filtered views. Physical Arrow batch boundaries do
+not change that order. Opposite zero signs remain distinct; NaN payloads share membership
+while transport retains the original key bits.
 DATE membership uses epoch days; TIME views carry internal milliseconds even if Flink resolves
 a lower declared precision. Both timestamp families use the existing millisecond/nanosecond
 component representation, retaining precision 0/3/6/9 and wide/pre-epoch values without a session-zone
@@ -610,13 +617,19 @@ The [release job measurements](../benchmarks/basic-type-coverage.md#temporal-two
 retain both transposes and IPC shuffle: 1.32-1.54x stock at 2M rows/64 keys and 1.07-1.15x
 at 10M rows/1,024 keys. Persistent recovery is verified for correctness; no RocksDB speedup is claimed.
 
-Insert-only `AVG(DISTINCT)` also rides the split for integers and DECIMAL precision up to 38.
-The local keeps two distinct states: a widened sum partial and a BIGINT count partial, while
-its membership view retains the original input value type. Empty/all-NULL bundles emit a
+Insert-only `AVG(DISTINCT)` also rides the split for integers, FLOAT, DOUBLE and DECIMAL precision up to 38.
+The declared partials are a widened sum and a BIGINT count, while the membership view retains
+the original input value type. Floating sums widen to DOUBLE for AVG. Empty/all-NULL bundles emit a
 zero sum and zero count. The global merges membership entries into the same exact average
 state used by single-phase AVG DISTINCT; it does not add the local sums/counts, which would
 count values appearing in several bundles more than once. Decimal sum fields must retain
 precision 38 and the input scale, and the result type must match Flink's AVG type.
+Released shared AVG/COUNT/SUM reductions may use DISTINCT SUM0 plus COUNT; SUM0 retains its
+positive-zero initialization. Aggregates sharing one floating view use one transient membership
+map, then update their independent durable accumulators in the verified merge order.
+
+The [floating partial measurements](../optimizations/aggregate-specialization-fast-paths.md#ordered-floating-distinct-partials)
+separate Rust/Arrow functionality admission from conversion-inclusive complete-job costs.
 
 Insert-only two-phase `SINGLE_VALUE` over the single-phase scalar value types retains a typed
 value and an INT count in each local bundle. NULL increments the count. Both local accumulation and global merging
@@ -667,8 +680,7 @@ for the persistent-state-backend angle on this same raw-keyed-state layout.
 
 Still falling back, specific to the two-phase split: the opt-in `distinct-agg.split.enabled`
 incremental chain (a deliberate non-goal — see [Unsupported operators](unsupported.md)),
-`MIN`/`MAX` with a retained physical `DISTINCT` flag, floating `SUM(DISTINCT)` and
-`AVG(DISTINCT)`, and — under a
+`MIN`/`MAX` with a retained physical `DISTINCT` flag, and — under a
 retracting input — any aggregate other than `COUNT`/`AVG`/`SUM0`/ordinary exact integer `SUM`
 (non-integer SUM and MIN/MAX retract variants retain unverified layouts, and a monotonicity-exempt `MIN`/`MAX` ignores
 retractions in ways the native fold would not) plus `DISTINCT` (its view value switches to
@@ -975,7 +987,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
 - A UDAF outside the verified synchronous single-phase JVM boundary described above.
   Verified UDAFs default on under the accepted performance exception.
 - `AVG`/`SUM`/`MIN`/`MAX` over a value type outside [Type support](#type-support)'s ✓ set.
-- Two-phase `AVG(DISTINCT)` over FLOAT/DOUBLE and physical SINGLE_VALUE with a retained DISTINCT flag.
+- Physical SINGLE_VALUE with a retained DISTINCT flag.
   (`COUNT(DISTINCT x)` keeps a per-key
   value set; `SUM(DISTINCT x)` adds a running sum folded as values enter/leave it; `MIN`/`MAX
   (DISTINCT)` run as their plain, multiplicity-blind forms.)
@@ -1012,9 +1024,9 @@ input in streaming mode emits no aggregate row. Native string/JSON coverage is d
   strings, DATE, TIME, BOOLEAN and timestamps), or an AVG value type outside
   bigint/int/smallint/tinyint/float/double/decimal.
 - A `COUNT(DISTINCT)` value type outside bigint/int/smallint/tinyint/float/double/string/decimal/
-  BOOLEAN/DATE/TIME/TIMESTAMP/TIMESTAMP_LTZ, or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint/DECIMAL;
+  BOOLEAN/DATE/TIME/TIMESTAMP/TIMESTAMP_LTZ, or a `SUM(DISTINCT)` value outside bigint/int/smallint/tinyint/FLOAT/DOUBLE/DECIMAL;
   DECIMAL sum partials with a different scale/precision other than 38;
-  `AVG(DISTINCT)` outside integers/DECIMAL or with incorrectly widened partials;
+  `AVG(DISTINCT)` outside integers/FLOAT/DOUBLE/DECIMAL or with incorrectly widened partials;
   `MIN`/`MAX` with a retained physical `DISTINCT` flag (Flink normally removes it).
 - A partial whose declared type differs from what the native side emits — defensive only, not
   reachable from Flink's own planner.

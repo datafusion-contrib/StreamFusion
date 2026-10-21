@@ -22,6 +22,7 @@ class DistinctAggregateBenchmark {
   private static final int WARMUP = Integer.getInteger("distinct.warmup", 2);
   private static final int RUNS = Integer.getInteger("distinct.runs", 5);
   private static final boolean FLOATING = Boolean.getBoolean("distinct.floating");
+  private static final boolean FLOATING_SUM = Boolean.getBoolean("distinct.floatingSum");
   private static final boolean AVERAGE = FLOATING || Boolean.getBoolean("distinct.average");
   private static final boolean EXPECT_NATIVE =
       Boolean.parseBoolean(System.getProperty("distinct.expectNative", "true"));
@@ -32,12 +33,16 @@ class DistinctAggregateBenchmark {
   private static final String SQL =
       FLOATING
           ? "INSERT INTO sink SELECT k, AVG(DISTINCT CAST(t AS FLOAT)),"
-              + " AVG(DISTINCT CAST(b AS DOUBLE)) FROM src GROUP BY k"
+              + " AVG(DISTINCT CAST(b AS DOUBLE))"
+              + (FLOATING_SUM
+                  ? ", SUM(DISTINCT CAST(t AS FLOAT)), SUM(DISTINCT CAST(b AS DOUBLE))"
+                  : "")
+              + " FROM src GROUP BY k"
           : AVERAGE
-          ? "INSERT INTO sink SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT amount) FROM"
-              + " src GROUP BY k"
-          : "INSERT INTO sink SELECT k, COUNT(DISTINCT b), COUNT(DISTINCT ts),"
-              + " SUM(DISTINCT amount) FROM src GROUP BY k";
+              ? "INSERT INTO sink SELECT k, AVG(DISTINCT t), AVG(DISTINCT b), AVG(DISTINCT amount)"
+                    + " FROM src GROUP BY k"
+              : "INSERT INTO sink SELECT k, COUNT(DISTINCT b), COUNT(DISTINCT ts),"
+                  + " SUM(DISTINCT amount) FROM src GROUP BY k";
 
   @Test
   void groupedDistinctTypes() throws Exception {
@@ -67,24 +72,35 @@ class DistinctAggregateBenchmark {
             throw new IllegalStateException("Unexpected fallback: " + scan.fallbackReasons());
           }
           if (scan != null && !EXPECT_NATIVE && scan.substitutions() != 0) {
-            throw new IllegalStateException("Expected previous aggregate fallback: " + scan.explainSummary());
+            throw new IllegalStateException(
+                "Expected previous aggregate fallback: " + scan.explainSummary());
           }
           if (scan != null && EXPECT_NATIVE) {
-            RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators().stream()
-                .filter(row -> jobId.equals(row.get("jobId")))
-                .collect(java.util.stream.Collectors.toList()), "NativeColumnarGroupAggregate");
+            var observations =
+                metrics.nativeOperators().stream()
+                    .filter(row -> jobId.equals(row.get("jobId")))
+                    .collect(java.util.stream.Collectors.toList());
+            RecoveryExecutionMetrics.assertConsumed(observations, "NativeColumnarGroupAggregate");
+            if (TWO_PHASE)
+              RecoveryExecutionMetrics.assertConsumed(
+                  observations, "NativeColumnarLocalGroupAggregate");
           }
           if (trial >= WARMUP) times[engine][trial - WARMUP] = seconds;
-          System.out.printf(Locale.ROOT,
+          System.out.printf(
+              Locale.ROOT,
               "[distinct-aggregate-trial] floating=%s engine=%d trial=%d warmup=%s seconds=%.6f%n",
-              FLOATING, engine, trial, trial < WARMUP, seconds);
+              FLOATING,
+              engine,
+              trial,
+              trial < WARMUP,
+              seconds);
         }
       }
     }
     System.out.printf(
         Locale.ROOT,
-        "[distinct-aggregate] floating=%s average=%s two_phase=%s precision=%d rows=%d keys=%d Flink=%.6fs Native=%.6fs"
-            + " flink_trials=%s native_trials=%s%n",
+        "[distinct-aggregate] floating=%s average=%s two_phase=%s precision=%d rows=%d keys=%d"
+            + " Flink=%.6fs Native=%.6fs flink_trials=%s native_trials=%s%n",
         FLOATING,
         AVERAGE,
         TWO_PHASE,
@@ -166,10 +182,12 @@ class DistinctAggregateBenchmark {
                 .build());
     table.executeSql(
         (FLOATING
-                ? "CREATE TABLE sink (k INT, av_t FLOAT, ab DOUBLE)"
+                ? "CREATE TABLE sink (k INT, av_t FLOAT, ab DOUBLE"
+                    + (FLOATING_SUM ? ", st FLOAT, sb DOUBLE" : "")
+                    + ")"
                 : AVERAGE
-                ? "CREATE TABLE sink (k INT, av_t TINYINT, ab BIGINT, ad DECIMAL(38,6))"
-                : "CREATE TABLE sink (k INT, cb BIGINT, ct BIGINT, sa DECIMAL(38,2))")
+                    ? "CREATE TABLE sink (k INT, av_t TINYINT, ab BIGINT, ad DECIMAL(38,6))"
+                    : "CREATE TABLE sink (k INT, cb BIGINT, ct BIGINT, sa DECIMAL(38,2))")
             + " WITH ('connector' = 'blackhole')");
     return table;
   }

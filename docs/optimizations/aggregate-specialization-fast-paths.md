@@ -219,9 +219,71 @@ applies. Measured on the generator profile loop: **q16 +17%, q17 +4%, q15 +3%** 
 floor of the Parquet/Kafka tables, gains the most. The cached tuple's own size accounting is covered
 on [Memory accounting designed off the hot path](memory-accounting-off-hot-path.md).
 
+## Ordered floating DISTINCT partials
+
+Two-phase FLOAT/DOUBLE SUM/AVG DISTINCT must reproduce Java map iteration and copy order:
+changing addition order changes cancellation, rounding and sometimes the final result. The
+local view retains that order; global merge collects one logical bundle before folding its
+temporary union. Physical Arrow batches do not define logical bundle boundaries. Shared
+SUM0/COUNT reductions retain independent accumulators behind a shared membership view.
+
+A CPU profile of the first implementation identified boxed `ScalarValue` comparison/hash,
+membership updates and Java-map insertion/resize among the hottest native leaves. FLOAT and
+DOUBLE memberships now use typed bit keys with canonical NaN equality and distinct signed
+zeros. The local stage updates each shared membership view once and omits unused arithmetic
+partials, matching Flink's excluded-accumulator protocol. Global aggregates sharing a view
+also share its temporary union, then fold into their independent durable states. Checkpoints
+retain raw running sums rather than recomputing them in a different order.
+
+The small functionality gate starts Flink in Java with prepared binary RowData and
+StreamFusion in Rust with prepared Arrow batches. Both execute the production local/global
+operators and consume the same output checksum. Input preparation, operator setup, Arrow
+import/export and perimeter JNI are outside timing. MapView copies in Flink, state work,
+allocations and native memory accounting remain inside. Rust reserves 1 GiB for each stage;
+the Flink JVM has a 2 GiB heap. The final SQL projection is outside both operator timers.
+
+On Flink 2.2.1/JDK 17, release+mimalloc, three warmups and seven measured trials, the 18 cases
+cover FLOAT/DOUBLE SUM, AVG and shared AVG/SUM/COUNT at 4,096 rows/64 keys and 131,072 rows
+with one/64 keys. Values have cardinality 1,024, one-seventh NULLs and 1,024-record bundles.
+All output checksums match; median speedups range from 1.10 to 2.72x. The larger 64-key
+cases give median and full measured range in seconds:
+
+| Reduction | Flink | StreamFusion |
+| --- | ---: | ---: |
+| FLOAT SUM | 0.046917 (0.041541–0.071079) | 0.032593 (0.031572–0.033671) |
+| FLOAT AVG | 0.047188 (0.041838–0.056356) | 0.033293 (0.032881–0.035526) |
+| FLOAT shared | 0.045433 (0.039968–0.064080) | 0.038056 (0.036213–0.038799) |
+| DOUBLE SUM | 0.054783 (0.048870–0.076217) | 0.039330 (0.038686–0.042385) |
+| DOUBLE AVG | 0.049702 (0.048855–0.057318) | 0.039526 (0.038590–0.044421) |
+| DOUBLE shared | 0.056809 (0.048772–0.068266) | 0.044612 (0.042138–0.047955) |
+
+Complete-job diagnostics retain both transposes, production JNI/IPC, runtime row sources and
+a rowwise sink. At two million rows/64 keys, two warmups and five alternating measured
+pairs, the first implementation took 3.701 s versus paired stock 1.635 s. Typed membership
+reduced native time to 2.331 s versus stock 1.573 s. Sharing transient views and omitting
+unused local arithmetic reduced it again to 1.923 s (1.874–2.006), versus stock 1.626 s
+(1.555–1.804). The actual preceding StreamFusion revision falls back for this query and
+measured 1.565 s versus its paired stock 1.534 s. The final complete job remains slower
+than stock; the small operator gate establishes admission under its own boundary only.
+
+The final release recheck preserves integer/decimal local partial values and limits omitted
+arithmetic partials to the new floating path. All 18 checksums pass again on each released
+line: 1.09–2.72x stock on Flink 2.2.1 and 1.02–3.13x on Flink 1.18.1. The narrowest margin
+is close to parity and is not a general speedup guarantee. The artifact retains the original
+and final trials separately. Final native unit validation passes 818 tests (two ignored);
+six focused SQL/filter/empty-input/repeated-recovery cases pass on each Flink line.
+
+The [result artifact](../benchmarks/results/floating-distinct-partials-2026-10-20.json)
+retains every trial, exact operator configurations, prepared-input hashes, native binary
+hashes and the initial profile. Reproduce prepared inputs with
+`FloatingDistinctPartialsAdmissionBenchmark` using `partials.rows`, `partials.keys` and
+`partials.export`, then run the release `distinct_partials_admission` example on its Arrow
+and JSON files. Conversion-inclusive jobs use `DistinctAggregateBenchmark` with
+`distinct.floating=true`, `distinct.floatingSum=true` and `distinct.twoPhase=true`.
+
 ## Typed DISTINCT multiplicities
 
-Non-windowed DISTINCT sets specialize BIGINT, INT, SMALLINT, TINYINT, DECIMAL, BOOLEAN,
+Non-windowed DISTINCT sets specialize BIGINT, INT, SMALLINT, TINYINT, FLOAT, DOUBLE, DECIMAL, BOOLEAN,
 TIMESTAMP and STRING keys. Integer maps retain their exact width; decimal maps store unscaled i128 keys with
 precision and scale on the map. STRING probes borrow UTF-8 bytes from the Arrow array in
 single-phase, local and global-merge folds. A duplicate does not allocate an owned string;

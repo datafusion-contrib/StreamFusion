@@ -84,7 +84,7 @@ final class GlobalGroupAggregateMatcher {
       // the per-key distinct set — the positional partial (the bundle's count/sum) is carried but
       // not consumed, exactly as the host's distinct merge re-accumulates from the view. The value
       // type comes from the ORIGINAL local input (the call's args point into it). Same scope as the
-      // local half: COUNT over the set-carriable types, SUM over exact integer/decimal arithmetic.
+      // local half: COUNT over the set-carriable types, SUM/AVG over admitted numeric values.
       if (call.isDistinct()) {
         if (call.getArgList().size() != 1) {
           return "global group aggregate: a distinct merge must have exactly one argument";
@@ -107,21 +107,30 @@ final class GlobalGroupAggregateMatcher {
                 && partialType == SqlTypeName.BIGINT
                 && LocalGroupAggregateMatcher.supportedDistinctValueType(value.getSqlTypeName());
         boolean sumDistinct =
-            kind == WindowAggregateMatcher.KIND_SUM
+            (kind == WindowAggregateMatcher.KIND_SUM || kind == GroupAggregateMatcher.KIND_SUM_ZERO)
                 && LocalGroupAggregateMatcher.supportedDistinctSumPartial(value, partial);
         RelDataType result = agg.getRowType().getFieldList().get(grouping.length + i).getType();
         boolean averageDistinct =
             kind == WindowAggregateMatcher.KIND_AVG
                 && LocalGroupAggregateMatcher.supportedDistinctAveragePartials(
                     value, partial, count)
-                && (GroupAggregateMatcher.isIntegerType(value.getSqlTypeName())
+                && (value.getSqlTypeName() != SqlTypeName.DECIMAL
                     ? result.getSqlTypeName() == value.getSqlTypeName()
                     : result.getSqlTypeName() == SqlTypeName.DECIMAL
                         && result.getPrecision() == 38
                         && result.getScale() == Math.max(6, value.getScale()));
         if (!countDistinct && !sumDistinct && !averageDistinct) {
           return "global group aggregate: distinct merges are COUNT (over set-carriable value"
-              + " types) and SUM/AVG (over integers or DECIMAL)";
+              + " types) and SUM/AVG (over numeric values with matching widened partials); got "
+              + call
+              + ", value="
+              + value
+              + ", partial="
+              + partial
+              + ", count="
+              + count
+              + ", result="
+              + result;
         }
         continue;
       }
@@ -402,7 +411,9 @@ final class GlobalGroupAggregateMatcher {
                 ? LocalGroupAggregateMatcher.KIND_COUNT_DISTINCT
                 : kind == WindowAggregateMatcher.KIND_AVG
                     ? GroupAggregateMatcher.KIND_AVG_DISTINCT
-                    : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
+                    : kind == GroupAggregateMatcher.KIND_SUM_ZERO
+                        ? GroupAggregateMatcher.KIND_SUM_ZERO_DISTINCT
+                        : LocalGroupAggregateMatcher.KIND_SUM_DISTINCT;
       } else {
         // A MIN/MAX merge is only admitted without retraction (see unsupportedReason), so a
         // numeric one always runs as the plain running extreme — no retractable multiset.
