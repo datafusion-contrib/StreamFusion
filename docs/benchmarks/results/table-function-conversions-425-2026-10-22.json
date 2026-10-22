@@ -1,0 +1,564 @@
+{
+  "issue": 425,
+  "date": "2026-10-22",
+  "baseline": "07fbffcaa09402bce0a36ff9b3f18a5b8703cb9b",
+  "baseline_reader_sha256": "e0def8b2d753905cb6a7971100f7abe2075ab320ef27ca267f443c736a5722e6",
+  "candidate_reader_sha256": "c433dc3cc5052678a6ebd6e2300b9cfb117f8eb4d268347fd620a2cba4e937b0",
+  "native_library_sha256": "d6ea59662b718a668eec0091cf2090269e2f663931a88adc19893441c12b120e",
+  "environment": {
+    "cpu": "Intel Core i7-12650H, 16 logical CPUs",
+    "os": "Linux x86_64 under WSL2",
+    "jdk": "OpenJDK 17.0.20.1",
+    "java_heap": "2 GiB",
+    "native_build": "release, mimalloc, no default features (no RocksDB)",
+    "native_build_command": "cargo build --release --no-default-features --features mimalloc -p streamfusion",
+    "parallelism": 1,
+    "batch_rows": 1024,
+    "zero_copy_local_exchange": false
+  },
+  "method": {
+    "benchmark": "TypedTableFunctionBenchmark",
+    "rows": 2000000,
+    "shape": "project",
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "order": "Alternating stock and StreamFusion within each pair",
+    "preflight": "EXPLAIN outside timing for both engines",
+    "boundary": "Complete executeSql/await jobs, runtime RowData source, both transposes, synchronous mutable-output JVM table function, production IPC and row blackhole sink",
+    "controls": "Actual preceding Java source and candidate use the same release native library and benchmark fixture; each separate JVM has its own paired stock control",
+    "limitations": "Separate JVM controls drift. These short jobs include startup/planning and do not isolate kernel cost. Profiling durations are excluded from throughput results. A slowdown relative to stock is retained under the accepted UDF performance exception."
+  },
+  "profiles": [
+    {
+      "version": "baseline",
+      "profiler": "async-profiler 4.6, CPU 1 ms and allocation 512 KiB",
+      "rows_per_type": 5000000,
+      "types": [
+        "DECIMAL(18,8)",
+        "DECIMAL(38,18)",
+        "TIMESTAMP_LTZ(9)"
+      ],
+      "warmup_pairs": 1,
+      "measured_pairs": 1,
+      "capture_and_analysis_limit_seconds": 600,
+      "note": "Mixed whole-JVM capture filtered to stacks containing NativeColumnarTableFunctionOperator. Inclusive frame counts overlap; allocation weight is not copied bytes. Initial output overwritten by a separate empty ORC fork was discarded; the retained capture uses the single surefire:test goal and a PID-specific filename.",
+      "events": {
+        "cpu": {
+          "unit": "CPU samples",
+          "native_pipeline_inclusive_total": 6706,
+          "inclusive_by_frame": {
+            "ArrowDecimalColumnVector": 978,
+            "getBigDecimalFromArrowBuf": 776,
+            "DecimalAccessor": 293,
+            "DecimalWriter": 264,
+            "ArrowToRowDataOperator": 2721,
+            "RowDataSerializer": 1674,
+            "TimestampAccessor": 143,
+            "BigInteger": 484,
+            "toByteArray": 29,
+            "allocateNew": 244
+          }
+        },
+        "alloc": {
+          "unit": "sampled allocation weight, bytes",
+          "native_pipeline_inclusive_total": 18304466944,
+          "inclusive_by_frame": {
+            "ArrowDecimalColumnVector": 6604980224,
+            "getBigDecimalFromArrowBuf": 5310513152,
+            "DecimalAccessor": 1482686464,
+            "DecimalWriter": 190316544,
+            "ArrowToRowDataOperator": 10525081600,
+            "RowDataSerializer": 7193755648,
+            "TimestampAccessor": 513277952,
+            "BigInteger": 2559049728,
+            "toByteArray": 86507520,
+            "allocateNew": 78118912
+          }
+        }
+      }
+    }
+  ],
+  "timeboxed_decisions": [
+    {
+      "candidate": "Decimal Arrow reads",
+      "decision": "Retain one sign-extension-checked long-read prototype; compact and wide declared precision are covered."
+    },
+    {
+      "candidate": "Wide values outside signed long",
+      "decision": "Skip after the initial profile; retain released Arrow reconstruction rather than redesigning BigInteger conversion."
+    },
+    {
+      "candidate": "Temporal and owned exit copies",
+      "decision": "Skip after the initial profile; no comparably small change identified, and generated binary exits were already rejected."
+    }
+  ],
+  "comparisons": [
+    {
+      "flink": "2.2.1",
+      "version": "baseline",
+      "type": "DECIMAL(18,8)",
+      "Flink": {
+        "warmup_seconds": [
+          0.807167,
+          0.313601
+        ],
+        "measured_seconds": [
+          0.314232,
+          0.245821,
+          0.239498,
+          0.241749,
+          0.255666
+        ],
+        "median_seconds": 0.245821,
+        "min_seconds": 0.239498,
+        "max_seconds": 0.314232
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          1.007913,
+          0.71542
+        ],
+        "measured_seconds": [
+          0.604165,
+          0.57144,
+          0.56493,
+          0.571593,
+          0.583154
+        ],
+        "median_seconds": 0.571593,
+        "min_seconds": 0.56493,
+        "max_seconds": 0.604165
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "version": "baseline",
+      "type": "DECIMAL(38,18)",
+      "Flink": {
+        "warmup_seconds": [
+          0.247371,
+          0.230618
+        ],
+        "measured_seconds": [
+          0.263445,
+          0.259654,
+          0.239027,
+          0.264467,
+          0.228921
+        ],
+        "median_seconds": 0.259654,
+        "min_seconds": 0.228921,
+        "max_seconds": 0.264467
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.666389,
+          0.630723
+        ],
+        "measured_seconds": [
+          0.61431,
+          0.628652,
+          0.620386,
+          0.619181,
+          0.608557
+        ],
+        "median_seconds": 0.619181,
+        "min_seconds": 0.608557,
+        "max_seconds": 0.628652
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "version": "baseline",
+      "type": "TIMESTAMP_LTZ(9)",
+      "Flink": {
+        "warmup_seconds": [
+          0.264491,
+          0.268899
+        ],
+        "measured_seconds": [
+          0.273373,
+          0.265155,
+          0.26867,
+          0.316424,
+          0.279381
+        ],
+        "median_seconds": 0.273373,
+        "min_seconds": 0.265155,
+        "max_seconds": 0.316424
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.655873,
+          0.576572
+        ],
+        "measured_seconds": [
+          0.568542,
+          0.571674,
+          0.55721,
+          0.576203,
+          0.5633
+        ],
+        "median_seconds": 0.568542,
+        "min_seconds": 0.55721,
+        "max_seconds": 0.576203
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "version": "candidate",
+      "type": "DECIMAL(18,8)",
+      "Flink": {
+        "warmup_seconds": [
+          0.791837,
+          0.326338
+        ],
+        "measured_seconds": [
+          0.328932,
+          0.234126,
+          0.234076,
+          0.227446,
+          0.245217
+        ],
+        "median_seconds": 0.234126,
+        "min_seconds": 0.227446,
+        "max_seconds": 0.328932
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.790574,
+          0.632352
+        ],
+        "measured_seconds": [
+          0.515215,
+          0.528878,
+          0.472198,
+          0.471146,
+          0.487287
+        ],
+        "median_seconds": 0.487287,
+        "min_seconds": 0.471146,
+        "max_seconds": 0.528878
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "version": "candidate",
+      "type": "DECIMAL(38,18)",
+      "Flink": {
+        "warmup_seconds": [
+          0.23998,
+          0.22922
+        ],
+        "measured_seconds": [
+          0.233915,
+          0.237681,
+          0.24119,
+          0.243419,
+          0.236415
+        ],
+        "median_seconds": 0.237681,
+        "min_seconds": 0.233915,
+        "max_seconds": 0.243419
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.687367,
+          0.563879
+        ],
+        "measured_seconds": [
+          0.56124,
+          0.56164,
+          0.559353,
+          0.560746,
+          0.561287
+        ],
+        "median_seconds": 0.56124,
+        "min_seconds": 0.559353,
+        "max_seconds": 0.56164
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "version": "candidate",
+      "type": "TIMESTAMP_LTZ(9)",
+      "Flink": {
+        "warmup_seconds": [
+          0.261029,
+          0.260365
+        ],
+        "measured_seconds": [
+          0.266818,
+          0.261291,
+          0.267293,
+          0.286476,
+          0.271739
+        ],
+        "median_seconds": 0.267293,
+        "min_seconds": 0.261291,
+        "max_seconds": 0.286476
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.640905,
+          0.569879
+        ],
+        "measured_seconds": [
+          0.576612,
+          0.564877,
+          0.561807,
+          0.563071,
+          0.572904
+        ],
+        "median_seconds": 0.564877,
+        "min_seconds": 0.561807,
+        "max_seconds": 0.576612
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "version": "baseline",
+      "type": "DECIMAL(18,8)",
+      "Flink": {
+        "warmup_seconds": [
+          0.795233,
+          0.311207
+        ],
+        "measured_seconds": [
+          0.29586,
+          0.233755,
+          0.316664,
+          0.244375,
+          0.23223
+        ],
+        "median_seconds": 0.244375,
+        "min_seconds": 0.23223,
+        "max_seconds": 0.316664
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.944737,
+          0.761813
+        ],
+        "measured_seconds": [
+          0.605663,
+          0.582184,
+          0.597716,
+          0.627373,
+          0.590853
+        ],
+        "median_seconds": 0.597716,
+        "min_seconds": 0.582184,
+        "max_seconds": 0.627373
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "version": "baseline",
+      "type": "DECIMAL(38,18)",
+      "Flink": {
+        "warmup_seconds": [
+          0.254727,
+          0.249906
+        ],
+        "measured_seconds": [
+          0.317126,
+          0.270136,
+          0.257856,
+          0.233898,
+          0.247568
+        ],
+        "median_seconds": 0.257856,
+        "min_seconds": 0.233898,
+        "max_seconds": 0.317126
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.674474,
+          0.670077
+        ],
+        "measured_seconds": [
+          0.687994,
+          0.690679,
+          0.648452,
+          0.654064,
+          0.623287
+        ],
+        "median_seconds": 0.654064,
+        "min_seconds": 0.623287,
+        "max_seconds": 0.690679
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "version": "baseline",
+      "type": "TIMESTAMP_LTZ(9)",
+      "Flink": {
+        "warmup_seconds": [
+          0.272311,
+          0.261521
+        ],
+        "measured_seconds": [
+          0.289556,
+          0.265836,
+          0.273553,
+          0.321154,
+          0.27976
+        ],
+        "median_seconds": 0.27976,
+        "min_seconds": 0.265836,
+        "max_seconds": 0.321154
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.689475,
+          0.578619
+        ],
+        "measured_seconds": [
+          0.588884,
+          0.628901,
+          0.592308,
+          0.594267,
+          0.585872
+        ],
+        "median_seconds": 0.592308,
+        "min_seconds": 0.585872,
+        "max_seconds": 0.628901
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "version": "candidate",
+      "type": "DECIMAL(18,8)",
+      "Flink": {
+        "warmup_seconds": [
+          0.838048,
+          0.318079
+        ],
+        "measured_seconds": [
+          0.24072,
+          0.230618,
+          0.235523,
+          0.24266,
+          0.24235
+        ],
+        "median_seconds": 0.24072,
+        "min_seconds": 0.230618,
+        "max_seconds": 0.24266
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.948206,
+          0.611438
+        ],
+        "measured_seconds": [
+          0.50311,
+          0.478143,
+          0.472577,
+          0.46944,
+          0.463754
+        ],
+        "median_seconds": 0.472577,
+        "min_seconds": 0.463754,
+        "max_seconds": 0.50311
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "version": "candidate",
+      "type": "DECIMAL(38,18)",
+      "Flink": {
+        "warmup_seconds": [
+          0.252664,
+          0.233351
+        ],
+        "measured_seconds": [
+          0.239373,
+          0.23077,
+          0.235989,
+          0.230519,
+          0.251901
+        ],
+        "median_seconds": 0.235989,
+        "min_seconds": 0.230519,
+        "max_seconds": 0.251901
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.624838,
+          0.579964
+        ],
+        "measured_seconds": [
+          0.568023,
+          0.563891,
+          0.608574,
+          0.579786,
+          0.564473
+        ],
+        "median_seconds": 0.568023,
+        "min_seconds": 0.563891,
+        "max_seconds": 0.608574
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "version": "candidate",
+      "type": "TIMESTAMP_LTZ(9)",
+      "Flink": {
+        "warmup_seconds": [
+          0.265378,
+          0.284575
+        ],
+        "measured_seconds": [
+          0.27261,
+          0.275084,
+          0.264102,
+          0.295575,
+          0.27582
+        ],
+        "median_seconds": 0.275084,
+        "min_seconds": 0.264102,
+        "max_seconds": 0.295575
+      },
+      "StreamFusion": {
+        "warmup_seconds": [
+          0.650606,
+          0.576015
+        ],
+        "measured_seconds": [
+          0.585296,
+          0.589402,
+          0.570419,
+          0.562191,
+          0.572697
+        ],
+        "median_seconds": 0.572697,
+        "min_seconds": 0.562191,
+        "max_seconds": 0.589402
+      }
+    }
+  ],
+  "focused_validation": {
+    "Flink 2.2.1/JDK17": {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "Flink 1.18.1/JDK17": {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "scope": [
+      "DecimalAccessorTest",
+      "FlinkTypedTableFunctionSqlHarnessTest (fanout, rounding/overflow, empty/filtered input, disabled fallback, TIME failure)",
+      "FlinkDecimalUdfConsumersSqlHarnessTest",
+      "FlinkWideDecimalTimestampSqlHarnessTest",
+      "FlinkDecimalOverflowSqlHarnessTest",
+      "RowDataArrowConverterTest"
+    ],
+    "limitation": "Focused local selection excludes the typed table-function RocksDB recovery method because this release library disables RocksDB; full required CI remains mandatory before merge."
+  }
+}

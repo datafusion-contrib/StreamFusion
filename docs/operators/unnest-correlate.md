@@ -217,6 +217,12 @@ both measurements. Profiling is diagnostic; its durations are excluded from spee
 work. The ordinary `streamfusion.operator.tableFunction.enabled=false` override disables
 table-function substitution for all admitted types.
 
+Arrow decimal reads now avoid temporary byte arrays and BigInteger construction when the
+actual unscaled value fits a signed long, including in wide-precision columns. The
+[bounded conversion investigation](../optimizations/decimal-arrow-reads.md) records the
+complete-job gains and remaining stock-Flink deficit. Larger values, temporal conversion
+and owned exit copies retain their existing paths; no collector or ownership contract changes.
+
 This does not complete [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237): JVM
 aggregate/OVER functions, nested scalar results and broader table-function types remain open. Performance evidence includes release jobs with row sources, both transposes, row
 sinks, stock Flink and the actual preceding revision; profiles include Java and symbolized Rust

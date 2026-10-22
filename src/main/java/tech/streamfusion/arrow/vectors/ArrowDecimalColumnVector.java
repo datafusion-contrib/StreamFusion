@@ -18,6 +18,8 @@
 
 package tech.streamfusion.arrow.vectors;
 
+import java.math.BigDecimal;
+import java.nio.ByteOrder;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.columnar.vector.DecimalColumnVector;
@@ -28,6 +30,7 @@ import org.apache.arrow.vector.DecimalVector;
 /** Arrow column vector for DecimalData. */
 @Internal
 public final class ArrowDecimalColumnVector implements DecimalColumnVector {
+    private static final boolean LITTLE_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
 
     /** Container which is used to store the sequence of DecimalData values of a column to read. */
     private final DecimalVector decimalVector;
@@ -38,6 +41,18 @@ public final class ArrowDecimalColumnVector implements DecimalColumnVector {
 
     @Override
     public DecimalData getDecimal(int i, int precision, int scale) {
+        if (LITTLE_ENDIAN && !decimalVector.isNull(i)) {
+            long offset = (long) i * DecimalVector.TYPE_WIDTH;
+            long unscaled = decimalVector.getDataBuffer().getLong(offset);
+            long high = decimalVector.getDataBuffer().getLong(offset + Long.BYTES);
+            // Sign extension proves that reading the low word cannot truncate a wider value.
+            if (high == (unscaled >> (Long.SIZE - 1))) {
+                return DecimalData.isCompact(precision)
+                        ? DecimalData.fromUnscaledLong(unscaled, precision, scale)
+                        : DecimalData.fromBigDecimal(
+                                BigDecimal.valueOf(unscaled, scale), precision, scale);
+            }
+        }
         return tech.streamfusion.arrow.DecimalAccessor.fromInternalValue(
                 decimalVector.getObject(i), precision, scale);
     }

@@ -54,9 +54,9 @@ class TypedTableFunctionBenchmark {
                               .build())
                       .build());
               String insert = "INSERT INTO sink " + sql;
+              var scan = engine == 1 ? NativePlanner.install(table) : null;
+              String plan = table.explainSql(insert);
               if (engine == 1) {
-                var scan = NativePlanner.install(table);
-                String plan = table.explainSql(insert);
                 if (nativeExpected) {
                   assertTrue(
                       plan.contains("NativeTableFunction")

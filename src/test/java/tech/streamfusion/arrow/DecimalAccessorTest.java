@@ -1,6 +1,8 @@
 package tech.streamfusion.arrow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
@@ -12,6 +14,58 @@ import org.junit.jupiter.api.Test;
 import tech.streamfusion.arrow.vectors.ArrowDecimalColumnVector;
 
 class DecimalAccessorTest {
+  @Test
+  void longBackedReadsPreserveSignedUnscaledValuesRequestedScaleAndNulls() {
+    long[] values = {Long.MIN_VALUE, -100000, -1, 0, 1, 100000, Long.MAX_VALUE};
+    for (int precision : new int[] {1, 5, 18}) {
+      for (int scale : new int[] {0, precision / 2, precision}) {
+        for (int storedPrecision : new int[] {precision, 38}) {
+          try (var allocator = new RootAllocator();
+              var vector = new DecimalVector("d", allocator, storedPrecision, scale)) {
+            vector.allocateNew(values.length + 1);
+            for (int i = 0; i < values.length; i++) vector.setSafe(i, values[i]);
+            vector.setNull(values.length);
+            vector.setValueCount(values.length + 1);
+            var column = new ArrowDecimalColumnVector(vector);
+            for (int i = 0; i < values.length; i++) {
+              for (int requestedPrecision : new int[] {precision, 38}) {
+                for (int requestedScale : new int[] {0, scale}) {
+                  var decimal = column.getDecimal(i, requestedPrecision, requestedScale);
+                  assertEquals(values[i], decimal.toUnscaledLong());
+                  assertEquals(requestedPrecision, decimal.precision());
+                  assertEquals(requestedScale, decimal.scale());
+                }
+              }
+            }
+            assertNull(column.getDecimal(values.length, precision, scale));
+          }
+        }
+      }
+    }
+  }
+
+  @Test
+  void compactReadsRejectValuesOutsideSignedLongInsteadOfTruncating() {
+    try (var allocator = new RootAllocator();
+        var vector = new DecimalVector("d", allocator, 38, 0)) {
+      vector.allocateNew(4);
+      BigInteger[] values = {
+          BigInteger.valueOf(Long.MIN_VALUE).subtract(BigInteger.ONE),
+          BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE),
+          BigInteger.TEN.pow(38).subtract(BigInteger.ONE),
+          BigInteger.TEN.pow(38).negate().add(BigInteger.ONE)
+      };
+      var column = new ArrowDecimalColumnVector(vector);
+      for (int i = 0; i < values.length; i++) vector.setSafe(i, new BigDecimal(values[i]));
+      vector.setValueCount(values.length);
+      for (int i = 0; i < values.length; i++) {
+        int row = i;
+        assertThrows(ArithmeticException.class, () -> column.getDecimal(row, 18, 0));
+        assertEquals(new BigDecimal(values[i]), column.getDecimal(row, 38, 0).toBigDecimal());
+      }
+    }
+  }
+
   @Test
   void widePrecisionPreservesSignedLongLimitsAndLargerValuesAcrossGrowth() {
     BigInteger[] values = {
