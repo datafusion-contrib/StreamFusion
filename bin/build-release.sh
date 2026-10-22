@@ -21,7 +21,7 @@ if [ "$host_only" = true ] && [ "$linux_only" = true ]; then
 fi
 native_extensions="core fluss kafka json csv raw avro protobuf parquet orc paimon"
 case "$flink_line" in
-  2.2) maven_profiles=dist,universal,release,delta,paimon,iceberg; native_extensions="$native_extensions iceberg" ;;
+  2.2) maven_profiles=dist,universal,release,delta,paimon,iceberg,doris; native_extensions="$native_extensions iceberg" ;;
   1.18) maven_profiles=dist,universal,release,paimon,flink-1.18 ;;
   *) echo "unsupported Flink line: $flink_line" >&2; exit 64 ;;
 esac

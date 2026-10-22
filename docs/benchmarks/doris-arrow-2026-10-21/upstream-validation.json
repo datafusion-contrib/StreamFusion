@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "summary": {
+    "contracted_executed": 0,
+    "errors": 0,
+    "evidence_records": 0,
+    "executed": 76,
+    "expected_failures": 0,
+    "failures": 0,
+    "passed": 76,
+    "process_exit": 0,
+    "reports_found": 5,
+    "reports_parsed": 5,
+    "result_exit": 0,
+    "satisfied_evidence_records_by_route": {},
+    "skipped": 7,
+    "testcases_by_runtime_route": {
+      "batch_host_only": 28,
+      "mixed": 5,
+      "native": 8,
+      "scan_only": 8,
+      "skipped": 7,
+      "unclassified": 27
+    },
+    "tests": 83,
+    "unclassified_outside_contract_scope": 76
+  },
+  "validation_problems": [],
+  "fixture": "Doris 4.1.3, connector 26.3.0, JDK 17, JVM heap 2 GiB, WARN logging",
+  "upstream_commit": "3a4cae3a56afd5b9a8cbf901aeff129d73a57377",
+  "native_doris_source_execution_plans": 6
+}

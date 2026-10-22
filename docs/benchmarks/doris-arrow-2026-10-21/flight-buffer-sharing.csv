@@ -1,0 +1,9 @@
+column,buffer,rows,bytes,address_mod16,shared
+id,1,3,24,0,true
+n,0,3,1,8,true
+n,1,3,12,0,true
+name,0,3,1,0,true
+name,1,3,16,8,true
+name,2,3,11,8,true
+amount,0,3,1,8,true
+amount,1,3,48,0,true

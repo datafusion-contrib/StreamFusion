@@ -39,7 +39,7 @@ version=$(cd "$repo_root" && mvn "$@" -q -DforceStdout help:evaluate -Dexpressio
 modules="core kafka fluss json csv raw avro avro-confluent-registry protobuf parquet orc paimon"
 native_modules="kafka fluss json csv raw avro protobuf parquet orc paimon"
 if [ "$flink_line" = 2.2 ]; then
-  modules="$modules delta iceberg"
+  modules="$modules delta iceberg doris"
   native_modules="$native_modules iceberg"
 fi
 entries=$(mktemp)
@@ -130,7 +130,7 @@ core_main_jar="$repo_root/streamfusion-core/target/streamfusion-core${artifact_s
 assert_flink_identity "$core_main_jar" "streamfusion-core${artifact_suffix}"
 assert_native_payload "$core_main_jar" streamfusion-core libstreamfusion ""
 assert_native_payload "$core_jar" streamfusion-core libstreamfusion ""
-if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|fluss|parquet|orc|delta|paimon|iceberg|format/(json|csv|raw|avro|avroconfluent|protobuf))/'; then
+if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|fluss|parquet|orc|delta|paimon|iceberg|doris|format/(json|csv|raw|avro|avroconfluent|protobuf))/'; then
   echo "streamfusion-core contains optional connector or format classes" >&2
   exit 1
 fi
@@ -223,5 +223,7 @@ for module in [*modules.split(), "runtime", "loader"]:
             elif not dep_version.startswith(expected_version):
                 raise SystemExit(f"{path}: mismatched Flink dependency {artifact}:{dep_version}")
 PYTHON
+
+if [ "$flink_line" = 2.2 ]; then assert_no_native_payload "$repo_root/streamfusion-doris/target/streamfusion-doris-$version.jar" streamfusion-doris; fi
 
 echo "StreamFusion artifact boundaries and consumer POMs are clean for $version / Flink $flink_line"

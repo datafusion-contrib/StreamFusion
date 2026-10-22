@@ -251,6 +251,15 @@ public final class StreamFusionSuiteAgent {
                 builder.visit(
                     Advice.to(PreferNativePaimonFormat.class)
                         .on(named("discoverFactory").and(takesArguments(2)))))
+        .type(
+            namedOneOf(
+                "tech.streamfusion.doris.DorisArrowReader",
+                "tech.streamfusion.doris.DorisThriftArrowReader"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(Advice.to(BindNativeExecution.class).on(isConstructor()))
+                    .visit(Advice.to(RecordDorisArrowRead.class).on(named("readBatch"))))
         .type(named("tech.streamfusion.delta.NativeDeltaParquetHandler$NativeFile"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -433,6 +442,14 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.This Object operator) {
       NativeExecution.opened(operator);
+    }
+  }
+
+  public static final class RecordDorisArrowRead {
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object reader, @Advice.Return Object root)
+        throws ReflectiveOperationException {
+      if (root != null) NativeExecution.completed(reader, NativeExecution.batchRows(reader, root));
     }
   }
 

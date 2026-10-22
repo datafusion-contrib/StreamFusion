@@ -295,6 +295,42 @@ jobs:
           mvn -B -ntp -P${{ matrix.profile }}
           -pl ${{ matrix.module }} -am test -Dsf.runtime.tests.skip=true -Dnative.build.skip=true
 
+  doris-tests:
+    needs: native-build
+    name: Doris connector and upstream SQL tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: debug-native-${{ github.sha }}
+          path: native/target/debug
+      - name: Resolve Doris dependencies before tests
+        run: python3 bin/ci-maven-dependencies.py --profile doris,doris-it,doris-upstream --projects streamfusion-doris --also-make
+      - name: Run Arrow ownership, SQL parity and upstream Doris connector tests
+        env:
+          SF_DORIS_NATIVE_BUILD_SKIP: 'true'
+        run: bin/doris-suite.sh
+      - name: Retain Doris plans, upstream assertions and server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doris-sql-parity
+          path: |
+            streamfusion-doris/target/surefire-reports/
+            streamfusion-doris/target/doris-sql-plans/
+            streamfusion-doris/target/doris-suite/
+          if-no-files-found: error
+          retention-days: 7
+
   image-integration:
     name: Flink image integration (optimized native build)${{ matrix.suffix }}
     runs-on: ubuntu-22.04
@@ -411,7 +447,7 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ always() && !cancelled() }}
-    needs: [native-build, native-tests, java-tests, lake-module-tests, image-integration]
+    needs: [native-build, native-tests, java-tests, lake-module-tests, image-integration, doris-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

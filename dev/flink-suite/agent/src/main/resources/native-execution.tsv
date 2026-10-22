@@ -63,3 +63,19 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testCountDisti
 # Released LISTAGG DISTINCT keeps ordered string membership.
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=OFF	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
+
+# Released Doris SQL readers must return nonempty Arrow batches in the selected transport.
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceOldApi	*	DorisThriftArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceAllOptions	*	DorisThriftArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterAndProjectionPushDown	useFlightSql=true	DorisArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterAndProjectionPushDown	useFlightSql=false	DorisThriftArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterWithUnionAll	useFlightSql=true	DorisArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterWithUnionAll	useFlightSql=false	DorisThriftArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterWithFilterQuery	useFlightSql=true	DorisArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterWithFilterQuery	useFlightSql=false	DorisThriftArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterWithUnionAllNotEqualFilter	useFlightSql=true	DorisArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTableSourceFilterWithUnionAllNotEqualFilter	useFlightSql=false	DorisThriftArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testJobManagerFailoverSource	useFlightSql=true	DorisArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testJobManagerFailoverSource	useFlightSql=false	DorisThriftArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTaskManagerFailoverSource	useFlightSql=true	DorisArrowReader
+org.apache.doris.flink.source.DorisSourceITCase#testTaskManagerFailoverSource	useFlightSql=false	DorisThriftArrowReader

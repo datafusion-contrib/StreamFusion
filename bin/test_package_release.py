@@ -24,7 +24,7 @@ class PackageReleaseTest(unittest.TestCase):
                     modules = ["loader", "core", "kafka", "fluss", "json", "csv", "raw", "avro",
                                "avro-confluent-registry", "protobuf", "parquet", "orc", "paimon"]
                     if line == "2.2":
-                        modules.extend(["delta", "iceberg"])
+                        modules.extend(["delta", "iceberg", "doris"])
                     artifacts = []
                     for module in modules:
                         target = root / f"streamfusion-{module}/target"

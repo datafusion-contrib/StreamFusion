@@ -1,0 +1,383 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "status": "complete; all output aggregate and plan assertions passed",
+  "base_commit": "d349a8e1b5e7001f507a89ab40832964659e0a22",
+  "working_tree": "Doris integration added on this base; unrelated workspace changes were not committed by this task",
+  "boundary": "SQL submission through queryable committed Doris output; includes planning, JNI, IPC, I/O, startup and publish wait",
+  "workload": "INSERT INTO dst SELECT id+1,n+1,name,amount FROM src WHERE MOD(id,2)=0",
+  "schema": "id BIGINT, n INT, name STRING, amount DECIMAL(18,2)",
+  "nulls": "name NULL when id%7=0; amount NULL when id%11=0; Unicode payload",
+  "configuration": {
+    "doris": "4.1.3",
+    "doris_image_digests": [
+      "apache/doris@sha256:82a5cabc7900ebcd3d080412d636c0cebd6602799fffe2605c652b2ea7d42609"
+    ],
+    "connector": "26.3.0",
+    "flink": "2.2.1",
+    "java": "17.0.20.1",
+    "cpu_model": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "logical_processors": 16,
+    "system_memory_bytes": 10429034496,
+    "jvm_heap_bytes": 2147483648,
+    "parallelism": 2,
+    "buckets": 4,
+    "replication": 1,
+    "source_transport": "Flight SQL / released Java ADBC",
+    "sink_transport": "Arrow IPC, uncompressed Stream Load, two-phase commit",
+    "logging": "WARN; HTTP wire debug disabled identically for all modes",
+    "native_profile": "release, mimalloc",
+    "native_library_sha256": "aaf010eb0b61a9a25c4a8e38e6113934bcb26da36c5588d45d741bb1ae49e38b",
+    "warmups_per_size_and_mode": 2,
+    "measured_trials_per_size_and_mode": 6,
+    "mode_order": "Rotated on each trial, two complete cycles per size"
+  },
+  "controls": {
+    "stock": "stock Flink source, SQL and Arrow sink",
+    "previous": "same StreamFusion core with streamfusion.doris.enabled=false; stock Doris source/sink and native Calc with both row transposes",
+    "arrow": "native Doris source, native Calc and native Doris sink; no row transposes"
+  },
+  "checks": [
+    "Native plan assertions on every run",
+    "Previous-behavior plans contain both perimeter row transposes",
+    "Output count, ID/payload sums, non-null counts, decimal sums and UTF-8 CRC32 aggregate match Doris reference"
+  ],
+  "results": [
+    {
+      "input_rows": 100000,
+      "output_rows": 50000,
+      "modes": {
+        "stock": {
+          "milliseconds": [
+            2132.949785,
+            21908.301156,
+            763.021327,
+            843.10235,
+            772.431311,
+            775.396411
+          ],
+          "median_ms": 809.2493804999999,
+          "min_ms": 763.021327,
+          "max_ms": 21908.301156,
+          "sample_stddev_ms": 8529.371318577192
+        },
+        "previous": {
+          "milliseconds": [
+            2050.622497,
+            781.218312,
+            756.053684,
+            787.208564,
+            769.463952,
+            760.220751
+          ],
+          "median_ms": 775.341132,
+          "min_ms": 756.053684,
+          "max_ms": 2050.622497,
+          "sample_stddev_ms": 522.6075240756459
+        },
+        "arrow": {
+          "milliseconds": [
+            1863.889155,
+            785.548804,
+            803.539571,
+            782.908114,
+            807.039782,
+            728.451478
+          ],
+          "median_ms": 794.5441875,
+          "min_ms": 728.451478,
+          "max_ms": 1863.889155,
+          "sample_stddev_ms": 442.78215868511086
+        }
+      },
+      "median_speedup_over_stock": 1.018507709490984,
+      "median_speedup_over_previous": 0.9758313561383897
+    },
+    {
+      "input_rows": 1000000,
+      "output_rows": 500000,
+      "modes": {
+        "stock": {
+          "milliseconds": [
+            1196.920114,
+            1116.093367,
+            1176.789558,
+            1355.178053,
+            1242.189182,
+            1097.361128
+          ],
+          "median_ms": 1186.854836,
+          "min_ms": 1097.361128,
+          "max_ms": 1355.178053,
+          "sample_stddev_ms": 93.7481168299287
+        },
+        "previous": {
+          "milliseconds": [
+            1093.450818,
+            1061.811929,
+            1097.574008,
+            1065.478795,
+            1091.945131,
+            1016.698739
+          ],
+          "median_ms": 1078.711963,
+          "min_ms": 1016.698739,
+          "max_ms": 1097.574008,
+          "sample_stddev_ms": 30.699490314164716
+        },
+        "arrow": {
+          "milliseconds": [
+            939.74668,
+            882.700764,
+            1006.419527,
+            880.554349,
+            836.538859,
+            867.648688
+          ],
+          "median_ms": 881.6275565000001,
+          "min_ms": 836.538859,
+          "max_ms": 1006.419527,
+          "sample_stddev_ms": 61.03338125195026
+        }
+      },
+      "median_speedup_over_stock": 1.3462088693231538,
+      "median_speedup_over_previous": 1.2235461052084298
+    },
+    {
+      "input_rows": 10000000,
+      "output_rows": 5000000,
+      "modes": {
+        "stock": {
+          "milliseconds": [
+            6507.450395,
+            6237.994716,
+            7574.149287,
+            20863.942851,
+            9594.543814,
+            5847.998833
+          ],
+          "median_ms": 7040.799841,
+          "min_ms": 5847.998833,
+          "max_ms": 20863.942851,
+          "sample_stddev_ms": 5757.896804388885
+        },
+        "previous": {
+          "milliseconds": [
+            6108.683447,
+            7673.160964,
+            7642.898784,
+            8045.75965,
+            5459.333822,
+            5030.661578
+          ],
+          "median_ms": 6875.7911155,
+          "min_ms": 5030.661578,
+          "max_ms": 8045.75965,
+          "sample_stddev_ms": 1289.4345916537147
+        },
+        "arrow": {
+          "milliseconds": [
+            4990.870684,
+            5991.893063,
+            6344.22481,
+            15693.667078,
+            5227.045641,
+            4635.722885
+          ],
+          "median_ms": 5609.469352,
+          "min_ms": 4635.722885,
+          "max_ms": 15693.667078,
+          "sample_stddev_ms": 4234.757819804941
+        }
+      },
+      "median_speedup_over_stock": 1.2551632604053133,
+      "median_speedup_over_previous": 1.2257471578926633
+    }
+  ],
+  "retained_diagnostics": {
+    "initial-implicit-logging.csv": "Initial unprofiled one-warmup/three-trial run with implicit legacy debug logging and 8 GiB heap; not headline results",
+    "profiled-implicit-logging-10m.csv": "JFR diagnostic with implicit debug logging and 8 GiB heap; not headline results; combined command failed only the then-unfixed missing-dependency unit test",
+    "profiled-warn-10m.csv": "JFR diagnostic with WARN logging and 8 GiB heap; not headline results",
+    "incomplete-memory-pressure.csv": "All completed samples from aborted 8 GiB sweep. First 10M stock warmup failed Doris MEM_LIMIT_EXCEEDED system low-water guard; not headline results",
+    "before-sidecar-prefix.csv": "Prior complete 2 GiB, WARN-logging 72-sample sweep before the final logical-prefix sink adjustment; retained as an independent control"
+  },
+  "limitations": [
+    "Small-job ranges overlap substantially; the Arrow median is about 2% slower than the previous control and about 2% faster than stock, with no reliable small-job speedup demonstrated",
+    "Large-job ranges overlap and contain slow trials; no sustained infinite-stream or Nexmark claim",
+    "Warmups and every completed measured trial, including unfavorable samples, are retained"
+  ],
+  "prior_fixed_heap_sweep_results": [
+    {
+      "input_rows": 100000,
+      "output_rows": 50000,
+      "modes": {
+        "stock": {
+          "milliseconds": [
+            898.227378,
+            910.977097,
+            824.428082,
+            844.899629,
+            887.807052,
+            1068.509309
+          ],
+          "median_ms": 893.0172150000001,
+          "min_ms": 824.428082,
+          "max_ms": 1068.509309,
+          "sample_stddev_ms": 86.26987444574726
+        },
+        "previous": {
+          "milliseconds": [
+            891.629703,
+            888.06228,
+            859.245544,
+            871.320688,
+            1018.781123,
+            1004.062627
+          ],
+          "median_ms": 889.8459915,
+          "min_ms": 859.245544,
+          "max_ms": 1018.781123,
+          "sample_stddev_ms": 70.25851738086699
+        },
+        "arrow": {
+          "milliseconds": [
+            893.196616,
+            824.795544,
+            847.12199,
+            833.104769,
+            1019.883118,
+            998.583374
+          ],
+          "median_ms": 870.1593029999999,
+          "min_ms": 824.795544,
+          "max_ms": 1019.883118,
+          "sample_stddev_ms": 86.04335561656907
+        }
+      },
+      "median_speedup_over_stock": 1.0262686520976034,
+      "median_speedup_over_previous": 1.0226242349327617
+    },
+    {
+      "input_rows": 1000000,
+      "output_rows": 500000,
+      "modes": {
+        "stock": {
+          "milliseconds": [
+            1319.108943,
+            1170.115213,
+            1110.707804,
+            1162.374996,
+            1359.480087,
+            1050.182912
+          ],
+          "median_ms": 1166.2451045,
+          "min_ms": 1050.182912,
+          "max_ms": 1359.480087,
+          "sample_stddev_ms": 120.18060472332908
+        },
+        "previous": {
+          "milliseconds": [
+            1096.443597,
+            1117.42994,
+            1141.447583,
+            1069.236914,
+            1073.543137,
+            1054.390495
+          ],
+          "median_ms": 1084.993367,
+          "min_ms": 1054.390495,
+          "max_ms": 1141.447583,
+          "sample_stddev_ms": 32.81688382644055
+        },
+        "arrow": {
+          "milliseconds": [
+            942.753198,
+            887.817941,
+            862.569723,
+            893.718697,
+            867.732757,
+            933.957351
+          ],
+          "median_ms": 890.768319,
+          "min_ms": 862.569723,
+          "max_ms": 942.753198,
+          "sample_stddev_ms": 33.43394644520544
+        }
+      },
+      "median_speedup_over_stock": 1.3092575023427613,
+      "median_speedup_over_previous": 1.2180421596246733
+    },
+    {
+      "input_rows": 10000000,
+      "output_rows": 5000000,
+      "modes": {
+        "stock": {
+          "milliseconds": [
+            7825.549887,
+            6925.324614,
+            6116.050678,
+            6043.505255,
+            6057.291027,
+            6342.633947
+          ],
+          "median_ms": 6229.3423125,
+          "min_ms": 6043.505255,
+          "max_ms": 7825.549887,
+          "sample_stddev_ms": 706.8931970921599
+        },
+        "previous": {
+          "milliseconds": [
+            9056.207011,
+            8133.926689,
+            5378.746224,
+            6096.892138,
+            6067.406655,
+            6231.97623
+          ],
+          "median_ms": 6164.434184,
+          "min_ms": 5378.746224,
+          "max_ms": 9056.207011,
+          "sample_stddev_ms": 1431.0102330765772
+        },
+        "arrow": {
+          "milliseconds": [
+            7679.413019,
+            7985.759415,
+            5051.586446,
+            5020.625006,
+            5717.674068,
+            5030.813453
+          ],
+          "median_ms": 5384.630257000001,
+          "min_ms": 5020.625006,
+          "max_ms": 7985.759415,
+          "sample_stddev_ms": 1385.7862400101014
+        }
+      },
+      "median_speedup_over_stock": 1.1568746627313689,
+      "median_speedup_over_previous": 1.1448203293041814
+    }
+  ],
+  "production_java_source_sha256": {
+    "streamfusion-doris/src/main/java/tech/streamfusion/doris/DorisArrowBuffers.java": "faa845111667d3995611d4125dce82dbbd8d20ffe6693ef5428715de126ca9ce",
+    "streamfusion-doris/src/main/java/tech/streamfusion/doris/DorisArrowReader.java": "e2ea70297281eddfb82482daefff7a1100c23e9a12e248881f626c98ccced658",
+    "streamfusion-doris/src/main/java/tech/streamfusion/doris/DorisArrowSerializer.java": "c7719f38466a65fc992b994dacc302d6d71df56d52723a0c68f746dcb1cc4763",
+    "streamfusion-doris/src/main/java/tech/streamfusion/doris/DorisArrowSource.java": "a8ef3404b8848737ebf3e47b50474333ef5a5dd51752fcae1a6f3bc872cefe33",
+    "streamfusion-doris/src/main/java/tech/streamfusion/doris/DorisSchemas.java": "1283d7ba3bcc2327b864db7b395e688ea4859554ffe0762ba358dec4ebc63614",
+    "streamfusion-doris/src/main/java/tech/streamfusion/planner/DorisPlannerExtension.java": "db121d69c84d86d3c77e616bb1189d61cf2722e962bf3380c03d999e6eac48f8",
+    "streamfusion-doris/src/main/java/tech/streamfusion/planner/DorisTables.java": "ab8cbb79037efcae34a2bd797305e85f653ddbc1538a3da89ac4b8789624d1e4",
+    "streamfusion-doris/src/main/java/tech/streamfusion/planner/NativeDorisSinkExecNode.java": "f15b7f20a750647f22252410a978b663dccce19febc5d75c932c70bc1c5d0768",
+    "streamfusion-doris/src/main/java/tech/streamfusion/planner/NativeDorisSourceExecNode.java": "128b1a6c9464e86d68098fc45a334b50719eaccdced256e241d0c14ba0de73fe",
+    "streamfusion-doris/src/main/java/tech/streamfusion/planner/StreamPhysicalNativeDorisSink.java": "e79f75aa0b306bd25886709eca6fe1faeca339afef9fd8e616a26e08cff3eb62",
+    "streamfusion-doris/src/main/java/tech/streamfusion/planner/StreamPhysicalNativeDorisSource.java": "8d448f7d684acf371300cbef50d2d3f9df19a688d52c7158b7aaf958803a1c9d"
+  },
+  "buffer_sharing": {
+    "fixture": "Real Flight response with nullable BIGINT/INT/UTF-8 STRING/DECIMAL(18,2), reader closed before Rust echo",
+    "checked_buffers": 8,
+    "shared_logical_buffer_bytes": 114,
+    "checked_values": "exactly equal",
+    "all_valid_validity_masks": "excluded; importer may reconstruct them",
+    "observations": "flight-buffer-sharing.csv",
+    "scope": "Compatible buffers; not a claim about network reception or all possible alignment repairs"
+  }
+}

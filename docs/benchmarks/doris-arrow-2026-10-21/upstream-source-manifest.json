@@ -1,0 +1,50 @@
+[
+  {
+    "test": "source/DorisSourceITCase.java",
+    "source_sha256": "8eed0a09b62a597c2532d82b3879da5dc391257f2a7742c5a1d2e4ccf89d3af1",
+    "compiled_sha256": "8eed0a09b62a597c2532d82b3879da5dc391257f2a7742c5a1d2e4ccf89d3af1",
+    "adaptation": "none"
+  },
+  {
+    "test": "source/AbstractDorisIncrementalITCase.java",
+    "source_sha256": "100e0ac5a49e35c49aebe0c30492389878383afc54e217614abdd3e59c7f2034",
+    "compiled_sha256": "100e0ac5a49e35c49aebe0c30492389878383afc54e217614abdd3e59c7f2034",
+    "adaptation": "none"
+  },
+  {
+    "test": "source/DorisIncrementalSourceITCase.java",
+    "source_sha256": "e1bbc676b1c541f5f02eab91de9c039e770f0214ddf968209df75e1c244dd012",
+    "compiled_sha256": "e1bbc676b1c541f5f02eab91de9c039e770f0214ddf968209df75e1c244dd012",
+    "adaptation": "none"
+  },
+  {
+    "test": "source/DorisIncrementalSourceFailoverITCase.java",
+    "source_sha256": "cbd4198eec1d24f9265435ef9876e9dce98ce71e9ee9a77d7140441fa69aa03c",
+    "compiled_sha256": "cbd4198eec1d24f9265435ef9876e9dce98ce71e9ee9a77d7140441fa69aa03c",
+    "adaptation": "none"
+  },
+  {
+    "test": "sink/DorisSinkITCase.java",
+    "source_sha256": "81108614f613d97499f51ac09ac88b8b3f8f2950bfea1b3f91c0b5c61f04d49a",
+    "compiled_sha256": "81108614f613d97499f51ac09ac88b8b3f8f2950bfea1b3f91c0b5c61f04d49a",
+    "adaptation": "none"
+  },
+  {
+    "test": "catalog/DorisCatalogITCase.java",
+    "source_sha256": "cf64a7c328ce6df0a7c5b59efac922953b29aecfc512a22cff992833a469ee8d",
+    "compiled_sha256": "cf64a7c328ce6df0a7c5b59efac922953b29aecfc512a22cff992833a469ee8d",
+    "adaptation": "none"
+  },
+  {
+    "test": "lookup/DorisLookupTableITCase.java",
+    "source_sha256": "b8908ca152e898debe15e10d2514e5302791f8284f66ff0b540d4bd8bec124fc",
+    "compiled_sha256": "b8908ca152e898debe15e10d2514e5302791f8284f66ff0b540d4bd8bec124fc",
+    "adaptation": "none"
+  },
+  {
+    "test": "table/DorisRowDataJdbcLookupFunctionITCase.java",
+    "source_sha256": "58720180a2077431203da62b011b7b94e2382ce6dbf1a7896677aead3b3c5b2e",
+    "compiled_sha256": "2420d523e0d928c348e7bc9f1a022cf6cfa2e5c16b27128d59b670d0b57eea1a",
+    "adaptation": "published Guava Cache import"
+  }
+]

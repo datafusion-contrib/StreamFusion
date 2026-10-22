@@ -102,6 +102,13 @@ macOS Apple Silicon payloads; Linux ARM64 is not part of the published binary se
 
 ### Layering connectors and formats
 
+The optional [Doris adapter](connectors/doris.md) builds with the `doris` Maven profile. Install
+`streamfusion-doris` and the released `flink-doris-connector-2.2-26.3.0.jar` with the loader and
+core. It requires JDK 17 because the stock Doris connector targets Java 17; the adapter itself
+targets Java 11. The Flink 2.2 release archive includes this Java-only adapter; it adds no connector
+DSO or separate format JAR. The base image does not include it. Stock Arrow sink fallback also
+requires the matching Flink `flink-python` JAR from `opt/` at runtime.
+
 The base image contains the loader and self-contained core runtime JAR and remains connector- and
 format-neutral: every optional connector or format is its own
 `streamfusion-*` artifact, matching Flink's own connector/format module split. Derive a small image

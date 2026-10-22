@@ -1,5 +1,9 @@
 # Connectors
 
+[Apache Doris](doris.md) has an optional experimental adapter for Flight/Thrift Arrow reads, including experimental incremental scans,
+and Arrow Stream Load writes, with the released connector retaining enumeration and
+transaction handling. Its validation is in progress; see its coverage page for fallback boundaries.
+
 **[Kafka](kafka.md)** is the only connector StreamFusion considers production-grade today, across
 the native [formats](#formats) listed below. It's covered in depth in this section.
 

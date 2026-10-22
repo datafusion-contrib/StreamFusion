@@ -7,6 +7,15 @@ operators flow Arrow batches into one another and a row↔Arrow transpose is ins
 columnar operator meets a rowwise one. The conversion is paid once at the region's edge, never
 inside a chain.
 
+The [Doris adapter](../connectors/doris.md) borrows the released client's shaded Arrow buffers
+through retained foreign allocations and emits Arrow IPC into its stock writer/committer.
+Its verified snapshot-to-insert pipeline removes both row transposes. The 2026-10-22 release
+fixture retains planning, startup, JNI, codecs, network I/O, commit and visibility wait.
+At 1M scalar rows the Flight and Thrift median speedups are 1.24× and 1.27× over stock;
+Flight with arrays, rows and timestamps reaches 1.54×. At 10M rows the measured gains are
+smaller (Flight 1.09×, Thrift 1.05×); full ranges and both stock/previous controls remain on
+the connector page. Sink IPC copies remain, and this is not a whole-network zero-copy claim.
+
 This was the change the first end-to-end benchmarks demanded: a lone native operator paid two
 conversions per batch and ran below Flink (filter 0.58x, window 0.81x); a fully-columnar Parquet
 copy runs 3–5x.

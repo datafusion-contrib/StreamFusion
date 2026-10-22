@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "adapter_tests": 24,
+  "benchmark_test": 1,
+  "profile": "release / bench",
+  "reports": [
+    {
+      "class": "DorisArrowBuffersTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "class": "DorisArrowSerializerTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "class": "DorisSchemasTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "class": "DorisDeploymentTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "class": "DorisSqlIT",
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "class": "DorisConnectorBenchmark",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "shared_arrow_allocations_after_sql": 0,
+  "packaging": "17 owned Java 11 class files; no bundled stock connector, core classes or DSO; source attachment contains 11 owned Java files"
+}

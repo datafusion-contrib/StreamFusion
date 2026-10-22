@@ -659,6 +659,10 @@
 
     <profiles>
         <profile>
+            <id>doris</id>
+            <modules><module>streamfusion-doris</module></modules>
+        </profile>
+        <profile>
             <id>flink-1.18</id>
             <properties>
                 <flink.version>1.18.1</flink.version>

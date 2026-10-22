@@ -216,3 +216,13 @@ checks prevents Maven's failed-lookup cache from defeating the next setup attemp
 The upstream suite transfers its prepared pinned Maven distribution to its consumer runners
 and verifies that it starts with downloads blocked. See the
 [shared-build guide](upstream-flink-suite.md#shared-builds-and-runtime-shards).
+
+## Doris connector
+
+The required `doris-tests` job runs `bin/doris-suite.sh`: the Arrow adapter tests and the
+unchanged source, sink, catalog and lookup SQL tests from released Doris connector 26.3.0
+against a real released Doris 4.1.4.1 FE/BE fixture. StreamFusion activation, per-test SQL
+inventory and nonempty Arrow source-read witnesses are audited. One stale upstream batch
+timestamp assertion is accepted only after reproducing and matching its exact failure with
+StreamFusion disabled; all original test SQL and assertions still execute. The incremental reader has unit coverage; a compatible Doris 5.0 server is not
+yet available as a released CI fixture.
