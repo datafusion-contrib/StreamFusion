@@ -142,8 +142,8 @@ day-time/year-month interval input, output and argument types.
 These types are admitted by default under the accepted UDF performance exception, without
 an additional type-specific opt-in. Their user functions still run on the JVM; measured
 standalone costs can exceed stock Flink after profiling and two optimization passes.
-Conversion optimization remains tracked in
-[#425](https://github.com/datafusion-contrib/StreamFusion/issues/425). Fixed BINARY and container types, specialized functions, Python/async
+The [bounded conversion investigation](../optimizations/decimal-arrow-reads.md)
+records the retained improvement and measured limits. Fixed BINARY and container types, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
 switch can disable this operator.
 
@@ -213,8 +213,9 @@ costs. Lazy RowKind allocation and a generated wide-decimal binary exit failed t
 improvement and were removed; the
 [rejected experiments](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/379-typed-table-function-boundaries.md) retain
 both measurements. Profiling is diagnostic; its durations are excluded from speed claims.
-[#425](https://github.com/datafusion-contrib/StreamFusion/issues/425) tracks further conversion
-work. The ordinary `streamfusion.operator.tableFunction.enabled=false` override disables
+The [bounded follow-up](../optimizations/decimal-arrow-reads.md) reduces decimal read costs;
+further conversion work is deferred after that pass found no other simple change.
+The ordinary `streamfusion.operator.tableFunction.enabled=false` override disables
 table-function substitution for all admitted types.
 
 Arrow decimal reads now avoid temporary byte arrays and BigInteger construction when the

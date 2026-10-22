@@ -71,7 +71,10 @@ include startup and planning and do not establish sustained kernel throughput.
 
 [All warmups, trials, ranges and profile counters](../benchmarks/results/table-function-conversions-425-2026-10-22.json)
 retain the library and reader identities. Existing exact/temporal support remains
-default-enabled, and #425 retains the remaining conversion work.
+default-enabled. The maintainer accepted closing #425 after the bounded pass found
+no other simple optimization. The
+[deferred work and reopening criteria](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/425-remaining-table-function-conversions.md)
+retain the larger-value, temporal and owned-exit costs as measured limits.
 
 The focused selection passes 87 checks on each released Flink line with JDK 17:
 signed-long limits and adjacent wider values, requested precision/scale and NULLs,

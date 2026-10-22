@@ -44,7 +44,10 @@ timing. Separate JVM controls drift; these diagnostic medians do not isolate sma
 
 All warmups, measured arrays and the CPU sample summary are retained with the
 [coverage benchmark artifact](../../docs/benchmarks/results/typed-table-functions-2026-10-19.json).
-Remaining conversion optimization is tracked in
-[#425](https://github.com/datafusion-contrib/StreamFusion/issues/425).
+The [bounded follow-up](../../docs/optimizations/decimal-arrow-reads.md) for
+[#425](https://github.com/datafusion-contrib/StreamFusion/issues/425) retains a decimal
+read improvement. Further work is
+[deferred with reopening criteria](425-remaining-table-function-conversions.md)
+after that pass found no other simple optimization.
 No speedup is claimed for the shipped whitelist expansion. Simple JVM functions can be
 cheaper than two Arrow conversions even when their surrounding native operators benefit.
