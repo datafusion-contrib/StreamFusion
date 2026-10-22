@@ -131,6 +131,14 @@ for join, and the row counts/widths stated above. Other source cases use `collec
 
 Reproduce an individual collection case after building the release library:
 
+The current harness retains operator metrics and requires consumed native Calc input for admitted
+runs. It constructs a metrics-enabled MiniCluster before timing each job. Execution-time planning,
+deployment, runtime row sources, both row/Arrow transposes, production JNI and the rowwise sink remain
+inside timing; cluster construction, preliminary schema/explain checks and teardown are outside.
+The October 17 tables above used the earlier harness and are historical observations. Compare fresh
+stock and preceding/current StreamFusion cohorts using the same harness rather than subtracting
+absolute times across those methods. Per-trial logs retain warmups and native execution counters.
+
 ```bash
 SF_BENCHMARK=true mvn -Pbench -pl :streamfusion-runtime -am test \
   -Dnative.build.skip=true -Dtest=DynamicCollectionBenchmark \

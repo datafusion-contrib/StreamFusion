@@ -38,10 +38,20 @@ import tech.streamfusion.arrow.NestedRepresentation;
 @Internal
 public final class ArrowRowColumnVector implements RowColumnVector {
 
+  private static final java.util.Set<Class<?>> OWNED_SCALARS = java.util.Set.of(
+      ArrowBooleanColumnVector.class, ArrowTinyIntColumnVector.class,
+      ArrowSmallIntColumnVector.class, ArrowIntColumnVector.class, ArrowBigIntColumnVector.class,
+      ArrowFloatColumnVector.class, ArrowDoubleColumnVector.class, ArrowDecimalColumnVector.class,
+      ArrowDateColumnVector.class, ArrowTimeColumnVector.class, ArrowTimestampColumnVector.class,
+      ArrowBinaryColumnVector.class, ArrowVarBinaryColumnVector.class, ArrowVarCharColumnVector.class,
+      ArrowNullColumnVector.class, tech.streamfusion.arrow.NestedStringColumnVector.class);
+
   /** Container which is used to store the sequence of row values of a column to read. */
   private final StructVector structVector;
 
   private final ColumnVector[] fieldColumns;
+  private final VectorizedColumnBatch columnBatch;
+  private final boolean ownedScalarFields;
   private final boolean represented;
   private final org.apache.arrow.vector.VarBinaryVector binaryRows;
   private boolean binaryRowsForExit;
@@ -57,6 +67,8 @@ public final class ArrowRowColumnVector implements RowColumnVector {
       StructVector structVector, ColumnVector[] fieldColumns, LogicalType[] types) {
     this.structVector = Preconditions.checkNotNull(structVector);
     this.fieldColumns = Preconditions.checkNotNull(fieldColumns);
+    columnBatch = new VectorizedColumnBatch(fieldColumns);
+    ownedScalarFields = Arrays.stream(fieldColumns).allMatch(column -> OWNED_SCALARS.contains(column.getClass()));
     binaryRows = NestedRepresentation.binaryRows(structVector);
     represented =
         NestedRepresentation.kinds(structVector) != null
@@ -70,8 +82,7 @@ public final class ArrowRowColumnVector implements RowColumnVector {
 
   @Override
   public ColumnarRowData getRow(int i) {
-    VectorizedColumnBatch vectorizedColumnBatch = new VectorizedColumnBatch(fieldColumns);
-    return new ColumnarRowData(vectorizedColumnBatch, i);
+    return new ColumnarRowData(columnBatch, i);
   }
 
   public RowData getRowData(int i) {
@@ -102,7 +113,8 @@ public final class ArrowRowColumnVector implements RowColumnVector {
     values.setRowKind(row.getRowKind());
     for (int field = 0; field < getters.length; field++)
       values.setField(field, row.isNullAt(field) ? null : getters[field].getFieldOrNull(row));
-    return serializer.copy(values);
+    // These scalar getters already return owned values; nested views still need a deep copy.
+    return ownedScalarFields ? values : serializer.copy(values);
   }
 
   /** The exit projection consumes these owned binary values immediately. */

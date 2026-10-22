@@ -20,6 +20,7 @@ package tech.streamfusion.arrow.writers;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.table.data.ArrayData;
+import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.RowData;
 
 import org.apache.arrow.vector.BigIntVector;
@@ -80,6 +81,27 @@ public abstract class BigIntWriter<T> extends ArrowFieldWriter<T> {
 
         private BigIntWriterForArray(BigIntVector bigIntVector) {
             super(bigIntVector);
+        }
+
+        public void writeArray(ArrayData array) {
+            var vector = (BigIntVector) getValueVector();
+            int start = getCount();
+            int end = Math.addExact(start, array.size());
+            while (vector.getValueCapacity() < end) vector.reAlloc();
+            if (array instanceof GenericArrayData && !((GenericArrayData) array).isPrimitiveArray()) {
+                Object[] values = ((GenericArrayData) array).toObjectArray();
+                for (int i = 0; i < values.length; i++) {
+                    Long value = (Long) values[i];
+                    if (value == null) vector.setNull(start + i);
+                    else vector.set(start + i, value);
+                }
+            } else {
+                for (int i = 0; i < array.size(); i++) {
+                    if (array.isNullAt(i)) vector.setNull(start + i);
+                    else vector.set(start + i, array.getLong(i));
+                }
+            }
+            advanceCount(array.size());
         }
 
         @Override

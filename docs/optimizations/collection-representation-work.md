@@ -44,6 +44,43 @@ to the reproduction command, pointing `ASPROF_LIBRARY` at the profiler installat
 suffix: Maven's separate ORC test execution can launch another JVM even when that execution has
 no selected benchmark tests. Profiled timings are excluded from the elapsed-time tables.
 
+## Shared views of string-keyed maps
+
+Direct final MAP_KEYS, MAP_VALUES and MAP_ENTRIES projections of an input-reference
+MAP<STRING/VARCHAR, nullable basic value> use the existing Arrow view kernels. Basic values
+are BOOLEAN, signed integers and DECIMAL. The kernels retain list offsets, parent validity
+and the selected entry buffers instead of constructing JVM collections and writing a second
+set of Arrow buffers. NULL keys, duplicate entries and their order remain part of the input.
+
+Key and entry projections keep the represented string children, including their original
+UTF-16 cache and generic/binary array-copy category. Fresh entry ROWs have INSERT kind.
+Nested consumers retain the complete generated evaluator; the existing guards for unverified
+columnar producers, state/exchange boundaries and native sinks remain in force. This changes
+execution of already-supported expressions rather than adding new SQL signatures.
+
+A Calc containing only direct MAP_VALUES projections and insensitive input-reference/literal
+co-projections, with no condition, does not observe the keys' caches. Its entry transpose can
+therefore use ordinary UTF-8 key storage while retaining the original map offsets and value
+columns. A projection exposing the map, its keys, another sensitive value, or a condition
+retains the represented input schema. This decision is captured during planning.
+
+Plain nested ROW views share their immutable column-batch wrapper. Each row view still has its
+own position, so retaining one view and reading another cannot retarget the first. Represented
+generic ROWs with only the known owning Arrow scalar getters construct a fresh owned row once;
+they avoid a second deep copy of values that already own their bytes and objects. Rows containing
+nested views and binary row representations retain their existing serializer copies. Tests retain
+strings and their UTF-16 caches, binary payloads, wide decimals, full-range timestamps and row kinds
+after the reader advances and the entire Arrow batch closes.
+
+## Reserve BIGINT array capacity once
+
+The entry transpose reserves the entire visible BIGINT child range before writing an array,
+following Comet's fixed-width writer pattern and the existing INT array path. Nullable boxed
+GenericArrayData reads its object storage once rather than redispatching primitive/boxed getters
+for every element. Primitive and other ArrayData implementations retain their typed getters.
+All paths copy into owned Arrow buffers before upstream can mutate the source. Empty arrays,
+NULL parents/elements, count reset and buffer growth retain the ordinary writer contract.
+
 ## Arrays consumed immediately by UNNEST
 
 The immediate UNNEST consumer can construct homogeneous scalar arrays with released DataFusion's

@@ -79,6 +79,16 @@ closure. Both released-line reactor test compilations pass.
 
 ## Generated projection for primitive and binary outputs
 
+Scalar CHAR/VARCHAR outputs can also use this projection when the batch has neither top-level
+Java UTF-16 caches nor nested representation metadata. The reader borrows the canonical string
+bytes only while the projection copies them into its reusable heap row; downstream copying or
+serialization then follows the ordinary owned-row contract. This removes intermediate string
+byte arrays and generic row copies for outputs such as standalone TYPEOF and native ARRAY_JOIN.
+Cached or represented strings retain the existing reader path. Eligibility is checked per batch,
+so alternating ordinary, cached, NULL and empty-string batches keep their original values.
+Ownership tests cover both object-reuse settings, all row kinds, isolated surrogates with caches,
+large payloads and retained rows after batch closure.
+
 A boolean-cast CPU profile attributed about 15% of native samples to the exit transpose and
 7% of leaf samples to a host row field getter. Rows composed entirely of BOOLEAN, integer,
 floating-point, DATE, TIME, interval, compact DECIMAL (precision at most 18), BINARY or

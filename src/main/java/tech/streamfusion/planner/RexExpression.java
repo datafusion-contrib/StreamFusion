@@ -187,6 +187,7 @@ final class RexExpression {
   private boolean unnestOperand;
   private final Set<Integer> nonthrowingJvmRoots = new java.util.HashSet<>();
   private boolean preserveCollections;
+  private boolean skipMapKeyCaches;
   private boolean javaStringInputs;
   private String jvmExecutionReason;
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
@@ -647,6 +648,9 @@ final class RexExpression {
 
   private boolean emitCalc(Calc calc) {
     RexProgram program = calc.getProgram();
+    skipMapKeyCaches = program.getCondition() == null
+        && program.getProjectList().stream().map(program::expandLocalRef)
+            .allMatch(RexExpression::readsOnlyMapValues);
     if (containsTemporalUdf(program)) {
       if (!NativeConfig.temporalUdfEnabled()) {
         return reject("temporal scalar UDF execution is explicitly disabled");
@@ -935,7 +939,8 @@ final class RexExpression {
             || isBuiltinDefinition(
                     call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.MAP_ENTRIES)
                 && call.getOperands().size() == 1
-                && nativeBasicMap(call.getOperands().get(0).getType()));
+                && (nativeBasicMap(call.getOperands().get(0).getType())
+                    || nativeStringKeyMapProjection(call)));
   }
 
   private static boolean nativeBasicRow(RexCall call) {
@@ -1580,6 +1585,29 @@ final class RexExpression {
                 .contains(t.getSqlTypeName()));
   }
 
+  static boolean nativeStringKeyMapProjection(RexCall call) {
+    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
+        || !java.util.Set.of("MAP_KEYS", "MAP_VALUES", "MAP_ENTRIES")
+            .contains(call.getOperator().getName())
+        || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexInputRef)) return false;
+    var type = call.getOperands().get(0).getType();
+    return type.getSqlTypeName() == SqlTypeName.MAP
+        && type.getKeyType().getSqlTypeName() == SqlTypeName.VARCHAR
+        && type.getValueType().isNullable()
+        && java.util.Set.of(SqlTypeName.BOOLEAN, SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+            SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.DECIMAL)
+            .contains(type.getValueType().getSqlTypeName());
+  }
+
+  private static boolean readsOnlyMapValues(RexNode projection) {
+    return (projection instanceof RexInputRef || projection instanceof RexLiteral)
+            && !CollectionValueIdentity.sensitive(projection.getType())
+        || projection instanceof RexCall
+            && ((RexCall) projection).getOperator().getName().equals("MAP_VALUES")
+            && nativeStringKeyMapProjection((RexCall) projection);
+  }
+
   private boolean uniqueObjectConstruction;
 
   static boolean nativeObjectUpdate(RexCall call) {
@@ -2176,9 +2204,12 @@ final class RexExpression {
     }
     if (NativeConfig.collectionExpressionsEnabled() && ("MAP_KEYS".equals(functionName) || "MAP_VALUES".equals(functionName) || "MAP_ENTRIES".equals(functionName))) {
       var args=call.getOperands();
-      if (args.size()!=1 || !nativeBasicMap(args.get(0).getType())
+      boolean represented = call == projectionRoot && nativeStringKeyMapProjection(call);
+      if (args.size()!=1 || (!nativeBasicMap(args.get(0).getType()) && !represented)
           || requiresRowShortCircuit(args.get(0)))
         return reject(functionName + " uses Flink evaluation outside total nullable basic maps");
+      // Value-only projections cannot observe the keys' original Java string caches.
+      if (represented && !skipMapKeyCaches) preserveCollections = true;
       return emitBuiltinCall(call,"MAP_KEYS".equals(functionName) ? 192 : "MAP_VALUES".equals(functionName) ? 193 : 194);
     }
     if (NativeConfig.collectionExpressionsEnabled() && "MAP_UNION".equals(functionName)) {

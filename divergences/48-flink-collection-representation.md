@@ -25,8 +25,9 @@ repeated string consumers, NULLs in declared NOT NULL elements and every nested 
 
 Programs containing only nullable primitive collection types keep ordinary layouts and avoid
 serializer snapshots that preserve no additional identity. Represented nested-row vectors reuse
-their reader for the lifetime of the batch; each returned row is still copied before that reader
-can move to another index.
+their reader for the lifetime of the batch. Each returned row owns its fields before that reader
+can move to another index: known owning scalar getters need no second serializer copy, while
+nested views retain the deep copy.
 
 The planner captures the entry and generated-result Arrow schemas in serialized operator/function
 specifications. Task JVM properties cannot change those layouts after planning. Connector schemas
@@ -34,7 +35,8 @@ retain their ordinary layouts. Representation-sensitive inputs from other column
 string/ROW/MAP-bearing or NOT NULL-element array results crossing unverified operator boundaries
 keep the host route. Represented final results also require a row sink: native writer substitutions
 are declined until they verify the extended physical schema. Ordinary nullable primitive array
-outputs retain native sinks. These schemas are scoped to generated collection programs; merely enabling
+outputs retain native sinks. These schemas are scoped to generated collection programs and verified
+direct string-keyed map projections; merely enabling
 the experimental switch does not change other operators' schemas.
 
 Arrow Java 18.3 requires a non-nullable map-key field declaration. The existing declaration stays,

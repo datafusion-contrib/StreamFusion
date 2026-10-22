@@ -70,6 +70,8 @@ public abstract class ArrayWriter<T> extends ArrowFieldWriter<T> {
                 IntWriter.IntWriterForArray integers = ((IntWriter.IntWriterForArray) elementWriter);
 
                 integers.writeArray(array);
+            } else if (elementWriter instanceof BigIntWriter.BigIntWriterForArray && array.size() > 1) {
+                ((BigIntWriter.BigIntWriterForArray) elementWriter).writeArray(array);
             } else {
                 for (int i = 0; i < array.size(); i++) {
                     elementWriter.write(array, i);

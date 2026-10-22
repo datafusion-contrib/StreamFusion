@@ -77,6 +77,9 @@ class DynamicCollectionBenchmark {
         for (int turn = 0; turn < 2; turn++) {
           int engine = (trial + turn) % 2;
           double elapsed = run(map, expression, engine == 1);
+          System.out.printf(Locale.ROOT,
+              "[collection-trial] engine=%s trial=%d warmup=%s rows=%d seconds=%.9f%n",
+              engine == 1 ? "native" : "flink", trial, trial < WARMUP, ROWS, elapsed);
           if (trial >= WARMUP) {
             seconds[engine][trial - WARMUP] = elapsed;
           }
@@ -111,17 +114,27 @@ class DynamicCollectionBenchmark {
   }
 
   private static double run(boolean map, String expression, boolean nativeRun) throws Exception {
-    TableEnvironment table = environment(map);
-    String sql = prepare(table, expression);
-    PhysicalPlanScan scan = nativeRun ? NativePlanner.install(table) : null;
-    long start = System.nanoTime();
-    table.executeSql(sql).await();
-    double seconds = (System.nanoTime() - start) / 1e9;
-    if (nativeRun && (scan.substitutions() > 0) != EXPECT_NATIVE) {
-      throw new IllegalStateException("Unexpected route: " + scan.explainSummary());
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      TableEnvironment table = environment(map,
+          metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0));
+      String sql = prepare(table, expression);
+      PhysicalPlanScan scan = nativeRun ? NativePlanner.install(table) : null;
+      long start = System.nanoTime();
+      table.executeSql(sql).await();
+      double seconds = (System.nanoTime() - start) / 1e9;
+      if (nativeRun && (scan.substitutions() > 0) != EXPECT_NATIVE) {
+        throw new IllegalStateException("Unexpected route: " + scan.explainSummary());
+      }
+      if (nativeRun) {
+        assertRustFunction(scan);
+        if (EXPECT_NATIVE) {
+          var observations = metrics.nativeOperators();
+          RecoveryExecutionMetrics.assertConsumed(observations, "NativeCalc");
+          System.out.println("[collection-route] " + observations);
+        }
+      }
+      return seconds;
     }
-    if (nativeRun) assertRustFunction(scan);
-    return seconds;
   }
 
   private static void assertRustFunction(PhysicalPlanScan scan) {
@@ -212,7 +225,10 @@ class DynamicCollectionBenchmark {
   }
 
   private static TableEnvironment environment(boolean map) {
-    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    return environment(map, StreamExecutionEnvironment.getExecutionEnvironment());
+  }
+
+  private static TableEnvironment environment(boolean map, StreamExecutionEnvironment env) {
     env.setParallelism(1);
     StreamTableEnvironment table = StreamTableEnvironment.create(env);
     if (map) {
