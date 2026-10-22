@@ -1,0 +1,19 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[default_catalog.default_database.dst], fields=[EXPR$0, EXPR$1, name, amount])
++- LogicalProject(EXPR$0=[+($0, 1)], EXPR$1=[+($1, 1)], name=[$2], amount=[$3])
+   +- LogicalFilter(condition=[=(MOD($0, 2), 0)])
+      +- LogicalTableScan(table=[[default_catalog, default_database, src]])
+
+== Optimized Physical Plan ==
+Sink(table=[default_catalog.default_database.dst], fields=[EXPR$0, EXPR$1, name, amount])
++- ArrowToRowData(reuseBarrier=[256])
+   +- NativeCalc(select=[+(id, 1) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[], reuseBarrier=[255])
+      +- RowDataToArrow(reuseBarrier=[254])
+         +- TableSourceScan(table=[[default_catalog, default_database, src, filter=[]]], fields=[id, n, name, amount])
+
+== Optimized Execution Plan ==
+Sink(table=[default_catalog.default_database.dst], fields=[EXPR$0, EXPR$1, name, amount])
++- ArrowToRowData
+   +- NativeCalc(select=[+(id, 1) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[])
+      +- RowDataToArrow(fields=[4])
+         +- TableSourceScan(table=[[default_catalog, default_database, src, filter=[]]], fields=[id, n, name, amount])

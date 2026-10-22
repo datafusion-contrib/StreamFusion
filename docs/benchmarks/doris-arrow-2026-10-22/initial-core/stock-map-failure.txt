@@ -1,0 +1,8 @@
+Released Doris connector 26.3.0 and Flink 2.2.1 Arrow serializer.
+100,000 input rows; two tasks; MAP<STRING NOT NULL,INT> with two keys and one null value.
+The first stock warmup fails after the fixed 1,000-row Arrow batch boundary:
+Map array child array should have no nulls.
+The released Flink MapWriter does not reset its child writer positions between batches.
+Reproduce with the benchmark complex=true and maps=true properties.
+Native regression: mapWritesRemainValidAcrossMultipleThriftBatches validates 5,000 rows with 512-row Thrift batches.
+No map speedup is claimed.

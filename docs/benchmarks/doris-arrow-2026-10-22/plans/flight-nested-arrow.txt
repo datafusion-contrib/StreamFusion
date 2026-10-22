@@ -5,9 +5,9 @@ LogicalSink(table=[default_catalog.default_database.dst], fields=[EXPR$0, EXPR$1
       +- LogicalTableScan(table=[[default_catalog, default_database, src]])
 
 == Optimized Physical Plan ==
-NativeDorisSink(reuseBarrier=[151])
-+- NativeCalc(select=[+(id, 1) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount, ts, a, r], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[], reuseBarrier=[150])
-   +- NativeDorisSource(reuseBarrier=[149])
+NativeDorisSink(reuseBarrier=[39])
++- NativeCalc(select=[+(id, 1) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount, ts, a, r], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[], reuseBarrier=[38])
+   +- NativeDorisSource(reuseBarrier=[37])
 
 == Optimized Execution Plan ==
 NativeDorisSink

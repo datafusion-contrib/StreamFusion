@@ -1,0 +1,6 @@
+The unchanged upstream batch timestamp assertion is reproduced without the StreamFusion agent.
+Doris 4.1.4.1 produces 2023-01-01T00:00 on both transports.
+The original Thrift assertion expects 2022-12-31T16:00.
+The CI harness compares exact stock and accelerated assertion messages before recording an expected failure.
+Doris 4.1.3 with Asia/Shanghai server timezone instead fails the Flight expectation.
+All test sources and assertions remain unchanged.

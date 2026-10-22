@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-22",
-  "base_commit": "d951a83808425f9e7df7c0f6fc3fdb082443885f",
+  "base_commit": "717b8d94f8de48643f2204d3cf1e30a1283d2672",
   "status": "complete; every measured output and plan assertion passed",
   "boundary": "SQL submission through committed, queryable Doris output, including planning, startup, JNI, IPC, network, commit and visibility wait",
   "configuration": {
@@ -24,192 +24,147 @@
     "mode_order": "rotated on every trial",
     "doris_build": "doris-4.1.4.1-rc02-5dbec55b399",
     "cpu_model": "12th Gen Intel(R) Core(TM) i7-12650H",
-    "system_memory_bytes": 10429034496,
-    "version_metadata": "Initial driver queried VERSION(), the MySQL compatibility string. Labels were corrected and the unchanged server build verified with @@version_comment; future runs query this directly."
+    "system_memory_bytes": 10429034496
   },
   "workloads": {
     "flight-flat": {
-      "100000": {
-        "stock": {
-          "median_seconds": 0.9430321964999999,
-          "minimum_seconds": 0.835254052,
-          "maximum_seconds": 0.997737345,
-          "trials": 6
-        },
-        "previous": {
-          "median_seconds": 0.899251332,
-          "minimum_seconds": 0.8339936179999999,
-          "maximum_seconds": 1.0740243820000002,
-          "trials": 6
-        },
-        "arrow": {
-          "median_seconds": 0.8725074184999999,
-          "minimum_seconds": 0.8428979900000001,
-          "maximum_seconds": 0.942961419,
-          "trials": 6
-        },
-        "stock_over_arrow": 1.0808300038540017,
-        "previous_over_arrow": 1.0306517892374802
-      },
       "1000000": {
         "stock": {
-          "median_seconds": 1.138743024,
-          "minimum_seconds": 1.047449457,
-          "maximum_seconds": 1.217529079,
+          "median_seconds": 1.7060312735,
+          "minimum_seconds": 1.510246325,
+          "maximum_seconds": 3.5576933960000003,
           "trials": 6
         },
         "previous": {
-          "median_seconds": 1.063352265,
-          "minimum_seconds": 1.043228542,
-          "maximum_seconds": 1.1591480699999999,
+          "median_seconds": 2.4371751010000002,
+          "minimum_seconds": 1.3305909999999999,
+          "maximum_seconds": 3.6155179320000004,
           "trials": 6
         },
         "arrow": {
-          "median_seconds": 0.9159401549999999,
-          "minimum_seconds": 0.8636364489999999,
-          "maximum_seconds": 0.949961539,
+          "median_seconds": 1.3409648939999999,
+          "minimum_seconds": 1.1340474010000001,
+          "maximum_seconds": 2.704333583,
           "trials": 6
         },
-        "stock_over_arrow": 1.2432504654193266,
-        "previous_over_arrow": 1.1609407658298376
+        "stock_over_arrow": 1.2722415636184434,
+        "previous_over_arrow": 1.8174786766639996
       },
       "10000000": {
         "stock": {
-          "median_seconds": 5.941452833,
-          "minimum_seconds": 5.857126471,
-          "maximum_seconds": 7.725641721,
+          "median_seconds": 5.844002279,
+          "minimum_seconds": 5.091657356,
+          "maximum_seconds": 17.829478334,
           "trials": 6
         },
         "previous": {
-          "median_seconds": 5.9375700705,
-          "minimum_seconds": 5.210222388,
-          "maximum_seconds": 6.981706132999999,
+          "median_seconds": 5.9342590264999995,
+          "minimum_seconds": 5.096050996,
+          "maximum_seconds": 8.699890791,
           "trials": 6
         },
         "arrow": {
-          "median_seconds": 5.468454207000001,
-          "minimum_seconds": 4.577390086,
-          "maximum_seconds": 7.355132498,
+          "median_seconds": 5.886285333,
+          "minimum_seconds": 4.703094394,
+          "maximum_seconds": 11.894710576,
           "trials": 6
         },
-        "stock_over_arrow": 1.086495855701695,
-        "previous_over_arrow": 1.0857858264405869
+        "stock_over_arrow": 0.9928166829149531,
+        "previous_over_arrow": 1.0081500795129734
       }
     },
     "flight-nested": {
-      "100000": {
-        "stock": {
-          "median_seconds": 0.9289333985,
-          "minimum_seconds": 0.885573855,
-          "maximum_seconds": 0.9878465609999999,
-          "trials": 6
-        },
-        "previous": {
-          "median_seconds": 0.9027907185,
-          "minimum_seconds": 0.8678405269999999,
-          "maximum_seconds": 0.990559043,
-          "trials": 6
-        },
-        "arrow": {
-          "median_seconds": 0.871016185,
-          "minimum_seconds": 0.830088249,
-          "maximum_seconds": 0.8777587210000001,
-          "trials": 6
-        },
-        "stock_over_arrow": 1.0664938430506892,
-        "previous_over_arrow": 1.0364798427941957
-      },
       "1000000": {
         "stock": {
-          "median_seconds": 1.6223834584999999,
-          "minimum_seconds": 1.5343998959999998,
-          "maximum_seconds": 1.8056407630000002,
+          "median_seconds": 1.6275117204999998,
+          "minimum_seconds": 1.560609183,
+          "maximum_seconds": 2.2125296779999997,
           "trials": 6
         },
         "previous": {
-          "median_seconds": 1.619629848,
-          "minimum_seconds": 1.537747306,
-          "maximum_seconds": 1.7012348,
+          "median_seconds": 1.8268035345,
+          "minimum_seconds": 1.613639255,
+          "maximum_seconds": 2.3203878220000003,
           "trials": 6
         },
         "arrow": {
-          "median_seconds": 1.0507444870000002,
-          "minimum_seconds": 0.991123851,
-          "maximum_seconds": 1.094868362,
+          "median_seconds": 1.1018147185,
+          "minimum_seconds": 1.0520708429999999,
+          "maximum_seconds": 1.63431881,
           "trials": 6
         },
-        "stock_over_arrow": 1.5440323300026026,
-        "previous_over_arrow": 1.5414117019297762
+        "stock_over_arrow": 1.477119240806366,
+        "previous_over_arrow": 1.6579952180952826
       }
     },
     "thrift-flat": {
       "1000000": {
         "stock": {
-          "median_seconds": 1.8876746355,
-          "minimum_seconds": 1.157305428,
-          "maximum_seconds": 2.212702758,
+          "median_seconds": 2.134326909,
+          "minimum_seconds": 1.914148924,
+          "maximum_seconds": 2.429772233,
           "trials": 6
         },
         "previous": {
-          "median_seconds": 2.057232292,
-          "minimum_seconds": 1.1377324149999999,
-          "maximum_seconds": 2.1852777139999997,
+          "median_seconds": 2.329525965,
+          "minimum_seconds": 1.114321758,
+          "maximum_seconds": 2.5778548089999997,
           "trials": 6
         },
         "arrow": {
-          "median_seconds": 1.4843235369999999,
-          "minimum_seconds": 0.919930408,
-          "maximum_seconds": 1.89017292,
+          "median_seconds": 1.8982307884999998,
+          "minimum_seconds": 1.3917609709999998,
+          "maximum_seconds": 2.312347475,
           "trials": 6
         },
-        "stock_over_arrow": 1.2717406875560446,
-        "previous_over_arrow": 1.3859729639253173
+        "stock_over_arrow": 1.124376931367005,
+        "previous_over_arrow": 1.2272090301732035
       },
       "10000000": {
         "stock": {
-          "median_seconds": 5.930183517,
-          "minimum_seconds": 5.904387929,
-          "maximum_seconds": 6.46438925,
+          "median_seconds": 6.064010371,
+          "minimum_seconds": 5.121584957,
+          "maximum_seconds": 11.865079771000001,
           "trials": 6
         },
         "previous": {
-          "median_seconds": 6.0700927205,
-          "minimum_seconds": 5.957459732,
-          "maximum_seconds": 7.113806365,
+          "median_seconds": 5.608295802500001,
+          "minimum_seconds": 5.152617610999999,
+          "maximum_seconds": 12.166692094,
           "trials": 6
         },
         "arrow": {
-          "median_seconds": 5.6525638229999995,
-          "minimum_seconds": 5.493020572000001,
-          "maximum_seconds": 6.847443286,
+          "median_seconds": 5.573890617,
+          "minimum_seconds": 5.473793462,
+          "maximum_seconds": 13.278218687,
           "trials": 6
         },
-        "stock_over_arrow": 1.0491139423973206,
-        "previous_over_arrow": 1.0738654017140146
+        "stock_over_arrow": 1.087931354896913,
+        "previous_over_arrow": 1.0061725620153124
       }
     },
     "legacy-thrift-flat": {
       "1000000": {
         "stock": {
-          "median_seconds": 1.1313797669999999,
-          "minimum_seconds": 1.0458791920000001,
-          "maximum_seconds": 1.211530386,
+          "median_seconds": 1.0864197450000002,
+          "minimum_seconds": 1.039347047,
+          "maximum_seconds": 1.463828687,
           "trials": 6
         },
         "previous": {
-          "median_seconds": 1.192658985,
-          "minimum_seconds": 1.0684206630000002,
-          "maximum_seconds": 1.2833112020000002,
+          "median_seconds": 1.1602558809999999,
+          "minimum_seconds": 1.073701177,
+          "maximum_seconds": 1.618488106,
           "trials": 6
         },
         "arrow": {
-          "median_seconds": 1.012868753,
-          "minimum_seconds": 0.909513845,
-          "maximum_seconds": 1.093633708,
+          "median_seconds": 0.9428595125,
+          "minimum_seconds": 0.8980342960000001,
+          "maximum_seconds": 1.066660149,
           "trials": 6
         },
-        "stock_over_arrow": 1.1170053016730785,
-        "previous_over_arrow": 1.177505951750888
+        "stock_over_arrow": 1.1522604699817356,
+        "previous_over_arrow": 1.2305713264997153
       }
     }
   },
@@ -217,7 +172,7 @@
     "bounded jobs, not sustained incremental throughput",
     "map performance has no working stock Arrow baseline at these sizes; the original formatter fails on a later batch",
     "the two interrupted memory-pressure diagnostics are retained separately and excluded from completed medians",
-    "startup dominates 100k rows; ranges overlap and all slow completed trials remain in the data"
+    "100k-row startup-dominated results remain in initial-core; final-base trials cover 1M/10M rows."
   ],
   "validation": {
     "adapter_distinct_cases": 49,
@@ -247,5 +202,7 @@
     "streamfusion-doris/src/main/java/tech/streamfusion/planner/NativeDorisSourceExecNode.java": "74636953e3c0a7fd5ed13911c783d5c8ecdd3a6c740a29ffb8f93062bdbcac23",
     "streamfusion-doris/src/main/java/tech/streamfusion/planner/StreamPhysicalNativeDorisSink.java": "39be09626ab026171a3593858ffdecb2600f39b83aa96f3aa0573242550227a7",
     "streamfusion-doris/src/main/java/tech/streamfusion/planner/StreamPhysicalNativeDorisSource.java": "4344f1a0652ff65c45df6c86a2123ac6f2be0f393a081296683b04c0142600f7"
-  }
+  },
+  "implementation_commit": "b61461a38ea4297001d1e07dcda056c1031f0859",
+  "comparison": "Rebased on main 717b8d94, including its Calc optimization; all three modes use the identical current core."
 }

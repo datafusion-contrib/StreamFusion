@@ -133,7 +133,7 @@ although 4.1.4.1 returns timezone-naive timestamps on both transports. The suite
 original method without StreamFusion first. Only the identical, exact assertion failure may
 be recorded as expected in the accelerated run; errors, missing cases and different failures
 are rejected. Both fixture variants still run, and the raw stock/native reports are retained.
-Doris 4.1.3 instead fails the method's Flight expectation. Native streaming timestamp parity
+A 4.1.3 control with Asia/Shanghai server timezone instead fails the Flight expectation. Native streaming timestamp parity
 is covered separately across both transports and both source APIs.
 
 The suite uses local fixture ports 8030, 9030, 8040, 9060, 9611 and 8050. Set
@@ -152,20 +152,18 @@ With a server implementing the pinned connector's protocol,
 
 ## Release-mode measurements
 
-The 2026-10-22 expanded adapter was compared with stock Flink and the previous StreamFusion
-perimeters on the released 4.1.4.1 fixture. Each mode has two warmups and six measured trials,
-with mode order rotated and every output validated. Medians in seconds are:
+The final adapter was compared on core base `717b8d94`, including main's Calc optimization.
+Each mode uses the same core, two warmups and six measured trials, rotated order and validated
+output. Medians in seconds are:
 
 | Transport / values | Rows | Stock | Previous | Arrow | Stock / Arrow | Previous / Arrow |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Flight / scalar | 100,000 | 0.943 | 0.899 | 0.873 | 1.08× | 1.03× |
-| Flight / scalar | 1,000,000 | 1.139 | 1.063 | 0.916 | 1.24× | 1.16× |
-| Flight / scalar | 10,000,000 | 5.941 | 5.938 | 5.468 | 1.09× | 1.09× |
-| Flight / nested | 100,000 | 0.929 | 0.903 | 0.871 | 1.07× | 1.04× |
-| Flight / nested | 1,000,000 | 1.622 | 1.620 | 1.051 | 1.54× | 1.54× |
-| Thrift / scalar | 1,000,000 | 1.888 | 2.057 | 1.484 | 1.27× | 1.39× |
-| Thrift / scalar | 10,000,000 | 5.930 | 6.070 | 5.653 | 1.05× | 1.07× |
-| Legacy Thrift / scalar | 1,000,000 | 1.131 | 1.193 | 1.013 | 1.12× | 1.18× |
+| Flight / scalar | 1,000,000 | 1.706 | 2.437 | 1.341 | 1.27× | 1.82× |
+| Flight / scalar | 10,000,000 | 5.844 | 5.934 | 5.886 | 0.99× | 1.01× |
+| Flight / nested | 1,000,000 | 1.628 | 1.827 | 1.102 | 1.48× | 1.66× |
+| Thrift / scalar | 1,000,000 | 2.134 | 2.330 | 1.898 | 1.12× | 1.23× |
+| Thrift / scalar | 10,000,000 | 6.064 | 5.608 | 5.574 | 1.09× | 1.01× |
+| Legacy Thrift / scalar | 1,000,000 | 1.086 | 1.160 | 0.943 | 1.15× | 1.23× |
 
 The nested case adds TIMESTAMP(6), ARRAY<INT> with null elements and ROW<INT,STRING> to
 the nullable scalar/Unicode/decimal payload. MAP is excluded from speedup claims because
@@ -175,9 +173,11 @@ across 512-row Thrift batches and committed Arrow output.
 
 All modes use a 2 GiB task JVM, two tasks, four buckets and uncompressed two-phase Stream Load.
 The fixture caps FE heap at 1 GiB, BE memory at 3 GiB and storage page cache at 256 MiB.
-The [complete 192 trials, ranges, configuration and representative plans](../benchmarks/doris-arrow-2026-10-22/results.json)
-retain warmups, unfavorable timings and the interrupted memory-limit diagnostics. Small jobs
-remain startup dominated; the 10M-row Thrift gain is modest and the ranges overlap.
+The [complete 144 trials, ranges, configuration and representative plans](../benchmarks/doris-arrow-2026-10-22/results.json)
+retain warmups and every unfavorable timing. The [initial-core comparison](../benchmarks/doris-arrow-2026-10-22/initial-core/results.json)
+keeps its 192 trials, startup-dominated 100k cases and interrupted memory-limit diagnostics.
+The 10M-row Flight result is at parity (no speedup established); the Thrift gain is modest,
+and the ranges overlap.
 
 Use `sf.doris.benchmark.complex=true` for nested values, `sf.doris.benchmark.flight=false`
 for Thrift, and `sf.doris.benchmark.legacy=true` for the legacy API. The benchmark always

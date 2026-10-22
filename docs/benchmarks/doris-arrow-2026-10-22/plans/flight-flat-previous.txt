@@ -6,9 +6,9 @@ LogicalSink(table=[default_catalog.default_database.dst], fields=[EXPR$0, EXPR$1
 
 == Optimized Physical Plan ==
 Sink(table=[default_catalog.default_database.dst], fields=[EXPR$0, EXPR$1, name, amount])
-+- ArrowToRowData(reuseBarrier=[256])
-   +- NativeCalc(select=[+(id, 1) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[], reuseBarrier=[255])
-      +- RowDataToArrow(reuseBarrier=[254])
++- ArrowToRowData(reuseBarrier=[144])
+   +- NativeCalc(select=[+(id, 1) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[], reuseBarrier=[143])
+      +- RowDataToArrow(reuseBarrier=[142])
          +- TableSourceScan(table=[[default_catalog, default_database, src, filter=[]]], fields=[id, n, name, amount])
 
 == Optimized Execution Plan ==
