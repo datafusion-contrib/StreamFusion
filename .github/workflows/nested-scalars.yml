@@ -18,7 +18,8 @@ jobs:
     env:
       CARGO_BUILD_JOBS: '2'
       MAVEN_OPTS: '-Xmx768m'
-      COLLECTION_CASES: 'map,join,typeof'
+      COLLECTION_CASES: 'join,typeof'
+      PROFILE_CASES: 'typeof'
     steps:
       - uses: actions/checkout@v6
         with:

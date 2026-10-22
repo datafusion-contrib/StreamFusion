@@ -46,7 +46,7 @@ for cohort,cwd in [('previous',previous),('candidate',root)]:
   records.append(rec);save();print(cohort,name,statistics.median(rec['stock_trials']),statistics.median(rec['native_trials']),flush=True)
 agent=Path(os.environ['RUNNER_TEMP'])/'async-profiler-4.6-linux-x64/lib/libasyncProfiler.so'
 for cohort,cwd in [('previous',previous),('candidate',root)]:
- for name in ['mapvalues','mapentries','reverse64','typeof']:
+ for name in os.environ.get('PROFILE_CASES','mapvalues,mapentries,reverse64,typeof').split(','):
   expression,ismap,kind,width,function=cases[name]
   label='profile-'+cohort+'-'+name
   args=['surefire:test@default-test','-Dtest=DynamicCollectionBenchmark','-Dsf.extraJvmArgs=-Xmx2g -Djava.library.path='+str(native)+' -agentpath:'+str(agent)+'=start,event=cpu,alloc=1m,interval=1ms,file='+str(out/(label+'-%p.jfr')),'-Dcollection.expression='+expression,'-Dcollection.map='+str(ismap).lower(),'-Dcollection.type='+kind,'-Dcollection.width='+str(width),'-Dcollection.bytes=64','-Dcollection.rows=2000000','-Dcollection.warmup=1','-Dcollection.runs=1']
