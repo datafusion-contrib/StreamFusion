@@ -24,7 +24,7 @@ cases={
  'prepend64':('ARRAY_PREPEND(arr,CAST(idx AS BIGINT))',False,'BIGINT',64,'ARRAY_PREPEND'),
  'row':('ROW(idx,idx+1)',False,'BIGINT',8,'ROW'),
  'array':('ARRAY[CAST(idx AS BIGINT),CAST(NULL AS BIGINT)]',False,'BIGINT',8,'ARRAY'),
- 'map':('MAP[CAST(idx AS BIGINT),CAST(idx AS BIGINT)]',False,'BIGINT',8,'MAP'),
+ 'map':('MAP[CAST(idx AS BIGINT),CAST(idx AS BIGINT)]',False,'BIGINT',8,None),
  'join':("ARRAY_JOIN(arr,'|','?')",False,'STRING',8,'ARRAY_JOIN'),
  'typeof':('TYPEOF(idx)',False,'BIGINT',8,None),
 }
@@ -32,10 +32,13 @@ if line=='1.18':del cases['prepend64']
 meta={'line':line,'baseline':baseline,'candidate':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'cpu':next(s.split(':',1)[1].strip() for s in Path('/proc/cpuinfo').read_text().splitlines() if s.startswith('model name')),'platform':platform.platform(),'java':subprocess.check_output(['java','-version'],stderr=subprocess.STDOUT,text=True),'native_sha256':hashlib.sha256((native/'libstreamfusion.so').read_bytes()).hexdigest(),'native_features':'release, no-default-features, mimalloc','heap':'2 GiB','parallelism':1,'warmup':2,'runs':5,'rows':2000000,'method':'Fresh JVM per expression/cohort; alternating stock/native pairs; MiniCluster construction and explain outside timing; production sources, transposes, JNI, deployment and row sink inside.'}
 records=[]
 def save(): (out/'results.json').write_text(json.dumps({'environment':meta,'records':records},indent=2)+'\n')
+selected=os.environ.get('COLLECTION_CASES',','.join(cases)).split(',')
 for cohort,cwd in [('previous',previous),('candidate',root)]:
- for name,(expression,ismap,kind,width,function) in cases.items():
+ for name in selected:
+  expression,ismap,kind,width,function=cases[name]
   args=['surefire:test@default-test','-Dtest=DynamicCollectionBenchmark','-Dsf.extraJvmArgs=-Xmx2g -Djava.library.path='+str(native),'-Dcollection.expression='+expression,'-Dcollection.map='+str(ismap).lower(),'-Dcollection.type='+kind,'-Dcollection.width='+str(width),'-Dcollection.bytes=64','-Dcollection.rows=2000000','-Dcollection.warmup=2','-Dcollection.runs=5']
   if cohort=='candidate' and function:args.append('-Dcollection.rustFunction='+function)
+  if name=='map':args.append('-Dcollection.generatedFunction=MAP')
   body=invoke(cohort+'-'+name,cwd,args)
   m=re.search(r'\[collection\].*Flink=([0-9.]+)s Native=([0-9.]+)s flink_trials=(\[.*?\]) native_trials=(\[.*?\])',body)
   if not m:raise RuntimeError('No results for '+cohort+'/'+name)

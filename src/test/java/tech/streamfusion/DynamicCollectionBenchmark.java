@@ -64,9 +64,8 @@ class DynamicCollectionBenchmark {
       if (!EXPECT_NATIVE && plan.contains("NativeCalc")) {
         throw new IllegalStateException("Expected fallback control: " + plan);
       }
-      String rustFunction = System.getProperty("collection.rustFunction");
-      assertRustFunction(planning);
-      if (rustFunction != null) System.out.println("[collection-engine] " + planning.functionExecutions());
+      assertFunctionExecution(planning);
+      System.out.println("[collection-engine] " + planning.functionExecutions());
       String fallbackReason = System.getProperty("collection.fallbackReason");
       if (!EXPECT_NATIVE && fallbackReason != null && !plan.contains(fallbackReason)) {
         throw new IllegalStateException("Unexpected fallback reason: " + plan);
@@ -126,7 +125,7 @@ class DynamicCollectionBenchmark {
         throw new IllegalStateException("Unexpected route: " + scan.explainSummary());
       }
       if (nativeRun) {
-        assertRustFunction(scan);
+        assertFunctionExecution(scan);
         if (EXPECT_NATIVE) {
           var observations = metrics.nativeOperators();
           RecoveryExecutionMetrics.assertConsumed(observations, "NativeCalc");
@@ -137,14 +136,26 @@ class DynamicCollectionBenchmark {
     }
   }
 
-  private static void assertRustFunction(PhysicalPlanScan scan) {
-    String function = System.getProperty("collection.rustFunction");
-    if (function != null
-        && scan.functionExecutions().stream().noneMatch(execution ->
-            execution.contains("native=[") && execution.contains(function)
-                && execution.contains("jvm=[]"))) {
+  private static void assertFunctionExecution(PhysicalPlanScan scan) {
+    String rustFunction = System.getProperty("collection.rustFunction");
+    String generatedFunction = System.getProperty("collection.generatedFunction");
+    if (rustFunction != null && scan.functionExecutions().stream().noneMatch(execution ->
+        listsFunction(execution, "native", rustFunction) && execution.contains("jvm=[]"))) {
       throw new IllegalStateException("Expected Rust function execution: " + scan.functionExecutions());
     }
+    if (generatedFunction != null && scan.functionExecutions().stream().noneMatch(execution ->
+        listsFunction(execution, "jvm", generatedFunction))) {
+      throw new IllegalStateException("Expected generated function execution: " + scan.functionExecutions());
+    }
+  }
+
+  private static boolean listsFunction(String execution, String engine, String function) {
+    int start = execution.indexOf(engine + "=[");
+    if (start < 0) return false;
+    start += engine.length() + 2;
+    int end = execution.indexOf(']', start);
+    return end >= 0 && Arrays.stream(execution.substring(start, end).split(","))
+        .map(String::trim).anyMatch(function::equals);
   }
 
   private static double median(double[] values) {

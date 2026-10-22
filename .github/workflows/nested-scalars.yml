@@ -18,6 +18,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: '2'
       MAVEN_OPTS: '-Xmx768m'
+      COLLECTION_CASES: 'map,join,typeof'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -33,7 +34,7 @@ jobs:
         with:
           workspaces: native
           key: criterion-release
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: true
       - name: Build the production core library
         run: cargo build --manifest-path native/Cargo.toml -p streamfusion --release --no-default-features --features mimalloc
       - name: Install the released profiler
