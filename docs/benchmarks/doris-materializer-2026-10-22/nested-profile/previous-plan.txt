@@ -1,0 +1,22 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3, EXPR$4, EXPR$5, EXPR$6])
++- LogicalProject(id=[$0], EXPR$1=[CAST($1):INTEGER NOT NULL], EXPR$2=[CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE" NOT NULL], EXPR$3=[CAST($0):DECIMAL(18, 2) NOT NULL], EXPR$4=[2020-07-01 12:34:56.123456:TIMESTAMP(6)], EXPR$5=[ARRAY(MOD($0, 10), null:INTEGER)], EXPR$6=[ROW(MOD($0, 3), _UTF-16LE'r-☃')])
+   +- LogicalAggregate(group=[{0}], agg#0=[COUNT()])
+      +- LogicalProject(id=[$0])
+         +- LogicalTableScan(table=[[default_catalog, default_database, src]])
+
+== Optimized Physical Plan ==
+Sink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3, EXPR$4, EXPR$5, EXPR$6], upsertMaterialize=[true])
++- ArrowToRowData(reuseBarrier=[45])
+   +- NativeCalc(select=[id, CAST($f1 AS INTEGER) AS EXPR$1, CAST(id AS VARCHAR(2147483647)) AS EXPR$2, CAST(id AS DECIMAL(18, 2)) AS EXPR$3, 2020-07-01 12:34:56.123456 AS EXPR$4, ARRAY(MOD(id, 10), null:INTEGER) AS EXPR$5, ROW(MOD(id, 3), 'r-☃') AS EXPR$6], nativeFunctions=[], jvmFunctions=[CAST, ARRAY, MOD, ROW], reuseBarrier=[44], collectionRepresentation=[true])
+      +- NativeColumnarGroupAggregate(reuseBarrier=[43])
+         +- NativeColumnarExchange(reuseBarrier=[42])
+            +- NativeDorisSource(reuseBarrier=[41])
+
+== Optimized Execution Plan ==
+Sink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3, EXPR$4, EXPR$5, EXPR$6], upsertMaterialize=[true])
++- ArrowToRowData
+   +- NativeCalc(select=[id, CAST($f1 AS INTEGER) AS EXPR$1, CAST(id AS VARCHAR(2147483647)) AS EXPR$2, CAST(id AS DECIMAL(18, 2)) AS EXPR$3, 2020-07-01 12:34:56.123456 AS EXPR$4, ARRAY(MOD(id, 10), null:INTEGER) AS EXPR$5, ROW(MOD(id, 3), 'r-☃') AS EXPR$6], nativeFunctions=[], jvmFunctions=[CAST, ARRAY, MOD, ROW], collectionRepresentation=[true])
+      +- NativeColumnarGroupAggregate
+         +- NativeColumnarExchange
+            +- NativeDorisSource

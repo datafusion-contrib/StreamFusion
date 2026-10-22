@@ -14,9 +14,12 @@ import org.apache.doris.flink.table.DorisDynamicTableSink;
 import org.apache.doris.flink.table.DorisDynamicTableSource;
 import org.apache.flink.table.connector.source.SourceProvider;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
+import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
+import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
+import org.apache.flink.table.planner.plan.utils.UpsertKeyUtil;
 import org.apache.flink.table.runtime.connector.source.ScanRuntimeProviderContext;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
@@ -119,6 +122,13 @@ final class DorisTables {
 
   private static RelNode sink(StreamPhysicalSink sink, PlanContext context) {
     try {
+      var originalSink = (StreamPhysicalSink) context.originalNode(sink);
+      boolean materialize =
+          sink.upsertMaterialize() && !ChangelogPlanUtils.inputInsertOnly(originalSink);
+      if (materialize && context.keyedStateUnsupportedReason() != null) {
+        context.decline(context.keyedStateUnsupportedReason());
+        return null;
+      }
       var table = (DorisDynamicTableSink) sink.tableSink().copy();
       var execution = (DorisExecutionOptions) field(table, "executionOptions");
       var reads = (DorisReadOptions) field(table, "readOptions");
@@ -138,15 +148,13 @@ final class DorisTables {
                   : execution.getWriteMode() != WriteMode.STREAM_LOAD
                           && execution.getWriteMode() != WriteMode.STREAM_LOAD_BATCH
                       ? "requires Arrow Stream Load writer"
-                      : sink.upsertMaterialize()
-                          ? "upsert materialization"
-                          : !tech.streamfusion.compat.FlinkCompat.sinkAbilities(sink).isEmpty()
-                              ? "sink abilities"
-                              : (boolean) field(table, "overwrite")
-                                  ? "overwrite"
-                                  : !supported(type)
-                                      ? "unsupported Arrow types"
-                                      : SinkConstraintGate.fallbackReason(sink, true);
+                      : !tech.streamfusion.compat.FlinkCompat.sinkAbilities(sink).isEmpty()
+                          ? "sink abilities"
+                          : (boolean) field(table, "overwrite")
+                              ? "overwrite"
+                              : !supported(type)
+                                  ? "unsupported Arrow types"
+                                  : SinkConstraintGate.fallbackReason(sink, true);
       if (reason != null) {
         context.decline("doris sink: " + reason);
         return null;
@@ -182,7 +190,11 @@ final class DorisTables {
               (Integer) field(table, "sinkParallelism"),
               keys,
               FlinkKeyGroupUtils.timestampPrecisions(sink.getInput().getRowType(), keys),
-              notNull);
+              notNull,
+              materialize,
+              UpsertKeyUtil.getSmallestKey(
+                  FlinkRelMetadataQuery.reuseOrCreate(sink.getCluster().getMetadataQuery())
+                      .getUpsertKeys(originalSink.getInput())));
       return new StreamPhysicalNativeDorisSink(
           sink.getCluster(), sink.getTraitSet(), sink.getInput(), sink.getRowType(), runtime);
     } catch (ReflectiveOperationException | LinkageError incompatible) {

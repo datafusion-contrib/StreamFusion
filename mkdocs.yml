@@ -103,6 +103,7 @@ nav:
       - Event-time sort: operators/event-time-sort.md
       - Watermark assigner: operators/watermark-assigner.md
       - Sink constraints: operators/sink-constraints.md
+      - Sink upsert materialization: operators/sink-upsert-materialize.md
       - Unsupported operators: operators/unsupported.md
   - Backends:
       - backends/index.md
@@ -190,6 +191,7 @@ nav:
       - Identity expression passthroughs: optimizations/identity-expression-passthroughs.md
       - Parquet sink file coalescing: optimizations/parquet-sink-file-coalescing.md
       - Iceberg boundary setup: optimizations/iceberg-boundary-overhead.md
+      - Sink candidate replacements: optimizations/sink-materializer-state.md
       - Canonical state installation: optimizations/canonical-state-installation.md
       - Delta batch sink handoff: optimizations/delta-batch-sink-handoff.md
       - Retire dead Delta checkpoint buffers: optimizations/delta-live-buffer-retirement.md

@@ -53,18 +53,9 @@ public final class DorisArrowSerializer implements DorisRecordSerializer<ArrowBa
         fields.add(Field.nullable("__DORIS_DELETE_SIGN__", new ArrowType.Int(8, true)));
       var allocator = root.getVector(0).getAllocator();
       try (var wire = VectorSchemaRoot.create(new Schema(fields), allocator)) {
-        boolean representations =
-            root.getSchema().getFields().stream()
-                .limit(type.getFieldCount())
-                .anyMatch(DorisArrowSerializer::representation);
-        if (representations) {
-          var reader = ArrowConversion.createArrowReader(root, type);
-          var writer = ArrowConversion.createRowDataArrowWriter(wire, type);
-          for (int i = 0; i < root.getRowCount(); i++) writer.write(reader.read(i));
-          writer.finish();
-        } else {
-          for (int i = 0; i < type.getFieldCount(); i++)
-            transfer(root.getVector(i), wire.getVector(i));
+        for (int i = 0; i < type.getFieldCount(); i++) {
+          if (representation(root.getSchema().getFields().get(i))) normalizeColumn(root, wire, i);
+          else transfer(root.getVector(i), wire.getVector(i));
         }
         if (deletable) {
           var signs = (TinyIntVector) wire.getVector(type.getFieldCount());
@@ -85,6 +76,28 @@ public final class DorisArrowSerializer implements DorisRecordSerializer<ArrowBa
         return DorisRecord.of(bytes.toByteArray());
       }
     }
+  }
+
+  private void normalizeColumn(VectorSchemaRoot from, VectorSchemaRoot to, int index) {
+    var columnType =
+        RowType.of(
+            new org.apache.flink.table.types.logical.LogicalType[] {type.getTypeAt(index)},
+            new String[] {type.getFieldNames().get(index)});
+    // These views borrow the enclosing vectors; their owning roots close the buffers.
+    var input =
+        new VectorSchemaRoot(
+            List.of(from.getSchema().getFields().get(index)),
+            List.of(from.getVector(index)),
+            from.getRowCount());
+    var output =
+        new VectorSchemaRoot(
+            List.of(to.getSchema().getFields().get(index)),
+            List.of(to.getVector(index)),
+            from.getRowCount());
+    var reader = ArrowConversion.createArrowReader(input, columnType);
+    var writer = ArrowConversion.createRowDataArrowWriter(output, columnType);
+    for (int row = 0; row < from.getRowCount(); row++) writer.write(reader.read(row));
+    writer.finish();
   }
 
   private static boolean representation(Field field) {

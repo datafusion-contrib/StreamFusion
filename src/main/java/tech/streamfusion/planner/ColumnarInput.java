@@ -7,4 +7,9 @@ package tech.streamfusion.planner;
  * row↔columnar transpose: it does only when the producer's output carrier differs from what the
  * consumer expects.
  */
-public interface ColumnarInput {}
+public interface ColumnarInput {
+  /** Whether this sink canonicalizes the core's represented collection values for its wire format. */
+  default boolean acceptsCollectionRepresentation() {
+    return false;
+  }
+}

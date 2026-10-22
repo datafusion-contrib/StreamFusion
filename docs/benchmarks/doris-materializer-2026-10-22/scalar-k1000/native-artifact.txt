@@ -1,0 +1,3 @@
+Release with mimalloc, vectorized identities and deferred candidate replacements.
+sha256=fe11e76bad0f01b7e54d1e0529abbe73bafedbeff61733716bd2427937a1c0f3
+The final source also guards an empty inferred key, outside this primary-key query.

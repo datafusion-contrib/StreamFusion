@@ -2374,6 +2374,52 @@ public final class Native {
   /** Releases a changelog normalizer handle. */
   public static native void closeChangelogNormalizer(long handle);
 
+  /** Creates ordered, owned candidate state per sink key; zero TTL disables expiry. */
+  public static native long createSinkMaterializer(
+      int[] keyColumns,
+      int[] keyTimestampPrecisions,
+      int[] inputUpsertKeys,
+      long stateTtlMillis,
+      int strategy,
+      long adaptiveHigh,
+      long adaptiveLow,
+      int[] matchTimestampPrecisions,
+      long memoryBudgetBytes);
+
+  /** Restores all assigned key groups, preserving candidate ordering and last-write clocks. */
+  public static native long restoreSinkMaterializer(
+      int[] keyColumns,
+      int[] keyTimestampPrecisions,
+      int[] inputUpsertKeys,
+      long stateTtlMillis,
+      byte[][] snapshots,
+      long nowMillis,
+      int strategy,
+      long adaptiveHigh,
+      long adaptiveLow,
+      int[] matchTimestampPrecisions,
+      long memoryBudgetBytes);
+
+  /**
+   * Imports an Arrow changelog and exports its materialized changes into caller-owned C structs.
+   */
+  public static native void pushSinkMaterializer(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  /** Returns versioned candidate payloads partitioned by Flink key group. */
+  public static native byte[][] snapshotSinkMaterializer(long handle, int maxParallelism);
+
+  /** Returns the native materializer's accounted state footprint. */
+  public static native long sinkMaterializerStateBytes(long handle);
+
+  /** Releases the materializer and every retained candidate. */
+  public static native void closeSinkMaterializer(long handle);
+
   /**
    * Creates an event-time INNER interval joiner and returns an opaque handle. It buffers both inputs
    * per equi-join key and emits a matched pair when the second of its two rows arrives. The JVM owns

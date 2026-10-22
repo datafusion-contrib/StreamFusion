@@ -57,6 +57,7 @@ mod normalizer;
 mod over_agg;
 mod rowtime;
 mod session_agg;
+mod sink_materializer;
 mod sorter;
 mod state;
 mod temporal_join;

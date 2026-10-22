@@ -630,6 +630,207 @@ class DorisSqlIT {
   }
 
   @Test
+  void materializationRetainsTheSharedChangelogStateBackendFallback() throws Exception {
+    String name = "materialize_backend_" + UUID.randomUUID().toString().replace("-", "");
+    sql(
+        "CREATE TABLE "
+            + database
+            + "."
+            + name
+            + " (id BIGINT NOT NULL,n BIGINT) UNIQUE KEY(id)"
+            + " DISTRIBUTED BY HASH(id) BUCKETS 2 PROPERTIES('replication_num'='1')");
+    var tables = environment(true);
+    tables.getConfig().set("table.exec.sink.upsert-materialize", "FORCE");
+    tables.getConfig().set("state.changelog.enabled", "true");
+    tables.executeSql(
+        ddl("src", "input", "id BIGINT,n INT,name STRING,amount DECIMAL(18,2)", false, ""));
+    tables.executeSql(
+        ddl(
+            "dst",
+            name,
+            "id BIGINT NOT NULL,n BIGINT,PRIMARY KEY(id) NOT ENFORCED",
+            true,
+            ", 'sink.properties.format'='arrow', 'sink.enable-delete'='false'"));
+    String plan = tables.explainSql("INSERT INTO dst SELECT id,COUNT(*) FROM src GROUP BY id");
+    assertTrue(plan.contains("upsertMaterialize=[true]"), plan);
+    assertFalse(plan.contains("NativeDorisSink"), plan);
+  }
+
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> materializerCases() {
+    var cases = new ArrayList<org.junit.jupiter.params.provider.Arguments>();
+    for (boolean batch : new boolean[] {false, true})
+      for (boolean inputKey : new boolean[] {false, true})
+        for (String strategy : List.of("LEGACY", "VALUE", "MAP", "ADAPTIVE"))
+          cases.add(org.junit.jupiter.params.provider.Arguments.of(batch, inputKey, strategy));
+    return cases.stream();
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.MethodSource("materializerCases")
+  void materializedArrowSinkRestoresCandidatesAndMatchesStock(
+      boolean batch, boolean inputKey, String strategy) throws Exception {
+    List<String> expected = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      String name = "materialize_" + UUID.randomUUID().toString().replace("-", "");
+      sql(
+          "CREATE TABLE "
+              + database
+              + "."
+              + name
+              + " (id BIGINT NOT NULL, uid BIGINT NOT NULL, n INT) UNIQUE KEY(id)"
+              + " DISTRIBUTED BY HASH(id) BUCKETS 2 PROPERTIES('replication_num'='1',"
+              + "'enable_unique_key_merge_on_write'='true')");
+      try (var metrics = new DorisExecutionMetrics()) {
+        var env = metrics.environment(1);
+        var tables = StreamTableEnvironment.create(env);
+        tables.getConfig().set("table.exec.sink.upsert-materialize", "FORCE");
+        tables
+            .getConfig()
+            .set(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_SINK_UPSERT_MATERIALIZE_STRATEGY,
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .SinkUpsertMaterializeStrategy.valueOf(strategy));
+        tables.getConfig().set("table.exec.sink.keyed-shuffle", "NONE");
+        tables
+            .getConfig()
+            .set(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_SINK_UPSERT_MATERIALIZE_ADAPTIVE_THRESHOLD_HIGH,
+                2L);
+        tables
+            .getConfig()
+            .set(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_SINK_UPSERT_MATERIALIZE_ADAPTIVE_THRESHOLD_LOW,
+                1L);
+        if (nativeRun) NativePlanner.install(tables);
+        var I = org.apache.flink.types.RowKind.INSERT;
+        var U = org.apache.flink.types.RowKind.UPDATE_AFTER;
+        var D = org.apache.flink.types.RowKind.DELETE;
+        var rows =
+            List.of(
+                org.apache.flink.types.Row.ofKind(I, 1L, 10L, 10),
+                org.apache.flink.types.Row.ofKind(I, 1L, 20L, 20),
+                org.apache.flink.types.Row.ofKind(I, 1L, 30L, 30),
+                org.apache.flink.types.Row.ofKind(U, 1L, 10L, 11),
+                org.apache.flink.types.Row.ofKind(D, 1L, 20L, 20),
+                org.apache.flink.types.Row.ofKind(D, 1L, 30L, 30),
+                org.apache.flink.types.Row.ofKind(D, 1L, 10L, 11),
+                org.apache.flink.types.Row.ofKind(D, 1L, 10L, 10),
+                org.apache.flink.types.Row.ofKind(I, 2L, 10L, 100),
+                org.apache.flink.types.Row.ofKind(I, 2L, 20L, 200),
+                org.apache.flink.types.Row.ofKind(D, 2L, 20L, 200));
+        var source =
+            env.fromCollection(
+                rows,
+                org.apache.flink.api.common.typeinfo.Types.ROW_NAMED(
+                    new String[] {"id", "uid", "n"},
+                    org.apache.flink.api.common.typeinfo.Types.LONG,
+                    org.apache.flink.api.common.typeinfo.Types.LONG,
+                    org.apache.flink.api.common.typeinfo.Types.INT));
+        var schema =
+            org.apache.flink.table.api.Schema.newBuilder()
+                .column("id", "BIGINT NOT NULL")
+                .column("uid", "BIGINT NOT NULL")
+                .column("n", "INT");
+        if (inputKey) schema.primaryKey("id", "uid");
+        tables.createTemporaryView("changes", tables.fromChangelogStream(source, schema.build()));
+        tables.executeSql(
+            ddl(
+                "dst",
+                name,
+                "id BIGINT NOT NULL,uid BIGINT NOT NULL,n INT,PRIMARY KEY(id) NOT ENFORCED",
+                true,
+                ", 'sink.properties.format'='"
+                    + (nativeRun ? "arrow" : "json")
+                    + "'"
+                    + (nativeRun ? "" : ", 'sink.properties.read_json_by_line'='true'")
+                    + ", 'sink.properties.compress_type'='',"
+                    + " 'sink.parallelism'='2', 'sink.enable-delete'='true',"
+                    + " 'sink.ignore.update-before'='true', 'sink.enable.batch-mode'='"
+                    + batch
+                    + "'"));
+        String insert = "INSERT INTO dst SELECT * FROM changes";
+        String plan = tables.explainSql(insert);
+        assertEquals(nativeRun, plan.contains("NativeDorisSink"), plan);
+        assertTrue(plan.contains("upsertMaterialize=[true]"), plan);
+        Files.createDirectories(Path.of("target/doris-sql-plans"));
+        Files.writeString(Path.of("target/doris-sql-plans/" + name + ".txt"), plan);
+        var result = tables.executeSql(insert);
+        result.await();
+        awaitCount(name, 1);
+        var actual = query(false, name, "id BIGINT,uid BIGINT,n INT", "SELECT * FROM src", true);
+        assertEquals(List.of("+I[2, 10, 100]"), actual);
+        if (!nativeRun) expected = actual;
+        else {
+          assertEquals(expected, actual);
+          String job = result.getJobClient().orElseThrow().getJobID().toString();
+          assertEquals(
+              rows.size(),
+              metrics.recordsIn(job, "native-sink-upsert-materialize"),
+              "materializer must consume the actual changelog");
+        }
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void materializedConstructedCollectionsReachTheArrowWriter(boolean maps) throws Exception {
+    List<String> expected = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      String name = "materialize_collections_" + UUID.randomUUID().toString().replace("-", "");
+      sql(
+          "CREATE TABLE "
+              + database
+              + "."
+              + name
+              + " (id BIGINT NOT NULL,n BIGINT,a ARRAY<INT>,r STRUCT<x:INT,t:STRING>"
+              + (maps ? ",m MAP<STRING,INT>" : "")
+              + ") UNIQUE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 2"
+              + " PROPERTIES('replication_num'='1','enable_unique_key_merge_on_write'='true')");
+      try (var metrics = new DorisExecutionMetrics()) {
+        var tables = StreamTableEnvironment.create(metrics.environment(2));
+        tables.getConfig().set("table.exec.sink.upsert-materialize", "FORCE");
+        if (nativeRun) NativePlanner.install(tables);
+        tables.executeSql(ddl("src", "input", schema(), true, ""));
+        String logical =
+            "id BIGINT NOT NULL,n BIGINT,a ARRAY<INT>,r ROW<x INT,t STRING>"
+                + (maps ? ",m MAP<STRING NOT NULL,INT>" : "");
+        tables.executeSql(
+            ddl(
+                "dst",
+                name,
+                logical + ",PRIMARY KEY(id) NOT ENFORCED",
+                true,
+                ", 'sink.properties.format'='arrow', 'sink.properties.compress_type'='',"
+                    + " 'sink.enable-delete'='false'"));
+        String insert =
+            "INSERT INTO dst SELECT MOD(id,2),COUNT(*),"
+                + "ARRAY[CAST(COUNT(*) AS INT),CAST(NULL AS INT)],"
+                + "ROW(CAST(COUNT(*) AS INT),'row-☃')"
+                + (maps ? ",MAP['a',CAST(COUNT(*) AS INT),'b',CAST(NULL AS INT)]" : "")
+                + " FROM src GROUP BY MOD(id,2)";
+        checkPlan(tables, insert, nativeRun, true);
+        var result = tables.executeSql(insert);
+        result.await();
+        awaitCount(name, 2);
+        var actual = query(false, name, logical, "SELECT * FROM src", true);
+        if (!nativeRun) expected = actual;
+        else {
+          assertEquals(expected, actual);
+          assertTrue(
+              metrics.recordsIn(
+                      result.getJobClient().orElseThrow().getJobID().toString(),
+                      "native-sink-upsert-materialize")
+                  > 0);
+        }
+      }
+    }
+  }
+
+  @Test
   void mapWritesRemainValidAcrossMultipleThriftBatches() throws Exception {
     String physical =
         "(id BIGINT, m MAP<STRING,INT>) DUPLICATE KEY(id)"

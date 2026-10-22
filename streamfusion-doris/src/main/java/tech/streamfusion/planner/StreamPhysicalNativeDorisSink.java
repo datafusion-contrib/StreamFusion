@@ -4,6 +4,7 @@ import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
@@ -23,8 +24,23 @@ public final class StreamPhysicalNativeDorisSink extends StreamPhysicalNativeSin
   }
 
   @Override
+  public boolean acceptsCollectionRepresentation() {
+    return true;
+  }
+
+  @Override
   public boolean requireWatermark() {
     return false;
+  }
+
+  @Override
+  public RelWriter explainTerms(RelWriter writer) {
+    return super.explainTerms(writer)
+        .itemIf("upsertMaterialize", true, runtime.materialize)
+        .itemIf(
+            "inputUpsertKey",
+            java.util.Arrays.toString(runtime.inputUpsertKeys),
+            runtime.materialize && runtime.inputUpsertKeys != null);
   }
 
   @Override

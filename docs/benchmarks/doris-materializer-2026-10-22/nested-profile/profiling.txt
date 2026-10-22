@@ -1,0 +1,10 @@
+JFR settings=profile, two warmups and three trials, all three modes.
+Only native-sink-upsert-materialize thread samples were inspected for the following observations.
+Hot samples included ArrowFieldWriter.write, BinaryStringData.ensureMaterialized, StringCacheColumns.read,
+StringCacheRowData.isNullAt and TimestampData.fromEpochMillis.
+Estimated native-sink-thread allocation samples included DecimalData.fromUnscaledLong (191802800 bytes),
+BinaryStringData.fromBytes (322935520), Utf16Cache.read (210344856), and Arrays.copyOf (970561216).
+These are sampling estimates over all five native jobs, not exact allocation counts.
+The writer normalized all fields when any one field needed a represented collection conversion.
+The final writer transfers ordinary columns and normalizes only represented columns.
+Profiled timings are diagnostics and are not mixed with the unprofiled comparison.

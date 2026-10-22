@@ -1,0 +1,855 @@
+use crate::*;
+mod equal;
+mod hash;
+mod state;
+use state::{Action, Candidates, Strategy};
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone)]
+enum Identity {
+    Bytes(Arc<[u8]>),
+    Values(Vec<ScalarValue>),
+}
+
+impl Identity {
+    fn matches(&self, other: &Self, fields: &[Arc<Field>], full_row: bool) -> bool {
+        match (self, other) {
+            (Self::Bytes(a), Self::Bytes(b)) => a == b,
+            (Self::Values(a), Self::Values(b)) => equal::rows(fields, a, b, full_row),
+            _ => unreachable!("one identity representation per materializer"),
+        }
+    }
+
+    fn bytes(&self) -> usize {
+        match self {
+            Self::Bytes(bytes) => bytes.len(),
+            Self::Values(values) => scalar_row_bytes(values),
+        }
+    }
+}
+
+struct Candidate {
+    hash: i32,
+    serialized: Option<Arc<[u8]>>,
+    payload: Arc<[u8]>,
+    identity: Identity,
+}
+
+impl Candidate {
+    fn bytes(&self) -> usize {
+        self.payload.len() + self.identity.bytes() + self.serialized.as_ref().map_or(0, |s| s.len())
+    }
+}
+
+struct RowsCodec {
+    schema: SchemaRef,
+    payload: RowConverter,
+    identity: RowConverter,
+    match_columns: Vec<usize>,
+    match_fields: Vec<Arc<Field>>,
+    byte_equality: bool,
+    compute_hash: bool,
+    full_row: bool,
+    serialized: bool,
+    match_precisions: Vec<i32>,
+}
+
+impl RowsCodec {
+    fn new(
+        schema: SchemaRef,
+        upsert_columns: &[usize],
+        strategy: Strategy,
+        match_precisions: &[i32],
+    ) -> Self {
+        let match_columns = if upsert_columns.is_empty() {
+            (0..schema.fields().len()).collect()
+        } else {
+            upsert_columns.to_vec()
+        };
+        let types: Vec<_> = match_columns
+            .iter()
+            .map(|&i| schema.field(i).data_type().clone())
+            .collect();
+        // Full rows arrive as BinaryRowData after Flink's required keyBy. Projected upsert keys
+        // instead use the generated field equaliser, whose primitive floating equality differs.
+        let byte_equality = types.iter().all(|t| {
+            !matches!(
+                t,
+                DataType::Struct(_)
+                    | DataType::List(_)
+                    | DataType::LargeList(_)
+                    | DataType::FixedSizeList(..)
+                    | DataType::Map(..)
+            ) && (upsert_columns.is_empty()
+                || !matches!(t, DataType::Float16 | DataType::Float32 | DataType::Float64))
+        });
+        Self {
+            match_fields: match_columns
+                .iter()
+                .map(|&i| schema.fields()[i].clone())
+                .collect(),
+            payload: RowConverter::new(
+                schema
+                    .fields()
+                    .iter()
+                    .map(|f| SortField::new(f.data_type().clone()))
+                    .collect(),
+            )
+            .expect("materializer payload codec"),
+            identity: key_row_converter_from_types(&types),
+            schema,
+            match_columns,
+            byte_equality,
+            compute_hash: strategy.hashed(),
+            serialized: strategy.serialized(),
+            match_precisions: match_precisions.to_vec(),
+            full_row: upsert_columns.is_empty(),
+        }
+    }
+
+    fn identities(&self, batch: &RecordBatch) -> Option<Rows> {
+        self.byte_equality.then(|| {
+            let columns: Vec<_> = self
+                .match_columns
+                .iter()
+                .map(|&i| batch.column(i).clone())
+                .collect();
+            encode_group_keys(&self.identity, &columns, batch.num_rows())
+        })
+    }
+
+    fn identity(&self, batch: &RecordBatch, row: usize, encoded: Option<&Rows>) -> Identity {
+        match encoded {
+            Some(rows) => Identity::Bytes(Arc::from(rows.row(row).data())),
+            None => Identity::Values(
+                self.match_columns
+                    .iter()
+                    .map(|&i| {
+                        ScalarValue::try_from_array(batch.column(i), row)
+                            .expect("materializer match value")
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    fn decode(&self, payloads: &[Arc<[u8]>]) -> Vec<ArrayRef> {
+        let parser = self.payload.parser();
+        self.payload
+            .convert_rows(payloads.iter().map(|row| parser.parse(row)))
+            .expect("decode materializer rows")
+    }
+
+    fn candidate(
+        &self,
+        payload: Arc<[u8]>,
+        identity: Option<Identity>,
+        serialized: Option<Arc<[u8]>>,
+    ) -> Candidate {
+        let owned = if identity.is_none() || self.serialized && serialized.is_none() {
+            Some(
+                RecordBatch::try_new(
+                    self.schema.clone(),
+                    self.decode(std::slice::from_ref(&payload)),
+                )
+                .expect("owned materializer row"),
+            )
+        } else {
+            None
+        };
+        let identity = identity.unwrap_or_else(|| {
+            let batch = owned.as_ref().unwrap();
+            self.identity(batch, 0, self.identities(batch).as_ref())
+        });
+        let serialized = serialized.or_else(|| {
+            self.serialized.then(|| {
+                let mut encoder = BinaryRowBatchEncoder::new(
+                    owned.as_ref().unwrap(),
+                    &self.match_columns,
+                    &self.match_precisions,
+                );
+                Arc::from(encoder.encode(0))
+            })
+        });
+        Candidate {
+            hash: self.hash_key(&identity, serialized.as_deref()),
+            payload,
+            identity,
+            serialized,
+        }
+    }
+
+    fn matches(&self, a: &Identity, b: &Identity) -> bool {
+        a.matches(b, &self.match_fields, self.full_row)
+    }
+    fn hash_key(&self, identity: &Identity, serialized: Option<&[u8]>) -> i32 {
+        if !self.compute_hash {
+            return 0;
+        }
+        if let Some(bytes) = serialized {
+            return hash::bytes(bytes);
+        }
+        match identity {
+            Identity::Bytes(bytes) => hash::bytes(bytes),
+            Identity::Values(values) => hash::row(&self.match_fields, values),
+        }
+    }
+
+    fn map_matches(
+        &self,
+        a: &Identity,
+        a_binary: Option<&[u8]>,
+        b: &Identity,
+        b_binary: Option<&[u8]>,
+    ) -> bool {
+        if self.serialized {
+            a_binary.expect("serialized query") == b_binary.expect("serialized index")
+        } else {
+            self.matches(a, b)
+        }
+    }
+
+    fn serialize_identity(&self, identity: &Identity) -> Option<Arc<[u8]>> {
+        self.serialized.then(|| {
+            let arrays = match identity {
+                Identity::Bytes(bytes) => {
+                    let parser = self.identity.parser();
+                    self.identity
+                        .convert_rows([parser.parse(bytes)])
+                        .expect("identity columns")
+                }
+                Identity::Values(values) => values
+                    .iter()
+                    .map(|v| v.to_array().expect("identity column"))
+                    .collect(),
+            };
+            let schema = Arc::new(Schema::new(self.match_fields.clone()));
+            let batch = RecordBatch::try_new(schema, arrays).expect("identity batch");
+            let columns: Vec<_> = (0..self.match_fields.len()).collect();
+            Arc::from(
+                BinaryRowBatchEncoder::new(&batch, &columns, &self.match_precisions).encode(0),
+            )
+        })
+    }
+
+    fn encode_identity(&self, identity: &Identity) -> Arc<[u8]> {
+        match identity {
+            Identity::Bytes(bytes) => bytes.clone(),
+            Identity::Values(values) => {
+                let columns: Vec<_> = values
+                    .iter()
+                    .map(|v| v.to_array().expect("identity array"))
+                    .collect();
+                Arc::from(encode_group_keys(&self.identity, &columns, 1).row(0).data())
+            }
+        }
+    }
+    fn decode_identity(&self, bytes: &[u8]) -> Identity {
+        if self.byte_equality {
+            return Identity::Bytes(Arc::from(bytes));
+        }
+        let parser = self.identity.parser();
+        let arrays = self
+            .identity
+            .convert_rows([parser.parse(bytes)])
+            .expect("identity restore");
+        Identity::Values(
+            arrays
+                .iter()
+                .map(|a| ScalarValue::try_from_array(a, 0).expect("identity value"))
+                .collect(),
+        )
+    }
+}
+
+/// Flink's sink upsert materializer: candidates retain insertion order, and a retract removes
+/// the first matching candidate. An inferred upstream key replaces a candidate in place.
+pub(crate) struct SinkMaterializer {
+    key_columns: Vec<usize>,
+    key_precisions: Vec<i32>,
+    upsert_columns: Vec<usize>,
+    ttl_ms: i64,
+    strategy: Strategy,
+    match_precisions: Vec<i32>,
+    last_sweep: i64,
+    codec: Option<RowsCodec>,
+    groups: MemoryStateStore<Candidates>,
+    pub(crate) memory: OperatorMemory,
+}
+
+impl SinkMaterializer {
+    pub(crate) fn new(
+        keys: Vec<usize>,
+        precisions: Vec<i32>,
+        upsert: Vec<usize>,
+        ttl_ms: i64,
+    ) -> Self {
+        Self {
+            key_columns: keys,
+            key_precisions: precisions,
+            upsert_columns: upsert,
+            ttl_ms: ttl_ms.max(0),
+            strategy: Strategy::Legacy,
+            match_precisions: vec![],
+            last_sweep: 0,
+            codec: None,
+            groups: MemoryStateStore::default(),
+            memory: OperatorMemory::unaccounted(),
+        }
+    }
+
+    fn with_strategy(mut self, strategy: Strategy, match_precisions: Vec<i32>) -> Self {
+        if !matches!(strategy, Strategy::Legacy) {
+            self.ttl_ms = 0;
+        }
+        self.strategy = strategy;
+        self.match_precisions = match_precisions;
+        self
+    }
+    pub(crate) fn with_budget(mut self, budget: i64) -> Result<Self, DataFusionError> {
+        let bytes = self
+            .groups
+            .iter()
+            .map(|(key, rows)| byte_key_bytes(&key.0) + rows.bytes())
+            .sum();
+        self.memory
+            .attach("sink-upsert-materialize", budget, bytes)?;
+        Ok(self)
+    }
+
+    pub(crate) fn push(
+        &mut self,
+        batch: &RecordBatch,
+        now: i64,
+    ) -> Result<RecordBatch, DataFusionError> {
+        if batch.num_rows() == 0 {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+        let ttl = StateTtl::new(self.ttl_ms, now);
+        let track = self.memory.tracking();
+        if ttl.enabled() && now >= self.last_sweep.saturating_add(self.ttl_ms) {
+            let mut reclaimed = 0;
+            self.groups.retain_live(&mut |key, rows| {
+                if ttl.expired(rows.written_at) {
+                    reclaimed += byte_key_bytes(key) + rows.bytes();
+                    false
+                } else {
+                    true
+                }
+            });
+            if track {
+                self.memory.record(-(reclaimed as isize));
+            }
+            self.last_sweep = now;
+        }
+        let schema = data_schema(batch);
+        let codec = self.codec.get_or_insert_with(|| {
+            RowsCodec::new(
+                schema.clone(),
+                &self.upsert_columns,
+                self.strategy,
+                &self.match_precisions,
+            )
+        });
+        assert_eq!(codec.schema, schema, "materializer input schema changed");
+        let kinds = row_kind_column(batch);
+        if batch.num_rows() >= 64
+            && !self.upsert_columns.is_empty()
+            && codec.byte_equality
+            && self.upsert_columns == self.key_columns
+            && kinds.is_none_or(|k| k.values().iter().all(|v| *v == 0 || *v == 2))
+        {
+            let mut key_encoder =
+                BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_precisions);
+            let first = key_encoder.encode(0).to_vec();
+            if key_encoder.encode(1) == first.as_slice() {
+                return self.push_single_candidate_updates(batch, now);
+            }
+        }
+        let payloads = codec
+            .payload
+            .convert_columns(&batch.columns()[..data_arity(batch)])
+            .expect("encode materializer rows");
+        let identities = codec.identities(batch);
+        let kinds = row_kind_column(batch);
+        let mut keys = BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_precisions);
+        let mut match_encoder = codec.serialized.then(|| {
+            BinaryRowBatchEncoder::new(batch, &codec.match_columns, &codec.match_precisions)
+        });
+        let mut output = Vec::new();
+        let mut output_kinds = Vec::new();
+        let mut input_rows = Vec::new();
+        for row in 0..batch.num_rows() {
+            let key = keys.encode(row);
+            let expired = self
+                .groups
+                .get(key)
+                .is_some_and(|v| ttl.expired(v.written_at));
+            if expired {
+                if track {
+                    self.memory.record(
+                        -((byte_key_bytes(key) + self.groups.get(key).unwrap().bytes()) as isize),
+                    );
+                }
+                self.groups.remove(key);
+            }
+            let kind = kinds.map_or(0, |k| k.value(row));
+            assert!((0..=3).contains(&kind), "invalid materializer row kind");
+            let identity = codec.identity(batch, row, identities.as_ref());
+            let payload: Arc<[u8]> = Arc::from(payloads.row(row).data());
+            let serialized: Option<Arc<[u8]>> =
+                match_encoder.as_mut().map(|e| Arc::from(e.encode(row)));
+            if kind == 0 || kind == 2 {
+                let fresh = !self.groups.contains(key);
+                let values = if fresh {
+                    self.groups
+                        .insert(ByteKey::from(key), Candidates::new(self.strategy))
+                } else {
+                    self.groups.get_mut(key).unwrap()
+                };
+                let before = if fresh {
+                    0
+                } else {
+                    byte_key_bytes(key) + values.bytes()
+                };
+                output_kinds.push(if values.is_empty() { 0 } else { 2 });
+                output.push(payload.clone());
+                input_rows.push(Some(row as u32));
+                // Owned key arrays must not retain unrelated rows of an incoming Arrow batch.
+                let owned_identity = codec.byte_equality.then_some(identity);
+                values.add(
+                    codec.candidate(payload, owned_identity, serialized),
+                    !self.upsert_columns.is_empty(),
+                    self.strategy,
+                    codec,
+                );
+                values.written_at = now;
+                if track {
+                    self.memory
+                        .record((byte_key_bytes(key) + values.bytes()) as isize - before as isize);
+                }
+            } else if let Some(values) = self.groups.get_mut(key) {
+                let before = byte_key_bytes(key) + values.bytes();
+                let (found, action) = values.remove(
+                    &identity,
+                    serialized.as_deref(),
+                    codec.hash_key(&identity, serialized.as_deref()),
+                    self.strategy,
+                    codec,
+                );
+                match action {
+                    Action::Silent => {}
+                    Action::Delete => {
+                        output.push(payload);
+                        input_rows.push(Some(row as u32));
+                        output_kinds.push(3);
+                    }
+                    Action::Restore(payload) => {
+                        output.push(payload);
+                        input_rows.push(None);
+                        output_kinds.push(2);
+                    }
+                }
+                if found {
+                    values.written_at = now;
+                }
+                let empty = values.is_empty();
+                let after = if empty {
+                    0
+                } else {
+                    byte_key_bytes(key) + values.bytes()
+                };
+                if track {
+                    self.memory.record(after as isize - before as isize);
+                }
+                if empty {
+                    self.groups.remove(key);
+                }
+            }
+        }
+        self.memory.account()?;
+        if output.is_empty() {
+            return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
+        }
+        // Ordinary upserts emit the incoming payload. Retain its buffers rather than round-trip
+        // those output values through the state codec; only predecessor restoration needs decoding.
+        let mut columns = if input_rows.iter().all(Option::is_some) {
+            if input_rows.len() == batch.num_rows() {
+                batch.columns()[..data_arity(batch)].to_vec()
+            } else {
+                let indices =
+                    UInt32Array::from_iter_values(input_rows.into_iter().map(Option::unwrap));
+                batch.columns()[..data_arity(batch)]
+                    .iter()
+                    .map(|column| {
+                        take(column, &indices, None).expect("materializer input selection")
+                    })
+                    .collect()
+            }
+        } else {
+            codec.decode(&output)
+        };
+        let mut fields = codec.schema.fields().to_vec();
+        fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
+        columns.push(Arc::new(Int8Array::from(output_kinds)));
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("materialized changelog"))
+    }
+
+    // With identical input and sink keys every key has one candidate. Positive changes still
+    // emit per arrival, but only the final replacement in this batch needs an owned state row.
+    fn push_single_candidate_updates(
+        &mut self,
+        batch: &RecordBatch,
+        now: i64,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let codec = self.codec.as_ref().unwrap();
+        let ttl = StateTtl::new(self.ttl_ms, now);
+        let mut keys = BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_precisions);
+        let identities = codec.identities(batch).expect("scalar sink keys");
+        let mut last = std::collections::HashMap::<Vec<u8>, (usize, Vec<u8>)>::new();
+        let mut kinds = Vec::with_capacity(batch.num_rows());
+        for row in 0..batch.num_rows() {
+            let identity = identities.row(row);
+            if let Some((index, _)) = last.get_mut(identity.data()) {
+                *index = row;
+                kinds.push(2);
+            } else {
+                let key = keys.encode(row);
+                let fresh = self
+                    .groups
+                    .get(key)
+                    .is_none_or(|v| ttl.expired(v.written_at));
+                kinds.push(if fresh { 0 } else { 2 });
+                last.insert(identity.data().to_vec(), (row, key.to_vec()));
+            }
+        }
+        let retained: Vec<_> = last.into_values().map(|(row, key)| (key, row)).collect();
+        let indices = UInt32Array::from_iter_values(retained.iter().map(|(_, row)| *row as u32));
+        let columns = batch.columns()[..data_arity(batch)]
+            .iter()
+            .map(|column| take(column, &indices, None).expect("materializer final replacements"))
+            .collect();
+        let selected =
+            RecordBatch::try_new(codec.schema.clone(), columns).expect("replacement rows");
+        let payloads = codec
+            .payload
+            .convert_columns(selected.columns())
+            .expect("encode replacements");
+        let identities = codec.identities(&selected);
+        let mut serialized = codec.serialized.then(|| {
+            BinaryRowBatchEncoder::new(&selected, &codec.match_columns, &codec.match_precisions)
+        });
+        let track = self.memory.tracking();
+        for (row, (key, _)) in retained.iter().enumerate() {
+            let before = self
+                .groups
+                .get(key)
+                .map_or(0, |v| byte_key_bytes(key) + v.bytes());
+            if self
+                .groups
+                .get(key)
+                .is_some_and(|v| ttl.expired(v.written_at))
+            {
+                self.groups.remove(key);
+            }
+            let values = if self.groups.contains(key) {
+                self.groups.get_mut(key).unwrap()
+            } else {
+                self.groups.insert(
+                    ByteKey::from(key.as_slice()),
+                    Candidates::new(self.strategy),
+                )
+            };
+            let identity = codec.identity(&selected, row, identities.as_ref());
+            let binary = serialized.as_mut().map(|e| Arc::from(e.encode(row)));
+            values.add(
+                codec.candidate(Arc::from(payloads.row(row).data()), Some(identity), binary),
+                true,
+                self.strategy,
+                codec,
+            );
+            values.written_at = now;
+            if track {
+                let after = byte_key_bytes(key) + values.bytes();
+                self.memory.record(after as isize - before as isize);
+            }
+        }
+        self.memory.account()?;
+        let mut fields = codec.schema.fields().to_vec();
+        fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
+        let mut columns = batch.columns()[..data_arity(batch)].to_vec();
+        columns.push(Arc::new(Int8Array::from(kinds)));
+        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+            .expect("materialized upserts"))
+    }
+
+    pub(crate) fn snapshot(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
+        let Some(codec) = &self.codec else {
+            return BTreeMap::new();
+        };
+        let mut groups: BTreeMap<i32, Vec<(&ByteKey, &Candidates)>> = BTreeMap::new();
+        for (key, rows) in self.groups.iter() {
+            let group = flink_key_group(hash_bytes_by_words(&key.0), max_parallelism) as i32;
+            groups.entry(group).or_default().push((key, rows));
+        }
+        groups
+            .into_iter()
+            .map(|(group, values)| {
+                let mut keys = BinaryBuilder::new();
+                let mut rows = BinaryBuilder::new();
+                let mut times = Int64Builder::new();
+                let mut shapes = StringBuilder::new();
+                for (key, candidates) in values {
+                    let (shape, payloads) = candidates.snapshot(codec);
+                    keys.append_value(&key.0);
+                    rows.append_value([]);
+                    times.append_value(candidates.written_at);
+                    shapes.append_value(shape);
+                    for payload in payloads {
+                        keys.append_value(&key.0);
+                        rows.append_value(payload);
+                        times.append_value(candidates.written_at);
+                        shapes.append_null();
+                    }
+                }
+                let schema = Schema::new_with_metadata(
+                    vec![
+                        Field::new(RAW_SNAPSHOT_KEY, DataType::Binary, false),
+                        Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, false),
+                        Field::new(TTL_TS_COLUMN, DataType::Int64, false),
+                        Field::new("__sink_shape__", DataType::Utf8, true),
+                    ],
+                    std::collections::HashMap::from([
+                        (
+                            RAW_SNAPSHOT_PAYLOAD_SCHEMA.to_string(),
+                            encode_schema_metadata(&codec.schema),
+                        ),
+                        (
+                            "streamfusion.sink-materializer.version".to_string(),
+                            "2".to_string(),
+                        ),
+                        (
+                            "streamfusion.sink-materializer.ttl-ms".to_string(),
+                            self.ttl_ms.to_string(),
+                        ),
+                    ]),
+                );
+                let batch = RecordBatch::try_new(
+                    Arc::new(schema),
+                    vec![
+                        Arc::new(keys.finish()),
+                        Arc::new(rows.finish()),
+                        Arc::new(times.finish()),
+                        Arc::new(shapes.finish()),
+                    ],
+                )
+                .expect("materializer snapshot");
+                (group, write_ipc(&batch))
+            })
+            .collect()
+    }
+
+    pub(crate) fn restore(&mut self, snapshots: &[Vec<u8>], now: i64) {
+        for bytes in snapshots {
+            for batch in read_ipc_if_present(bytes) {
+                assert_eq!(
+                    batch
+                        .schema_ref()
+                        .metadata()
+                        .get("streamfusion.sink-materializer.version")
+                        .map(String::as_str),
+                    Some("2")
+                );
+                let had_ttl = batch
+                    .schema_ref()
+                    .metadata()
+                    .get("streamfusion.sink-materializer.ttl-ms")
+                    .and_then(|value| value.parse::<i64>().ok())
+                    .unwrap_or(0)
+                    > 0;
+                let schema = decode_schema_metadata(&batch).expect("materializer snapshot schema");
+                let codec = self.codec.get_or_insert_with(|| {
+                    RowsCodec::new(
+                        schema.clone(),
+                        &self.upsert_columns,
+                        self.strategy,
+                        &self.match_precisions,
+                    )
+                });
+                assert_eq!(codec.schema, schema, "materializer restore schema mismatch");
+                let keys = column_binary(&batch, RAW_SNAPSHOT_KEY);
+                let rows = column_binary(&batch, RAW_SNAPSHOT_ROW);
+                let times = column_i64(&batch, TTL_TS_COLUMN);
+                let shapes = batch
+                    .column_by_name("__sink_shape__")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap();
+                let mut row = 0;
+                while row < batch.num_rows() {
+                    let shape = shapes.value(row);
+                    let count = Candidates::snapshot_rows(shape);
+                    let written_at = if self.ttl_ms > 0 && !had_ttl {
+                        now
+                    } else {
+                        times.value(row)
+                    };
+                    let mut values = Candidates::restore(
+                        shape,
+                        (row + 1..row + 1 + count).map(|i| rows.value(i).to_vec()),
+                        written_at,
+                        codec,
+                    );
+                    values.reconfigure(self.strategy, codec);
+                    self.groups.insert(ByteKey::from(keys.value(row)), values);
+                    row += count + 1;
+                }
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_createSinkMaterializer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    keys: JIntArray<'local>,
+    precisions: JIntArray<'local>,
+    upsert: JIntArray<'local>,
+    ttl: jlong,
+    strategy: jint,
+    high: jlong,
+    low: jlong,
+    match_precisions: JIntArray<'local>,
+    budget: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let materializer = SinkMaterializer::new(
+            read_columns(&env, &keys),
+            read_i32_array(&env, &precisions),
+            read_columns(&env, &upsert),
+            ttl,
+        )
+        .with_strategy(
+            Strategy::from_config(strategy, high, low),
+            read_i32_array(&env, &match_precisions),
+        )
+        .with_budget(budget);
+        boxed_or_throw(&mut env, materializer)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_restoreSinkMaterializer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    keys: JIntArray<'local>,
+    precisions: JIntArray<'local>,
+    upsert: JIntArray<'local>,
+    ttl: jlong,
+    snapshots: JObjectArray<'local>,
+    now: jlong,
+    strategy: jint,
+    high: jlong,
+    low: jlong,
+    match_precisions: JIntArray<'local>,
+    budget: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let mut materializer = SinkMaterializer::new(
+            read_columns(&env, &keys),
+            read_i32_array(&env, &precisions),
+            read_columns(&env, &upsert),
+            ttl,
+        )
+        .with_strategy(
+            Strategy::from_config(strategy, high, low),
+            read_i32_array(&env, &match_precisions),
+        );
+        let mut restored = Vec::new();
+        for i in 0..env
+            .get_array_length(&snapshots)
+            .expect("materializer partition count")
+        {
+            let bytes = JByteArray::from(
+                env.get_object_array_element(&snapshots, i)
+                    .expect("materializer partition"),
+            );
+            restored.push(
+                env.convert_byte_array(&bytes)
+                    .expect("materializer partition bytes"),
+            );
+        }
+        materializer.restore(&restored, now);
+        boxed_or_throw(&mut env, materializer.with_budget(budget))
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_pushSinkMaterializer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    input_array: jlong,
+    input_schema: jlong,
+    now: jlong,
+    output_array: jlong,
+    output_schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let materializer = unsafe { &mut *(handle as *mut SinkMaterializer) };
+        let result = {
+            let batch = import_record_batch(input_array, input_schema);
+            materializer.push(&batch, now)
+        };
+        match result {
+            Ok(batch) => export_record_batch(batch, output_array, output_schema),
+            Err(error) => throw_memory_limit(&mut env, &error.to_string()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_snapshotSinkMaterializer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    max_parallelism: jint,
+) -> jni::sys::jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let materializer = unsafe { &*(handle as *const SinkMaterializer) };
+        keyed_state_partition_array(
+            &mut env,
+            materializer.snapshot(max_parallelism as usize),
+            "sink-materializer",
+        )
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_sinkMaterializerStateBytes<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const SinkMaterializer) }
+            .memory
+            .state_bytes as jlong
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_closeSinkMaterializer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| unsafe {
+        drop(from_handle::<SinkMaterializer>(handle));
+    })
+}

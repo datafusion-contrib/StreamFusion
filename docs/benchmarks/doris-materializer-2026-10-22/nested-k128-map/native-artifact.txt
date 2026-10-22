@@ -1,0 +1,3 @@
+Release with mimalloc; final native source.
+sha256=602034c4737d805e57a83d978b0548f8e588b6c329cf81fec24fd948f37a8e32
+Writer normalizes only represented columns.

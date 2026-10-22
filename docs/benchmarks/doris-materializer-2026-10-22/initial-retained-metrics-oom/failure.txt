@@ -1,0 +1,1 @@
+Incomplete run: retained metrics across many completed jobs exhausted the 2 GiB Java heap during the 1M-row previous-mode trial 4. All completed warmup and measurement rows are retained. The harness now closes each job cluster and its reporter after recording counters.

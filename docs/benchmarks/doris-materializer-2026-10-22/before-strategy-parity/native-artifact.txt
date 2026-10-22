@@ -1,0 +1,2 @@
+Release with mimalloc; native library used by scalar and nested measurements.
+sha256=5b4923f4015b0a6e0a2ca280c10c3ee6b4156b3a6a3645dcb31e961db9304cc8

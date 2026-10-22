@@ -31,14 +31,21 @@ struct KeyTypeSchema {
     timestamp_precision: i32,
     children: Vec<KeyTypeSchema>,
     row_kind: Option<usize>,
+    map_list: bool,
 }
 
-fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize) -> KeyTypeSchema {
+fn key_type_schema(field: &Field, precisions: &[i32], cursor: &mut usize) -> KeyTypeSchema {
+    let data_type = field.data_type();
+    let map_list = field
+        .metadata()
+        .get("streamfusion.map-list")
+        .is_some_and(|s| s == "1")
+        || matches!(data_type, DataType::List(child) | DataType::LargeList(child) if child.metadata().get("streamfusion.map-list").is_some_and(|s| s == "1"));
     if represented_element(data_type) {
         let DataType::Struct(fields) = data_type else {
             unreachable!()
         };
-        return key_type_schema(fields[0].data_type(), precisions, cursor);
+        return key_type_schema(&fields[0], precisions, cursor);
     }
     let row_kind = match data_type {
         DataType::Struct(fields) => nested_row_kind_index(fields),
@@ -51,17 +58,33 @@ fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize)
     let children = match data_type {
         _ if is_timestamp(data_type) || represented_string(data_type) => Vec::new(),
         DataType::List(field) | DataType::LargeList(field) => {
-            vec![key_type_schema(field.data_type(), precisions, cursor)]
+            if map_list {
+                let DataType::Struct(fields) = field.data_type() else {
+                    panic!("map-list entries")
+                };
+                fields
+                    .iter()
+                    .map(|f| key_type_schema(f, precisions, cursor))
+                    .collect()
+            } else {
+                vec![key_type_schema(field, precisions, cursor)]
+            }
         }
         DataType::Struct(fields) => fields
             .iter()
             .take(row_kind.unwrap_or(fields.len()))
-            .map(|field| key_type_schema(field.data_type(), precisions, cursor))
+            .filter(|field| {
+                !field
+                    .metadata()
+                    .get("streamfusion.nested-row-binary")
+                    .is_some_and(|s| s == "1")
+            })
+            .map(|field| key_type_schema(field, precisions, cursor))
             .collect(),
         DataType::Map(entries, _) => match entries.data_type() {
             DataType::Struct(fields) => fields
                 .iter()
-                .map(|field| key_type_schema(field.data_type(), precisions, cursor))
+                .map(|field| key_type_schema(field, precisions, cursor))
                 .collect(),
             other => panic!("Arrow map entries must be a struct, got {other:?}"),
         },
@@ -71,6 +94,7 @@ fn key_type_schema(data_type: &DataType, precisions: &[i32], cursor: &mut usize)
         timestamp_precision,
         children,
         row_kind,
+        map_list,
     }
 }
 
@@ -346,9 +370,25 @@ fn encode_array(array: &ArrayRef, schema: &KeyTypeSchema) -> Vec<u8> {
 
 fn encode_struct(array: &StructArray, row: usize, schema: &KeyTypeSchema) -> Vec<u8> {
     let kind = schema.row_kind;
+    let binary = array.fields().iter().position(|field| {
+        field
+            .metadata()
+            .get("streamfusion.nested-row-binary")
+            .is_some_and(|s| s == "1")
+    });
+    if let Some(index) = binary {
+        let bytes = array
+            .column(index)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .unwrap();
+        if !bytes.is_null(row) {
+            return bytes.value(row).to_vec();
+        }
+    }
     assert_eq!(
         array.num_columns(),
-        schema.children.len() + usize::from(kind.is_some())
+        schema.children.len() + usize::from(kind.is_some()) + usize::from(binary.is_some())
     );
     let mut writer = BinaryRowWriter::new(schema.children.len());
     if let Some(index) = kind {
@@ -362,8 +402,7 @@ fn encode_struct(array: &StructArray, row: usize, schema: &KeyTypeSchema) -> Vec
         } else {
             kinds.value(row) as u8
         };
-        assert!(value <= 3, "invalid nested Flink RowKind");
-        writer.bytes[0] = value;
+        writer.bytes[0] = value & 3;
     }
     for (pos, child_schema) in schema.children.iter().enumerate() {
         write_value(&mut writer, pos, array.column(pos), row, child_schema);
@@ -374,6 +413,10 @@ fn encode_struct(array: &StructArray, row: usize, schema: &KeyTypeSchema) -> Vec
 fn encode_map(array: &MapArray, row: usize, schema: &KeyTypeSchema) -> Vec<u8> {
     assert_eq!(schema.children.len(), 2);
     let entries = array.value(row);
+    encode_map_entries(&entries, schema)
+}
+
+fn encode_map_entries(entries: &StructArray, schema: &KeyTypeSchema) -> Vec<u8> {
     let keys = encode_array(entries.column(0), &schema.children[0]);
     let values = encode_array(entries.column(1), &schema.children[1]);
     let mut bytes = Vec::with_capacity(4 + keys.len() + values.len());
@@ -381,6 +424,29 @@ fn encode_map(array: &MapArray, row: usize, schema: &KeyTypeSchema) -> Vec<u8> {
     bytes.extend_from_slice(&keys);
     bytes.extend_from_slice(&values);
     bytes
+}
+
+fn encode_map_list(array: &ArrayRef, row: usize, schema: &KeyTypeSchema) -> Vec<u8> {
+    let entries = match array.data_type() {
+        DataType::List(_) => array
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap()
+            .value(row),
+        DataType::LargeList(_) => array
+            .as_any()
+            .downcast_ref::<LargeListArray>()
+            .unwrap()
+            .value(row),
+        _ => unreachable!(),
+    };
+    encode_map_entries(
+        entries
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("map-list entries"),
+        schema,
+    )
 }
 
 fn write_array_value(
@@ -546,6 +612,10 @@ fn write_array_value(
                 writer.write_fixed(pos, &(offset_and_nanos as i64).to_ne_bytes());
                 writer.cursor += 8;
             }
+        }
+        DataType::List(_) | DataType::LargeList(_) if schema.map_list => {
+            let bytes = encode_map_list(array, row, schema);
+            writer.write_variable(pos, &bytes, round_to_word(bytes.len()));
         }
         DataType::List(_) => {
             let value = array
@@ -731,6 +801,10 @@ fn write_value(
         data_type if is_timestamp(data_type) => {
             writer.write_timestamp(pos, timestamp_value(array, row), schema.timestamp_precision)
         }
+        DataType::List(_) | DataType::LargeList(_) if schema.map_list => {
+            let bytes = encode_map_list(array, row, schema);
+            writer.write_variable(pos, &bytes, round_to_word(bytes.len()));
+        }
         DataType::List(_) => {
             let value = array
                 .as_any()
@@ -797,13 +871,7 @@ impl<'a> BinaryRowBatchEncoder<'a> {
         let schema = batch.schema_ref();
         let schemas: Vec<KeyTypeSchema> = key_columns
             .iter()
-            .map(|&column| {
-                key_type_schema(
-                    schema.field(column).data_type(),
-                    timestamp_precisions,
-                    &mut cursor,
-                )
-            })
+            .map(|&column| key_type_schema(schema.field(column), timestamp_precisions, &mut cursor))
             .collect();
         assert_eq!(
             cursor,

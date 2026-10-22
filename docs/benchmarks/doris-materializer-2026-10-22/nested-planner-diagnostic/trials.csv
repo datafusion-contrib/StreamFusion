@@ -1,0 +1,3 @@
+rows,parallelism,trial,mode,milliseconds
+100000,2,0,stock,1892.73545
+100000,2,0,previous,938.08906

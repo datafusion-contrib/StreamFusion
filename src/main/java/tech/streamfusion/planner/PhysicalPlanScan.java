@@ -208,7 +208,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
         && substituted instanceof ColumnarInput
         && (JsonStringIdentity.projectsBinaryString(root)
             || LegacyBinaryResults.reachesSink(root)
-            || CollectionValueIdentity.requiresRowSink(substituted))) {
+            || CollectionValueIdentity.requiresRowSink(substituted)
+                && !((ColumnarInput) substituted).acceptsCollectionRepresentation())) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
       recordFallback(

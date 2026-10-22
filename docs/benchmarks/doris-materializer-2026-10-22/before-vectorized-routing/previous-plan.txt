@@ -1,0 +1,22 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3])
++- LogicalProject(id=[$0], EXPR$1=[CAST($1):INTEGER NOT NULL], EXPR$2=[CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE" NOT NULL], EXPR$3=[CAST($0):DECIMAL(18, 2) NOT NULL])
+   +- LogicalAggregate(group=[{0}], agg#0=[COUNT()])
+      +- LogicalProject(id=[$0])
+         +- LogicalTableScan(table=[[default_catalog, default_database, src]])
+
+== Optimized Physical Plan ==
+Sink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3], upsertMaterialize=[true])
++- ArrowToRowData(reuseBarrier=[365])
+   +- NativeCalc(select=[id, CAST($f1 AS INTEGER) AS EXPR$1, CAST(id AS VARCHAR(2147483647)) AS EXPR$2, CAST(id AS DECIMAL(18, 2)) AS EXPR$3], nativeFunctions=[CAST], jvmFunctions=[], reuseBarrier=[364])
+      +- NativeColumnarGroupAggregate(reuseBarrier=[363])
+         +- NativeColumnarExchange(reuseBarrier=[362])
+            +- NativeDorisSource(reuseBarrier=[361])
+
+== Optimized Execution Plan ==
+Sink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3], upsertMaterialize=[true])
++- ArrowToRowData
+   +- NativeCalc(select=[id, CAST($f1 AS INTEGER) AS EXPR$1, CAST(id AS VARCHAR(2147483647)) AS EXPR$2, CAST(id AS DECIMAL(18, 2)) AS EXPR$3], nativeFunctions=[CAST], jvmFunctions=[])
+      +- NativeColumnarGroupAggregate
+         +- NativeColumnarExchange
+            +- NativeDorisSource

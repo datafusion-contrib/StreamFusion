@@ -65,6 +65,82 @@ class DorisSinkRuntimeTest {
     assertEquals(128, reassembled.getMaxParallelism());
   }
 
+  @Test
+  void materializationAlwaysRoutesBySinkKeyEvenWithShuffleDisabledAndOneWriter() {
+    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    var config =
+        new Configuration()
+            .set(
+                ExecutionConfigOptions.TABLE_EXEC_SINK_KEYED_SHUFFLE,
+                ExecutionConfigOptions.SinkKeyedShuffle.NONE);
+    for (int target : new int[] {1, 3}) {
+      var result =
+          (OneInputTransformation<ArrowBatch, ArrowBatch>)
+              new DorisSinkRuntime(
+                      null,
+                      TYPE,
+                      target,
+                      new int[] {0},
+                      new int[] {-1},
+                      new String[1],
+                      true,
+                      new int[] {0})
+                  .prepare(input(env), env, ExecNodeConfig.ofNodeConfig(config, false));
+      assertEquals("native-sink-upsert-materialize", result.getName());
+      assertEquals(target, result.getParallelism());
+      assertEquals(128, result.getMaxParallelism());
+      assertNotNull(result.getStateKeySelector());
+      assertInstanceOf(PartitionTransformation.class, result.getInputs().get(0));
+    }
+  }
+
+  @Test
+  void adaptiveThresholdsRejectTheSameInvalidConfigurationsAsFlink() throws Exception {
+    tech.streamfusion.operator.TaskOffHeapMemory.initialize(
+        new Configuration()
+            .set(
+                org.apache.flink.configuration.TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
+                org.apache.flink.configuration.MemorySize.ofMebiBytes(256)));
+    var env = StreamExecutionEnvironment.getExecutionEnvironment();
+    for (Long[] thresholds : List.of(new Long[] {1L, 2L}, new Long[] {100L, null})) {
+      var config =
+          new Configuration()
+              .set(
+                  ExecutionConfigOptions.TABLE_EXEC_SINK_UPSERT_MATERIALIZE_STRATEGY,
+                  ExecutionConfigOptions.SinkUpsertMaterializeStrategy.ADAPTIVE);
+      config.set(
+          ExecutionConfigOptions.TABLE_EXEC_SINK_UPSERT_MATERIALIZE_ADAPTIVE_THRESHOLD_HIGH,
+          thresholds[0]);
+      if (thresholds[1] != null)
+        config.set(
+            ExecutionConfigOptions.TABLE_EXEC_SINK_UPSERT_MATERIALIZE_ADAPTIVE_THRESHOLD_LOW,
+            thresholds[1]);
+      var transform =
+          (OneInputTransformation<ArrowBatch, ArrowBatch>)
+              new DorisSinkRuntime(
+                      null,
+                      TYPE,
+                      1,
+                      new int[] {0},
+                      new int[] {-1},
+                      new String[1],
+                      true,
+                      new int[] {0})
+                  .prepare(input(env), env, ExecNodeConfig.ofNodeConfig(config, false));
+      var factory =
+          (org.apache.flink.streaming.api.operators.SimpleOperatorFactory<ArrowBatch>)
+              transform.getOperatorFactory();
+      var operator = (tech.streamfusion.operator.NativeSinkMaterializer) factory.getOperator();
+      try (var harness =
+          new org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness<
+              Integer, ArrowBatch, ArrowBatch>(
+              operator, b -> 0, org.apache.flink.api.common.typeinfo.Types.INT, 128, 1, 0)) {
+        harness.setup(new tech.streamfusion.operator.ArrowBatchSerializer());
+        assertThrows(IllegalArgumentException.class, harness::open);
+      }
+    }
+  }
+
   private static Transformation<ArrowBatch> input(StreamExecutionEnvironment env) {
     var input =
         env.fromCollection(List.<ArrowBatch>of(), ArrowBatchTypeInformation.INSTANCE)

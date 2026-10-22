@@ -1,0 +1,4 @@
+Scenario-specific hashes accompany the final measurements.
+Native builds use release optimization and mimalloc.
+Final controls include upstream main 88c90a34.
+Earlier development runs predate that rebase and are diagnostic.

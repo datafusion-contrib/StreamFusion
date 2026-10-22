@@ -1,0 +1,4 @@
+== Native acceleration (StreamFusion) ==
+0 operator(s) ran natively.
+1 operator(s) fell back to Flink:
+  - collection value representation requires a row sink

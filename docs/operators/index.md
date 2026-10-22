@@ -8,6 +8,8 @@ runs natively.
 
 [Sink constraints](sink-constraints.md) documents the shared columnar NOT NULL ERROR boundary and
 the connector-specific admission that remains necessary around it.
+[Sink upsert materialization](sink-upsert-materialize.md) covers ordered candidate state before
+admitted Doris Arrow writers.
 
 ## The all-or-nothing island
 

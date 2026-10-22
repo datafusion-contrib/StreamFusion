@@ -63,7 +63,16 @@ Insert, update and delete input is supported. The stock connector negotiates upd
 handling; a delete-sign column is generated when delete support is enabled for a Unique Key
 table. Scalar and nested values, timestamp precision, destination aliases, explicit sink
 parallelism and Flink's primary-key shuffle policy are preserved. NOT NULL error enforcement
-uses StreamFusion's existing constraint operator.
+uses StreamFusion's existing constraint operator. Generated arrays, maps and rows can also reach
+the Arrow writer: its declared collection capability canonicalizes the core's representation
+metadata for Doris, including when an upsert materializer precedes the writer.
+
+Sinks requiring upsert materialization use the shared
+[native sink materializer](../operators/sink-upsert-materialize.md). Candidate rows remain ordered
+per sink primary key; stale retractions are swallowed and removing the visible candidate restores
+its predecessor. Flink's inferred input upsert key controls replacement and matching. The stage
+forces primary-key routing even when ordinary sink shuffle policy is `NONE`, and its state follows
+the native keyed checkpoint/recovery path. Input and output stay Arrow batches.
 
 Connector options are passed to stock readers, enumerators and writers, including security,
 load properties, retries, buffering and commit settings. Options specific to row conversion
@@ -72,8 +81,9 @@ its acceptance depends on the Doris server's Arrow Stream Load support. The veri
 uses uncompressed Arrow.
 
 Non-Arrow formats, JDBC lookup functions and COPY/TVF transports retain stock execution. Shared Flink sink fallbacks
-also remain for required upsert materialization, unsupported sink abilities/overwrite, NOT NULL
-DROP and string/binary length trimming. These require Flink's corresponding runtime stages,
+also remain for unsupported sink abilities/overwrite, NOT NULL
+DROP and string/binary length trimming. Materialized sinks also retain the shared Flink 2.2
+changelog-state-backend fallback. These require Flink's corresponding runtime stages,
 rather than a different Arrow transport.
 
 ## Buffer ownership and copies
@@ -93,7 +103,7 @@ This is a buffer-sharing contract after Flight has decoded its response, not a c
 network reception, compression, or every Arrow alignment/type conversion is zero copy. Sink
 IPC framing and the stock writer's `byte[]` buffering copy bytes. Native output reaches the
 serializer as Arrow vectors. Timestamp output is normalized columnarly; specialized nested
-physical representations use the core's reusable row views when needed to construct the wire
+physical representations use the core's reusable row views only for the affected columns to construct the wire
 layout. Output serialization and these conversions may copy, as permitted by the sink contract.
 Thrift IPC decoding allocates Arrow buffers once; subsequent handoffs retain those buffers.
 The sink serializes the logical column prefix; internal batch sidecars stay local and are released
@@ -111,6 +121,9 @@ The newer FE fixes hidden delete-sign resolution in Arrow loads. The script runs
   scalar extremes/nulls, source/sink table models, both two-phase commit settings,
   nested/timestamp round trips, both source APIs, update/delete writers,
   checkpointed sink recovery and allocation checks after completion/cancellation;
+- materialized updates across both writer modes, inferred input keys and all four Flink 2.2
+  strategy settings, with positive native row counters. Retraction results use stock JSON as
+  the reference because the released connector rejects delete-enabled Arrow serialization;
 - upstream `DorisSourceITCase`, `DorisSinkITCase`, `DorisCatalogITCase`,
   `DorisLookupTableITCase` and `DorisRowDataJdbcLookupFunctionITCase` from release 26.3.0,
   compiled against the released connector and run with StreamFusion's upstream-suite agent.
@@ -225,3 +238,15 @@ The [complete measurements and configuration](../benchmarks/doris-arrow-2026-10-
 retain every warmup and measured trial, earlier diagnostics and the interrupted memory-pressure
 run. The fixture rotates mode order and uses release native code with mimalloc. These are bounded
 jobs; they do not establish infinite-stream throughput or a Nexmark result.
+
+
+## Sink materialization measurements
+
+The [materializer benchmark](../benchmarks/doris-materializer-2026-10-22/README.md) retains
+144 final warmup/measured trials plus development runs and profiles. It compares stock Flink,
+the previous native-source/SQL plus stock-sink boundary, and the Rust materializer/Arrow writer.
+At 1m scalar rows the medians are 0.764 / 0.687 / 0.599 seconds (1.28× versus Flink, 1.15× versus
+the previous boundary). The 10m scalar and constructed nested cases have overlapping ranges;
+nested medians remain slightly slower than Flink, so these runs do not establish a nested or
+sustained-stream speedup. They include all production boundaries and verify positive materializer
+work. See the linked method, complete ranges, raw trials and profiled copy/state optimizations.

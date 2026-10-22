@@ -1,0 +1,7 @@
+CPU/JFR diagnostic before deferred candidate replacement: 10m rows, no warmup, one trial per mode.
+The CPU capture began after the previous-mode job and covered the native job plus startup/shutdown.
+1463 cpu-clock samples at 99 Hz; 12-second capture. Native aggregation accounted for 16.34%
+of CPU samples in libstreamfusion; the native sink/materializer thread accounted for 8.48%.
+JVM compilation and GC occupied substantial CPU; this is not an isolated materializer profile.
+The native sink thread allocation samples included Arrays.copyOf (1213176736 weighted bytes).
+Instrumented timings are diagnostic and are not included in the final comparison.

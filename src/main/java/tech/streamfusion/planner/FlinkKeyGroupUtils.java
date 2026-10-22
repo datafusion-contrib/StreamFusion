@@ -28,6 +28,27 @@ public final class FlinkKeyGroupUtils {
     return precisions.stream().mapToInt(Integer::intValue).toArray();
   }
 
+  static int[] timestampPrecisions(
+      org.apache.flink.table.types.logical.RowType inputType, int[] keys) {
+    List<Integer> result = new ArrayList<>();
+    for (int key : keys) appendTimestampPrecisions(inputType.getTypeAt(key), result);
+    return result.stream().mapToInt(Integer::intValue).toArray();
+  }
+
+  private static void appendTimestampPrecisions(
+      org.apache.flink.table.types.logical.LogicalType type, List<Integer> result) {
+    var root = type.getTypeRoot();
+    result.add(
+        root == org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE
+                || root
+                    == org.apache.flink.table.types.logical.LogicalTypeRoot
+                        .TIMESTAMP_WITH_LOCAL_TIME_ZONE
+            ? org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getPrecision(type)
+            : -1);
+    for (var child : type.getChildren()) appendTimestampPrecisions(child, result);
+    if (root == org.apache.flink.table.types.logical.LogicalTypeRoot.MULTISET) result.add(-1);
+  }
+
   private static void appendTimestampPrecisions(
       RelDataType type, List<Integer> precisions) {
     SqlTypeName typeName = type.getSqlTypeName();
