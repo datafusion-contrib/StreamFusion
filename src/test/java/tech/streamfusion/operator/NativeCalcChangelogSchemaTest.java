@@ -8,9 +8,13 @@ import java.util.List;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
+import org.apache.flink.table.data.GenericArrayData;
+import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,6 +22,64 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class NativeCalcChangelogSchemaTest {
   private static final RowType TYPE = RowType.of(new IntType());
+
+  @Test
+  void nestedAndEmptyOutputsRemainOwnedAcrossLaterBatchesAndShutdown() throws Exception {
+    RowType type = RowType.of(new ArrayType(new IntType()),
+        RowType.of(new IntType(), new VarCharType(VarCharType.MAX_LENGTH)));
+    var calc = new NativeCalcOperator(new int[] {0, 0}, new int[] {0, 1}, new int[] {0, 0},
+        new long[0], new double[0], new String[0], new int[] {0, 1}, -1,
+        new String[] {"items", "nested"}, NativeUdf.Binding.EMPTY);
+    List<ArrowBatch> retained = new ArrayList<>();
+    try (var allocator = new org.apache.arrow.memory.RootAllocator()) {
+      try {
+        try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(calc)) {
+          harness.setup(new ArrowBatchSerializer());
+          harness.open();
+          for (int count : new int[] {0, 3, 0, 2}) {
+            List<RowData> input = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+              var row = GenericRowData.of(
+                  i == 1 ? null : new GenericArrayData(new Integer[] {i, null, -i}),
+                  i == 1 ? null : GenericRowData.of(i, StringData.fromString("é中" + i)));
+              row.setRowKind(RowKind.values()[i % 4]);
+              input.add(row);
+            }
+            harness.processElement(new StreamRecord<>(new ArrowBatch(
+                RowDataArrowConverter.write(input, type, allocator, true), 17)));
+            @SuppressWarnings("unchecked")
+            var output = (StreamRecord<ArrowBatch>) harness.getOutput().poll();
+            retained.add(output.getValue());
+          }
+          harness.processWatermark(new org.apache.flink.streaming.api.watermark.Watermark(123));
+          assertEquals(123, ((org.apache.flink.streaming.api.watermark.Watermark)
+              harness.getOutput().poll()).getTimestamp());
+        }
+        for (int batch = 0; batch < retained.size(); batch++) {
+          var output = retained.get(batch);
+          assertEquals(17, output.keyGroup());
+          var rows = RowDataArrowConverter.read(output.root(), type);
+          assertEquals(new int[] {0, 3, 0, 2}[batch], rows.size());
+          for (int i = 0; i < rows.size(); i++) {
+            var row = rows.get(i);
+            assertEquals(RowKind.values()[i % 4], row.getRowKind());
+            if (i == 1) {
+              org.junit.jupiter.api.Assertions.assertTrue(row.isNullAt(0) && row.isNullAt(1));
+            } else {
+              assertEquals(i, row.getArray(0).getInt(0));
+              org.junit.jupiter.api.Assertions.assertTrue(row.getArray(0).isNullAt(1));
+              assertEquals(-i, row.getArray(0).getInt(2));
+              assertEquals(i, row.getRow(1, 2).getInt(0));
+              assertEquals("é中" + i, row.getRow(1, 2).getString(1).toString());
+            }
+          }
+        }
+      } finally {
+        for (var output : retained) output.root().close();
+      }
+      assertEquals(0, allocator.getAllocatedMemory());
+    }
+  }
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
@@ -44,6 +106,8 @@ class NativeCalcChangelogSchemaTest {
       var root = RowDataArrowConverter.write(rows, RowType.of(), NativeAllocator.SHARED, changelog);
       assertEquals(changelog ? 1 : 0, root.getFieldVectors().size());
       harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
+      harness.processElement(new StreamRecord<>(new ArrowBatch(
+          RowDataArrowConverter.write(List.of(), RowType.of(), NativeAllocator.SHARED, changelog))));
       int count = 0;
       for (Object record : harness.getOutput()) {
         if (record instanceof StreamRecord<?>) {

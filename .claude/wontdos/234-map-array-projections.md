@@ -65,5 +65,5 @@ probe, preventing a fallback timing from being presented as native performance.
 Do not enable these standalone paths based on zero-copy kernel mechanics alone.
 Revisit after a demonstrated end-to-end improvement or a justified admission
 policy for already-columnar pipelines. General boundary work belongs to
-[#248](https://github.com/datafusion-contrib/StreamFusion/issues/248); this
+the [bounded #248 outcome and reopening criteria](248-native-handle-redesign.md); this
 experiment introduces no handoff or ownership architecture change.

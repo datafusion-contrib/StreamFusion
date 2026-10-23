@@ -48,6 +48,7 @@ native clock selection, a separate filter profile still recorded 521 callback sa
 3,825 Calc samples including downstream work, alongside Arrow allocation and transpose costs.
 These are different profile boundaries, not a claimed percentage reduction. Fusion then removed
 the extra Calc handoff. The final 4.1% filter gap has not been fully attributed; it remains
-related to [the JNI/Arrow cost investigation](https://github.com/datafusion-contrib/StreamFusion/issues/248).
+related to boundary work. The [bounded JNI/Arrow investigation](calc-schema-once-c-data.md#cache-calc-output-schemas)
+retains an output-schema cache but does not remeasure or attribute this historical filter gap.
 Shipping the slower filter as runtime groundwork requires the maintainer's explicit tradeoff
 agreement. Stock Flink remains available through the native-enabled switch.

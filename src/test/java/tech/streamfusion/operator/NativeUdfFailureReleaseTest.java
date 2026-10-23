@@ -15,7 +15,8 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.flink.table.functions.ScalarFunction;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.Native;
 
 class NativeUdfFailureReleaseTest {
@@ -27,8 +28,9 @@ class NativeUdfFailureReleaseTest {
     }
   }
 
-  @Test
-  void callbackFailureSurvivesReleaseOfExportedInput() throws Exception {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void callbackFailureSurvivesReleaseOfExportedInput(boolean cachedSchema) throws Exception {
     var function = new FailingFunction();
     int id =
         NativeUdf.register(
@@ -49,6 +51,21 @@ class NativeUdfFailureReleaseTest {
             -1,
             new String[] {"result"});
     try (var allocator = new RootAllocator()) {
+      if (cachedSchema) {
+        var schema = new Schema(List.of(Field.nullable("value", new ArrowType.Int(32, true))));
+        try (var root = VectorSchemaRoot.create(schema, allocator);
+            var input = ArrowArray.allocateNew(allocator);
+            var inputSchema = ArrowSchema.allocateNew(allocator);
+            var output = ArrowArray.allocateNew(allocator);
+            var outputSchema = ArrowSchema.allocateNew(allocator)) {
+          root.allocateNew();
+          root.setRowCount(0);
+          Data.exportVectorSchemaRoot(allocator, root, NativeAllocator.DICTIONARIES, input, inputSchema);
+          Native.calcExpression(calc, input.memoryAddress(), inputSchema.memoryAddress(),
+              output.memoryAddress(), outputSchema.memoryAddress());
+          Data.importVectorSchemaRoot(allocator, output, outputSchema, NativeAllocator.DICTIONARIES).close();
+        }
+      }
       for (int i = 0; i < 32; i++) {
         try (var input = ArrowArray.allocateNew(allocator);
             var inputSchema = ArrowSchema.allocateNew(allocator);
@@ -59,21 +76,27 @@ class NativeUdfFailureReleaseTest {
             root.allocateNew();
             ((IntVector) root.getVector(0)).set(0, i);
             root.setRowCount(1);
-            Data.exportVectorSchemaRoot(
-                allocator, root, NativeAllocator.DICTIONARIES, input, inputSchema);
+            if (cachedSchema) {
+              Data.exportVectorSchemaRoot(allocator, root, NativeAllocator.DICTIONARIES, input);
+            } else {
+              Data.exportVectorSchemaRoot(
+                  allocator, root, NativeAllocator.DICTIONARIES, input, inputSchema);
+            }
           }
           // The exported input owns the buffers after the producer closes. Its release callback
           // must run safely even when the scalar callback throws on the same JNI thread.
           var failure =
               assertThrows(
                   IllegalArgumentException.class,
-                  () ->
-                      Native.calcExpression(
-                          calc,
-                          input.memoryAddress(),
-                          inputSchema.memoryAddress(),
-                          output.memoryAddress(),
-                          outputSchema.memoryAddress()));
+                  () -> {
+                    if (cachedSchema) {
+                      Native.calcExpressionWithCachedSchemasAtWatermark(calc, input.memoryAddress(),
+                          output.memoryAddress(), Long.MIN_VALUE);
+                    } else {
+                      Native.calcExpression(calc, input.memoryAddress(), inputSchema.memoryAddress(),
+                          output.memoryAddress(), outputSchema.memoryAddress());
+                    }
+                  });
           assertSame(function.failure, failure);
           assertSame(function.failure, NativeUdf.propagateUpcallFailure(failure));
         }

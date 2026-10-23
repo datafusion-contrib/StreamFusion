@@ -8,6 +8,7 @@ import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -38,7 +39,7 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
 
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
-  private transient Map<Schema, Long> compiledSchemas;
+  private transient Map<Schema, CompiledCalc> compiledSchemas;
   private transient long[] boundLongs;
   private transient long watermark;
   private transient int directRowCalc;
@@ -47,6 +48,20 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
   private transient org.apache.flink.metrics.Counter directRows;
   private transient org.apache.flink.metrics.Counter directPrimitiveRows;
   private transient org.apache.flink.metrics.Counter aliasedValues;
+
+  private static final class CompiledCalc {
+    final long handle;
+    Schema outputSchema;
+
+    CompiledCalc(long handle) {
+      this.handle = handle;
+    }
+  }
+
+  private static boolean hasDictionary(Field field) {
+    return field.getDictionary() != null
+        || field.getChildren().stream().anyMatch(NativeCalcOperator::hasDictionary);
+  }
 
   public NativeCalcOperator(
       int[] kinds,
@@ -105,7 +120,7 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
   @Override
   public void close() throws Exception {
     if (compiledSchemas != null) {
-      compiledSchemas.values().forEach(Native::closeCalcExpression);
+      compiledSchemas.values().forEach(calc -> Native.closeCalcExpression(calc.handle));
       compiledSchemas.clear();
     }
     udfBinding.unbind();
@@ -162,26 +177,27 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
     // allocator owns only the imported result.
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
+    CompiledCalc cached = compiledSchemas.get(in.getSchema());
     VectorSchemaRoot out;
     try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
         ArrowArray outArray = ArrowArray.allocateNew(allocator);
-        ArrowSchema outSchema = ArrowSchema.allocateNew(allocator)) {
+        ArrowSchema outSchema = cached == null || cached.outputSchema == null
+            ? ArrowSchema.allocateNew(allocator) : null) {
       try {
         // UNION ALL can mix insert-only batches with batches carrying the hidden row-kind
         // column. Each native handle caches its own immutable Arrow schema.
-        Long cached = compiledSchemas.get(in.getSchema());
-        long calc;
         if (cached != null) {
-          calc = cached;
           Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray);
-          Native.calcExpressionArrayAtWatermark(
-              calc,
-              inArray.memoryAddress(),
-              outArray.memoryAddress(),
-              outSchema.memoryAddress(),
-              watermark);
+          if (outSchema == null) {
+            Native.calcExpressionWithCachedSchemasAtWatermark(
+                cached.handle, inArray.memoryAddress(), outArray.memoryAddress(), watermark);
+          } else {
+            Native.calcExpressionArrayAtWatermark(
+                cached.handle, inArray.memoryAddress(), outArray.memoryAddress(),
+                outSchema.memoryAddress(), watermark);
+          }
         } else {
-          calc =
+          long calc =
               Native.createCalcExpression(
                   kinds,
                   payload,
@@ -192,7 +208,8 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
                   projectionRoots,
                   conditionRoot,
                   outputNames);
-          compiledSchemas.put(in.getSchema(), calc);
+          cached = new CompiledCalc(calc);
+          compiledSchemas.put(in.getSchema(), cached);
           try (ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
             Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
             Native.calcExpressionAtWatermark(
@@ -207,7 +224,21 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
       } catch (tech.streamfusion.NativeException e) {
         throw NativeUdf.propagateUpcallFailure(e);
       }
-      out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+      if (outSchema != null) {
+        out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+        // Dictionary IDs refer to mutable provider entries. Preserve the existing full
+        // schema import instead of caching those IDs across result batches.
+        if (out.getSchema().getFields().stream().noneMatch(NativeCalcOperator::hasDictionary))
+          cached.outputSchema = out.getSchema();
+      } else {
+        out = VectorSchemaRoot.create(cached.outputSchema, allocator);
+        try {
+          Data.importIntoVectorSchemaRoot(allocator, outArray, out, dictionaries);
+        } catch (Throwable failure) {
+          out.close();
+          throw failure;
+        }
+      }
     } finally {
       in.close(); // the input batch is consumed
     }

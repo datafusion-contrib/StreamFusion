@@ -525,8 +525,8 @@ STRING benefit, and embedding the generated row body directly into the loop adde
 complete-job improvement or allocation reduction. The retained numeric/boolean specialization
 follows Comet's generated batch-kernel structure while keeping Flink's existing row evaluator and
 StreamFusion's Arrow writer. Broad buffer pooling or ownership changes remain outside this bounded
-investigation; evidence-gated JNI/Arrow boundary work is tracked in
-[#248](https://github.com/datafusion-contrib/StreamFusion/issues/248).
+investigation. The separate [bounded JNI/Arrow investigation](calc-schema-once-c-data.md#cache-calc-output-schemas)
+retains an output-schema cache and records why broader ownership changes remain deferred.
 
 Both released lines pass 223 focused checks plus six isolated-worker cases without planner or
 Calcite classes. Coverage includes default and explicit-false routes, shared and independent

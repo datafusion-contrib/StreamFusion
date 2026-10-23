@@ -26,7 +26,7 @@ mod map_udf;
 fn roundtrip(batch: &RecordBatch, cached: bool) -> RecordBatch {
     let mut array = FFI_ArrowArray::empty();
     if cached {
-        export_record_batch_array(batch.clone(), &mut array as *mut _ as i64);
+        export_record_batch(batch.clone(), &mut array as *mut _ as i64, 0);
         import_record_batch_with_schema(&mut array as *mut _ as i64, &batch.schema())
     } else {
         let mut schema = FFI_ArrowSchema::empty();

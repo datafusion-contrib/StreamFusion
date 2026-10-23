@@ -604,8 +604,9 @@ fallback; all completed trials are in the [raw results](../benchmarks/results/sh
 A diagnostic CPU profile records 972 JVM-callback, 2,433 entry-transpose and 673 exit-transpose
 samples among 6,769 total samples. These inclusive stack counts overlap; they identify boundary
 and callback work, not an additive cost breakdown. The row evaluator already reuses its input
-row and batches JNI calls; further primitive Arrow conversion work is tracked in
-[#248](https://github.com/datafusion-contrib/StreamFusion/issues/248). No standalone speedup is claimed. Default UDF admission supports composition with surrounding native operators,
+row and batches JNI calls. The bounded [boundary investigation](../optimizations/calc-schema-once-c-data.md#cache-calc-output-schemas)
+caches immutable Calc output schemas; broader conversion and ownership work is deferred there.
+No standalone speedup is claimed for this historical UDF workload. Default UDF admission supports composition with surrounding native operators,
 whose performance must be measured for the complete query.
 
 

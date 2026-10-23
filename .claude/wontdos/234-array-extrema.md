@@ -90,8 +90,8 @@ startup; they do not establish isolated kernel CPU percentages.
 The released kernel already has a primitive short-array path. This evidence does
 not justify enabling a slower default or replacing it with an unmeasured bespoke
 kernel. Keep stock Flink admission and revisit after demonstrating a whole-job
-improvement, potentially through the separately tracked boundary investigation
-[#248](https://github.com/datafusion-contrib/StreamFusion/issues/248). No boundary
+improvement. The separate [bounded boundary investigation](248-native-handle-redesign.md)
+retains an output-schema cache and defers broader redesign; it does not requalify this kernel. No boundary
 architecture is changed by this investigation.
 
 At the investigation revision, reproducing the prototype required restoring the two DataFusion registrations and the

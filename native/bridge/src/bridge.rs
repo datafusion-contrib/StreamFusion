@@ -338,7 +338,12 @@ pub fn export_record_batch_array(batch: RecordBatch, array_address: jlong) {
 }
 
 /// Exports a batch into consumer-allocated C structs; the JVM owns and releases it after import.
+/// A zero schema address reuses an immutable schema already held by the consumer.
 pub fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_address: jlong) {
+    if schema_address == 0 {
+        export_record_batch_array(batch, array_address);
+        return;
+    }
     let out_data = StructArray::from(batch).to_data();
     let out_array = FFI_ArrowArray::new(&out_data);
     let out_schema =
@@ -346,6 +351,51 @@ pub fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_addr
     unsafe {
         std::ptr::write(array_address as *mut FFI_ArrowArray, out_array);
         std::ptr::write(schema_address as *mut FFI_ArrowSchema, out_schema);
+    }
+}
+
+#[cfg(test)]
+mod cached_schema_tests {
+    use super::*;
+
+    #[test]
+    fn array_only_exports_preserve_slices_nulls_metadata_and_retained_buffers() {
+        let values: ArrayRef = Arc::new(Int64Array::from(vec![Some(7), None, Some(-11)]));
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Int64,
+            true,
+        )
+        .with_metadata(std::collections::HashMap::from([(
+            "source".to_string(),
+            "retained".to_string(),
+        )]))]));
+        let batch = RecordBatch::try_new(schema.clone(), vec![values]).unwrap();
+        let mut retained = Vec::new();
+        for (offset, length) in [(0, 0), (1, 2), (0, 3), (3, 0)] {
+            let input = batch.slice(offset, length);
+            let mut array = FFI_ArrowArray::empty();
+            export_record_batch(input.clone(), &mut array as *mut _ as jlong, 0);
+            let output = import_record_batch_with_schema(&mut array as *mut _ as jlong, &schema);
+            assert_eq!(output, input);
+            if length > 0 {
+                assert_eq!(
+                    output.column(0).to_data().buffers()[0].as_ptr(),
+                    input.column(0).to_data().buffers()[0].as_ptr()
+                );
+            }
+            retained.push(output);
+        }
+        drop(batch);
+        assert_eq!(
+            retained[1]
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap(),
+            &Int64Array::from(vec![None, Some(-11)])
+        );
+        assert_eq!(retained[2].schema(), schema);
     }
 }
 

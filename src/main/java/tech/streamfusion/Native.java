@@ -590,6 +590,10 @@ public final class Native {
       long outSchemaAddress,
       long watermark);
 
+  /** Runs a later batch using the immutable input and output schemas established by the first. */
+  public static native void calcExpressionWithCachedSchemasAtWatermark(
+      long handle, long inArrayAddress, long outArrayAddress, long watermark);
+
   /** Releases a compiled Calc handle and its native state. */
   public static native void closeCalcExpression(long handle);
 

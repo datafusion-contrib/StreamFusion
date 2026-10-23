@@ -782,6 +782,29 @@ pub extern "system" fn Java_tech_streamfusion_Native_calcExpressionArrayAtWaterm
     })
 }
 
+/// Runs a later batch when the consumer already holds the immutable output schema.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_calcExpressionWithCachedSchemasAtWatermark<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    handle: jlong,
+    in_array_address: jlong,
+    out_array_address: jlong,
+    watermark: jlong,
+) {
+    Java_tech_streamfusion_Native_calcExpressionArrayAtWatermark(
+        env,
+        class,
+        handle,
+        in_array_address,
+        out_array_address,
+        0,
+        watermark,
+    );
+}
+
 /// Releases a compiled Calc handle and its native state.
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_closeCalcExpression<'local>(

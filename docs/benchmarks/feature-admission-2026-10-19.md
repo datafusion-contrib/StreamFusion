@@ -137,9 +137,11 @@ Final attached medians for 262,144 prebuilt outer-input rows and 25 assigned win
 This removes the attached performance whitelist. It does not invalidate prior slower complete
 cascades or close their remaining routing/state costs in [#394](https://github.com/datafusion-contrib/StreamFusion/issues/394)
 and [#350](https://github.com/datafusion-contrib/StreamFusion/issues/350).
-Shared stateful and temporal follow-ups remain [#398](https://github.com/datafusion-contrib/StreamFusion/issues/398)
-and [#389](https://github.com/datafusion-contrib/StreamFusion/issues/389). Repeated C Data/ownership
-work remains tracked in [#248](https://github.com/datafusion-contrib/StreamFusion/issues/248).
+Shared stateful and temporal investigations shipped through [#398](https://github.com/datafusion-contrib/StreamFusion/issues/398)
+and [#389](https://github.com/datafusion-contrib/StreamFusion/issues/389); their measured limits remain documented. Repeated C Data/ownership
+work was investigated in [#248](https://github.com/datafusion-contrib/StreamFusion/issues/248);
+its [output-schema optimization and deferred scope](../optimizations/calc-schema-once-c-data.md#cache-calc-output-schemas)
+do not establish a new result for the historical workloads above.
 
 ## Reproduction
 
