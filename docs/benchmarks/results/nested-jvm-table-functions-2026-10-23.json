@@ -787,8 +787,8 @@
   "post_measurement_changes": [
     {
       "file": "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java",
-      "sha256": "0edccb2e191f86973b39d712bf31f758a979d89d241c2b613ed19bdd33898587",
-      "description": "Admit name/type-preserving source column projections by folding them into the existing preserving entry transpose. Benchmark queries use both source columns directly and do not take this fold. Original measured source hashes and trials are retained."
+      "sha256": "125f7f4a7e5b93f39d3cf4eeb3bd3e787d72ef4cb5bcf77db5333f2a8483c156",
+      "description": "Admit type-preserving source-column projections, metadata-only AS aliases and reordered unique fields by folding them into the preserving entry transpose. Retain source names for entry pruning and correlate ordinals for output aliases. Timed queries use both source columns directly and do not take this fold. Original measured hashes and trials are retained."
     }
   ]
 }

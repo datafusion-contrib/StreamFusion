@@ -35,8 +35,10 @@ Java conversions recursively; internal or alternate container conversion classes
 fallback. Sensitive outputs may only flow through verified preserving consumers or the final
 row boundary. These restrictions avoid inventing a second nested-value or ownership protocol.
 
-A plain name/type-preserving projection at a row source folds into the existing preserving
-entry transpose before table application. This avoids passing nested ROW arguments through
-an unverified native Calc merely to discard unused source columns. Computed/filtered/renamed
+A plain type-preserving projection at a row source folds into the existing preserving
+entry transpose before table application. Metadata-only AS aliases and reordered unique
+columns retain original source names for the owned entry copy; the released correlate reads
+ordinals and retains its declared output aliases. This avoids passing nested ROW arguments through
+an unverified native Calc merely to discard unused source columns. Computed/filtered/duplicated
 projections and columnar sources retain their existing representation guards; no duplicate
 projection evaluator or conversion ABI is added.

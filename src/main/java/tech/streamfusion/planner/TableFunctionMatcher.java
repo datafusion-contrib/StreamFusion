@@ -75,25 +75,55 @@ final class TableFunctionMatcher {
         && type.getChildren().stream().allMatch(TableFunctionMatcher::defaultConversions);
   }
 
-  private static RelNode projectedSource(RelNode input) {
-    if (!(input instanceof StreamPhysicalNativeCalc)) return null;
-    var program = ((StreamPhysicalNativeCalc) input).sourceProgram();
-    if (program == null || program.getCondition() != null) return null;
-    for (int i = 0; i < program.getProjectList().size(); i++) {
-      var expression = program.expandLocalRef(program.getProjectList().get(i));
-      if (!(expression instanceof RexInputRef)) return null;
-      var field =
-          program.getInputRowType().getFieldList().get(((RexInputRef) expression).getIndex());
-      var output = input.getRowType().getFieldList().get(i);
-      if (!output.getName().equals(field.getName()) || !output.getType().equals(field.getType()))
-        return null;
+  private static final class ProjectedSource {
+    final RelNode source;
+    final org.apache.calcite.rel.type.RelDataType type;
+
+    ProjectedSource(RelNode source, org.apache.calcite.rel.type.RelDataType type) {
+      this.source = source;
+      this.type = type;
     }
-    RelNode source = input.getInput(0);
-    if (source instanceof StreamPhysicalRowDataToArrow) source = source.getInput(0);
-    return !(source instanceof ColumnarOutput)
-            && source.getRowType().equals(program.getInputRowType())
-        ? source
-        : null;
+  }
+
+  private static ProjectedSource projectedSource(RelNode input) {
+    RelNode current = input;
+    int[] mapping =
+        java.util.stream.IntStream.range(0, input.getRowType().getFieldCount()).toArray();
+    while (current instanceof StreamPhysicalNativeCalc) {
+      var program = ((StreamPhysicalNativeCalc) current).sourceProgram();
+      if (program == null || program.getCondition() != null) return null;
+      int[] columns = new int[program.getProjectList().size()];
+      for (int i = 0; i < columns.length; i++) {
+        var expression = program.expandLocalRef(program.getProjectList().get(i));
+        if (expression instanceof RexCall
+            && expression.getKind() == org.apache.calcite.sql.SqlKind.AS)
+          expression = ((RexCall) expression).getOperands().get(0);
+        if (!(expression instanceof RexInputRef)) return null;
+        columns[i] = ((RexInputRef) expression).getIndex();
+      }
+      mapping = java.util.Arrays.stream(mapping).map(index -> columns[index]).toArray();
+      RelNode source = current.getInput(0);
+      if (source instanceof StreamPhysicalRowDataToArrow) source = source.getInput(0);
+      if (!source.getRowType().equals(program.getInputRowType())) return null;
+      if (source instanceof StreamPhysicalNativeCalc) {
+        current = source;
+        continue;
+      }
+      if (source instanceof ColumnarOutput) return null;
+      var type = input.getCluster().getTypeFactory().builder();
+      var selected = new java.util.HashSet<Integer>();
+      for (int i = 0; i < mapping.length; i++) {
+        if (!selected.add(mapping[i])) return null;
+        var field = source.getRowType().getFieldList().get(mapping[i]);
+        if (!input.getRowType().getFieldList().get(i).getType().equals(field.getType()))
+          return null;
+        // Correlate reads ordinals and applies its declared output aliases. Entry pruning needs
+        // source names so its owned copy selects the same fields across stacked projections.
+        type.add(field.getName(), field.getType());
+      }
+      return new ProjectedSource(source, type.build());
+    }
+    return null;
   }
 
   static String unsupportedReason(StreamPhysicalCorrelate node) {
@@ -105,14 +135,15 @@ final class TableFunctionMatcher {
 
   static RelNode substitute(StreamPhysicalCorrelate node, PlanContext context) {
     RelNode input = node.getInput();
-    RelNode source = scalarBoundary(node) ? null : projectedSource(input);
-    if (source != null) {
+    var projected = scalarBoundary(node) ? null : projectedSource(input);
+    if (projected != null) {
+      RelNode source = projected.source;
       boolean kinds =
           source instanceof StreamPhysicalRel
               && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) source);
       input =
           new StreamPhysicalRowDataToArrow(
-              source.getCluster(), source.getTraitSet(), source, kinds, input.getRowType(), true);
+              source.getCluster(), source.getTraitSet(), source, kinds, projected.type, true);
     }
     return new StreamPhysicalNativeTableFunction(
         node.getCluster(),

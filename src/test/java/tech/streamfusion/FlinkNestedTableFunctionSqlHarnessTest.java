@@ -204,44 +204,53 @@ class FlinkNestedTableFunctionSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void sourceProjectionRetainsTheAnnotatedExternalRowArgument(boolean updating) {
-    try (var metrics = new RecoveryExecutionMetrics()) {
-      var runs =
-          NativeFailureParity.run(
-              () -> {
-                var env = metrics.environment(new Configuration(), 1, 0);
-                var table = StreamTableEnvironment.create(env);
-                var type =
-                    org.apache.flink.api.common.typeinfo.Types.ROW_NAMED(
-                        new String[] {"a", "b", "c"},
-                        org.apache.flink.api.common.typeinfo.Types.INT,
-                        org.apache.flink.api.common.typeinfo.Types.BOOLEAN,
-                        org.apache.flink.api.common.typeinfo.Types.ROW(
-                            org.apache.flink.api.common.typeinfo.Types.INT,
-                            org.apache.flink.api.common.typeinfo.Types.INT,
-                            org.apache.flink.api.common.typeinfo.Types.INT));
-                var rows = new java.util.ArrayList<Row>();
-                rows.add(Row.of(12, true, Row.of(1, 2, 3)));
-                rows.add(Row.of(13, false, Row.ofKind(RowKind.DELETE, 4, null, 6)));
-                if (updating) {
-                  rows.add(Row.ofKind(RowKind.UPDATE_BEFORE, 12, true, Row.of(1, 2, 3)));
-                  rows.add(Row.ofKind(RowKind.UPDATE_AFTER, 12, true, Row.of(7, 8, 9)));
-                  rows.add(Row.ofKind(RowKind.DELETE, 12, true, Row.of(7, 8, 9)));
-                }
-                var input = tech.streamfusion.compat.FlinkTestSources.fromData(env, rows, type);
-                table.createTemporaryView(
-                    "src",
-                    updating
-                        ? table.fromChangelogStream(
-                            input,
-                            Schema.newBuilder().build(),
-                            org.apache.flink.table.connector.ChangelogMode.all())
-                        : table.fromDataStream(input));
-                table.createTemporarySystemFunction("row_arguments", new RowArguments());
-                return table;
-              },
-              "SELECT s.c,t.c FROM src s,LATERAL TABLE(row_arguments(s.c)) AS t(a,b,c)");
-      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
-      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+    for (boolean reordered : new boolean[] {false, true}) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var runs =
+            NativeFailureParity.run(
+                () -> {
+                  var env = metrics.environment(new Configuration(), 1, 0);
+                  var table = StreamTableEnvironment.create(env);
+                  var type =
+                      org.apache.flink.api.common.typeinfo.Types.ROW(
+                          org.apache.flink.api.common.typeinfo.Types.INT,
+                          org.apache.flink.api.common.typeinfo.Types.BOOLEAN,
+                          org.apache.flink.api.common.typeinfo.Types.ROW(
+                              org.apache.flink.api.common.typeinfo.Types.INT,
+                              org.apache.flink.api.common.typeinfo.Types.INT,
+                              org.apache.flink.api.common.typeinfo.Types.INT));
+                  var rows = new java.util.ArrayList<Row>();
+                  rows.add(Row.of(12, true, Row.of(1, 2, 3)));
+                  rows.add(Row.of(13, false, Row.ofKind(RowKind.DELETE, 4, null, 6)));
+                  if (updating) {
+                    rows.add(Row.ofKind(RowKind.UPDATE_BEFORE, 12, true, Row.of(1, 2, 3)));
+                    rows.add(Row.ofKind(RowKind.UPDATE_AFTER, 12, true, Row.of(7, 8, 9)));
+                    rows.add(Row.ofKind(RowKind.DELETE, 12, true, Row.of(7, 8, 9)));
+                  }
+                  var input = tech.streamfusion.compat.FlinkTestSources.fromData(env, rows, type);
+                  var source =
+                      (updating
+                              ? table.fromChangelogStream(
+                                  input,
+                                  Schema.newBuilder().build(),
+                                  org.apache.flink.table.connector.ChangelogMode.all())
+                              : table.fromDataStream(input))
+                          .as("a", "b", "c");
+                  if (reordered)
+                    source =
+                        source.select(
+                            org.apache.flink.table.api.Expressions.$("c"),
+                            org.apache.flink.table.api.Expressions.$("a"));
+                  table.createTemporaryView("src", source);
+                  table.createTemporarySystemFunction("row_arguments", new RowArguments());
+                  return table;
+                },
+                "SELECT s.c,"
+                    + (reordered ? "s.a," : "")
+                    + "t.f2 FROM src s,LATERAL TABLE(row_arguments(s.c)) AS t(f0,f1,f2)");
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+      }
     }
   }
 
