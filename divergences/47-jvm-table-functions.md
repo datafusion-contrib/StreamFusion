@@ -17,8 +17,9 @@ rows and closed input batches.
 The generated correlate evaluator is private to the columnar operator. It is stateless from
 Flink's checkpoint perspective; source offsets and downstream operators retain their existing
 checkpoint contracts. The implementation verifies repeated recovery with grouped state rather than
-introducing an independent function-state codec. Stateful JVM aggregate functions require a
-separate design and remain tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
+introducing an independent function-state codec. Stateful JVM aggregates use the separate
+[managed-state boundary](48-jvm-aggregate-managed-state.md); their remaining contracts stay
+tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 
 Mixed Java/Rust CPU profiles identified a redundant projection and writes of discarded input
 columns after correlate expansion. Pure column projections are fused into the output writer;

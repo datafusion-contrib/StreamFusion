@@ -501,7 +501,6 @@ class FlinkJvmAggregateSqlHarnessTest {
   void unsupportedStateModesAndOperatorDisableKeepWholeIslandFallback() {
     for (var settings :
         java.util.List.of(
-            Map.of("table.exec.state.ttl", "5 s"),
             Map.of(
                 "table.exec.mini-batch.enabled",
                 "true",
@@ -529,15 +528,15 @@ class FlinkJvmAggregateSqlHarnessTest {
   }
 
   @Test
-  void distinctAndFilteredFunctionsKeepExplicitFallback() {
+  void distinctAndFilteredFunctionsUseReleasedHandlers() {
     for (String aggregate :
         new String[] {"test_aggregate(DISTINCT v)", "test_aggregate(v) FILTER (WHERE v > 0)"}) {
       var comparison =
           NativeFailureParity.run(
               () -> PortableSqlFixtures.environment(RuntimeExecutionMode.STREAMING, Map.of()),
               "SELECT k, " + aggregate + " FROM test_input GROUP BY k");
-      comparison.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertFalse(comparison.nativeRun().plan().contains("NativeJvmGroup"));
+      comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertTrue(comparison.nativeRun().plan().contains("NativeJvmGroup"));
     }
   }
 

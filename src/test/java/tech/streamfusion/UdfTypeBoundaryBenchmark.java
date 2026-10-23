@@ -37,6 +37,16 @@ class UdfTypeBoundaryBenchmark {
       BiFunction<Integer, RecoveryExecutionMetrics, TableEnvironment> factory,
       String query)
       throws Exception {
+    run(type, factory, query, "NativeCalc", true);
+  }
+
+  static void run(
+      String type,
+      BiFunction<Integer, RecoveryExecutionMetrics, TableEnvironment> factory,
+      String query,
+      String operator,
+      boolean nativeExpected)
+      throws Exception {
     assertEquals("false", System.getProperty("streamfusion.exchange.zeroCopyLocal"), "Use -Pbench");
     int rows = Integer.getInteger("boundary.rows", 262144);
     int warmups = Integer.getInteger("boundary.warmups", 2);
@@ -59,14 +69,14 @@ class UdfTypeBoundaryBenchmark {
           var scan = engine == 1 ? NativePlanner.install(table) : null;
           String insert = "INSERT INTO sink " + query;
           String plan = table.explainSql(insert);
-          if (engine == 1) {
+          if (engine == 1 && nativeExpected) {
             assertTrue(
-                plan.contains("NativeCalc")
+                plan.contains(operator)
                     && plan.contains("RowDataToArrow")
                     && plan.contains("ArrowToRowData"),
                 plan);
             assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
-          }
+          } else if (engine == 1) assertEquals(0, scan.substitutions(), plan);
           long start = System.nanoTime();
           table.executeSql(insert).await();
           double seconds = (System.nanoTime() - start) / 1e9;
@@ -80,8 +90,8 @@ class UdfTypeBoundaryBenchmark {
               rows,
               seconds);
           if (trial >= warmups) samples[engine][trial - warmups] = seconds;
-          if (engine == 1)
-            RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+          if (engine == 1 && nativeExpected)
+            RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), operator);
           else assertTrue(metrics.nativeOperators().isEmpty());
         }
       }

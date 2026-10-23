@@ -79,3 +79,7 @@ org.apache.doris.flink.source.DorisSourceITCase#testJobManagerFailoverSource	use
 org.apache.doris.flink.source.DorisSourceITCase#testJobManagerFailoverSource	useFlightSql=false	DorisThriftArrowReader
 org.apache.doris.flink.source.DorisSourceITCase#testTaskManagerFailoverSource	useFlightSql=true	DorisArrowReader
 org.apache.doris.flink.source.DorisSourceITCase#testTaskManagerFailoverSource	useFlightSql=false	DorisThriftArrowReader
+
+# Released DISTINCT JVM aggregate/DataView fixtures retain native work with idle retention.
+org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGG	*	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGGMixedWithNonDistinctUsage	*	NativeColumnarJvmGroupOperator

@@ -20,6 +20,7 @@ public final class StreamPhysicalNativeJvmGroup extends StreamPhysicalNativeSing
   private final boolean[] retracts;
   private final boolean retract;
   private final boolean updateBefore;
+  private final Long stateTtlHint;
 
   StreamPhysicalNativeJvmGroup(
       RelOptCluster cluster,
@@ -30,13 +31,15 @@ public final class StreamPhysicalNativeJvmGroup extends StreamPhysicalNativeSing
       Seq<AggregateCall> calls,
       boolean[] retracts,
       boolean retract,
-      boolean updateBefore) {
+      boolean updateBefore,
+      Long stateTtlHint) {
     super(cluster, traits, input, output);
     this.grouping = grouping;
     this.calls = calls;
     this.retracts = retracts;
     this.retract = retract;
     this.updateBefore = updateBefore;
+    this.stateTtlHint = stateTtlHint;
   }
 
   @Override
@@ -60,7 +63,8 @@ public final class StreamPhysicalNativeJvmGroup extends StreamPhysicalNativeSing
         calls,
         retracts,
         retract,
-        updateBefore);
+        updateBefore,
+        stateTtlHint);
   }
 
   @Override
@@ -74,6 +78,7 @@ public final class StreamPhysicalNativeJvmGroup extends StreamPhysicalNativeSing
         retracts,
         retract,
         updateBefore,
+        stateTtlHint,
         getRelDetailedDescription());
   }
 }

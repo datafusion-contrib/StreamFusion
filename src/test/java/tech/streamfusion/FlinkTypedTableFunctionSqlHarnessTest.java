@@ -50,6 +50,9 @@ class FlinkTypedTableFunctionSqlHarnessTest {
             "FLOAT",
             "DOUBLE",
             "VARBINARY",
+            "BINARY(1)",
+            "BINARY(4)",
+            "BINARY(128)",
             "DAY_TIME",
             "YEAR_MONTH",
             "DECIMAL(18,8)",
@@ -98,6 +101,7 @@ class FlinkTypedTableFunctionSqlHarnessTest {
         "FLOAT",
         "DOUBLE",
         "VARBINARY",
+        "BINARY(4)",
         "DAY_TIME",
         "YEAR_MONTH",
         "DECIMAL(18,8)",
@@ -231,6 +235,61 @@ class FlinkTypedTableFunctionSqlHarnessTest {
     }
   }
 
+  @Test
+  void fixedBinaryArgumentsAndResultsKeepActualBytes() {
+    for (String join :
+        List.of(
+            ", LATERAL TABLE(binary_rows(s.v)) AS t(v)",
+            " LEFT JOIN LATERAL TABLE(binary_rows(s.v)) AS t(v) ON TRUE")) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var comparison =
+            NativeFailureParity.run(
+                () -> {
+                  var table = environment("BINARY(4)", "UTC", 1031, metrics);
+                  table.createTemporarySystemFunction("binary_rows", new BinaryRows());
+                  return table;
+                },
+                "SELECT s.id, s.v, t.v, t.v FROM src s" + join);
+        comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+      }
+    }
+  }
+
+  @Test
+  void fixedBinaryRetainsFallbackWithoutTheVariableByteTransport() {
+    String nested = "streamfusion.experimental.nestedScalarUdfs";
+    String binary = "streamfusion.experimental.binaryElt";
+    String previousNested = System.getProperty(nested);
+    String previousBinary = System.getProperty(binary);
+    try {
+      System.setProperty(nested, "false");
+      System.setProperty(binary, "false");
+      var comparison =
+          NativeFailureParity.run(
+              () -> environment("BINARY(4)", "UTC", 32, null),
+              "SELECT t.v FROM src s, LATERAL TABLE(typed_rows(s.id, s.v)) AS t(v, pos)");
+      comparison.assertSuccess(NativeFailureParity.Route.FALLBACK);
+    } finally {
+      if (previousNested == null) System.clearProperty(nested);
+      else System.setProperty(nested, previousNested);
+      if (previousBinary == null) System.clearProperty(binary);
+      else System.setProperty(binary, previousBinary);
+    }
+  }
+
+  @FunctionHint(input = @DataTypeHint("BINARY(4)"), output = @DataTypeHint("BINARY(4)"))
+  public static class BinaryRows extends TableFunction<byte[]> {
+    public void eval(byte[] value) {
+      if (value == null) return;
+      byte[] reused = value.clone();
+      collect(reused);
+      java.util.Arrays.fill(reused, (byte) 0x7f);
+      collect(reused);
+      java.util.Arrays.fill(reused, (byte) 0);
+    }
+  }
+
   @FunctionHint(input = @DataTypeHint("CHAR(4)"), output = @DataTypeHint("CHAR(4)"))
   public static class CharacterRows extends TableFunction<String> {
     public void eval(String value) {
@@ -273,6 +332,8 @@ class FlinkTypedTableFunctionSqlHarnessTest {
   }
 
   static DataType valueType(String name) {
+    if (name.startsWith("BINARY("))
+      return DataTypes.BINARY(Integer.parseInt(name.substring(7, name.length() - 1)));
     if (name.startsWith("CHAR("))
       return DataTypes.CHAR(Integer.parseInt(name.substring(5, name.length() - 1)));
     if (name.startsWith("TIMESTAMP_LTZ("))
@@ -280,6 +341,8 @@ class FlinkTypedTableFunctionSqlHarnessTest {
     if (name.startsWith("TIMESTAMP("))
       return DataTypes.TIMESTAMP(Integer.parseInt(name.substring(10, name.length() - 1)));
     switch (name) {
+      case "STRING":
+        return DataTypes.STRING();
       case "FLOAT":
         return DataTypes.FLOAT();
       case "DOUBLE":
@@ -312,9 +375,12 @@ class FlinkTypedTableFunctionSqlHarnessTest {
   static Object value(String name, int index) {
     int slot = index % 8;
     if (slot == 7) return null;
+    if (name.startsWith("BINARY(")) return value("VARBINARY", index);
     if (name.startsWith("CHAR("))
       return new String[] {"", "a", "a ", "abcd", "abcde", "  ", "z"}[slot];
     switch (name) {
+      case "STRING":
+        return new String[] {"", "é🙂", "a", "a ", "\ud800", "\udc00", "x\ud800y"}[slot];
       case "FLOAT":
         return new float[] {
               Float.NEGATIVE_INFINITY,

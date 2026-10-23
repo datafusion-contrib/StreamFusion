@@ -137,15 +137,22 @@ Arrow island; these results do not imply every scalar expression runs in Rust.
 
 Synchronous JVM `TableFunction` definitions carried by Flink's bridging SQL function support
 INNER/LEFT application with top-level CHAR, STRING/VARCHAR, BOOLEAN, TINYINT, SMALLINT, INT, BIGINT,
-DECIMAL, FLOAT/DOUBLE, VARBINARY, DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and
+DECIMAL, FLOAT/DOUBLE, BINARY/VARBINARY, DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ and
 day-time/year-month interval input, output and argument types.
 These types are admitted by default under the accepted UDF performance exception, without
 an additional type-specific opt-in. Their user functions still run on the JVM; measured
 standalone costs can exceed stock Flink after profiling and two optimization passes.
 The [bounded conversion investigation](../optimizations/decimal-arrow-reads.md)
-records the retained improvement and measured limits. Fixed BINARY and container types, specialized functions, Python/async
+records the retained improvement and measured limits. Container types, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
 switch can disable this operator.
+
+Fixed BINARY uses the existing default variable-byte Arrow transport, preserving the released
+function's actual bytes even when their length differs from BINARY(n). Values are copied into
+output batches before the collector can mutate or reuse them. INNER/LEFT fanout, NULLs,
+widths 1/4/128, empty/oversized byte arrays and memory/RocksDB recovery are checked against
+stock Flink on both supported lines. Disabling both `nestedScalarUdfs` and `binaryElt`
+restores the earlier fixed-width transport and keeps these table signatures on fallback.
 
 The operator consumes and produces `ArrowBatch`. It borrows input row views only during the
 current batch and invokes the released Flink correlate generator, retaining its conversions,

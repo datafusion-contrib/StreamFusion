@@ -61,8 +61,29 @@ class StatefulSqlRescaleTest {
     groupedScenario(rocks, directory, true, true, false);
   }
 
+  @ParameterizedTest(name = "typed-jvm-rescale-rocks={0}-savepoint={1}")
+  @CsvSource({"false,false", "true,false", "false,true", "true,true"})
+  @org.junit.jupiter.api.condition.DisabledIfSystemProperty(
+      named = "streamfusion.experimental.jvmGroupAggregates",
+      matches = "false")
+  void typedAndDistinctJvmStateAcrossBothDirections(
+      boolean rocks, boolean savepoint, @TempDir Path directory) throws Exception {
+    groupedScenario(rocks, directory, true, savepoint, false, true);
+  }
+
   private void groupedScenario(
       boolean rocks, Path directory, boolean jvm, boolean savepoint, boolean typedTable)
+      throws Exception {
+    groupedScenario(rocks, directory, jvm, savepoint, typedTable, false);
+  }
+
+  private void groupedScenario(
+      boolean rocks,
+      Path directory,
+      boolean jvm,
+      boolean savepoint,
+      boolean typedTable,
+      boolean typedJvm)
       throws Exception {
     List<Row> input = new ArrayList<>();
     String text = "long-duplicate-é🙂".repeat(128);
@@ -79,7 +100,8 @@ class StatefulSqlRescaleTest {
       input.add(Row.ofKind(RowKind.INSERT, k, null, "other"));
     }
     Map<String, Long> expected = new TreeMap<>();
-    for (int k = 0; k < 128; k++) expected.put(k + (jvm ? "|0|2|[0]" : "|-0.50|1"), 1L);
+    for (int k = 0; k < 128; k++)
+      expected.put(k + (jvm ? "|0|2|[0]" + (typedJvm ? "|null" : "") : "|-0.50|1"), 1L);
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
     Map<String, Object> report = new java.util.LinkedHashMap<>();
     List<Map<String, Object>> stageEvidence = new ArrayList<>();
@@ -93,13 +115,15 @@ class StatefulSqlRescaleTest {
     report.put("physicalBatchRows", 5);
     report.put("logicalMiniBatchRows", jvm ? 0 : 3);
     report.put("jvmAggregate", jvm);
+    report.put("typedJvmAggregate", typedJvm);
     report.put("snapshotFormat", savepoint ? "CANONICAL savepoint" : "externalized checkpoint");
     report.put("stages", stageEvidence);
     RESULTS.put(
         (jvm ? "jvm-" : "")
             + (savepoint ? "savepoint-" : "")
             + (rocks ? "rocksdb" : "memory")
-            + (typedTable ? "-typed-table" : ""),
+            + (typedTable ? "-typed-table" : "")
+            + (typedJvm ? "-typed-distinct" : ""),
         report);
     try {
       var reference =
@@ -114,6 +138,7 @@ class StatefulSqlRescaleTest {
               jvm,
               false,
               typedTable,
+              typedJvm,
               expected);
       report.put("reference", reference.evidence());
       List<Stage> stages = new ArrayList<>();
@@ -132,6 +157,7 @@ class StatefulSqlRescaleTest {
                 jvm,
                 savepoint,
                 typedTable,
+                typedJvm,
                 i == 2 ? expected : null);
         stages.add(stage);
         stageEvidence.add(stage.evidence());
@@ -232,6 +258,7 @@ class StatefulSqlRescaleTest {
       boolean jvm,
       boolean savepoint,
       boolean typedTable,
+      boolean typedJvm,
       Map<String, Long> expected)
       throws Exception {
     var type =
@@ -265,6 +292,14 @@ class StatefulSqlRescaleTest {
               ? "SELECT k, test_aggregate(CAST(amount AS BIGINT)), COUNT(text_value),"
                   + " view_aggregate(CAST(amount AS BIGINT)) FROM recovery_input GROUP BY k"
               : "SELECT k, SUM(amount), COUNT(DISTINCT text_value) FROM recovery_input GROUP BY k";
+      if (typedJvm) {
+        FlinkTypedJvmAggregateSqlHarnessTest.register(table, DataTypes.DECIMAL(20, 2));
+        sql =
+            "SELECT k, test_aggregate(DISTINCT CAST(amount AS BIGINT))"
+                + " FILTER (WHERE amount IS NOT NULL), COUNT(text_value),"
+                + " view_aggregate(DISTINCT CAST(amount AS BIGINT)), remember(amount)"
+                + " FROM recovery_input GROUP BY k";
+      }
       if (typedTable) {
         table.createTemporarySystemFunction(
             "typed_rows",
@@ -295,7 +330,8 @@ class StatefulSqlRescaleTest {
                           + row.getField(1)
                           + "|"
                           + row.getField(2)
-                          + (jvm ? "|" + row.getField(3) : ""))
+                          + (jvm ? "|" + row.getField(3) : "")
+                          + (typedJvm ? "|" + row.getField(4) : ""))
               .returns(Types.STRING)
               .uid("rescale-encode");
       tech.streamfusion.compat.CheckpointFileSink.attach(encoded, output, "rescale-output");

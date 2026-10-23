@@ -1,0 +1,313 @@
+{
+  "date": "2026-10-23",
+  "source_baseline": "1bd9daa8d75586424f3a5d9ad7acc14d600baffb",
+  "candidate_source_sha256": {
+    "src/main/java/tech/streamfusion/planner/JvmFunctionTypes.java": "a6b7fcb3689c7aa91c96d2b0a36e6a4b216e5608ba7d4d95693561052ddb6f11",
+    "src/main/java/tech/streamfusion/operator/SerializedRowKeySelector.java": "3c2dd5fe4d4f81f03c994e0b2368264e386f272d0eeb5bb4bbc4bea7a57a1ff2",
+    "src/main/java/tech/streamfusion/operator/NativeColumnarJvmGroupOperator.java": "f27cacb65215a7faba80126cc3eaa9aa8143c04118d68903df0ebdf5f13d6ae8",
+    "src/main/java/tech/streamfusion/planner/NativeJvmGroupExecNode.java": "ada64399941f930ed83829968f9430612b92023425b5b73998f1fe8df00e0d43",
+    "src/main/java/tech/streamfusion/planner/JvmGroupAggregateMatcher.java": "a5ad53d541f1973c32c5b4872f43ef6c761be4d6ce25c8240e92faac408041e3",
+    "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "1a5147320cf50404984777aa491d59946e1eccf0b530714d61c7f316065c2532"
+  },
+  "platform": {
+    "cpu": "Intel Core i7-12650H",
+    "logical_cpus": 16,
+    "os": "Linux/WSL2 x86_64",
+    "jdk": "OpenJDK 17.0.20.1",
+    "flink": "2.2.1",
+    "native_build": "release, mimalloc, rocksdb-state",
+    "test_jvm_heap": "2 GiB"
+  },
+  "method": {
+    "rows": 262144,
+    "parallelism": 1,
+    "batch_rows": 1024,
+    "warmups": 2,
+    "measured_alternating_pairs": 5,
+    "timed_boundary": "executeSql(INSERT).await; matched preflight and fixture setup precede timing; row sources, both transposes, JVM callbacks, keyed state and native exchange retained",
+    "aggregate_keys": 64,
+    "wide_decimal_grouping_keys": 8,
+    "prior_route": "whole-query stock fallback, asserted zero substitutions",
+    "candidate_route": "intended native operator consumes input; both transposes asserted",
+    "limitations": [
+      "Short complete jobs include startup and JIT effects; several trial ranges drift or overlap.",
+      "Baseline and candidate use separate JVMs with separate stock controls; no isolated causal speedup or sustained-throughput claim.",
+      "UDF coverage ships under the accepted performance exception; all unfavorable trials are retained."
+    ],
+    "local_exchange": "production IPC; streamfusion.exchange.zeroCopyLocal=false"
+  },
+  "phases": {
+    "candidate22": {
+      "TABLE_BINARY(4)": {
+        "stock_seconds": [
+          0.171531612,
+          0.165345941,
+          0.100439457,
+          0.095387925,
+          0.101383493
+        ],
+        "native_enabled_seconds": [
+          0.289289828,
+          0.274211044,
+          0.266776924,
+          0.292826496,
+          0.243454531
+        ]
+      },
+      "JVM_AGG_DECIMAL(38,18)": {
+        "stock_seconds": [
+          0.180002601,
+          0.189220462,
+          0.191929652,
+          0.202798597,
+          0.193941881
+        ],
+        "native_enabled_seconds": [
+          0.216067448,
+          0.22991059,
+          0.21226113,
+          0.227478099,
+          0.216691183
+        ]
+      },
+      "JVM_AGG_TIMESTAMP(9)": {
+        "stock_seconds": [
+          0.188789428,
+          0.208284553,
+          0.209462735,
+          0.189336723,
+          0.198601866
+        ],
+        "native_enabled_seconds": [
+          0.210417828,
+          0.212609921,
+          0.23091424,
+          0.210780108,
+          0.205407729
+        ]
+      },
+      "JVM_AGG_BINARY(4)": {
+        "stock_seconds": [
+          0.320127842,
+          0.354613342,
+          0.332023556,
+          0.347760262,
+          0.340695127
+        ],
+        "native_enabled_seconds": [
+          0.445489398,
+          0.455704761,
+          0.4364333,
+          0.462536784,
+          0.477555098
+        ]
+      },
+      "JVM_AGG_KEY_DECIMAL(38,18)": {
+        "stock_seconds": [
+          0.322136642,
+          0.279232878,
+          0.186250189,
+          0.186373096,
+          0.206675235
+        ],
+        "native_enabled_seconds": [
+          0.295223219,
+          0.297665198,
+          0.226314358,
+          0.214405952,
+          0.215055525
+        ]
+      }
+    },
+    "prior22": {
+      "TABLE_BINARY(4)": {
+        "stock_seconds": [
+          0.192839463,
+          0.175455583,
+          0.12259608,
+          0.153205342,
+          0.089118261
+        ],
+        "native_enabled_seconds": [
+          0.162109721,
+          0.162046344,
+          0.149608833,
+          0.087095027,
+          0.135405469
+        ]
+      },
+      "JVM_AGG_DECIMAL(38,18)": {
+        "stock_seconds": [
+          0.252800606,
+          0.186229166,
+          0.196731077,
+          0.176034329,
+          0.180941338
+        ],
+        "native_enabled_seconds": [
+          0.191603238,
+          0.190751882,
+          0.187464031,
+          0.173449052,
+          0.192807874
+        ]
+      },
+      "JVM_AGG_TIMESTAMP(9)": {
+        "stock_seconds": [
+          0.174107124,
+          0.180619363,
+          0.190487154,
+          0.198607236,
+          0.178543566
+        ],
+        "native_enabled_seconds": [
+          0.178885488,
+          0.178792353,
+          0.186867063,
+          0.1895935,
+          0.205726198
+        ]
+      },
+      "JVM_AGG_BINARY(4)": {
+        "stock_seconds": [
+          0.312575355,
+          0.31224465,
+          0.314125048,
+          0.312984186,
+          0.330444785
+        ],
+        "native_enabled_seconds": [
+          0.309735118,
+          0.312307357,
+          0.314969636,
+          0.316349118,
+          0.333221225
+        ]
+      },
+      "JVM_AGG_KEY_DECIMAL(38,18)": {
+        "stock_seconds": [
+          0.271416223,
+          0.243976286,
+          0.176858402,
+          0.176501936,
+          0.17168615
+        ],
+        "native_enabled_seconds": [
+          0.248452018,
+          0.245440972,
+          0.240331372,
+          0.195864106,
+          0.202151726
+        ]
+      }
+    }
+  },
+  "validation": {
+    "2.2.1": {
+      "totals": {
+        "tests": 184,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "classes": {
+        "operator.SerializedRowKeySelectorTest": {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "operator.NativeJvmAggregateTtlTest": {
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "FlinkJvmAggregateModifiersSqlHarnessTest": {
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "FlinkTypedJvmAggregateSqlHarnessTest": {
+          "tests": 59,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "FlinkTypedTableFunctionSqlHarnessTest": {
+          "tests": 64,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "FlinkJvmAggregateSqlHarnessTest": {
+          "tests": 45,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "StatefulSqlRescaleTest": {
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "expected_skips": null
+    },
+    "1.18.1": {
+      "totals": {
+        "tests": 184,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2
+      },
+      "classes": {
+        "operator.SerializedRowKeySelectorTest": {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "operator.NativeJvmAggregateTtlTest": {
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "FlinkJvmAggregateModifiersSqlHarnessTest": {
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2
+        },
+        "FlinkTypedJvmAggregateSqlHarnessTest": {
+          "tests": 59,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "FlinkTypedTableFunctionSqlHarnessTest": {
+          "tests": 64,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "FlinkJvmAggregateSqlHarnessTest": {
+          "tests": 45,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "StatefulSqlRescaleTest": {
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "expected_skips": "STATE_TTL hints are unavailable on Flink 1.18"
+    }
+  }
+}

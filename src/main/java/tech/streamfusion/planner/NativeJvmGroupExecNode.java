@@ -38,6 +38,7 @@ public final class NativeJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
   private final boolean[] retracts;
   private final boolean retract;
   private final boolean updateBefore;
+  private final Long stateTtlHint;
 
   NativeJvmGroupExecNode(
       ReadableConfig config,
@@ -48,6 +49,7 @@ public final class NativeJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
       boolean[] retracts,
       boolean retract,
       boolean updateBefore,
+      Long stateTtlHint,
       String description) {
     super(
         ExecNodeContext.newNodeId(),
@@ -62,6 +64,7 @@ public final class NativeJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
     this.retracts = retracts;
     this.retract = retract;
     this.updateBefore = updateBefore;
+    this.stateTtlHint = stateTtlHint;
   }
 
   @Override
@@ -92,13 +95,27 @@ public final class NativeJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
     var equaliser =
         new EqualiserCodeGenerator(values, planner.getFlinkContext().getClassLoader())
             .generateRecordEqualiser("ColumnarJvmAggEqualiser");
+    long retention = stateTtlHint == null ? config.getStateRetentionTime() : stateTtlHint;
     var function =
         new GroupAggFunction(
-            handler, equaliser, accTypes, info.getIndexOfCountStar(), updateBefore, 0);
+            handler, equaliser, accTypes, info.getIndexOfCountStar(), updateBefore, retention);
     var selector =
         KeySelectorUtil.getRowDataSelector(
             planner.getFlinkContext().getClassLoader(), grouping, InternalTypeInfo.of(inputType));
+    // Generated projections reserve bytes for NULL non-compact decimals; the serializer and
+    // native exchange omit that reservation. Select the same layout for routing and keyed state.
+    if (Arrays.stream(grouping)
+        .mapToObj(inputType::getTypeAt)
+        .anyMatch(
+            type ->
+                type instanceof org.apache.flink.table.types.logical.DecimalType
+                    && ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision()
+                        > 18))
+      selector = new tech.streamfusion.operator.SerializedRowKeySelector(inputType, grouping);
     var keyType = grouping.length == 1 ? inputType.getTypeAt(grouping[0]).getTypeRoot() : null;
+    if (keyType != org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER
+        && keyType != org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT
+        && keyType != org.apache.flink.table.types.logical.LogicalTypeRoot.VARCHAR) keyType = null;
     var transform =
         ExecNodeUtil.createOneInputTransformation(
             input,
@@ -111,7 +128,8 @@ public final class NativeJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
                 NativeConfig.transposeBatchRows(config),
                 Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0),
                 keyType,
-                grouping.length == 1 ? grouping[0] : -1),
+                grouping.length == 1 ? grouping[0] : -1,
+                retention),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

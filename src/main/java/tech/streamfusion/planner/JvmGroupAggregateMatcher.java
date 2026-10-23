@@ -1,7 +1,6 @@
 package tech.streamfusion.planner;
 
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.functions.AggregateFunction;
 import org.apache.flink.table.functions.SpecializedFunction;
 import org.apache.flink.table.planner.functions.bridging.BridgingSqlAggFunction;
@@ -27,22 +26,17 @@ final class JvmGroupAggregateMatcher {
 
   static boolean matches(StreamPhysicalGroupAggregate node) {
     var config = ShortcutUtils.unwrapTableConfig(node);
-    var retention = tech.streamfusion.compat.FlinkCompat.singleStateTtl(node);
     if (config.get(
             org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED)
-        || config.getIdleStateRetention().toMillis() > 0
-        || retention != null && retention > 0
         || config.get(
             org.apache.flink.configuration.ConfigOptions.key("table.exec.async-state.enabled")
                 .booleanType()
                 .defaultValue(false))) return false;
-    if (!basicRow(node.getInput().getRowType()) || !basicRow(node.getRowType())) return false;
+    if (!JvmFunctionTypes.scalarRow(node.getInput().getRowType())
+        || !JvmFunctionTypes.scalarRow(node.getRowType())) return false;
     for (int i = 0; i < node.aggCalls().size(); i++) {
       var call = node.aggCalls().apply(i);
-      if (call.isDistinct()
-          || call.isApproximate()
-          || call.filterArg >= 0
-          || !call.getCollation().getFieldCollations().isEmpty()) return false;
+      if (call.isApproximate() || !call.getCollation().getFieldCollations().isEmpty()) return false;
       if (call.getAggregation() instanceof BridgingSqlAggFunction
           && ((BridgingSqlAggFunction) call.getAggregation()).getDefinition()
               instanceof SpecializedFunction) return false;
@@ -50,24 +44,10 @@ final class JvmGroupAggregateMatcher {
     return true;
   }
 
-  private static boolean basicRow(RelDataType row) {
-    return row.getFieldList().stream()
-        .allMatch(
-            field -> {
-              switch (field.getType().getSqlTypeName()) {
-                case VARCHAR:
-                case INTEGER:
-                case BIGINT:
-                  return true;
-                default:
-                  return false;
-              }
-            });
-  }
-
   static String unsupportedReason(StreamPhysicalGroupAggregate node) {
-    return "GROUP BY: JVM aggregates require verified columnar input, keyed state and performance"
-        + " admission";
+    return "GROUP BY: JVM aggregates require verified scalar fields and synchronous single-phase"
+        + " execution without mini-batching, specialization, approximate"
+        + " or ordered calls";
   }
 
   static RelNode substitute(StreamPhysicalGroupAggregate node, PlanContext context) {
@@ -81,6 +61,7 @@ final class JvmGroupAggregateMatcher {
         node.aggCalls(),
         AggregateUtil.deriveAggCallNeedRetractions(node, keys.length, node.aggCalls()),
         !ChangelogPlanUtils.inputInsertOnly(node),
-        ChangelogPlanUtils.generateUpdateBefore(node));
+        ChangelogPlanUtils.generateUpdateBefore(node),
+        tech.streamfusion.compat.FlinkCompat.singleStateTtl(node));
   }
 }

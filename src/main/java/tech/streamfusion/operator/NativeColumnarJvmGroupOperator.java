@@ -34,6 +34,7 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
   private final int cacheEntries;
   private final LogicalTypeRoot keyType;
   private final int keyColumn;
+  private final long stateRetentionTime;
   private transient JvmAccumulatorCache accumulatorCache;
   private transient KeyedProcessFunction<RowData, RowData, RowData>.Context context;
   private transient Collector<RowData> collector;
@@ -52,7 +53,8 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
       int batchRows,
       int cacheEntries,
       LogicalTypeRoot keyType,
-      int keyColumn) {
+      int keyColumn,
+      long stateRetentionTime) {
     this.inputType = inputType;
     this.outputType = outputType;
     this.function = function;
@@ -61,6 +63,7 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
     this.cacheEntries = cacheEntries;
     this.keyType = keyType;
     this.keyColumn = keyColumn;
+    this.stateRetentionTime = stateRetentionTime;
   }
 
   @Override
@@ -102,7 +105,8 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
           }
         };
     var runtime = getRuntimeContext();
-    if (cacheEntries > 0 && keyType != null) {
+    // Expiring state must be read and updated against Flink's TTL clock for every input row.
+    if (cacheEntries > 0 && keyType != null && stateRetentionTime <= 0) {
       accumulatorCache =
           new JvmAccumulatorCache(
               cacheEntries,
@@ -113,7 +117,10 @@ public final class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<Ar
               getMetricGroup().counter("jvmAccumulatorCacheBypasses"));
       JvmAggregateCompat.open(function, accumulatorCache.wrap(runtime));
     } else JvmAggregateCompat.open(function, runtime);
-    coalescer = BatchCoalescer.create(getProcessingTimeService(), this::ingest);
+    coalescer =
+        stateRetentionTime > 0
+            ? null
+            : BatchCoalescer.create(getProcessingTimeService(), this::ingest);
   }
 
   @Override

@@ -887,7 +887,11 @@ JVM aggregate functions now default enabled under the accepted UDF performance e
 remaining coverage is tracked by [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 The system property `streamfusion.experimental.jvmGroupAggregates` defaults to true and admits
 released Flink bridging aggregate functions in the synchronous single-phase plan when every
-input and output field is VARCHAR, INT or BIGINT. It retains Flink's generated function,
+input and output field is a verified scalar: CHAR/VARCHAR, BOOLEAN, signed integers,
+FLOAT/DOUBLE, DECIMAL, BINARY/VARBINARY, DATE, TIME, TIMESTAMP/TIMESTAMP_LTZ or intervals.
+Fixed BINARY requires the existing variable-byte transport (enabled by default).
+ARRAY/MAP/ROW fields at the operator boundary retain fallback; managed accumulator fields and
+DataViews still use Flink's own declared serializers and converters. It retains Flink's generated function,
 accumulate/retract logic, managed accumulator/DataView state and lifecycle inside an
 Arrow-batch input/output operator. It preserves each emitted changelog row; input coalescing
 does not reduce user function invocations or intermediate results. The operator disable switch
@@ -919,12 +923,39 @@ retaining the mixed UDAF/COUNT/managed-ListView workload. It verifies the same v
 source offsets, stable operator identities, complete key-group ownership, consumed native work
 and cleanup. Both lines also pass the existing checkpoint controls through the shared harness.
 [Savepoint evidence](../benchmarks/results/jvm-aggregate-savepoint-2026-10-16.json)
-records every stage. Cross-version migration, stock/native state-layout migration, broader
-accumulator types and two-phase merge/reset remain pending.
+records every stage. Cross-version migration, stock/native state-layout migration and
+two-phase merge/reset remain pending.
 
-Mini-batching, positive idle retention or state-TTL hints, asynchronous state, specialized
-functions, DISTINCT, approximate aggregates, FILTER and ordered calls are excluded from this
-boundary. Two-phase merge/reset, OVER functions and the remaining nested/table-function
+DISTINCT and FILTER use the released generated handlers, including shared membership state,
+NULL handling, retractions and managed DataViews. Released Flink still rejects DISTINCT on
+binary arguments during planning. Positive idle retention and, on Flink 2.2,
+STATE_TTL hints use the released grouped function's managed-state TTL. Per-operator hints take
+precedence over job retention. Positive TTL disables the optional accumulator cache and input
+coalescing so each row reads and updates expiring state on Flink's clock. Expiration does not
+emit a delete; later input observes the same empty-state behavior as stock Flink, including
+ignored expired retractions and unsuppressed no-op updates.
+
+For non-compact DECIMAL grouping keys, the Java grouped operator projects keys through the
+released RowData serializer, matching the native exchange's existing BinaryRow layout.
+Flink's generated key projection reserves extra bytes for a NULL non-compact decimal, whereas
+its serializer omits them. Mixing those layouts gives different hashes and can route NULL
+keys into the wrong subtask. The selected keys own their bytes and always have INSERT kind,
+independent of the input changelog kind; other key types retain the generated selector.
+This does not establish stock/native savepoint-layout migration.
+
+The typed and modifier regressions compare complete values, declared types and per-key raw
+changelogs on both supported lines. Precision-38 decimals, nanosecond/wide-date timestamps,
+actual BINARY byte lengths, nullable keys, delete/reinsert and managed accumulator fields
+survive two forced restores with both backends. A mixed typed-UDAF/DISTINCT/DataView/FILTER
+workload also restores checkpoints and canonical savepoints through 1 → 3 → 2 subtasks,
+checking source offsets, operator identities and key-group ownership. Controlled-clock operator
+checks compare TTL refresh, exact expiry and restored state against the released host runtime.
+The unchanged upstream DISTINCT UDAF/DataView fixtures require positive native operator work.
+[Complete-job diagnostics](../benchmarks/jvm-aggregates.md#scalar-types-distinctfilter-and-idle-retention-2026-10-23)
+retain stock, prior-fallback and native costs, including regressions under the accepted UDF exception.
+
+Mini-batching, asynchronous state, specialized functions, approximate aggregates and ordered
+calls are excluded from this boundary. Two-phase merge/reset, OVER functions and the remaining nested/table-function
 type gaps stay tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 Verified [nested scalar results](calc-filter.md#nested-java-scalar-results) and
 [scalar table-function types](unnest-correlate.md#jvm-table-functions) are already enabled
