@@ -3,7 +3,9 @@
 The Rust sink materializer emits every arrival required by Flink while retaining owned candidate
 state. Ordinary upserts share incoming Arrow value buffers; only restored predecessor rows need
 payload decoding. State encoding remains necessary so a small candidate cannot pin a large input
-batch indefinitely.
+batch indefinitely. Generic array/map NaN payloads are normalized as in Flink's required keyed
+exchange. Only affected columns are copied; ordinary columns and explicit binary-array carriers
+keep their shared buffers.
 
 For positive-only batches whose inferred input upsert key equals the sink primary key, each key
 has one candidate. Replacing that candidate repeatedly within one call has no intermediate state

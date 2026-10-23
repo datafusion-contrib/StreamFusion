@@ -19,6 +19,12 @@ Matching follows the released Flink implementation after its required keyed exch
 use binary equality; projected input upsert keys use generated field equality. MAP also uses the
 generated hash on heap, while RocksDB compares serialized user-key bytes. These differences are
 observable for signed zero, NaNs, map ordering, NULL values and nested row kinds.
+The required keyed exchange canonicalizes NaN payloads in generic arrays and map key/value
+arrays, while explicit binary-array carriers retain their raw bits. Native materialization
+performs the same normalization and copies only affected columns; scalar floats and floats
+inside ROW fields retain their binary payloads. Projected MAP-value comparison also preserves
+Flink's generated boxed-primitive reference equality: separately boxed floating values never
+match, and integer matching observes the running JVM's integer-cache range.
 
 LEGACY and VALUE retain a candidate vector. MAP uses linked sequence nodes and a matching-key
 index. ADAPTIVE migrates between these representations at its configured thresholds. The linked

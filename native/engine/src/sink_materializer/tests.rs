@@ -328,3 +328,120 @@ fn global_candidate_multisets_keep_every_row_without_an_inferred_key() {
         vec![(1, 98, 980, 2)]
     );
 }
+
+#[test]
+fn array_nan_serialization_retains_explicit_binary_carriers_across_restore() {
+    let fields = arrow::datatypes::Fields::from(vec![
+        Field::new("value", DataType::Float64, true),
+        Field::new("array_copy_class", DataType::Int8, true)
+            .with_metadata([("streamfusion.array-element".to_string(), "1".to_string())].into()),
+    ]);
+    let element = Arc::new(Field::new(
+        "element",
+        DataType::Struct(fields.clone()),
+        false,
+    ));
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("sink_key", DataType::Int64, false),
+        Field::new("input_key", DataType::List(element.clone()), false),
+        Field::new("value", DataType::Int64, false),
+        Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+    ]));
+    for binary in [false, true] {
+        let make = |keys: Vec<f64>, values: Vec<i64>, kinds: Vec<i8>| {
+            let count = keys.len();
+            let entries = StructArray::new(
+                fields.clone(),
+                vec![
+                    Arc::new(Float64Array::from(keys)),
+                    Arc::new(Int8Array::from(vec![i8::from(binary); count])),
+                ],
+                None,
+            );
+            let list = ListArray::new(
+                element.clone(),
+                arrow::buffer::OffsetBuffer::new(arrow::buffer::ScalarBuffer::from(
+                    (0..=count as i32).collect::<Vec<_>>(),
+                )),
+                Arc::new(entries),
+                None,
+            );
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(Int64Array::from(vec![1; count])),
+                    Arc::new(list),
+                    Arc::new(Int64Array::from(values)),
+                    Arc::new(Int8Array::from(kinds)),
+                ],
+            )
+            .unwrap()
+        };
+        for strategy in [
+            Strategy::Legacy,
+            Strategy::Value,
+            Strategy::Map { serialized: false },
+            Strategy::Map { serialized: true },
+            Strategy::Adaptive {
+                high: 1,
+                low: 0,
+                serialized: false,
+            },
+            Strategy::Adaptive {
+                high: 1,
+                low: 0,
+                serialized: true,
+            },
+        ] {
+            let create = || materializer(true, 0).with_strategy(strategy, vec![-1, -1]);
+            let nan1 = f64::from_bits(0x7ff8000000000001);
+            let nan2 = f64::from_bits(0x7ff8000000000002);
+            let mut before = create();
+            let input = make(vec![nan1, 2.0, nan2], vec![10, 20, 11], vec![0, 0, 2]);
+            let output = before.push(&input, 0).unwrap();
+            let list = output
+                .column(1)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap();
+            let entries = list
+                .values()
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .unwrap();
+            let floats = entries
+                .column(0)
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .unwrap();
+            assert_eq!(
+                floats.value(0).to_bits(),
+                if binary {
+                    nan1.to_bits()
+                } else {
+                    crate::flink_float::canonical_f64(nan1).to_bits()
+                }
+            );
+            assert_eq!(Arc::ptr_eq(input.column(1), output.column(1)), binary);
+            assert!(Arc::ptr_eq(input.column(2), output.column(2)));
+            let snapshots: Vec<_> = before.snapshot(128).into_values().collect();
+            let mut after = create();
+            after.restore(&snapshots, 0);
+            let visible = after.push(&make(vec![2.0], vec![20], vec![3]), 0).unwrap();
+            if binary {
+                assert_eq!(visible.num_rows(), 0);
+            } else {
+                assert_eq!(column_i64(&visible, "value").values().as_ref(), &[11]);
+            }
+            let result = after.push(&make(vec![nan2], vec![99], vec![3]), 0).unwrap();
+            assert_eq!(
+                column_i64(&result, "value").values().as_ref(),
+                &[if binary { 10 } else { 99 }]
+            );
+            assert_eq!(
+                row_kind_column(&result).unwrap().values().as_ref(),
+                &[if binary { 2 } else { 3 }]
+            );
+        }
+    }
+}

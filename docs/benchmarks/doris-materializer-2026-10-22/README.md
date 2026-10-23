@@ -52,6 +52,9 @@ checkpoints; recovery is tested separately. Raw data includes every warmup and m
 in [results.json](results.json) and the scenario CSVs. Native library hashes accompany each
 scenario; the scalar measurement precedes a defensive empty-input-key guard that does not apply
 to its primary-key query. The nested writer additionally normalizes only represented columns.
+Subsequent correctness fixes canonicalize generic array/map NaN payloads and reproduce Flink's
+boxed MAP-value comparison, including the host JVM's integer cache. The benchmark uses BIGINT
+keys and INT arrays, so these fixes do not change its matching or normalization behavior.
 These are shared-host connector measurements, not isolated operator timings.
 
 ## Reproduction

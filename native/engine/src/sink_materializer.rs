@@ -1,6 +1,7 @@
 use crate::*;
 mod equal;
 mod hash;
+mod serialized;
 mod state;
 use state::{Action, Candidates, Strategy};
 
@@ -327,6 +328,10 @@ impl SinkMaterializer {
         if batch.num_rows() == 0 {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
+        // The required Flink keyBy serializes generic arrays before materialization. Preserve
+        // that normalization without copying ordinary input columns or already canonical arrays.
+        let normalized = serialized::batch(batch);
+        let batch = normalized.as_ref().unwrap_or(batch);
         let ttl = StateTtl::new(self.ttl_ms, now);
         let track = self.memory.tracking();
         if ttl.enabled() && now >= self.last_sweep.saturating_add(self.ttl_ms) {
@@ -728,6 +733,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createSinkMaterializer<'loc
     budget: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
+        equal::init_java_cache(&mut env);
         let materializer = SinkMaterializer::new(
             read_columns(&env, &keys),
             read_i32_array(&env, &precisions),
@@ -760,6 +766,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreSinkMaterializer<'lo
     budget: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
+        equal::init_java_cache(&mut env);
         let mut materializer = SinkMaterializer::new(
             read_columns(&env, &keys),
             read_i32_array(&env, &precisions),

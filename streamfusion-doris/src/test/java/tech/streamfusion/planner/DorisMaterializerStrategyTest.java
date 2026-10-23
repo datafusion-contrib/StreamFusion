@@ -103,6 +103,83 @@ class DorisMaterializerStrategyTest {
           decimal("9.99"),
           decimal("123456789012345678901234567890.12")
         });
+    double nan1 = Double.longBitsToDouble(0x7ff8000000000001L);
+    double nan2 = Double.longBitsToDouble(0x7ff8000000000002L);
+    Object firstNan = new GenericArrayData(new Object[] {nan1});
+    Object secondArray = new GenericArrayData(new Object[] {2.0});
+    Object otherNan = new GenericArrayData(new Object[] {nan2});
+    values.add(
+        new Object[] {
+          "array-nan", new ArrayType(new DoubleType()), firstNan, secondArray, otherNan
+        });
+    values.add(
+        new Object[] {
+          "array-nan-retract", new ArrayType(new DoubleType()), firstNan, secondArray, otherNan
+        });
+    values.add(
+        new Object[] {
+          "array-float-nan",
+          new ArrayType(new FloatType()),
+          new GenericArrayData(new Object[] {Float.intBitsToFloat(0x7fc00001)}),
+          new GenericArrayData(new Object[] {2.0f}),
+          new GenericArrayData(new Object[] {Float.intBitsToFloat(0x7fc00002)})
+        });
+    values.add(
+        new Object[] {
+          "array-row-nan",
+          new ArrayType(RowType.of(new DoubleType())),
+          new GenericArrayData(new Object[] {GenericRowData.of(nan1)}),
+          new GenericArrayData(new Object[] {GenericRowData.of(2.0)}),
+          new GenericArrayData(new Object[] {GenericRowData.of(nan2)})
+        });
+    values.add(
+        new Object[] {
+          "map-nan-value-retract",
+          new MapType(new VarCharType(VarCharType.MAX_LENGTH), new DoubleType()),
+          map("a", nan1),
+          map("b", 2.0),
+          map("a", nan2)
+        });
+    values.add(
+        new Object[] {
+          "map-nan-key-retract",
+          new MapType(new DoubleType(), new IntType()),
+          new GenericMapData(java.util.Collections.singletonMap(nan1, 1)),
+          new GenericMapData(java.util.Collections.singletonMap(2.0, 2)),
+          new GenericMapData(java.util.Collections.singletonMap(nan2, 1))
+        });
+    values.add(
+        new Object[] {
+          "map-int-uncached",
+          new MapType(new VarCharType(VarCharType.MAX_LENGTH), new IntType()),
+          map("a", 1000),
+          map("b", 2000),
+          map("a", 1000)
+        });
+    values.add(
+        new Object[] {
+          "map-long-uncached",
+          new MapType(new VarCharType(VarCharType.MAX_LENGTH), new BigIntType()),
+          map("a", 1000L),
+          map("b", 2000L),
+          map("a", 1000L)
+        });
+    values.add(
+        new Object[] {
+          "map-short-uncached",
+          new MapType(new VarCharType(VarCharType.MAX_LENGTH), new SmallIntType()),
+          map("a", (short) 1000),
+          map("b", (short) 2000),
+          map("a", (short) 1000)
+        });
+    values.add(
+        new Object[] {
+          "map-float-boxed",
+          new MapType(new VarCharType(VarCharType.MAX_LENGTH), new FloatType()),
+          map("a", 1.0f),
+          map("b", 2.0f),
+          map("a", 1.0f)
+        });
     values.add(new Object[] {"cursor", new BigIntType(), 10L, 20L, 10L});
     values.add(new Object[] {"adaptive-cycle", new BigIntType(), 10L, 20L, 10L});
     var cases = new ArrayList<Arguments>();
@@ -133,30 +210,36 @@ class DorisMaterializerStrategyTest {
             new LogicalType[] {new BigIntType(), valueType, new BigIntType()},
             new String[] {"id", "uid", "n"});
     List<GenericRowData> rows =
-        name.equals("adaptive-cycle")
+        name.endsWith("-retract")
             ? List.of(
-                row(RowKind.INSERT, 10L, 10L),
-                row(RowKind.INSERT, 20L, 20L),
-                row(RowKind.INSERT, 30L, 30L),
-                row(RowKind.DELETE, 30L, 30L),
-                row(RowKind.DELETE, 20L, 20L),
-                row(RowKind.INSERT, 40L, 40L),
-                row(RowKind.DELETE, 40L, 40L),
-                row(RowKind.DELETE, 10L, 10L))
-            : name.equals("cursor")
+                row(RowKind.INSERT, first, 10L),
+                row(RowKind.INSERT, second, 20L),
+                row(RowKind.DELETE, replacement, 10L),
+                row(RowKind.DELETE, second, 20L))
+            : name.equals("adaptive-cycle")
                 ? List.of(
                     row(RowKind.INSERT, 10L, 10L),
                     row(RowKind.INSERT, 20L, 20L),
                     row(RowKind.INSERT, 30L, 30L),
-                    row(RowKind.UPDATE_AFTER, 10L, 11L),
+                    row(RowKind.DELETE, 30L, 30L),
+                    row(RowKind.DELETE, 20L, 20L),
                     row(RowKind.INSERT, 40L, 40L),
-                    row(RowKind.DELETE, 40L, 40L))
-                : List.of(
-                    row(RowKind.INSERT, first, 10L),
-                    row(RowKind.INSERT, second, 20L),
-                    row(RowKind.UPDATE_AFTER, replacement, 11L),
-                    row(RowKind.DELETE, second, 20L),
-                    row(RowKind.DELETE, replacement, inputKey ? 99L : 11L));
+                    row(RowKind.DELETE, 40L, 40L),
+                    row(RowKind.DELETE, 10L, 10L))
+                : name.equals("cursor")
+                    ? List.of(
+                        row(RowKind.INSERT, 10L, 10L),
+                        row(RowKind.INSERT, 20L, 20L),
+                        row(RowKind.INSERT, 30L, 30L),
+                        row(RowKind.UPDATE_AFTER, 10L, 11L),
+                        row(RowKind.INSERT, 40L, 40L),
+                        row(RowKind.DELETE, 40L, 40L))
+                    : List.of(
+                        row(RowKind.INSERT, first, 10L),
+                        row(RowKind.INSERT, second, 20L),
+                        row(RowKind.UPDATE_AFTER, replacement, 11L),
+                        row(RowKind.DELETE, second, 20L),
+                        row(RowKind.DELETE, replacement, inputKey ? 99L : 11L));
     assertEquals(
         stock(type, strategy, rocks, inputKey, rows, name.equals("adaptive-cycle")),
         nativeRows(type, strategy, rocks, inputKey, rows, name.equals("adaptive-cycle")),

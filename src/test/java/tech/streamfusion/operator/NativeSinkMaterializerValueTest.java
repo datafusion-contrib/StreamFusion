@@ -64,6 +64,27 @@ class NativeSinkMaterializerValueTest {
             new GenericArrayData(new Object[] {0.0, Double.NaN}),
             new GenericArrayData(new Object[] {2.0}),
             new GenericArrayData(new Object[] {-0.0, Double.NaN})));
+    cases.add(
+        Arguments.of(
+            "array-nan-generic",
+            new ArrayType(new DoubleType()),
+            new GenericArrayData(new Object[] {Double.longBitsToDouble(0x7ff8000000000001L)}),
+            new GenericArrayData(new Object[] {2.0}),
+            new GenericArrayData(new Object[] {Double.longBitsToDouble(0x7ff8000000000002L)})));
+    cases.add(
+        Arguments.of(
+            "array-float-nan-generic",
+            new ArrayType(new FloatType()),
+            new GenericArrayData(new Object[] {Float.intBitsToFloat(0x7fc00001)}),
+            new GenericArrayData(new Object[] {2.0f}),
+            new GenericArrayData(new Object[] {Float.intBitsToFloat(0x7fc00002)})));
+    cases.add(
+        Arguments.of(
+            "map-nan-generic",
+            new MapType(new VarCharType(VarCharType.MAX_LENGTH), new DoubleType()),
+            map("a", Double.longBitsToDouble(0x7ff8000000000001L)),
+            map("b", 2.0),
+            map("a", Double.longBitsToDouble(0x7ff8000000000002L))));
     var map = new MapType(new VarCharType(VarCharType.MAX_LENGTH), new IntType());
     cases.add(
         Arguments.of("map-order", map, map("a", 1, "b", 2), map("z", 9), map("b", 2, "a", 1)));
@@ -139,7 +160,8 @@ class NativeSinkMaterializerValueTest {
                 GenericRowData.ofKind(RowKind.DELETE, 1L, replacement, key ? 99L : 10L))) {
           var serialized = serializer.toBinaryRow(row).copy();
           rows.add(serialized);
-          nativeInput.add(name.equals("row-binary") ? row : serialized);
+          nativeInput.add(
+              name.equals("row-binary") || name.endsWith("-generic") ? row : serialized);
         }
         assertEquals(
             stock(type, rows, key), nativeRows(type, nativeInput, key), name + " inputKey=" + key);

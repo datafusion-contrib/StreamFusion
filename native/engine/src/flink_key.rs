@@ -465,6 +465,38 @@ fn write_array_value(
             .as_any()
             .downcast_ref::<StructArray>()
             .expect("represented key");
+        if represented_element(array.data_type()) {
+            let flags = array
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .unwrap();
+            if !flags.is_null(row) && flags.value(row) != 0 && !array.column(0).is_null(row) {
+                match array.column(0).data_type() {
+                    DataType::Float32 => {
+                        let value = array
+                            .column(0)
+                            .as_any()
+                            .downcast_ref::<Float32Array>()
+                            .unwrap()
+                            .value(row);
+                        writer.write_fixed(pos, &value.to_ne_bytes());
+                        return;
+                    }
+                    DataType::Float64 => {
+                        let value = array
+                            .column(0)
+                            .as_any()
+                            .downcast_ref::<arrow::array::Float64Array>()
+                            .unwrap()
+                            .value(row);
+                        writer.write_fixed(pos, &value.to_ne_bytes());
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+        }
         write_array_value(writer, pos, array.column(0), row, schema);
         return;
     }
