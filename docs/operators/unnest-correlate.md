@@ -51,8 +51,10 @@ methods remain enabled in CI but are excluded from this local stateless check.
 The source transpose preserves collection representation and can prune unused input columns before
 generated expansion. Generated collection Calc results and other generated expansions are verified
 inputs; DropUpdateBefore, mini-batch assignment and watermark assignment preserve that contract.
-Complex nested outputs require a verified preserving consumer or a final row boundary. Unverified
-state, ordering, exchange and native-sink boundaries retain whole-query fallback. Scalar expanded
+Complex nested outputs require a verified preserving consumer or a final row boundary. Flink
+1.18's legacy `toAppendStream` sink is also a final row boundary; nested ROW arguments and results
+retain the same external conversion and values as the stock API. Unverified state, ordering,
+exchange and native-sink boundaries retain whole-query fallback. Scalar expanded
 values can feed ordinary native aggregates, including checkpoint/recovery.
 
 Scalar ARRAY constructors consumed here use the native constructor for resolved homogeneous

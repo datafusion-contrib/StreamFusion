@@ -195,6 +195,7 @@ final class CollectionValueIdentity {
                         && sensitive(field.getType()))
         && !(parent == null && finalOutput)
         && !(parent instanceof StreamPhysicalSink)
+        && !FlinkPlannerCompat.isLegacyRowSink(parent)
         && !preservingCorrelate(parent)
         && !(parent instanceof StreamPhysicalNativeCalc
             && ((StreamPhysicalNativeCalc) parent).preservesCollections())) return true;

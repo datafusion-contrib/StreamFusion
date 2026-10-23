@@ -42,6 +42,10 @@ final class FlinkPlannerCompat {
     return node;
   }
 
+  static boolean isLegacyRowSink(org.apache.calcite.rel.RelNode node) {
+    return node instanceof PreparedLegacySink;
+  }
+
   static void addSubstitutions(List<Substitution<?>> entries) {
     entries.add(
         Substitution.of(
