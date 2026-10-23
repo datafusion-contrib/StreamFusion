@@ -1099,7 +1099,7 @@ Integer formatting uses canonical decimal text, including signed minima and zero
 `VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
 Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
 Flink. Other TRY_CAST pairs, except the BOOLEAN and temporal forms described here and
-the binary and DECIMAL forms below, still fall back. Bare encoders without table configuration
+the binary, DECIMAL and collection forms below, still fall back. Bare encoders without table configuration
 decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
 for the release benchmark against the previous host-cast path.
 
