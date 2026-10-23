@@ -920,13 +920,13 @@
   "validation": {
     "jdk": 17,
     "flink_2_2_1": {
-      "passed": 223,
+      "passed": 225,
       "skipped": 0
     },
     "flink_1_18_1": {
       "passed": 188,
-      "skipped": 35
+      "skipped": 37
     },
-    "scope": "Distinct invocations across the focused ARRAY CAST/TRY_CAST, standalone collection, generated collection, representation, string builtin and collection identity suites. Not the full JVM or upstream suite."
+    "scope": "Distinct invocations across the focused ARRAY CAST/TRY_CAST, standalone collection, canonical SPLIT, generated collection, representation, string builtin and collection identity suites. Not the full JVM or upstream suite."
   }
 }

@@ -16,8 +16,8 @@ class FlinkSplitSqlHarnessTest {
   }
 
   @Test
-  void unverifiedFormsFallBackBeforeExecution() throws Exception {
-    NativeParity.assertFallback(
+  void emptySeparatorsPreserveReleasedUtf16Units() throws Exception {
+    NativeParity.assertParity(
         TextTimeFunctionTestInputs::strings, "SELECT id, SPLIT(s, '') FROM inputs");
   }
 }
