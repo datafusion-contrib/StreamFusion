@@ -202,6 +202,19 @@ class FlinkNestedTableFunctionSqlHarnessTest {
   }
 
   @ParameterizedTest
+  @ValueSource(strings = {"array_string", "map", "row_STRING"})
+  void unverifiedProjectedContainersRetainTheirCopyBoundary(String name) {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var runs =
+          NativeFailureParity.run(
+              () -> environment(name, 96, metrics, true),
+              "SELECT s.id,s.p,t.v,t.pos FROM src s,LATERAL TABLE(nested_rows(s.id,s.p)) AS"
+                  + " t(v,pos)");
+      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+    }
+  }
+
+  @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void sourceProjectionRetainsTheAnnotatedExternalRowArgument(boolean updating) {
     for (boolean reordered : new boolean[] {false, true}) {
@@ -440,11 +453,20 @@ class FlinkNestedTableFunctionSqlHarnessTest {
   }
 
   static TableEnvironment environment(String name, int count, RecoveryExecutionMetrics metrics) {
+    return environment(name, count, metrics, false);
+  }
+
+  private static TableEnvironment environment(
+      String name, int count, RecoveryExecutionMetrics metrics, boolean aliased) {
     var env = metrics.environment(new Configuration(), 1, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("streamfusion.transpose.batchRows", "7");
-    var type = rowType(name);
+    var type =
+        aliased
+            ? DataTypes.ROW(
+                DataTypes.FIELD("f0", DataTypes.INT()), DataTypes.FIELD("f1", valueType(name)))
+            : rowType(name);
     Object[] values =
         java.util.stream.IntStream.range(0, 64).mapToObj(i -> value(name, i)).toArray();
     var input =
@@ -452,8 +474,8 @@ class FlinkNestedTableFunctionSqlHarnessTest {
             .filter(i -> i < count)
             .map(i -> Row.of(i.intValue(), values[(int) (i % values.length)]))
             .returns(ExternalTypeInfo.<Row>of(type));
-    table.createTemporaryView(
-        "src", table.fromDataStream(input, Schema.newBuilder().fromRowDataType(type).build()));
+    var source = table.fromDataStream(input, Schema.newBuilder().fromRowDataType(type).build());
+    table.createTemporaryView("src", aliased ? source.as("id", "p") : source);
     return register(table, name);
   }
 

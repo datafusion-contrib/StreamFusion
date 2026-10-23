@@ -758,7 +758,7 @@
   "validation": {
     "flink_2.2": {
       "cases": {
-        "FlinkNestedTableFunctionSqlHarnessTest": 58,
+        "FlinkNestedTableFunctionSqlHarnessTest": 61,
         "FlinkTableFunctionSqlHarnessTest": 15,
         "FlinkGeneratedUnnestSqlHarnessTest": 66,
         "FlinkArrayScalarUdfSqlHarnessTest": 24,
@@ -771,7 +771,7 @@
     },
     "flink_1.18": {
       "cases": {
-        "FlinkNestedTableFunctionSqlHarnessTest": 58,
+        "FlinkNestedTableFunctionSqlHarnessTest": 61,
         "FlinkTableFunctionSqlHarnessTest": 15,
         "FlinkGeneratedUnnestSqlHarnessTest": 66,
         "FlinkArrayScalarUdfSqlHarnessTest": 24,
@@ -787,8 +787,8 @@
   "post_measurement_changes": [
     {
       "file": "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java",
-      "sha256": "125f7f4a7e5b93f39d3cf4eeb3bd3e787d72ef4cb5bcf77db5333f2a8483c156",
-      "description": "Admit type-preserving source-column projections, metadata-only AS aliases and reordered unique fields by folding them into the preserving entry transpose. Retain source names for entry pruning and correlate ordinals for output aliases. Timed queries use both source columns directly and do not take this fold. Original measured hashes and trials are retained."
+      "sha256": "a0a69633efa0f622ad2bee887a0469e3437f18b298a1b1069c6a8f9fdf8f9d7e",
+      "description": "Admit type-preserving source-column projections, metadata-only AS aliases and reordered unique fields by folding them into the preserving entry transpose. Retain source names for entry pruning and correlate ordinals for output aliases. Timed queries use both source columns directly and do not take this fold. Original measured hashes and trials are retained. Folding is limited to boolean/signed-integer fields and ROWs of them; other projected containers require independently verified preserving producers."
     }
   ]
 }

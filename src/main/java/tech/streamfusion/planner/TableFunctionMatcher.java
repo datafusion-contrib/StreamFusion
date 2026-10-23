@@ -85,7 +85,25 @@ final class TableFunctionMatcher {
     }
   }
 
+  private static boolean copyStableProjectionType(org.apache.calcite.rel.type.RelDataType type) {
+    switch (type.getSqlTypeName()) {
+      case BOOLEAN:
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+        return true;
+      case ROW:
+        return type.getFieldList().stream()
+            .allMatch(field -> copyStableProjectionType(field.getType()));
+      default:
+        return false;
+    }
+  }
+
   private static ProjectedSource projectedSource(RelNode input) {
+    if (input.getRowType().getFieldList().stream()
+        .anyMatch(field -> !copyStableProjectionType(field.getType()))) return null;
     RelNode current = input;
     int[] mapping =
         java.util.stream.IntStream.range(0, input.getRowType().getFieldCount()).toArray();
@@ -130,7 +148,7 @@ final class TableFunctionMatcher {
     return "correlate: only non-specialized JVM table functions with INNER/LEFT and CHAR/VARCHAR,"
         + " numeric, boolean, binary, interval, temporal or recursively verified"
         + " ARRAY/MAP/ROW input, output and argument types with default external Java"
-        + " conversions are verified";
+        + " conversions and input representation are verified";
   }
 
   static RelNode substitute(StreamPhysicalCorrelate node, PlanContext context) {

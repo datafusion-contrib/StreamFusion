@@ -167,9 +167,10 @@ A verified source transpose, preserving Calc, generated UNNEST or preserving tab
 supply sensitive values. Plain source-column projections, including metadata-only AS aliases
 and reordered columns, can fold into the preserving entry transpose when types match and
 source columns are unique. Original source names select the entry copy; Flink's ordinal
-correlate semantics retain the declared output aliases. Filters, computed projections and
-duplicate input columns do not use that fold; their input must independently satisfy the
-preserving guard. Their results must reach a preserving Calc/correlate or final row
+correlate semantics retain the declared output aliases. This fold is verified for boolean
+and signed-integer fields and ROWs recursively containing those fields. Other projected
+containers, filters, computed projections and duplicate input columns do not use that fold;
+their input must independently satisfy the preserving guard. Their results must reach a preserving Calc/correlate or final row
 boundary; unverified stateful consumers and columnar sinks retain complete-query fallback.
 For example, a non-preserving MAP `CARDINALITY` Calc or a grouped count that still carries an
 ARRAY-of-ROW or MAP payload stays on fallback even when that payload is absent from the final result.
