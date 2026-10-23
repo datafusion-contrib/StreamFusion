@@ -1,0 +1,932 @@
+{
+  "date": "2026-10-23",
+  "previous_revision": "1bd9daa8",
+  "hardware": {
+    "cpu": "Intel Core i7-12650H",
+    "logical_cpus": 16,
+    "memory_gib": 9.7,
+    "os": "Linux x86-64 / WSL2",
+    "jdk": "OpenJDK 17.0.20.1"
+  },
+  "native": {
+    "profile": "release",
+    "features": [
+      "mimalloc",
+      "rocksdb-state"
+    ],
+    "sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
+    "source_revision": "1bd9daa8; no native source changes"
+  },
+  "configuration": {
+    "flink": "2.2.1",
+    "parallelism": 1,
+    "rows": 500000,
+    "warmups_per_engine": 2,
+    "measured_trials_per_engine": 3,
+    "unicode": true,
+    "text_payload_bytes": 32,
+    "null_container_every": 8,
+    "decimal_type": "DECIMAL(38,9)",
+    "decimal_array_width": 3,
+    "decimal_array_values": [
+      "12345678901234567890.123456700",
+      null,
+      "-0.000000100"
+    ],
+    "input": "runtime row source",
+    "sink": "blackhole",
+    "measurement": "planning, job submission and processing, including both RowData/Arrow transposes; cluster setup and initial explain excluded",
+    "engines": "alternating stock/native within each JVM; candidate and previous in independent JVMs; no concurrent tests or benchmarks",
+    "test_heap_gib": 8
+  },
+  "trials": {
+    "current": [
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.188913"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.258683"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.255535"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.197096"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.179952"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.327569"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.173192"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.158448"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.167490"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.181258"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.174188"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.160668"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.406347"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.671658"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.681770"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.397833"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.396182"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.685444"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.304137"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.576421"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.565540"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.290957"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.308932"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.575999"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.661662"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "1.967336"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "1.943902"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.656279"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.666962"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "1.975747"
+      }
+    ],
+    "previous": [
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.186421"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.255148"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.258409"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.184914"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.180505"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.249616"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.187787"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.163479"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.157486"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.236218"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.186892"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.161417"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.390852"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.400672"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.392447"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.396425"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.389514"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_STRING",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.411652"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.301078"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.297007"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.294347"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.292668"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.298351"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.286044"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.679991"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.726890"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.650776"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.675291"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.667493"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.639608"
+      }
+    ]
+  },
+  "summary_seconds": {
+    "BASELINE_tt_decimal_array/current/flink": {
+      "median": 0.188913,
+      "min": 0.179952,
+      "max": 0.197096
+    },
+    "BASELINE_tt_decimal_array/current/native": {
+      "median": 0.258683,
+      "min": 0.255535,
+      "max": 0.327569
+    },
+    "BASELINE_tt_text/current/flink": {
+      "median": 0.174188,
+      "min": 0.173192,
+      "max": 0.181258
+    },
+    "BASELINE_tt_text/current/native": {
+      "median": 0.160668,
+      "min": 0.158448,
+      "max": 0.16749
+    },
+    "DECIMAL_ARRAY_TO_STRING/current/flink": {
+      "median": 0.397833,
+      "min": 0.396182,
+      "max": 0.406347
+    },
+    "DECIMAL_ARRAY_TO_STRING/current/native": {
+      "median": 0.68177,
+      "min": 0.671658,
+      "max": 0.685444
+    },
+    "SPLIT_DYNAMIC/current/flink": {
+      "median": 0.304137,
+      "min": 0.290957,
+      "max": 0.308932
+    },
+    "SPLIT_DYNAMIC/current/native": {
+      "median": 0.575999,
+      "min": 0.56554,
+      "max": 0.576421
+    },
+    "SPLIT_EMPTY/current/flink": {
+      "median": 0.661662,
+      "min": 0.656279,
+      "max": 0.666962
+    },
+    "SPLIT_EMPTY/current/native": {
+      "median": 1.967336,
+      "min": 1.943902,
+      "max": 1.975747
+    },
+    "BASELINE_tt_decimal_array/previous/flink": {
+      "median": 0.184914,
+      "min": 0.180505,
+      "max": 0.186421
+    },
+    "BASELINE_tt_decimal_array/previous/native": {
+      "median": 0.255148,
+      "min": 0.249616,
+      "max": 0.258409
+    },
+    "BASELINE_tt_text/previous/flink": {
+      "median": 0.187787,
+      "min": 0.186892,
+      "max": 0.236218
+    },
+    "BASELINE_tt_text/previous/native": {
+      "median": 0.161417,
+      "min": 0.157486,
+      "max": 0.163479
+    },
+    "DECIMAL_ARRAY_TO_STRING/previous/flink": {
+      "median": 0.390852,
+      "min": 0.389514,
+      "max": 0.396425
+    },
+    "DECIMAL_ARRAY_TO_STRING/previous/native": {
+      "median": 0.400672,
+      "min": 0.392447,
+      "max": 0.411652
+    },
+    "SPLIT_DYNAMIC/previous/flink": {
+      "median": 0.298351,
+      "min": 0.292668,
+      "max": 0.301078
+    },
+    "SPLIT_DYNAMIC/previous/native": {
+      "median": 0.294347,
+      "min": 0.286044,
+      "max": 0.297007
+    },
+    "SPLIT_EMPTY/previous/flink": {
+      "median": 0.675291,
+      "min": 0.667493,
+      "max": 0.679991
+    },
+    "SPLIT_EMPTY/previous/native": {
+      "median": 0.650776,
+      "min": 0.639608,
+      "max": 0.72689
+    }
+  },
+  "notes": [
+    "Subsecond jobs include startup and do not establish sustained throughput.",
+    "Previous controls assert zero native Calc substitutions for each new expression; identity controls still require native Calc.",
+    "This is coverage within the existing accepted generated-collection tradeoff, not an acceleration claim.",
+    "The initial DECIMAL_ARRAY_TO_FLOAT diagnostic was already native on previous main and is not a newly admitted cast."
+  ],
+  "initial_diagnostics": {
+    "current": [
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.262830"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.236314"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.186197"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.310614"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.258368"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.178039"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.166022"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.184847"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.181086"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.171890"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.208582"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.191407"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_FLOAT",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.310445"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_FLOAT",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.453742"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_FLOAT",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.448026"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_FLOAT",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.307629"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_FLOAT",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.301805"
+      },
+      {
+        "function": "DECIMAL_ARRAY_TO_FLOAT",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.456715"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.627674"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.306819"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.307897"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.610710"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.593154"
+      },
+      {
+        "function": "SPLIT_DYNAMIC",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.305479"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "1.969203"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.669453"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.764291"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "1.964471"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "1.987999"
+      },
+      {
+        "function": "SPLIT_EMPTY",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.654498"
+      }
+    ],
+    "previous_partial": [
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.304175"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.285825"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.184251"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.261818"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.337644"
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.186483"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "0",
+        "seconds": "0.180452"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "0",
+        "seconds": "0.184885"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "1",
+        "seconds": "0.178926"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "1",
+        "seconds": "0.158815"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "native",
+        "trial": "2",
+        "seconds": "0.155501"
+      },
+      {
+        "function": "BASELINE_tt_text",
+        "engine": "flink",
+        "trial": "2",
+        "seconds": "0.190443"
+      }
+    ],
+    "previous_abort_reason": "Route assertion correctly detected DECIMAL_ARRAY_TO_FLOAT was already native; no timing of that expression was taken in this aborted run."
+  },
+  "cpu_profiles": {
+    "profiler": "async-profiler 4.6",
+    "event": "cpu",
+    "interval": "1ms",
+    "requested_loop_seconds": 8,
+    "warmup_jobs": 1,
+    "rows_per_job": 500000,
+    "note": "Two independent candidate JVMs. Profiles include all JVM threads, JIT, planning and repeated complete jobs. Inclusive counts overlap and are neither allocation counts nor copied bytes. Only summaries are committed; JFR timings do not enter trial medians.",
+    "captures": {
+      "dynamic": {
+        "total_samples_all_threads": 13333,
+        "top_self_samples": {
+          "org/apache/flink/table/data/binary/LazyBinaryFormat.ensureMaterialized_[i]": 669,
+          "org/apache/arrow/vector/VarCharVector.get_[i]": 475,
+          "_raw_spin_unlock_irqrestore_[k]": 291,
+          "org/apache/flink/table/runtime/util/SegmentsUtil.find_[j]": 280,
+          "org/apache/arrow/vector/BaseVariableWidthVector.setNull_[i]": 258,
+          "IndexSetIterator::advance_and_next": 225,
+          "tech/streamfusion/arrow/writers/NestedStringWriter.doWrite_[i]": 191,
+          "itable stub": 189,
+          "libc.so.6": 180,
+          "org/apache/flink/table/runtime/typeutils/ArrayDataSerializer.copyGenericArray_[i]": 163,
+          "java/util/ArrayList.toArray_[i]": 162,
+          "tech/streamfusion/arrow/vectors/ArrowArrayColumnVector.getArray_[i]": 152,
+          "PhaseChaitin::Split": 147,
+          "tech/streamfusion/arrow/writers/ArrowFieldWriter.write_[i]": 146,
+          "org/apache/flink/table/data/binary/BinaryStringData.substring_[i]": 139,
+          "org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator_[i]": 131,
+          "jlong_disjoint_arraycopy": 130,
+          "PhaseChaitin::gather_lrg_masks": 118,
+          "PhaseLive::compute": 95,
+          "java/lang/String.encodeUTF8_UTF16_[j]": 95,
+          "PhaseChaitin::interfere_with_live": 94,
+          "org/apache/flink/table/data/binary/BinaryStringDataUtil.splitByWholeSeparatorPreserveAllTokens_[j]": 94,
+          "G1ParScanThreadState::trim_queue_to_threshold": 90,
+          "java/lang/String.encodeUTF8_[i]": 90,
+          "clear_page_erms_[k]": 89
+        },
+        "relevant_inclusive_samples": {
+          "tech/streamfusion/Native.calcExpressionWithCachedSchemasAtWatermark_[j]": 3796,
+          "tech/streamfusion/operator/NativeUdf.invokeUdf_[j]": 3496,
+          "tech/streamfusion/arrow/ArrowWriter.write_[i]": 1916,
+          "tech/streamfusion/arrow/writers/ArrowFieldWriter.write_[i]": 1911,
+          "tech/streamfusion/planner/FlinkExpressionFunction.evalRow_[j]": 1495,
+          "tech/streamfusion/arrow/writers/RowWriter.doWrite_[j]": 1368,
+          "tech/streamfusion/arrow/writers/ArrayWriter.doWrite_[j]": 1286,
+          "org/apache/flink/table/runtime/typeutils/ArrayDataSerializer.copy_[i]": 943,
+          "org/apache/flink/table/runtime/typeutils/ArrayDataSerializer.copyGenericArray_[i]": 943,
+          "org/apache/flink/table/runtime/functions/scalar/SplitFunction.eval_[i]": 833,
+          "tech/streamfusion/arrow/writers/NestedStringWriter.doWrite_[i]": 776,
+          "tech/streamfusion/arrow/vectors/ArrowArrayColumnVector.getArray_[i]": 591,
+          "tech/streamfusion/arrow/writers/VarCharWriter.doWrite_[j]": 581,
+          "tech/streamfusion/arrow/writers/NestedStringWriter.doWrite_[j]": 479,
+          "tech/streamfusion/arrow/RepresentedArrayData.getString_[i]": 428,
+          "tech/streamfusion/arrow/NestedStringColumnVector.getString_[i]": 428,
+          "tech/streamfusion/arrow/Utf16Cache$Writer.write_[j]": 326,
+          "tech/streamfusion/arrow/writers/VarCharWriter.encode_[i]": 213,
+          "tech/streamfusion/arrow/NestedStringColumnVector.getString_[j]": 206,
+          "tech/streamfusion/arrow/StringCacheRowData.getString_[i]": 193,
+          "tech/streamfusion/arrow/ArrowConversion.createRowDataArrowWriter_[j]": 125,
+          "tech/streamfusion/arrow/ArrowConversion.createRowDataArrowWriter_[1]": 73,
+          "tech/streamfusion/operator/NativeUdf$Binding.bind_[0]": 66,
+          "tech/streamfusion/operator/NativeUdf$Binding.openFunction_[0]": 63,
+          "tech/streamfusion/planner/FlinkExpressionFunction.open_[0]": 61,
+          "tech/streamfusion/arrow/ArrowConversion.createArrowFieldWriterForRow_[j]": 47,
+          "tech/streamfusion/arrow/ArrowConversion.createArrowReader_[i]": 44,
+          "tech/streamfusion/arrow/ArrowConversion.createArrowReader_[1]": 44,
+          "tech/streamfusion/arrow/StringCacheRowData.isNullAt_[i]": 44,
+          "tech/streamfusion/arrow/writers/NestedStringWriter$$Lambda$3345.apply_[i]": 39,
+          "tech/streamfusion/arrow/vectors/ArrowBooleanColumnVector.isNullAt_[j]": 33,
+          "tech/streamfusion/arrow/NestedStringColumnVector.isNullAt_[j]": 33,
+          "tech/streamfusion/arrow/vectors/ArrowArrayColumnVector.isNullAt_[j]": 28,
+          "tech/streamfusion/operator/NativeUdf.resultRoot_[1]": 26,
+          "tech/streamfusion/Native.calcExpressionAtWatermark_[0]": 23
+        }
+      },
+      "empty": {
+        "total_samples_all_threads": 10331,
+        "top_self_samples": {
+          "org/apache/flink/table/data/binary/BinaryStringData.ensureMaterialized_[i]": 1198,
+          "org/apache/flink/table/data/binary/BinarySegmentUtils.copyToBytes_[i]": 533,
+          "org/apache/arrow/vector/VarCharVector.get_[i]": 380,
+          "Unsafe_SetMemory0": 343,
+          "jdk/internal/misc/Unsafe.checkOffset_[i]": 304,
+          "jdk/internal/misc/Unsafe.setMemory0_[j]": 286,
+          "tech/streamfusion/arrow/Utf16Cache$Writer.write_[i]": 286,
+          "org/apache/arrow/vector/complex/ListVector.startNewValue_[i]": 262,
+          "org/apache/flink/table/data/binary/LazyBinaryFormat.ensureMaterialized_[j]": 201,
+          "java/lang/ThreadLocal.set_[i]": 191,
+          "tech/streamfusion/arrow/writers/NestedStringWriter.lambda$forRow$0_[i]": 190,
+          "jbyte_disjoint_arraycopy": 186,
+          "org/apache/flink/table/runtime/typeutils/ArrayDataSerializer.copyGenericArray_[i]": 172,
+          "jshort_disjoint_arraycopy": 156,
+          "jlong_disjoint_arraycopy": 153,
+          "java/lang/ThreadLocal$ThreadLocalMap.getEntryAfterMiss_[i]": 149,
+          "java/util/ArrayList.grow_[i]": 147,
+          "libc.so.6": 141,
+          "org/apache/flink/table/data/binary/StringUtf8Utils.encodeUTF8_[j]": 140,
+          "_raw_spin_unlock_irqrestore_[k]": 139,
+          "java/util/Arrays.copyOf_[i]": 139,
+          "unsafe_arraycopy": 123,
+          "IndexSetIterator::advance_and_next": 80,
+          "Copy::fill_to_memory_atomic": 77,
+          "java/lang/String.length_[i]": 75
+        },
+        "relevant_inclusive_samples": {
+          "tech/streamfusion/Native.calcExpressionWithCachedSchemasAtWatermark_[j]": 4590,
+          "tech/streamfusion/operator/NativeUdf.invokeUdf_[j]": 4489,
+          "tech/streamfusion/arrow/writers/ArrowFieldWriter.write_[i]": 3856,
+          "tech/streamfusion/arrow/ArrowWriter.write_[j]": 3696,
+          "tech/streamfusion/arrow/writers/RowWriter.doWrite_[j]": 3689,
+          "tech/streamfusion/arrow/writers/ArrayWriter.doWrite_[j]": 3666,
+          "org/apache/flink/table/runtime/typeutils/ArrayDataSerializer.copy_[i]": 2309,
+          "org/apache/flink/table/runtime/typeutils/ArrayDataSerializer.copyGenericArray_[i]": 2309,
+          "tech/streamfusion/arrow/writers/NestedStringWriter.doWrite_[j]": 2186,
+          "tech/streamfusion/arrow/vectors/ArrowArrayColumnVector.getArray_[j]": 1466,
+          "tech/streamfusion/arrow/Utf16Cache$Writer.write_[i]": 1454,
+          "tech/streamfusion/arrow/NestedStringColumnVector.getString_[i]": 1449,
+          "tech/streamfusion/arrow/RepresentedArrayData.getString_[i]": 1449,
+          "tech/streamfusion/arrow/StringCacheColumns.read_[i]": 1034,
+          "tech/streamfusion/planner/FlinkExpressionFunction.evalRow_[j]": 518,
+          "tech/streamfusion/arrow/writers/VarCharWriter.doWrite_[i]": 417,
+          "org/apache/flink/table/runtime/functions/scalar/SplitFunction.eval_[j]": 372,
+          "tech/streamfusion/arrow/writers/NestedStringWriter$$Lambda$3335.apply_[i]": 266,
+          "tech/streamfusion/arrow/writers/NestedStringWriter.lambda$forRow$0_[i]": 266,
+          "tech/streamfusion/arrow/ArrowWriter.write_[i]": 164,
+          "tech/streamfusion/arrow/NestedStringColumnVector.getString_[j]": 74,
+          "tech/streamfusion/arrow/StringCacheRowData.getString_[i]": 71,
+          "tech/streamfusion/arrow/ArrowConversion.createRowDataArrowWriter_[1]": 48,
+          "tech/streamfusion/arrow/writers/VarCharWriter.encode_[i]": 43,
+          "tech/streamfusion/arrow/ArrowConversion.createArrowReader_[1]": 23,
+          "tech/streamfusion/arrow/ArrowConversion.createRowDataArrowWriter_[i]": 23,
+          "tech/streamfusion/operator/NativeUdf$Binding.openFunction_[0]": 21,
+          "tech/streamfusion/planner/FlinkExpressionFunction.open_[0]": 21,
+          "tech/streamfusion/operator/NativeUdf$Binding.bind_[0]": 21,
+          "tech/streamfusion/Native.calcExpressionAtWatermark_[0]": 20,
+          "tech/streamfusion/arrow/ArrowConversion.createArrowFieldWriterForRow_[j]": 19,
+          "tech/streamfusion/arrow/writers/ArrayWriter$ArrayWriterForRow.isNullAt_[i]": 17,
+          "tech/streamfusion/arrow/StringCacheRowData.isNullAt_[i]": 15,
+          "tech/streamfusion/arrow/NestedStringColumnVector.isNullAt_[j]": 13,
+          "tech/streamfusion/arrow/vectors/ArrowBooleanColumnVector.isNullAt_[j]": 11
+        }
+      }
+    }
+  },
+  "validation": {
+    "jdk": 17,
+    "flink_2_2_1": {
+      "passed": 223,
+      "skipped": 0
+    },
+    "flink_1_18_1": {
+      "passed": 188,
+      "skipped": 35
+    },
+    "scope": "Distinct invocations across the focused ARRAY CAST/TRY_CAST, standalone collection, generated collection, representation, string builtin and collection identity suites. Not the full JVM or upstream suite."
+  }
+}

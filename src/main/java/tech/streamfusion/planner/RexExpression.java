@@ -1050,7 +1050,25 @@ final class RexExpression {
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
     return GENERATED_COLLECTIONS.contains(call.getOperator().getName())
+        || standaloneCollectionExpression(call)
         || call.getOperands().stream().anyMatch(RexExpression::containsGeneratedCollectionFunction);
+  }
+
+  private static boolean standaloneCollectionExpression(RexCall call) {
+    if ((call.getKind() == SqlKind.CAST
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
+        && call.getOperands().size() == 1) {
+      var source = call.getOperands().get(0).getType().getSqlTypeName();
+      return source == call.getType().getSqlTypeName()
+          && Set.of(SqlTypeName.ARRAY, SqlTypeName.MAP, SqlTypeName.ROW).contains(source);
+    }
+    if (!"SPLIT".equals(call.getOperator().getName()) || call.getOperands().size() != 2)
+      return false;
+    var separator = call.getOperands().get(1);
+    if (!(separator instanceof RexLiteral)) return true;
+    String value = ((RexLiteral) separator).getValueAs(String.class);
+    return value == null || value.isEmpty();
   }
 
   private static boolean containsCollectionStringFunction(RexNode node) {

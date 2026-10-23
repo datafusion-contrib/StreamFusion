@@ -1779,3 +1779,59 @@ the same output digest. Ordinary SQL regressions separately establish released-F
 and type parity and positive consumed native work on both supported Flink lines.
 Numeric ARRAY TRY_CAST invokes the identical total conversion kernel; these measurements use
 CAST SQL and do not claim a separate TRY_CAST measurement.
+
+## Standalone collection programs
+
+Standalone ARRAY/MAP/ROW casts and dynamic or empty-separator SPLIT can now select the existing
+generated collection evaluator without another collection function in the Calc. This is coverage
+under the accepted collection-extension tradeoff; these new standalone forms are slower than
+stock Flink and previous-main fallback. Existing numeric ARRAY kernels remain unchanged.
+
+Measured on 2026-10-23 with Linux x86-64/WSL2, Intel Core i7-12650H, OpenJDK 17.0.20.1,
+Flink 2.2.1 and release/mimalloc. Each query uses 500,000 runtime-source rows, parallelism 1,
+an 8 GiB test heap, two warmups and three alternating measurements per engine. Source, blackhole sink, both
+row/Arrow transposes, planning and submission remain timed. Initial explain and cluster setup
+are outside timing. No other tests or benchmarks ran concurrently. Previous main is `1bd9daa8`,
+in a separate JVM using the same native DSO and benchmark source; each new expression must
+have zero native Calc substitutions there. Identity controls still require native Calc.
+
+DECIMAL arrays contain two DECIMAL(38,9) values and a NULL element. Every eighth container is
+NULL. SPLIT uses a 32-byte Unicode payload budget and every eighth input is NULL; the dynamic
+separator is `LEFT(s,1)`. Empty separators produce UTF-16-unit elements, including isolated
+surrogate halves, whose Java caches must survive the represented Arrow result.
+
+Median seconds; ranges and both paired stock controls are retained in the
+[trial/profile summary](results/standalone-collections-2026-10-23.json).
+
+| Expression | Stock | Generated collection | Previous fallback | Stock / generated |
+| --- | ---: | ---: | ---: | ---: |
+| DECIMAL ARRAY to STRING ARRAY | 0.397833 | 0.681770 | 0.400672 | 0.584x |
+| SPLIT with dynamic separator | 0.304137 | 0.575999 | 0.294347 | 0.528x |
+| SPLIT with empty separator | 0.661662 | 1.967336 | 0.650776 | 0.336x |
+
+These complete jobs include startup; the subsecond results do not establish sustained throughput.
+The initial DECIMAL-array-to-FLOAT diagnostic was already native on previous main and is retained
+as a diagnostic, not evidence of newly admitted coverage or an improvement from this change.
+
+Optimization investigation was limited to two eight-second CPU captures, one per SPLIT form.
+The empty-separator capture has 10,331 samples across all JVM threads, including 2,309 inclusive
+samples in Flink's array copy and 3,666 in represented array writing; the dynamic capture has
+13,333 total samples, with 943 and 1,286 in those paths. Counts overlap, include compilation and
+planning, and do not measure allocations or copied bytes. These paths preserve released array
+copy categories and UTF-16 caches; no shortcut was enabled without a verified representation
+contract. Further standalone optimization remains in [#392](https://github.com/datafusion-contrib/StreamFusion/issues/392).
+
+Reproduce with a released native build:
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime test -Pbench \
+  '-Dtest=ScalarFunctionBenchmark#individualFunctions' -Dsf.testForks=1 \
+  -Dscalar.functions=DECIMAL_ARRAY_TO_STRING,SPLIT_DYNAMIC,SPLIT_EMPTY \
+  -Dscalar.rows=500000 -Dscalar.bytes=32 -Dscalar.unicode=true -Dscalar.nullEvery=8 \
+  -Dscalar.warmup=2 -Dscalar.runs=3
+```
+
+The previous checkout copies only the same benchmark source and adds
+`-Dscalar.native.expected=false`. SPLIT is absent from released Flink 1.18.1; standalone cast
+parity is checked on both supported lines, with NativeCalc consumption required for successful
+runtime queries and ordinary fallback retained at unverified collection boundaries.

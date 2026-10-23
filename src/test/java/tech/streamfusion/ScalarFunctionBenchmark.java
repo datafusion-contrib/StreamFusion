@@ -187,6 +187,8 @@ class ScalarFunctionBenchmark {
           new Query("PRINTF_BIGINT", "bigint", "PRINTF('n=%020d', n)", "STRING"),
           new Query("BTRIM_DYNAMIC", "text", "BTRIM(s, LEFT(s, 1))", "STRING"),
           new Query("IS_ALPHA", "text", "IS_ALPHA(s)", "BOOLEAN"),
+          new Query("SPLIT_DYNAMIC", "tt_text", "SPLIT(s, LEFT(s,1))", "ARRAY<STRING>"),
+          new Query("SPLIT_EMPTY", "tt_text", "SPLIT(s, '')", "ARRAY<STRING>"),
           new Query("STARTSWITH_BINARY", "tt_bytes", "STARTSWITH(b,b)", "BOOLEAN"),
           new Query(
               "TRY_FIXED_BINARY_GROUPED_COUNT",
@@ -285,6 +287,11 @@ class ScalarFunctionBenchmark {
               "tt_decimal_array",
               "CAST(a AS ARRAY<FLOAT>)",
               "ARRAY<FLOAT>"),
+          new Query(
+              "DECIMAL_ARRAY_TO_STRING",
+              "tt_decimal_array",
+              "CAST(a AS ARRAY<STRING>)",
+              "ARRAY<STRING>"),
           new Query("TAN_EXACT", "numbers", "TAN(CAST(n AS DOUBLE))", "DOUBLE"),
           new Query(
               "TAN_GROUPED_SUM",

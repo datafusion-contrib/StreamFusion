@@ -2158,7 +2158,8 @@ Existing admitted collection subscripts and Boolean/integer ARRAY_DISTINCT retai
 
 | Functions | Execution inside NativeCalc |
 | --- | --- |
-| ARRAY CAST / TRY_CAST | Rust recursive child-buffer conversion for nullable signed-integer/DECIMAL elements, including nested arrays; fallible arguments and other standalone signatures retain Flink evaluation |
+| Collection CAST / TRY_CAST | Rust recursive child-buffer conversion for nullable signed-integer/DECIMAL ARRAY elements, including nested arrays, and the existing DECIMAL-to-floating ARRAY CAST; other verified ARRAY-to-ARRAY, MAP-to-MAP and ROW-to-ROW casts use the generated Flink program |
+| SPLIT with dynamic or empty separator | Generated Flink program, preserving literal whole separators, NULLs and UTF-16 unit splitting for an empty separator; the existing non-empty literal separator retains its ordinary Rust path |
 | ARRAY_REVERSE, ARRAY_SLICE | Rust kernels for nullable primitive elements; generated Flink program for STRING/ROW/MAP-bearing or NOT NULL-element arrays and consumers requiring Java value semantics |
 | CARDINALITY on ARRAY/MAP | Rust outer-offset count, returning INT; NULL container produces NULL |
 | ARRAY_CONTAINS, ARRAY_POSITION | Rust scans for matching BOOLEAN, integer and DECIMAL element/needle types with nullable elements; other signatures, representation-sensitive consumers and fallible arguments use the generated Flink program. Non-NULL literal or nonnullable CONTAINS needles retain Flink evaluation; DECIMAL arrays with such needles require whole-Calc fallback |
@@ -2298,9 +2299,13 @@ collection aggregates, cast signatures and representation boundaries outside thi
 
 Standalone CAST and TRY_CAST between arrays of TINYINT, SMALLINT, INT, BIGINT and DECIMAL evaluate
 in Rust. Every array level must have nullable elements, with matching nesting depth. This uses
-the existing default-enabled collection option; no additional switch is required. STRING,
-floating, temporal, NOT NULL-element and MAP casts outside an already-admitted generated program
-retain their existing fallback.
+the existing default-enabled collection option; no additional switch is required. Other verified
+standalone ARRAY-to-ARRAY, MAP-to-MAP and ROW-to-ROW casts now enter the same generated Flink
+program used when a collection constructor or function is present. STRING, floating, temporal
+and NOT NULL-element conversions keep Flink's conversion rules and resolved types. The bridge's
+type gates and the representation-boundary restrictions above still apply; this does not admit
+external STRUCTURED inputs or fixed BINARY MAP leaves.
+The existing DECIMAL-to-FLOAT/DOUBLE ARRAY CAST also retains its Rust path.
 
 The conversion follows the recursive list structure used by Comet, preserving NULL containers,
 NULL elements and the resolved target schema. Integer widening uses Arrow; integer narrowing
@@ -2312,11 +2317,12 @@ the complete shared child buffer.
 
 Arguments that can fail per row retain Flink evaluation. The numeric cast itself is total;
 it must not introduce eager evaluation of an unselected or filtered input expression.
-TRY_CAST uses the same total numeric conversion, including overflow-to-NULL DECIMAL elements;
+Numeric TRY_CAST uses the same total numeric conversion, including overflow-to-NULL DECIMAL elements;
 it does not catch errors raised while evaluating its input. String-array TRY_CAST retains
-Flink evaluation: an invalid string element makes the complete result array NULL rather
-than replacing only that element. STRING and other unverified array conversions are not
-included in this numeric admission.
+generated Flink evaluation: an invalid string element makes the complete result array NULL rather
+than replacing only that element. The complete Calc retains filter/CASE short-circuiting and
+input evaluation errors, including with legacy cast behavior enabled. STRING and other generated
+conversions are not included in the Rust numeric admission.
 The released upstream ARRAY<BIGINT> cast fixtures preserve their original assertions. The two
 Flink 1.18.1 invocations consume native Calc input with `jvmFunctions=[]`; their input is an
 inline array constructor. The three Flink 2.2.1 invocations still fall back because their input
@@ -2326,6 +2332,8 @@ Upstream fixture fallback is not counted as native CAST evidence.
 
 The [release-mode functionality measurements](../benchmarks/scalar-functions.md#exact-numeric-array-casts)
 compare the same prepared data with stock Flink and the previous StreamFusion fallback.
+The new generated standalone casts and SPLIT signatures have separate
+[conversion-inclusive measurements](../benchmarks/scalar-functions.md#standalone-collection-programs).
 
 ### ARRAY_DISTINCT
 
@@ -2347,7 +2355,18 @@ ten-million-row candidate runs; STRING performance admission remains unresolved,
 
 ### SPLIT
 
-Character input and a literal non-empty separator. The separator is literal text, including regex metacharacters. NULL input returns NULL, empty input returns an empty array, and leading/repeated/trailing separators retain empty tokens. Empty or dynamic separators fall back; the empty form splits UTF-16 surrogate units in Flink.
+Character input and a literal non-empty separator use the Rust kernel. The separator is literal
+text, including regex metacharacters. NULL input returns NULL, empty input returns an empty array,
+and leading/repeated/trailing separators retain empty tokens.
+
+Dynamic and empty separators use the default-enabled generated collection route. NULL input or
+separator returns NULL. An empty separator splits Java UTF-16 units, including the two surrogate
+halves of a supplementary character. The represented collection output retains those units
+and their Java string caches through fused consumers and the final row projection. Unverified
+stateful, ordering, exchange and native-writer boundaries retain planning fallback. Disabling
+`streamfusion.experimental.collectionExpressions` retains fallback for these new signatures and
+does not disable the existing non-empty literal Rust path.
+SPLIT is absent from the released Flink 1.18.1 catalog, so this SQL coverage is N/A on that line.
 
 ### SUBSTRING
 

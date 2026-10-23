@@ -81,14 +81,14 @@ class FlinkArrayCastSqlHarnessTest {
         "SELECT CAST(t AS ARRAY<INT>) FROM src",
         "SELECT CAST(a AS ARRAY<INT NOT NULL>) FROM src"
       })
-  void unverifiedOrFailingConversionsRetainReleasedEvaluation(String sql) {
+  void generatedConversionsRetainReleasedEvaluation(String sql) {
     var runs = NativeFailureParity.run(() -> environment(false), sql);
-    if (runs.host().failure() == null) runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+    if (runs.host().failure() == null) runs.assertSuccess(NativeFailureParity.Route.NATIVE);
     else
       runs.assertFailure(
           runs.host().rootCause().getClass(),
           runs.host().phase(),
-          NativeFailureParity.Route.FALLBACK);
+          NativeFailureParity.Route.NATIVE);
   }
 
   @ParameterizedTest
@@ -135,7 +135,7 @@ class FlinkArrayCastSqlHarnessTest {
       var runs =
           NativeFailureParity.run(
               () -> environment(legacy), "SELECT id,TRY_CAST(t AS ARRAY<INT>) FROM src");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
       assertTrue(runs.host().rows().contains(java.util.Arrays.asList("+I", 0, null)), runs.toString());
       assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
     }
