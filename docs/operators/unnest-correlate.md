@@ -164,7 +164,9 @@ the callback. Released converters remain responsible for external values; the sa
 adapter used by scalar UDFs handles nullable arrays copied into generic Object arrays.
 Collected nested values are written before the user reuses or mutates the result.
 A verified source transpose, preserving Calc, generated UNNEST or preserving table function may
-supply sensitive values. Their results must reach a preserving Calc/correlate or final row
+supply sensitive values. Plain source-column projections can fold into the preserving entry
+transpose when names and types match the original fields. Filters, computed projections and
+renamed fields do not use that fold; their input must independently satisfy the preserving guard. Their results must reach a preserving Calc/correlate or final row
 boundary; unverified stateful consumers and columnar sinks retain complete-query fallback.
 For example, a non-preserving MAP `CARDINALITY` Calc or a grouped count that still carries an
 ARRAY-of-ROW or MAP payload stays on fallback even when that payload is absent from the final result.

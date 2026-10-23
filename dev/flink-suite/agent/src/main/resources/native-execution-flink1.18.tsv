@@ -92,8 +92,10 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWit
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testListAggWithDistinct	changelog=false&aggMode=ON	NativeColumnarLocalGroupAggregateOperator+NativeColumnarGroupAggregateOperator
 
 # Released DISTINCT JVM aggregate/DataView fixtures retain native work with idle retention.
-org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGG	*	NativeColumnarJvmGroupOperator
-org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGGMixedWithNonDistinctUsage	*	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGG	changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGG	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGGMixedWithNonDistinctUsage	changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGGMixedWithNonDistinctUsage	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 
 # Released nested-ROW table-function arguments retain their declared converters and native work.
 org.apache.flink.table.planner.runtime.stream.table.CorrelateITCase#testRowType	*	NativeColumnarTableFunctionOperator

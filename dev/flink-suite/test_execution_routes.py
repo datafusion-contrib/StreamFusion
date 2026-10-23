@@ -43,6 +43,17 @@ class RuntimeRoutesTest(unittest.TestCase):
             with self.subTest(classes=classes, work=work):
                 self.assertEqual(expected, self.classify({'job': self.job(classes, work)}))
 
+    def test_jvm_function_work_requires_the_matching_completed_operator(self):
+        for name in ('NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator'):
+            classes = [self.SOURCE, 'tech.streamfusion.operator.RowDataToArrowOperator',
+                       'tech.streamfusion.operator.' + name,
+                       'tech.streamfusion.operator.ArrowToRowDataOperator', self.SINK]
+            with self.subTest(operator=name):
+                self.assertEqual('native', self.classify({'job': self.job(classes, {name: 3})}))
+                self.assertEqual('unclassified', self.classify({'job': self.job(classes, {})}))
+                self.assertEqual('unclassified', self.classify(
+                    {'job': self.job(classes, {'NativeCalcOperator': 3})}))
+
     def test_split_aggregate_requires_work_from_both_native_halves(self):
         local = 'tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator'
         global_agg = 'tech.streamfusion.operator.NativeColumnarGroupAggregateOperator'

@@ -758,7 +758,7 @@
   "validation": {
     "flink_2.2": {
       "cases": {
-        "FlinkNestedTableFunctionSqlHarnessTest": 56,
+        "FlinkNestedTableFunctionSqlHarnessTest": 58,
         "FlinkTableFunctionSqlHarnessTest": 15,
         "FlinkGeneratedUnnestSqlHarnessTest": 66,
         "FlinkArrayScalarUdfSqlHarnessTest": 24,
@@ -771,7 +771,7 @@
     },
     "flink_1.18": {
       "cases": {
-        "FlinkNestedTableFunctionSqlHarnessTest": 56,
+        "FlinkNestedTableFunctionSqlHarnessTest": 58,
         "FlinkTableFunctionSqlHarnessTest": 15,
         "FlinkGeneratedUnnestSqlHarnessTest": 66,
         "FlinkArrayScalarUdfSqlHarnessTest": 24,
@@ -782,5 +782,13 @@
       "errors": 0,
       "expected_skips": 18
     }
-  }
+  },
+  "measured_source_commit": "6bc3f34f50184b5c9b56def4fea1025e865e4d3c",
+  "post_measurement_changes": [
+    {
+      "file": "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java",
+      "sha256": "0edccb2e191f86973b39d712bf31f758a979d89d241c2b613ed19bdd33898587",
+      "description": "Admit name/type-preserving source column projections by folding them into the existing preserving entry transpose. Benchmark queries use both source columns directly and do not take this fold. Original measured source hashes and trials are retained."
+    }
+  ]
 }

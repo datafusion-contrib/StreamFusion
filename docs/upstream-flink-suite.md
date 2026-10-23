@@ -32,6 +32,10 @@ invocations so an unrelated native node or a silent fallback cannot satisfy the 
 The DISTINCT JVM aggregate/DataView methods `testDistinctUDAGG` and
 `testDistinctUDAGGMixedWithNonDistinctUsage` likewise require the JVM aggregate operator and both
 backend routes, retaining upstream's positive idle retention and failure/recovery fixtures.
+Flink 1.18's randomized changelog-state setting retains its established full-fallback contract;
+the exact observed variant selects native work or that explicit fallback reason. Both JVM
+operators are also listed in the runtime-route classifier, which still requires matching
+nonempty work from successful jobs.
 The agent records the JVM aggregate and table-function operators after successful Arrow-batch
 consumption, using the same consumed-row recorder as the other columnar operators.
 Focused SQL additionally covers container fanout, ownership, failures and repeated recovery;
