@@ -1835,3 +1835,5 @@ The previous checkout copies only the same benchmark source and adds
 `-Dscalar.native.expected=false`. SPLIT is absent from released Flink 1.18.1; standalone cast
 parity is checked on both supported lines, with NativeCalc consumption required for successful
 runtime queries and ordinary fallback retained at unverified collection boundaries.
+
+These timings and CPU profiles precede the JVM bridge/type extension in [#469](https://github.com/datafusion-contrib/StreamFusion/pull/469). The rebased change passes 250 focused checks on Flink 2.2.1 and 213 passes plus 37 host-function skips on 1.18.1, including a temporary numeric UDF named SPLIT. The historical timings were not repeated after rebasing.

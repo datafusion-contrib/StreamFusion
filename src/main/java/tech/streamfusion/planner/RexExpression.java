@@ -1063,7 +1063,11 @@ final class RexExpression {
       return source == call.getType().getSqlTypeName()
           && Set.of(SqlTypeName.ARRAY, SqlTypeName.MAP, SqlTypeName.ROW).contains(source);
     }
-    if (!"SPLIT".equals(call.getOperator().getName()) || call.getOperands().size() != 2)
+    if (!"SPLIT".equals(call.getOperator().getName())
+        || call.getOperands().size() != 2
+        || tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
+        || !isCharacter(call.getOperands().get(0))
+        || !isCharacter(call.getOperands().get(1)))
       return false;
     var separator = call.getOperands().get(1);
     if (!(separator instanceof RexLiteral)) return true;

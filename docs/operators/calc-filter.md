@@ -2367,6 +2367,8 @@ stateful, ordering, exchange and native-writer boundaries retain planning fallba
 `streamfusion.experimental.collectionExpressions` retains fallback for these new signatures and
 does not disable the existing non-empty literal Rust path.
 SPLIT is absent from the released Flink 1.18.1 catalog, so this SQL coverage is N/A on that line.
+Temporary user functions named SPLIT keep their own signatures and the ordinary UDF admission
+rules; builtin separator checks do not apply to them.
 
 ### SUBSTRING
 

@@ -511,7 +511,8 @@
     "Subsecond jobs include startup and do not establish sustained throughput.",
     "Previous controls assert zero native Calc substitutions for each new expression; identity controls still require native Calc.",
     "This is coverage within the existing accepted generated-collection tradeoff, not an acceleration claim.",
-    "The initial DECIMAL_ARRAY_TO_FLOAT diagnostic was already native on previous main and is not a newly admitted cast."
+    "The initial DECIMAL_ARRAY_TO_FLOAT diagnostic was already native on previous main and is not a newly admitted cast.",
+    "Benchmark timings and profiles precede the JVM bridge/type extension in #469. Correctness was revalidated on main 189edb21 after rebasing; timings were not repeated."
   ],
   "initial_diagnostics": {
     "current": [
@@ -920,13 +921,14 @@
   "validation": {
     "jdk": 17,
     "flink_2_2_1": {
-      "passed": 225,
+      "passed": 250,
       "skipped": 0
     },
     "flink_1_18_1": {
-      "passed": 188,
+      "passed": 213,
       "skipped": 37
     },
-    "scope": "Distinct invocations across the focused ARRAY CAST/TRY_CAST, standalone collection, canonical SPLIT, generated collection, representation, string builtin and collection identity suites. Not the full JVM or upstream suite."
+    "scope": "Focused ARRAY CAST/TRY_CAST, standalone collection, canonical SPLIT, ARRAY scalar UDF, generated collection, representation, string builtin and collection identity suites; includes a temporary numeric UDF named SPLIT. Not the full JVM or upstream suite.",
+    "base_revision": "189edb21"
   }
 }

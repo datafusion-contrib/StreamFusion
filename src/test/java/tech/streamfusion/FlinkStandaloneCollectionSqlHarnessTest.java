@@ -80,6 +80,27 @@ class FlinkStandaloneCollectionSqlHarnessTest {
         runs.host().rows().contains(java.util.Arrays.asList("+I", 0, null)), runs.toString());
   }
 
+  public static class NumericSplit extends org.apache.flink.table.functions.ScalarFunction {
+    public Long eval(Long value, Integer increment) {
+      return value == null ? null : value + increment;
+    }
+  }
+
+  @Test
+  void userFunctionNamedSplitRetainsItsOwnSignature() {
+    var runs =
+        run(
+            () -> {
+              var table =
+                  environment(
+                      ROW(FIELD("n", BIGINT())), List.of(Row.of(1L), Row.of((Object) null)));
+              table.createTemporarySystemFunction("SPLIT", NumericSplit.class);
+              return table;
+            },
+            "SELECT SPLIT(n,1) FROM src");
+    assertEquivalent(runs);
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"CAST", "TRY_CAST"})
   void mapKeyCollisionsAndNestedValuesKeepReleasedMapConstruction(String cast) {
