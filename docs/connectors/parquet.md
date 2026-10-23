@@ -41,6 +41,17 @@ decimals, times, and timestamps use the same host-compatible leaf encoding as to
 rather than Parquet fixed-length byte arrays; nulls, nested fields and sliced batches are preserved.
 The partitioned SQL parity test compares stock and native footer schemas and rows with MAP columns.
 
+Partition grouping can produce Arrow slices starting at any row. Before exporting them to
+Java, the native C Data bridge rebases sliced BOOLEAN value and validity bitmaps to bit zero:
+the released Arrow Java importer does not apply the C array's bit offset to Boolean buffers.
+Byte-aligned slices share bitmap buffer views; other offsets copy only the affected bitmaps.
+Other column buffers retain their existing ownership and slicing. This also covers nested
+Boolean children and the cached-schema export path, without transposing complete rows.
+Regression tests on both supported Flink lines verify typed stock-reader readback and exact
+partition directories for BOOLEAN keys, nullable BOOLEAN payloads under BOOLEAN and STRING
+keys, byte/word-boundary slices, the two-row true/false case, and repeated alternating batches.
+NULL partition keys retain Flink's default partition-directory routing.
+
 Falls back to Flink on:
 
 - INT64 timestamp columns without `'parquet.utc-timezone' = 'true'` set.

@@ -15,6 +15,7 @@ import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
+import org.apache.flink.table.types.logical.BooleanType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
@@ -89,6 +90,49 @@ class FilePartitionSplitOperatorTest {
               "dt=__DEFAULT_PARTITION__/", List.of(2),
               "dt=a/", List.of(3),
               "dt=a%2Fb/", List.of(5)),
+          buckets);
+    }
+  }
+
+  @Test
+  void booleanPartitionValuesAndNullsUseFlinkPaths() throws Exception {
+    RowType type =
+        RowType.of(
+            new LogicalType[] {new BooleanType(), new IntType(), new BooleanType()},
+            new String[] {"p", "id", "flag"});
+    Boolean[] partitions = {true, false, null, true, false, null};
+    Boolean[] flags = {false, null, true, true, false, null};
+    List<RowData> rows = new ArrayList<>();
+    for (int i = 0; i < partitions.length; i++)
+      rows.add(GenericRowData.of(partitions[i], i, flags[i]));
+    try (BufferAllocator allocator = new RootAllocator();
+        OneInputStreamOperatorTestHarness<ArrowBatch, PartitionedArrowBatch> harness =
+            new OneInputStreamOperatorTestHarness<>(
+                new FilePartitionSplitOperator(type, List.of("p"), "__DEFAULT_PARTITION__"),
+                new ArrowBatchSerializer())) {
+      harness.setup(new PartitionedArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(rows, type, allocator))));
+      Map<String, List<Integer>> buckets = new TreeMap<>();
+      for (PartitionedArrowBatch batch : harness.extractOutputValues()) {
+        try (VectorSchemaRoot root = batch.root()) {
+          for (int i = 0; i < root.getRowCount(); i++) {
+            int id = ((IntVector) root.getVector("id")).get(i);
+            assertEquals(partitions[id], root.getVector("p").getObject(i));
+            assertEquals(flags[id], root.getVector("flag").getObject(i));
+            buckets.computeIfAbsent(batch.bucketId(), key -> new ArrayList<>()).add(id);
+          }
+        }
+      }
+      assertEquals(
+          Map.of(
+              "p=true/",
+              List.of(0, 3),
+              "p=false/",
+              List.of(1, 4),
+              "p=__DEFAULT_PARTITION__/",
+              List.of(2, 5)),
           buckets);
     }
   }

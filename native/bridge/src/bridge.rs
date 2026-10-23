@@ -1,4 +1,6 @@
 use crate::*;
+use arrow::array::ArrayData;
+use arrow::buffer::{BooleanBuffer, NullBuffer};
 
 /// Takes ownership of a batch the JVM exported through the C Data Interface, swapping in released
 /// placeholders so the producer's release callbacks fire once when the imported data drops.
@@ -328,7 +330,8 @@ pub fn export_schema(schema: &Schema, schema_address: jlong) {
 
 /// Exports only buffers when the consumer already owns the immutable output schema.
 pub fn export_record_batch_array(batch: RecordBatch, array_address: jlong) {
-    let out_data = StructArray::from(batch).to_data();
+    let data = StructArray::from(batch).to_data();
+    let out_data = rebase_boolean_slices(&data).unwrap_or(data);
     unsafe {
         std::ptr::write(
             array_address as *mut FFI_ArrowArray,
@@ -344,7 +347,8 @@ pub fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_addr
         export_record_batch_array(batch, array_address);
         return;
     }
-    let out_data = StructArray::from(batch).to_data();
+    let data = StructArray::from(batch).to_data();
+    let out_data = rebase_boolean_slices(&data).unwrap_or(data);
     let out_array = FFI_ArrowArray::new(&out_data);
     let out_schema =
         FFI_ArrowSchema::try_from(out_data.data_type()).expect("failed to export Arrow schema");
@@ -354,9 +358,119 @@ pub fn export_record_batch(batch: RecordBatch, array_address: jlong, schema_addr
     }
 }
 
+// Arrow Java's C Data importer loads Boolean buffers from bit zero, ignoring the C array offset.
+// Rebase only sliced Boolean bitmaps; byte-aligned slices remain shared buffer views.
+fn rebase_boolean_slices(data: &ArrayData) -> Option<ArrayData> {
+    if data.data_type() == &DataType::Boolean && data.offset() != 0 {
+        let array = BooleanArray::from(data.clone());
+        let values = BooleanBuffer::new(array.values().sliced(), 0, array.len());
+        let nulls = array.nulls().map(|nulls| {
+            NullBuffer::new(BooleanBuffer::new(nulls.inner().sliced(), 0, nulls.len()))
+        });
+        return Some(BooleanArray::new(values, nulls).to_data());
+    }
+
+    let mut children = None;
+    for (index, child) in data.child_data().iter().enumerate() {
+        if let Some(rebased) = rebase_boolean_slices(child) {
+            children.get_or_insert_with(|| data.child_data().to_vec())[index] = rebased;
+        }
+    }
+    children.map(|children| {
+        data.clone()
+            .into_builder()
+            .child_data(children)
+            .build()
+            .expect("failed to rebuild Java-compatible Boolean children")
+    })
+}
+
 #[cfg(test)]
 mod cached_schema_tests {
     use super::*;
+
+    #[test]
+    fn boolean_exports_rebase_bits_and_preserve_other_buffers() {
+        let mut retained = Vec::new();
+        for offset in [0, 1, 7, 8, 9, 63, 64, 65, 127] {
+            for length in [0, 1, 17] {
+                for nullable in [false, true] {
+                    let values = BooleanBuffer::collect_bool(offset + length, |i| i % 3 == 0)
+                        .slice(offset, length);
+                    // Validity can have a different bit offset from the values.
+                    let nulls = nullable.then(|| {
+                        NullBuffer::new(
+                            BooleanBuffer::collect_bool(offset + length + 5, |i| i % 7 != 2)
+                                .slice(offset + 5, length),
+                        )
+                    });
+                    let flags: ArrayRef = Arc::new(BooleanArray::new(values, nulls));
+                    let nested: ArrayRef = Arc::new(StructArray::from(vec![(
+                        Arc::new(
+                            Field::new("bit", DataType::Boolean, true)
+                                .with_metadata([("source".into(), "boolean-slice".into())].into()),
+                        ),
+                        flags.clone(),
+                    )]));
+                    let integers: ArrayRef = Arc::new(
+                        Int64Array::from_iter_values(0..(offset + length) as i64)
+                            .slice(offset, length),
+                    );
+                    let input = RecordBatch::try_from_iter(vec![
+                        ("flag", flags),
+                        ("nested", nested),
+                        ("id", integers),
+                    ])
+                    .unwrap();
+                    for cached in [false, true] {
+                        let mut array = FFI_ArrowArray::empty();
+                        let mut schema = FFI_ArrowSchema::empty();
+                        export_record_batch(
+                            input.clone(),
+                            &mut array as *mut _ as jlong,
+                            if cached {
+                                0
+                            } else {
+                                &mut schema as *mut _ as jlong
+                            },
+                        );
+                        assert_eq!(array.child(0).offset(), 0);
+                        assert_eq!(array.child(1).child(0).offset(), 0);
+                        if length > 0 {
+                            assert_eq!(
+                                array.child(2).buffer(1),
+                                input.column(2).to_data().buffers()[0].as_ptr(),
+                            );
+                            if offset % 8 == 0 {
+                                assert_eq!(
+                                    array.child(0).buffer(1),
+                                    input.column(0).to_data().buffers()[0]
+                                        .as_ptr()
+                                        .wrapping_add(offset / 8),
+                                );
+                            }
+                        }
+                        let output = if cached {
+                            import_record_batch_with_schema(
+                                &mut array as *mut _ as jlong,
+                                &input.schema(),
+                            )
+                        } else {
+                            import_record_batch(
+                                &mut array as *mut _ as jlong,
+                                &mut schema as *mut _ as jlong,
+                            )
+                        };
+                        assert_eq!(output, input);
+                        retained.push((output, input.clone()));
+                    }
+                }
+            }
+        }
+        for (output, expected) in retained {
+            assert_eq!(output, expected);
+        }
+    }
 
     #[test]
     fn array_only_exports_preserve_slices_nulls_metadata_and_retained_buffers() {
