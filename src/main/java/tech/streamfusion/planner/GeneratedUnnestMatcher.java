@@ -50,6 +50,8 @@ final class GeneratedUnnestMatcher {
 
   static boolean preservedInput(RelNode node) {
     if (node instanceof StreamPhysicalNativeGeneratedUnnest) return true;
+    if (node instanceof StreamPhysicalNativeTableFunction)
+      return ((StreamPhysicalNativeTableFunction) node).preservesCollections();
     if (node instanceof StreamPhysicalNativeCalc)
       return ((StreamPhysicalNativeCalc) node).preservesCollections();
     if (node instanceof StreamPhysicalRowDataToArrow)
@@ -64,6 +66,8 @@ final class GeneratedUnnestMatcher {
   static boolean verifiedInput(RelNode node) {
     if (!(node instanceof ColumnarOutput)) return true;
     if (node instanceof StreamPhysicalNativeGeneratedUnnest) return true;
+    if (node instanceof StreamPhysicalNativeTableFunction)
+      return ((StreamPhysicalNativeTableFunction) node).preservesCollections();
     if (node instanceof StreamPhysicalNativeCalc)
       return ((StreamPhysicalNativeCalc) node).preservesCollections()
           || node.getRowType().getFieldList().stream()

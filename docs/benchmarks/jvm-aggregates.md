@@ -422,3 +422,31 @@ JDK11 jobs continue checking released compatibility and bytecode.
 17-case2.2 collection-source API recheck. These use the pinned prior nested-candidate
 release payload; required CI rebuilds current production native code before its own
 opt-in selection. No local test duration is treated as throughput evidence.
+
+### Released legacy-wrapper coverage (2026-10-23)
+
+The exact legacy Table API wrapper now reaches the same managed-state function boundary as
+bridging definitions. Four focused cases on each Flink line cover mixed DISTINCT/non-DISTINCT
+use, FILTER, nullable arguments, lifecycle and POJO accumulators. Repeated recovery covers
+both memory/native RocksDB and zero/positive retention, with two forced restores per scenario.
+Custom wrapper subclasses, Python and specialized functions remain excluded.
+
+One release complete-job diagnostic uses 262,144 runtime rows, 64 INT keys, nullable BIGINT
+values and INT weights, mixed DISTINCT/non-DISTINCT legacy weighted average plus COUNT,
+parallelism one, 1,024-row batches, a 2 GiB heap and both transposes with a blackhole row sink.
+On Intel i7-12650H/Linux WSL2, JDK 17.0.20.1/Flink 2.2.1, after two warmups and five alternating
+pairs, stock measures 0.281323 s (0.271881–0.332792), previous canonical fallback
+0.284807 s (0.200943–0.297426) and the new native boundary 0.306032 s
+(0.283084–0.383554). The previous process's own stock control is 0.285709 s
+(0.204406–0.317088). No concurrent local build/test/timing runs; both engines receive untimed
+EXPLAIN and planning/submission remain timed. These short jobs do not establish sustained
+throughput or acceleration. The accepted UDF exception admits correctness coverage with this
+measured cost; planner recognition reuses the existing runtime rather than an optimization pass.
+
+[All legacy-wrapper trials and source hashes](results/legacy-jvm-aggregates-2026-10-23.json)
+retain the independent prior controls and positive native/fallback assertions. Reproduce with
+`SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+'-Dtest=JvmFunctionContractsBenchmark#legacyPojoAccumulatorsRetainDistinctStateAndBothTransposes'
+-Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5
+-Dstreamfusion.exchange.zeroCopyLocal=false test`. Previous production copies only the test
+fixtures and sets `-Dboundary.expectNative=false`.

@@ -25,3 +25,12 @@ Mixed Java/Rust CPU profiles identified a redundant projection and writes of dis
 columns after correlate expansion. Pure column projections are fused into the output writer;
 function calls, predicate evaluation and collector order are unchanged. General expressions and
 filters remain separate operators. No new Rust kernel or JNI protocol is introduced.
+
+ARRAY/MAP/ROW table-function signatures reuse the representation-preserving boundary already
+used by generated UNNEST and scalar UDFs. This keeps NULL map keys, nested string contents,
+row kinds and released container-copy behavior within an Arrow island. Both function types
+share the nullable typed-array converter adapter, while each generated context supplies its
+own released classloader expression. Released type inference must select default external
+Java conversions recursively; internal or alternate container conversion classes retain
+fallback. Sensitive outputs may only flow through verified preserving consumers or the final
+row boundary. These restrictions avoid inventing a second nested-value or ownership protocol.

@@ -45,21 +45,36 @@ final class CollectionValueIdentity {
 
   static boolean requiresGeneratedEvaluation(RexProgram program) {
     if (!RexExpression.usesCollectionFunctions(program)) return false;
-    boolean joins=program.getExprList().stream().anyMatch(node -> node instanceof RexCall && RexExpression.nativeArrayJoin((RexCall)node));
-    if (joins && program.getProjectList().stream().map(program::expandLocalRef)
-        .anyMatch(node -> sensitive(node.getType()) && !(node instanceof RexCall && RexExpression.nativeArrayJoin((RexCall)node)))) return true;
-    return program.getProjectList().stream().anyMatch(ref -> consumerNeedsGeneration(program.expandLocalRef(ref)))
-        || program.getCondition()!=null && consumerNeedsGeneration(program.expandLocalRef(program.getCondition()));
+    boolean joins =
+        program.getExprList().stream()
+            .anyMatch(
+                node -> node instanceof RexCall && RexExpression.nativeArrayJoin((RexCall) node));
+    if (joins
+        && program.getProjectList().stream()
+            .map(program::expandLocalRef)
+            .anyMatch(
+                node ->
+                    sensitive(node.getType())
+                        && !(node instanceof RexCall
+                            && RexExpression.nativeArrayJoin((RexCall) node)))) return true;
+    return program.getProjectList().stream()
+            .anyMatch(ref -> consumerNeedsGeneration(program.expandLocalRef(ref)))
+        || program.getCondition() != null
+            && consumerNeedsGeneration(program.expandLocalRef(program.getCondition()));
   }
 
   private static boolean verifiedConsumer(RexCall call) {
-    return RexExpression.nativeArrayJoin(call) || RexExpression.nativeObjectUpdate(call) || RexExpression.nativeObjectOf(call)
+    return RexExpression.nativeArrayJoin(call)
+        || RexExpression.nativeObjectUpdate(call)
+        || RexExpression.nativeObjectOf(call)
         || RexExpression.nativeStringKeyMapProjection(call)
         || call.getOperator().getName().equals("CARDINALITY")
         || tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) == null
-            && java.util.Set.of("MAP_KEYS","MAP_VALUES","MAP_ENTRIES","MAP_UNION").contains(call.getOperator().getName())
+            && java.util.Set.of("MAP_KEYS", "MAP_VALUES", "MAP_ENTRIES", "MAP_UNION")
+                .contains(call.getOperator().getName())
             && !call.getOperands().isEmpty()
-            && call.getOperands().stream().allMatch(arg -> RexExpression.nativeBasicMap(arg.getType()));
+            && call.getOperands().stream()
+                .allMatch(arg -> RexExpression.nativeBasicMap(arg.getType()));
   }
 
   private static boolean consumerNeedsGeneration(RexNode node) {
@@ -97,6 +112,8 @@ final class CollectionValueIdentity {
     if (node instanceof StreamPhysicalRowDataToArrow)
       return !((StreamPhysicalRowDataToArrow) node).preservesCollections();
     if (node instanceof StreamPhysicalNativeGeneratedUnnest) return false;
+    if (node instanceof StreamPhysicalNativeTableFunction
+        && ((StreamPhysicalNativeTableFunction) node).preservesCollections()) return false;
     if (node instanceof StreamPhysicalNativeColumnarGroupAggregate
         && ((StreamPhysicalNativeColumnarGroupAggregate) node).preservesCollections()) return false;
     if (node instanceof StreamPhysicalNativeCalc
@@ -132,7 +149,7 @@ final class CollectionValueIdentity {
   }
 
   private static boolean requiresRepresentedRowSink(RelNode node) {
-    if (node instanceof StreamPhysicalNativeGeneratedUnnest
+    if (preservingCorrelate(node)
         && node.getRowType().getFieldList().stream().anyMatch(field -> sensitive(field.getType())))
       return true;
     if (node instanceof StreamPhysicalNativeColumnarGroupAggregate
@@ -141,8 +158,10 @@ final class CollectionValueIdentity {
       return true;
     if (node instanceof StreamPhysicalNativeCalc) {
       var calc = (StreamPhysicalNativeCalc) node;
-      if (calc.sourceProgram()!=null && RexExpression.usesCollectionFunctions(calc.sourceProgram())
-          && calc.getRowType().getFieldList().stream().anyMatch(field -> requiresCopySemantics(field.getType()))) return true;
+      if (calc.sourceProgram() != null
+          && RexExpression.usesCollectionFunctions(calc.sourceProgram())
+          && calc.getRowType().getFieldList().stream()
+              .anyMatch(field -> requiresCopySemantics(field.getType()))) return true;
       if (calc.preservesCollections()
           && calc.getRowType().getFieldList().stream()
               .anyMatch(field -> sensitive(field.getType()))) return true;
@@ -150,13 +169,25 @@ final class CollectionValueIdentity {
     return node.getInputs().stream().anyMatch(CollectionValueIdentity::requiresRepresentedRowSink);
   }
 
-  static boolean generatedUnnestCrossesBoundary(RelNode root, boolean finalOutput) {
-    return generatedUnnestCrossesBoundary(root, null, finalOutput);
+  private static boolean preservingCorrelate(RelNode node) {
+    return node instanceof StreamPhysicalNativeGeneratedUnnest
+        || node instanceof StreamPhysicalNativeTableFunction
+            && ((StreamPhysicalNativeTableFunction) node).preservesCollections();
   }
 
-  private static boolean generatedUnnestCrossesBoundary(
+  private static boolean verifiedCorrelate(
+      org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate node) {
+    return GeneratedUnnestMatcher.matches(node)
+        || TableFunctionMatcher.isUserTableFunction(node) && TableFunctionMatcher.matches(node);
+  }
+
+  static boolean generatedCorrelateCrossesBoundary(RelNode root, boolean finalOutput) {
+    return generatedCorrelateCrossesBoundary(root, null, finalOutput);
+  }
+
+  private static boolean generatedCorrelateCrossesBoundary(
       RelNode node, RelNode parent, boolean finalOutput) {
-    if (node instanceof StreamPhysicalNativeGeneratedUnnest
+    if (preservingCorrelate(node)
         && node.getRowType().getFieldList().stream()
             .anyMatch(
                 field ->
@@ -164,11 +195,11 @@ final class CollectionValueIdentity {
                         && sensitive(field.getType()))
         && !(parent == null && finalOutput)
         && !(parent instanceof StreamPhysicalSink)
-        && !(parent instanceof StreamPhysicalNativeGeneratedUnnest)
+        && !preservingCorrelate(parent)
         && !(parent instanceof StreamPhysicalNativeCalc
             && ((StreamPhysicalNativeCalc) parent).preservesCollections())) return true;
     return node.getInputs().stream()
-        .anyMatch(input -> generatedUnnestCrossesBoundary(input, node, false));
+        .anyMatch(input -> generatedCorrelateCrossesBoundary(input, node, false));
   }
 
   static boolean crossesBoundary(RelNode root, boolean finalOutput) {
@@ -184,7 +215,7 @@ final class CollectionValueIdentity {
         && !(parent
                 instanceof
                 org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate
-            && GeneratedUnnestMatcher.matches(
+            && verifiedCorrelate(
                 (org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate)
                     parent))) {
       var program = ((Calc) node).getProgram();

@@ -1,9 +1,11 @@
 package tech.streamfusion.planner;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.flink.table.functions.AggregateFunction;
 import org.apache.flink.table.functions.SpecializedFunction;
 import org.apache.flink.table.planner.functions.bridging.BridgingSqlAggFunction;
+import org.apache.flink.table.planner.functions.utils.AggSqlFunction;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupAggregate;
 import org.apache.flink.table.planner.plan.utils.AggregateUtil;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
@@ -16,12 +18,19 @@ final class JvmGroupAggregateMatcher {
     if (!Boolean.parseBoolean(
         System.getProperty("streamfusion.experimental.jvmGroupAggregates", "true"))) return false;
     for (int i = 0; i < node.aggCalls().size(); i++) {
-      var agg = node.aggCalls().apply(i).getAggregation();
-      if (agg instanceof BridgingSqlAggFunction
-          && ((BridgingSqlAggFunction) agg).getDefinition() instanceof AggregateFunction)
-        return true;
+      if (userFunction(node.aggCalls().apply(i).getAggregation()) != null) return true;
     }
     return false;
+  }
+
+  private static AggregateFunction<?, ?> userFunction(SqlAggFunction function) {
+    Object definition =
+        function instanceof BridgingSqlAggFunction
+            ? ((BridgingSqlAggFunction) function).getDefinition()
+            : function.getClass() == AggSqlFunction.class
+                ? ((AggSqlFunction) function).aggregateFunction()
+                : null;
+    return definition instanceof AggregateFunction ? (AggregateFunction<?, ?>) definition : null;
   }
 
   static boolean matches(StreamPhysicalGroupAggregate node) {
@@ -37,9 +46,15 @@ final class JvmGroupAggregateMatcher {
     for (int i = 0; i < node.aggCalls().size(); i++) {
       var call = node.aggCalls().apply(i);
       if (call.isApproximate() || !call.getCollation().getFieldCollations().isEmpty()) return false;
-      if (call.getAggregation() instanceof BridgingSqlAggFunction
-          && ((BridgingSqlAggFunction) call.getAggregation()).getDefinition()
-              instanceof SpecializedFunction) return false;
+      var aggregation = call.getAggregation();
+      if (aggregation instanceof AggSqlFunction && aggregation.getClass() != AggSqlFunction.class)
+        return false;
+      var function = userFunction(aggregation);
+      if (function instanceof org.apache.flink.table.functions.python.PythonFunction
+          || function instanceof SpecializedFunction) return false;
+      if (aggregation instanceof BridgingSqlAggFunction
+          && ((BridgingSqlAggFunction) aggregation).getDefinition() instanceof SpecializedFunction)
+        return false;
     }
     return true;
   }

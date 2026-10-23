@@ -7,7 +7,6 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.table.planner.codegen.CodeGeneratorContext;
 import org.apache.flink.table.planner.codegen.CorrelateCodeGenerator$;
 import org.apache.flink.table.planner.delegation.PlannerBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
@@ -32,6 +31,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
   private final RexCall invocation;
   private final RexNode condition;
   private final boolean left;
+  private final boolean preserveCollections;
   private final RowType correlatedType;
   private final int[] projection;
 
@@ -44,6 +44,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
       RexCall invocation,
       RexNode condition,
       boolean left,
+      boolean preserveCollections,
       String description) {
     super(
         ExecNodeContext.newNodeId(),
@@ -58,6 +59,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     this.invocation = invocation;
     this.condition = condition;
     this.left = left;
+    this.preserveCollections = preserveCollections;
   }
 
   @Override
@@ -66,7 +68,10 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     var input = (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     var context =
-        new CodeGeneratorContext(config, planner.getFlinkContext().getClassLoader())
+        new JvmFunctionCodeGeneratorContext(
+                config,
+                planner.getFlinkContext().getClassLoader(),
+                "getRuntimeContext().getUserCodeClassLoader()")
             .setOperatorBaseClass(TableStreamOperator.class);
     RexNode shifted =
         condition == null ? null : RexUtil.shift(condition, inputType.getFieldCount());
@@ -89,7 +94,8 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
             (RowType) getOutputType(),
             generated.getGeneratedClass(),
             projection,
-            NativeConfig.transposeBatchRows(config)),
+            NativeConfig.transposeBatchRows(config),
+            preserveCollections),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

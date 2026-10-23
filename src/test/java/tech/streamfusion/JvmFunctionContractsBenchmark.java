@@ -24,6 +24,16 @@ class JvmFunctionContractsBenchmark {
     run("DECIMAL(38,18)", true);
   }
 
+  @Test
+  void legacyPojoAccumulatorsRetainDistinctStateAndBothTransposes() throws Exception {
+    UdfTypeBoundaryBenchmark.run(
+        "JVM_AGG_LEGACY_POJO",
+        FlinkLegacyJvmAggregateSqlHarnessTest::benchmarkEnvironment,
+        FlinkLegacyJvmAggregateSqlHarnessTest.QUERY,
+        "NativeJvmGroup",
+        Boolean.parseBoolean(System.getProperty("boundary.expectNative", "true")));
+  }
+
   private static void run(String name, boolean typedKey) throws Exception {
     boolean nativeExpected =
         Boolean.parseBoolean(System.getProperty("boundary.expectNative", "true"));

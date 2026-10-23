@@ -170,7 +170,7 @@ class FlinkTableFunctionSqlHarnessTest {
   }
 
   @Test
-  void nestedFunctionOutputsRetainExplicitFallback() {
+  void nestedFunctionOutputsRetainTypesAndNativeApplication() {
     var comparison =
         NativeFailureParity.run(
             () -> {
@@ -179,8 +179,8 @@ class FlinkTableFunctionSqlHarnessTest {
               return table;
             },
             "SELECT s.id, t.v FROM src s, LATERAL TABLE(nested_rows(s.id)) AS t(v)");
-    comparison.assertSuccess(NativeFailureParity.Route.FALLBACK);
-    assertFalse(comparison.nativeRun().plan().contains("NativeTableFunction"));
+    comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+    assertTrue(comparison.nativeRun().plan().contains("NativeTableFunction"));
   }
 
   @FunctionHint(input = @DataTypeHint("BIGINT"), output = @DataTypeHint("ROW<v ARRAY<INT>>"))

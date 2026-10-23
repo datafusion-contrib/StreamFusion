@@ -886,10 +886,20 @@ retain the distinct-key regression for deferred performance work.
 JVM aggregate functions now default enabled under the accepted UDF performance exception;
 remaining coverage is tracked by [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 The system property `streamfusion.experimental.jvmGroupAggregates` defaults to true and admits
-released Flink bridging aggregate functions in the synchronous single-phase plan when every
+released Flink bridging aggregate functions and its exact legacy Table API aggregate wrapper
+in the synchronous single-phase plan when every
 input and output field is a verified scalar: CHAR/VARCHAR, BOOLEAN, signed integers,
 FLOAT/DOUBLE, DECIMAL, BINARY/VARBINARY, DATE, TIME, TIMESTAMP/TIMESTAMP_LTZ or intervals.
 Fixed BINARY requires the existing variable-byte transport (enabled by default).
+Legacy JVM functions reuse the released legacy type inference and POJO accumulator converters;
+DISTINCT/non-DISTINCT sharing, FILTER, NULL arguments, lifecycle, positive retention and repeated
+memory/RocksDB recovery use the same managed-state boundary. Wrapper subclasses with custom
+argument-dependent construction (including Hive wrappers), Python functions and specialization
+retain fallback. The unchanged mixed-DISTINCT upstream WeightedAvg fixture requires positive
+JVM aggregate work on both lines. A release complete-job diagnostic measures 0.306032 s
+native versus 0.281323 s stock and 0.284807 s preceding fallback for mixed legacy DISTINCT
+weighted average; [method and all trials](../benchmarks/jvm-aggregates.md#released-legacy-wrapper-coverage-2026-10-23)
+retain the ranges and startup/JIT limits without an acceleration claim.
 ARRAY/MAP/ROW fields at the operator boundary retain fallback; managed accumulator fields and
 DataViews still use Flink's own declared serializers and converters. It retains Flink's generated function,
 accumulate/retract logic, managed accumulator/DataView state and lifecycle inside an
@@ -1025,8 +1035,9 @@ See the [probe technique](../optimizations/borrowed-key-probes.md#experimental-j
 
 [All diagnostic trials and profiles](../benchmarks/results/jvm-aggregates-investigation-2026-10-15.json)
 retain the variability, GC observations and interference records. These historical profiles
-did not establish a throughput win. Broader key/accumulator contracts and representative
-preceding-fallback comparisons remain outstanding. The isolated results below now cover both Flink lines. An additional cold-key bypass run measured
+did not establish a throughput win. Unlisted key/accumulator contracts remain unverified;
+the newer scalar contract and preceding-fallback comparisons are recorded in the linked
+benchmark page. The isolated results below cover both Flink lines. An additional cold-key bypass run measured
 1.770 s native versus 1.769 s stock but overlapped another build, so it is diagnostic only.
 [Isolated release diagnostics](../benchmarks/jvm-aggregates.md) build and finish correctness
 checks before measuring typed key/cardinality cases and collecting Java/Rust profiles on

@@ -83,3 +83,6 @@ org.apache.doris.flink.source.DorisSourceITCase#testTaskManagerFailoverSource	us
 # Released DISTINCT JVM aggregate/DataView fixtures retain native work with idle retention.
 org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGG	*	NativeColumnarJvmGroupOperator
 org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGGMixedWithNonDistinctUsage	*	NativeColumnarJvmGroupOperator
+
+# Released nested-ROW table-function arguments retain their declared converters and native work.
+org.apache.flink.table.planner.runtime.stream.table.CorrelateITCase#testRowType	*	NativeColumnarTableFunctionOperator

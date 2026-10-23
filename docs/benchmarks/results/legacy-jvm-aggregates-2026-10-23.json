@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-23",
+  "purpose": "Released legacy Table API wrapper coverage through the existing managed-state runtime; no acceleration claim.",
+  "environment": {
+    "cpu": "Intel Core i7-12650H",
+    "logical_cpus": 16,
+    "os": "Linux WSL2",
+    "jdk": "OpenJDK 17.0.20.1",
+    "flink": "2.2.1",
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "native": "release/mimalloc, full RocksDB; unchanged native sources and ABI",
+    "zero_copy_local": false
+  },
+  "method": {
+    "input_rows": 262144,
+    "keys": 64,
+    "batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "order": "alternating engine order",
+    "previous_revision": "1bd9daa8d75586424f3a5d9ad7acc14d600baffb",
+    "previous_production_unchanged": true,
+    "boundary": "Runtime row source, both transposes, native exchange, generated legacy WeightedAverage callbacks, managed POJO accumulator and DISTINCT membership, count, blackhole row sink. Symmetric untimed explain, planning/submission timed. No concurrent local builds/tests/timings.",
+    "native_execution": "candidate asserts consumed NativeJvmGroup work; previous production asserts full fallback and zero substitutions"
+  },
+  "candidate_source_sha256": {
+    "src/main/java/tech/streamfusion/planner/JvmGroupAggregateMatcher.java": "6dc21712091be641a010047e1b5c78c6bd5215c6944c4eb3960af50bad785190",
+    "src/test/java/tech/streamfusion/FlinkLegacyJvmAggregateSqlHarnessTest.java": "332a73a8546d36c5d0003a6798cc239247762c6f4cc3ba8f6b03c442886ffcaf",
+    "src/test/java/tech/streamfusion/JvmFunctionContractsBenchmark.java": "bb47405479e3d854f1ae5fd826429dcdf959fcaf04ec84d850472b97abe5cb7b"
+  },
+  "trials": {
+    "candidate": [
+      {
+        "engine": "stock",
+        "trial": 0,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.983742
+      },
+      {
+        "engine": "native",
+        "trial": 0,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.597737
+      },
+      {
+        "engine": "native",
+        "trial": 1,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.426039
+      },
+      {
+        "engine": "stock",
+        "trial": 1,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.338115
+      },
+      {
+        "engine": "stock",
+        "trial": 2,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.332792
+      },
+      {
+        "engine": "native",
+        "trial": 2,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.383554
+      },
+      {
+        "engine": "native",
+        "trial": 3,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.312433
+      },
+      {
+        "engine": "stock",
+        "trial": 3,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.308067
+      },
+      {
+        "engine": "stock",
+        "trial": 4,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.281323
+      },
+      {
+        "engine": "native",
+        "trial": 4,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.296346
+      },
+      {
+        "engine": "native",
+        "trial": 5,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.306032
+      },
+      {
+        "engine": "stock",
+        "trial": 5,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.276203
+      },
+      {
+        "engine": "stock",
+        "trial": 6,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.271881
+      },
+      {
+        "engine": "native",
+        "trial": 6,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.283084
+      }
+    ],
+    "previous": [
+      {
+        "engine": "stock",
+        "trial": 0,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.961853
+      },
+      {
+        "engine": "native",
+        "trial": 0,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.506458
+      },
+      {
+        "engine": "native",
+        "trial": 1,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.353747
+      },
+      {
+        "engine": "stock",
+        "trial": 1,
+        "warmup": true,
+        "rows": 262144,
+        "seconds": 0.328367
+      },
+      {
+        "engine": "stock",
+        "trial": 2,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.302173
+      },
+      {
+        "engine": "native",
+        "trial": 2,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.297426
+      },
+      {
+        "engine": "native",
+        "trial": 3,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.291673
+      },
+      {
+        "engine": "stock",
+        "trial": 3,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.317088
+      },
+      {
+        "engine": "stock",
+        "trial": 4,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.285709
+      },
+      {
+        "engine": "native",
+        "trial": 4,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.284807
+      },
+      {
+        "engine": "native",
+        "trial": 5,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.267108
+      },
+      {
+        "engine": "stock",
+        "trial": 5,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.204406
+      },
+      {
+        "engine": "stock",
+        "trial": 6,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.277136
+      },
+      {
+        "engine": "native",
+        "trial": 6,
+        "warmup": false,
+        "rows": 262144,
+        "seconds": 0.200943
+      }
+    ]
+  },
+  "limits": [
+    "Short complete jobs include startup/JIT variation; not sustained throughput.",
+    "Preceding runtime runs in a separate process, with separately paired stock controls.",
+    "Legacy admission changes planner recognition and reuses the existing managed-state function implementation. No optimization or speedup is claimed."
+  ],
+  "validation": {
+    "flink_2.2": {
+      "legacy_cases": 4,
+      "modifier_cases": 9,
+      "failures": 0,
+      "skips": 0
+    },
+    "flink_1.18": {
+      "legacy_cases": 4,
+      "modifier_cases": 9,
+      "failures": 0,
+      "skips": 2
+    },
+    "recovery": "Both heap and native RocksDB, zero/positive retention, two forced restores for each scenario."
+  }
+}

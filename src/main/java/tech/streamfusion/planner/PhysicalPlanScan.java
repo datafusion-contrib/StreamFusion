@@ -220,11 +220,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
                   : "collection value representation requires a row sink");
       return root;
     }
-    if (CollectionValueIdentity.generatedUnnestCrossesBoundary(substituted, finalOutput)) {
+    if (CollectionValueIdentity.generatedCorrelateCrossesBoundary(substituted, finalOutput)) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
       recordFallback(
-          "generated UNNEST collection representation requires a final projection or fused"
+          "generated correlate collection representation requires a final projection or fused"
               + " consumer");
       return root;
     }
@@ -845,6 +845,8 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
             : consumesColumnar(node) && emitsColumnar(node) ? inheritedBatchRows : 1024;
     boolean preserve =
         node instanceof StreamPhysicalNativeGeneratedUnnest
+            || node instanceof StreamPhysicalNativeTableFunction
+                && ((StreamPhysicalNativeTableFunction) node).preservesCollections()
             || node instanceof StreamPhysicalNativeColumnarGroupAggregate
                 && ((StreamPhysicalNativeColumnarGroupAggregate) node).preservesCollections()
             || node instanceof StreamPhysicalNativeColumnarLocalGroupAggregate

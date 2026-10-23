@@ -58,6 +58,13 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
     this.left = left;
   }
 
+  boolean preservesCollections() {
+    return !JvmFunctionTypes.scalarRow(getInput().getRowType())
+        || !JvmFunctionTypes.scalarRow(correlatedType)
+        || invocation.getOperands().stream()
+            .anyMatch(arg -> !JvmFunctionTypes.scalar(arg.getType()));
+  }
+
   @Override
   public boolean requireWatermark() {
     return false;
@@ -103,6 +110,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
         invocation,
         condition,
         left,
+        preservesCollections(),
         getRelDetailedDescription());
   }
 }

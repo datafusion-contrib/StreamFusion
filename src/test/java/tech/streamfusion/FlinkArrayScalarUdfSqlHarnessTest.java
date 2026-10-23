@@ -283,7 +283,7 @@ class FlinkArrayScalarUdfSqlHarnessTest {
     return table;
   }
 
-  private static DataType rowType(String type) {
+  static DataType rowType(String type) {
     DataType element;
     switch (type) {
       case "float":
@@ -336,7 +336,7 @@ class FlinkArrayScalarUdfSqlHarnessTest {
         DataTypes.FIELD("id", DataTypes.INT()), DataTypes.FIELD("p", DataTypes.ARRAY(element)));
   }
 
-  private static Object value(String type, int id) {
+  static Object value(String type, int id) {
     if (id % 8 == 7) return null;
     int size = id % 8 == 0 ? 0 : 3;
     Object[] result;

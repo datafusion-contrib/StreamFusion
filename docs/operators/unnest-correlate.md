@@ -141,9 +141,13 @@ DECIMAL, FLOAT/DOUBLE, BINARY/VARBINARY, DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ an
 day-time/year-month interval input, output and argument types.
 These types are admitted by default under the accepted UDF performance exception, without
 an additional type-specific opt-in. Their user functions still run on the JVM; measured
-standalone costs can exceed stock Flink after profiling and two optimization passes.
+standalone costs can exceed stock Flink.
 The [bounded conversion investigation](../optimizations/decimal-arrow-reads.md)
-records the retained improvement and measured limits. Container types, specialized functions, Python/async
+records the retained improvement and measured limits. ARRAY, MAP and ROW may recursively contain
+these admitted scalar types. Container signatures require Flink's default external Java conversions
+(boxed Java arrays, `java.util.Map`, external `Row`, and their default scalar children).
+Released type inference determines those conversions; internal `ArrayData`/`MapData`/`RowData`,
+Java List or primitive-array bridges, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
 switch can disable this operator.
 
@@ -153,6 +157,52 @@ output batches before the collector can mutate or reuse them. INNER/LEFT fanout,
 widths 1/4/128, empty/oversized byte arrays and memory/RocksDB recovery are checked against
 stock Flink on both supported lines. Disabling both `nestedScalarUdfs` and `binaryElt`
 restores the earlier fixed-width transport and keeps these table signatures on fallback.
+
+Container inputs use the existing preserving Arrow boundary: nested Java string contents,
+NULL map keys, nullable parents/elements, nested RowKinds and array copy representations survive
+the callback. Released converters remain responsible for external values; the same typed-array
+adapter used by scalar UDFs handles nullable arrays copied into generic Object arrays.
+Collected nested values are written before the user reuses or mutates the result.
+A verified source transpose, preserving Calc, generated UNNEST or preserving table function may
+supply sensitive values. Their results must reach a preserving Calc/correlate or final row
+boundary; unverified stateful consumers and columnar sinks retain complete-query fallback.
+For example, a non-preserving MAP `CARDINALITY` Calc or a grouped count that still carries an
+ARRAY-of-ROW or MAP payload stays on fallback even when that payload is absent from the final result.
+Focused SQL checks cover typed and custom-inferred default conversions, retained arguments,
+mutable collected arrays/rows, INNER/LEFT fanout, pushed filters, chained functions and UNNEST,
+empty projections, failures, all changelog kinds and repeated memory/RocksDB recovery on both
+supported Flink lines. The unchanged released Table API `CorrelateITCase.testRowType` additionally
+requires the table-function operator to consume input in every backend invocation.
+
+### Container callback costs (2026-10-23)
+
+Release/mimalloc complete jobs on Intel i7-12650H/Linux WSL2, JDK 17.0.20.1 and Flink 2.2.1 use
+262,144 runtime rows, parallelism one, a 2 GiB heap, 1,024-row batches, both transposes and a
+blackhole row sink. Both engines receive untimed EXPLAIN. Two warmup pairs precede five
+alternating measured pairs; no other local builds/tests/timings run concurrently.
+
+| Fanout value | Stock median (range), s | Previous fallback median (range), s | New median (range), s |
+|---|---:|---:|---:|
+| ARRAY INT | 0.175073 (0.091724–0.196773) | 0.166436 (0.098027–0.177716) | 0.205787 (0.145973–0.223976) |
+| MAP STRING/INT | 0.239401 (0.231195–0.254029) | 0.218140 (0.213235–0.237609) | 0.388336 (0.368596–0.454621) |
+| ROW with DECIMAL(38,18) | 0.128294 (0.122698–0.142771) | 0.114790 (0.101556–0.159279) | 0.219902 (0.212385–0.241299) |
+
+Previous canonical `1bd9daa8` executes full stock fallback. Its separately paired stock medians
+are 0.149210/0.232581/0.106898 s; every sample, source hash and configuration is retained in the
+[container callback artifact](../benchmarks/results/nested-jvm-table-functions-2026-10-23.json).
+These short jobs show startup/JIT variation and slower callback paths; they do not establish
+sustained throughput or a causal speedup. Verified coverage follows the accepted UDF exception.
+A separate bounded JFR pass sampled released MAP conversion and immediate owned Arrow writes
+(20 operator CPU samples, too sparse for precise attribution). No easy optimization preserving
+those contracts was established, so the investigation stopped after one profile pass without
+an optimization change. Profile timings are excluded from the table.
+
+Reproduce with `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+-Dtest=TypedTableFunctionBenchmark -Dtablefunc.rows=262144 -Dtablefunc.warmup=2
+-Dtablefunc.runs=5 '-Dtablefunc.types=nested:array_int;nested:map;nested:row_DECIMAL(38,18)'
+-Dtablefunc.cases=project -Dstreamfusion.exchange.zeroCopyLocal=false test`.
+The previous-production control copies only these test fixtures and sets
+`-Dtablefunc.expectNative=false`; it must report zero substitutions.
 
 The operator consumes and produces `ArrowBatch`. It borrows input row views only during the
 current batch and invokes the released Flink correlate generator, retaining its conversions,
@@ -247,7 +297,8 @@ complete-job gains and remaining stock-Flink deficit. Larger values, temporal co
 and owned exit copies retain their existing paths; no collector or ownership contract changes.
 
 This does not complete [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237): JVM
-aggregate/OVER functions, nested scalar results and broader table-function types remain open. Performance evidence includes release jobs with row sources, both transposes, row
+two-phase/OVER aggregate functions, additional scalar conversion classes and specialized/async/legacy
+table-function contracts remain open. Performance evidence includes release jobs with row sources, both transposes, row
 sinks, stock Flink and the actual preceding revision; profiles include Java and symbolized Rust
 CPU stacks plus sampled Java allocations. Profiled durations are excluded from speed claims.
 
@@ -353,5 +404,7 @@ version skips on 1.18.1. Coverage includes mutable output reuse, 8,193 results f
 all RowKinds, lifecycle errors, repeated/zero-column projection, numeric consumers and a
 parallelism-three pipeline with keyed aggregates before and after the function. Four recovery
 scenarios per line cover memory/native RocksDB and append/retracting input, each with two forced
-restores and consumed-row/memory-release assertions. Unsupported nested output and an explicitly disabled table-function operator retain complete-query
-fallback with zero native substitutions. Broader types and other JVM function kinds remain tracked in #237.
+restores and consumed-row/memory-release assertions. Container signatures with unverified external
+conversions or representation consumers, and an explicitly disabled table-function operator,
+retain complete-query fallback with zero native substitutions. Other JVM function contracts remain
+tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).

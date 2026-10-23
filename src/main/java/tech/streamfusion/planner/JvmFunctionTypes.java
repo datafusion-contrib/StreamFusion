@@ -8,6 +8,23 @@ import tech.streamfusion.arrow.ArrowConversion;
 final class JvmFunctionTypes {
   private JvmFunctionTypes() {}
 
+  static boolean nestedRow(RelDataType row) {
+    return row.getFieldList().stream().allMatch(field -> nested(field.getType()));
+  }
+
+  static boolean nested(RelDataType type) {
+    switch (type.getSqlTypeName()) {
+      case ARRAY:
+        return nested(type.getComponentType());
+      case MAP:
+        return nested(type.getKeyType()) && nested(type.getValueType());
+      case ROW:
+        return nestedRow(type);
+      default:
+        return scalar(type);
+    }
+  }
+
   static boolean scalarRow(RelDataType row) {
     return row.getFieldList().stream().allMatch(field -> scalar(field.getType()));
   }

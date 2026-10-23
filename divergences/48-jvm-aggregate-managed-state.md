@@ -39,3 +39,10 @@ This is correctness-verified UDF coverage under the accepted performance excepti
 a speedup requirement. Failed cache designs and dispersed timing trials remain
 diagnostic evidence; see [GROUP BY](../docs/operators/group-by.md#jvm-aggregate-investigation).
 Merge/reset, OVER and additional function/type contracts remain pending.
+
+The exact released legacy Table API aggregate wrapper is admitted alongside the bridging wrapper.
+It reaches the same generated handler, managed POJO/DataView state and grouped runtime; only
+planner recognition differs. Wrapper subclasses with custom construction, Python functions and
+specialization remain excluded. Unchanged released mixed-DISTINCT WeightedAvg fixtures and
+focused POJO accumulator recovery checks verify both supported Flink lines. No legacy state
+codec or stock/native migration promise is introduced.

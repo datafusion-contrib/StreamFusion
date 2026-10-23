@@ -721,6 +721,42 @@
         "changelog=false&aggMode=ON": "native",
         "changelog=true": "full_fallback"
       }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.CorrelateITCase#testRowType",
+      "display_name": "testRowType[StateBackend=HEAP]",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.CorrelateITCase#testRowType",
+      "display_name": "testRowType[StateBackend=ROCKSDB]",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGG",
+      "display_name": "testDistinctUDAGG[StateBackend=HEAP]",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGG",
+      "display_name": "testDistinctUDAGG[StateBackend=ROCKSDB]",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGGMixedWithNonDistinctUsage",
+      "display_name": "testDistinctUDAGGMixedWithNonDistinctUsage[StateBackend=HEAP]",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.table.AggregateITCase#testDistinctUDAGGMixedWithNonDistinctUsage",
+      "display_name": "testDistinctUDAGGMixedWithNonDistinctUsage[StateBackend=ROCKSDB]",
+      "count": 1,
+      "route": "native"
     }
   ]
 }

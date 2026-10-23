@@ -42,7 +42,13 @@ class TypedTableFunctionBenchmark {
             for (int order = 0; order < 2; order++) {
               int engine = (trial + order) & 1;
               var table =
-                  FlinkTypedTableFunctionSqlHarnessTest.environment(type, "UTC", rows, metrics);
+                  type.startsWith("nested:")
+                      ? FlinkNestedTableFunctionSqlHarnessTest.environment(
+                          type.substring(7), rows, metrics)
+                      : FlinkTypedTableFunctionSqlHarnessTest.environment(
+                          type, "UTC", rows, metrics);
+              if (type.startsWith("nested:"))
+                sql = sql.replace("typed_rows", "nested_rows").replace("s.v", "s.p");
               table.getConfig().set("streamfusion.transpose.batchRows", "1024");
               table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
               table.createTemporaryTable(

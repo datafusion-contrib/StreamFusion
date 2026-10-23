@@ -1,0 +1,786 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-23",
+  "purpose": "Correctness-enabling JVM table-function costs; no acceleration claim.",
+  "boundary": "Complete jobs with runtime row source, 1024-row RowData-to-Arrow and Arrow-to-RowData transposes, generated JVM function and blackhole row sink. Both engines receive untimed explain; planning/submission remain timed. Separate stock controls retained for the preceding-runtime process.",
+  "environment": {
+    "cpu": "Intel Core i7-12650H",
+    "logical_cpus": 16,
+    "os": "Linux WSL2",
+    "jdk": "OpenJDK 17.0.20.1",
+    "flink": "2.2.1",
+    "parallelism": 1,
+    "heap": "2 GiB",
+    "native": "release/mimalloc, full RocksDB; unchanged native ABI",
+    "native_snapshot": "main baseline 1bd9daa8d75586424f3a5d9ad7acc14d600baffb",
+    "zero_copy_local": false
+  },
+  "method": {
+    "input_rows": 262144,
+    "batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "order": "alternating engine order",
+    "previous_revision": "1bd9daa8d75586424f3a5d9ad7acc14d600baffb",
+    "previous_production_unchanged": true,
+    "no_other_local_builds_tests_or_timings_running": true,
+    "native_execution": "positive NativeTableFunction consumed rows; previous runtime asserts zero substitutions and stock fallback"
+  },
+  "candidate_source_sha256": {
+    "src/main/java/tech/streamfusion/planner/CollectionValueIdentity.java": "fc2da002b497850d21e37bff0022301191938e4cb2bb03fae73bf9a416f1f4e9",
+    "src/main/java/tech/streamfusion/planner/FlinkExpressionGenerator.java": "3155f615ecf405272e9cb811f2c24368b3f4f3a991c360161f211313e7580cc1",
+    "src/main/java/tech/streamfusion/planner/GeneratedUnnestMatcher.java": "cc2eff8971f69cdb4a15f0c8c0f947dc6b8ef4986741d21397dd6b8c63aeb37d",
+    "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "777da3bf9f1756075bc77546a89cffbd4bd32f907d33780f612ec64d09be6b3a",
+    "src/main/java/tech/streamfusion/planner/JvmFunctionTypes.java": "94f5d9cceda122cb87c1aba58a035ea1c7805f4fcbc5be4e63c87146b482e17a",
+    "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "371f0902a2515ddd1b008a40cc710a60cf6b39cd397d3fdd5977576e1a1a90bd",
+    "src/main/java/tech/streamfusion/planner/PhysicalPlanScan.java": "c006ba629f22acf399c6b85de51b9c1b4f51b2fb0f2b61fa1a3c4b8581741202",
+    "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeTableFunction.java": "471eef4a833be9e4e2e27b32bfff67ebbc7238db9b4be6397a733cc834333d8b",
+    "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "db12e749db22337055762ee4fd84e0641ce607254604f3e1026ed27de80bfccf"
+  },
+  "cases": {
+    "nested:array_int": {
+      "candidate": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.638849
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.463698
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.27785
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.195376
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.190141
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.223976
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.220977
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.175073
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.196773
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.205787
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.153257
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.091724
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.116463
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.145973
+        }
+      ],
+      "previous": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.668442
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.269159
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.189937
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.178939
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.188567
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.171044
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.177716
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.196335
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.091127
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.166436
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.098027
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.14921
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.098991
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.164498
+        }
+      ]
+    },
+    "nested:map": {
+      "candidate": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.381351
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.534061
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.436823
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.248547
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.239401
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.454621
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.383935
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.231195
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.254029
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.368596
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.401801
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.232885
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.242124
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.388336
+        }
+      ],
+      "previous": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.36209
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.287598
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.230389
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.272965
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.241867
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.216609
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.222061
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.226619
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.236976
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.213235
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.21814
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.228211
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.232581
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.237609
+        }
+      ]
+    },
+    "nested:row_DECIMAL(38,18)": {
+      "candidate": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.121895
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.313112
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.230503
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.123111
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.122698
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.212385
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.215547
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.128294
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.127813
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.241299
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.219902
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.129785
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.142771
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.221749
+        }
+      ],
+      "previous": [
+        {
+          "engine": "Flink",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.112924
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 0,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.099432
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.117248
+        },
+        {
+          "engine": "Flink",
+          "trial": 1,
+          "warmup": true,
+          "rows": 262144,
+          "seconds": 0.108196
+        },
+        {
+          "engine": "Flink",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.106898
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 2,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.159279
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.101556
+        },
+        {
+          "engine": "Flink",
+          "trial": 3,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.155382
+        },
+        {
+          "engine": "Flink",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.106343
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 4,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.153844
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.11479
+        },
+        {
+          "engine": "Flink",
+          "trial": 5,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.100776
+        },
+        {
+          "engine": "Flink",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.109817
+        },
+        {
+          "engine": "StreamFusion",
+          "trial": 6,
+          "warmup": false,
+          "rows": 262144,
+          "seconds": 0.107491
+        }
+      ]
+    }
+  },
+  "profile": {
+    "total_events": {
+      "jdk.ObjectAllocationSample": 2655,
+      "jdk.ExecutionSample": 256
+    },
+    "inside_table_function": {
+      "jdk.ObjectAllocationSample": 39,
+      "jdk.ExecutionSample": 20
+    },
+    "cpu_frames": [
+      [
+        "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.processElement",
+        11
+      ],
+      [
+        "org.apache.flink.table.data.conversion.MapMapConverter.toExternal",
+        10
+      ],
+      [
+        "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.append",
+        9
+      ],
+      [
+        "tech.streamfusion.arrow.ArrowWriter.write",
+        7
+      ],
+      [
+        "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+        7
+      ],
+      [
+        "tech.streamfusion.arrow.writers.MapWriter.doWrite",
+        4
+      ],
+      [
+        "tech.streamfusion.arrow.writers.IntWriter.doWrite",
+        3
+      ],
+      [
+        "tech.streamfusion.arrow.writers.IntWriter$IntWriterForRow.isNullAt",
+        3
+      ],
+      [
+        "tech.streamfusion.arrow.vectors.ArrowMapColumnVector$1.valueArray",
+        2
+      ],
+      [
+        "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.flush",
+        2
+      ],
+      [
+        "tech.streamfusion.arrow.writers.MapWriter$MapWriterForRow.isNullAt",
+        2
+      ],
+      [
+        "org.apache.arrow.vector.TinyIntVector.set",
+        1
+      ],
+      [
+        "org.apache.arrow.vector.BitVectorHelper.setBit",
+        1
+      ],
+      [
+        "org.apache.arrow.vector.TinyIntVector.setSafe",
+        1
+      ],
+      [
+        "org.apache.arrow.vector.VectorSchemaRoot.setRowCount",
+        1
+      ]
+    ],
+    "sampled_allocation_weights": [
+      [
+        "tech/streamfusion/arrow/vectors/ArrowMapColumnVector$1",
+        439213984
+      ],
+      [
+        "tech/streamfusion/arrow/RepresentedArrayData",
+        124328824
+      ],
+      [
+        "java/util/HashMap",
+        15175744
+      ],
+      [
+        "org/apache/flink/table/data/columnar/ColumnarArrayData",
+        8698448
+      ],
+      [
+        "java/lang/Integer",
+        2617952
+      ],
+      [
+        "java/util/LinkedHashMap",
+        1571072
+      ]
+    ],
+    "note": "Shared JVM stock/native profile, frame samples include descendants and are not additive; allocation weights are sampled estimates, not total or peak memory. Profile timings excluded."
+  },
+  "optimization": {
+    "profile_passes": 1,
+    "optimization_passes": 0,
+    "decision": "Sparse JFR samples identify released MAP conversion and immediate owned Arrow writes. No easy change was established that preserves conversion/copy contracts; stop within the two-pass timebox. UDF exception admits verified coverage with documented costs."
+  },
+  "limits": [
+    "Short jobs with JIT/startup variation; not sustained-throughput or causal speedup evidence.",
+    "Previous-runtime controls execute in a separate JVM; retain their separate stock controls.",
+    "Profile durations are excluded from timings and claims.",
+    "Container conversion classes and representation consumers outside the whitelist retain fallback."
+  ],
+  "validation": {
+    "flink_2.2": {
+      "cases": {
+        "FlinkNestedTableFunctionSqlHarnessTest": 56,
+        "FlinkTableFunctionSqlHarnessTest": 15,
+        "FlinkGeneratedUnnestSqlHarnessTest": 66,
+        "FlinkArrayScalarUdfSqlHarnessTest": 24,
+        "FlinkMapScalarUdfSqlHarnessTest": 58,
+        "FlinkTypedTableFunctionSqlHarnessTest": 64
+      },
+      "failures": 0,
+      "errors": 0,
+      "expected_skips": 0
+    },
+    "flink_1.18": {
+      "cases": {
+        "FlinkNestedTableFunctionSqlHarnessTest": 56,
+        "FlinkTableFunctionSqlHarnessTest": 15,
+        "FlinkGeneratedUnnestSqlHarnessTest": 66,
+        "FlinkArrayScalarUdfSqlHarnessTest": 24,
+        "FlinkMapScalarUdfSqlHarnessTest": 58,
+        "FlinkTypedTableFunctionSqlHarnessTest": 64
+      },
+      "failures": 0,
+      "errors": 0,
+      "expected_skips": 18
+    }
+  }
+}
