@@ -8,6 +8,7 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.MapListRepresentation;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /** Ordered sink-key candidates with Arrow input/output and native checkpointed state. */
 public class NativeSinkMaterializer extends AbstractNativeStatefulOperator<ArrowBatch>
@@ -38,6 +39,46 @@ public class NativeSinkMaterializer extends AbstractNativeStatefulOperator<Arrow
 
   protected int[] matchTimestampPrecisions() {
     return new int[0];
+  }
+
+  @Override
+  protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
+    return resolveRocksDB(rawStateRestored, () -> true, ttlMillis);
+  }
+
+  @Override
+  protected boolean usesDirectRocksDBState() {
+    return true;
+  }
+
+  @Override
+  protected long createRocksDBHandle(RocksDBNativeStateSupport rocks, byte[][] restoredPartitions) {
+    return Native.createRocksDBSinkMaterializer(
+        keys,
+        keyTimestampPrecisions(),
+        inputUpsertKeys,
+        ttlMillis,
+        strategyMode(),
+        adaptiveHighThreshold(),
+        adaptiveLowThreshold(),
+        matchTimestampPrecisions(),
+        memoryBudgetBytes(),
+        getProcessingTimeService().getCurrentProcessingTime(),
+        rocks.tableDirectory(),
+        maxParallelism(),
+        rocks.optionsJson(),
+        rocks.sharedResourcesHandle(),
+        rocks.sourceDirectories(),
+        rocks.sourceSnapshotTokens(),
+        rocks.keyGroupStart(),
+        rocks.keyGroupEnd(),
+        rocks.aligned(),
+        restoredPartitions);
+  }
+
+  @Override
+  protected String[] checkpointRocksDBHandle(String directory) {
+    return Native.checkpointRocksDBSinkMaterializer(handle, directory);
   }
 
   @Override

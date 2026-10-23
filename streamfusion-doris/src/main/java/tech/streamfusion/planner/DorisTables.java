@@ -154,7 +154,16 @@ final class DorisTables {
                               ? "overwrite"
                               : !supported(type)
                                   ? "unsupported Arrow types"
-                                  : SinkConstraintGate.fallbackReason(sink, true);
+                                  : org.apache.flink.table.planner.utils.ShortcutUtils
+                                              .unwrapTableConfig(sink)
+                                              .get(
+                                                  org.apache.flink.table.api.config
+                                                      .ExecutionConfigOptions
+                                                      .TABLE_EXEC_SINK_NESTED_CONSTRAINT_ENFORCER)
+                                          != org.apache.flink.table.api.config
+                                              .ExecutionConfigOptions.NestedEnforcer.IGNORE
+                                      ? "nested sink constraints"
+                                      : null;
       if (reason != null) {
         context.decline("doris sink: " + reason);
         return null;

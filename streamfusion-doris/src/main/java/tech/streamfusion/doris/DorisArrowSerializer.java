@@ -146,6 +146,30 @@ public final class DorisArrowSerializer implements DorisRecordSerializer<ArrowBa
   }
 
   private static void transfer(FieldVector from, FieldVector to) throws IOException {
+    if (from instanceof org.apache.arrow.vector.FixedSizeBinaryVector
+        && to instanceof org.apache.arrow.vector.VarBinaryVector) {
+      var input = (org.apache.arrow.vector.FixedSizeBinaryVector) from;
+      var output = (org.apache.arrow.vector.VarBinaryVector) to;
+      output.allocateNew();
+      for (int i = 0; i < from.getValueCount(); i++) {
+        if (from.isNull(i)) output.setNull(i);
+        else output.setSafe(i, input.get(i));
+      }
+      output.setValueCount(from.getValueCount());
+      return;
+    }
+    if (from instanceof org.apache.arrow.vector.VarBinaryVector
+        && to instanceof org.apache.arrow.vector.FixedSizeBinaryVector) {
+      var input = (org.apache.arrow.vector.VarBinaryVector) from;
+      var output = (org.apache.arrow.vector.FixedSizeBinaryVector) to;
+      output.allocateNew(from.getValueCount());
+      for (int i = 0; i < from.getValueCount(); i++) {
+        if (from.isNull(i)) output.setNull(i);
+        else output.setSafe(i, input.get(i));
+      }
+      output.setValueCount(from.getValueCount());
+      return;
+    }
     if (to instanceof TimeStampVector && TimestampAccessor.isTimestamp(from)) {
       var output = (TimeStampVector) to;
       output.allocateNew(from.getValueCount());

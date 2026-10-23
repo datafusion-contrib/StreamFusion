@@ -62,8 +62,10 @@ two-phase commit, transaction recovery and committers remain stock implementatio
 Insert, update and delete input is supported. The stock connector negotiates update-before
 handling; a delete-sign column is generated when delete support is enabled for a Unique Key
 table. Scalar and nested values, timestamp precision, destination aliases, explicit sink
-parallelism and Flink's primary-key shuffle policy are preserved. NOT NULL error enforcement
-uses StreamFusion's existing constraint operator. Generated arrays, maps and rows can also reach
+parallelism and Flink's primary-key shuffle policy are preserved. Top-level NOT NULL `ERROR` and
+`DROP`, plus string/binary length `IGNORE`, `TRIM_PAD` and `ERROR`, run before routing and
+materialization. The general policies reuse Flink's released constraint executor over Arrow-backed
+row views; unchanged columns retain their buffers. Generated arrays, maps and rows can also reach
 the Arrow writer: its declared collection capability canonicalizes the core's representation
 metadata for Doris, including when an upsert materializer precedes the writer.
 
@@ -81,8 +83,7 @@ its acceptance depends on the Doris server's Arrow Stream Load support. The veri
 uses uncompressed Arrow.
 
 Non-Arrow formats, JDBC lookup functions and COPY/TVF transports retain stock execution. Shared Flink sink fallbacks
-also remain for unsupported sink abilities/overwrite, NOT NULL
-DROP and string/binary length trimming. Materialized sinks also retain the shared Flink 2.2
+also remain for unsupported sink abilities/overwrite and nested constraint enforcement. Materialized sinks also retain the shared Flink 2.2
 changelog-state-backend fallback. These require Flink's corresponding runtime stages,
 rather than a different Arrow transport.
 
@@ -104,7 +105,8 @@ network reception, compression, or every Arrow alignment/type conversion is zero
 IPC framing and the stock writer's `byte[]` buffering copy bytes. Native output reaches the
 serializer as Arrow vectors. Timestamp output is normalized columnarly; specialized nested
 physical representations use the core's reusable row views only for the affected columns to construct the wire
-layout. Output serialization and these conversions may copy, as permitted by the sink contract.
+layout. Fixed/variable binary carriers are converted columnarly to the declared wire type.
+Output serialization and these conversions may copy, as permitted by the sink contract.
 Thrift IPC decoding allocates Arrow buffers once; subsequent handoffs retain those buffers.
 The sink serializes the logical column prefix; internal batch sidecars stay local and are released
 with the owned root.
@@ -250,3 +252,9 @@ the previous boundary). The 10m scalar and constructed nested cases have overlap
 nested medians remain slightly slower than Flink, so these runs do not establish a nested or
 sustained-stream speedup. They include all production boundaries and verify positive materializer
 work. See the linked method, complete ranges, raw trials and profiled copy/state optimizations.
+
+The [sink constraint and disk candidate measurements](../benchmarks/doris-constraints-rocks-2026-10-23/README.md)
+retain 192 warmup/measured trials, including the actual previous materializer build. They cover
+DROP, Unicode TRIM_PAD, MAP state at 1k/100k key cardinalities and nested payloads. Disk-backed
+candidates trade higher cost than the previous RAM-backed implementation for bounded resident
+state, while improving stock Flink medians on these workloads.

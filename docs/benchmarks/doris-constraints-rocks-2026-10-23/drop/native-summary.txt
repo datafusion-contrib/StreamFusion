@@ -1,0 +1,6 @@
+== Native acceleration (StreamFusion) ==
+2 operator(s) ran natively.
+1 operator(s) fell back to Flink:
+  - dorisSink: disabled by config (streamfusion.operator.dorisSink.enabled=false)
+Function execution:
+  - NativeCalc functions: native=[MOD], jvm=[]

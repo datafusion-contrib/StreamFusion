@@ -1,20 +1,25 @@
 # Sink constraints
 
-**Status: partial.** `NativeConstraintEnforcer` is a connector-neutral Arrow operator. It currently
-implements only top-level NOT NULL with Flink's `table.exec.sink.not-null-enforcer=ERROR` policy;
-its name does not imply support for every constraint implemented by Flink's rowwise enforcer.
+**Status: partial.** Doris Arrow sinks support top-level NOT NULL `ERROR`/`DROP` and
+CHAR/VARCHAR/BINARY/VARBINARY length `IGNORE`, `TRIM_PAD` and `ERROR` policies. Other connector
+admission remains unchanged: the shared fast enforcer implements top-level NOT NULL `ERROR`.
 
 ## Admitted boundaries
 
 Both [Paimon](../connectors/paimon.md) adapters use the shared operator for their already-admitted
 NOT NULL ERROR targets. It runs before local merging and bucket routing, so a later update cannot
-hide an earlier invalid row. The extraction does not change connector admission or add constraint
-support to other sinks. Paimon's existing `native-paimon-not-null-enforcer` transformation name and
+hide an earlier invalid row. Their admission remains unchanged. Paimon's existing `native-paimon-not-null-enforcer` transformation name and
 position are unchanged.
 
 Connector planning still derives required fields from the physical target schema and verifies
 formats, types, changelog modes and options independently. No row-to-Arrow conversion is inserted
 just to reach this operator.
+
+Doris uses the same fast NOT NULL ERROR path when no length checking is needed. Other admitted
+policies call released Flink 2.2's `ConstraintEnforcerExecutor` through the connector-neutral
+`NativeSinkConstraintEnforcer`. Input rows are reusable views of the Arrow buffers, so there is
+no whole-batch input transpose or duplicate implementation of Flink's trimming/padding rules.
+The stage runs before sink-key routing and upsert materialization.
 
 ## Runtime semantics and ownership
 
@@ -36,17 +41,29 @@ the sliced buffers; closing the original root does not release a prefix's refere
 fixed-width, variable-width and nested prefix values after closing all original consumers and check
 that the retained buffers are freed only after the prefix closes.
 
+For Doris DROP/length enforcement, an unchanged batch keeps its identity. Dropping rows gathers
+the selected columns and aligned metadata; rewriting a value copies its affected column while
+ordinary sibling buffers remain shared. String-cache sidecars are updated with the changed values.
+A failure emits the already accepted prefix, including earlier rewrites, then releases the rejected
+input. Released Flink's executor controls constraint order, Unicode length and padding, and errors.
+This includes the released executor's nullable-length failure behavior, verified against the
+stock connector through an actual Arrow source.
+
 The operator is stateless and forwards watermarks through Flink's ordinary operator implementation.
 It retains no Arrow batches in checkpoint state. Connector commit, recovery and delivery guarantees
 are unchanged.
 
 ## Remaining gaps and validation boundary
 
-- NOT NULL `DROP` and type-length enforcement remain on the existing Flink fallback paths.
-- Nested NOT NULL is not implemented by the shared operator; connector-specific restrictions remain.
+- Other connector matchers retain their existing NOT NULL `DROP` and type-length fallbacks.
+- Nested enforcement remains unsupported by this adapter; Doris retains stock execution when its nested-enforcer option is enabled.
 - Other sinks do not gain admission merely because a shared enforcer is available.
 
 Operator tests compare exceptions and valid prefixes with the released Flink enforcer and cover
 identity, shared ownership, nullable children, empty batches, RowKinds, metadata, failure cleanup,
 watermarks and stateless restore. This extraction does not establish an end-to-end throughput gain
 or independently revalidate Paimon's service recovery guarantees.
+
+[Doris complete-job measurements](../benchmarks/doris-constraints-rocks-2026-10-23/README.md)
+retain stock/previous/current trials. At one million input rows, DROP and TRIM_PAD improve the
+stock medians by 1.30× and 1.28×; the small cases overlap substantially.

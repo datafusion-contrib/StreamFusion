@@ -277,6 +277,8 @@ pub(crate) struct SinkMaterializer {
     last_sweep: i64,
     codec: Option<RowsCodec>,
     groups: MemoryStateStore<Candidates>,
+    #[cfg(feature = "rocksdb-state")]
+    rocks: Option<state::rocks::RocksCandidates>,
     pub(crate) memory: OperatorMemory,
 }
 
@@ -297,6 +299,8 @@ impl SinkMaterializer {
             last_sweep: 0,
             codec: None,
             groups: MemoryStateStore::default(),
+            #[cfg(feature = "rocksdb-state")]
+            rocks: None,
             memory: OperatorMemory::unaccounted(),
         }
     }
@@ -309,6 +313,33 @@ impl SinkMaterializer {
         self.match_precisions = match_precisions;
         self
     }
+    #[cfg(feature = "rocksdb-state")]
+    fn with_rocks(
+        mut self,
+        store: state::rocks::RocksCandidates,
+        now: i64,
+    ) -> Result<Self, DataFusionError> {
+        if let Some((schema, old_ttl)) = store.descriptor()? {
+            self.codec = Some(RowsCodec::new(
+                schema.clone(),
+                &self.upsert_columns,
+                self.strategy,
+                &self.match_precisions,
+            ));
+            if self.ttl_ms > 0 && old_ttl <= 0 {
+                store.adopt_ttl(now)?;
+            }
+            store.install_schema(&schema, self.ttl_ms)?;
+        }
+        let legacy = store.legacy_partitions()?;
+        self.rocks = Some(store);
+        if !legacy.is_empty() {
+            self.restore(&legacy, now);
+            self.rocks.as_ref().unwrap().clear_legacy()?;
+        }
+        Ok(self)
+    }
+
     pub(crate) fn with_budget(mut self, budget: i64) -> Result<Self, DataFusionError> {
         let bytes = self
             .groups
@@ -317,6 +348,10 @@ impl SinkMaterializer {
             .sum();
         self.memory
             .attach("sink-upsert-materialize", budget, bytes)?;
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.rocks {
+            store.attach_work(self.memory.temporary_reservation());
+        }
         Ok(self)
     }
 
@@ -360,6 +395,10 @@ impl SinkMaterializer {
         });
         assert_eq!(codec.schema, schema, "materializer input schema changed");
         let kinds = row_kind_column(batch);
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.rocks {
+            store.sweep_expired(ttl, self.ttl_ms)?;
+        }
         if batch.num_rows() >= 64
             && !self.upsert_columns.is_empty()
             && codec.byte_equality
@@ -372,6 +411,10 @@ impl SinkMaterializer {
             if key_encoder.encode(1) == first.as_slice() {
                 return self.push_single_candidate_updates(batch, now);
             }
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if self.rocks.is_some() {
+            return self.push_rocks(batch, now);
         }
         let payloads = codec
             .payload
@@ -475,6 +518,16 @@ impl SinkMaterializer {
             }
         }
         self.memory.account()?;
+        Self::output(codec, batch, output, input_rows, output_kinds)
+    }
+
+    fn output(
+        codec: &RowsCodec,
+        batch: &RecordBatch,
+        output: Vec<Arc<[u8]>>,
+        input_rows: Vec<Option<u32>>,
+        output_kinds: Vec<i8>,
+    ) -> Result<RecordBatch, DataFusionError> {
         if output.is_empty() {
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
@@ -503,6 +556,82 @@ impl SinkMaterializer {
             .expect("materialized changelog"))
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    fn push_rocks(
+        &mut self,
+        batch: &RecordBatch,
+        now: i64,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let codec = self.codec.as_ref().unwrap();
+        let store = self.rocks.as_ref().unwrap();
+        store.install_schema(&codec.schema, self.ttl_ms)?;
+        let columns = &batch.columns()[..data_arity(batch)];
+        let payloads = codec.payload.convert_columns(columns)?;
+        let mut reservation = self.memory.temporary_reservation();
+        if let Some(memory) = &mut reservation {
+            memory.try_resize(payloads.size())?;
+        }
+        let identities = codec.identities(batch);
+        let mut binary = codec.serialized.then(|| {
+            BinaryRowBatchEncoder::new(batch, &codec.match_columns, &codec.match_precisions)
+        });
+        let mut keys = BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_precisions);
+        let kinds = row_kind_column(batch);
+        let mut output = Vec::new();
+        let mut inputs = Vec::new();
+        let mut output_kinds = Vec::new();
+        for row in 0..batch.num_rows() {
+            let kind = kinds.map_or(0, |k| k.value(row));
+            let payload: Arc<[u8]> = Arc::from(payloads.row(row).data());
+            let candidate = codec.candidate(
+                payload.clone(),
+                Some(codec.identity(batch, row, identities.as_ref())),
+                binary.as_mut().map(|b| Arc::from(b.encode(row))),
+            );
+            let addition = kind == 0 || kind == 2;
+            let (fresh, action) = store.apply(
+                keys.encode(row),
+                candidate,
+                addition,
+                !self.upsert_columns.is_empty(),
+                self.strategy,
+                codec,
+                StateTtl::new(self.ttl_ms, now),
+            )?;
+            if addition {
+                output.push(payload);
+                inputs.push(Some(row as u32));
+                output_kinds.push(if fresh { 0 } else { 2 });
+            } else {
+                match action {
+                    Action::Silent => {}
+                    Action::Delete => {
+                        output.push(payload);
+                        inputs.push(Some(row as u32));
+                        output_kinds.push(3);
+                    }
+                    Action::Restore(previous) => {
+                        output.push(previous);
+                        inputs.push(None);
+                        output_kinds.push(2);
+                    }
+                }
+            }
+        }
+        Self::output(codec, batch, output, inputs, output_kinds)
+    }
+
+    fn fresh(&self, key: &[u8], ttl: StateTtl) -> Result<bool, DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.rocks {
+            return store.live(key, ttl).map(|live| !live);
+        }
+        Ok(self
+            .groups
+            .get(key)
+            .is_none_or(|v| ttl.expired(v.written_at)))
+    }
+
     // With identical input and sink keys every key has one candidate. Positive changes still
     // emit per arrival, but only the final replacement in this batch needs an owned state row.
     fn push_single_candidate_updates(
@@ -523,10 +652,7 @@ impl SinkMaterializer {
                 kinds.push(2);
             } else {
                 let key = keys.encode(row);
-                let fresh = self
-                    .groups
-                    .get(key)
-                    .is_none_or(|v| ttl.expired(v.written_at));
+                let fresh = self.fresh(key, ttl)?;
                 kinds.push(if fresh { 0 } else { 2 });
                 last.insert(identity.data().to_vec(), (row, key.to_vec()));
             }
@@ -543,12 +669,37 @@ impl SinkMaterializer {
             .payload
             .convert_columns(selected.columns())
             .expect("encode replacements");
+        #[cfg(feature = "rocksdb-state")]
+        let mut reservation = self
+            .rocks
+            .as_ref()
+            .and_then(|_| self.memory.temporary_reservation());
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(memory) = &mut reservation {
+            memory.try_resize(payloads.size())?;
+        }
         let identities = codec.identities(&selected);
         let mut serialized = codec.serialized.then(|| {
             BinaryRowBatchEncoder::new(&selected, &codec.match_columns, &codec.match_precisions)
         });
         let track = self.memory.tracking();
         for (row, (key, _)) in retained.iter().enumerate() {
+            #[cfg(feature = "rocksdb-state")]
+            if let Some(store) = &self.rocks {
+                store.install_schema(&codec.schema, self.ttl_ms)?;
+                let identity = codec.identity(&selected, row, identities.as_ref());
+                let binary = serialized.as_mut().map(|e| Arc::from(e.encode(row)));
+                store.apply(
+                    key,
+                    codec.candidate(Arc::from(payloads.row(row).data()), Some(identity), binary),
+                    true,
+                    true,
+                    self.strategy,
+                    codec,
+                    ttl,
+                )?;
+                continue;
+            }
             let before = self
                 .groups
                 .get(key)
@@ -592,6 +743,12 @@ impl SinkMaterializer {
     }
 
     pub(crate) fn snapshot(&self, max_parallelism: usize) -> BTreeMap<i32, Vec<u8>> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.rocks {
+            return self
+                .snapshot_rocks(store, max_parallelism)
+                .expect("materializer canonical export");
+        }
         let Some(codec) = &self.codec else {
             return BTreeMap::new();
         };
@@ -657,6 +814,48 @@ impl SinkMaterializer {
             .collect()
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    fn snapshot_rocks(
+        &self,
+        store: &state::rocks::RocksCandidates,
+        groups: usize,
+    ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
+        let Some(codec) = &self.codec else {
+            return Ok(BTreeMap::new());
+        };
+        let mut writers = BTreeMap::<i32, arrow::ipc::writer::StreamWriter<Vec<u8>>>::new();
+        for key in store.keys()? {
+            let candidates = store.read(&key.0, codec)?;
+            let mut one = SinkMaterializer::new(
+                self.key_columns.clone(),
+                self.key_precisions.clone(),
+                self.upsert_columns.clone(),
+                self.ttl_ms,
+            )
+            .with_strategy(self.strategy, self.match_precisions.clone());
+            one.codec = Some(RowsCodec::new(
+                codec.schema.clone(),
+                &self.upsert_columns,
+                self.strategy,
+                &self.match_precisions,
+            ));
+            one.groups.insert(key, candidates);
+            for (group, bytes) in one.snapshot(groups) {
+                for batch in read_ipc(&bytes) {
+                    let writer = writers.entry(group).or_insert_with(|| {
+                        arrow::ipc::writer::StreamWriter::try_new(Vec::new(), &batch.schema())
+                            .expect("snapshot stream")
+                    });
+                    writer.write(&batch)?;
+                }
+            }
+        }
+        writers
+            .into_iter()
+            .map(|(group, writer)| Ok((group, writer.into_inner()?)))
+            .collect()
+    }
+
     pub(crate) fn restore(&mut self, snapshots: &[Vec<u8>], now: i64) {
         for bytes in snapshots {
             for batch in read_ipc_if_present(bytes) {
@@ -713,6 +912,20 @@ impl SinkMaterializer {
                     self.groups.insert(ByteKey::from(keys.value(row)), values);
                     row += count + 1;
                 }
+            }
+            #[cfg(feature = "rocksdb-state")]
+            if let Some(store) = &self.rocks {
+                if let Some(codec) = &self.codec {
+                    store
+                        .install_schema(&codec.schema, self.ttl_ms)
+                        .expect("materializer schema import");
+                    for (key, rows) in self.groups.iter() {
+                        store
+                            .import(&key.0, rows, codec)
+                            .expect("materializer state import");
+                    }
+                }
+                self.groups = MemoryStateStore::default();
             }
         }
     }
@@ -858,5 +1071,99 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeSinkMaterializer<'loca
 ) {
     crate::bridge::jni_guard(env, move |_env| unsafe {
         drop(from_handle::<SinkMaterializer>(handle));
+    })
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSinkMaterializer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    keys: JIntArray<'local>,
+    precisions: JIntArray<'local>,
+    upsert: JIntArray<'local>,
+    ttl: jlong,
+    strategy: jint,
+    high: jlong,
+    low: jlong,
+    match_precisions: JIntArray<'local>,
+    budget: jlong,
+    now: jlong,
+    directory: jni::objects::JString<'local>,
+    max_parallelism: jint,
+    options: jni::objects::JString<'local>,
+    shared: jlong,
+    source_dirs: JObjectArray<'local>,
+    source_tokens: JObjectArray<'local>,
+    start: jint,
+    end: jint,
+    aligned: jni::sys::jboolean,
+    snapshots: JObjectArray<'local>,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        use crate::state::rocks_jni::{read_restored_partitions, read_string, read_strings};
+        equal::init_java_cache(&mut env);
+        let config = RocksStoreConfig {
+            table_dir: read_string(&mut env, &directory),
+            max_parallelism: max_parallelism as usize,
+            options_json: read_string(&mut env, &options),
+            shared_resources: shared,
+            ttl_ms: ttl.max(0),
+        };
+        let sources = read_strings(&mut env, &source_dirs)
+            .into_iter()
+            .flatten()
+            .zip(
+                read_strings(&mut env, &source_tokens)
+                    .into_iter()
+                    .flatten()
+                    .map(|v| v.parse::<i64>().expect("checkpoint token")),
+            )
+            .collect::<Vec<_>>();
+        let result =
+            state::rocks::RocksCandidates::open(config, &sources, start..=end, aligned != 0)
+                .and_then(|store| {
+                    let mut materializer = SinkMaterializer::new(
+                        read_columns(&env, &keys),
+                        read_i32_array(&env, &precisions),
+                        read_columns(&env, &upsert),
+                        ttl,
+                    )
+                    .with_strategy(
+                        Strategy::from_config(strategy, high, low),
+                        read_i32_array(&env, &match_precisions),
+                    )
+                    .with_rocks(store, now)?;
+                    materializer.restore(&read_restored_partitions(&mut env, &snapshots), now);
+                    materializer.with_budget(budget)
+                });
+        boxed_or_throw(&mut env, result)
+    })
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBSinkMaterializer<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    directory: jni::objects::JString<'local>,
+) -> jni::sys::jobjectArray {
+    crate::bridge::jni_guard(env, move |mut env| {
+        use crate::state::rocks_jni::{manifest_array, read_string};
+        let materializer = unsafe { &mut *(handle as *mut SinkMaterializer) };
+        match materializer
+            .rocks
+            .as_mut()
+            .expect("direct materializer store")
+            .table
+            .checkpoint(&read_string(&mut env, &directory))
+        {
+            Ok(manifest) => manifest_array(&mut env, &manifest),
+            Err(error) => {
+                let _ = env.throw_new("java/lang/RuntimeException", error.to_string());
+                std::ptr::null_mut()
+            }
+        }
     })
 }

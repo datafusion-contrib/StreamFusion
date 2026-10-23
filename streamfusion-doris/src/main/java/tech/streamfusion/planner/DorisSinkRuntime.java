@@ -12,6 +12,7 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeConstraintEnforcer;
+import tech.streamfusion.operator.NativeSinkConstraintEnforcer;
 import tech.streamfusion.operator.NativeSinkMaterializer;
 import tech.streamfusion.operator.OrderedKeyGroupReassembler;
 import tech.streamfusion.operator.SplitByKeyGroupOperator;
@@ -62,12 +63,46 @@ final class DorisSinkRuntime {
       Transformation<ArrowBatch> input,
       StreamExecutionEnvironment environment,
       ExecNodeConfig config) {
-    if (java.util.Arrays.stream(notNull).anyMatch(name -> name != null))
+    var notNullPolicy = config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_NOT_NULL_ENFORCER);
+    var lengthPolicy = config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_TYPE_LENGTH_ENFORCER);
+    boolean[] lengths = new boolean[type.getFieldCount()];
+    for (int i = 0; i < lengths.length; i++)
+      lengths[i] =
+          lengthPolicy != ExecutionConfigOptions.TypeLengthEnforcer.IGNORE
+              && (type.getTypeAt(i) instanceof org.apache.flink.table.types.logical.CharType
+                  || type.getTypeAt(i) instanceof org.apache.flink.table.types.logical.BinaryType
+                  || type.getTypeAt(i) instanceof org.apache.flink.table.types.logical.VarCharType
+                      && ((org.apache.flink.table.types.logical.VarCharType) type.getTypeAt(i))
+                              .getLength()
+                          < org.apache.flink.table.types.logical.VarCharType.MAX_LENGTH
+                  || type.getTypeAt(i) instanceof org.apache.flink.table.types.logical.VarBinaryType
+                      && ((org.apache.flink.table.types.logical.VarBinaryType) type.getTypeAt(i))
+                              .getLength()
+                          < org.apache.flink.table.types.logical.VarBinaryType.MAX_LENGTH);
+    boolean hasLengths = false;
+    for (boolean length : lengths) hasLengths |= length;
+    boolean hasNotNull = java.util.Arrays.stream(notNull).anyMatch(name -> name != null);
+    if (hasLengths || hasNotNull)
       input =
           new OneInputTransformation<>(
               input,
-              "doris-not-null-enforcer",
-              SimpleOperatorFactory.of(new NativeConstraintEnforcer(notNull)),
+              !hasLengths && notNullPolicy == ExecutionConfigOptions.NotNullEnforcer.ERROR
+                  ? "doris-not-null-enforcer"
+                  : "doris-sink-constraint-enforcer",
+              SimpleOperatorFactory.of(
+                  !hasLengths && notNullPolicy == ExecutionConfigOptions.NotNullEnforcer.ERROR
+                      ? new NativeConstraintEnforcer(notNull)
+                      : new NativeSinkConstraintEnforcer(
+                          type,
+                          org.apache.flink.table.runtime.operators.sink.constraint
+                                  .ConstraintEnforcerExecutor.create(
+                                      type,
+                                      notNullPolicy,
+                                      lengthPolicy,
+                                      ExecutionConfigOptions.NestedEnforcer.IGNORE)
+                                  .orElseThrow()
+                              ::enforce,
+                          lengths)),
               ArrowBatchTypeInformation.INSTANCE,
               input.getParallelism(),
               false);

@@ -1,0 +1,15 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[default_catalog.default_database.dst], fields=[EXPR$0, EXPR$1, name, amount])
++- LogicalProject(EXPR$0=[CASE(=(MOD($0, 7), 0), null:BIGINT, +($0, 1))], EXPR$1=[+($1, 1)], name=[$2], amount=[$3])
+   +- LogicalFilter(condition=[=(MOD($0, 2), 0)])
+      +- LogicalTableScan(table=[[default_catalog, default_database, src]])
+
+== Optimized Physical Plan ==
+NativeDorisSink(reuseBarrier=[129])
++- NativeCalc(select=[CASE(=(MOD(id, 7), 0), null:BIGINT, +(id, 1)) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[], reuseBarrier=[128])
+   +- NativeDorisSource(reuseBarrier=[127])
+
+== Optimized Execution Plan ==
+NativeDorisSink
++- NativeCalc(select=[CASE(=(MOD(id, 7), 0), null:BIGINT, +(id, 1)) AS EXPR$0, +(n, 1) AS EXPR$1, name, amount], where=[=(MOD(id, 2), 0)], nativeFunctions=[MOD], jvmFunctions=[])
+   +- NativeDorisSource

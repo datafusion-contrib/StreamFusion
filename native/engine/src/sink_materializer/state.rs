@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "rocksdb-state")]
+pub(super) mod rocks;
 
 #[derive(Clone, Copy)]
 pub(super) enum Strategy {

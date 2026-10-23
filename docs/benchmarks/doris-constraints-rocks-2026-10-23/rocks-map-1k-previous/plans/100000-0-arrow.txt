@@ -1,0 +1,20 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3])
++- LogicalProject(id=[$0], EXPR$1=[CAST($1):INTEGER NOT NULL], EXPR$2=[CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE" NOT NULL], EXPR$3=[CAST($0):DECIMAL(18, 2) NOT NULL])
+   +- LogicalAggregate(group=[{0}], agg#0=[COUNT()])
+      +- LogicalProject(id=[$0])
+         +- LogicalTableScan(table=[[default_catalog, default_database, src]])
+
+== Optimized Physical Plan ==
+NativeDorisSink(reuseBarrier=[25], upsertMaterialize=[true], inputUpsertKey=[[0]])
++- NativeCalc(select=[id, CAST($f1 AS INTEGER) AS EXPR$1, CAST(id AS VARCHAR(2147483647)) AS EXPR$2, CAST(id AS DECIMAL(18, 2)) AS EXPR$3], nativeFunctions=[CAST], jvmFunctions=[], reuseBarrier=[24])
+   +- NativeColumnarGroupAggregate(reuseBarrier=[23])
+      +- NativeColumnarExchange(reuseBarrier=[22])
+         +- NativeDorisSource(reuseBarrier=[21])
+
+== Optimized Execution Plan ==
+NativeDorisSink(upsertMaterialize=[true], inputUpsertKey=[[0]])
++- NativeCalc(select=[id, CAST($f1 AS INTEGER) AS EXPR$1, CAST(id AS VARCHAR(2147483647)) AS EXPR$2, CAST(id AS DECIMAL(18, 2)) AS EXPR$3], nativeFunctions=[CAST], jvmFunctions=[])
+   +- NativeColumnarGroupAggregate
+      +- NativeColumnarExchange
+         +- NativeDorisSource

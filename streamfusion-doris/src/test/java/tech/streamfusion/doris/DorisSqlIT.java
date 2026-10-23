@@ -656,6 +656,250 @@ class DorisSqlIT {
     assertFalse(plan.contains("NativeDorisSink"), plan);
   }
 
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> constraintCases() {
+    var cases = new ArrayList<org.junit.jupiter.params.provider.Arguments>();
+    for (boolean batch : new boolean[] {false, true})
+      for (String policy : List.of("DROP", "TRIM_PAD", "ERROR"))
+        cases.add(org.junit.jupiter.params.provider.Arguments.of(batch, policy));
+    return cases.stream();
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.MethodSource("constraintCases")
+  void arrowSinkConstraintsMatchStock(boolean batch, String policy) throws Exception {
+    List<String> expected = null;
+    String expectedError = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      String name = "constraints_" + UUID.randomUUID().toString().replace("-", "");
+      sql(
+          "CREATE TABLE "
+              + database
+              + "."
+              + name
+              + " (id BIGINT NOT NULL, v STRING, p STRING, b STRING, f STRING) DUPLICATE KEY(id)"
+              + " DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1')");
+      try (var metrics = new DorisExecutionMetrics()) {
+        var env = metrics.environment(1);
+        var tables = StreamTableEnvironment.create(env);
+        var config = tables.getConfig();
+        config.set(
+            org.apache.flink.table.api.config.ExecutionConfigOptions
+                .TABLE_EXEC_SINK_NOT_NULL_ENFORCER,
+            policy.equals("DROP")
+                ? org.apache.flink.table.api.config.ExecutionConfigOptions.NotNullEnforcer.DROP
+                : org.apache.flink.table.api.config.ExecutionConfigOptions.NotNullEnforcer.ERROR);
+        config.set(
+            org.apache.flink.table.api.config.ExecutionConfigOptions
+                .TABLE_EXEC_SINK_TYPE_LENGTH_ENFORCER,
+            policy.equals("ERROR")
+                ? org.apache.flink.table.api.config.ExecutionConfigOptions.TypeLengthEnforcer.ERROR
+                : org.apache.flink.table.api.config.ExecutionConfigOptions.TypeLengthEnforcer
+                    .TRIM_PAD);
+        if (nativeRun) NativePlanner.install(tables);
+        tables.executeSql(
+            ddl("src", "input", schema().replace("name STRING", "name VARCHAR(3)"), true, ""));
+        tables.executeSql(
+            ddl(
+                "dst",
+                name,
+                "id BIGINT NOT NULL,v VARCHAR(3),p CHAR(4),b VARBINARY(2),f BINARY(3)",
+                true,
+                ", 'sink.properties.format'='arrow', 'sink.properties.compress_type'='',"
+                    + " 'sink.enable-delete'='false', 'sink.enable.batch-mode'='"
+                    + batch
+                    + "'"));
+        String id =
+            policy.equals("DROP") ? "CASE WHEN id=2 THEN CAST(NULL AS BIGINT) ELSE id END" : "id";
+        String insert =
+            "INSERT INTO dst SELECT "
+                + id
+                + ",COALESCE(name,''),CAST(COALESCE(name,'') AS"
+                + " CHAR(4)),UNHEX('01020304'),CAST(UNHEX('09') AS BINARY(3)) FROM src";
+        if (policy.equals("ERROR")) insert += " WHERE id<>2";
+        checkPlan(tables, insert, nativeRun, true);
+        if (policy.equals("ERROR")) {
+          final String failingInsert = insert;
+          Exception failure =
+              assertThrows(Exception.class, () -> tables.executeSql(failingInsert).await());
+          Throwable cause = failure;
+          while (cause.getCause() != null) cause = cause.getCause();
+          assertTrue(cause.getMessage().contains("Column 'v'"), cause.toString());
+          if (!nativeRun) expectedError = cause.getMessage();
+          else assertEquals(expectedError, cause.getMessage());
+        } else {
+          var result = tables.executeSql(insert);
+          result.await();
+          if (nativeRun)
+            assertTrue(
+                metrics.recordsIn(
+                        result.getJobClient().orElseThrow().getJobID().toString(),
+                        "doris-sink-constraint-enforcer")
+                    > 0);
+          awaitCount(name, policy.equals("DROP") ? 2 : 3);
+          List<String> actual = new ArrayList<>();
+          try (var statement = connection.createStatement();
+              var rows =
+                  statement.executeQuery(
+                      "SELECT id,v,p,HEX(b),HEX(f) FROM "
+                          + database
+                          + "."
+                          + name
+                          + " ORDER BY id")) {
+            while (rows.next())
+              actual.add(
+                  rows.getLong(1)
+                      + "|"
+                      + rows.getString(2)
+                      + "|"
+                      + rows.getString(3)
+                      + "|"
+                      + rows.getString(4)
+                      + "|"
+                      + rows.getString(5));
+          }
+          if (!nativeRun) expected = actual;
+          else assertEquals(expected, actual);
+          assertEquals(policy.equals("DROP") ? 2 : 3, actual.size());
+        }
+      }
+    }
+  }
+
+  @Test
+  void nullableLengthFailureMatchesStockThroughTheArrowSource() throws Exception {
+    String expected = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      String name = "null_length_" + UUID.randomUUID().toString().replace("-", "");
+      sql(
+          "CREATE TABLE "
+              + database
+              + "."
+              + name
+              + " (id BIGINT, v STRING) DUPLICATE KEY(id)"
+              + " DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1')");
+      var tables = environment(nativeRun);
+      tables
+          .getConfig()
+          .set(
+              org.apache.flink.table.api.config.ExecutionConfigOptions
+                  .TABLE_EXEC_SINK_TYPE_LENGTH_ENFORCER,
+              org.apache.flink.table.api.config.ExecutionConfigOptions.TypeLengthEnforcer.TRIM_PAD);
+      tables.executeSql(ddl("src", "input", schema(), true, ""));
+      tables.executeSql(
+          ddl(
+              "dst",
+              name,
+              "id BIGINT,v VARCHAR(3)",
+              true,
+              ", 'sink.properties.format'='arrow', 'sink.properties.compress_type'='',"
+                  + " 'sink.enable-delete'='false'"));
+      String insert = "INSERT INTO dst SELECT id+1,name FROM src WHERE id=2";
+      checkPlan(tables, insert, nativeRun, true);
+      Exception failure = assertThrows(Exception.class, () -> tables.executeSql(insert).await());
+      Throwable cause = failure;
+      while (cause.getCause() != null) cause = cause.getCause();
+      assertInstanceOf(NullPointerException.class, cause);
+      if (!nativeRun) expected = cause.getMessage();
+      else {
+        assertEquals(expected, cause.getMessage());
+        assertTrue(
+            java.util.Arrays.stream(cause.getStackTrace())
+                .anyMatch(
+                    frame ->
+                        frame
+                            .getClassName()
+                            .equals("tech.streamfusion.operator.NativeSinkConstraintEnforcer")));
+      }
+    }
+  }
+
+  @Test
+  void constraintsPrecedeDiskBackedMaterialization() throws Exception {
+    List<String> expected = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      String name = "constrained_materialize_" + UUID.randomUUID().toString().replace("-", "");
+      sql(
+          "CREATE TABLE "
+              + database
+              + "."
+              + name
+              + " (id BIGINT NOT NULL,n INT NOT NULL,name STRING NOT NULL) UNIQUE KEY(id)"
+              + " DISTRIBUTED BY HASH(id) BUCKETS 1"
+              + " PROPERTIES('replication_num'='1','enable_unique_key_merge_on_write'='true')");
+      try (var metrics = new DorisExecutionMetrics()) {
+        var env = metrics.environment(1);
+        var options = new org.apache.flink.configuration.Configuration();
+        options.setString("state.backend.rocksdb.memory.fixed-per-slot", "16mb");
+        options.setString(
+            "state.backend.type",
+            nativeRun
+                ? tech.streamfusion.state.RocksDBNativeStateBackendFactory.class.getName()
+                : "rocksdb");
+        env.configure(options, getClass().getClassLoader());
+        var tables = StreamTableEnvironment.create(env);
+        tables
+            .getConfig()
+            .set(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_SINK_NOT_NULL_ENFORCER,
+                org.apache.flink.table.api.config.ExecutionConfigOptions.NotNullEnforcer.DROP);
+        tables
+            .getConfig()
+            .set(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_SINK_TYPE_LENGTH_ENFORCER,
+                org.apache.flink.table.api.config.ExecutionConfigOptions.TypeLengthEnforcer
+                    .TRIM_PAD);
+        tables
+            .getConfig()
+            .set(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_SINK_UPSERT_MATERIALIZE,
+                org.apache.flink.table.api.config.ExecutionConfigOptions.UpsertMaterialize.FORCE);
+        tables
+            .getConfig()
+            .set(
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .TABLE_EXEC_SINK_UPSERT_MATERIALIZE_STRATEGY,
+                org.apache.flink.table.api.config.ExecutionConfigOptions
+                    .SinkUpsertMaterializeStrategy.MAP);
+        if (nativeRun) NativePlanner.install(tables);
+        tables.executeSql(
+            ddl("src", "input", schema().replace("name STRING", "name VARCHAR(3)"), true, ""));
+        tables.executeSql(
+            ddl(
+                "dst",
+                name,
+                "id BIGINT NOT NULL,n INT NOT NULL,name VARCHAR(3) NOT NULL,PRIMARY KEY(id) NOT"
+                    + " ENFORCED",
+                true,
+                ", 'sink.properties.format'='arrow', 'sink.properties.compress_type'='',"
+                    + " 'sink.enable-delete'='false'"));
+        String insert =
+            "INSERT INTO dst SELECT MOD(id,2),CAST(COUNT(*) AS INT),MIN(name) FROM src GROUP BY"
+                + " MOD(id,2)";
+        checkPlan(tables, insert, nativeRun, true);
+        var result = tables.executeSql(insert);
+        result.await();
+        awaitCount(name, 1);
+        List<String> actual = new ArrayList<>();
+        try (var statement = connection.createStatement();
+            var rows = statement.executeQuery("SELECT id,n,name FROM " + database + "." + name)) {
+          while (rows.next())
+            actual.add(rows.getLong(1) + "|" + rows.getInt(2) + "|" + rows.getString(3));
+        }
+        assertEquals(List.of("1|2|a,b"), actual);
+        if (!nativeRun) expected = actual;
+        else {
+          assertEquals(expected, actual);
+          String job = result.getJobClient().orElseThrow().getJobID().toString();
+          assertTrue(metrics.recordsIn(job, "native-sink-upsert-materialize") > 0);
+          assertTrue(metrics.recordsIn(job, "doris-sink-constraint-enforcer") > 0);
+        }
+      }
+    }
+  }
+
   static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> materializerCases() {
     var cases = new ArrayList<org.junit.jupiter.params.provider.Arguments>();
     for (boolean batch : new boolean[] {false, true})

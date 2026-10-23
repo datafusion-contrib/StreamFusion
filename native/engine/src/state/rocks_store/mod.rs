@@ -8,6 +8,8 @@
 //! last-write timestamp as a fixed 8-byte prefix so the compaction filter never parses the row.
 
 mod decoded_cache;
+mod raw_store;
+pub(crate) use raw_store::RocksRawStore;
 pub(crate) mod interval_buffer;
 #[cfg(test)]
 mod join_record_tests;

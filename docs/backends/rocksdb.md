@@ -34,14 +34,14 @@ checkpoints reuse immutable SST handles; full checkpoints upload the complete li
 ## Write path and memory
 
 The write path is Flink's: state writes go through to the RocksDB memtable (WAL off), amortized to
-one write per touched key per batch, and RocksDB's background threads own all memtable flushing and
+one write per touched key per batch where the operator layout permits. RocksDB's background threads own memtable flushing and
 compaction. There is no StreamFusion-side write buffer above RocksDB and no forced flush — the
 checkpoint barrier commits the current batch's residue and takes RocksDB's native hard-link
-checkpoint, which flushes live memtables itself. Typed-store values are compact arrow-row bytes; a
-state-TTL value carries its last-write timestamp as a fixed 8-byte prefix, so the TTL compaction
-filter reads one integer per entry.
+checkpoint, which flushes live memtables itself. Most typed-store values are compact arrow-row bytes; their state-TTL values carry an 8-byte
+last-write prefix for the compaction filter. Sink candidate TTL instead lives in whole-key
+metadata and uses bounded key cleanup.
 
-Point reads use RocksDB's optimized batched MultiGet API on the default column family. The Rust
+Batch-oriented point reads use RocksDB's optimized MultiGet API on the default column family. The Rust
 binding borrows the batch's key bytes and returns pinned values, which remain valid through the
 batch decode and are then released. Operator state owns its decoded values; it does not retain
 RocksDB cache pins across bundles. Constant AppendFast Top-1 can retain clean,
@@ -81,7 +81,10 @@ Flink's max-parallelism and key-group redistribution semantics.
 
 Stateful native operators use this backend in tests and production. Operators with a typed direct
 state codec access RocksDB per key; other native operators persist their existing key-group snapshot
-payloads in the same Rust-owned RocksDB lifecycle.
+payloads in the same Rust-owned RocksDB lifecycle. Doris sink upsert materialization uses
+record-level candidate, linked-node and matching-index tables. Its point mutations hydrate only
+affected records; native checkpoints keep the database files, and legacy TTL cleanup seeks past
+candidate payloads. See [sink materialization](../operators/sink-upsert-materialize.md).
 
 ## Compatibility boundary
 

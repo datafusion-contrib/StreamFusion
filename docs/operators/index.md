@@ -6,7 +6,8 @@ operators](unsupported.md) for the operators with no native path at all. Togethe
 the precise answer to "why didn't my query accelerate?" — everything not called out as a gap here
 runs natively.
 
-[Sink constraints](sink-constraints.md) documents the shared columnar NOT NULL ERROR boundary and
+[Sink constraints](sink-constraints.md) documents the shared columnar NOT NULL boundary, Doris
+DROP and string/binary length policies, and
 the connector-specific admission that remains necessary around it.
 [Sink upsert materialization](sink-upsert-materialize.md) covers ordered candidate state before
 admitted Doris Arrow writers.

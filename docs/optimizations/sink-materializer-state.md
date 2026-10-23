@@ -13,7 +13,8 @@ observer. The operator therefore emits every row with the required INSERT/UPDATE
 encodes and stores only each key's final replacement. A vectorized key encoding groups repeated
 identities; Flink binary routing keys are encoded only once per distinct identity in the batch. TTL refreshes use the same processing-time
 sample for the whole call, memory accounting covers retained state, and checkpoints observe the
-completed call. The optimization requires scalar byte equality, at least 64 rows and an initial
+completed call. The same optimization applies to disk-backed candidates, avoiding repeated writes
+of superseded replacements. The optimization requires scalar byte equality, at least 64 rows and an initial
 repeated key; complex matching and retracting batches keep the ordered candidate path.
 
 This reduces payload encoding, matching-key allocation and repeated state replacement without

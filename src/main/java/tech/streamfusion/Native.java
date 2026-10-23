@@ -2378,6 +2378,32 @@ public final class Native {
   /** Releases a changelog normalizer handle. */
   public static native void closeChangelogNormalizer(long handle);
 
+  /** Creates record-level RocksDB candidates using the shared Flink state resources. */
+  public static native long createRocksDBSinkMaterializer(
+      int[] keyColumns,
+      int[] keyTimestampPrecisions,
+      int[] inputUpsertKeys,
+      long stateTtlMillis,
+      int strategy,
+      long adaptiveHigh,
+      long adaptiveLow,
+      int[] matchTimestampPrecisions,
+      long memoryBudgetBytes,
+      long nowMillis,
+      String tableDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned,
+      byte[][] restoredPartitions);
+
+  public static native String[] checkpointRocksDBSinkMaterializer(
+      long handle, String snapshotDirectory);
+
   /** Creates ordered, owned candidate state per sink key; zero TTL disables expiry. */
   public static native long createSinkMaterializer(
       int[] keyColumns,

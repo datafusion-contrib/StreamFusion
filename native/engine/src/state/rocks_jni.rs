@@ -13,11 +13,11 @@ type RocksChangelogNormalizer = ChangelogNormalizer<RocksNormalizerStore>;
 type RocksKeepLastDeduplicator = KeepLastDeduplicator<RocksDedupStore>;
 type RocksUpdatingJoiner = UpdatingJoiner<RocksJoinStore>;
 
-fn read_string(env: &mut JNIEnv, value: &JString) -> String {
+pub(crate) fn read_string(env: &mut JNIEnv, value: &JString) -> String {
     env.get_string(value).expect("jni string").into()
 }
 
-fn read_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Option<String>> {
+pub(crate) fn read_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Option<String>> {
     (0..env.get_array_length(values).expect("array length"))
         .map(|i| {
             let value = env
@@ -34,7 +34,7 @@ fn read_strings(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Option<String>> 
 
 /// The restored blob key groups a create receives when a canonical savepoint or raw keyed state
 /// (rather than a RocksDB checkpoint) is being restored; empty on a fresh start or native restore.
-fn read_restored_partitions(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Vec<u8>> {
+pub(crate) fn read_restored_partitions(env: &mut JNIEnv, values: &JObjectArray) -> Vec<Vec<u8>> {
     (0..env.get_array_length(values).expect("array length"))
         .map(|i| {
             let value = env
@@ -128,7 +128,7 @@ fn open_store_pair<C: RocksStateCodec>(
     }
 }
 
-fn manifest_array<'local>(
+pub(crate) fn manifest_array<'local>(
     env: &mut JNIEnv<'local>,
     manifest: &RocksCheckpointManifest,
 ) -> jobjectArray {

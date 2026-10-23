@@ -35,6 +35,9 @@ class DorisConnectorBenchmark {
   private final boolean flight =
       Boolean.parseBoolean(System.getProperty("sf.doris.benchmark.flight", "true"));
   private final boolean legacy = Boolean.getBoolean("sf.doris.benchmark.legacy");
+  private final String constraints = System.getProperty("sf.doris.benchmark.constraints", "none");
+  private final boolean constrained = !constraints.equals("none");
+  private final boolean rocks = Boolean.getBoolean("sf.doris.benchmark.rocks");
   private String database;
 
   @Test
@@ -42,6 +45,9 @@ class DorisConnectorBenchmark {
   void compareStockPreviousAndArrowTransport() throws Exception {
     assertEquals(
         "release", System.getProperty("sf.doris.benchmark.profile"), "Use the bench Maven profile");
+    assertTrue(List.of("none", "drop", "trim").contains(constraints));
+    assertFalse(
+        constrained && materialize, "Constraint benchmark measures its separate sink boundary");
     assertFalse(materialize && maps, "Materialization benchmark uses scalar or array/row payloads");
     int warmups = Integer.getInteger("sf.doris.benchmark.warmups", 1);
     int trials = Integer.getInteger("sf.doris.benchmark.trials", 3);
@@ -68,7 +74,9 @@ class DorisConnectorBenchmark {
                   + ".input SELECT "
                   + (materialize ? "number % " + cardinality : "number")
                   + ", CAST(number % 1000 AS INT),"
-                  + " IF(number % 7 = 0, NULL, CONCAT('payload-☃-',CAST(number AS STRING))),"
+                  + " IF(number % 7 = 0, "
+                  + (constraints.equals("trim") ? "''" : "NULL")
+                  + ", CONCAT('payload-☃-',CAST(number AS STRING))),"
                   + " IF(number % 11 = 0, NULL, CAST(number / 100.0 AS DECIMAL(18,2)))"
                   + (complex
                       ? ", CAST('2020-07-01 12:34:56.123456' AS DATETIMEV2(6)),"
@@ -82,7 +90,9 @@ class DorisConnectorBenchmark {
           List<String> expected =
               result(
                   "SELECT COUNT(*), SUM(id+1), SUM(n+1), COUNT(name), SUM(amount),"
-                      + " SUM(CRC32(COALESCE(name,'')))"
+                      + " SUM(CRC32(COALESCE("
+                      + (constraints.equals("trim") ? "SUBSTRING(name,1,12)" : "name")
+                      + ",'')))"
                       + (complex
                           ? ",SUM(UNIX_TIMESTAMP(CONVERT_TZ(ts,'UTC','"
                               + java.time.ZoneId.systemDefault().getId()
@@ -92,7 +102,8 @@ class DorisConnectorBenchmark {
                           : "")
                       + " FROM "
                       + database
-                      + ".input WHERE id % 2 = 0");
+                      + ".input WHERE id % 2 = 0"
+                      + (constraints.equals("drop") ? " AND id % 7 <> 0" : ""));
           if (materialize)
             expected =
                 materializedResult(
@@ -102,24 +113,39 @@ class DorisConnectorBenchmark {
                         + database
                         + ".input GROUP BY id) expected");
           for (int trial = -warmups; trial < trials; trial++) {
-            var modes = new ArrayList<>(List.of("stock", "previous", "arrow"));
+            var modes =
+                new ArrayList<>(
+                    List.of(
+                        System.getProperty("sf.doris.benchmark.modes", "stock,previous,arrow")
+                            .split(",")));
             java.util.Collections.rotate(modes, trial + warmups);
             for (String mode : modes) {
               try (var metrics = new DorisExecutionMetrics()) {
                 System.setProperty(
                     "streamfusion.doris.enabled",
-                    Boolean.toString(materialize || mode.equals("arrow")));
-                if (materialize)
+                    Boolean.toString(materialize || constrained || mode.equals("arrow")));
+                if (materialize || constrained)
                   System.setProperty(
                       "streamfusion.operator.dorisSink.enabled",
                       Boolean.toString(mode.equals("arrow")));
                 String output = "output_" + UUID.randomUUID().toString().replace("-", "");
                 sql("CREATE TABLE " + database + "." + output + " " + dorisSchema(true));
                 var env =
-                    materialize
+                    materialize || constrained
                         ? metrics.environment(parallelism)
                         : StreamExecutionEnvironment.getExecutionEnvironment();
                 env.setParallelism(parallelism);
+                if (rocks) {
+                  var stateConfig = new org.apache.flink.configuration.Configuration();
+                  stateConfig.setString(
+                      "state.backend.type",
+                      mode.equals("stock")
+                          ? "rocksdb"
+                          : tech.streamfusion.state.RocksDBNativeStateBackendFactory.class
+                              .getName());
+                  stateConfig.setString("state.backend.rocksdb.memory.fixed-per-slot", "32mb");
+                  env.configure(stateConfig, getClass().getClassLoader());
+                }
                 var tables = StreamTableEnvironment.create(env);
                 if (materialize) {
                   tables.getConfig().set("table.exec.sink.upsert-materialize", "FORCE");
@@ -129,6 +155,18 @@ class DorisConnectorBenchmark {
                           ExecutionConfigOptions.TABLE_EXEC_SINK_UPSERT_MATERIALIZE_STRATEGY,
                           strategy);
                 }
+                if (constraints.equals("drop"))
+                  tables
+                      .getConfig()
+                      .set(
+                          ExecutionConfigOptions.TABLE_EXEC_SINK_NOT_NULL_ENFORCER,
+                          ExecutionConfigOptions.NotNullEnforcer.DROP);
+                if (constraints.equals("trim"))
+                  tables
+                      .getConfig()
+                      .set(
+                          ExecutionConfigOptions.TABLE_EXEC_SINK_TYPE_LENGTH_ENFORCER,
+                          ExecutionConfigOptions.TypeLengthEnforcer.TRIM_PAD);
                 var scan = mode.equals("stock") ? null : NativePlanner.install(tables);
                 tables.executeSql(ddl("src", "input", ""));
                 tables.executeSql(
@@ -141,7 +179,11 @@ class DorisConnectorBenchmark {
                             + UUID.randomUUID()
                             + "'"));
                 String insert =
-                    "INSERT INTO dst SELECT id + 1, n + 1, name, amount"
+                    "INSERT INTO dst SELECT "
+                        + (constraints.equals("drop")
+                            ? "CASE WHEN MOD(id,7)=0 THEN CAST(NULL AS BIGINT) ELSE id+1 END"
+                            : "id+1")
+                        + ", n + 1, name, amount"
                         + (complex ? ",ts,a" + (maps ? ",m" : "") + ",r" : "")
                         + " FROM src WHERE MOD(id,2)=0";
                 if (materialize)
@@ -155,7 +197,7 @@ class DorisConnectorBenchmark {
                 if (materialize) assertTrue(plan.contains("upsertMaterialize=[true]"), plan);
                 boolean arrow = mode.equals("arrow");
                 assertEquals(
-                    arrow || materialize && mode.equals("previous"),
+                    arrow || (materialize || constrained) && mode.equals("previous"),
                     plan.contains("NativeDorisSource"),
                     plan);
                 assertEquals(arrow, plan.contains("NativeDorisSink"), plan);
@@ -164,7 +206,7 @@ class DorisConnectorBenchmark {
                   assertFalse(plan.contains("RowDataToArrow"), plan);
                   assertFalse(plan.contains("ArrowToRowData"), plan);
                 } else if (mode.equals("previous")) {
-                  assertEquals(!materialize, plan.contains("RowDataToArrow"), plan);
+                  assertEquals(!materialize && !constrained, plan.contains("RowDataToArrow"), plan);
                   assertTrue(plan.contains("ArrowToRowData"), plan);
                 }
                 Files.writeString(
@@ -174,7 +216,7 @@ class DorisConnectorBenchmark {
                 execution.await();
                 long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
                 while (!result("SELECT COUNT(*) FROM " + database + "." + output)
-                    .equals(List.of(Integer.toString(materialize ? cardinality : rows / 2)))) {
+                    .equals(List.of(expected.get(0)))) {
                   assertTrue(System.nanoTime() < deadline, "Doris output did not become visible");
                   Thread.sleep(10);
                 }
@@ -185,6 +227,12 @@ class DorisConnectorBenchmark {
                       metrics.recordsIn(job, "native-sink-upsert-materialize") >= cardinality,
                       "Native materializer must process aggregate updates");
                 }
+                if (constrained && arrow)
+                  assertTrue(
+                      metrics.recordsIn(
+                              execution.getJobClient().orElseThrow().getJobID().toString(),
+                              "doris-sink-constraint-enforcer")
+                          > 0);
                 if (materialize)
                   assertEquals(expected, materializedResult(database + "." + output));
                 else
@@ -203,7 +251,15 @@ class DorisConnectorBenchmark {
                               + "."
                               + output));
                 String measured =
-                    rows + "," + parallelism + "," + trial + "," + mode + "," + milliseconds;
+                    rows
+                        + ","
+                        + parallelism
+                        + ","
+                        + trial
+                        + ","
+                        + System.getProperty("sf.doris.benchmark.modeLabel", mode)
+                        + ","
+                        + milliseconds;
                 System.out.println("DORIS_BENCH " + measured);
                 measurements.add(measured);
                 Files.write(directory.resolve("trials.csv"), measurements);
@@ -220,6 +276,10 @@ class DorisConnectorBenchmark {
                 + "\nconnector=26.3.0\nflink=2.2.1\n"
                 + "materialize="
                 + materialize
+                + "\nconstraints="
+                + constraints
+                + "\nrocks="
+                + rocks
                 + "\nstrategy="
                 + strategy
                 + "\ncardinality="
@@ -331,8 +391,12 @@ class DorisConnectorBenchmark {
     return "CREATE TABLE "
         + name
         + " (id BIGINT"
-        + (materialize ? " NOT NULL" : "")
-        + ", n INT, name STRING, amount DECIMAL(18,2)"
+        + (materialize || constraints.equals("drop") && table.startsWith("output_")
+            ? " NOT NULL"
+            : "")
+        + ", n INT, name "
+        + (constraints.equals("trim") ? "VARCHAR(12)" : "STRING")
+        + ", amount DECIMAL(18,2)"
         + (complex
             ? ", ts TIMESTAMP(6), a ARRAY<INT>"
                 + (maps ? ", m MAP<STRING NOT NULL,INT>" : "")

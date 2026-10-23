@@ -19,7 +19,9 @@ Snapshots retain the linked cursor and index independently of node payloads, pre
 Flink behavior after older-slot replacement and subsequent appends. Flink 2.2 disables TTL for
 non-legacy strategies, which the native path preserves.
 
-The Rust state remains in the shared native memory budget; the native RocksDB backend checkpoints
-it through the existing snapshot store. This differs from Flink's per-entry backend state while
-preserving its key matching and sequence semantics. Paimon's merge-on-flush keyed upsert buffer is
+Heap candidate state remains in the shared native memory budget. The native RocksDB backend
+keeps ordered values, linked nodes and serialized matching indexes in record-level tables, reusing
+the shared pool, Flink write options and checkpoint files. Point mutations hydrate only their
+neighbours; portable snapshots retain the version-2 logical layout. Earlier snapshot-store
+checkpoints migrate on restore. The disk tables preserve Flink's key matching and sequence semantics. Paimon's merge-on-flush keyed upsert buffer is
 not reused: it collapses records for storage and cannot emit the required per-arrival changelog.

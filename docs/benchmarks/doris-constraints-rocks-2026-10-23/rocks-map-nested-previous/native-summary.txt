@@ -1,0 +1,5 @@
+== Native acceleration (StreamFusion) ==
+4 operator(s) ran natively.
+No operators fell back to Flink.
+Function execution:
+  - NativeCalc functions: native=[], jvm=[CAST, ARRAY, MOD, ROW], reason=ROW metadata requires Flink's whole-Calc evaluation
