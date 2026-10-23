@@ -306,7 +306,7 @@ class FlinkNestedTableFunctionSqlHarnessTest {
   }
 
   @Test
-  void internalAndAlternateContainerConversionsKeepExplicitFallback() {
+  void internalContainerConversionsKeepExplicitFallback() {
     for (String name : List.of("array_int", "map", "row_STRING")) {
       Class<?> internal =
           name.equals("array_int")
@@ -314,8 +314,7 @@ class FlinkNestedTableFunctionSqlHarnessTest {
               : name.equals("map")
                   ? org.apache.flink.table.data.MapData.class
                   : org.apache.flink.table.data.RowData.class;
-      for (Class<?> conversion :
-          name.equals("array_int") ? List.of(internal, java.util.List.class) : List.of(internal)) {
+      for (Class<?> conversion : List.of(internal)) {
         try (var metrics = new RecoveryExecutionMetrics()) {
           var runs =
               NativeFailureParity.run(
@@ -331,7 +330,7 @@ class FlinkNestedTableFunctionSqlHarnessTest {
           runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
           assertTrue(
               runs.nativeRun().fallbackReasons().stream()
-                  .anyMatch(reason -> reason.contains("default external Java conversions")),
+                  .anyMatch(reason -> reason.contains("verified external Java conversions")),
               runs::toString);
         }
       }

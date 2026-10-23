@@ -146,10 +146,18 @@ an additional type-specific opt-in. Their user functions still run on the JVM; m
 standalone costs can exceed stock Flink.
 The [bounded conversion investigation](../optimizations/decimal-arrow-reads.md)
 records the retained improvement and measured limits. ARRAY, MAP and ROW may recursively contain
-these admitted scalar types. Container signatures require Flink's default external Java conversions
+these admitted scalar types. Container signatures support Flink's default external Java conversions
 (boxed Java arrays, `java.util.Map`, external `Row`, and their default scalar children).
-Released type inference determines those conversions; internal `ArrayData`/`MapData`/`RowData`,
-Java List or primitive-array bridges, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
+Direct ARRAY arguments and direct result columns also support `java.util.List` with default
+scalar element conversions, and `boolean[]`, `byte[]`, `short[]`, `int[]`, `long[]`, `float[]`
+and `double[]` with matching non-null element types. ARRAY parents can still be NULL or empty;
+Lists can contain NULL elements. Released converters own these Java values, and the existing
+typed-array adapter supplies primitive conversion after nullable Arrow copies. FLOAT/DOUBLE
+retain signed zero and NaN payloads through chained function inputs and results.
+
+Released type inference determines the conversions. Alternate bridges nested inside a ROW/MAP
+argument or nested result column, Lists with ARRAY/MAP/ROW elements, internal
+`ArrayData`/`MapData`/`RowData`, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
 switch can disable this operator.
 
@@ -181,6 +189,50 @@ mutable collected arrays/rows, INNER/LEFT fanout, pushed filters, chained functi
 empty projections, failures, all changelog kinds and repeated memory/RocksDB recovery on both
 supported Flink lines. The unchanged released Table API `CorrelateITCase.testRowType` additionally
 requires the table-function operator to consume input in every backend invocation.
+
+### List and primitive array validation and costs (2026-10-23)
+
+Forty-seven new checks pass on each supported Flink line, alongside 125 existing nested/typed
+table-function regressions. They cover scalar List elements (including both interval families),
+all seven primitive array types, concrete Java signatures, atomic-array result collectors,
+retained arguments, mutable fanout, NULL/empty values, exact floating bits through chained calls,
+error causes, all RowKinds and two forced restores on memory and native RocksDB state.
+Unverified source filters, nested alternate bridges, internal containers and Lists of containers
+keep explicit fallback checks. Existing unchanged upstream ROW contracts still require consumed
+native table-function input on both lines.
+
+[The complete-job artifact](../benchmarks/results/jvm-table-function-conversions-2026-10-23.json)
+retains all stock, candidate and actual prior-production trials, ranges and source hashes.
+Release/mimalloc jobs use JDK 17, 262,144 runtime input rows, parallelism one, 2 GiB heap,
+1,024-row batches, both transposes and a blackhole row sink. Each job gets its own cluster and
+untimed EXPLAIN; two warmup pairs precede five alternating measured pairs. Builds and tests
+from this investigation do not overlap timings; the sampled other-Java-process count was zero.
+
+| Flink / value | Stock median (range), s | Prior fallback median (range), s | New median (range), s |
+|---|---:|---:|---:|
+| 2.2.1 / INT primitive array | 0.159 (0.147–0.238) | 0.176 (0.147–0.223) | 0.321 (0.234–0.343) |
+| 2.2.1 / DOUBLE primitive array | 0.154 (0.140–0.187) | 0.155 (0.140–0.166) | 0.253 (0.247–0.261) |
+| 2.2.1 / List STRING | 0.264 (0.258–0.284) | 0.258 (0.251–0.274) | 0.482 (0.474–0.502) |
+| 2.2.1 / List DECIMAL(38,18) | 0.270 (0.264–0.286) | 0.257 (0.249–0.265) | 0.457 (0.450–0.462) |
+| 1.18.1 / INT primitive array | 0.153 (0.144–0.160) | 0.151 (0.139–0.219) | 0.256 (0.234–0.294) |
+| 1.18.1 / DOUBLE primitive array | 0.152 (0.134–0.159) | 0.145 (0.141–0.166) | 0.245 (0.240–0.249) |
+| 1.18.1 / List STRING | 0.256 (0.253–0.284) | 0.251 (0.244–0.257) | 0.501 (0.499–0.507) |
+| 1.18.1 / List DECIMAL(38,18) | 0.264 (0.263–0.268) | 0.262 (0.260–0.267) | 0.447 (0.445–0.455) |
+
+Prior canonical `189edb21` retains unchanged production code and executes full stock fallback;
+its separately paired stock controls remain in the artifact. Short jobs include startup/JIT
+variation and separate-JVM drift. These slower conversions are verified UDF coverage under the
+accepted performance exception, with no acceleration or sustained-throughput claim.
+A separate, bounded List STRING JFR pass observed generated callbacks and owned Arrow writes
+in 28 operator samples, too sparse for precise attribution. No easy safe improvement was
+established, so profiling stopped after one pass with no optimization change. Those profile
+timings are excluded from the comparison.
+
+Reproduce with `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+-Dtest=TableFunctionConversionBenchmark -Dboundary.rows=262144 -Dboundary.warmups=2
+-Dboundary.runs=5 -Dsf.testForks=1 -Dstreamfusion.exchange.zeroCopyLocal=false
+surefire:test@default-test`; add `flink-1.18` to the profile for that line. Prior controls copy
+only the test fixtures and set `-Dboundary.expectNative=false`, requiring zero substitutions.
 
 ### Container callback costs (2026-10-23)
 

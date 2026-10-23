@@ -1,6 +1,7 @@
 package tech.streamfusion.planner;
 
 import java.util.Collections;
+import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rex.RexCall;
@@ -15,6 +16,8 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.inference.TypeInferenceUtil;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.types.Row;
 
 /** Admission for released Flink JVM table-function generation inside a columnar boundary. */
 final class TableFunctionMatcher {
@@ -63,11 +66,59 @@ final class TableFunctionMatcher {
               call.getType());
       var inferred = TypeInferenceUtil.runTypeInference(function.getTypeInference(), context, null);
       return inferred.getExpectedArgumentTypes().stream()
-              .allMatch(TableFunctionMatcher::defaultConversions)
-          && defaultConversions(inferred.getOutputDataType());
+              .allMatch(TableFunctionMatcher::verifiedConversion)
+          && verifiedOutputConversion(inferred.getOutputDataType());
     } catch (RuntimeException failure) {
       return false;
     }
+  }
+
+  private static boolean verifiedOutputConversion(DataType type) {
+    if (type.getLogicalType().is(LogicalTypeRoot.ROW) && type.getConversionClass() == Row.class)
+      return type.getChildren().stream().allMatch(TableFunctionMatcher::verifiedConversion);
+    return verifiedConversion(type);
+  }
+
+  private static boolean verifiedConversion(DataType type) {
+    if (defaultConversions(type)) return true;
+    if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)) return false;
+    var element = type.getChildren().get(0);
+    if (type.getConversionClass() == List.class)
+      return element.getChildren().isEmpty() && defaultConversions(element);
+    return type.getConversionClass().isArray()
+        && type.getConversionClass().getComponentType().isPrimitive()
+        && primitiveConversion(element);
+  }
+
+  private static boolean primitiveConversion(DataType type) {
+    if (type.getLogicalType().isNullable()) return false;
+    Class<?> primitive;
+    switch (type.getLogicalType().getTypeRoot()) {
+      case BOOLEAN:
+        primitive = boolean.class;
+        break;
+      case TINYINT:
+        primitive = byte.class;
+        break;
+      case SMALLINT:
+        primitive = short.class;
+        break;
+      case INTEGER:
+        primitive = int.class;
+        break;
+      case BIGINT:
+        primitive = long.class;
+        break;
+      case FLOAT:
+        primitive = float.class;
+        break;
+      case DOUBLE:
+        primitive = double.class;
+        break;
+      default:
+        return false;
+    }
+    return type.getConversionClass() == primitive;
   }
 
   private static boolean defaultConversions(DataType type) {
@@ -147,8 +198,9 @@ final class TableFunctionMatcher {
   static String unsupportedReason(StreamPhysicalCorrelate node) {
     return "correlate: only non-specialized JVM table functions with INNER/LEFT and CHAR/VARCHAR,"
         + " numeric, boolean, binary, interval, temporal or recursively verified"
-        + " ARRAY/MAP/ROW input, output and argument types with default external Java"
-        + " conversions and input representation are verified";
+        + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
+        + " conversions (default containers, scalar Lists or non-null primitive arrays)"
+        + " and input representation are verified";
   }
 
   static RelNode substitute(StreamPhysicalCorrelate node, PlanContext context) {

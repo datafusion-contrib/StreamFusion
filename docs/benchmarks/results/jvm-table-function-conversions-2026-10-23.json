@@ -1,0 +1,2237 @@
+{
+  "date": "2026-10-23",
+  "purpose": "Correctness-enabling JVM table-function Java conversion contracts; no acceleration claim.",
+  "provenance": {
+    "base_revision": "189edb2149dc86cfc7786f57e333ae4c8b24a942",
+    "candidate_source_sha256": {
+      "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "84d5c0027d36c3747752239c9499795399f2d8ac22ac1495dfb434574bd4818c",
+      "src/test/java/tech/streamfusion/FlinkTableFunctionConversionSqlHarnessTest.java": "361a9e88c3b2390dfd23d721faecc2c0bb2c6a5b2f9cd78efb749529fb029282",
+      "src/test/java/tech/streamfusion/TableFunctionConversionBenchmark.java": "4c4340019baee521938663642811bd4d9d71d754328b69c9ee0db1029d4b684a",
+      "src/test/java/tech/streamfusion/UdfTypeBoundaryBenchmark.java": "6972eb7e58ceb67914d6e725b60d4e2f04287c3b62f58f6bd4e49b064d3ba8aa"
+    },
+    "native_payload_sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
+    "native_source_revision": "1bd9daa8d75586424f3a5d9ad7acc14d600baffb"
+  },
+  "configuration": {
+    "rows": 262144,
+    "parallelism": 1,
+    "heap": "2g",
+    "transpose_batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_alternating_pairs": 5,
+    "source": "Runtime Flink rows with nullable/empty arrays and repeated edge scalar values",
+    "sink": "Flink blackhole row sink",
+    "both_perimeter_transposes": true,
+    "local_zero_copy_exchange": false,
+    "cluster_per_job": true,
+    "symmetric_untimed_explain": true,
+    "timed_boundary": "executeSql(insert).await(), including planning/submission, callbacks, array conversions, production transport and both transposes; environment setup and EXPLAIN outside timing.",
+    "native_profile": "release, full RocksDB, mimalloc",
+    "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+    "os": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "fixture_identity_verified": true,
+    "previous_production_source_unchanged": true
+  },
+  "execution_observations": [
+    {
+      "flink_line": "22",
+      "engine": "candidate",
+      "exit_code": 0,
+      "started_unix": 1792796635.411799,
+      "finished_unix": 1792796663.9594555,
+      "other_java_before": 0,
+      "other_java_after": 0,
+      "other_java_sampled_max": 0,
+      "observation_count": 29
+    },
+    {
+      "flink_line": "22",
+      "engine": "prior",
+      "exit_code": 0,
+      "started_unix": 1792796663.9737992,
+      "finished_unix": 1792796687.3779855,
+      "other_java_before": 0,
+      "other_java_after": 0,
+      "other_java_sampled_max": 0,
+      "observation_count": 24
+    },
+    {
+      "flink_line": "118",
+      "engine": "candidate",
+      "exit_code": 0,
+      "started_unix": 1792796687.3796606,
+      "finished_unix": 1792796714.797576,
+      "other_java_before": 0,
+      "other_java_after": 0,
+      "other_java_sampled_max": 0,
+      "observation_count": 28
+    },
+    {
+      "flink_line": "118",
+      "engine": "prior",
+      "exit_code": 0,
+      "started_unix": 1792796714.811695,
+      "finished_unix": 1792796737.4317946,
+      "other_java_before": 0,
+      "other_java_after": 0,
+      "other_java_sampled_max": 0,
+      "observation_count": 23
+    }
+  ],
+  "results": [
+    {
+      "flink_version": "2.2.1",
+      "production": "candidate",
+      "native_enabled_expected_route": "native_table_function",
+      "cases": [
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:INT",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.237989452,
+              0.223248628,
+              0.158968577,
+              0.154676926,
+              0.146700147
+            ],
+            "median_seconds": 0.158968577,
+            "minimum_seconds": 0.146700147,
+            "maximum_seconds": 0.237989452
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.342591733,
+              0.32073313,
+              0.26892108,
+              0.331098073,
+              0.234258857
+            ],
+            "median_seconds": 0.32073313,
+            "minimum_seconds": 0.234258857,
+            "maximum_seconds": 0.342591733
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.703498
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.568782
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.381704
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.265213
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.237989
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.342592
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.320733
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.223249
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.158969
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.268921
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.331098
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.154677
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.1467
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.234259
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:DOUBLE",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.140088237,
+              0.152212409,
+              0.187300008,
+              0.156340216,
+              0.153632434
+            ],
+            "median_seconds": 0.153632434,
+            "minimum_seconds": 0.140088237,
+            "maximum_seconds": 0.187300008
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.250350697,
+              0.26146606,
+              0.247110737,
+              0.253154362,
+              0.254459192
+            ],
+            "median_seconds": 0.253154362,
+            "minimum_seconds": 0.247110737,
+            "maximum_seconds": 0.26146606
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.16184
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.354239
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.263451
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.15892
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.140088
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.250351
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.261466
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.152212
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.1873
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.247111
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.253154
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.15634
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.153632
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.254459
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:STRING",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.263098774,
+              0.264999117,
+              0.257908952,
+              0.264348993,
+              0.283641669
+            ],
+            "median_seconds": 0.264348993,
+            "minimum_seconds": 0.257908952,
+            "maximum_seconds": 0.283641669
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.482700513,
+              0.473676105,
+              0.501561474,
+              0.482334048,
+              0.480958074
+            ],
+            "median_seconds": 0.482334048,
+            "minimum_seconds": 0.473676105,
+            "maximum_seconds": 0.501561474
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.29086
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.595645
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.476341
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.267436
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.263099
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.482701
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.473676
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.264999
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.257909
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.501561
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.482334
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.264349
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.283642
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.480958
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:DECIMAL(38,18)",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.286098787,
+              0.269951836,
+              0.263912036,
+              0.272281375,
+              0.266055276
+            ],
+            "median_seconds": 0.269951836,
+            "minimum_seconds": 0.263912036,
+            "maximum_seconds": 0.286098787
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.461599162,
+              0.452986277,
+              0.450312805,
+              0.458010632,
+              0.457059258
+            ],
+            "median_seconds": 0.457059258,
+            "minimum_seconds": 0.450312805,
+            "maximum_seconds": 0.461599162
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.291112
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.516049
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.459543
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.267373
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.286099
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.461599
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.452986
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.269952
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.263912
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.450313
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.458011
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.272281
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.266055
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.457059
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flink_version": "2.2.1",
+      "production": "prior",
+      "native_enabled_expected_route": "full_stock_fallback",
+      "cases": [
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:INT",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.230117101,
+              0.218395275,
+              0.148680326,
+              0.14849651,
+              0.143015378
+            ],
+            "median_seconds": 0.148680326,
+            "minimum_seconds": 0.143015378,
+            "maximum_seconds": 0.230117101
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.221440202,
+              0.22267653,
+              0.176085775,
+              0.147276439,
+              0.15263515
+            ],
+            "median_seconds": 0.176085775,
+            "minimum_seconds": 0.147276439,
+            "maximum_seconds": 0.22267653
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.67278
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.306244
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.259532
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.25085
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.230117
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.22144
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.222677
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.218395
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.14868
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.176086
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.147276
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.148497
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.143015
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.152635
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:DOUBLE",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.147573865,
+              0.12689665,
+              0.144306663,
+              0.144484441,
+              0.147396733
+            ],
+            "median_seconds": 0.144484441,
+            "minimum_seconds": 0.12689665,
+            "maximum_seconds": 0.147573865
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.155328471,
+              0.165935991,
+              0.143320188,
+              0.158572616,
+              0.140060702
+            ],
+            "median_seconds": 0.155328471,
+            "minimum_seconds": 0.140060702,
+            "maximum_seconds": 0.165935991
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.160572
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.146732
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.148826
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.1479
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.147574
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.155328
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.165936
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.126897
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.144307
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.14332
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.158573
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.144484
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.147397
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.140061
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:STRING",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.261236262,
+              0.252257614,
+              0.24853329,
+              0.254115013,
+              0.256892233
+            ],
+            "median_seconds": 0.254115013,
+            "minimum_seconds": 0.24853329,
+            "maximum_seconds": 0.261236262
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.26222129,
+              0.251104798,
+              0.274027685,
+              0.258071909,
+              0.252784943
+            ],
+            "median_seconds": 0.258071909,
+            "minimum_seconds": 0.251104798,
+            "maximum_seconds": 0.274027685
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.286144
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.293795
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.262648
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.29438
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.261236
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.262221
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.251105
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.252258
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.248533
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.274028
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.258072
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.254115
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.256892
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.252785
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:DECIMAL(38,18)",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.257962911,
+              0.261792229,
+              0.249402641,
+              0.253486668,
+              0.267618305
+            ],
+            "median_seconds": 0.257962911,
+            "minimum_seconds": 0.249402641,
+            "maximum_seconds": 0.267618305
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.258165426,
+              0.255716248,
+              0.249177168,
+              0.256629043,
+              0.265220031
+            ],
+            "median_seconds": 0.256629043,
+            "minimum_seconds": 0.249177168,
+            "maximum_seconds": 0.265220031
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.303235
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.261522
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.255924
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.253087
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.257963
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.258165
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.255716
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.261792
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.249403
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.249177
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.256629
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.253487
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.267618
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.26522
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flink_version": "1.18.1",
+      "production": "candidate",
+      "native_enabled_expected_route": "native_table_function",
+      "cases": [
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:INT",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.158164191,
+              0.143822288,
+              0.160367522,
+              0.152737559,
+              0.149091779
+            ],
+            "median_seconds": 0.152737559,
+            "minimum_seconds": 0.143822288,
+            "maximum_seconds": 0.160367522
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.259282248,
+              0.293859648,
+              0.233773123,
+              0.255543647,
+              0.243817113
+            ],
+            "median_seconds": 0.255543647,
+            "minimum_seconds": 0.233773123,
+            "maximum_seconds": 0.293859648
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.615611
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.579152
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.366494
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.27301
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.158164
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.259282
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.29386
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.143822
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.160368
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.233773
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.255544
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.152738
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.149092
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.243817
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:DOUBLE",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.148776333,
+              0.134417019,
+              0.158529162,
+              0.152006598,
+              0.153241509
+            ],
+            "median_seconds": 0.152006598,
+            "minimum_seconds": 0.134417019,
+            "maximum_seconds": 0.158529162
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.24941994,
+              0.244971821,
+              0.241595227,
+              0.240242307,
+              0.245143218
+            ],
+            "median_seconds": 0.244971821,
+            "minimum_seconds": 0.240242307,
+            "maximum_seconds": 0.24941994
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.159786
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.357513
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.252387
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.142889
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.148776
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.24942
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.244972
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.134417
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.158529
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.241595
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.240242
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.152007
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.153242
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.245143
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:STRING",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.256499257,
+              0.252541971,
+              0.253401285,
+              0.261522736,
+              0.283993343
+            ],
+            "median_seconds": 0.256499257,
+            "minimum_seconds": 0.252541971,
+            "maximum_seconds": 0.283993343
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.499135302,
+              0.500912134,
+              0.501399201,
+              0.506070151,
+              0.507415109
+            ],
+            "median_seconds": 0.501399201,
+            "minimum_seconds": 0.499135302,
+            "maximum_seconds": 0.507415109
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.310543
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.593489
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.502409
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.250448
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.256499
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.499135
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.500912
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.252542
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.253401
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.501399
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.50607
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.261523
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.283993
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.507415
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:DECIMAL(38,18)",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.264196679,
+              0.268093738,
+              0.263963,
+              0.26267864,
+              0.263400401
+            ],
+            "median_seconds": 0.263963,
+            "minimum_seconds": 0.26267864,
+            "maximum_seconds": 0.268093738
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.44509419,
+              0.446768211,
+              0.45147035,
+              0.44700744,
+              0.454531346
+            ],
+            "median_seconds": 0.44700744,
+            "minimum_seconds": 0.44509419,
+            "maximum_seconds": 0.454531346
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.310784
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.513273
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.452569
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.264221
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.264197
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.445094
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.446768
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.268094
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.263963
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.45147
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.447007
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.262679
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.2634
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.454531
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flink_version": "1.18.1",
+      "production": "prior",
+      "native_enabled_expected_route": "full_stock_fallback",
+      "cases": [
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:INT",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.218932177,
+              0.151090797,
+              0.162970768,
+              0.168351959,
+              0.143531599
+            ],
+            "median_seconds": 0.162970768,
+            "minimum_seconds": 0.143531599,
+            "maximum_seconds": 0.218932177
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.218805358,
+              0.216985316,
+              0.150626046,
+              0.139008352,
+              0.14601326
+            ],
+            "median_seconds": 0.150626046,
+            "minimum_seconds": 0.139008352,
+            "maximum_seconds": 0.218805358
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.642245
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.29343
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.219222
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.222969
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.218932
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.218805
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.216985
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.151091
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.162971
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.150626
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.139008
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.168352
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.143532
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.146013
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_primitive:DOUBLE",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.159418108,
+              0.149223637,
+              0.14073325,
+              0.144035727,
+              0.144181548
+            ],
+            "median_seconds": 0.144181548,
+            "minimum_seconds": 0.14073325,
+            "maximum_seconds": 0.159418108
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.165934582,
+              0.152258524,
+              0.144523891,
+              0.141019679,
+              0.141646827
+            ],
+            "median_seconds": 0.144523891,
+            "minimum_seconds": 0.141019679,
+            "maximum_seconds": 0.165934582
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.157563
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.155009
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.144896
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.145891
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.159418
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.165935
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.152259
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.149224
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.140733
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.144524
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.14102
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.144036
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.144182
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.141647
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:STRING",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.265804353,
+              0.25043641,
+              0.267735828,
+              0.247633186,
+              0.252955684
+            ],
+            "median_seconds": 0.252955684,
+            "minimum_seconds": 0.247633186,
+            "maximum_seconds": 0.267735828
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.25092763,
+              0.256841265,
+              0.244112919,
+              0.245681465,
+              0.254454846
+            ],
+            "median_seconds": 0.25092763,
+            "minimum_seconds": 0.244112919,
+            "maximum_seconds": 0.256841265
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.310515
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.286835
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.259398
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.245979
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.265804
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.250928
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.256841
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.250436
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.267736
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.244113
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.245681
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.247633
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.252956
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.254455
+            }
+          ]
+        },
+        {
+          "case": "JVM_TABLE_CONVERSION_list:DECIMAL(38,18)",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.266899399,
+              0.266992668,
+              0.257865526,
+              0.268333492,
+              0.26956367
+            ],
+            "median_seconds": 0.266992668,
+            "minimum_seconds": 0.257865526,
+            "maximum_seconds": 0.26956367
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.259889085,
+              0.260929998,
+              0.262011525,
+              0.266754016,
+              0.262920055
+            ],
+            "median_seconds": 0.262011525,
+            "minimum_seconds": 0.259889085,
+            "maximum_seconds": 0.266754016
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.312967
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.255383
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.265305
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.258191
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.266899
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.259889
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.26093
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.266993
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.257866
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.262012
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.266754
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.268333
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.269564
+            },
+            {
+              "engine": "native_enabled_fallback",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.26292
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Short complete-job measurements include startup and JIT variability; they do not establish sustained throughput.",
+    "Prior production runs in a separate JVM with its own stock controls; ranges and all trials remain visible.",
+    "No builds or tests from this goal overlap timings. Other local Java activity was sampled once per second; this is not an exclusive CPU reservation.",
+    "Slower verified UDF coverage follows the accepted maintainer performance exception."
+  ],
+  "bounded_profile": {
+    "profile_passes": 1,
+    "optimization_passes": 0,
+    "flink_version": "2.2.1",
+    "case": "list:STRING",
+    "rows": 1048576,
+    "warmup_pairs": 1,
+    "profiled_measured_pairs": 1,
+    "timings_excluded_from_performance_matrix": true,
+    "all_execution_and_native_samples": 916,
+    "native_table_function_samples": 28,
+    "operator_leaf_samples": {
+      "ColumnarJvmTableFunction$12.processElement": 5,
+      "tech.streamfusion.arrow.writers.ArrayWriter$ArrayWriterForRow.isNullAt": 3,
+      "tech.streamfusion.operator.NativeColumnarTableFunctionOperator$1.collect": 3,
+      "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest.scalar": 3,
+      "tech.streamfusion.arrow.writers.IntWriter.doWrite": 3,
+      "tech.streamfusion.arrow.writers.IntWriter$IntWriterForRow.isNullAt": 3,
+      "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.processElement": 2,
+      "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.append": 2,
+      "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest$MutatingRows.eval": 1,
+      "tech.streamfusion.arrow.writers.ArrayWriter.doWrite": 1,
+      "tech.streamfusion.arrow.writers.ArrowFieldWriter.write": 1,
+      "tech.streamfusion.arrow.ArrowWriter.write": 1
+    },
+    "operator_inclusive_samples": {
+      "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.append": 14,
+      "tech.streamfusion.arrow.ArrowWriter.write": 12,
+      "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3151+0x00007f62d4daa5f8.924548271.accept": 11,
+      "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.processElement": 11,
+      "tech.streamfusion.arrow.writers.ArrowFieldWriter.write": 11,
+      "tech.streamfusion.operator.NativeColumnarTableFunctionOperator$1.collect": 11,
+      "ColumnarJvmTableFunction$12.processElement": 9,
+      "org.apache.flink.streaming.runtime.tasks.ChainingOutput.pushToOperator": 8,
+      "org.apache.flink.streaming.runtime.tasks.ChainingOutput.collect": 7,
+      "org.apache.flink.table.runtime.util.StreamRecordCollector.collect": 6,
+      "tech.streamfusion.arrow.writers.IntWriter.doWrite": 6,
+      "org.apache.flink.table.runtime.collector.TableFunctionCollector.outputResult": 5,
+      "tech.streamfusion.arrow.writers.ArrayWriter.doWrite": 4,
+      "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest$MutatingRows.eval": 4,
+      "tech.streamfusion.arrow.writers.ArrayWriter$ArrayWriterForRow.isNullAt": 3,
+      "StreamExecCorrelate$12$TableFunctionCollector$2.collect": 3,
+      "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest.scalar": 3,
+      "tech.streamfusion.arrow.writers.IntWriter$IntWriterForRow.isNullAt": 3
+    },
+    "limits": [
+      "A single short profile gives diagnostic samples, not precise CPU attribution or a speedup measurement."
+    ],
+    "recording_sha256": "63a66ae8fd06f8d170d2e2cd709e8456f47ab2209107f5995b5c3f0ce5eefa17",
+    "observation": "Generated JVM callbacks and immediate owned Arrow output appear in the 28 operator samples. No easy safe improvement was established; the investigation stopped after one profile without an optimization change."
+  },
+  "validation": {
+    "flink_2.2.1_jdk17": {
+      "new_conversion_cases": 47,
+      "existing_nested_cases": 61,
+      "existing_typed_cases": 64,
+      "failures": 0
+    },
+    "flink_1.18.1_jdk17": {
+      "new_conversion_cases": 47,
+      "existing_nested_cases": 61,
+      "existing_typed_cases": 64,
+      "failures": 0
+    },
+    "required_ci": "Both unchanged upstream Flink suites and the complete CI matrices must pass on the PR head before merge."
+  },
+  "released_reference_sources": [
+    "https://repo.maven.apache.org/maven2/org/apache/flink/flink-table-common/2.2.1/flink-table-common-2.2.1-sources.jar",
+    "https://repo.maven.apache.org/maven2/org/apache/flink/flink-table-runtime/2.2.1/flink-table-runtime-2.2.1-sources.jar",
+    "https://repo.maven.apache.org/maven2/org/apache/flink/flink-table-common/1.18.1/flink-table-common-1.18.1-sources.jar",
+    "https://repo.maven.apache.org/maven2/org/apache/flink/flink-table-runtime/1.18.1/flink-table-runtime-1.18.1-sources.jar"
+  ]
+}
