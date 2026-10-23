@@ -194,7 +194,7 @@ requires the table-function operator to consume input in every backend invocatio
 
 Forty-seven new checks pass on each supported Flink line, alongside 125 existing nested/typed
 table-function regressions. They cover scalar List elements (including both interval families),
-all seven primitive array types, concrete Java signatures, atomic-array result collectors,
+all seven primitive array types, invocation of concrete Java signatures, atomic-array result collectors,
 retained arguments, mutable fanout, NULL/empty values, exact floating bits through chained calls,
 error causes, all RowKinds and two forced restores on memory and native RocksDB state.
 Unverified source filters, nested alternate bridges, internal containers and Lists of containers

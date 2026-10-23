@@ -318,22 +318,41 @@ class FlinkTableFunctionConversionSqlHarnessTest {
   }
 
   public static class IntRows extends MutatingRows {
+    private transient boolean called;
+
     public IntRows() {
       super("primitive:INT");
     }
 
     public void eval(Integer mode, int[] values) {
+      called = true;
       super.eval(mode, values);
+    }
+
+    @Override
+    public void close() {
+      if (!called)
+        throw new IllegalStateException("concrete primitive array method was not invoked");
+      super.close();
     }
   }
 
   public static class ListRows extends MutatingRows {
+    private transient boolean called;
+
     public ListRows() {
       super("list:STRING");
     }
 
     public void eval(Integer mode, List<String> values) {
+      called = true;
       super.eval(mode, values);
+    }
+
+    @Override
+    public void close() {
+      if (!called) throw new IllegalStateException("concrete List method was not invoked");
+      super.close();
     }
   }
 

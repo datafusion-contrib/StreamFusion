@@ -10,7 +10,9 @@
       "src/test/java/tech/streamfusion/UdfTypeBoundaryBenchmark.java": "6972eb7e58ceb67914d6e725b60d4e2f04287c3b62f58f6bd4e49b064d3ba8aa"
     },
     "native_payload_sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
-    "native_source_revision": "1bd9daa8d75586424f3a5d9ad7acc14d600baffb"
+    "native_source_revision": "1bd9daa8d75586424f3a5d9ad7acc14d600baffb",
+    "benchmark_source_revision": "2a5eee02be03cd54fda6f8c071a0ef269f1c2597",
+    "post_measurement_test_changes": "Subsequent test probes require concrete Java overload invocation at closure. Measured production, function/factory and benchmark methods are unchanged."
   },
   "configuration": {
     "rows": 262144,
