@@ -173,6 +173,17 @@ timeouts. Authorization and other failures remain fatal. This changes fixture
 synchronization only; sink execution, SQL, and result assertions stay upstream's,
 and failed tests are not rerun.
 
+The Flink 2.2 `CommonExecSinkITCase` bounded source fixture waits for its already scheduled
+`NoMoreSplits` notification before emitting data or ending input. Its released split holder
+otherwise emits immediately: a NOT NULL task failure can race that notification, and the
+result reports a secondary lost-operator-event failure instead of the real sink error.
+The test agent gates this exact fixture reader's availability and polling until its original
+notification handler runs; closing a reader releases any pending availability. The original
+reader still supplies every row, conversion, end signal and exception. Rows, SQL, production
+sink enforcement and upstream assertions remain unchanged, and failed tests are not retried.
+Focused bytecode tests cover split/empty readers, independent readers, closure, and propagation
+of the original sink exception after readiness.
+
 The 1.18 execution contract resource names methods verified in that release's unchanged source.
 It retains scalar, aggregate, rank, distinct-window and lookup witnesses; it excludes the
 retracting window TVF method absent from that release and the unavailable Delta suite. Agent and
