@@ -8,6 +8,11 @@ back](#still-falls-back).
 Flink picks between the two plan shapes itself, based on `table.exec.mini-batch.enabled`; this page
 covers both, since a query only accelerates when whichever shape Flink chose is fully native.
 
+Integer COLLECT uses the verified single-phase generated JVM handler behind Arrow batch
+boundaries, with released managed MapViews; see [Integer COLLECT](#integer-collect) for its
+narrow type and representation gates. Integer ARRAY_AGG additionally uses that boundary on
+Flink 2.2 as [described below](#integer-array_agg); richer collection results remain pending.
+
 When the selected aggregate uses a mini-batch trigger, translation uses the released host's
 size validation. Unset/default `-1`, zero and negative `table.exec.mini-batch.size` values
 fail during planning with the same exception and message as Flink, for single-phase and
@@ -830,6 +835,9 @@ route on both supported JDKs, and check helpful JVM null-dereference text when i
 
 ## Type support
 
+The separate [integer COLLECT](#integer-collect) and [integer ARRAY_AGG](#integer-array_agg) routes
+admit INT/BIGINT through released JVM handlers. The table below describes the arithmetic native accumulators.
+
 The matcher only accelerates `(aggregate, value-type)` pairs where DataFusion's native arithmetic
 agrees byte-for-byte with Flink's — this table is that guardrail; anything marked ✗ falls back.
 
@@ -1006,7 +1014,7 @@ An initial BinaryRow-keyed write-through cache was rejected: its key comparisons
 saved heap-state reads (1.395 s versus stock 1.084 s at 2M rows/65,536 keys). Primitive-key
 lookups reduced that cost, after which managed-state writes and rehashing dominated.
 
-Final release measurements use JDK17, Flink2.2.1, the unchanged release/mimalloc native library,
+Final release measurements use JDK17, Flink 2.2.1, the unchanged release/mimalloc native library,
 p=1, 2 GiB heap, production IPC, row source/blackhole sink and both 1,024-row transposes.
 Each complete job owns and closes its metrics cluster; cluster boot/config is outside timing,
 while planning/submission, source, sink, conversions, functions and state remain timed.
@@ -1175,6 +1183,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
   (`COUNT(DISTINCT x)` keeps a per-key
   value set; `SUM(DISTINCT x)` adds a running sum folded as values enter/leave it; `MIN`/`MAX
   (DISTINCT)` run as their plain, multiplicity-blind forms.)
+- COLLECT/ARRAY_AGG outside their verified single-phase INT/BIGINT, scalar-input, non-character-output boundary; ARRAY_AGG on Flink 1.18.
 - An approximate aggregate.
 - FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over a value type outside the single-phase list above,
   or with more than one argument.
@@ -2487,3 +2496,57 @@ retain the measured variability and exact configurations. Reproduce with `String
 `stringagg.ttl=1 h`, and the corresponding rows/keys/width settings. The retracting profile sets
 `stringagg.updating=true` and `stringagg.literalSeparator=false`; the append profile sets those
 properties to `false` and `true` respectively.
+
+
+## Integer COLLECT
+
+COLLECT over INT/BIGINT uses the existing columnar JVM aggregate runtime with released Flink
+handlers and managed MapViews. Input fields remain scalar, and the initial output row cannot
+contain character fields, including grouping keys or scalar co-aggregates. Other COLLECT
+value types and nested results retain fallback. Integer ARRAY_AGG additionally runs onFlink 2.2;
+it is absent from released Flink 1.18.1. No new native multiset accumulator or state serializer is introduced.
+
+NULL values do not contribute; repeated values keep their multiplicities. Retractions retain
+Flink's zero/negative-count behavior, group deletion and reinsertion, and resolved MULTISET
+schema. DISTINCT, FILTER and mixed scalar aggregates use the same released generated handlers.
+Grouped and global aggregation are verified on both supported lines, including consumed
+NativeJvmGroup work. Heap and native RocksDB cases restore twice across nonempty accumulation
+and retraction prefixes, retaining managed DataView state and changelog tags.
+
+The existing `streamfusion.experimental.jvmGroupAggregates` switch controls this route and is
+true by default. Mini-batching, async state, approximate/ordered calls and unverified function
+specialization retain fallback. A COLLECT result may reach a final row sink or a verified
+collection-preserving Calc. Unverified state, ordering, exchange and native-writer boundaries
+retain the existing collection guards. Updating retained MAP/MULTISET payloads remain deferred
+in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
+
+[Release comparisons](../benchmarks/collection-aggregates.md#integer-collect) retain source,
+keyed state, sink and both row/Arrow transposes, including startup and all trial ranges.
+The optimization investigation is limited to two profiling/optimization passes per increment.
+
+
+## Integer ARRAY_AGG
+
+On released Flink 2.2.1, ARRAY_AGG over INT/BIGINT uses the same single-phase columnar JVM
+runtime. Only the exact builtin operator is recognized; user-defined functions with that name
+retain their existing signature gates. Scalar inputs and non-character output fields are
+required. Other element types and nested collection results retain fallback. ARRAY_AGG is
+explicitly N/A on released Flink 1.18.1. Mini-batch, async-state, approximate, ordered and specialized forms keep their
+existing restrictions.
+
+The released handler retains arrival order, duplicate values, NULL elements, DISTINCT and
+FILTER behavior, retractions, deletion/reinsertion and mixed COLLECT/scalar aggregates. RESPECT
+NULLS is the default; IGNORE NULLS removes NULL inputs and returns NULL when no value remains.
+Resolved ARRAY types and parent/element validity are preserved. Per-key changelog histories and
+global/empty-input cases require native work. Heap and native RocksDB tests restore the RAW
+LinkedList accumulator twice across nonempty prefixes; no list or checkpoint serializer is added.
+
+Nullable primitive-array results can feed the verified native updating Top-N and UNNEST paths,
+with consumed work in both the producer and consumer. Sensitive output forms, including
+NOT NULL-element arrays, retain the existing final row-sink/preserving-consumer guards.
+Unverified state/writer shapes retain fallback. This does not enable updating MAP/MULTISET
+payload support deferred in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
+
+[Release comparisons](../benchmarks/collection-aggregates.md#integer-array_agg) retain array
+materialization, managed state, both perimeter conversions and source/sink costs. Optimization
+stops after two profiling/optimization passes; slower results use the accepted collection tradeoff.

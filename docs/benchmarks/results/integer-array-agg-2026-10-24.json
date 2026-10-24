@@ -1,0 +1,270 @@
+{
+  "date": "2026-10-24",
+  "previous_revision": "9ee3080f",
+  "previous_revision_note": "Integer COLLECT candidate retained by PR479; this ARRAY_AGG increment merges after it. Identical benchmark/input source is copied to that checkout.",
+  "hardware": {
+    "cpu": "Intel Core i7-12650H",
+    "os": "Linux x86-64 / WSL2",
+    "jdk": "OpenJDK17.0.20.1"
+  },
+  "native": {
+    "profile": "release",
+    "features": [
+      "mimalloc",
+      "rocksdb-state"
+    ],
+    "sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
+    "production_rust_changes": false,
+    "operator_note": "Existing columnar Java/JVM grouped runtime, released Flink handler and RAW LinkedList accumulators; DISTINCT uses managed DataViews. Production changes are planner/version admission and existing output-boundary classification."
+  },
+  "configuration": {
+    "flink": "2.2.1",
+    "rows": 50000,
+    "parallelism": 1,
+    "key_type": "INT",
+    "value_type": "BIGINT",
+    "groups": [
+      64,
+      4096
+    ],
+    "distinct_values_per_non_null_group": 8,
+    "key": "row modulo groups",
+    "value": "(row/groups) modulo8; NULL when row modulo8=7",
+    "null_note": "Every eighth input value isNULL; key7mod8groups contain onlyNULL elements under defaultRESPECTNULLS.",
+    "warmups_per_engine": 2,
+    "trials_per_engine": 3,
+    "test_heap_gib": 8,
+    "jvm_accumulator_cache_entries": 0,
+    "key_prefix_note": "Default16 prefix chars unused forINTkeys.",
+    "boundary": "planning, submission, runtime Row source, keyed state, both row/Arrow transposes and blackhole row sink; cluster setup and initial explain excluded",
+    "schedule": "alternating stock/native per JVM; separate JVMs per cardinality and phase; no concurrent tests, builds or benchmarks during measurements",
+    "value_types": [
+      "BIGINT",
+      "INT via CAST(v AS INT) before grouping"
+    ],
+    "array_length_note": "The8-value input domain does not cap ARRAY length: respect-NULLs arrays grow to781/782 elements at64groups and12/13at4096groups."
+  },
+  "trials": [
+    {
+      "phase": "previous",
+      "groups": 64,
+      "shape": "array_agg",
+      "element_type": "BIGINT",
+      "flink_seconds": [
+        0.552738849,
+        0.507870178,
+        0.663671289
+      ],
+      "native_seconds": [
+        0.517952953,
+        0.656764508,
+        0.557445921
+      ]
+    },
+    {
+      "phase": "previous",
+      "groups": 64,
+      "shape": "array_agg_int",
+      "element_type": "INT",
+      "flink_seconds": [
+        0.558824948,
+        0.528121578,
+        0.55175267
+      ],
+      "native_seconds": [
+        0.53539401,
+        0.654646231,
+        0.67115133
+      ]
+    },
+    {
+      "phase": "previous",
+      "groups": 4096,
+      "shape": "array_agg",
+      "element_type": "BIGINT",
+      "flink_seconds": [
+        0.189795898,
+        0.171819386,
+        0.102443112
+      ],
+      "native_seconds": [
+        0.114341029,
+        0.180525437,
+        0.098210255
+      ]
+    },
+    {
+      "phase": "previous",
+      "groups": 4096,
+      "shape": "array_agg_int",
+      "element_type": "INT",
+      "flink_seconds": [
+        0.157129123,
+        0.099901388,
+        0.085930588
+      ],
+      "native_seconds": [
+        0.179144672,
+        0.154373263,
+        0.208797195
+      ]
+    },
+    {
+      "phase": "final",
+      "groups": 64,
+      "shape": "array_agg",
+      "element_type": "BIGINT",
+      "flink_seconds": [
+        0.612707224,
+        0.590128554,
+        0.530636916
+      ],
+      "native_seconds": [
+        0.615159676,
+        0.682652485,
+        0.695289212
+      ]
+    },
+    {
+      "phase": "final",
+      "groups": 64,
+      "shape": "array_agg_int",
+      "element_type": "INT",
+      "flink_seconds": [
+        0.631507186,
+        0.530444687,
+        0.526918269
+      ],
+      "native_seconds": [
+        0.659266675,
+        0.630828152,
+        0.575246956
+      ]
+    },
+    {
+      "phase": "final",
+      "groups": 4096,
+      "shape": "array_agg",
+      "element_type": "BIGINT",
+      "flink_seconds": [
+        0.179081935,
+        0.170332845,
+        0.177614215
+      ],
+      "native_seconds": [
+        0.223838682,
+        0.187168255,
+        0.109108191
+      ]
+    },
+    {
+      "phase": "final",
+      "groups": 4096,
+      "shape": "array_agg_int",
+      "element_type": "INT",
+      "flink_seconds": [
+        0.094891903,
+        0.128949309,
+        0.099210414
+      ],
+      "native_seconds": [
+        0.200834703,
+        0.112457002,
+        0.104144998
+      ]
+    }
+  ],
+  "cpu_profiles": {
+    "passes": 2,
+    "closed": true,
+    "event": "cpu",
+    "interval": "1ms",
+    "target_seconds_per_capture": 8,
+    "profiler": "async-profiler4.6",
+    "boundary": "one unprofiled native-only complete-job warmup; profile native-only jobs until the8second target completes, including planning/compilation/allJVMthreads; stop after currentjob",
+    "captures": {
+      "array_agg_int-keys4096-native": {
+        "total_samples": 25319,
+        "inclusive_method_samples": {
+          "NativeColumnarJvmGroupOperator.ingest": 1047,
+          "NativeColumnarJvmGroupOperator.append": 255,
+          "ArrayAggFunction.getValue": 158,
+          "ArrayWriter.doWrite": 55,
+          "ArrayDataSerializer.copy": 114,
+          "GroupAggFunction.processElement": 902,
+          "LinkedList.toArray": 156
+        },
+        "top_self_samples": {
+          "_raw_spin_unlock_irqrestore_[k]": 1857,
+          "IndexSetIterator::advance_and_next": 561,
+          "PhaseChaitin::Split": 448,
+          "/usr/lib/x86_64-linux-gnu/libc.so.6": 395,
+          "PhaseChaitin::gather_lrg_masks": 352,
+          "PhaseLive::compute": 329,
+          "G1ParScanThreadState::trim_queue_to_threshold": 323,
+          "PhaseChaitin::interfere_with_live": 295,
+          "PhaseIdealLoop::build_loop_late": 240,
+          "PhaseChaitin::elide_copy": 237
+        }
+      },
+      "array_agg-keys64-native": {
+        "total_samples": 15403,
+        "inclusive_method_samples": {
+          "NativeColumnarJvmGroupOperator.ingest": 5979,
+          "NativeColumnarJvmGroupOperator.append": 1326,
+          "ArrayAggFunction.getValue": 3999,
+          "ArrayWriter.doWrite": 569,
+          "ArrayDataSerializer.copy": 1288,
+          "GroupAggFunction.processElement": 5899,
+          "LinkedList.toArray": 3996
+        },
+        "top_self_samples": {
+          "java/util/LinkedList.toArray_[i]": 3940,
+          "java/lang/Long.valueOf_[i]": 639,
+          "_raw_spin_unlock_irqrestore_[k]": 598,
+          "org/apache/flink/table/data/GenericRowData.<init>_[i]": 405,
+          "IndexSetIterator::advance_and_next": 198,
+          "/usr/lib/x86_64-linux-gnu/libc.so.6": 180,
+          "G1ParScanThreadState::trim_queue_to_threshold": 176,
+          "PhaseChaitin::Split": 171,
+          "clear_page_erms_[k]": 170,
+          "jlong_disjoint_arraycopy": 158
+        }
+      }
+    },
+    "limitations": "inclusive counts overlap; not allocation counts/copied bytes, and profiled times do not enter trial tables"
+  },
+  "scope": {
+    "admitted": "Exact released2.2 ARRAY_AGG overINT/BIGINT, scalar inputs andnon-character output fields; defaultRESPECTNULLS/IGNORENULLS,DISTINCT/FILTER/global/mixedCOLLECT; verifiednullableprimitivearrayTopN/UNNEST consumers.",
+    "retained_fallback": [
+      "richer ARRAY_AGG element types",
+      "character grouping/output fields",
+      "mini-batch/async-state/approximate/ordered/specialized forms",
+      "sensitive/unverified represented state or writer boundaries",
+      "updating MAP/MULTISET retained payload extension#437"
+    ],
+    "not_applicable": "ARRAY_AGG absent onreleasedFlink1.18.1;compat helperreturnsfalse andruntimechecks explicitlyskipthere."
+  },
+  "conclusion": "All native medians exceed paired stock; BIGINT medians also exceed previous fallback while INT medians improve previous fallback. Ranges overlap and small-array jobs are startup dominated. No acceleration claim. Two profiles identify linked-list result snapshots, copying/boxing and startup/compilation; no safe small shortcut was identified. Accepted collection tradeoff; further performance in#239.",
+  "validation": {
+    "flink2.2.1": {
+      "passed": 219,
+      "skipped": 0
+    },
+    "flink1.18.1": {
+      "passed": 185,
+      "skipped": 34
+    },
+    "coverage": [
+      "consumed NativeJvmGroup and per-key ordered change histories",
+      "INT/BIGINT, duplicates, NULL and validNOTNULL elements viaCOALESCE",
+      "RESPECT/IGNORENULLS and allNULL/global/emptyinput results",
+      "DISTINCT/FILTER/mixedCOLLECT/scalars/formatting",
+      "heap/nativeRocksDB2nonemptyprefixrestores andmemoryrelease",
+      "consumed native producer+TopN/UNNEST",
+      "richer/character schemas anddisabledgroupfallback",
+      "ARRAY_AGG explicitN/A on1.18",
+      "existing scalarUDAF,COLLECT,MULTISETcast,UNNEST andsink/producerguards"
+    ]
+  }
+}

@@ -220,11 +220,11 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
                   : "collection value representation requires a row sink");
       return root;
     }
-    if (CollectionValueIdentity.generatedCorrelateCrossesBoundary(substituted, finalOutput)) {
+    if (CollectionValueIdentity.generatedCollectionCrossesBoundary(substituted, finalOutput)) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
       recordFallback(
-          "generated correlate collection representation requires a final projection or fused"
+          "generated collection representation requires a final projection or fused"
               + " consumer");
       return root;
     }
@@ -302,7 +302,7 @@ public final class PhysicalPlanScan implements FlinkOptimizeProgram<StreamOptimi
                 StreamPhysicalGroupAggregate.class,
                 "jvmGroupAggregate",
                 JvmGroupAggregateMatcher::substitute)
-            .shaped(JvmGroupAggregateMatcher::enabledUserAggregate)
+            .shaped(JvmGroupAggregateMatcher::enabledAggregate)
             .matching(JvmGroupAggregateMatcher::matches)
             .reason(JvmGroupAggregateMatcher::unsupportedReason)
             .keyedState()

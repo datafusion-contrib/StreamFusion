@@ -2356,6 +2356,8 @@ Runtime sources require consumed NativeCalc work on both supported releases, inc
 four input changelog kinds, filtered/CASE paths and empty batches. Direct BINARY elements
 remain guarded. MULTISET outputs use the same final row-sink/fused-consumer restriction as
 MAP outputs; unverified state, exchange, ordering and native-writer boundaries still fall back.
+A verified integer COLLECT producer can feed this preserving Calc through its existing map-shaped
+output; character co-projections and other unverified aggregate representations retain fallback.
 The updating MAP/MULTISET payload extension in
 [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) remains deferred.
 [Release comparisons](../benchmarks/scalar-functions.md#multiset-casts) document the accepted

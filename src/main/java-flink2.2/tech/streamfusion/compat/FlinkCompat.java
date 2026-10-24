@@ -8,6 +8,10 @@ import org.apache.flink.table.planner.plan.logical.WindowSpec;
 
 /** Planner constructs selected at build time for the target Flink line. */
 public final class FlinkCompat {
+  public static boolean isBuiltinArrayAgg(org.apache.calcite.sql.SqlAggFunction function) {
+    return function == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ARRAY_AGG;
+  }
+
   private FlinkCompat() {}
 
   public static final boolean NARROW_CONSTRUCTORS_COMPILE = true;

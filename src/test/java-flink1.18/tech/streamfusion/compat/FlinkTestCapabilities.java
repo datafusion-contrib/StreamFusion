@@ -19,6 +19,7 @@ public final class FlinkTestCapabilities {
 
   private static final java.util.Set<String> ABSENT_SQL_FUNCTIONS =
       java.util.Set.of(
+          "ARRAY_AGG",
           "ARRAY_APPEND",
           "ARRAY_PREPEND",
           "ARRAY_SORT",

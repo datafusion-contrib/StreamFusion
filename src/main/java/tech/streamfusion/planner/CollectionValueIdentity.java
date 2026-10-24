@@ -113,6 +113,8 @@ final class CollectionValueIdentity {
     if (node instanceof StreamPhysicalRowDataToArrow)
       return !((StreamPhysicalRowDataToArrow) node).preservesCollections();
     if (node instanceof StreamPhysicalNativeGeneratedUnnest) return false;
+    if (node instanceof StreamPhysicalNativeJvmGroup
+        && ((StreamPhysicalNativeJvmGroup) node).hasCollectionResults()) return false;
     if (node instanceof StreamPhysicalNativeTableFunction
         && ((StreamPhysicalNativeTableFunction) node).preservesCollections()) return false;
     if (node instanceof StreamPhysicalNativeColumnarGroupAggregate
@@ -150,7 +152,7 @@ final class CollectionValueIdentity {
   }
 
   private static boolean requiresRepresentedRowSink(RelNode node) {
-    if (preservingCorrelate(node)
+    if (preservingCollectionProducer(node)
         && node.getRowType().getFieldList().stream().anyMatch(field -> sensitive(field.getType())))
       return true;
     if (node instanceof StreamPhysicalNativeColumnarGroupAggregate
@@ -170,8 +172,10 @@ final class CollectionValueIdentity {
     return node.getInputs().stream().anyMatch(CollectionValueIdentity::requiresRepresentedRowSink);
   }
 
-  private static boolean preservingCorrelate(RelNode node) {
+  private static boolean preservingCollectionProducer(RelNode node) {
     return node instanceof StreamPhysicalNativeGeneratedUnnest
+        || node instanceof StreamPhysicalNativeJvmGroup
+            && ((StreamPhysicalNativeJvmGroup) node).hasCollectionResults()
         || node instanceof StreamPhysicalNativeTableFunction
             && ((StreamPhysicalNativeTableFunction) node).preservesCollections();
   }
@@ -182,13 +186,13 @@ final class CollectionValueIdentity {
         || TableFunctionMatcher.isUserTableFunction(node) && TableFunctionMatcher.matches(node);
   }
 
-  static boolean generatedCorrelateCrossesBoundary(RelNode root, boolean finalOutput) {
-    return generatedCorrelateCrossesBoundary(root, null, finalOutput);
+  static boolean generatedCollectionCrossesBoundary(RelNode root, boolean finalOutput) {
+    return generatedCollectionCrossesBoundary(root, null, finalOutput);
   }
 
-  private static boolean generatedCorrelateCrossesBoundary(
+  private static boolean generatedCollectionCrossesBoundary(
       RelNode node, RelNode parent, boolean finalOutput) {
-    if (preservingCorrelate(node)
+    if (preservingCollectionProducer(node)
         && node.getRowType().getFieldList().stream()
             .anyMatch(
                 field ->
@@ -197,11 +201,11 @@ final class CollectionValueIdentity {
         && !(parent == null && finalOutput)
         && !(parent instanceof StreamPhysicalSink)
         && !FlinkPlannerCompat.isLegacyRowSink(parent)
-        && !preservingCorrelate(parent)
+        && !preservingCollectionProducer(parent)
         && !(parent instanceof StreamPhysicalNativeCalc
             && ((StreamPhysicalNativeCalc) parent).preservesCollections())) return true;
     return node.getInputs().stream()
-        .anyMatch(input -> generatedCorrelateCrossesBoundary(input, node, false));
+        .anyMatch(input -> generatedCollectionCrossesBoundary(input, node, false));
   }
 
   static boolean crossesBoundary(RelNode root, boolean finalOutput) {

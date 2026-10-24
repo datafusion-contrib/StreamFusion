@@ -128,6 +128,7 @@ nav:
       - AppendFast Top-1: benchmarks/append-top1.md
       - Performance audit reproduction: benchmarks/performance-audit.md
       - Scalar functions: benchmarks/scalar-functions.md
+      - Collection aggregates: benchmarks/collection-aggregates.md
       - Native date-partition Calc: benchmarks/native-sync-calc.md
       - Nested Java scalars: benchmarks/nested-scalars.md
       - Decimal expressions: benchmarks/decimal-expressions.md

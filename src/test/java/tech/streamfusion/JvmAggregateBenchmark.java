@@ -21,6 +21,7 @@ class JvmAggregateBenchmark {
     assertEquals("false", System.getProperty("streamfusion.exchange.zeroCopyLocal"));
     int rows = Integer.getInteger("jvmagg.rows", 2_000_000);
     int keys = Integer.getInteger("jvmagg.keys", 65_536);
+    int values = Integer.getInteger("jvmagg.values", 0);
     int warmups = Integer.getInteger("jvmagg.warmup", 2);
     int runs = Integer.getInteger("jvmagg.runs", 5);
     String keyType = System.getProperty("jvmagg.keyType", "int");
@@ -30,12 +31,24 @@ class JvmAggregateBenchmark {
     boolean expectedUdf = Boolean.parseBoolean(System.getProperty("jvmagg.expectNative", "false"));
     for (String shape : System.getProperty("jvmagg.cases", "udaf,builtin").split(",")) {
       boolean udf = shape.equals("udaf");
-      String sql = "SELECT k, " + (udf ? "test_aggregate" : "SUM") + "(v) FROM src GROUP BY k";
+      boolean collect = shape.equals("collect");
+      boolean arrayAgg = java.util.Set.of("array_agg", "array_agg_int").contains(shape);
+      boolean jvm = udf || collect || arrayAgg;
+      String argument = shape.equals("array_agg_int") ? "CAST(v AS INT)" : "v";
+      String sql =
+          "SELECT k, "
+              + (udf ? "test_aggregate" : collect ? "COLLECT" : arrayAgg ? "ARRAY_AGG" : "SUM")
+              + "("
+              + argument
+              + ") FROM src GROUP BY k";
       double[][] elapsed = new double[2][runs];
       for (int trial = 0; trial < warmups + runs; trial++) {
         for (int order = 0; order < 2; order++) {
           try (var metrics = new RecoveryExecutionMetrics()) {
             int engine = (trial + order) & 1;
+            String selectedEngine = System.getProperty("jvmagg.engine", "both");
+            if (!selectedEngine.equals("both")
+                && !selectedEngine.equals(engine == 1 ? "native" : "flink")) continue;
             var env = metrics.environment(new Configuration(), 1, 0);
             env.setParallelism(1);
             var table = StreamTableEnvironment.create(env);
@@ -46,20 +59,20 @@ class JvmAggregateBenchmark {
               case "string":
                 source =
                     sequence
-                        .map(i -> Row.of(prefix + Long.toString(i % keys), i % 8 == 7 ? null : i))
+                        .map(i -> Row.of(prefix + Long.toString(i % keys), value(i, keys, values)))
                         .returns(
                             Types.ROW_NAMED(new String[] {"k", "v"}, Types.STRING, Types.LONG));
                 break;
               case "bigint":
                 source =
                     sequence
-                        .map(i -> Row.of(i % keys, i % 8 == 7 ? null : i))
+                        .map(i -> Row.of(i % keys, value(i, keys, values)))
                         .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.LONG, Types.LONG));
                 break;
               case "int":
                 source =
                     sequence
-                        .map(i -> Row.of((int) (i % keys), i % 8 == 7 ? null : i))
+                        .map(i -> Row.of((int) (i % keys), value(i, keys, values)))
                         .returns(Types.ROW_NAMED(new String[] {"k", "v"}, Types.INT, Types.LONG));
                 break;
               default:
@@ -80,9 +93,9 @@ class JvmAggregateBenchmark {
             var scan = engine == 1 ? NativePlanner.install(table) : null;
             String plan = table.explainSql(insert);
             if (engine == 1) {
-              if (!udf || expectedUdf) {
+              if (!jvm || expectedUdf) {
                 assertTrue(
-                    plan.contains(udf ? "NativeJvmGroup" : "NativeColumnarGroupAggregate")
+                    plan.contains(jvm ? "NativeJvmGroup" : "NativeColumnarGroupAggregate")
                         && plan.contains("RowDataToArrow")
                         && plan.contains("ArrowToRowData"),
                     plan);
@@ -111,7 +124,7 @@ class JvmAggregateBenchmark {
                 seconds);
             if (trial >= warmups) elapsed[engine][trial - warmups] = seconds;
             if (engine == 1
-                && udf
+                && jvm
                 && expectedUdf
                 && expectedCache
                 && Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0)
@@ -129,30 +142,94 @@ class JvmAggregateBenchmark {
               if (keys >= rows) assertEquals(0, hits, "distinct keys unexpectedly hit the cache");
               System.out.println("[jvm-aggregate-cache] hits=" + hits + " bypasses=" + bypasses);
             }
-            if (engine == 0 || (udf && !expectedUdf))
+            if (engine == 0 || (jvm && !expectedUdf))
               assertTrue(
-                  metrics.nativeOperators().isEmpty(), "fallback control executed native operators");
-            if (engine == 1 && (!udf || expectedUdf))
+                  metrics.nativeOperators().isEmpty(),
+                  "fallback control executed native operators");
+            if (engine == 1 && (!jvm || expectedUdf))
               RecoveryExecutionMetrics.assertConsumed(
                   metrics.nativeOperators(),
-                  udf ? "NativeJvmGroup" : "NativeColumnarGroupAggregate");
+                  jvm ? "NativeJvmGroup" : "NativeColumnarGroupAggregate");
           }
         }
       }
       System.out.printf(
           Locale.ROOT,
-          "[jvm-aggregate] shape=%s key_type=%s key_prefix_chars=%d rows=%d keys=%d stock=%.6f"
-              + " sf=%.6f stock_trials=%s sf_trials=%s%n",
+          "[jvm-aggregate] shape=%s key_type=%s key_prefix_chars=%d rows=%d keys=%d values=%d"
+              + " stock=%.6f sf=%.6f stock_trials=%s sf_trials=%s%n",
           shape,
           keyType,
           prefixChars,
           rows,
           keys,
+          values,
           median(elapsed[0]),
           median(elapsed[1]),
           Arrays.toString(elapsed[0]),
           Arrays.toString(elapsed[1]));
     }
+  }
+
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_JVM_AGG", matches = "true")
+  void profileCollect() throws Exception {
+    profileCollection("collect");
+  }
+
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_JVM_AGG", matches = "true")
+  void profileArrayAgg() throws Exception {
+    String shape = System.getProperty("jvmagg.cases", "array_agg");
+    assertTrue(
+        java.util.Set.of("array_agg", "array_agg_int").contains(shape),
+        "profileArrayAgg requires one array_agg or array_agg_int case");
+    profileCollection(shape);
+  }
+
+  private void profileCollection(String shape) throws Exception {
+    String[] properties = {"jvmagg.engine", "jvmagg.warmup", "jvmagg.runs", "jvmagg.cases"};
+    String[] previous = Arrays.stream(properties).map(System::getProperty).toArray(String[]::new);
+    String profiler = System.getProperty("profile.asprof", "asprof");
+    String pid = Long.toString(ProcessHandle.current().pid());
+    var directory =
+        java.nio.file.Path.of(System.getProperty("profile.outputDir", "target/profiles/jvmagg"));
+    java.nio.file.Files.createDirectories(directory);
+    var recording =
+        directory
+            .resolve(shape + "-keys" + Integer.getInteger("jvmagg.keys", 64) + "-native.jfr")
+            .toAbsolutePath();
+    boolean started = false;
+    try {
+      System.setProperty(properties[0], "native");
+      System.setProperty(properties[1], "0");
+      System.setProperty(properties[2], "1");
+      System.setProperty(properties[3], shape);
+      completeJobsRetainKeyedStateAndBothTransposes();
+      profileCommand(profiler, "start", "-e", "cpu", "-i", "1ms", "-f", recording.toString(), pid);
+      started = true;
+      long deadline = System.nanoTime() + Long.getLong("jvmagg.seconds", 8L) * 1_000_000_000L;
+      do {
+        completeJobsRetainKeyedStateAndBothTransposes();
+      } while (System.nanoTime() < deadline);
+    } finally {
+      try {
+        if (started) profileCommand(profiler, "stop", pid);
+      } finally {
+        for (int i = 0; i < properties.length; i++) {
+          if (previous[i] == null) System.clearProperty(properties[i]);
+          else System.setProperty(properties[i], previous[i]);
+        }
+      }
+    }
+  }
+
+  private static void profileCommand(String... command) throws Exception {
+    int exit = new ProcessBuilder(command).inheritIO().start().waitFor();
+    if (exit != 0) throw new IllegalStateException("Profiler exited " + exit);
+  }
+
+  private static Long value(long row, int keys, int values) {
+    return row % 8 == 7 ? null : values > 0 ? (row / keys) % values : row;
   }
 
   private static double median(double[] values) {
