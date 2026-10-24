@@ -66,11 +66,19 @@ final class TableFunctionMatcher {
               call.getType());
       var inferred = TypeInferenceUtil.runTypeInference(function.getTypeInference(), context, null);
       return inferred.getExpectedArgumentTypes().stream()
-              .allMatch(type -> verifiedConversion(type) || primitiveConversion(type))
+              .allMatch(TableFunctionMatcher::verifiedArgumentConversion)
           && verifiedOutputConversion(inferred.getOutputDataType());
     } catch (RuntimeException failure) {
       return false;
     }
+  }
+
+  private static boolean verifiedArgumentConversion(DataType type) {
+    return verifiedConversion(type)
+        || primitiveConversion(type)
+        || (type.getLogicalType().is(LogicalTypeRoot.DATE)
+            && !type.getLogicalType().isNullable()
+            && type.getConversionClass() == int.class);
   }
 
   private static boolean verifiedOutputConversion(DataType type) {
@@ -200,9 +208,9 @@ final class TableFunctionMatcher {
     return "correlate: only non-specialized JVM table functions with INNER/LEFT and CHAR/VARCHAR,"
         + " numeric, boolean, binary, interval, temporal or recursively verified"
         + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
-        + " conversions (default containers, scalar Lists, non-null primitive arrays or direct"
-        + " non-null boolean/numeric primitive scalar arguments or results)"
-        + " and input representation are verified";
+        + " conversions (default containers, scalar Lists, non-null primitive arrays or"
+        + " direct non-null boolean/numeric primitive scalar arguments or results, or"
+        + " non-null DATE/int arguments) and input representation are verified";
   }
 
   static RelNode substitute(StreamPhysicalCorrelate node, PlanContext context) {

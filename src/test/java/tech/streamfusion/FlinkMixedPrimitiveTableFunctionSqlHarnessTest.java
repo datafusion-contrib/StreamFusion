@@ -110,7 +110,7 @@ class FlinkMixedPrimitiveTableFunctionSqlHarnessTest {
   }
 
   @Test
-  void integerDateBridgesKeepExplicitFallback() {
+  void integerDateArgumentsUseTheVerifiedPrimitiveArgumentGate() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -120,11 +120,8 @@ class FlinkMixedPrimitiveTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT t.v FROM src s,LATERAL TABLE(date_rows(s.x,s.p)) AS t(v)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 
