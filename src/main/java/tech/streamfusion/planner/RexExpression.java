@@ -1060,8 +1060,8 @@ final class RexExpression {
                 == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
         && call.getOperands().size() == 1) {
       var source = call.getOperands().get(0).getType().getSqlTypeName();
-      return source == call.getType().getSqlTypeName()
-          && Set.of(SqlTypeName.ARRAY, SqlTypeName.MAP, SqlTypeName.ROW).contains(source);
+      return Set.of(SqlTypeName.ARRAY, SqlTypeName.MAP, SqlTypeName.ROW).contains(source)
+          && (source == call.getType().getSqlTypeName() || isCharacter(call));
     }
     if (!"SPLIT".equals(call.getOperator().getName())
         || call.getOperands().size() != 2

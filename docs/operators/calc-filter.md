@@ -2158,7 +2158,7 @@ Existing admitted collection subscripts and Boolean/integer ARRAY_DISTINCT retai
 
 | Functions | Execution inside NativeCalc |
 | --- | --- |
-| Collection CAST / TRY_CAST | Rust recursive child-buffer conversion for nullable signed-integer/DECIMAL ARRAY elements, including nested arrays, and the existing DECIMAL-to-floating ARRAY CAST; other verified ARRAY-to-ARRAY, MAP-to-MAP and ROW-to-ROW casts use the generated Flink program |
+| Collection CAST / TRY_CAST | Rust recursive child-buffer conversion for nullable signed-integer/DECIMAL ARRAY elements, including nested arrays, and the existing DECIMAL-to-floating ARRAY CAST; other verified ARRAY-to-ARRAY, MAP-to-MAP, ROW-to-ROW and ARRAY/MAP/ROW-to-character casts use the generated Flink program |
 | SPLIT with dynamic or empty separator | Generated Flink program, preserving literal whole separators, NULLs and UTF-16 unit splitting for an empty separator; the existing non-empty literal separator retains its ordinary Rust path |
 | ARRAY_REVERSE, ARRAY_SLICE | Rust kernels for nullable primitive elements; generated Flink program for STRING/ROW/MAP-bearing or NOT NULL-element arrays and consumers requiring Java value semantics |
 | CARDINALITY on ARRAY/MAP | Rust outer-offset count, returning INT; NULL container produces NULL |
@@ -2334,6 +2334,20 @@ The [release-mode functionality measurements](../benchmarks/scalar-functions.md#
 compare the same prepared data with stock Flink and the previous StreamFusion fallback.
 The new generated standalone casts and SPLIT signatures have separate
 [conversion-inclusive measurements](../benchmarks/scalar-functions.md#standalone-collection-programs).
+
+### Collection casts to character types
+
+Standalone ARRAY/MAP casts to STRING, VARCHAR and CHAR also select this generated program;
+ROW-to-character casts retain their existing whole-Calc route. Flink supplies brackets, map entry
+order, nested formatting, NULL spellings, CHAR padding and VARCHAR truncation for the selected
+legacy-cast setting. Bounded casts count Java UTF-16 units, including truncation between surrogate
+halves; the represented string result preserves those Java units. CAST and TRY_CAST retain NULL
+containers, filtered/CASE short-circuiting and errors from evaluating their input. Runtime tests
+require consumed NativeCalc input on both supported releases, including all four outer changelog
+kinds and generic/binary collection representations. Unverified state, exchange and native-writer
+boundaries, fixed BINARY MAP leaves and external STRUCTURED inputs still fall back.
+These casts share the accepted collection-extension performance tradeoff; see the
+[conversion-inclusive character-cast measurements](../benchmarks/scalar-functions.md#collection-character-casts).
 
 ### ARRAY_DISTINCT
 

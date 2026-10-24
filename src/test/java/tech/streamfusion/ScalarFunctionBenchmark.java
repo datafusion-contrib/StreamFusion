@@ -292,6 +292,9 @@ class ScalarFunctionBenchmark {
               "tt_decimal_array",
               "CAST(a AS ARRAY<STRING>)",
               "ARRAY<STRING>"),
+          new Query("ARRAY_FORMAT_STRING", "tt_decimal_array", "CAST(a AS STRING)", "STRING"),
+          new Query("TEXT_ARRAY_FORMAT_CHAR", "tt_json_array", "TRY_CAST(a AS CHAR(32))", "CHAR(32)"),
+          new Query("MAP_FORMAT_STRING", "tt_json_map", "CAST(m AS STRING)", "STRING"),
           new Query("TAN_EXACT", "numbers", "TAN(CAST(n AS DOUBLE))", "DOUBLE"),
           new Query(
               "TAN_GROUPED_SUM",

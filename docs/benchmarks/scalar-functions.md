@@ -1837,3 +1837,61 @@ parity is checked on both supported lines, with NativeCalc consumption required 
 runtime queries and ordinary fallback retained at unverified collection boundaries.
 
 These timings and CPU profiles precede the JVM bridge/type extension in [#469](https://github.com/datafusion-contrib/StreamFusion/pull/469). The rebased change passes 250 focused checks on Flink 2.2.1 and 213 passes plus 37 host-function skips on 1.18.1, including a temporary numeric UDF named SPLIT. The historical timings were not repeated after rebasing.
+
+
+## Collection character casts
+
+Standalone ARRAY/MAP CAST and TRY_CAST to STRING, VARCHAR and CHAR now use the existing
+generated collection evaluator; ROW-to-character casts already used whole-Calc JVM evaluation.
+This is coverage under the accepted collection-extension tradeoff. These standalone jobs are
+slower than stock Flink and previous-main fallback; no acceleration is claimed.
+
+The 2026-10-23 release/mimalloc comparison uses Flink 2.2.1, OpenJDK 17.0.20.1 and Linux
+x86-64/WSL2 on an Intel Core i7-12650H. Each engine processes 500,000 runtime-source rows,
+parallelism 1, two warmups and three alternating trials with an 8 GiB test heap. Complete-job
+timing retains planning, submission, source, rowwise blackhole sink and both row/Arrow transposes;
+cluster setup and initial explain are outside timing. No other tests or benchmarks run concurrently.
+Previous main `8eb2b004` uses the identical benchmark source and released native DSO in a separate
+JVM, with fallback required for the new expressions. Source-matched identity controls still require
+native Calc. Subsecond complete-job results include startup and do not establish sustained throughput.
+
+DECIMAL arrays have three elements: two DECIMAL(38,9) values and a NULL. Text arrays have a
+32-byte-budget Unicode string, NULL and `tail`; maps have three ordered STRING entries, including
+a NULL value. Every eighth container is NULL. Trial values, variability, both paired stock controls,
+identity controls and CPU counts are retained in the
+[measurement summary](results/collection-character-casts-2026-10-23.json).
+
+Median seconds (minimum–maximum):
+
+| Expression | Stock Flink | Generated collection | Previous fallback |
+| --- | ---: | ---: | ---: |
+| DECIMAL ARRAY → STRING | 0.406602 (0.397808–0.410599) | 0.547139 (0.546228–0.568279) | 0.401366 (0.395287–0.406225) |
+| STRING ARRAY → CHAR(32), TRY_CAST | 0.355477 (0.352671–0.357062) | 0.577292 (0.573435–0.592959) | 0.355399 (0.338167–0.361236) |
+| STRING MAP → STRING | 0.561181 (0.553266–0.564460) | 0.899699 (0.887600–0.900220) | 0.559865 (0.557814–0.569516) |
+
+Optimization was limited to two eight-second CPU captures, one each for ARRAY and MAP formatting.
+The ARRAY capture has 15,151 samples across all JVM threads, with 3,660 inclusive samples in the
+JVM callback and 2,521 in generated row evaluation. The MAP capture has 13,381 total samples, with
+3,479 in the callback, 2,278 in generated evaluation and 1,247 in represented-string writing.
+Counts overlap and include compilation/planning; they do not measure allocation or copied bytes.
+Formatting, materializing strings and preserving Java caches remain visible costs. No obvious
+safe shortcut removed those costs within this increment; further work stays in
+[#392](https://github.com/datafusion-contrib/StreamFusion/issues/392).
+
+Reproduce with a released native build:
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime test -Pbench \
+  '-Dtest=ScalarFunctionBenchmark#individualFunctions' -Dsf.testForks=1 \
+  -Dscalar.functions=ARRAY_FORMAT_STRING,TEXT_ARRAY_FORMAT_CHAR,MAP_FORMAT_STRING \
+  -Dscalar.rows=500000 -Dscalar.bytes=32 -Dscalar.unicode=true -Dscalar.nullEvery=8 \
+  -Dscalar.warmup=2 -Dscalar.runs=3
+```
+
+The previous checkout copies the same benchmark source and adds `-Dscalar.native.expected=false`.
+For each of ARRAY_FORMAT_STRING and MAP_FORMAT_STRING, select `#profileFunction`, set
+`SF_PROFILE_SCALAR=true`, `-Dscalar.warmup=1 -Dscalar.seconds=8` and
+`-Dprofile.asprof=/path/to/asprof -Dprofile.outputDir=/path/to/output`. Runtime parity on both
+supported Flink lines independently requires consumed NativeCalc input, including bounded UTF-16
+results, legacy formatting and all four changelog kinds. Fixed BINARY MAP leaves and unverified
+state/native-writer boundaries retain fallback.

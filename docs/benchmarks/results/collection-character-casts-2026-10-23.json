@@ -1,0 +1,711 @@
+{
+  "date": "2026-10-23",
+  "previous_revision": "8eb2b004",
+  "hardware": {
+    "cpu": "Intel Core i7-12650H",
+    "os": "Linux x86-64 / WSL2",
+    "jdk": "OpenJDK 17.0.20.1"
+  },
+  "native": {
+    "profile": "release",
+    "features": [
+      "mimalloc",
+      "rocksdb-state"
+    ],
+    "sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
+    "source_revision": "189edb21; native sources unchanged through 8eb2b004 and this increment"
+  },
+  "configuration": {
+    "flink": "2.2.1",
+    "parallelism": 1,
+    "rows": 500000,
+    "warmups_per_engine": 2,
+    "measured_trials_per_engine": 3,
+    "unicode": true,
+    "text_payload_bytes": 32,
+    "null_container_every": 8,
+    "test_heap_gib": 8,
+    "input": "runtime row source",
+    "sink": "blackhole",
+    "boundary": "planning, submission and complete processing including both row/Arrow transposes; cluster setup and initial explain excluded",
+    "execution": "alternating stock/native in each JVM; candidate and previous in separate JVMs; no concurrent tests or benchmarks",
+    "previous_admission": "new expressions must have zero native substitutions; source-matched identity controls must have NativeCalc"
+  },
+  "inputs": {
+    "tt_decimal_array": {
+      "type": "ARRAY<DECIMAL(38,9)>",
+      "values": [
+        "12345678901234567890.123456700",
+        null,
+        "-0.000000100"
+      ]
+    },
+    "tt_json_array": {
+      "type": "ARRAY<STRING>",
+      "values": [
+        "32-byte-budget Unicode text",
+        null,
+        "tail"
+      ]
+    },
+    "tt_json_map": {
+      "type": "MAP<STRING NOT NULL,STRING>",
+      "ordered_entries": [
+        [
+          "first",
+          "32-byte-budget Unicode text"
+        ],
+        [
+          "absent",
+          null
+        ],
+        [
+          "last",
+          "tail"
+        ]
+      ]
+    }
+  },
+  "trials": {
+    "current": [
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.180734
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.322296
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.261134
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.189764
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.174113
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.305876
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.262381
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.27484
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.270671
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.259116
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.252827
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.271089
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.390911
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.48511
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.492232
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.384401
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.37728
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.478935
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.406602
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.568279
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.547139
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.397808
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.410599
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.546228
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.352671
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.577292
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.573435
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.357062
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.355477
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.592959
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.56446
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.899699
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.90022
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.561181
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.553266
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.8876
+      }
+    ],
+    "previous": [
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.256885
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.260696
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.25886
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.217172
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.226857
+      },
+      {
+        "function": "BASELINE_tt_decimal_array",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.255935
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.366643
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.281369
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.268049
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.265674
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.26528
+      },
+      {
+        "function": "BASELINE_tt_json_array",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.273576
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.377408
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.47899
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.480395
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.377766
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.369423
+      },
+      {
+        "function": "BASELINE_tt_json_map",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.467909
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.420968
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.406225
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.401366
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.40351
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.409036
+      },
+      {
+        "function": "ARRAY_FORMAT_STRING",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.395287
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.360393
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.361236
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.338167
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.356133
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.37206
+      },
+      {
+        "function": "TEXT_ARRAY_FORMAT_CHAR",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.355399
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 0,
+        "seconds": 0.560089
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "native",
+        "trial": 0,
+        "seconds": 0.557814
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "native",
+        "trial": 1,
+        "seconds": 0.569516
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 1,
+        "seconds": 0.564423
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "flink",
+        "trial": 2,
+        "seconds": 0.563984
+      },
+      {
+        "function": "MAP_FORMAT_STRING",
+        "engine": "native",
+        "trial": 2,
+        "seconds": 0.559865
+      }
+    ]
+  },
+  "summary": {
+    "ARRAY_FORMAT_STRING": {
+      "current_flink": {
+        "median": 0.406602,
+        "min": 0.397808,
+        "max": 0.410599
+      },
+      "current_native": {
+        "median": 0.547139,
+        "min": 0.546228,
+        "max": 0.568279
+      },
+      "previous_flink": {
+        "median": 0.409036,
+        "min": 0.40351,
+        "max": 0.420968
+      },
+      "previous_native": {
+        "median": 0.401366,
+        "min": 0.395287,
+        "max": 0.406225
+      }
+    },
+    "BASELINE_tt_decimal_array": {
+      "current_flink": {
+        "median": 0.180734,
+        "min": 0.174113,
+        "max": 0.189764
+      },
+      "current_native": {
+        "median": 0.305876,
+        "min": 0.261134,
+        "max": 0.322296
+      },
+      "previous_flink": {
+        "median": 0.226857,
+        "min": 0.217172,
+        "max": 0.256885
+      },
+      "previous_native": {
+        "median": 0.25886,
+        "min": 0.255935,
+        "max": 0.260696
+      }
+    },
+    "BASELINE_tt_json_array": {
+      "current_flink": {
+        "median": 0.259116,
+        "min": 0.252827,
+        "max": 0.262381
+      },
+      "current_native": {
+        "median": 0.271089,
+        "min": 0.270671,
+        "max": 0.27484
+      },
+      "previous_flink": {
+        "median": 0.265674,
+        "min": 0.26528,
+        "max": 0.366643
+      },
+      "previous_native": {
+        "median": 0.273576,
+        "min": 0.268049,
+        "max": 0.281369
+      }
+    },
+    "BASELINE_tt_json_map": {
+      "current_flink": {
+        "median": 0.384401,
+        "min": 0.37728,
+        "max": 0.390911
+      },
+      "current_native": {
+        "median": 0.48511,
+        "min": 0.478935,
+        "max": 0.492232
+      },
+      "previous_flink": {
+        "median": 0.377408,
+        "min": 0.369423,
+        "max": 0.377766
+      },
+      "previous_native": {
+        "median": 0.47899,
+        "min": 0.467909,
+        "max": 0.480395
+      }
+    },
+    "MAP_FORMAT_STRING": {
+      "current_flink": {
+        "median": 0.561181,
+        "min": 0.553266,
+        "max": 0.56446
+      },
+      "current_native": {
+        "median": 0.899699,
+        "min": 0.8876,
+        "max": 0.90022
+      },
+      "previous_flink": {
+        "median": 0.563984,
+        "min": 0.560089,
+        "max": 0.564423
+      },
+      "previous_native": {
+        "median": 0.559865,
+        "min": 0.557814,
+        "max": 0.569516
+      }
+    },
+    "TEXT_ARRAY_FORMAT_CHAR": {
+      "current_flink": {
+        "median": 0.355477,
+        "min": 0.352671,
+        "max": 0.357062
+      },
+      "current_native": {
+        "median": 0.577292,
+        "min": 0.573435,
+        "max": 0.592959
+      },
+      "previous_flink": {
+        "median": 0.360393,
+        "min": 0.356133,
+        "max": 0.37206
+      },
+      "previous_native": {
+        "median": 0.355399,
+        "min": 0.338167,
+        "max": 0.361236
+      }
+    }
+  },
+  "cpu_profiles": {
+    "profiler": "async-profiler 4.6",
+    "event": "cpu",
+    "interval": "1ms",
+    "capture_seconds_each": 8,
+    "passes": 2,
+    "boundary": "repeated complete jobs after one warmup, all JVM threads; includes planning, submission and compilation",
+    "limitations": "inclusive counts overlap and are not allocation or copied-byte measurements",
+    "captures": {
+      "array_format_string-native": {
+        "total_samples": 15151,
+        "inclusive_method_samples": {
+          "NativeUdf.invokeUdf": 3660,
+          "FlinkExpressionFunction.evalRow": 2521,
+          "NestedStringWriter.doWrite": 448,
+          "StringCacheColumns.read": 7,
+          "ArrayWriter.doWrite": 707,
+          "MapWriter.doWrite": 0,
+          "Utf16Cache$Writer.write": 324
+        },
+        "top_self_samples": {
+          "_raw_spin_unlock_irqrestore_[k]": 361,
+          "java/lang/Long.getChars_[i]": 328,
+          "IndexSetIterator::advance_and_next": 298,
+          "PhaseChaitin::Split": 222,
+          "java/lang/StringUTF16.newString_[i]": 214,
+          "/usr/lib/x86_64-linux-gnu/libc.so.6": 196,
+          "java/math/BigInteger.stripLeadingZeroBytes_[i]": 179,
+          "PhaseChaitin::gather_lrg_masks": 174,
+          "java/util/Arrays.fill_[i]": 171,
+          "org/apache/arrow/vector/VarCharVector.get_[i]": 170,
+          "itable stub": 168,
+          "jlong_disjoint_arraycopy": 159,
+          "jint_disjoint_arraycopy": 158,
+          "java/math/BigInteger.firstNonzeroIntNum_[i]": 145,
+          "clear_page_erms_[k]": 141
+        }
+      },
+      "map_format_string-native": {
+        "total_samples": 13381,
+        "inclusive_method_samples": {
+          "NativeUdf.invokeUdf": 3479,
+          "FlinkExpressionFunction.evalRow": 2278,
+          "NestedStringWriter.doWrite": 1247,
+          "StringCacheColumns.read": 485,
+          "ArrayWriter.doWrite": 0,
+          "MapWriter.doWrite": 738,
+          "Utf16Cache$Writer.write": 318
+        },
+        "top_self_samples": {
+          "org/apache/flink/table/data/binary/BinaryStringData.ensureMaterialized_[i]": 720,
+          "java/lang/ThreadLocal$ThreadLocalMap.getEntryAfterMiss_[i]": 320,
+          "org/apache/flink/table/data/binary/StringUtf8Utils.decodeUTF8Strict_[j]": 300,
+          "IndexSetIterator::advance_and_next": 231,
+          "tech/streamfusion/arrow/writers/NestedStringWriter.doWrite_[j]": 226,
+          "_raw_spin_unlock_irqrestore_[k]": 222,
+          "java/lang/AbstractStringBuilder.inflate_[i]": 195,
+          "jlong_disjoint_arraycopy": 179,
+          "org/apache/flink/table/data/binary/StringUtf8Utils.encodeUTF8_[j]": 177,
+          "org/apache/flink/table/data/binary/BinarySection.pointTo_[j]": 174,
+          "PhaseChaitin::Split": 161,
+          "/usr/lib/x86_64-linux-gnu/libc.so.6": 153,
+          "itable stub": 152,
+          "jint_disjoint_arraycopy": 142,
+          "clear_page_erms_[k]": 137
+        }
+      }
+    }
+  },
+  "conclusion": "All new standalone forms are slower than stock and previous fallback. Existing accepted collection-extension tradeoff applies; no acceleration claim. Two profiling passes completed; no unverified cache/representation shortcut or further optimization added. Follow-up #392."
+}

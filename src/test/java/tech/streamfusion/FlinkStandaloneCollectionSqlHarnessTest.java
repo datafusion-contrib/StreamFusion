@@ -72,6 +72,83 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     assertEquivalent(run(this::strings, sql));
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"a", "d", "t", "nested", "m", "r", "dates", "times"})
+  void collectionCharacterCastsPreserveFormattingBoundsAndLegacyRules(String field) {
+    for (boolean legacy : new boolean[] {false, true}) {
+      assertEquivalent(
+          run(
+              () -> casts(legacy),
+              "SELECT id,CAST("
+                  + field
+                  + " AS STRING),CAST("
+                  + field
+                  + " AS VARCHAR(2)),TRY_CAST("
+                  + field
+                  + " AS CHAR(64)),TRY_CAST("
+                  + field
+                  + " AS VARCHAR(3)) FROM src"));
+    }
+  }
+
+  @Test
+  void characterCastsPreserveUtf16AndUnselectedInputs() {
+    Supplier<TableEnvironment> factory =
+        () ->
+            environment(
+                ROW(FIELD("id", INT()), FIELD("a", ARRAY(STRING()))),
+                List.of(
+                    Row.of(0, new String[] {"\ud83d\ude00", null, "\ud800"}),
+                    Row.of(1, new String[] {}),
+                    Row.of(2, (Object) null)));
+    for (String sql :
+        List.of(
+            "SELECT id,CAST(a AS VARCHAR(2)),TRY_CAST(a AS CHAR(8)),CAST(a AS STRING) FROM src",
+            "SELECT id,CAST(a AS STRING) FROM src WHERE id<0",
+            "SELECT id,CASE WHEN id=0 THEN CAST(a AS VARCHAR(2)) ELSE CAST(a AS CHAR(8)) END FROM"
+                + " src",
+            "SELECT CAST(a AS VARCHAR(2))='[?' FROM src")) {
+      assertEquivalent(run(factory, sql));
+    }
+    for (String cast : List.of("CAST", "TRY_CAST")) {
+      var failure = run(() -> casts(false), "SELECT " + cast + "(ARRAY[10/id] AS STRING) FROM src");
+      failure.assertFailure(
+          ArithmeticException.class, failure.host().phase(), NativeFailureParity.Route.NATIVE);
+    }
+  }
+
+  @Test
+  void characterCastsPreserveContainerRepresentationsAndAllChangelogKinds() {
+    assertEquivalent(
+        run(
+            () -> {
+              var table =
+                  StreamTableEnvironment.create(METRICS.environment(new Configuration(), 1, 0));
+              table.getConfig().set("streamfusion.transpose.batchRows", "2");
+              table.executeSql(
+                  "CREATE TABLE src (id BIGINT,t ARRAY<STRING>,r ARRAY<ROW<n INT>>,"
+                      + "nn ARRAY<INT NOT NULL>,m MAP<BYTES,ARRAY<INT>>)"
+                      + " WITH ('connector'='collection-representation','changelog'='true')");
+              return table;
+            },
+            "SELECT id,CAST(t AS STRING),TRY_CAST(r AS CHAR(32)),CAST(nn AS STRING),CAST(m AS"
+                + " STRING) FROM src"));
+  }
+
+  @Test
+  void fixedBinaryMapLeavesStillFallBackForCharacterCasts() {
+    var entries = new LinkedHashMap<byte[], byte[]>();
+    entries.put(new byte[] {0, -1}, new byte[] {1, 2});
+    var runs =
+        NativeFailureParity.run(
+            () ->
+                environment(
+                    ROW(FIELD("m", MAP(BINARY(2), BINARY(2)))),
+                    List.of(Row.of(entries), Row.of((Object) null))),
+            "SELECT CAST(m AS STRING),TRY_CAST(m AS CHAR(16)) FROM src");
+    runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+  }
+
   @Test
   void invalidStringElementNullsTheWholeTryCastArray() {
     var runs = run(() -> casts(false), "SELECT id,TRY_CAST(t AS ARRAY<INT>) FROM src");
@@ -141,7 +218,8 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     var table = casts(false);
     table.getConfig().set("streamfusion.experimental.collectionExpressions", "false");
     var scan = NativePlanner.install(table);
-    table.explainSql("SELECT CAST(a AS ARRAY<DOUBLE>) FROM src");
+    table.explainSql(
+        "SELECT CAST(a AS ARRAY<DOUBLE>),CAST(a AS STRING),TRY_CAST(m AS CHAR(8)) FROM src");
     assertEquals(0, scan.substitutions(), scan::explainSummary);
   }
 
@@ -150,6 +228,10 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     NativeParity.assertFallbackReasonContains(
         () -> casts(false),
         "SELECT COUNT(*) FROM src GROUP BY CAST(a AS ARRAY<STRING>)",
+        "collection value representation requires a final projection");
+    NativeParity.assertFallbackReasonContains(
+        () -> casts(false),
+        "SELECT CAST(a AS STRING),COUNT(*) FROM src GROUP BY CAST(a AS STRING)",
         "collection value representation requires a final projection");
     var table = casts(false);
     table.executeSql(
