@@ -151,7 +151,12 @@ these admitted scalar types. Container signatures support Flink's default extern
 Direct ARRAY arguments and direct result columns also support `java.util.List` with default
 scalar element conversions, and `boolean[]`, `byte[]`, `short[]`, `int[]`, `long[]`, `float[]`
 and `double[]` with matching non-null element types. ARRAY parents can still be NULL or empty;
-Lists can contain NULL elements. Released converters own these Java values, and the existing
+Lists can contain NULL elements. In signatures containing containers, direct non-null BOOLEAN,
+TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE arguments may also use their corresponding
+Java primitive classes. Released type inference still validates argument nullability; this
+does not coerce a nullable source argument to a non-null primitive. Primitive scalar result
+bridges in container signatures retain fallback.
+Released converters own these Java values, and the existing
 typed-array adapter supplies primitive conversion after nullable Arrow copies. FLOAT/DOUBLE
 retain signed zero and NaN payloads through chained function inputs and results.
 
@@ -189,6 +194,56 @@ mutable collected arrays/rows, INNER/LEFT fanout, pushed filters, chained functi
 empty projections, failures, all changelog kinds and repeated memory/RocksDB recovery on both
 supported Flink lines. The unchanged released Table API `CorrelateITCase.testRowType` additionally
 requires the table-function operator to consume input in every backend invocation.
+
+### Mixed primitive arguments and containers (2026-10-24)
+
+Forty-eight additional checks cover all seven non-null primitive scalar argument types with
+boxed ARRAY, primitive ARRAY, List, MAP and ROW values. Both INNER and LEFT application compare
+released-Flink results and resolved types, including signed zero and raw NaN payloads. Literal
+binding, nullable-input planning failures, empty-input evaluation, exception causes, mutable
+fanout, retained containers across closed batches, all changelog kinds and two forced restores
+with memory/native RocksDB state retain parity. Existing boxed arguments keep their route;
+primitive result metadata and DATE-as-int in container signatures retain explicit fallback.
+The 172 existing List/primitive-array/nested/typed checks remain in the regression set on each
+supported Flink line. Existing unchanged upstream ROW contracts keep their native-work
+requirement; this increment does not change an upstream execution expectation.
+
+The [complete-job artifact](../benchmarks/results/jvm-table-function-mixed-primitives-2026-10-24.json)
+records all trials and source/native hashes. It compares stock Flink, canonical `8eb2b004`
+with unchanged production code (full fallback), and the new argument admission. Jobs use the
+same runtime row source, blackhole row sink, both perimeter transposes, release/mimalloc
+native payload, JDK 17, parallelism one, 2 GiB heap, 262,144 input rows and 1,024-row batches.
+Each job has a fresh cluster and symmetric untimed EXPLAIN; two warmup pairs precede five
+alternating measured pairs. Prior production has separately paired stock controls.
+
+| Flink / signature | Stock median (range), s | Prior fallback median (range), s | New median (range), s |
+|---|---:|---:|---:|
+| 2.2.1 / INT / ARRAY | 0.188 (0.103–0.201) | 0.173 (0.099–0.183) | 0.169 (0.140–0.237) |
+| 2.2.1 / INT / List STRING | 1.017 (1.000–1.032) | 1.014 (1.010–1.037) | 2.355 (1.803–2.404) |
+| 2.2.1 / DOUBLE / MAP | 0.233 (0.228–0.246) | 0.232 (0.217–0.250) | 0.366 (0.359–0.369) |
+| 2.2.1 / FLOAT / ROW | 0.153 (0.146–0.157) | 0.144 (0.136–0.147) | 0.288 (0.278–0.292) |
+| 1.18.1 / INT / ARRAY | 0.111 (0.105–0.230) | 0.110 (0.103–0.186) | 0.163 (0.157–0.169) |
+| 1.18.1 / INT / List STRING | 1.031 (1.005–1.037) | 1.021 (1.005–1.034) | 1.839 (1.809–2.404) |
+| 1.18.1 / DOUBLE / MAP | 0.258 (0.231–0.280) | 0.222 (0.217–0.224) | 0.402 (0.353–0.417) |
+| 1.18.1 / FLOAT / ROW | 0.155 (0.153–0.159) | 0.141 (0.135–0.143) | 0.289 (0.281–0.298) |
+
+These short jobs include startup/JIT variability and separate-JVM drift. The other-Java-process
+count sampled once per second was zero, and this investigation's builds/tests did not overlap
+timings; the machine was not reserved exclusively. Most measured signatures are slower than
+stock Flink. This is verified UDF coverage under the accepted performance exception, with no
+acceleration or sustained-throughput claim.
+
+One bounded JFR profile of INT / List STRING used 1,048,576 rows, one warmup pair and one
+measured pair. Only 41 sampled stacks contained the table-function operator, spread among
+callbacks, released List conversion and owned Arrow writes. This is too sparse for precise
+attribution or an easy safe improvement; investigation stopped after one pass without an
+optimization change. Profile timings are excluded from the comparison.
+
+Reproduce with `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+-Dtest=MixedPrimitiveTableFunctionBenchmark -Dboundary.rows=262144 -Dboundary.warmups=2
+-Dboundary.runs=5 -Dsf.testForks=1 -Dstreamfusion.exchange.zeroCopyLocal=false
+surefire:test@default-test`; add `flink-1.18` to the profile for that line. Prior controls copy
+only test fixtures and set `-Dboundary.expectNative=false`, requiring zero substitutions.
 
 ### List and primitive array validation and costs (2026-10-23)
 

@@ -66,7 +66,7 @@ final class TableFunctionMatcher {
               call.getType());
       var inferred = TypeInferenceUtil.runTypeInference(function.getTypeInference(), context, null);
       return inferred.getExpectedArgumentTypes().stream()
-              .allMatch(TableFunctionMatcher::verifiedConversion)
+              .allMatch(type -> verifiedConversion(type) || primitiveConversion(type))
           && verifiedOutputConversion(inferred.getOutputDataType());
     } catch (RuntimeException failure) {
       return false;
@@ -199,7 +199,8 @@ final class TableFunctionMatcher {
     return "correlate: only non-specialized JVM table functions with INNER/LEFT and CHAR/VARCHAR,"
         + " numeric, boolean, binary, interval, temporal or recursively verified"
         + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
-        + " conversions (default containers, scalar Lists or non-null primitive arrays)"
+        + " conversions (default containers, scalar Lists, non-null primitive arrays or direct"
+        + " non-null boolean/numeric primitive scalar arguments)"
         + " and input representation are verified";
   }
 
