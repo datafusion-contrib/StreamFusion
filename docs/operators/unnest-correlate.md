@@ -156,8 +156,8 @@ support `java.util.ArrayList` with default scalar element conversions, including
 families. This is result-only: released validation rejects concrete List subclass arguments.
 In signatures containing containers, direct non-null BOOLEAN, TINYINT, SMALLINT, INT, BIGINT,
 FLOAT and DOUBLE arguments may also use their corresponding
-Java primitive classes. Direct non-null DATE arguments can also use Java `int` epoch days.
-This DATE bridge is argument-only: boxed `Integer`, result and nested DATE bridges retain
+Java primitive classes. Direct non-null DATE arguments, external Row result fields and atomic
+DATE results can also use Java `int` epoch days. Boxed `Integer` and nested DATE bridges retain
 fallback in container signatures. Released type inference still validates argument nullability; this
 does not coerce a nullable source argument to a non-null primitive. Direct fields of an
 external Row result may also use those seven non-null primitive scalar classes alongside
@@ -302,7 +302,8 @@ retain the same `ValidationException`, diagnostic and planning phase with zero n
 substitutions or consumed native work. The [scoped rejection record](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/237-concrete-list-arguments.md)
 contains the released source evidence; it does not exclude concrete List results.
 
-The expanded suite has 82 conversion checks and four interval-List checks, alongside the
+At the ArrayList increment, the expanded suite had 82 conversion checks and four interval-List
+checks, alongside the
 existing primitive-result, DATE-argument, nested, typed and basic table-function coverage: 428
 checks on each supported Flink line. The 39 additions cover all admitted scalar families,
 INNER/LEFT mutable fanout, actual ArrayList result objects, non-null parent metadata (including
@@ -377,6 +378,83 @@ For the actual prior revision, copy the conversion, interval and benchmark test 
 and set `-Dboundary.expectNative=false`; the control still requires native work. Production
 sources must remain unchanged.
 
+### DATE epoch-day results and containers (2026-10-24)
+
+Direct non-null DATE results bridged to Java `int` now execute alongside container arguments
+and result columns, both as external Row fields and as atomic DATE results. The released
+identity converter and existing eager result projection preserve Flink's conversion behavior;
+this adds no runtime, JNI or native-memory implementation. The primitive ARRAY element gate
+does not change. Boxed DATE/Integer and alternate DATE bridges inside ROW or ARRAY remain
+explicit fallback controls.
+
+Twenty-four result checks cover all five existing container shapes, epoch days spanning SQL
+years 0001–9999, INNER/LEFT application, mutable result Rows, retained arguments across closed
+input batches, lifecycle, empty input and user failures. Both result forms survive changelog
+input and two forced restores on memory and native RocksDB backends. Together with the
+existing table-function suites, 452 checks pass on each supported Flink line, with no skips.
+Each admitted path must consume input in the columnar table-function operator.
+
+NULLs follow the released behavior: a folded INNER projection reads a NULL non-null Row field
+as epoch day -1; a LEFT projection preserves NULL padding; atomic NULL emissions use the
+collector's epoch-day -1 default. Without the folded projection, a NULL non-null Row field
+retains sink enforcement. On Flink 1.18, selecting a declared non-null field from an external
+Row result in a LEFT query retains the release's SQL-to-rel nullability assertion. Those tests
+verify the independent planning failure, then execute the representable projection; atomic
+LEFT results execute on both lines.
+
+The [complete-job artifact](../benchmarks/results/jvm-table-function-date-int-results-2026-10-24.json)
+compares stock Flink, unchanged previous production (`7c2cec4e`) and the candidate. Each case
+uses 262,144 rows, one task, a 2 GiB heap, 1,024-row transpose batches, two warmup pairs and five
+alternating measured pairs. Source setup and symmetric EXPLAIN are outside timing; planning,
+submission, callbacks, container conversions, the blackhole sink and both perimeter transposes
+remain inside it. Prior production falls back for the three new result cases; the DATE/int
+argument control remains native in both revisions. Every trial verifies its expected route
+and positive native work where applicable.
+
+Seconds below are median (minimum–maximum). Prior and candidate run in separate JVMs with
+their own stock controls; all 224 trials, source/payload hashes and sampled host observations
+are retained in the artifact. These short jobs include startup and JIT variability and do not
+establish sustained throughput. Host sampling does not reserve CPUs exclusively.
+
+| Flink / boundary | Stock Flink | Previous enabled | Candidate enabled |
+|---|---:|---:|---:|
+| 2.2.1 / Row DATE / ARRAY | 0.128 (0.115–0.221) | 0.120 (0.111–0.191) | 0.244 (0.179–0.271) |
+| 2.2.1 / Row DATE / List | 1.002 (0.989–1.010) | 1.060 (0.997–1.253) | 2.287 (2.285–2.317) |
+| 2.2.1 / atomic DATE / ARRAY | 0.091 (0.083–0.097) | 0.108 (0.091–0.115) | 0.121 (0.118–0.129) |
+| 2.2.1 / DATE argument control | 0.125 (0.124–0.141) | 0.211 (0.190–0.222) | 0.175 (0.172–0.186) |
+| 1.18.1 / Row DATE / ARRAY | 0.115 (0.112–0.221) | 0.130 (0.108–0.185) | 0.256 (0.175–0.296) |
+| 1.18.1 / Row DATE / List | 1.022 (1.003–1.031) | 0.998 (0.994–1.021) | 1.818 (1.787–2.380) |
+| 1.18.1 / atomic DATE / ARRAY | 0.092 (0.090–0.101) | 0.090 (0.081–0.093) | 0.132 (0.120–0.141) |
+| 1.18.1 / DATE argument control | 0.122 (0.117–0.154) | 0.185 (0.172–0.189) | 0.177 (0.175–0.180) |
+
+One bounded 37-second JFR pass used a separate 1,048,576-row Row/List workload, one warmup
+pair and one observed pair. Its 34 table-operator stacks included nine leaves in the user callback,
+seven in the released result projection and four in DATE-writer NULL checks, alongside List
+conversion and owned Arrow writes. This sparse sample identified no easy DATE-result-specific
+improvement. The existing eager projection is retained; the previously rejected lazy-projection
+experiment is not repeated. No optimization prototype or further profiling pass was attempted.
+These slower verified paths use the accepted UDF performance exception, without an acceleration
+claim or a performance-only opt-in.
+
+The 2.2 prior and 1.18 candidate forks sampled up to one and two external Java processes,
+respectively. No external compiler processes were sampled; minimum available memory was about
+5.3 GiB and maximum sampled CPU pressure avg10 was 0.48. All observations remain in the artifact.
+
+Reproduce with JDK 17 and the release profile:
+
+```bash
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench \
+  -Dtest=DateIntResultTableFunctionBenchmark -Dboundary.rows=262144 \
+  -Dboundary.warmups=2 -Dboundary.runs=5 -Dsf.extraJvmArgs=-Xmx2g \
+  test-compile surefire:test@default-test
+```
+
+Add `,flink-1.18` to the profile for that line. To measure the actual previous revision,
+copy only the four test/benchmark fixtures changed by this increment into that checkout,
+retain its production sources, and set `-Dboundary.expectNative=false`. The unchanged control
+still requires native execution. Retain the same release payload and resources on each side.
+
+
 ### DATE epoch-day arguments and containers (2026-10-24)
 
 Twenty-one checks verify direct non-null DATE arguments bridged to Java `int`, alongside
@@ -387,8 +465,9 @@ INNER/LEFT fanout, nullable containers and children, DATE literals, rejected nul
 mutable results, retained arguments across closed batches, lifecycle and failure order are
 checked independently against released Flink. Updating input survives two forced restores
 with both memory and native RocksDB backends. Negative controls preserve fallback for boxed
-DATE/Integer arguments, primitive DATE result fields and atomic results, and DATE/int bridges
-nested inside ROW or ARRAY arguments. The shared primitive-array/result whitelist is unchanged.
+DATE/Integer arguments and DATE/int bridges nested inside ROW or ARRAY arguments. Direct
+primitive DATE result fields and atomic results are covered by the DATE result checks on this page.
+The primitive-array element whitelist is unchanged.
 
 At the DATE-argument increment, the local regression set contained 389 checks on each
 supported Flink line, including the 368 preceding table-function checks. Admission uses the released identity DATE converter
@@ -449,7 +528,7 @@ binding, nullable-input planning failures, empty-input evaluation, exception cau
 fanout, retained containers across closed batches, all changelog kinds and two forced restores
 with memory/native RocksDB state retain parity. Existing boxed arguments keep their route.
 Direct non-null DATE-as-int arguments in container signatures are now covered by the
-DATE argument checks on this page; other DATE bridges retain fallback. Primitive result
+DATE argument and result checks on this page; other DATE bridges retain fallback. Primitive result
 metadata is now covered by the result-conversion checks on this page.
 The 172 existing List/primitive-array/nested/typed checks remain in the regression set on each
 supported Flink line. Existing unchanged upstream ROW contracts keep their native-work

@@ -198,7 +198,7 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
   }
 
   @Test
-  void primitiveDateResultFieldsRetainFallback() {
+  void primitiveDateResultFieldsRetainEpochDays() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -208,13 +208,13 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT s.x,s.p,t.v,t.epoch_day,t.pos FROM src s" + join("day_rows", false));
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertUnverifiedConversion(runs);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 
   @Test
-  void atomicPrimitiveDateResultsRetainFallback() {
+  void atomicPrimitiveDateResultsRetainEpochDays() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -225,8 +225,8 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
               },
               "SELECT s.x,s.p,t.epoch_day FROM src s,LATERAL TABLE(atomic_rows(s.x,s.p)) AS"
                   + " t(epoch_day)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertUnverifiedConversion(runs);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 

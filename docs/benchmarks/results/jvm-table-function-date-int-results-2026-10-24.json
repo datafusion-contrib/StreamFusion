@@ -1,0 +1,3784 @@
+{
+  "date": "2026-10-24",
+  "purpose": "Correctness-enabling direct non-null DATE/int JVM table-function results alongside containers; no acceleration claim.",
+  "provenance": {
+    "base_revision": "7c2cec4eb7d25c7062b6749455601c97ab949f69",
+    "candidate_source_sha256": {
+      "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "6e3dcc7db41c54bae1e126862bd968c097b13638a7470a7bec811004babb9f3e",
+      "src/test/java/tech/streamfusion/FlinkDateIntArgumentTableFunctionSqlHarnessTest.java": "e823d6fd7a99168247ba677938f2ef5fb6d8230bdbf93c847675003599dda525",
+      "src/test/java/tech/streamfusion/FlinkDateIntResultTableFunctionSqlHarnessTest.java": "57aca3bc1e3ab985cf6da53f1ae755d27508730476d728b00c92415cde3d5470",
+      "src/test/java/tech/streamfusion/FlinkPrimitiveResultTableFunctionSqlHarnessTest.java": "72096bbd53d716aaef2afd570db25f1cbf7ddcd13cecd1e0ba9f6db5aea36278",
+      "src/test/java/tech/streamfusion/DateIntResultTableFunctionBenchmark.java": "354326c3938e332b925e2481d701b2296ed31ac98f286f782a72198be1d5d63e",
+      "src/test/java/tech/streamfusion/FlinkMixedPrimitiveTableFunctionSqlHarnessTest.java": "6d4d00f6317c3f0d2588712ae57485e756736b8f24328f8c1c1a8b6d4e3ecdec",
+      "src/test/java/tech/streamfusion/UdfTypeBoundaryBenchmark.java": "6972eb7e58ceb67914d6e725b60d4e2f04287c3b62f58f6bd4e49b064d3ba8aa"
+    },
+    "native_payload_sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
+    "native_source_revision": "1bd9daa8d75586424f3a5d9ad7acc14d600baffb",
+    "native_operational_sources_unchanged": true,
+    "fixture_identity_verified": true,
+    "previous_production_source_unchanged": true,
+    "released_sources_sha256": {
+      "common118.jar": "8238a03f97393c204b382408bd12ab3723c175b6835ea42e25a846331997fe83",
+      "common22.jar": "d3e111b83308e524e38db16b52a0a93c582eb6b34b1e6727242d2e4b5b69e5ea",
+      "runtime118.jar": "07d20618193742eed0d3e166e8ed4cfc10518c652f682b442d37d80315cdb35b",
+      "runtime22.jar": "6e453283568dceadf7ce4323170e8894b6895e107e08b5f89a201aba0a2b2277"
+    }
+  },
+  "configuration": {
+    "rows": 262144,
+    "parallelism": 1,
+    "heap": "2g",
+    "transpose_batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_alternating_pairs": 5,
+    "source": "Runtime Flink rows with non-null DATE values spanning SQL years 0001-9999 and nullable/empty ARRAY or List values",
+    "sink": "Flink blackhole row sink",
+    "both_perimeter_transposes": true,
+    "local_zero_copy_exchange": false,
+    "cluster_per_job": true,
+    "symmetric_untimed_explain": true,
+    "timed_boundary": "executeSql(insert).await(), including planning/submission, callbacks, container conversions, production transport and both transposes; environment setup and EXPLAIN outside timing.",
+    "native_profile": "release, full RocksDB, mimalloc",
+    "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+    "os": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "fixture_identity_verified": true,
+    "previous_production_source_unchanged": true
+  },
+  "validation": [
+    {
+      "line": "118",
+      "suites": [
+        {
+          "name": "FlinkDateIntResultTableFunctionSqlHarnessTest",
+          "tests": 24,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+          "tests": 21,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkPrimitiveResultTableFunctionSqlHarnessTest",
+          "tests": 133,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkMixedPrimitiveTableFunctionSqlHarnessTest",
+          "tests": 48,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTableFunctionConversionSqlHarnessTest",
+          "tests": 82,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTableFunctionIntervalListSqlHarnessTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkNestedTableFunctionSqlHarnessTest",
+          "tests": 61,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTypedTableFunctionSqlHarnessTest",
+          "tests": 64,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTableFunctionSqlHarnessTest",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total": 452
+    },
+    {
+      "line": "22",
+      "suites": [
+        {
+          "name": "FlinkDateIntResultTableFunctionSqlHarnessTest",
+          "tests": 24,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+          "tests": 21,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkPrimitiveResultTableFunctionSqlHarnessTest",
+          "tests": 133,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkMixedPrimitiveTableFunctionSqlHarnessTest",
+          "tests": 48,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTableFunctionConversionSqlHarnessTest",
+          "tests": 82,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTableFunctionIntervalListSqlHarnessTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkNestedTableFunctionSqlHarnessTest",
+          "tests": 61,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTypedTableFunctionSqlHarnessTest",
+          "tests": 64,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "FlinkTableFunctionSqlHarnessTest",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total": 452
+    }
+  ],
+  "execution_observations": [
+    {
+      "flink_line": "22",
+      "engine": "candidate",
+      "exit_code": 0,
+      "started_unix": 1792876100.7832863,
+      "finished_unix": 1792876141.4746122,
+      "host_samples": [
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 9072636,
+          "free_swap_kib": 2515500,
+          "cpu_pressure_avg10": 0.48,
+          "load_average_1min": 2.53
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8900988,
+          "free_swap_kib": 2515508,
+          "cpu_pressure_avg10": 0.39,
+          "load_average_1min": 2.53
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8688560,
+          "free_swap_kib": 2515560,
+          "cpu_pressure_avg10": 0.39,
+          "load_average_1min": 2.53
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8597624,
+          "free_swap_kib": 2515564,
+          "cpu_pressure_avg10": 0.32,
+          "load_average_1min": 2.53
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8326516,
+          "free_swap_kib": 2515564,
+          "cpu_pressure_avg10": 0.32,
+          "load_average_1min": 2.53
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8238708,
+          "free_swap_kib": 2515564,
+          "cpu_pressure_avg10": 0.26,
+          "load_average_1min": 2.89
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8140832,
+          "free_swap_kib": 2515564,
+          "cpu_pressure_avg10": 0.26,
+          "load_average_1min": 2.89
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7891876,
+          "free_swap_kib": 2515564,
+          "cpu_pressure_avg10": 0.21,
+          "load_average_1min": 2.89
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7823156,
+          "free_swap_kib": 2515564,
+          "cpu_pressure_avg10": 0.21,
+          "load_average_1min": 2.89
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7845348,
+          "free_swap_kib": 2515568,
+          "cpu_pressure_avg10": 0.17,
+          "load_average_1min": 2.89
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7742560,
+          "free_swap_kib": 2516228,
+          "cpu_pressure_avg10": 0.17,
+          "load_average_1min": 2.98
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7728148,
+          "free_swap_kib": 2516368,
+          "cpu_pressure_avg10": 0.14,
+          "load_average_1min": 2.98
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7453132,
+          "free_swap_kib": 2516368,
+          "cpu_pressure_avg10": 0.14,
+          "load_average_1min": 2.98
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7450172,
+          "free_swap_kib": 2516368,
+          "cpu_pressure_avg10": 0.11,
+          "load_average_1min": 2.98
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7390744,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.11,
+          "load_average_1min": 2.98
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7334432,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.09,
+          "load_average_1min": 2.82
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7337452,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.09,
+          "load_average_1min": 2.82
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7264372,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.07,
+          "load_average_1min": 2.82
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7188260,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.07,
+          "load_average_1min": 2.82
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7217024,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.06,
+          "load_average_1min": 2.82
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7219684,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.06,
+          "load_average_1min": 2.67
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7225916,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.05,
+          "load_average_1min": 2.67
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7162972,
+          "free_swap_kib": 2516424,
+          "cpu_pressure_avg10": 0.05,
+          "load_average_1min": 2.67
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7166056,
+          "free_swap_kib": 2516428,
+          "cpu_pressure_avg10": 0.04,
+          "load_average_1min": 2.67
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7096320,
+          "free_swap_kib": 2516428,
+          "cpu_pressure_avg10": 0.04,
+          "load_average_1min": 2.67
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7034504,
+          "free_swap_kib": 2516428,
+          "cpu_pressure_avg10": 0.03,
+          "load_average_1min": 2.54
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7072256,
+          "free_swap_kib": 2516428,
+          "cpu_pressure_avg10": 0.03,
+          "load_average_1min": 2.54
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7083396,
+          "free_swap_kib": 2516428,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 2.54
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7036576,
+          "free_swap_kib": 2516428,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 2.54
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7016572,
+          "free_swap_kib": 2516428,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 2.54
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7026384,
+          "free_swap_kib": 2516432,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 2.42
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6893332,
+          "free_swap_kib": 2516440,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 2.42
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6907108,
+          "free_swap_kib": 2516448,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 2.42
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6825968,
+          "free_swap_kib": 2516452,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 2.42
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6835688,
+          "free_swap_kib": 2516452,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 2.42
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6844964,
+          "free_swap_kib": 2516452,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 2.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6655760,
+          "free_swap_kib": 2516452,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 2.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6658680,
+          "free_swap_kib": 2516452,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6703028,
+          "free_swap_kib": 2516456,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6692584,
+          "free_swap_kib": 2516484,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6685448,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.12
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 9018216,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.12
+        }
+      ],
+      "other_java_sampled_max": 0,
+      "other_build_processes_sampled_max": 0,
+      "minimum_available_memory_kib": 6655760,
+      "maximum_cpu_pressure_avg10": 0.48
+    },
+    {
+      "flink_line": "22",
+      "engine": "prior",
+      "exit_code": 0,
+      "started_unix": 1792876141.48711,
+      "finished_unix": 1792876175.2316313,
+      "host_samples": [
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 9017364,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.12
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8839500,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.12
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8587588,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.12
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8471892,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.12
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8238536,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.12
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8140720,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.03
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8098924,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.03
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7905756,
+          "free_swap_kib": 2516500,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.03
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7869280,
+          "free_swap_kib": 2516600,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.03
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7795192,
+          "free_swap_kib": 2516600,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.03
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7801160,
+          "free_swap_kib": 2516604,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.35
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7437468,
+          "free_swap_kib": 2516628,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.35
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7376136,
+          "free_swap_kib": 2516644,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.35
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7305728,
+          "free_swap_kib": 2516644,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.35
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7238876,
+          "free_swap_kib": 2516644,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.35
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7255884,
+          "free_swap_kib": 2516644,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.24
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7253284,
+          "free_swap_kib": 2516644,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.24
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7210048,
+          "free_swap_kib": 2516644,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.24
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 7164592,
+          "free_swap_kib": 2516656,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.24
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 7027324,
+          "free_swap_kib": 2516664,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.24
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6811276,
+          "free_swap_kib": 2516664,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.86
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6776972,
+          "free_swap_kib": 2516664,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.86
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6623128,
+          "free_swap_kib": 2516664,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.86
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6511012,
+          "free_swap_kib": 2516664,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.86
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6546400,
+          "free_swap_kib": 2516664,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.86
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6440068,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.19
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6355280,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.19
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6396544,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.19
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6147728,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.19
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 6124300,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.19
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 5846900,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.9
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 5658372,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.9
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 5605964,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.9
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 5532060,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.9
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 7576904,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.9
+        }
+      ],
+      "other_java_sampled_max": 1,
+      "other_build_processes_sampled_max": 0,
+      "minimum_available_memory_kib": 5532060,
+      "maximum_cpu_pressure_avg10": 0.0
+    },
+    {
+      "flink_line": "118",
+      "engine": "candidate",
+      "exit_code": 0,
+      "started_unix": 1792876175.2330832,
+      "finished_unix": 1792876216.0532856,
+      "host_samples": [
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 7576904,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.9
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 7421124,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 4.63
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 7254808,
+          "free_swap_kib": 2516856,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 4.63
+        },
+        {
+          "other_java": 1,
+          "other_build_processes": {},
+          "available_memory_kib": 7122300,
+          "free_swap_kib": 2516864,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 4.63
+        },
+        {
+          "other_java": 2,
+          "other_build_processes": {},
+          "available_memory_kib": 6850028,
+          "free_swap_kib": 2516864,
+          "cpu_pressure_avg10": 0.18,
+          "load_average_1min": 4.63
+        },
+        {
+          "other_java": 2,
+          "other_build_processes": {},
+          "available_memory_kib": 6552844,
+          "free_swap_kib": 2516864,
+          "cpu_pressure_avg10": 0.18,
+          "load_average_1min": 4.63
+        },
+        {
+          "other_java": 2,
+          "other_build_processes": {},
+          "available_memory_kib": 6316456,
+          "free_swap_kib": 2516864,
+          "cpu_pressure_avg10": 0.14,
+          "load_average_1min": 4.82
+        },
+        {
+          "other_java": 2,
+          "other_build_processes": {},
+          "available_memory_kib": 6168248,
+          "free_swap_kib": 2517028,
+          "cpu_pressure_avg10": 0.14,
+          "load_average_1min": 4.82
+        },
+        {
+          "other_java": 2,
+          "other_build_processes": {},
+          "available_memory_kib": 5997888,
+          "free_swap_kib": 2517028,
+          "cpu_pressure_avg10": 0.3,
+          "load_average_1min": 4.82
+        },
+        {
+          "other_java": 2,
+          "other_build_processes": {},
+          "available_memory_kib": 5956408,
+          "free_swap_kib": 2517032,
+          "cpu_pressure_avg10": 0.3,
+          "load_average_1min": 4.82
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7885488,
+          "free_swap_kib": 2517036,
+          "cpu_pressure_avg10": 0.42,
+          "load_average_1min": 4.82
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7837288,
+          "free_swap_kib": 2517036,
+          "cpu_pressure_avg10": 0.42,
+          "load_average_1min": 4.59
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7796032,
+          "free_swap_kib": 2517036,
+          "cpu_pressure_avg10": 0.35,
+          "load_average_1min": 4.59
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7487236,
+          "free_swap_kib": 2517036,
+          "cpu_pressure_avg10": 0.35,
+          "load_average_1min": 4.59
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7452916,
+          "free_swap_kib": 2517036,
+          "cpu_pressure_avg10": 0.28,
+          "load_average_1min": 4.59
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7456812,
+          "free_swap_kib": 2517044,
+          "cpu_pressure_avg10": 0.28,
+          "load_average_1min": 4.59
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7450276,
+          "free_swap_kib": 2517048,
+          "cpu_pressure_avg10": 0.23,
+          "load_average_1min": 4.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7448860,
+          "free_swap_kib": 2517048,
+          "cpu_pressure_avg10": 0.23,
+          "load_average_1min": 4.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7394844,
+          "free_swap_kib": 2517048,
+          "cpu_pressure_avg10": 0.19,
+          "load_average_1min": 4.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7388824,
+          "free_swap_kib": 2517048,
+          "cpu_pressure_avg10": 0.19,
+          "load_average_1min": 4.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7317588,
+          "free_swap_kib": 2517072,
+          "cpu_pressure_avg10": 0.15,
+          "load_average_1min": 4.3
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7246620,
+          "free_swap_kib": 2517072,
+          "cpu_pressure_avg10": 0.15,
+          "load_average_1min": 4.04
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7250316,
+          "free_swap_kib": 2517076,
+          "cpu_pressure_avg10": 0.12,
+          "load_average_1min": 4.04
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7258888,
+          "free_swap_kib": 2517076,
+          "cpu_pressure_avg10": 0.12,
+          "load_average_1min": 4.04
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7195188,
+          "free_swap_kib": 2517076,
+          "cpu_pressure_avg10": 0.1,
+          "load_average_1min": 4.04
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7125876,
+          "free_swap_kib": 2517076,
+          "cpu_pressure_avg10": 0.1,
+          "load_average_1min": 4.04
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7119768,
+          "free_swap_kib": 2517076,
+          "cpu_pressure_avg10": 0.08,
+          "load_average_1min": 3.8
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7104580,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.08,
+          "load_average_1min": 3.8
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7101804,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.06,
+          "load_average_1min": 3.8
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7036064,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.06,
+          "load_average_1min": 3.8
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7043272,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.05,
+          "load_average_1min": 3.8
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6979180,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.05,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6908804,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.04,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6904488,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.04,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6909572,
+          "free_swap_kib": 2517124,
+          "cpu_pressure_avg10": 0.03,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6912668,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.03,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6665224,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.03,
+          "load_average_1min": 3.29
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6615364,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.03,
+          "load_average_1min": 3.29
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6623932,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 3.29
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6623568,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 3.29
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 6615288,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 3.29
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 9025056,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 3.18
+        }
+      ],
+      "other_java_sampled_max": 2,
+      "other_build_processes_sampled_max": 0,
+      "minimum_available_memory_kib": 5956408,
+      "maximum_cpu_pressure_avg10": 0.42
+    },
+    {
+      "flink_line": "118",
+      "engine": "prior",
+      "exit_code": 0,
+      "started_unix": 1792876216.0662994,
+      "finished_unix": 1792876246.343221,
+      "host_samples": [
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 9023596,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 3.18
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8867464,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.02,
+          "load_average_1min": 3.18
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8657944,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 3.18
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8562316,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 3.18
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8278104,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 3.18
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8200836,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8069400,
+          "free_swap_kib": 2517132,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8012472,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.01,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8007252,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7965660,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.57
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7705768,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.52
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7583932,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.52
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7529452,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.52
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7557920,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.52
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7556280,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.52
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7560320,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.32
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7486192,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.32
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7517844,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.32
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7463576,
+          "free_swap_kib": 2517136,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.32
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7500060,
+          "free_swap_kib": 2517140,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.32
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7453320,
+          "free_swap_kib": 2517180,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.13
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7502352,
+          "free_swap_kib": 2517180,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.13
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7479396,
+          "free_swap_kib": 2517180,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.13
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7525488,
+          "free_swap_kib": 2517184,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.13
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7471076,
+          "free_swap_kib": 2517224,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 3.13
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7443588,
+          "free_swap_kib": 2517224,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.96
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7282376,
+          "free_swap_kib": 2517224,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.96
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7273456,
+          "free_swap_kib": 2517236,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.96
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7228108,
+          "free_swap_kib": 2517240,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.96
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7212948,
+          "free_swap_kib": 2517240,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.96
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 7213916,
+          "free_swap_kib": 2517240,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.81
+        },
+        {
+          "other_java": 0,
+          "other_build_processes": {},
+          "available_memory_kib": 8990456,
+          "free_swap_kib": 2517240,
+          "cpu_pressure_avg10": 0.0,
+          "load_average_1min": 2.81
+        }
+      ],
+      "other_java_sampled_max": 0,
+      "other_build_processes_sampled_max": 0,
+      "minimum_available_memory_kib": 7212948,
+      "maximum_cpu_pressure_avg10": 0.02
+    }
+  ],
+  "results": [
+    {
+      "flink_version": "2.2.1",
+      "production": "candidate",
+      "native_enabled_expected_route": "native_table_function",
+      "cases": [
+        {
+          "case": "JVM_DATE_INT_RESULT_row:array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.195089149,
+              0.116981216,
+              0.220590047,
+              0.114611531,
+              0.127844544
+            ],
+            "median_seconds": 0.127844544,
+            "minimum_seconds": 0.114611531,
+            "maximum_seconds": 0.220590047
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.270877546,
+              0.247686534,
+              0.193155572,
+              0.243725524,
+              0.178795146
+            ],
+            "median_seconds": 0.243725524,
+            "minimum_seconds": 0.178795146,
+            "maximum_seconds": 0.270877546
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.639462
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.49663
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.321381
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.210084
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.195089
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.270878
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.247687
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.116981
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.22059
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.193156
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.243726
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.114612
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.127845
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.178795
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_row:list",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              1.001645389,
+              0.988790438,
+              0.990423168,
+              1.002068704,
+              1.009541043
+            ],
+            "median_seconds": 1.001645389,
+            "minimum_seconds": 0.988790438,
+            "maximum_seconds": 1.009541043
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              2.287215519,
+              2.29105671,
+              2.317154935,
+              2.286376251,
+              2.284945918
+            ],
+            "median_seconds": 2.287215519,
+            "minimum_seconds": 2.284945918,
+            "maximum_seconds": 2.317154935
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.181793
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.909219
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 2.319382
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.008157
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.001645
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 2.287216
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 2.291057
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.98879
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.990423
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 2.317155
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 2.286376
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.002069
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.009541
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 2.284946
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_atomic:array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.08276019,
+              0.087342145,
+              0.095249504,
+              0.091199332,
+              0.097091984
+            ],
+            "median_seconds": 0.091199332,
+            "minimum_seconds": 0.08276019,
+            "maximum_seconds": 0.097091984
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.119158494,
+              0.120777113,
+              0.12937768,
+              0.121480296,
+              0.117534334
+            ],
+            "median_seconds": 0.120777113,
+            "minimum_seconds": 0.117534334,
+            "maximum_seconds": 0.12937768
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.08663
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.15963
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.152851
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.097213
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.08276
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.119158
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.120777
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.087342
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.09525
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.129378
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.12148
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.091199
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.097092
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.117534
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_CONTROL_array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.123772025,
+              0.140724872,
+              0.123563059,
+              0.124929201,
+              0.126108913
+            ],
+            "median_seconds": 0.124929201,
+            "minimum_seconds": 0.123563059,
+            "maximum_seconds": 0.140724872
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.172426881,
+              0.18601367,
+              0.17217474,
+              0.185772587,
+              0.174618589
+            ],
+            "median_seconds": 0.174618589,
+            "minimum_seconds": 0.17217474,
+            "maximum_seconds": 0.18601367
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.114799
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.177353
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.183823
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.121323
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.123772
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.172427
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.186014
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.140725
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.123563
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.172175
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.185773
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.124929
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.126109
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.174619
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flink_version": "2.2.1",
+      "production": "prior",
+      "native_enabled_expected_route": "per_case_verified_previous_route",
+      "cases": [
+        {
+          "case": "JVM_DATE_INT_RESULT_row:array",
+          "expected_route": "full_stock_fallback",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.191841443,
+              0.196359974,
+              0.112371479,
+              0.115849284,
+              0.119930209
+            ],
+            "median_seconds": 0.119930209,
+            "minimum_seconds": 0.112371479,
+            "maximum_seconds": 0.196359974
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.184511726,
+              0.190794814,
+              0.116564077,
+              0.110945572,
+              0.119710178
+            ],
+            "median_seconds": 0.119710178,
+            "minimum_seconds": 0.110945572,
+            "maximum_seconds": 0.190794814
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.633601
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.290977
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.25217
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.19886
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.191841
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.184512
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.190795
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.19636
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.112371
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.116564
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.110946
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.115849
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.11993
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.11971
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_row:list",
+          "expected_route": "full_stock_fallback",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.993095001,
+              1.194506512,
+              1.328734634,
+              1.455766357,
+              1.139320308
+            ],
+            "median_seconds": 1.194506512,
+            "minimum_seconds": 0.993095001,
+            "maximum_seconds": 1.455766357
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.998200005,
+              1.06037353,
+              1.25349723,
+              1.243677995,
+              0.996841103
+            ],
+            "median_seconds": 1.06037353,
+            "minimum_seconds": 0.996841103,
+            "maximum_seconds": 1.25349723
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.199114
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.043947
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.9902
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.995227
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.993095
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.9982
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.060374
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.194507
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.328735
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.253497
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.243678
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.455766
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.13932
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.996841
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_atomic:array",
+          "expected_route": "full_stock_fallback",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.088688218,
+              0.112466239,
+              0.08703083,
+              0.085341932,
+              0.09993828
+            ],
+            "median_seconds": 0.088688218,
+            "minimum_seconds": 0.085341932,
+            "maximum_seconds": 0.112466239
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.091459291,
+              0.095923671,
+              0.109212291,
+              0.108429467,
+              0.115398553
+            ],
+            "median_seconds": 0.108429467,
+            "minimum_seconds": 0.091459291,
+            "maximum_seconds": 0.115398553
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.084178
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.088963
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.084874
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.08746
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.088688
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.091459
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.095924
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.112466
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.087031
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.109212
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.108429
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.085342
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.099938
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.115399
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_CONTROL_array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.121733738,
+              0.127808996,
+              0.157115742,
+              0.141995516,
+              0.141876064
+            ],
+            "median_seconds": 0.141876064,
+            "minimum_seconds": 0.121733738,
+            "maximum_seconds": 0.157115742
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.219175314,
+              0.222197307,
+              0.190298073,
+              0.198954783,
+              0.210875592
+            ],
+            "median_seconds": 0.210875592,
+            "minimum_seconds": 0.190298073,
+            "maximum_seconds": 0.222197307
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.189414
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.40848
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.232428
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.127201
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.121734
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.219175
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.222197
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.127809
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.157116
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.190298
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.198955
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.141996
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.141876
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.210876
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flink_version": "1.18.1",
+      "production": "candidate",
+      "native_enabled_expected_route": "native_table_function",
+      "cases": [
+        {
+          "case": "JVM_DATE_INT_RESULT_row:array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.221250074,
+              0.111792927,
+              0.114678807,
+              0.123447301,
+              0.115443516
+            ],
+            "median_seconds": 0.115443516,
+            "minimum_seconds": 0.111792927,
+            "maximum_seconds": 0.221250074
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.296200336,
+              0.264037258,
+              0.255589306,
+              0.175230653,
+              0.181628379
+            ],
+            "median_seconds": 0.255589306,
+            "minimum_seconds": 0.175230653,
+            "maximum_seconds": 0.296200336
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.660874
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.579661
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.340479
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.225004
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.22125
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.2962
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.264037
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.111793
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.114679
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.255589
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.175231
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.123447
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.115444
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.181628
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_row:list",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              1.021694249,
+              1.003036356,
+              1.023961364,
+              1.011544077,
+              1.030690909
+            ],
+            "median_seconds": 1.021694249,
+            "minimum_seconds": 1.003036356,
+            "maximum_seconds": 1.030690909
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              1.787359187,
+              1.812444641,
+              2.380029348,
+              1.817743267,
+              2.341837993
+            ],
+            "median_seconds": 1.817743267,
+            "minimum_seconds": 1.787359187,
+            "maximum_seconds": 2.380029348
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.148538
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 2.421375
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 2.357459
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.037155
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.021694
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.787359
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.812445
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.003036
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.023961
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 2.380029
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.817743
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.011544
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.030691
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 2.341838
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_atomic:array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.091375262,
+              0.089589918,
+              0.10138255,
+              0.092499923,
+              0.094943257
+            ],
+            "median_seconds": 0.092499923,
+            "minimum_seconds": 0.089589918,
+            "maximum_seconds": 0.10138255
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.132890584,
+              0.129390004,
+              0.140604584,
+              0.131745485,
+              0.119568016
+            ],
+            "median_seconds": 0.131745485,
+            "minimum_seconds": 0.119568016,
+            "maximum_seconds": 0.140604584
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.085412
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.146054
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.134789
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.091191
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.091375
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.132891
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.12939
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.08959
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.101383
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.140605
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.131745
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.0925
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.094943
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.119568
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_CONTROL_array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.12056208,
+              0.153576249,
+              0.124343436,
+              0.122363728,
+              0.117485941
+            ],
+            "median_seconds": 0.122363728,
+            "minimum_seconds": 0.117485941,
+            "maximum_seconds": 0.153576249
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.179502109,
+              0.174703342,
+              0.176345584,
+              0.180265166,
+              0.177386209
+            ],
+            "median_seconds": 0.177386209,
+            "minimum_seconds": 0.174703342,
+            "maximum_seconds": 0.180265166
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.107197
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.176962
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.195588
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.114753
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.120562
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.179502
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.174703
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.153576
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.124343
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.176346
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.180265
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.122364
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.117486
+            },
+            {
+              "engine": "native_candidate",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.177386
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flink_version": "1.18.1",
+      "production": "prior",
+      "native_enabled_expected_route": "per_case_verified_previous_route",
+      "cases": [
+        {
+          "case": "JVM_DATE_INT_RESULT_row:array",
+          "expected_route": "full_stock_fallback",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.187535354,
+              0.117864836,
+              0.112516906,
+              0.13699943,
+              0.11411404
+            ],
+            "median_seconds": 0.117864836,
+            "minimum_seconds": 0.112516906,
+            "maximum_seconds": 0.187535354
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.185070534,
+              0.175880508,
+              0.129827404,
+              0.108160922,
+              0.116241427
+            ],
+            "median_seconds": 0.129827404,
+            "minimum_seconds": 0.108160922,
+            "maximum_seconds": 0.185070534
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.583746
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.279312
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.204518
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.18302
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.187535
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.185071
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.175881
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.117865
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.112517
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.129827
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.108161
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.136999
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.114114
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.116241
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_row:list",
+          "expected_route": "full_stock_fallback",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.987155091,
+              0.98791342,
+              1.003688064,
+              0.985992005,
+              1.001224497
+            ],
+            "median_seconds": 0.98791342,
+            "minimum_seconds": 0.985992005,
+            "maximum_seconds": 1.003688064
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              1.007203512,
+              0.995236387,
+              1.020628395,
+              0.994362016,
+              0.998302079
+            ],
+            "median_seconds": 0.998302079,
+            "minimum_seconds": 0.994362016,
+            "maximum_seconds": 1.020628395
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.191131
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.002634
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.999792
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 1.021065
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.987155
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.007204
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.995236
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.987913
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.003688
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.020628
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.994362
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.985992
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 1.001224
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.998302
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_atomic:array",
+          "expected_route": "full_stock_fallback",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.09064127,
+              0.087692458,
+              0.08817585,
+              0.10191752,
+              0.079826396
+            ],
+            "median_seconds": 0.08817585,
+            "minimum_seconds": 0.079826396,
+            "maximum_seconds": 0.10191752
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.087897562,
+              0.093347096,
+              0.092448363,
+              0.090179748,
+              0.081161447
+            ],
+            "median_seconds": 0.090179748,
+            "minimum_seconds": 0.081161447,
+            "maximum_seconds": 0.093347096
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.096246
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.083229
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.085707
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.087597
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.090641
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.087898
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.093347
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.087692
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.088176
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.092448
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.09018
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.101918
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.079826
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.081161
+            }
+          ]
+        },
+        {
+          "case": "JVM_DATE_INT_RESULT_CONTROL_array",
+          "expected_route": "native_table_function",
+          "rows": 262144,
+          "stock": {
+            "samples_seconds": [
+              0.120224087,
+              0.116203355,
+              0.11878921,
+              0.124442854,
+              0.120049009
+            ],
+            "median_seconds": 0.120049009,
+            "minimum_seconds": 0.116203355,
+            "maximum_seconds": 0.124442854
+          },
+          "native_enabled": {
+            "samples_seconds": [
+              0.185491774,
+              0.188979797,
+              0.174289927,
+              0.172493241,
+              0.186035015
+            ],
+            "median_seconds": 0.185491774,
+            "minimum_seconds": 0.172493241,
+            "maximum_seconds": 0.188979797
+          },
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.098458
+            },
+            {
+              "engine": "native_previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.307634
+            },
+            {
+              "engine": "native_previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.195992
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds": 0.112286
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.120224
+            },
+            {
+              "engine": "native_previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.185492
+            },
+            {
+              "engine": "native_previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.18898
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.116203
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.118789
+            },
+            {
+              "engine": "native_previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.17429
+            },
+            {
+              "engine": "native_previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.172493
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.124443
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.120049
+            },
+            {
+              "engine": "native_previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds": 0.186035
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Short complete-job measurements include startup and JIT variability; they do not establish sustained throughput.",
+    "Prior production runs in a separate JVM with its own stock controls; ranges and all trials remain visible.",
+    "No builds or tests from this goal overlap timings. Other local Java/build activity, available memory, swap, load and CPU pressure were sampled once per second; this is not an exclusive CPU reservation.",
+    "Slower verified UDF coverage follows the accepted maintainer performance exception."
+  ],
+  "optimization": {
+    "profile": {
+      "pass_number": 1,
+      "rows": 1048576,
+      "case": "DATE/int Row result with scalar List STRING",
+      "warmup_pairs": 1,
+      "observed_pairs": 1,
+      "wall_seconds": 37.285261154174805,
+      "diagnostic_timings_excluded_from_cost_matrix": true,
+      "all_execution_native_samples": 2767,
+      "table_operator_stack_samples": 34,
+      "leaf": [
+        [
+          "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest$DateRows.eval",
+          9
+        ],
+        [
+          "TableFunctionProjection$0.apply",
+          7
+        ],
+        [
+          "tech.streamfusion.arrow.writers.DateWriter$DateWriterForRow.isNullAt",
+          4
+        ],
+        [
+          "ColumnarJvmTableFunction$12.processElement",
+          3
+        ],
+        [
+          "java.util.Arrays$ArrayList.toArray",
+          2
+        ],
+        [
+          "org.apache.flink.table.data.conversion.ArrayObjectArrayConverter.toExternal",
+          2
+        ],
+        [
+          "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+          2
+        ],
+        [
+          "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.getArray",
+          1
+        ],
+        [
+          "org.apache.arrow.vector.types.pojo.Field.createVector",
+          1
+        ],
+        [
+          "tech.streamfusion.operator.ArrowBatch.<init>",
+          1
+        ],
+        [
+          "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.processElement",
+          1
+        ],
+        [
+          "tech.streamfusion.arrow.ArrowWriter.write",
+          1
+        ]
+      ],
+      "inclusive": [
+        [
+          "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.processElement",
+          18
+        ],
+        [
+          "ColumnarJvmTableFunction$12.processElement",
+          17
+        ],
+        [
+          "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3148+0x0000775900daa380.1702458906.accept",
+          16
+        ],
+        [
+          "org.apache.flink.streaming.runtime.tasks.ChainingOutput.pushToOperator",
+          13
+        ],
+        [
+          "tech.streamfusion.operator.NativeColumnarTableFunctionOperator$1.collect",
+          10
+        ],
+        [
+          "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest$DateRows.eval",
+          9
+        ],
+        [
+          "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.append",
+          9
+        ],
+        [
+          "org.apache.flink.table.runtime.util.StreamRecordCollector.collect",
+          8
+        ],
+        [
+          "tech.streamfusion.arrow.ArrowWriter.write",
+          7
+        ],
+        [
+          "TableFunctionProjection$0.apply",
+          7
+        ],
+        [
+          "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+          6
+        ],
+        [
+          "org.apache.flink.table.runtime.collector.TableFunctionCollector.outputResult",
+          6
+        ],
+        [
+          "org.apache.flink.table.data.conversion.ArrayListConverter.toExternal",
+          4
+        ],
+        [
+          "tech.streamfusion.arrow.writers.DateWriter.doWrite",
+          4
+        ],
+        [
+          "tech.streamfusion.arrow.writers.DateWriter$DateWriterForRow.isNullAt",
+          4
+        ],
+        [
+          "org.apache.flink.streaming.runtime.tasks.ChainingOutput.collect",
+          4
+        ],
+        [
+          "java.util.Arrays$ArrayList.toArray",
+          2
+        ],
+        [
+          "java.util.ArrayList.<init>",
+          2
+        ],
+        [
+          "org.apache.flink.table.data.conversion.ArrayObjectArrayConverter.toExternal",
+          2
+        ],
+        [
+          "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.getArray",
+          1
+        ],
+        [
+          "org.apache.flink.table.data.columnar.ColumnarRowData.getArray",
+          1
+        ],
+        [
+          "org.apache.arrow.vector.VectorSchemaRoot.create",
+          1
+        ],
+        [
+          "org.apache.arrow.vector.types.pojo.Field.createVector",
+          1
+        ],
+        [
+          "tech.streamfusion.operator.ArrowBatch.<init>",
+          1
+        ],
+        [
+          "tech.streamfusion.operator.NativeColumnarTableFunctionOperator.flush",
+          1
+        ],
+        [
+          "tech.streamfusion.arrow.writers.ArrayWriter.doWrite",
+          1
+        ]
+      ],
+      "global_leaf": [
+        [
+          "sun.nio.ch.Net.accept",
+          643
+        ],
+        [
+          "sun.nio.ch.EPoll.wait",
+          626
+        ],
+        [
+          "java.io.FileInputStream.readBytes",
+          404
+        ],
+        [
+          "org.apache.flink.table.data.binary.StringUtf8Utils.encodeUTF8",
+          293
+        ],
+        [
+          "org.apache.flink.table.data.binary.StringUtf8Utils.decodeUTF8Strict",
+          269
+        ],
+        [
+          "jdk.internal.misc.Unsafe.checkOffset",
+          105
+        ],
+        [
+          "org.apache.flink.table.data.binary.BinarySection.pointTo",
+          31
+        ],
+        [
+          "java.lang.ThreadLocal$ThreadLocalMap.set",
+          24
+        ],
+        [
+          "org.apache.flink.table.data.conversion.RowRowConverter.toInternal",
+          23
+        ],
+        [
+          "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest$DateRows.eval",
+          19
+        ],
+        [
+          "java.util.Arrays.copyOf",
+          15
+        ],
+        [
+          "java.lang.ThreadLocal$ThreadLocalMap.getEntryAfterMiss",
+          15
+        ],
+        [
+          "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3148+0x0000775900daa380.1702458906.accept",
+          14
+        ],
+        [
+          "java.lang.ThreadLocal.setInitialValue",
+          13
+        ],
+        [
+          "org.apache.flink.table.runtime.typeutils.ArrayDataSerializer.toBinaryArray",
+          13
+        ]
+      ]
+    },
+    "measured_optimization_attempts": 0,
+    "retained_optimization_changes": 0,
+    "decision": "One bounded profile; no easy result-specific improvement, shared eager result projection retained without revisiting the previously rejected lazy projection."
+  }
+}

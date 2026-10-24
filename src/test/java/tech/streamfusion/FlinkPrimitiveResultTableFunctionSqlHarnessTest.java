@@ -327,12 +327,11 @@ class FlinkPrimitiveResultTableFunctionSqlHarnessTest {
     return left ? " LEFT JOIN " + application + " ON TRUE" : "," + application;
   }
 
-  private static boolean flink118() {
+  static boolean flink118() {
     return org.apache.flink.runtime.util.EnvironmentInformation.getVersion().startsWith("1.18.");
   }
 
-  private static void assertValues(
-      NativeFailureParity.Comparison runs, RecoveryExecutionMetrics metrics) {
+  static void assertValues(NativeFailureParity.Comparison runs, RecoveryExecutionMetrics metrics) {
     runs.assertSuccess(NativeFailureParity.Route.NATIVE);
     assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
     assertEquals(
@@ -343,7 +342,7 @@ class FlinkPrimitiveResultTableFunctionSqlHarnessTest {
     RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
   }
 
-  private static void assertReleasedLeftNullability(
+  static void assertReleasedLeftNullability(
       java.util.function.Supplier<TableEnvironment> factory, String sql) {
     String host = null;
     for (boolean nativeRun : List.of(false, true)) {
