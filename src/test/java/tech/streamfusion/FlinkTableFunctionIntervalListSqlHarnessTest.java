@@ -7,7 +7,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class FlinkTableFunctionIntervalListSqlHarnessTest {
   @ParameterizedTest
-  @ValueSource(strings = {"list:DAY_TIME", "list:YEAR_MONTH"})
+  @ValueSource(
+      strings = {"list:DAY_TIME", "list:YEAR_MONTH", "arraylist:DAY_TIME", "arraylist:YEAR_MONTH"})
   void scalarIntervalListsRetainReleasedConvertersAndNullableFanout(String name) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =

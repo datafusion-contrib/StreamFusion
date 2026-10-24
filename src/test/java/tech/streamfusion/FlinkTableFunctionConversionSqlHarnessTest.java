@@ -3,6 +3,8 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Stream;
 import org.apache.flink.configuration.Configuration;
@@ -10,6 +12,7 @@ import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
+import org.apache.flink.table.functions.TableFunction;
 import org.apache.flink.table.runtime.typeutils.ExternalTypeInfo;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
@@ -18,28 +21,34 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class FlinkTableFunctionConversionSqlHarnessTest {
   static Stream<String> conversions() {
+    String selected = System.getProperty("conversion.cases");
+    if (selected != null) return Stream.of(selected.split(";"));
     return Stream.concat(
         Stream.of("BOOLEAN", "TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
             .map(type -> "primitive:" + type),
-        Stream.of(
-                "BOOLEAN",
-                "TINYINT",
-                "SMALLINT",
-                "INT",
-                "BIGINT",
-                "FLOAT",
-                "DOUBLE",
-                "STRING",
-                "CHAR(4)",
-                "VARBINARY",
-                "BINARY(4)",
-                "DECIMAL(18,8)",
-                "DECIMAL(38,18)",
-                "DATE",
-                "TIME",
-                "TIMESTAMP(9)",
-                "TIMESTAMP_LTZ(9)")
-            .map(type -> "list:" + type));
+        Stream.of("list:", "arraylist:")
+            .flatMap(bridge -> scalarElements().map(type -> bridge + type)));
+  }
+
+  private static Stream<String> scalarElements() {
+    return Stream.of(
+        "BOOLEAN",
+        "TINYINT",
+        "SMALLINT",
+        "INT",
+        "BIGINT",
+        "FLOAT",
+        "DOUBLE",
+        "STRING",
+        "CHAR(4)",
+        "VARBINARY",
+        "BINARY(4)",
+        "DECIMAL(18,8)",
+        "DECIMAL(38,18)",
+        "DATE",
+        "TIME",
+        "TIMESTAMP(9)",
+        "TIMESTAMP_LTZ(9)");
   }
 
   @ParameterizedTest(name = "{0}")
@@ -63,7 +72,14 @@ class FlinkTableFunctionConversionSqlHarnessTest {
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(
-      strings = {"primitive:INT", "primitive:DOUBLE", "list:STRING", "list:DECIMAL(38,18)"})
+      strings = {
+        "primitive:INT",
+        "primitive:DOUBLE",
+        "list:STRING",
+        "list:DECIMAL(38,18)",
+        "arraylist:STRING",
+        "arraylist:DECIMAL(38,18)"
+      })
   void retainedArgumentsStayOwnedAcrossLaterBatches(String name) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
@@ -81,7 +97,8 @@ class FlinkTableFunctionConversionSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @org.junit.jupiter.params.provider.ValueSource(strings = {"primitive:INT", "list:STRING"})
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"primitive:INT", "list:STRING", "arraylist:STRING"})
   void filteredCallsAndFailuresKeepReleasedEvaluationOrder(String name) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       java.util.function.Supplier<TableEnvironment> factory =
@@ -114,16 +131,15 @@ class FlinkTableFunctionConversionSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @org.junit.jupiter.params.provider.ValueSource(strings = {"primitive:INT", "list:STRING"})
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"primitive:INT", "list:STRING", "arraylist:STRING"})
   void concreteJavaMethodSignaturesExecuteInsideTheColumnarOperator(String name) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
               () -> {
                 var table = environment(name, 96, metrics);
-                table.createTemporarySystemFunction(
-                    "concrete_rows",
-                    name.startsWith("primitive:") ? new IntRows() : new ListRows());
+                table.createTemporarySystemFunction("concrete_rows", concreteRows(name));
                 return table;
               },
               "SELECT s.id,t.v,t.pos FROM src s,LATERAL TABLE(concrete_rows(s.id,s.p)) AS"
@@ -135,7 +151,14 @@ class FlinkTableFunctionConversionSqlHarnessTest {
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(
-      strings = {"primitive:INT", "primitive:DOUBLE", "list:STRING", "list:DECIMAL(38,18)"})
+      strings = {
+        "primitive:INT",
+        "primitive:DOUBLE",
+        "list:STRING",
+        "list:DECIMAL(38,18)",
+        "arraylist:STRING",
+        "arraylist:DECIMAL(38,18)"
+      })
   void changelogValuesSurviveRepeatedRecovery(String name) throws Exception {
     var rows = new java.util.ArrayList<Row>();
     for (int i = 0; i < 48; i++) rows.add(Row.of(i, value(name, i)));
@@ -172,18 +195,29 @@ class FlinkTableFunctionConversionSqlHarnessTest {
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(
-      strings = {"array_nested", "array_row", "array_map"})
+      strings = {
+        "array_nested",
+        "array_row",
+        "array_map",
+        "arraylist:array_nested",
+        "arraylist:array_row",
+        "arraylist:array_map"
+      })
   void listElementsWithUnverifiedContainerConversionsRetainFallback(String name) {
+    boolean arrayList = name.startsWith("arraylist:");
+    String shape = arrayList ? name.substring("arraylist:".length()) : name;
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
               () -> {
-                var table = FlinkNestedTableFunctionSqlHarnessTest.environment(name, 32, metrics);
+                var table = FlinkNestedTableFunctionSqlHarnessTest.environment(shape, 32, metrics);
                 table.createTemporarySystemFunction(
                     "bridge_rows",
                     new FlinkTypedTableFunctionSqlHarnessTest.TypedRows(
-                        FlinkNestedTableFunctionSqlHarnessTest.valueType(name)
-                            .bridgedTo(List.class)));
+                        FlinkNestedTableFunctionSqlHarnessTest.valueType(shape)
+                            .bridgedTo(List.class),
+                        FlinkNestedTableFunctionSqlHarnessTest.valueType(shape)
+                            .bridgedTo(arrayList ? ArrayList.class : List.class)));
                 return table;
               },
               "SELECT t.v FROM src s,LATERAL TABLE(bridge_rows(s.id,s.p)) AS t(v,pos)");
@@ -253,8 +287,45 @@ class FlinkTableFunctionConversionSqlHarnessTest {
     }
   }
 
+  @org.junit.jupiter.api.Test
+  void concreteListBridgesInsideResultRowsKeepFallback() {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var runs =
+          NativeFailureParity.run(
+              () -> {
+                var env = metrics.environment(new Configuration(), 1, 0);
+                var table = StreamTableEnvironment.create(env);
+                var type =
+                    DataTypes.ROW(
+                        DataTypes.FIELD("id", DataTypes.INT()),
+                        DataTypes.FIELD(
+                            "p", DataTypes.ROW(DataTypes.FIELD("items", sourceArray("list:INT")))));
+                var input =
+                    tech.streamfusion.compat.FlinkTestSources.fromData(
+                        env,
+                        List.of(
+                            Row.of(1, Row.of(value("list:INT", 1))),
+                            Row.of(2, Row.of(value("list:INT", 2)))),
+                        ExternalTypeInfo.<Row>of(type));
+                table.createTemporaryView(
+                    "src",
+                    table.fromDataStream(input, Schema.newBuilder().fromRowDataType(type).build()));
+                table.createTemporarySystemFunction(
+                    "nested_result", new NestedArrayListResultRows());
+                return table;
+              },
+              "SELECT t.v FROM src s,LATERAL TABLE(nested_result(s.id,s.p)) AS t(v,pos)");
+      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      assertTrue(
+          runs.nativeRun().fallbackReasons().stream()
+              .anyMatch(reason -> reason.contains("verified external Java conversions")),
+          runs::toString);
+    }
+  }
+
   @ParameterizedTest
-  @org.junit.jupiter.params.provider.ValueSource(strings = {"primitive:INT", "list:STRING"})
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"primitive:INT", "list:STRING", "arraylist:INT", "arraylist:STRING"})
   void atomicArrayResultsUseTheReleasedWrappingCollector(String name) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
@@ -272,23 +343,146 @@ class FlinkTableFunctionConversionSqlHarnessTest {
     }
   }
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"arraylist", "linkedlist"})
+  void concreteListArgumentsKeepReleasedPlanningRejection(String bridge) {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var runs =
+          NativeFailureParity.run(
+              () -> {
+                var table = environment("list:STRING", 32, metrics);
+                table.createTemporarySystemFunction(
+                    "invalid_rows", new InvalidListArgumentRows(bridge));
+                return table;
+              },
+              "SELECT s.id,t.v,t.pos FROM src s,LATERAL TABLE(invalid_rows(s.id,s.p)) AS t(v,pos)");
+      runs.assertFailure(
+          org.apache.flink.table.api.ValidationException.class,
+          "does not support an output conversion",
+          NativeFailureParity.Phase.PLANNING,
+          NativeFailureParity.Route.FALLBACK);
+      assertEquals(runs.host().rootCause().getMessage(), runs.nativeRun().rootCause().getMessage());
+      assertEquals(0, runs.nativeRun().substitutions());
+      assertTrue(metrics.nativeOperators().isEmpty());
+    }
+  }
+
+  @org.junit.jupiter.api.Test
+  void primitiveDateArgumentsAndConcreteArrayListResultsComposeWithoutWideningNestedBridges() {
+    for (boolean left : List.of(false, true)) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var runs =
+            NativeFailureParity.run(
+                () -> {
+                  var table =
+                      FlinkDateIntArgumentTableFunctionSqlHarnessTest.sourceEnvironment(
+                          "list", 96, metrics, false);
+                  table.createTemporarySystemFunction("date_list_rows", new DateArrayListRows());
+                  return table;
+                },
+                "SELECT s.x,t.v,t.epoch_day,t.pos FROM src s"
+                    + (left ? " LEFT JOIN " : ",")
+                    + "LATERAL TABLE(date_list_rows(s.x,s.p)) AS t(v,epoch_day,pos)"
+                    + (left ? " ON TRUE" : ""));
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+        FlinkDateIntArgumentTableFunctionSqlHarnessTest.assertStamps(runs.host().rows());
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"list", "arraylist", "wrapped_list", "wrapped_arraylist"})
+  void emptyRowsRemainContainerElementsRatherThanScalarLeaves(String bridge) {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var runs =
+          NativeFailureParity.run(
+              () -> {
+                var table = environment("list:INT", 32, metrics);
+                table.createTemporarySystemFunction(
+                    "empty_row_lists", new EmptyRowListResults(bridge));
+                return table;
+              },
+              "SELECT s.id,t.v,t.pos FROM src s,LATERAL TABLE(empty_row_lists(s.id,s.p)) AS"
+                  + " t(v,pos)");
+      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      assertTrue(
+          runs.nativeRun().fallbackReasons().stream()
+              .anyMatch(reason -> reason.contains("verified external Java conversions")),
+          runs::toString);
+      assertTrue(metrics.nativeOperators().isEmpty());
+    }
+  }
+
+  @org.junit.jupiter.api.Test
+  void requiredArrayListResultsKeepReleasedNullabilitySemantics() {
+    for (boolean emitNull : List.of(false, true)) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var runs =
+            NativeFailureParity.run(
+                () -> {
+                  var table = environment("list:INT", 32, metrics);
+                  table.createTemporarySystemFunction(
+                      "required_rows", new RequiredArrayListRows(emitNull));
+                  return table;
+                },
+                "SELECT s.id,t.v,t.pos FROM src s,LATERAL TABLE(required_rows(s.id,s.p)) AS"
+                    + " t(v,pos)");
+        if (runs.host().failure() == null) {
+          runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+          assertEquals(32, runs.host().rows().size());
+          for (var row : runs.host().rows()) {
+            if (emitNull) assertNull(row.get(2));
+            else assertNotNull(row.get(2));
+          }
+          RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+        } else {
+          assertTrue(emitNull, runs::toString);
+          assertTrue(
+              runs.host().phase() == NativeFailureParity.Phase.ROW_EVALUATION
+                  || runs.host().phase() == NativeFailureParity.Phase.COLLECTION,
+              runs::toString);
+          assertTrue(
+              String.valueOf(runs.host().rootCause().getMessage())
+                  .toUpperCase(java.util.Locale.ROOT)
+                  .contains("NULL"),
+              runs::toString);
+          runs.assertFailure(
+              runs.host().rootCause().getClass(),
+              null,
+              runs.host().phase(),
+              NativeFailureParity.Route.NATIVE);
+        }
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+      }
+    }
+  }
+
   public static class AtomicRows extends org.apache.flink.table.functions.TableFunction<Object> {
     private final DataType type;
+    private final DataType argumentType;
 
     public AtomicRows(String name) {
       type = conversion(name);
+      argumentType = argumentConversion(name);
     }
 
     @Override
     public org.apache.flink.table.types.inference.TypeInference getTypeInference(
         org.apache.flink.table.catalog.DataTypeFactory factory) {
       return org.apache.flink.table.types.inference.TypeInference.newBuilder()
-          .typedArguments(DataTypes.INT(), type)
+          .typedArguments(DataTypes.INT(), argumentType)
           .outputTypeStrategy(org.apache.flink.table.types.inference.TypeStrategies.explicit(type))
           .build();
     }
 
     public void eval(Integer mode, Object value) {
+      if (type.getConversionClass() == ArrayList.class
+          && value != null
+          && value.getClass() != ArrayList.class)
+        throw new IllegalStateException("atomic result is not an ArrayList");
       if (mode % 4 != 0) collect(value);
     }
   }
@@ -356,11 +550,142 @@ class FlinkTableFunctionConversionSqlHarnessTest {
     }
   }
 
+  private static TableFunction<Row> concreteRows(String name) {
+    switch (name) {
+      case "primitive:INT":
+        return new IntRows();
+      case "arraylist:STRING":
+        return new ArrayListRows();
+      default:
+        return new ListRows();
+    }
+  }
+
+  public static class EmptyRowListResults extends FlinkTypedTableFunctionSqlHarnessTest.TypedRows {
+    public EmptyRowListResults(String bridge) {
+      super(
+          conversion("list:INT"),
+          DataTypes.ARRAY(emptyRowElement(bridge))
+              .bridgedTo(bridge.endsWith("arraylist") ? ArrayList.class : List.class));
+    }
+
+    private static DataType emptyRowElement(String bridge) {
+      return bridge.startsWith("wrapped_")
+          ? new org.apache.flink.table.types.AtomicDataType(
+              DataTypes.ROW().getLogicalType(), Row.class)
+          : DataTypes.ROW();
+    }
+
+    @Override
+    public void eval(Integer mode, Object value) {
+      super.eval(
+          mode,
+          new ArrayList<>(
+              java.util.Arrays.asList(
+                  Row.of(), null, Row.ofKind(org.apache.flink.types.RowKind.DELETE))));
+    }
+  }
+
+  public static class RequiredArrayListRows
+      extends FlinkTypedTableFunctionSqlHarnessTest.TypedRows {
+    private final boolean emitNull;
+
+    public RequiredArrayListRows(boolean emitNull) {
+      super(conversion("list:INT"), conversion("arraylist:INT").notNull());
+      this.emitNull = emitNull;
+    }
+
+    @Override
+    public void eval(Integer mode, Object value) {
+      Object result =
+          emitNull ? null : new ArrayList<>(value == null ? List.of() : (List<?>) value);
+      collect(Row.of(result, mode));
+    }
+  }
+
+  public static class ArrayListRows extends MutatingRows {
+    private transient boolean called;
+
+    public ArrayListRows() {
+      super("arraylist:STRING");
+    }
+
+    public void eval(Integer mode, List<String> values) {
+      if (values != null && values.getClass() != ArrayList.class)
+        throw new IllegalStateException("result is not an ArrayList");
+      called = true;
+      super.eval(mode, values);
+    }
+
+    @Override
+    public void close() {
+      if (!called)
+        throw new IllegalStateException("concrete ArrayList result method was not invoked");
+      super.close();
+    }
+  }
+
+  public static class InvalidListArgumentRows
+      extends FlinkTypedTableFunctionSqlHarnessTest.TypedRows {
+    public InvalidListArgumentRows(String bridge) {
+      super(conversion(bridge + ":STRING"), conversion("list:STRING"));
+    }
+  }
+
+  public static class NestedArrayListResultRows
+      extends FlinkTypedTableFunctionSqlHarnessTest.TypedRows {
+    public NestedArrayListResultRows() {
+      super(
+          DataTypes.ROW(DataTypes.FIELD("items", sourceArray("list:INT"))),
+          DataTypes.ROW(DataTypes.FIELD("items", conversion("arraylist:INT"))));
+    }
+
+    @Override
+    public void eval(Integer mode, Object value) {
+      Row input = (Row) value;
+      Object items = input.getField(0);
+      super.eval(
+          mode,
+          Row.of(
+              items == null ? null : new ArrayList<>(java.util.Arrays.asList((Object[]) items))));
+    }
+  }
+
+  public static class DateArrayListRows
+      extends FlinkDateIntArgumentTableFunctionSqlHarnessTest.IntDateRows {
+    private transient boolean called;
+
+    public DateArrayListRows() {
+      super("list");
+    }
+
+    @Override
+    DataType outputType() {
+      return DataTypes.ROW(
+          DataTypes.FIELD("v", conversion("arraylist:STRING")),
+          DataTypes.FIELD("epoch_day", DataTypes.INT()),
+          DataTypes.FIELD("pos", DataTypes.INT()));
+    }
+
+    public void eval(int epochDay, List<String> values) {
+      if (values != null && values.getClass() != ArrayList.class)
+        throw new IllegalStateException("DATE result is not an ArrayList");
+      called = true;
+      super.eval(epochDay, values);
+    }
+
+    @Override
+    public void close() {
+      if (!called) throw new IllegalStateException("DATE/ArrayList result method was not invoked");
+      super.close();
+    }
+  }
+
   public static class PreviousRows extends FlinkTypedTableFunctionSqlHarnessTest.TypedRows {
     private transient Object previous;
 
     public PreviousRows(String name) {
-      super(conversion(name));
+      super(argumentConversion(name), conversion(name));
     }
 
     @Override
@@ -394,7 +719,15 @@ class FlinkTableFunctionConversionSqlHarnessTest {
     return DataTypes.ARRAY(name.startsWith("primitive:") ? type.notNull() : type);
   }
 
+  static DataType argumentConversion(String name) {
+    return name.startsWith("arraylist:")
+        ? sourceArray(name).bridgedTo(List.class)
+        : conversion(name);
+  }
+
   static DataType conversion(String name) {
+    if (name.startsWith("arraylist:")) return sourceArray(name).bridgedTo(ArrayList.class);
+    if (name.startsWith("linkedlist:")) return sourceArray(name).bridgedTo(LinkedList.class);
     if (name.startsWith("list:")) return sourceArray(name).bridgedTo(List.class);
     Class<?> primitive;
     switch (name.substring(name.indexOf(':') + 1)) {
@@ -476,7 +809,7 @@ class FlinkTableFunctionConversionSqlHarnessTest {
     private final String name;
 
     public MutatingRows(String name) {
-      super(conversion(name));
+      super(argumentConversion(name), conversion(name));
       this.name = name;
     }
 

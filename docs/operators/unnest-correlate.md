@@ -151,8 +151,11 @@ these admitted scalar types. Container signatures support Flink's default extern
 Direct ARRAY arguments and direct result columns also support `java.util.List` with default
 scalar element conversions, and `boolean[]`, `byte[]`, `short[]`, `int[]`, `long[]`, `float[]`
 and `double[]` with matching non-null element types. ARRAY parents can still be NULL or empty;
-Lists can contain NULL elements. In signatures containing containers, direct non-null BOOLEAN,
-TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE arguments may also use their corresponding
+Lists can contain NULL elements. Direct result fields and atomic ARRAY results additionally
+support `java.util.ArrayList` with default scalar element conversions, including both interval
+families. This is result-only: released validation rejects concrete List subclass arguments.
+In signatures containing containers, direct non-null BOOLEAN, TINYINT, SMALLINT, INT, BIGINT,
+FLOAT and DOUBLE arguments may also use their corresponding
 Java primitive classes. Direct non-null DATE arguments can also use Java `int` epoch days.
 This DATE bridge is argument-only: boxed `Integer`, result and nested DATE bridges retain
 fallback in container signatures. Released type inference still validates argument nullability; this
@@ -168,8 +171,9 @@ Released converters own these Java values, and the existing
 typed-array adapter supplies primitive conversion after nullable Arrow copies. FLOAT/DOUBLE
 retain signed zero and NaN payloads through chained function inputs and results.
 
-Released type inference determines the conversions. Alternate bridges nested inside a ROW/MAP
-argument or nested result column, Lists with ARRAY/MAP/ROW elements, internal
+Released type inference determines the conversions. Other concrete/custom List result classes,
+alternate bridges nested inside a ROW/MAP argument or nested result column, Lists with
+ARRAY/MAP/ROW elements, internal
 `ArrayData`/`MapData`/`RowData`, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
 switch can disable this operator.
@@ -286,6 +290,93 @@ surefire:test@default-test`; add `flink-1.18` to the profile for that line. Prio
 only the test fixtures and set `-Dboundary.expectNative=false`; the existing native control
 continues to require the table-function operator and both transposes.
 
+### Concrete ArrayList results (2026-10-24)
+
+Direct external Row result fields and atomic ARRAY results can use `ArrayList` when their
+elements use verified default scalar conversions. List arguments still use the exact
+`java.util.List` bridge. These are separate contracts: released Flink accepts List subclasses
+for external-to-internal result conversion, but rejects their internal-to-external argument
+conversion while planning/generating the job. The converter materializing an ArrayList does
+not override that validation rule. Independent ArrayList and LinkedList argument controls
+retain the same `ValidationException`, diagnostic and planning phase with zero native
+substitutions or consumed native work. The [scoped rejection record](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/237-concrete-list-arguments.md)
+contains the released source evidence; it does not exclude concrete List results.
+
+The expanded suite has 82 conversion checks and four interval-List checks, alongside the
+existing primitive-result, DATE-argument, nested, typed and basic table-function coverage: 428
+checks on each supported Flink line. The 39 additions cover all admitted scalar families,
+INNER/LEFT mutable fanout, actual ArrayList result objects, non-null parent metadata (including
+emitted NULLs), retained values across closed batches, empty inputs, failures, direct and atomic
+collectors, DATE/int argument composition, and two forced restores with memory/native RocksDB.
+Nested ArrayList result fields and Lists/ArrayLists of containers retain fallback. Scalar
+membership uses Flink’s predefined logical-type family, so zero-field ROW elements remain
+containers even when wrapped in an AtomicDataType. Other concrete/custom List result classes
+remain outside this exact-class whitelist. Admission reuses Flink's result converter and the
+existing owned Arrow writes; no runtime or native-memory path changes.
+
+The [complete-job artifact](../benchmarks/results/jvm-table-function-arraylist-results-2026-10-24.json)
+records the exact final source/native hashes, all validation outcomes and 784 timing trials.
+The final matrix uses 262,144 rows, one task, a 2 GiB heap, 1,024-row transpose batches, two
+warmup pairs and five measured alternating pairs. Inputs cycle 64 prebuilt arrays; within
+that fixture, index multiples of 13 give NULL parents, other multiples of seven give empty
+parents, and the remaining parents have three elements including a NULL middle element.
+INT, STRING (including unpaired UTF-16 surrogates), and DECIMAL(38,18) cases keep the same
+List arguments and mutable function code across stock, prior and candidate. The unchanged
+control returns the List interface instead of ArrayList.
+
+Fresh-cluster timing includes submission, generated callbacks, conversions, production
+transport and both perimeter transposes into a row blackhole sink. Setup and symmetric
+EXPLAIN are outside timing. Prior production (`e5c3b4d0`) uses full stock fallback for the
+new result bridges, while the List STRING control is native on both revisions. Every
+candidate run requires consumed table-function work and both transposes. Seconds below
+are median (minimum–maximum).
+
+| Flink / result bridge | Stock in candidate JVM | Prior native enabled | Candidate native enabled |
+|---|---:|---:|---:|
+| 2.2.1 / ArrayList INT | 0.148 (0.131–0.241) | 0.176 (0.141–0.198) | 0.213 (0.206–0.290) |
+| 2.2.1 / ArrayList STRING | 0.252 (0.244–0.262) | 0.247 (0.242–0.252) | 0.470 (0.466–0.476) |
+| 2.2.1 / ArrayList DECIMAL(38,18) | 0.275 (0.261–0.282) | 0.257 (0.251–0.267) | 0.443 (0.438–0.452) |
+| 2.2.1 / List STRING control | 0.260 (0.251–0.270) | 0.476 (0.468–0.482) | 0.474 (0.469–0.475) |
+| 1.18.1 / ArrayList INT | 0.223 (0.141–0.310) | 0.139 (0.125–0.170) | 0.358 (0.252–0.434) |
+| 1.18.1 / ArrayList STRING | 0.284 (0.253–0.323) | 0.241 (0.236–0.265) | 0.582 (0.556–0.652) |
+| 1.18.1 / ArrayList DECIMAL(38,18) | 0.297 (0.286–0.314) | 0.252 (0.248–0.255) | 0.497 (0.477–0.587) |
+| 1.18.1 / List STRING control | 0.278 (0.267–0.313) | 0.490 (0.476–0.499) | 0.518 (0.496–0.668) |
+
+These native callbacks remain slower than stock. The unchanged native control differs from
+its prior median by -0.5% on 2.2 and +5.6% on 1.18. Separate-JVM stock controls and
+short-job startup/JIT variability remain visible in the ranges. These results do not establish
+sustained throughput or a causal speedup. Verified UDF coverage follows the accepted
+performance exception, without an extra opt-in or acceleration claim.
+
+The final 224-trial matrix retains all 560 earlier trials and their original source hashes.
+Initial 2.2 candidate timings overlapped two other Java processes (CPU pressure avg10 up to
+0.67%, about 4 GiB minimum available memory), followed by one quieter 2.2 check. Scalar
+classification was then refined to exclude empty ROW elements, including AtomicDataType
+wrappers, and the final matrix measures the exact logical-family guard. These are validation
+snapshots; the callback, Arrow implementation and timed fixture bodies are unchanged.
+
+In the final matrix, the 2.2 forks had no sampled other Java/build processes. Other Java
+activity overlapped parts of both 1.18 forks, with CPU pressure avg10 up to 1.05% and at least
+5.3 GiB available memory. All observations and unfavorable trials remain in the artifact.
+No build or test from this goal overlaps a timing run; CPUs were not reserved.
+
+Optimization stopped after one 16-second JFR pass over a separate 1,048,576-row String case,
+with one warmup pair and one observed pair. Its 48 table-operator stack samples included 27
+stacks in owned Arrow writes and 14 leaves in integer-writer null checks, alongside generated
+callbacks and released conversion. This sparse profile exposed no isolated concrete-result
+bridge hotspot or easy safe class-specific change. No optimization prototype or fixture
+optimization was attempted. The later classifier refinement changed no callback or Arrow
+implementation; the profile's original provenance and diagnostic timings remain separate
+from the cost matrix.
+
+Reproduce with `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+-Dtest=ArrayListTableFunctionBenchmark -Dboundary.rows=262144 -Dboundary.warmups=2
+-Dboundary.runs=5 surefire:test@default-test`; add `,flink-1.18` to the profile for 1.18.1.
+`arraylist.boundaries` defaults to `arraylist:INT;arraylist:STRING;arraylist:DECIMAL(38,18);CONTROL_list:STRING`.
+For the actual prior revision, copy the conversion, interval and benchmark test fixtures only
+and set `-Dboundary.expectNative=false`; the control still requires native work. Production
+sources must remain unchanged.
+
 ### DATE epoch-day arguments and containers (2026-10-24)
 
 Twenty-one checks verify direct non-null DATE arguments bridged to Java `int`, alongside
@@ -299,8 +390,8 @@ with both memory and native RocksDB backends. Negative controls preserve fallbac
 DATE/Integer arguments, primitive DATE result fields and atomic results, and DATE/int bridges
 nested inside ROW or ARRAY arguments. The shared primitive-array/result whitelist is unchanged.
 
-The complete local regression set contains 389 checks on each supported Flink line, including
-the 368 existing table-function checks. Admission uses the released identity DATE converter
+At the DATE-argument increment, the local regression set contained 389 checks on each
+supported Flink line, including the 368 preceding table-function checks. Admission uses the released identity DATE converter
 and correlate generator; it adds no runtime implementation or native-memory path.
 
 The [complete-job artifact](../benchmarks/results/jvm-table-function-date-int-arguments-2026-10-24.json)

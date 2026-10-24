@@ -1,5 +1,6 @@
 package tech.streamfusion.planner;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
@@ -16,6 +17,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.inference.TypeInferenceUtil;
+import org.apache.flink.table.types.logical.LogicalTypeFamily;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.types.Row;
 
@@ -83,20 +85,30 @@ final class TableFunctionMatcher {
 
   private static boolean verifiedOutputConversion(DataType type) {
     if (type.getLogicalType().is(LogicalTypeRoot.ROW) && type.getConversionClass() == Row.class)
-      return type.getChildren().stream()
-          .allMatch(field -> verifiedConversion(field) || primitiveConversion(field));
-    return verifiedConversion(type) || primitiveConversion(type);
+      return type.getChildren().stream().allMatch(TableFunctionMatcher::verifiedResultConversion);
+    return verifiedResultConversion(type);
+  }
+
+  private static boolean verifiedResultConversion(DataType type) {
+    if (verifiedConversion(type) || primitiveConversion(type)) return true;
+    if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)
+        || type.getConversionClass() != ArrayList.class) return false;
+    var element = type.getChildren().get(0);
+    return defaultScalarConversion(element);
   }
 
   private static boolean verifiedConversion(DataType type) {
     if (defaultConversions(type)) return true;
     if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)) return false;
     var element = type.getChildren().get(0);
-    if (type.getConversionClass() == List.class)
-      return element.getChildren().isEmpty() && defaultConversions(element);
+    if (type.getConversionClass() == List.class) return defaultScalarConversion(element);
     return type.getConversionClass().isArray()
         && type.getConversionClass().getComponentType().isPrimitive()
         && primitiveConversion(element);
+  }
+
+  private static boolean defaultScalarConversion(DataType type) {
+    return type.getLogicalType().is(LogicalTypeFamily.PREDEFINED) && defaultConversions(type);
   }
 
   private static boolean primitiveConversion(DataType type) {
@@ -208,9 +220,10 @@ final class TableFunctionMatcher {
     return "correlate: only non-specialized JVM table functions with INNER/LEFT and CHAR/VARCHAR,"
         + " numeric, boolean, binary, interval, temporal or recursively verified"
         + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
-        + " conversions (default containers, scalar Lists, non-null primitive arrays or"
-        + " direct non-null boolean/numeric primitive scalar arguments or results, or"
-        + " non-null DATE/int arguments) and input representation are verified";
+        + " conversions (default containers, scalar Lists, scalar ArrayList results,"
+        + " non-null primitive arrays or direct non-null boolean/numeric primitive scalar"
+        + " arguments or results, or non-null DATE/int arguments) and input representation"
+        + " are verified";
   }
 
   static RelNode substitute(StreamPhysicalCorrelate node, PlanContext context) {
