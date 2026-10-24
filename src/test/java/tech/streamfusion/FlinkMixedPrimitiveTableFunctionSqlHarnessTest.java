@@ -73,7 +73,7 @@ class FlinkMixedPrimitiveTableFunctionSqlHarnessTest {
   }
 
   @Test
-  void primitiveResultMetadataRemainsOutsideThisArgumentIncrement() {
+  void primitiveResultMetadataUsesTheVerifiedNativeRoute() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -83,11 +83,8 @@ class FlinkMixedPrimitiveTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT t.v,t.m FROM src s,LATERAL TABLE(mixed_rows(s.x,s.p)) AS t(v,m)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 

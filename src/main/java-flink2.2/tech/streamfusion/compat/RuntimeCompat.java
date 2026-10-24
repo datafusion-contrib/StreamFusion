@@ -9,8 +9,31 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 public final class RuntimeCompat {
   private RuntimeCompat() {}
 
+  public static org.apache.flink.table.runtime.generated.GeneratedProjection
+      tableFunctionProjection(
+          org.apache.flink.configuration.ReadableConfig config,
+          ClassLoader classLoader,
+          org.apache.flink.table.types.logical.RowType inputType,
+          org.apache.flink.table.types.logical.RowType outputType,
+          int[] projection) {
+    return org.apache.flink.table.planner.codegen.ProjectionCodeGenerator$.MODULE$
+        .generateProjection(
+            new org.apache.flink.table.planner.codegen.CodeGeneratorContext(config, classLoader),
+            "TableFunctionProjection",
+            inputType,
+            outputType,
+            projection,
+            org.apache.flink.table.data.BoxedWrapperRowData.class,
+            "in1",
+            "out",
+            "outWriter",
+            true,
+            null);
+  }
+
   public static int applyParsedTimePrecision(int millis, int precision) {
-    return org.apache.flink.table.utils.DateTimeUtils.applyTimePrecisionTruncation(millis, precision);
+    return org.apache.flink.table.utils.DateTimeUtils.applyTimePrecisionTruncation(
+        millis, precision);
   }
 
   public static boolean supportsNonTimeOverRowNumber() {

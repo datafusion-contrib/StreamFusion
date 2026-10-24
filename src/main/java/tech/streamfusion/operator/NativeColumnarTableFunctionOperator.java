@@ -28,6 +28,9 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
   private final int[] projection;
   private final boolean preserveCollections;
   private final int[] inputMapping;
+  private final org.apache.flink.table.runtime.generated.GeneratedProjection generatedProjection;
+  private transient org.apache.flink.table.runtime.generated.Projection<RowData, ? extends RowData>
+      rowProjection;
   private transient org.apache.flink.table.data.utils.ProjectedRowData inputProjector;
   private transient org.apache.flink.table.data.utils.ProjectedRowData projected;
   private transient org.apache.arrow.vector.types.pojo.Schema outputSchema;
@@ -66,6 +69,27 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
       int batchRows,
       boolean preserveCollections,
       int[] inputMapping) {
+    this(
+        inputType,
+        outputType,
+        generated,
+        projection,
+        batchRows,
+        preserveCollections,
+        inputMapping,
+        null);
+  }
+
+  public NativeColumnarTableFunctionOperator(
+      RowType inputType,
+      RowType outputType,
+      GeneratedClass<? extends StreamOperator<RowData>> generated,
+      int[] projection,
+      int batchRows,
+      boolean preserveCollections,
+      int[] inputMapping,
+      org.apache.flink.table.runtime.generated.GeneratedProjection generatedProjection) {
+    this.generatedProjection = generatedProjection;
     this.inputMapping = inputMapping;
     this.preserveCollections = preserveCollections;
     this.inputType = inputType;
@@ -89,11 +113,21 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     if (preserveCollections)
       outputSchema = tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(outputSchema);
     projected = org.apache.flink.table.data.utils.ProjectedRowData.from(projection);
+    rowProjection =
+        generatedProjection == null
+            ? null
+            : generatedProjection.newInstance(getUserCodeClassloader());
     var collector =
         new FlinkOutput<RowData>(output) {
           @Override
           public void collect(StreamRecord<RowData> record) {
-            append(projected.replaceRow(record.getValue()));
+            RowData input = record.getValue();
+            if (rowProjection == null) append(projected.replaceRow(input));
+            else {
+              RowData row = rowProjection.apply(input);
+              row.setRowKind(input.getRowKind());
+              append(row);
+            }
           }
         };
     evaluator =

@@ -19,6 +19,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
   private final boolean left;
   private final RelDataType correlatedType;
   private final int[] projection;
+  private final boolean hasProjection;
 
   StreamPhysicalNativeTableFunction(
       RelOptCluster cluster,
@@ -36,6 +37,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
         invocation,
         condition,
         left,
+        false,
         output,
         java.util.stream.IntStream.range(0, output.getFieldCount()).toArray());
   }
@@ -48,11 +50,13 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
       RexCall invocation,
       RexNode condition,
       boolean left,
+      boolean hasProjection,
       RelDataType correlatedType,
       int[] projection) {
     super(cluster, traits, input, output);
     this.correlatedType = correlatedType;
     this.projection = projection;
+    this.hasProjection = hasProjection;
     this.invocation = invocation;
     this.condition = condition;
     this.left = left;
@@ -80,6 +84,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
         invocation,
         condition,
         left,
+        hasProjection,
         correlatedType,
         projection);
   }
@@ -95,6 +100,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
         invocation,
         condition,
         left,
+        true,
         correlatedType,
         combined);
   }
@@ -107,6 +113,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
         FlinkTypeFactory.toLogicalRowType(getRowType()),
         FlinkTypeFactory.toLogicalRowType(correlatedType),
         projection,
+        hasProjection,
         invocation,
         condition,
         left,

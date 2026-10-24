@@ -75,8 +75,9 @@ final class TableFunctionMatcher {
 
   private static boolean verifiedOutputConversion(DataType type) {
     if (type.getLogicalType().is(LogicalTypeRoot.ROW) && type.getConversionClass() == Row.class)
-      return type.getChildren().stream().allMatch(TableFunctionMatcher::verifiedConversion);
-    return verifiedConversion(type);
+      return type.getChildren().stream()
+          .allMatch(field -> verifiedConversion(field) || primitiveConversion(field));
+    return verifiedConversion(type) || primitiveConversion(type);
   }
 
   private static boolean verifiedConversion(DataType type) {
@@ -200,7 +201,7 @@ final class TableFunctionMatcher {
         + " numeric, boolean, binary, interval, temporal or recursively verified"
         + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
         + " conversions (default containers, scalar Lists, non-null primitive arrays or direct"
-        + " non-null boolean/numeric primitive scalar arguments)"
+        + " non-null boolean/numeric primitive scalar arguments or results)"
         + " and input representation are verified";
   }
 

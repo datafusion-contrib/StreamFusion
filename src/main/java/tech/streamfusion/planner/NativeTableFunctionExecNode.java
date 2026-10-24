@@ -34,6 +34,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
   private final boolean preserveCollections;
   private final RowType correlatedType;
   private final int[] projection;
+  private final boolean hasProjection;
 
   NativeTableFunctionExecNode(
       ReadableConfig config,
@@ -41,6 +42,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
       RowType outputType,
       RowType correlatedType,
       int[] projection,
+      boolean hasProjection,
       RexCall invocation,
       RexNode condition,
       boolean left,
@@ -56,6 +58,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     this.inputType = inputType;
     this.correlatedType = correlatedType;
     this.projection = projection;
+    this.hasProjection = hasProjection;
     this.invocation = invocation;
     this.condition = condition;
     this.left = left;
@@ -86,6 +89,18 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
             invocation,
             "ColumnarJvmTableFunction",
             true);
+    RowType outputType = (RowType) getOutputType();
+    var resultProjection =
+        hasProjection
+                && outputType.getChildren().stream()
+                    .anyMatch(type -> !type.isNullable() && type.getChildren().isEmpty())
+            ? tech.streamfusion.compat.RuntimeCompat.tableFunctionProjection(
+                config,
+                planner.getFlinkContext().getClassLoader(),
+                correlatedType,
+                outputType,
+                projection)
+            : null;
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta("native-table-function", config),
@@ -95,7 +110,9 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
             generated.getGeneratedClass(),
             projection,
             NativeConfig.transposeBatchRows(config),
-            preserveCollections),
+            preserveCollections,
+            null,
+            resultProjection),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

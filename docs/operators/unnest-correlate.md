@@ -154,8 +154,14 @@ and `double[]` with matching non-null element types. ARRAY parents can still be 
 Lists can contain NULL elements. In signatures containing containers, direct non-null BOOLEAN,
 TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE arguments may also use their corresponding
 Java primitive classes. Released type inference still validates argument nullability; this
-does not coerce a nullable source argument to a non-null primitive. Primitive scalar result
-bridges in container signatures retain fallback.
+does not coerce a nullable source argument to a non-null primitive. Direct fields of an
+external Row result may also use those seven non-null primitive scalar classes alongside
+container result fields. Atomic results using those classes are supported too; Flink wraps
+them in a single inferred result field. Alternate bridges nested inside a result field
+retain fallback.
+For these conversions on Flink 1.18, LEFT queries selecting a declared non-null field from
+an external Row result retain the release's SQL-to-rel nullability assertion. Container-only
+LEFT projections and atomic-result LEFT queries are verified to execute.
 Released converters own these Java values, and the existing
 typed-array adapter supplies primitive conversion after nullable Arrow copies. FLOAT/DOUBLE
 retain signed zero and NaN payloads through chained function inputs and results.
@@ -178,6 +184,10 @@ NULL map keys, nullable parents/elements, nested RowKinds and array copy represe
 the callback. Released converters remain responsible for external values; the same typed-array
 adapter used by scalar UDFs handles nullable arrays copied into generic Object arrays.
 Collected nested values are written before the user reuses or mutates the result.
+Folded column projections with non-null scalar fields execute Flink's released projection
+generator before those owned writes. If a function emits NULL under non-null primitive result
+metadata, this preserves the generated projection's default primitive value. Queries without
+that projection retain stock sink constraint enforcement; LEFT padding remains nullable.
 A verified source transpose, preserving Calc, generated UNNEST or preserving table function may
 supply sensitive values. Plain source-column projections, including metadata-only AS aliases
 and reordered columns, can fold into the preserving entry transpose when types match and
@@ -195,6 +205,85 @@ empty projections, failures, all changelog kinds and repeated memory/RocksDB rec
 supported Flink lines. The unchanged released Table API `CorrelateITCase.testRowType` additionally
 requires the table-function operator to consume input in every backend invocation.
 
+### Primitive table-function results (2026-10-24)
+
+The result-conversion matrix adds 133 checks per supported Flink line, alongside 235 existing
+table-function checks. It covers all seven primitive scalar result types with boxed ARRAY,
+primitive ARRAY, List, MAP and ROW signatures, using both external Row fields and atomic
+collectors. Types, raw floating bits, mutable/retained values, literal NULL emissions, empty
+input, failures, changelog kinds and two forced restores with memory/native RocksDB state
+match the corresponding released Flink execution. Nested alternate result bridges retain
+explicit fallback. The unchanged upstream ROW contracts keep their native-work requirement.
+
+Flink's generated scalar projection turns a NULL emitted under non-null primitive metadata
+into false or a typed -1. A fused projection must execute that evaluation before owned Arrow
+writes. External Row results without the projection retain stock sink constraint errors;
+LEFT padding stays nullable. Atomic collectors apply their own released wrapping/default
+semantics. Tests independently check these behaviors and a boxed non-null result control.
+
+On Flink 1.18, selecting the declared non-null external Row result field through LEFT fails
+in the released SQL-to-rel converter before physical planning. Both host and native-enabled
+queries must raise the same datatype/nullability assertion, with no substitutions. Separate
+LEFT projections omitting that field still require consumed native table-function input.
+Atomic-result LEFT queries execute on both lines. Recovery checks keep external Row result
+fields observable with INNER and exercise atomic results through LEFT on both backends.
+
+The [complete-job artifact](../benchmarks/results/jvm-table-function-primitive-results-2026-10-24.json)
+retains stock, unchanged canonical `01b24b62`, and candidate trials, ranges and source/native
+hashes. Four external Row signatures and two atomic signatures require native execution in
+the candidate and verified preceding-production fallback. An existing INT/ARRAY control
+requires native execution in both revisions, exposing the cost of preserving fused projection
+semantics. Each revision has separately paired stock controls.
+
+Jobs use JDK 17, release/mimalloc native code, 262,144 runtime input rows, parallelism one,
+2 GiB heap, 1,024-row batches, both perimeter transposes and a blackhole row sink. Every job
+has a fresh cluster and symmetric untimed EXPLAIN. Two warmup pairs precede five alternating
+measured pairs. Builds and tests from this goal do not overlap timings; host activity and
+resource pressure are sampled once per second and retained in the artifact.
+
+| Flink / result signature | Stock median (range), s | Previous native-enabled median (range), s | New median (range), s |
+|---|---:|---:|---:|
+| 2.2.1 / Row INT / ARRAY | 0.121 (0.112–0.210) | 0.183 (0.104–0.188) | 0.228 (0.169–0.259) |
+| 2.2.1 / Row INT / List STRING | 1.015 (1.011–1.027) | 1.003 (0.995–1.028) | 2.349 (1.802–2.476) |
+| 2.2.1 / Row DOUBLE / MAP | 0.245 (0.237–0.257) | 0.231 (0.227–0.240) | 0.374 (0.369–0.380) |
+| 2.2.1 / Row FLOAT / ROW | 0.160 (0.157–0.166) | 0.144 (0.139–0.152) | 0.301 (0.293–0.308) |
+| 2.2.1 / Atomic INT / ARRAY | 0.099 (0.093–0.101) | 0.091 (0.086–0.100) | 0.123 (0.118–0.134) |
+| 2.2.1 / Atomic DOUBLE / MAP | 0.162 (0.154–0.175) | 0.150 (0.144–0.152) | 0.213 (0.206–0.228) |
+| 2.2.1 / Existing INT / ARRAY control | 0.119 (0.109–0.122) | 0.167 (0.155–0.174) | 0.186 (0.179–0.206) |
+| 1.18.1 / Row INT / ARRAY | 0.119 (0.114–0.195) | 0.122 (0.103–0.217) | 0.170 (0.165–0.182) |
+| 1.18.1 / Row INT / List STRING | 1.010 (0.992–1.037) | 1.009 (0.989–1.018) | 1.768 (1.732–2.306) |
+| 1.18.1 / Row DOUBLE / MAP | 0.240 (0.235–0.255) | 0.227 (0.220–0.234) | 0.366 (0.344–0.373) |
+| 1.18.1 / Row FLOAT / ROW | 0.162 (0.155–0.189) | 0.142 (0.132–0.145) | 0.303 (0.289–0.309) |
+| 1.18.1 / Atomic INT / ARRAY | 0.095 (0.089–0.101) | 0.090 (0.088–0.097) | 0.119 (0.114–0.143) |
+| 1.18.1 / Atomic DOUBLE / MAP | 0.157 (0.150–0.160) | 0.148 (0.144–0.153) | 0.203 (0.189–0.211) |
+| 1.18.1 / Existing INT / ARRAY control | 0.122 (0.117–0.126) | 0.161 (0.160–0.169) | 0.171 (0.163–0.182) |
+
+The sampler observed zero other Java/build processes, a maximum CPU-pressure 10-second
+average of zero, and a minimum of about 6 GiB available memory. The machine was not reserved
+exclusively. These short jobs
+include startup/JIT variability and separate-JVM stock drift. Existing-control native medians
+increase from 0.167 to 0.186 s on 2.2 and 0.161 to 0.171 s on 1.18. The 2.2 control range
+is above its prior range; 1.18 ranges overlap. These figures do not isolate a steady-state
+projection cost. All new result cases remain
+slower than stock; coverage follows the accepted UDF exception, with no acceleration claim.
+
+One bounded JFR pass of INT / List STRING used 1,048,576 rows, one warmup pair and one measured
+pair. Forty sampled stacks contained the table-function operator, four including projection
+application; this is too sparse for precise attribution. One measured attempt deferred the
+generated projection and used a validity-scanning column view for normal rows. Its control
+medians improved 6.3% / 2.4%, but 1.18 Row INT / ARRAY and atomic INT regressed 28.0% / 8.6%.
+The attempt was reverted and the investigation stopped. The artifact retains all 588 trials,
+including the rejected variant, and its source hashes. Profile timings are excluded.
+[The bounded rejection record](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/237-lazy-primitive-result-projections.md)
+sets reopening criteria. No optimization change is retained in this increment.
+
+Reproduce with `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+-Dtest=PrimitiveResultTableFunctionBenchmark -Dboundary.rows=262144 -Dboundary.warmups=2
+-Dboundary.runs=5 -Dsf.testForks=1 -Dstreamfusion.exchange.zeroCopyLocal=false
+surefire:test@default-test`; add `flink-1.18` to the profile for that line. Prior controls copy
+only the test fixtures and set `-Dboundary.expectNative=false`; the existing native control
+continues to require the table-function operator and both transposes.
+
 ### Mixed primitive arguments and containers (2026-10-24)
 
 Forty-eight additional checks cover all seven non-null primitive scalar argument types with
@@ -203,7 +292,8 @@ released-Flink results and resolved types, including signed zero and raw NaN pay
 binding, nullable-input planning failures, empty-input evaluation, exception causes, mutable
 fanout, retained containers across closed batches, all changelog kinds and two forced restores
 with memory/native RocksDB state retain parity. Existing boxed arguments keep their route;
-primitive result metadata and DATE-as-int in container signatures retain explicit fallback.
+DATE-as-int in container signatures retains explicit fallback. Primitive result metadata
+is now covered by the result-conversion checks on this page.
 The 172 existing List/primitive-array/nested/typed checks remain in the regression set on each
 supported Flink line. Existing unchanged upstream ROW contracts keep their native-work
 requirement; this increment does not change an upstream execution expectation.
