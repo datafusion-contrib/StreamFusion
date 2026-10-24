@@ -492,5 +492,57 @@ fn temporal_operands(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, run, constructors, temporal_operands);
+fn binary_map_values(c: &mut Criterion) {
+    let mut group = c.benchmark_group("binary_map_values");
+    for rows in [16, 1024] {
+        for bytes in [0, 4, 256] {
+            let mut maps = MapBuilder::new(
+                None,
+                StringBuilder::new(),
+                arrow::array::BinaryBuilder::new(),
+            );
+            let payload = vec![0x80; bytes];
+            for row in 1..=rows + 1 {
+                let valid = row % 7 != 0;
+                if valid && row % 5 != 0 {
+                    maps.keys().append_value("first");
+                    maps.values().append_value(&payload);
+                    maps.keys().append_value("absent");
+                    maps.values().append_null();
+                    maps.keys().append_value("last");
+                    maps.values().append_value(&payload);
+                }
+                maps.append(valid).unwrap();
+            }
+            let input = maps.finish().slice(1, rows);
+            let batch =
+                RecordBatch::try_from_iter([("m", Arc::new(input.clone()) as ArrayRef)]).unwrap();
+            let mut calc = plan_for(193);
+            let (output, allocations) = measure(|| calc.run(batch.clone()));
+            let values = output
+                .column(0)
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap();
+            assert_eq!(values.offsets(), input.offsets());
+            assert_eq!(values.nulls(), input.nulls());
+            assert!(Arc::ptr_eq(values.values(), input.entries().column(1)));
+            let label = format!("rows={rows}/bytes={bytes}/sliced-null-empty");
+            report(&label, batch.columns(), output.columns(), allocations);
+            group.throughput(Throughput::Elements(rows as u64));
+            group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                b.iter(|| std::hint::black_box(calc.run(batch.clone())))
+            });
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    run,
+    constructors,
+    temporal_operands,
+    binary_map_values
+);
 criterion_main!(benches);

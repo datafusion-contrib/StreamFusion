@@ -2746,6 +2746,12 @@ fixtures retain both conversion boundaries.
 The scalar registry includes MAP_KEYS with sliced nullable map inputs and shared child buffers.
 
 MAP_VALUES uses the same verified basic-map admission and shared-buffer view, selecting the value child without changing NULLs or entry order.
+The `collection_expressions` target additionally registers `binary_map_values`: sliced maps at
+16/1024 rows and 0/4/256-byte values, including NULL/empty parents and NULL values. Setup is
+outside timing; the production Calc projection runs inside Rust. An untimed probe checks offsets,
+parent validity and `Arc` sharing of the value child, and reports allocation requests through the
+system counting allocator. These probes measure neither copied bytes nor standalone speedup.
+
 
 MAP_ENTRIES uses the same verified basic-map admission and reuses entry children
 as a list of nullable key/value rows, preserving order and parent NULLs. Consumers

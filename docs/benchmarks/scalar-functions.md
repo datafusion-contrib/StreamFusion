@@ -1895,3 +1895,73 @@ For each of ARRAY_FORMAT_STRING and MAP_FORMAT_STRING, select `#profileFunction`
 supported Flink lines independently requires consumed NativeCalc input, including bounded UTF-16
 results, legacy formatting and all four changelog kinds. Fixed BINARY MAP leaves and unverified
 state/native-writer boundaries retain fallback.
+
+
+## Fixed BINARY map values
+
+Nullable BINARY(n) map values now enter the existing generated collection evaluator. A direct
+final MAP_VALUES of an input-reference map with VARCHAR keys reuses the Rust shared-child view;
+other consumers retain Flink evaluation. Fixed BINARY keys and NOT NULL fixed BINARY values
+remain guarded. The latter has an observed NULL-formatting difference on released Flink 1.18.
+
+Release/mimalloc measurements on 2026-10-24 use Flink 2.2.1, OpenJDK 17.0.20.1 and Linux
+x86-64/WSL2 on an Intel Core i7-12650H. Each job has 500,000 runtime-source rows, parallelism 1,
+two warmups and three alternating trials per engine, with an 8 GiB test heap. The three-entry
+map has fixed ASCII STRING keys and two BINARY values of the selected width plus a NULL value;
+every eighth parent is NULL. Timing includes planning, submission, processing, both row/Arrow
+transposes and the blackhole row sink; cluster setup and initial explain are outside timing.
+No other tests, benchmarks or native compilation run concurrently with these measurements.
+
+Previous main `01b24b62` uses identical benchmark code and the same native DSO in a separate JVM.
+The new expressions must fall back there; source-matched identity controls still require NativeCalc.
+The initial generated route precedes the bounded optimization; the final route uses Rust for the
+direct MAP_VALUES projection. MAP-to-STRING continues to use generated Flink evaluation.
+All trial values, both paired stock controls, identity controls and CPU/allocation diagnostics are
+in the [measurement summary](results/fixed-binary-map-values-2026-10-24.json).
+
+Median seconds (minimum–maximum), retaining complete-job startup costs:
+
+| Expression / bytes per value | Paired stock, final run | Previous fallback | Initial generated route | Final native route |
+| --- | ---: | ---: | ---: | ---: |
+| MAP_VALUES / 4 | 0.312171 (0.310226–0.327523) | 0.291862 (0.289075–0.299226) | 0.581776 (0.561526–0.597252) | 0.366429 (0.352071–0.367083) |
+| MAP → STRING / 4 | 0.462423 (0.450366–0.471487) | 0.438994 (0.437611–0.451575) | 0.737274 (0.728585–0.741667) | 0.756175 (0.752077–0.835100) |
+| MAP_VALUES / 256 | 0.400533 (0.377027–0.426528) | 0.387280 (0.383559–0.407149) | 0.685394 (0.681593–0.699388) | 0.448989 (0.446273–0.480963) |
+| MAP → STRING / 256 | 1.167681 (1.161664–1.181050) | 1.173208 (1.138053–1.187564) | 1.651487 (1.616399–1.669336) | 1.763396 (1.744110–1.808813) |
+
+The Rust view reduces MAP_VALUES native medians by 34.5–37.0% versus the generated route. Every final
+standalone case remains slower than stock Flink and previous fallback, under the existing accepted
+collection-extension tradeoff. These subsecond/second complete jobs do not establish sustained
+throughput, and this is not a standalone acceleration claim.
+
+Optimization stopped after two passes. An eight-second CPU capture of generated MAP_VALUES has
+12,125 samples, with 2,297 inclusive samples in the JVM callback and 1,122 in generated evaluation.
+The bounded change selects the existing Rust child view and avoids that callback for the verified
+projection. The second eight-second capture, for MAP-to-STRING at 256 bytes, has 12,044 samples,
+including 4,961 in the callback, 2,686 in generated evaluation and 2,056 in represented-string writing.
+Inclusive counts overlap and include compilation/planning; they do not measure allocations or copied
+bytes. Formatting, byte/string materialization and both perimeter conversions remain costs for
+[#392](https://github.com/datafusion-contrib/StreamFusion/issues/392).
+
+Six release Criterion smokes independently assert shared child identity, offsets and parent validity
+on sliced maps at 16/1024 rows and 0/4/256-byte payloads with NULL/empty parents and NULL values.
+The untimed System-allocation probe makes 104 allocation requests for 6,481 bytes per case and
+reports zero newly owned Arrow output-buffer bytes. This includes first schema binding and is
+not a steady-state allocation or copied-byte count. The complete output buffers share input storage;
+the SQL benchmarks above still retain all perimeter conversion costs.
+
+Reproduce each width with a released native build:
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime test -Pbench \
+  '-Dtest=ScalarFunctionBenchmark#individualFunctions' -Dsf.testForks=1 \
+  -Dscalar.functions=FIXED_BINARY_MAP_VALUES,FIXED_BINARY_MAP_STRING \
+  -Dscalar.rows=500000 -Dscalar.binary.width=256 -Dscalar.nullEvery=8 \
+  -Dscalar.warmup=2 -Dscalar.runs=3
+```
+
+Also run with `-Dscalar.binary.width=4`. The previous checkout copies the same benchmark and input
+fixture sources and adds `-Dscalar.native.expected=false`. For CPU captures, select
+`#profileFunction`, set `SF_PROFILE_SCALAR=true`, choose one function, and use
+`-Dscalar.warmup=1 -Dscalar.seconds=8 -Dprofile.asprof=/path/to/asprof`.
+Rust fixtures run with `cargo bench -p streamfusion --bench collection_expressions --features mimalloc
+--locked -j2 -- binary_map_values --test` from `native/`.

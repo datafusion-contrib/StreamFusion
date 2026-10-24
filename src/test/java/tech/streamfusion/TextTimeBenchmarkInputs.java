@@ -61,6 +61,7 @@ final class TextTimeBenchmarkInputs {
       case "tt_json_array":
         return "a";
       case "tt_json_map":
+      case "tt_fixed_binary_map":
         return "m";
       case "tt_timestamp":
       case "tt_timestamp_ltz":
@@ -98,6 +99,8 @@ final class TextTimeBenchmarkInputs {
         return "ARRAY<STRING>";
       case "tt_json_map":
         return "MAP<STRING NOT NULL, STRING>";
+      case "tt_fixed_binary_map":
+        return "MAP<STRING NOT NULL,BINARY(" + fixedBinaryWidth() + ")>";
       case "tt_timestamp":
         return "TIMESTAMP(9)";
       case "tt_timestamp_ltz":
@@ -128,6 +131,23 @@ final class TextTimeBenchmarkInputs {
               charsets[(int) (i % charsets.length)]))
           .returns(Types.ROW_NAMED(new String[] {"s", "b", "c"},
               Types.STRING, Types.PRIMITIVE_ARRAY(Types.BYTE), Types.STRING)));
+    } else if (input.equals("tt_fixed_binary_map")) {
+      int width = fixedBinaryWidth();
+      byte[][] values = {new byte[width], new byte[width]};
+      for (int i = 0; i < width; i++) {
+        values[0][i] = (byte) (i * 17);
+        values[1][i] = (byte) (255 - i * 17);
+      }
+      tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
+          .map(i -> {
+            var map = new java.util.LinkedHashMap<String, byte[]>();
+            map.put("first", values[(int) (i % 2)]);
+            map.put("absent", null);
+            map.put("last", values[(int) ((i + 1) % 2)]);
+            return Row.of((Object) (isNull(i, nullEvery) ? null : map));
+          }).returns(Types.ROW_NAMED(new String[] {"m"},
+              Types.MAP(Types.STRING, Types.PRIMITIVE_ARRAY(Types.BYTE)))),
+          Schema.newBuilder().column("m", DataTypes.MAP(DataTypes.STRING().notNull(), DataTypes.BINARY(width))).build());
     } else if (input.equals("tt_json_map")) {
       tables.createTemporaryView("inputs", env.fromSequence(0, rows - 1)
           .map(i -> {

@@ -825,7 +825,10 @@ final class RexExpression {
                     && SqlTypeFamily.CHARACTER.contains(type.getValueType())
                 || (preserveCollections || !type.getKeyType().isNullable())
                     && type.getKeyType().getSqlTypeName() != SqlTypeName.BINARY
-                    && type.getValueType().getSqlTypeName() != SqlTypeName.BINARY
+                    && (type.getValueType().getSqlTypeName() != SqlTypeName.BINARY
+                        || preserveCollections
+                            && type.getValueType().isNullable()
+                            && tech.streamfusion.arrow.ArrowConversion.nestedScalarUdfsEnabled())
                     && rowCalcTypeCode(type.getKeyType(), preserveCollections) >= 0
                     && rowCalcTypeCode(type.getValueType(), preserveCollections) >= 0;
         break;
@@ -1625,9 +1628,12 @@ final class RexExpression {
     return type.getSqlTypeName() == SqlTypeName.MAP
         && type.getKeyType().getSqlTypeName() == SqlTypeName.VARCHAR
         && type.getValueType().isNullable()
-        && java.util.Set.of(SqlTypeName.BOOLEAN, SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
-            SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.DECIMAL)
-            .contains(type.getValueType().getSqlTypeName());
+        && (java.util.Set.of(SqlTypeName.BOOLEAN, SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+                SqlTypeName.INTEGER, SqlTypeName.BIGINT, SqlTypeName.DECIMAL)
+                .contains(type.getValueType().getSqlTypeName())
+            || "MAP_VALUES".equals(call.getOperator().getName())
+                && type.getValueType().getSqlTypeName() == SqlTypeName.BINARY
+                && tech.streamfusion.arrow.ArrowConversion.nestedScalarUdfsEnabled());
   }
 
   private static boolean readsOnlyMapValues(RexNode projection) {

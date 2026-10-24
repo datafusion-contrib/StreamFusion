@@ -358,3 +358,25 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime test -Pbench \
 Prior-code controls copy only the same fixture into the frozen revision and set
 `-Dgenerated.expectNative=false`. Native fixture validation uses
 `python3 bin/bench-native.py --bench data_movement --features mimalloc --filter cached_rows --smoke`.
+
+
+## Fixed BINARY map-value views
+
+A direct final MAP_VALUES projection also uses the existing Rust view for VARCHAR-key maps with
+nullable BINARY(n) values when the default length-delimited transport is enabled. The kernel
+shares the selected binary child, offsets and parent validity; no new Rust formatter or map
+representation is introduced. A value-only Calc without a condition or sensitive co-projection
+also reuses the existing key-cache omission. Other consumers retain generated evaluation, and
+fixed BINARY keys/NOT NULL values remain guarded.
+
+At 500,000 runtime-source rows, widths4/256, the release complete-job median falls from
+0.581776/0.685394 seconds through generated evaluation to 0.366429/0.448989 seconds through the
+Rust view, a 34.5–37.0% reduction. Paired stock medians are 0.312171/0.400533 seconds; the final native
+route remains slower. Measurements retain planning, submission, source/sink and both transposes.
+[All trials and reproduction](../benchmarks/scalar-functions.md#fixed-binary-map-values) include
+previous fallback, controls, ranges and the two-pass optimization limit.
+
+Six Rust smoke fixtures assert child `Arc` identity, sliced offsets, NULL/empty parents and NULL
+values at 16/1024 rows and 0/4/256-byte values. The untimed System-allocation probe reports 104
+requests/6,481 bytes and zero new Arrow output-buffer bytes per fixture, including first schema
+binding. Buffer sharing and allocation requests do not measure copied bytes or end-to-end speedup.

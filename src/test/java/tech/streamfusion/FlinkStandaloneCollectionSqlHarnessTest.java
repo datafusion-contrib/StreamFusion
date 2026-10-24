@@ -149,6 +149,186 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT id,m,MAP_VALUES(m),MAP_KEYS(m) FROM src",
+        "SELECT id,CAST(m AS MAP<STRING,BINARY(2)>),TRY_CAST(m AS MAP<STRING,BINARY(8)>) FROM src",
+        "SELECT id,CAST(m AS MAP<STRING,VARBINARY(8)>),TRY_CAST(m AS MAP<STRING,STRING>) FROM src",
+        "SELECT id,CAST(m AS STRING),TRY_CAST(m AS CHAR(8)),CAST(m AS VARCHAR(2)) FROM src",
+        "SELECT id,MAP_ENTRIES(m),MAP_UNION(m,m) FROM src",
+        "SELECT id,ARRAY_REVERSE(MAP_VALUES(m)) FROM src WHERE id>=0",
+        "SELECT id,MAP_VALUES(m) FROM src WHERE id<0",
+        "SELECT id,CASE WHEN id=0 THEN CAST(NULL AS MAP<STRING,BINARY(4)>) ELSE m END,MAP_VALUES(m)"
+            + " FROM src"
+      })
+  void fixedBinaryMapValuesKeepActualLengthsAndReleasedCasts(String sql) {
+    for (String function : List.of("MAP_ENTRIES", "MAP_UNION", "ARRAY_REVERSE"))
+      if (sql.contains(function + "("))
+        tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction(function);
+    for (boolean legacy : new boolean[] {false, true}) {
+      assertEquivalent(run(() -> binaryMaps(legacy), sql));
+    }
+  }
+
+  @Test
+  void binaryValueInputsRetainShortCircuitAndInputErrorSemantics() {
+    for (String sql :
+        List.of(
+            "SELECT id,MAP_VALUES(m) FROM src WHERE id>0 AND CARDINALITY(MAP_VALUES(m))>=0",
+            "SELECT CASE WHEN id=0 THEN CAST(NULL AS STRING) ELSE CAST(MAP['a',CAST(CAST(10/id AS"
+                + " STRING) AS BINARY(4))] AS STRING) END FROM src")) {
+      assertEquivalent(run(() -> binaryMaps(false), sql));
+    }
+  }
+
+  @Test
+  void fixedBinaryMapValuesKeepExistingStateAndSwitchGates() throws Exception {
+    NativeParity.assertFallbackReasonContains(
+        () -> binaryMaps(false),
+        "SELECT COUNT(*) FROM src GROUP BY CAST(m AS MAP<STRING,BINARY(8)>)",
+        "collection value representation requires a final projection");
+    var table = binaryMaps(false);
+    table.getConfig().set("streamfusion.experimental.collectionExpressions", "false");
+    var scan = NativePlanner.install(table);
+    table.explainSql("SELECT MAP_VALUES(m) FROM src");
+    assertEquals(0, scan.substitutions(), scan::explainSummary);
+  }
+
+  public static class BinaryMapIdentity extends org.apache.flink.table.functions.ScalarFunction {
+    @org.apache.flink.table.annotation.DataTypeHint("MAP<STRING,BINARY(4)>")
+    public java.util.Map<String, byte[]> eval(
+        @org.apache.flink.table.annotation.DataTypeHint("MAP<STRING,BINARY(4)>")
+            java.util.Map<String, byte[]> value) {
+      return value;
+    }
+  }
+
+  @Test
+  void generatedMapArgumentsAndResultsRetainBinaryValueLengths() {
+    assertEquivalent(
+        run(
+            () -> {
+              var table = binaryMaps(false);
+              table.createTemporarySystemFunction("binary_map_identity", BinaryMapIdentity.class);
+              return table;
+            },
+            "SELECT id,binary_map_identity(m),MAP_VALUES(binary_map_identity(m)) FROM src"));
+    for (String cast : List.of("CAST", "TRY_CAST")) {
+      var failure =
+          run(
+              () -> binaryMaps(false),
+              "SELECT "
+                  + cast
+                  + "(MAP['a',CAST(CAST(10/id AS STRING) AS BINARY(4))] AS STRING) FROM src");
+      failure.assertFailure(
+          ArithmeticException.class, failure.host().phase(), NativeFailureParity.Route.NATIVE);
+    }
+  }
+
+  @Test
+  void fixedBinaryValuesComposeWithVerifiedKeyTypes() {
+    for (var key :
+        List.of(
+            new Object[] {INT(), 1},
+            new Object[] {
+              ROW(FIELD("n", INT()), FIELD("s", STRING())),
+              Row.ofKind(org.apache.flink.types.RowKind.UPDATE_BEFORE, 1, "\ud800")
+            })) {
+      var entries = new LinkedHashMap<Object, byte[]>();
+      entries.put(key[1], new byte[] {0, -1, 1});
+      entries.put(null, null);
+      assertEquivalent(
+          run(
+              () ->
+                  environment(
+                      ROW(FIELD("m", MAP((DataType) key[0], BINARY(4)))),
+                      List.of(
+                          Row.of(entries), Row.of(new LinkedHashMap<>()), Row.of((Object) null))),
+              "SELECT m,MAP_VALUES(m),CAST(m AS STRING) FROM src"));
+    }
+  }
+
+  @Test
+  void fixedBinaryMapValuesRequireLengthDelimitedTransport() {
+    String property = "streamfusion.experimental.nestedScalarUdfs";
+    String previous = System.getProperty(property);
+    System.setProperty(property, "false");
+    try {
+      var table = binaryMaps(false);
+      var scan = NativePlanner.install(table);
+      table.explainSql("SELECT MAP_VALUES(m) FROM src");
+      assertEquals(0, scan.substitutions(), scan::explainSummary);
+    } finally {
+      if (previous == null) System.clearProperty(property);
+      else System.setProperty(property, previous);
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void fixedBinaryMapValuesPreserveAllInputChangelogKinds(boolean notNull) {
+    Supplier<TableEnvironment> factory =
+        () -> {
+          var env = METRICS.environment(new Configuration(), 1, 0);
+          env.getConfig().enableObjectReuse();
+          var table = StreamTableEnvironment.create(env);
+          table.getConfig().set("streamfusion.transpose.batchRows", "2");
+          table.executeSql(
+              "CREATE TABLE src (id BIGINT,t ARRAY<STRING>,r ARRAY<ROW<n INT>>,"
+                  + "nn ARRAY<INT NOT NULL>,m MAP<BYTES,BINARY(4)"
+                  + (notNull ? " NOT NULL" : "")
+                  + ">)"
+                  + " WITH ('connector'='collection-representation','changelog'='true')");
+          return table;
+        };
+    String sql = "SELECT id,m,MAP_VALUES(m),CAST(m AS STRING) FROM src";
+    if (notNull)
+      NativeFailureParity.run(factory, sql).assertSuccess(NativeFailureParity.Route.FALLBACK);
+    else assertEquivalent(run(factory, sql));
+  }
+
+  @Test
+  void directBinaryMapValuesUseTheRustViewAndKeepLengthsAcrossBatchSlices() {
+    for (String sql :
+        List.of(
+            "SELECT id,MAP_VALUES(m) FROM src",
+            "SELECT id,MAP_VALUES(m) FROM src WHERE MOD(id,3)=0",
+            "SELECT MAP_VALUES(m) FROM src WHERE id<0")) {
+      var table = binaryMaps(false);
+      var scan = NativePlanner.install(table);
+      table.explainSql(sql);
+      assertTrue(
+          scan.functionExecutions().stream()
+              .anyMatch(
+                  execution ->
+                      execution.contains("native=[")
+                          && execution.contains("MAP_VALUES")
+                          && execution.contains("jvm=[]")),
+          scan.functionExecutions().toString());
+      assertEquivalent(run(() -> binaryMaps(false), sql));
+    }
+  }
+
+  private static TableEnvironment binaryMaps(boolean legacy) {
+    var rows = new java.util.ArrayList<Row>();
+    int id = 0;
+    for (int length : new int[] {0, 1, 3, 4, 5, 17, 4097}) {
+      var values = new LinkedHashMap<String, byte[]>();
+      byte[] bytes = new byte[length];
+      for (int i = 0; i < bytes.length; i++) bytes[i] = (byte) (i * 31 + 128);
+      values.put("\ud83d\ude00\ud800", bytes);
+      values.put(null, new byte[] {0, -1, 3, -128});
+      values.put("nil", null);
+      rows.add(Row.of(id++, values));
+    }
+    rows.add(Row.of(id++, new LinkedHashMap<String, byte[]>()));
+    rows.add(Row.of(id, null));
+    var table = environment(ROW(FIELD("id", INT()), FIELD("m", MAP(STRING(), BINARY(4)))), rows);
+    table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
+    return table;
+  }
+
   @Test
   void invalidStringElementNullsTheWholeTryCastArray() {
     var runs = run(() -> casts(false), "SELECT id,TRY_CAST(t AS ARRAY<INT>) FROM src");

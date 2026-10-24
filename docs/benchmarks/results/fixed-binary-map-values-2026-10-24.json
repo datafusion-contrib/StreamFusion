@@ -1,0 +1,467 @@
+{
+  "date": "2026-10-24",
+  "previous_revision": "01b24b6218c1bfe78a339b327a8bfd2623e924aa",
+  "hardware": {
+    "cpu": "Intel Core i7-12650H",
+    "os": "Linux x86-64 / WSL2",
+    "jdk": "OpenJDK 17.0.20.1"
+  },
+  "native": {
+    "profile": "release",
+    "features": [
+      "mimalloc",
+      "rocksdb-state"
+    ],
+    "sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
+    "production_rust_changes": false,
+    "note": "Same native DSO for stock/prior/generated/final comparisons; final runs explicitly freeze the original library. New Rust code is benchmark coverage only."
+  },
+  "configuration": {
+    "flink": "2.2.1",
+    "parallelism": 1,
+    "rows": 500000,
+    "map_entries": 3,
+    "binary_widths": [
+      4,
+      256
+    ],
+    "null_container_every": 8,
+    "null_value_key": "absent",
+    "keys": [
+      "first",
+      "absent",
+      "last"
+    ],
+    "key_type": "STRING NOT NULL",
+    "value_type": "nullable BINARY(n)",
+    "binary_payload_patterns": [
+      "i*17 modulo256",
+      "255-i*17 modulo256"
+    ],
+    "warmups_per_engine": 2,
+    "measured_trials_per_engine": 3,
+    "test_heap_gib": 8,
+    "boundary": "planning, submission and complete runtime-row-source jobs, including both row/Arrow transposes and blackhole row sink; cluster setup and initial explain excluded",
+    "schedule": "separate JVMs per phase/width, alternating stock/native in each; no concurrent tests, benchmarks or native compilation during timing",
+    "metadata_note": "CSV payload_bytes=264 and unicode=false are unused text-fixture defaults; this input has fixed ASCII keys and binary widths4/256."
+  },
+  "trials": [
+    {
+      "phase": "previous",
+      "binary_width": 4,
+      "function": "BASELINE_tt_fixed_binary_map",
+      "flink_seconds": [
+        0.307168,
+        0.295784,
+        0.289185
+      ],
+      "native_seconds": [
+        0.488111,
+        0.422188,
+        0.405309
+      ]
+    },
+    {
+      "phase": "previous",
+      "binary_width": 4,
+      "function": "FIXED_BINARY_MAP_STRING",
+      "flink_seconds": [
+        0.449216,
+        0.442975,
+        0.435305
+      ],
+      "native_seconds": [
+        0.437611,
+        0.451575,
+        0.438994
+      ]
+    },
+    {
+      "phase": "previous",
+      "binary_width": 4,
+      "function": "FIXED_BINARY_MAP_VALUES",
+      "flink_seconds": [
+        0.293161,
+        0.309812,
+        0.302748
+      ],
+      "native_seconds": [
+        0.291862,
+        0.289075,
+        0.299226
+      ]
+    },
+    {
+      "phase": "previous",
+      "binary_width": 256,
+      "function": "BASELINE_tt_fixed_binary_map",
+      "flink_seconds": [
+        0.460388,
+        0.500526,
+        0.478921
+      ],
+      "native_seconds": [
+        0.763555,
+        0.66414,
+        0.733199
+      ]
+    },
+    {
+      "phase": "previous",
+      "binary_width": 256,
+      "function": "FIXED_BINARY_MAP_STRING",
+      "flink_seconds": [
+        1.181236,
+        1.184012,
+        1.164961
+      ],
+      "native_seconds": [
+        1.173208,
+        1.187564,
+        1.138053
+      ]
+    },
+    {
+      "phase": "previous",
+      "binary_width": 256,
+      "function": "FIXED_BINARY_MAP_VALUES",
+      "flink_seconds": [
+        0.434017,
+        0.388045,
+        0.400627
+      ],
+      "native_seconds": [
+        0.407149,
+        0.383559,
+        0.38728
+      ]
+    },
+    {
+      "phase": "generated",
+      "binary_width": 4,
+      "function": "BASELINE_tt_fixed_binary_map",
+      "flink_seconds": [
+        0.361894,
+        0.300423,
+        0.288107
+      ],
+      "native_seconds": [
+        0.419805,
+        0.415132,
+        0.416193
+      ]
+    },
+    {
+      "phase": "generated",
+      "binary_width": 4,
+      "function": "FIXED_BINARY_MAP_STRING",
+      "flink_seconds": [
+        0.445728,
+        0.445716,
+        0.4431
+      ],
+      "native_seconds": [
+        0.741667,
+        0.737274,
+        0.728585
+      ]
+    },
+    {
+      "phase": "generated",
+      "binary_width": 4,
+      "function": "FIXED_BINARY_MAP_VALUES",
+      "flink_seconds": [
+        0.293603,
+        0.291725,
+        0.297851
+      ],
+      "native_seconds": [
+        0.597252,
+        0.581776,
+        0.561526
+      ]
+    },
+    {
+      "phase": "generated",
+      "binary_width": 256,
+      "function": "BASELINE_tt_fixed_binary_map",
+      "flink_seconds": [
+        0.488812,
+        0.356778,
+        0.345266
+      ],
+      "native_seconds": [
+        0.491144,
+        0.481625,
+        0.480336
+      ]
+    },
+    {
+      "phase": "generated",
+      "binary_width": 256,
+      "function": "FIXED_BINARY_MAP_STRING",
+      "flink_seconds": [
+        1.144166,
+        1.128619,
+        1.138395
+      ],
+      "native_seconds": [
+        1.669336,
+        1.616399,
+        1.651487
+      ]
+    },
+    {
+      "phase": "generated",
+      "binary_width": 256,
+      "function": "FIXED_BINARY_MAP_VALUES",
+      "flink_seconds": [
+        0.352903,
+        0.34008,
+        0.355045
+      ],
+      "native_seconds": [
+        0.699388,
+        0.681593,
+        0.685394
+      ]
+    },
+    {
+      "phase": "final",
+      "binary_width": 4,
+      "function": "BASELINE_tt_fixed_binary_map",
+      "flink_seconds": [
+        0.442405,
+        0.316493,
+        0.316787
+      ],
+      "native_seconds": [
+        0.470356,
+        0.46423,
+        0.466511
+      ]
+    },
+    {
+      "phase": "final",
+      "binary_width": 4,
+      "function": "FIXED_BINARY_MAP_STRING",
+      "flink_seconds": [
+        0.471487,
+        0.450366,
+        0.462423
+      ],
+      "native_seconds": [
+        0.756175,
+        0.752077,
+        0.8351
+      ]
+    },
+    {
+      "phase": "final",
+      "binary_width": 4,
+      "function": "FIXED_BINARY_MAP_VALUES",
+      "flink_seconds": [
+        0.327523,
+        0.312171,
+        0.310226
+      ],
+      "native_seconds": [
+        0.352071,
+        0.367083,
+        0.366429
+      ]
+    },
+    {
+      "phase": "final",
+      "binary_width": 256,
+      "function": "BASELINE_tt_fixed_binary_map",
+      "flink_seconds": [
+        0.385162,
+        0.374701,
+        0.360414
+      ],
+      "native_seconds": [
+        0.543078,
+        0.518104,
+        0.516682
+      ]
+    },
+    {
+      "phase": "final",
+      "binary_width": 256,
+      "function": "FIXED_BINARY_MAP_STRING",
+      "flink_seconds": [
+        1.167681,
+        1.18105,
+        1.161664
+      ],
+      "native_seconds": [
+        1.808813,
+        1.763396,
+        1.74411
+      ]
+    },
+    {
+      "phase": "final",
+      "binary_width": 256,
+      "function": "FIXED_BINARY_MAP_VALUES",
+      "flink_seconds": [
+        0.400533,
+        0.377027,
+        0.426528
+      ],
+      "native_seconds": [
+        0.446273,
+        0.480963,
+        0.448989
+      ]
+    }
+  ],
+  "cpu_profiles": {
+    "profiler": "async-profiler4.6",
+    "event": "cpu",
+    "interval": "1ms",
+    "seconds_per_capture": 8,
+    "passes": 2,
+    "limitations": "all JVM threads including planning and compilation; inclusive counts overlap, not allocations or copied bytes",
+    "captures": {
+      "fixed_binary_map_values-native": {
+        "total_samples": 12125,
+        "inclusive_method_samples": {
+          "NativeUdf.invokeUdf": 2297,
+          "FlinkExpressionFunction.evalRow": 1122,
+          "MapWriter.doWrite": 844,
+          "NestedStringWriter.doWrite": 318,
+          "BinaryStringData.ensureMaterialized": 293
+        },
+        "top_self_samples": {
+          "jlong_disjoint_arraycopy": 611,
+          "org/apache/arrow/vector/BaseVariableWidthVector.fillHoles_[i]": 371,
+          "org/apache/arrow/vector/VarCharVector.get_[i]": 297,
+          "jint_disjoint_arraycopy": 274,
+          "jdk/internal/misc/Unsafe.checkOffset_[i]": 262,
+          "org/apache/arrow/vector/BaseVariableWidthVector.handleSafe_[i]": 242,
+          "org/apache/flink/table/data/binary/BinarySection.pointTo_[j]": 213,
+          "_raw_spin_unlock_irqrestore_[k]": 202,
+          "IndexSetIterator::advance_and_next": 185,
+          "clear_page_erms_[k]": 181
+        }
+      },
+      "fixed_binary_map_string-native": {
+        "total_samples": 12044,
+        "inclusive_method_samples": {
+          "NativeUdf.invokeUdf": 4961,
+          "FlinkExpressionFunction.evalRow": 2686,
+          "MapWriter.doWrite": 466,
+          "NestedStringWriter.doWrite": 2056,
+          "BinaryStringData.ensureMaterialized": 583
+        },
+        "top_self_samples": {
+          "java/lang/String.encodeUTF8_UTF16_[j]": 1018,
+          "java/lang/String.isMalformed3_[i]": 879,
+          "jlong_disjoint_arraycopy": 685,
+          "jshort_disjoint_arraycopy": 357,
+          "java/lang/String.decodeUTF8_UTF16_[j]": 331,
+          "org/apache/flink/table/data/binary/BinarySegmentUtils.allocateReuseBytes_[i]": 220,
+          "_raw_spin_unlock_irqrestore_[k]": 190,
+          "tech/streamfusion/arrow/Utf16Cache.read_[i]": 183,
+          "jdk/internal/misc/Unsafe.checkOffset_[i]": 148,
+          "jint_disjoint_arraycopy": 138
+        }
+      }
+    }
+  },
+  "native_smoke": {
+    "command": "cargo bench -p streamfusion --bench collection_expressions --features mimalloc --locked -j2 -- binary_map_values --test",
+    "cases": 6,
+    "allocator": "System counting allocator in the benchmark executable",
+    "boundary": "prepared sliced Arrow maps and Calc setup outside timed iterations; production Rust Calc projection; untimed probe includes first schema binding",
+    "assertions": [
+      "parent NULLs",
+      "empty parents",
+      "NULL values",
+      "nonzero child-offset slices",
+      "value-child Arc identity",
+      "offsets and validity"
+    ],
+    "probes": [
+      {
+        "case": "rows=16/bytes=0/sliced-null-empty",
+        "allocation_requests": 104,
+        "requested_bytes": 6481,
+        "shared_output_arrow_buffer_bytes": 224,
+        "new_output_arrow_buffer_bytes": 0
+      },
+      {
+        "case": "rows=16/bytes=4/sliced-null-empty",
+        "allocation_requests": 104,
+        "requested_bytes": 6481,
+        "shared_output_arrow_buffer_bytes": 320,
+        "new_output_arrow_buffer_bytes": 0
+      },
+      {
+        "case": "rows=16/bytes=256/sliced-null-empty",
+        "allocation_requests": 104,
+        "requested_bytes": 6481,
+        "shared_output_arrow_buffer_bytes": 6368,
+        "new_output_arrow_buffer_bytes": 0
+      },
+      {
+        "case": "rows=1024/bytes=0/sliced-null-empty",
+        "allocation_requests": 104,
+        "requested_bytes": 6481,
+        "shared_output_arrow_buffer_bytes": 12933,
+        "new_output_arrow_buffer_bytes": 0
+      },
+      {
+        "case": "rows=1024/bytes=4/sliced-null-empty",
+        "allocation_requests": 104,
+        "requested_bytes": 6481,
+        "shared_output_arrow_buffer_bytes": 18557,
+        "new_output_arrow_buffer_bytes": 0
+      },
+      {
+        "case": "rows=1024/bytes=256/sliced-null-empty",
+        "allocation_requests": 104,
+        "requested_bytes": 6481,
+        "shared_output_arrow_buffer_bytes": 372869,
+        "new_output_arrow_buffer_bytes": 0
+      }
+    ]
+  },
+  "scope": {
+    "admitted": "nullable fixed BINARY map values via generated collection evaluation; direct final VARCHAR-key MAP_VALUES uses existing Rust child-buffer view",
+    "retained_fallback": [
+      "fixed BINARY map keys",
+      "NOT NULL fixed BINARY map values",
+      "external STRUCTURED inputs",
+      "unverified represented state/exchange/native-writer boundaries",
+      "disabled length-delimited transport"
+    ],
+    "not_null_reason": "Released1.18 can preserve NULL spelling during formatting even when unchecked BINARY getters expose empty bytes; retain planning fallback until the representation contract is verified."
+  },
+  "conclusion": "One optimization uses the existing Rust map-value view, reducing native medians34.5\u201337.0% versus the generated route. All complete jobs remain slower than paired stock and previous fallback; no acceleration claim. Two profiling/optimization passes completed. Remaining cost belongs to #392.",
+  "validation": {
+    "flink2.2.1": {
+      "passed": 265,
+      "skipped": 0
+    },
+    "flink1.18.1": {
+      "passed": 238,
+      "skipped": 27
+    },
+    "native_rust_smokes": 6,
+    "coverage": [
+      "runtime sources and consumed NativeCalc",
+      "direct MAP_VALUES diagnostic native with jvm=[]",
+      "NULL/empty/variable byte lengths",
+      "legacy casts and declared SQL types",
+      "STRING/integer/ROW keys and ordered internal BYTES keys",
+      "all four input changelog kinds",
+      "scalar callback composition",
+      "CASE/filter/empty batches/input errors",
+      "fixed BINARY key and NOT NULL value fallback",
+      "collection and length-delimited transport switch fallback"
+    ]
+  }
+}
