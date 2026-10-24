@@ -8,6 +8,10 @@ back](#still-falls-back).
 Flink picks between the two plan shapes itself, based on `table.exec.mini-batch.enabled`; this page
 covers both, since a query only accelerates when whichever shape Flink chose is fully native.
 
+Integer COLLECT uses the verified single-phase generated JVM handler behind Arrow batch
+boundaries, with released managed MapViews; see [Integer COLLECT](#integer-collect) for its
+narrow type and representation gates. ARRAY_AGG and richer COLLECT results remain pending.
+
 When the selected aggregate uses a mini-batch trigger, translation uses the released host's
 size validation. Unset/default `-1`, zero and negative `table.exec.mini-batch.size` values
 fail during planning with the same exception and message as Flink, for single-phase and
@@ -830,6 +834,9 @@ route on both supported JDKs, and check helpful JVM null-dereference text when i
 
 ## Type support
 
+The separate [integer COLLECT](#integer-collect) route admits INT/BIGINT through the released
+JVM handler. The table below describes the arithmetic native accumulators.
+
 The matcher only accelerates `(aggregate, value-type)` pairs where DataFusion's native arithmetic
 agrees byte-for-byte with Flink's — this table is that guardrail; anything marked ✗ falls back.
 
@@ -1175,6 +1182,7 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
   (`COUNT(DISTINCT x)` keeps a per-key
   value set; `SUM(DISTINCT x)` adds a running sum folded as values enter/leave it; `MIN`/`MAX
   (DISTINCT)` run as their plain, multiplicity-blind forms.)
+- COLLECT outside its verified single-phase INT/BIGINT, scalar-input, non-character-output boundary; ARRAY_AGG.
 - An approximate aggregate.
 - FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over a value type outside the single-phase list above,
   or with more than one argument.
@@ -2487,3 +2495,30 @@ retain the measured variability and exact configurations. Reproduce with `String
 `stringagg.ttl=1 h`, and the corresponding rows/keys/width settings. The retracting profile sets
 `stringagg.updating=true` and `stringagg.literalSeparator=false`; the append profile sets those
 properties to `false` and `true` respectively.
+
+
+## Integer COLLECT
+
+COLLECT over INT/BIGINT uses the existing columnar JVM aggregate runtime with released Flink
+handlers and managed MapViews. Input fields remain scalar, and the initial output row cannot
+contain character fields, including grouping keys or scalar co-aggregates. Other COLLECT
+value types, nested results and ARRAY_AGG retain fallback. ARRAY_AGG is absent from released
+Flink 1.18.1. No new native multiset accumulator or state serializer is introduced.
+
+NULL values do not contribute; repeated values keep their multiplicities. Retractions retain
+Flink's zero/negative-count behavior, group deletion and reinsertion, and resolved MULTISET
+schema. DISTINCT, FILTER and mixed scalar aggregates use the same released generated handlers.
+Grouped and global aggregation are verified on both supported lines, including consumed
+NativeJvmGroup work. Heap and native RocksDB cases restore twice across nonempty accumulation
+and retraction prefixes, retaining managed DataView state and changelog tags.
+
+The existing `streamfusion.experimental.jvmGroupAggregates` switch controls this route and is
+true by default. Mini-batching, async state, approximate/ordered calls and unverified function
+specialization retain fallback. A COLLECT result may reach a final row sink or a verified
+collection-preserving Calc. Unverified state, ordering, exchange and native-writer boundaries
+retain the existing collection guards. Updating retained MAP/MULTISET payloads remain deferred
+in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
+
+[Release comparisons](../benchmarks/collection-aggregates.md#integer-collect) retain source,
+keyed state, sink and both row/Arrow transposes, including startup and all trial ranges.
+The optimization investigation is limited to two profiling/optimization passes per increment.

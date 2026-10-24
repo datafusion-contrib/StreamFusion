@@ -46,3 +46,14 @@ planner recognition differs. Wrapper subclasses with custom construction, Python
 specialization remain excluded. Unchanged released mixed-DISTINCT WeightedAvg fixtures and
 focused POJO accumulator recovery checks verify both supported Flink lines. No legacy state
 codec or stock/native migration promise is introduced.
+
+
+Integer COLLECT reuses this same released handler/managed MapView boundary. Arroyo's updating
+aggregate planner and vector-collecting UDAF adapter were consulted before the extension.
+Flink's COLLECT exposes incremental multiplicities, retractions and managed DataView state;
+retaining its handler avoids introducing a second multiset accumulator or checkpoint codec.
+The first admission covers only INT/BIGINT elements with scalar inputs and non-character
+output fields. Collection results require a verified preserving Calc or final row sink;
+other value types, ARRAY_AGG and unverified state/writer boundaries retain fallback.
+This builtin coverage uses the maintainer's bounded collection-performance tradeoff, with
+separate stock/previous/native measurements; it does not extend the UDF performance exception.

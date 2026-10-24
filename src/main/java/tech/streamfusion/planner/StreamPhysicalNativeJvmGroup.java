@@ -47,6 +47,14 @@ public final class StreamPhysicalNativeJvmGroup extends StreamPhysicalNativeSing
     return super.explainTerms(writer).item("grouping", Arrays.toString(grouping));
   }
 
+  public boolean hasCollectionResults() {
+    return getRowType().getFieldList().stream()
+        .anyMatch(
+            field ->
+                field.getType().getSqlTypeName()
+                    == org.apache.calcite.sql.type.SqlTypeName.MULTISET);
+  }
+
   @Override
   public boolean requireWatermark() {
     return false;

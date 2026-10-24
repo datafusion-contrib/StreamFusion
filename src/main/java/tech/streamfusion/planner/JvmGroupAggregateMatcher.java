@@ -14,13 +14,31 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 final class JvmGroupAggregateMatcher {
   private JvmGroupAggregateMatcher() {}
 
-  static boolean enabledUserAggregate(StreamPhysicalGroupAggregate node) {
+  static boolean enabledAggregate(StreamPhysicalGroupAggregate node) {
     if (!Boolean.parseBoolean(
         System.getProperty("streamfusion.experimental.jvmGroupAggregates", "true"))) return false;
     for (int i = 0; i < node.aggCalls().size(); i++) {
-      if (userFunction(node.aggCalls().apply(i).getAggregation()) != null) return true;
+      var call = node.aggCalls().apply(i);
+      if (userFunction(call.getAggregation()) != null
+          || call.getAggregation()
+              == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.COLLECT)
+        return true;
     }
     return false;
+  }
+
+  private static boolean integerCollect(
+      StreamPhysicalGroupAggregate node, org.apache.calcite.rel.core.AggregateCall call) {
+    if (call.getAggregation()
+            != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.COLLECT
+        || call.getArgList().size() != 1) return false;
+    var value = node.getInput().getRowType().getFieldList().get(call.getArgList().get(0)).getType();
+    return java.util.Set.of(
+                org.apache.calcite.sql.type.SqlTypeName.INTEGER,
+                org.apache.calcite.sql.type.SqlTypeName.BIGINT)
+            .contains(value.getSqlTypeName())
+        && call.getType().getSqlTypeName() == org.apache.calcite.sql.type.SqlTypeName.MULTISET
+        && call.getType().getComponentType().getSqlTypeName() == value.getSqlTypeName();
   }
 
   private static AggregateFunction<?, ?> userFunction(SqlAggFunction function) {
@@ -41,10 +59,14 @@ final class JvmGroupAggregateMatcher {
             org.apache.flink.configuration.ConfigOptions.key("table.exec.async-state.enabled")
                 .booleanType()
                 .defaultValue(false))) return false;
-    if (!JvmFunctionTypes.scalarRow(node.getInput().getRowType())
-        || !JvmFunctionTypes.scalarRow(node.getRowType())) return false;
+    if (!JvmFunctionTypes.scalarRow(node.getInput().getRowType())) return false;
     for (int i = 0; i < node.aggCalls().size(); i++) {
       var call = node.aggCalls().apply(i);
+      if (!JvmFunctionTypes.scalar(call.getType()) && !integerCollect(node, call)) return false;
+      if (integerCollect(node, call)
+          && node.getRowType().getFieldList().stream()
+              .anyMatch(field -> JsonStringIdentity.containsCharacter(field.getType())))
+        return false;
       if (call.isApproximate() || !call.getCollation().getFieldCollations().isEmpty()) return false;
       var aggregation = call.getAggregation();
       if (aggregation instanceof AggSqlFunction && aggregation.getClass() != AggSqlFunction.class)
@@ -60,9 +82,9 @@ final class JvmGroupAggregateMatcher {
   }
 
   static String unsupportedReason(StreamPhysicalGroupAggregate node) {
-    return "GROUP BY: JVM aggregates require verified scalar fields and synchronous single-phase"
-        + " execution without mini-batching, specialization, approximate"
-        + " or ordered calls";
+    return "GROUP BY: JVM aggregates require verified scalar fields or integer COLLECT with"
+               + " non-character results and synchronous single-phase execution without"
+               + " mini-batching, specialization, approximate or ordered calls";
   }
 
   static RelNode substitute(StreamPhysicalGroupAggregate node, PlanContext context) {

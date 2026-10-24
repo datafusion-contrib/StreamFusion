@@ -1,0 +1,192 @@
+{
+  "date": "2026-10-24",
+  "previous_revision": "bbde17c4",
+  "previous_revision_note": "The MULTISET increment tree is retained as an ancestor of PR477; this COLLECT increment merges after it. Benchmark/input code is identical in both trees.",
+  "hardware": {
+    "cpu": "Intel Core i7-12650H",
+    "os": "Linux x86-64 / WSL2",
+    "jdk": "OpenJDK17.0.20.1"
+  },
+  "native": {
+    "profile": "release",
+    "features": [
+      "mimalloc",
+      "rocksdb-state"
+    ],
+    "sha256": "b574491f08427c8b128107d6286cb403421a0bafbdba7a0e5cdd8fea30562d16",
+    "production_rust_changes": false,
+    "operator_note": "Existing columnar Java/JVM grouped runtime, generated released Flink handler and managed MapViews; production changes are planner admission and representation-boundary gates."
+  },
+  "configuration": {
+    "flink": "2.2.1",
+    "rows": 200000,
+    "parallelism": 1,
+    "key_type": "INT",
+    "value_type": "BIGINT",
+    "groups": [
+      64,
+      4096
+    ],
+    "distinct_values_per_non_null_group": 8,
+    "key": "row modulo groups",
+    "value": "(row/groups) modulo8; NULL when row modulo8=7",
+    "null_note": "Groups whose key modulo8=7 receive onlyNULL values and emit empty multisets. Other groups cycle through8values.",
+    "warmups_per_engine": 2,
+    "trials_per_engine": 3,
+    "test_heap_gib": 8,
+    "jvm_accumulator_cache_entries": 0,
+    "key_prefix_note": "Default16 prefix characters are unused for INT keys.",
+    "boundary": "planning, submission, runtime Row source, keyed state, both row/Arrow transposes and blackhole row sink; cluster setup and initial explain excluded",
+    "schedule": "alternating stock/native per JVM; separate JVMs per cardinality and phase; no concurrent tests, builds or benchmarks during measurements"
+  },
+  "trials": [
+    {
+      "phase": "previous",
+      "groups": 64,
+      "flink_seconds": [
+        0.476706771,
+        0.45490514,
+        0.316043047
+      ],
+      "native_seconds": [
+        0.333299805,
+        0.412596248,
+        0.325387721
+      ]
+    },
+    {
+      "phase": "previous",
+      "groups": 4096,
+      "flink_seconds": [
+        0.421953327,
+        0.42436506,
+        0.458834734
+      ],
+      "native_seconds": [
+        0.383962644,
+        0.337086671,
+        0.32316423
+      ]
+    },
+    {
+      "phase": "final",
+      "groups": 64,
+      "flink_seconds": [
+        0.44061837,
+        0.428994847,
+        0.311923938
+      ],
+      "native_seconds": [
+        0.415787529,
+        0.344032549,
+        0.329836623
+      ]
+    },
+    {
+      "phase": "final",
+      "groups": 4096,
+      "flink_seconds": [
+        0.422888683,
+        0.395371025,
+        0.3864995
+      ],
+      "native_seconds": [
+        0.472422155,
+        0.374743265,
+        0.382119947
+      ]
+    }
+  ],
+  "cpu_profiles": {
+    "passes": 2,
+    "closed": true,
+    "event": "cpu",
+    "interval": "1ms",
+    "target_seconds_per_capture": 8,
+    "profiler": "async-profiler4.6",
+    "boundary": "one unprofiled native-only complete-job warmup; profile native-only jobs until the8second target completes, including planning/compilation/allJVMthreads; stop after currentjob",
+    "captures": {
+      "collect-keys4096-native": {
+        "total_samples": 16940,
+        "inclusive_method_samples": {
+          "NativeColumnarJvmGroupOperator.ingest": 4276,
+          "NativeColumnarJvmGroupOperator.append": 1071,
+          "CollectAggFunction.getValue": 913,
+          "MapWriter.doWrite": 366,
+          "MapDataSerializer.toBinaryMap": 290,
+          "GroupAggFunction.processElement": 4034
+        },
+        "top_self_samples": {
+          "org/apache/flink/core/memory/MemorySegment.equalTo_[i]": 739,
+          "_raw_spin_unlock_irqrestore_[k]": 694,
+          "java/util/HashMap.putVal_[i]": 430,
+          "IndexSetIterator::advance_and_next": 278,
+          "G1ParScanThreadState::trim_queue_to_threshold": 273,
+          "clear_page_erms_[k]": 264,
+          "java/util/HashMap.valuesToArray_[i]": 255,
+          "/usr/lib/x86_64-linux-gnu/libc.so.6": 221,
+          "PhaseChaitin::Split": 216,
+          "org/apache/flink/table/data/binary/MurmurHashUtils.hashBytesByInt_[i]": 215
+        }
+      },
+      "collect-keys64-native": {
+        "total_samples": 19173,
+        "inclusive_method_samples": {
+          "NativeColumnarJvmGroupOperator.ingest": 4362,
+          "NativeColumnarJvmGroupOperator.append": 1264,
+          "CollectAggFunction.getValue": 636,
+          "MapWriter.doWrite": 460,
+          "MapDataSerializer.toBinaryMap": 388,
+          "GroupAggFunction.processElement": 4027
+        },
+        "top_self_samples": {
+          "_raw_spin_unlock_irqrestore_[k]": 839,
+          "IndexSetIterator::advance_and_next": 398,
+          "java/util/HashMap.putVal_[i]": 369,
+          "/usr/lib/x86_64-linux-gnu/libc.so.6": 283,
+          "PhaseChaitin::Split": 283,
+          "clear_page_erms_[k]": 257,
+          "PhaseChaitin::gather_lrg_masks": 215,
+          "java/util/HashMap.valuesToArray_[i]": 212,
+          "java/util/HashMap.keysToArray_[i]": 198,
+          "tech/streamfusion/arrow/writers/ArrowFieldWriter.write_[i]": 179
+        }
+      }
+    },
+    "limitations": "inclusive counts overlap; not allocation counts/copied bytes, and profiled times do not enter trial tables"
+  },
+  "scope": {
+    "admitted": "INT/BIGINT COLLECT in synchronous single-phase grouping with scalar inputs and non-character output fields; DISTINCT/FILTER/global forms and verified final row-sink/fused Calc",
+    "retained_fallback": [
+      "other COLLECT element types",
+      "character grouping/output fields",
+      "nested UDAF results",
+      "ARRAY_AGG",
+      "mini-batch/async-state/approximate/ordered/specialized forms",
+      "unverified state/exchange/ordering/native-writer boundaries",
+      "updating MAP/MULTISET retained payload extension#437"
+    ]
+  },
+  "conclusion": "Native medians beat paired stock but exceed prior fallback; ranges overlap and jobs are short. No sustained acceleration claim. Two profiling/optimization passes found grouped processing, map snapshots, output writing and startup costs; no safe small optimization was identified. Accepted bounded collection tradeoff; further performance work belongs to the native SQL backlog#239.",
+  "validation": {
+    "flink2.2.1": {
+      "passed": 203,
+      "skipped": 0
+    },
+    "flink1.18.1": {
+      "passed": 185,
+      "skipped": 18
+    },
+    "coverage": [
+      "consumed NativeJvmGroup",
+      "INT/BIGINT, NULLs/extremes, multiplicities, zero/negative counts, group deletion/reinsertion",
+      "DISTINCT/FILTER/mixed COUNT/global grouping",
+      "fused formatting",
+      "empty global/grouped input with consumed NativeFilter and planned empty aggregate",
+      "allinputRowKinds",
+      "two nonempty-prefix restores on heap/nativeRocksDB, managed DataViews and native memory release",
+      "unsupported element/character schema, disabled JVM group and updating Top-N fallback",
+      "existing scalar UDAFs, MULTISET casts, generated UNNEST and sink/producers regressions"
+    ]
+  }
+}

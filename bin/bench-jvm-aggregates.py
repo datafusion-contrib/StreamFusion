@@ -15,7 +15,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 RESULT = re.compile(
     r"\[jvm-aggregate\] shape=(\w+) key_type=(\w+) key_prefix_chars=(\d+) "
-    r"rows=(\d+) keys=(\d+) stock=([\d.]+) sf=([\d.]+) "
+    r"rows=(\d+) keys=(\d+) (?:values=(\d+) )?stock=([\d.]+) sf=([\d.]+) "
     r"stock_trials=(\[.*?\]) sf_trials=(\[.*?\])"
 )
 
@@ -23,7 +23,7 @@ RESULT = re.compile(
 def summaries(log, expected_runs):
     records = []
     for match in RESULT.finditer(log):
-        shape, key_type, prefix, rows, keys, stock, native, raw_stock, raw_native = (
+        shape, key_type, prefix, rows, keys, values, stock, native, raw_stock, raw_native = (
             match.groups()
         )
         trials = [json.loads(raw_stock), json.loads(raw_native)]
@@ -45,6 +45,7 @@ def summaries(log, expected_runs):
                 "key_prefix_chars": int(prefix),
                 "rows": int(rows),
                 "keys": int(keys),
+                "values": int(values) if values is not None else 0,
                 "stock_seconds": trials[0],
                 "native_seconds": trials[1],
                 "stock_median_seconds": medians[0],
