@@ -21,6 +21,7 @@ class StringFusionPipelineBenchmark {
     int count = Integer.getInteger("fusion.pipeline.rows", 2_000_000);
     int warmups = Integer.getInteger("fusion.pipeline.warmups", 2);
     int runs = Integer.getInteger("fusion.pipeline.runs", 5);
+    int minLength = Integer.getInteger("fusion.pipeline.minLength", 1);
     String engines = System.getProperty("fusion.pipeline.engines", "both");
     String expression = System.getProperty("fusion.pipeline.expression", "LPAD(s,n,'X') = 'a?'");
     String base = "a?" + "ab?c".repeat(64);
@@ -38,7 +39,10 @@ class StringFusionPipelineBenchmark {
             .setString("pipeline.operator-chaining.enabled", "true");
         var source =
             env.fromSequence(0, count - 1)
-                .map(i -> Row.of(i % 7 == 0 ? null : base + "|" + (i % 16), (int) (1 + i % 3)))
+                .map(
+                    i ->
+                        Row.of(
+                            i % 7 == 0 ? null : base + "|" + (i % 16), minLength + (int) (i % 3)))
                 .returns(Types.ROW_NAMED(new String[] {"s", "n"}, Types.STRING, Types.INT));
         tables.createTemporaryView(
             "inputs",

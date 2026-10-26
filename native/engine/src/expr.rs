@@ -2428,6 +2428,62 @@ mod certified_builtin_tests {
     use crate::calc::CalcExpression;
 
     #[test]
+    fn compiled_growing_padding_comparisons_do_not_call_the_jvm() {
+        for operation in [20, 21, 23, 24] {
+            let input = RecordBatch::try_new(
+                Arc::new(Schema::new(vec![
+                    Field::new("s", DataType::Utf8, true),
+                    Field::new("n", DataType::Int64, false),
+                    Field::new("p", DataType::Utf8, false),
+                ])),
+                vec![
+                    Arc::new(StringArray::from(vec![
+                        Some("skip"),
+                        Some("a"),
+                        Some("a"),
+                        None,
+                    ])),
+                    Arc::new(arrow::array::Int64Array::from(vec![5, 5, 6, 5])),
+                    Arc::new(StringArray::from(vec!["x", "xy", "xy", "xy"])),
+                ],
+            )
+            .unwrap()
+            .slice(1, 3);
+            let mut calc = CalcExpression {
+                kinds: vec![44, 0, 0, 0, 3],
+                payload: vec![0, 0, 1, 2, 0],
+                child_counts: vec![4, 0, 0, 0, 0],
+                longs: vec![999, 4, operation],
+                doubles: vec![],
+                strings: vec![Some(
+                    if (operation - 20) % 3 == 0 {
+                        "xyxya"
+                    } else {
+                        "axyxy"
+                    }
+                    .into(),
+                )],
+                projection_roots: vec![0],
+                condition_root: -1,
+                output_names: vec!["v".into()],
+                compiled: None,
+            };
+            for _ in 0..2 {
+                let result = calc.evaluate(input.clone());
+                assert_eq!(
+                    result.column(0).as_ref(),
+                    &arrow::array::BooleanArray::from(vec![
+                        Some(operation < 23),
+                        Some(operation >= 23),
+                        None
+                    ])
+                );
+            }
+            assert_eq!(calc.evaluate(input.slice(0, 0)).num_rows(), 0);
+        }
+    }
+
+    #[test]
     fn compiled_string_consumers_keep_utf16_without_a_jvm() {
         use streamfusion_bridge::string_cache::{string_cache_array, string_cache_field};
         for cached in [false, true] {
