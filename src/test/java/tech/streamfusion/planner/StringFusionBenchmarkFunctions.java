@@ -104,6 +104,25 @@ public final class StringFusionBenchmarkFunctions {
   public static void prepare(
       int operation, String target, String corpus, int width, boolean cached, int count)
       throws Exception {
+    prepare(operation, target, corpus, width, cached, count, 0);
+  }
+
+  public static void prepare(
+      int operation, String target, String corpus, int width, boolean cached, int count, int growth)
+      throws Exception {
+    prepare(operation, target, corpus, width, cached, count, growth, false);
+  }
+
+  public static void prepare(
+      int operation,
+      String target,
+      String corpus,
+      int width,
+      boolean cached,
+      int count,
+      int growth,
+      boolean matching)
+      throws Exception {
     if (stock != null) stock.close();
     stock = function(operation, target, false);
     var serializer = new RowDataSerializer(RowType.of(arguments(operation, false)));
@@ -111,16 +130,24 @@ public final class StringFusionBenchmarkFunctions {
         corpus.equals("cjk") ? "\u4e2d\u6587?" : corpus.equals("emoji") ? "\ud83d\ude00?" : "ab?c";
     int repeats = Math.max(1, width / unit.getBytes(StandardCharsets.UTF_8).length);
     String base = "a?" + unit.repeat(repeats);
+    String pad =
+        growth > 0 && corpus.equals("cjk")
+            ? "\u4e2d"
+            : growth > 0 && corpus.equals("emoji") ? "\ud83d\ude00" : "X";
     rows = new RowData[count];
     boolean overlay = (operation - 20) % 3 == 2;
     for (int i = 0; i < count; i++) {
-      int number = overlay ? 1 + i % 3 : 2 + unit.length() * (repeats / 2) + i % 3;
+      String source = base + "|" + (matching ? 0 : i % 16);
+      int number =
+          growth > 0
+              ? (i % 7 == 0 ? 0 : source.length()) + growth + (matching ? 0 : i % 3)
+              : overlay ? 1 + i % 3 : 2 + unit.length() * (repeats / 2) + i % 3;
       Object typedNumber = overlay ? (Object) Long.valueOf(number) : Integer.valueOf(number);
       RowData row =
           GenericRowData.of(
-              i % 7 == 0 ? null : StringData.fromString(base + "|" + (i % 16)),
+              i % 7 == 0 ? null : StringData.fromString(source),
               typedNumber,
-              StringData.fromString("X"));
+              StringData.fromString(pad));
       rows[i] = cached ? row : serializer.toBinaryRow(row).copy();
     }
   }

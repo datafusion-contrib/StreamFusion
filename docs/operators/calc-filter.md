@@ -2504,8 +2504,9 @@ STRING, dynamic INT-width length, and literal or dynamic STRING padding. NULL, n
 Standalone final LPAD/RPAD projections retain their native kernels. Direct equality/inequality
 against a string literal and REPLACE with single-character ASCII search/replacement literals
 have a [conditional Rust fusion path](../optimizations/native-string-fusion.md). This path
-requires direct input/literal producer arguments (or lossless integer widening) and truncation
-or unchanged length; padding growth retains the exact Flink evaluator. Equality supports
+requires direct input/literal producer arguments (or lossless integer widening). Equality
+also handles growth by comparing the literal's UTF-16 length and repeating padding period
+without constructing the padded string; REPLACE growth retains the exact Flink evaluator. Equality supports
 original Unicode Java caches; REPLACE retains Flink for non-ASCII caches or producer literals. Dynamic consumers,
 other replacements, LIKE, and surrounding CASE expressions retain generated Flink evaluation
 through the batch JVM bridge. Both paths preserve isolated surrogates. For example, padding a supplementary

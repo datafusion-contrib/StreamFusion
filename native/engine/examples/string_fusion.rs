@@ -86,7 +86,10 @@ fn main() {
     let warmups: usize = args.get(7).map_or(5, |s| s.parse().unwrap());
     let runs: usize = args.get(8).map_or(9, |s| s.parse().unwrap());
     let engine_filter = args.get(9).map_or("all", String::as_str);
+    let growth: usize = args.get(10).map_or(0, |s| s.parse().unwrap());
+    let matching = args.get(11).is_some_and(|s| s == "true");
     assert!((20..=28).contains(&operation));
+    assert!(growth == 0 || matches!(operation, 20 | 21 | 23 | 24));
     let classpath = format!(
         "-Djava.class.path={}",
         std::env::var("SF_NATIVE_BENCH_CLASSPATH").unwrap()
@@ -114,22 +117,47 @@ fn main() {
     };
     let repeats = (width / unit.len()).max(1);
     let base = format!("a?{}", unit.repeat(repeats));
+    let pad = match (growth > 0, corpus) {
+        (true, "cjk") => "\u{4e2d}",
+        (true, "emoji") => "\u{1f600}",
+        _ => "X",
+    };
+    let pad_units: Vec<_> = pad.encode_utf16().collect();
+    assert!(!matching || growth.is_multiple_of(pad_units.len()));
     let overlay = (operation - 20) % 3 == 2;
     let prefix = 2 + unit.encode_utf16().count() * (repeats / 2);
-    let target = if overlay {
+    let target = if growth > 0 {
+        let source = format!("{base}|0");
+        let padding: String = char::decode_utf16(pad_units.iter().copied().cycle().take(growth))
+            .map(|unit| unit.unwrap_or('?'))
+            .collect();
+        if (operation - 20) % 3 == 0 {
+            format!("{padding}{source}")
+        } else {
+            format!("{source}{padding}")
+        }
+    } else if overlay {
         format!("X{}|0", &base[1..])
     } else {
         String::from_utf16(&base.encode_utf16().take(prefix).collect::<Vec<_>>()).unwrap()
     };
     let sources: Vec<_> = (0..batch_rows)
-        .map(|i| (i % 7 != 0).then(|| format!("{base}|{}", i % 16)))
+        .map(|i| (i % 7 != 0).then(|| format!("{base}|{}", if matching { 0 } else { i % 16 })))
         .collect();
     let units: Vec<_> = sources
         .iter()
         .map(|s| s.as_ref().map(|s| s.encode_utf16().collect::<Vec<_>>()))
         .collect();
     let numbers: Vec<_> = (0..batch_rows)
-        .map(|i| if overlay { 1 + i % 3 } else { prefix + i % 3 })
+        .map(|i| {
+            if growth > 0 {
+                units[i].as_ref().map_or(0, Vec::len) + growth + if matching { 0 } else { i % 3 }
+            } else if overlay {
+                1 + i % 3
+            } else {
+                prefix + i % 3
+            }
+        })
         .collect();
     let mut columns: Vec<ArrayRef> = vec![
         Arc::new(StringArray::from(sources)),
@@ -142,7 +170,7 @@ fn main() {
                 numbers.iter().map(|n| *n as i32),
             ))
         },
-        Arc::new(StringArray::from(vec!["X"; batch_rows])),
+        Arc::new(StringArray::from(vec![pad; batch_rows])),
     ];
     let mut fields = vec![
         Field::new("s", DataType::Utf8, true),
@@ -162,7 +190,7 @@ fn main() {
             (0, string_cache_array(units.iter().map(|v| v.as_deref()))),
             (
                 2,
-                string_cache_array((0..batch_rows).map(|_| Some(&[88_u16][..]))),
+                string_cache_array((0..batch_rows).map(|_| Some(pad_units.as_slice()))),
             ),
         ] {
             fields.push(string_cache_field(index, cache.data_type().clone()));
@@ -187,7 +215,7 @@ fn main() {
     env.call_static_method(
         class,
         "prepare",
-        "(ILjava/lang/String;Ljava/lang/String;IZI)V",
+        "(ILjava/lang/String;Ljava/lang/String;IZIIZ)V",
         &[
             JValue::Int(operation as i32),
             JValue::Object(&target_java),
@@ -195,10 +223,22 @@ fn main() {
             JValue::Int(width as i32),
             JValue::Bool(cached.into()),
             JValue::Int(batch_rows as i32),
+            JValue::Int(growth as i32),
+            JValue::Bool(matching.into()),
         ],
     )
     .unwrap();
-    let mut prior = plan(id, operation, 0, &target);
+    // Baseline mode is linked against the preceding production library by the comparison driver.
+    let mut prior = plan(
+        id,
+        operation,
+        if engine_filter == "baseline" {
+            operation
+        } else {
+            0
+        },
+        &target,
+    );
     let admitted = !(operation >= 26 && cached && corpus != "ascii");
     let mut candidate = plan(
         if admitted { -1 } else { id },
@@ -207,11 +247,16 @@ fn main() {
         &target,
     );
     let reference = prior.run(batch.clone());
-    assert_eq!(reference.column(0), candidate.run(batch.clone()).column(0));
+    if matches!(engine_filter, "all" | "native") {
+        assert_eq!(reference.column(0), candidate.run(batch.clone()).column(0));
+    }
     for trial in 0..warmups + runs {
         for turn in 0..3 {
             let engine = (trial + turn) % 3;
-            if engine_filter != "all" && engine_filter != ["flink", "previous", "native"][engine] {
+            if engine_filter != "all"
+                && engine_filter != ["flink", "previous", "native"][engine]
+                && !(engine_filter == "baseline" && engine == 1)
+            {
                 continue;
             }
             let (nanos, digest) = if engine == 0 {
@@ -238,7 +283,7 @@ fn main() {
                 (start.elapsed().as_nanos(), black_box(digest))
             };
             assert_eq!(digest, checksum(&reference) * loops as i64);
-            println!("fusion,{operation},{corpus},{width},{cached},{batch_rows},{},{trial},{},{},{nanos},{digest}",
+            println!("fusion,{operation},{corpus},{width},{cached},{batch_rows},{},{trial},{},{},{nanos},{digest},{growth},{matching}",
                 loops * batch_rows, trial < warmups, ["flink", "previous", if admitted { "native" } else { "retained" }][engine]);
         }
     }
