@@ -26,7 +26,7 @@ class PackageReleaseTest(unittest.TestCase):
                     if line == "2.2":
                         modules.extend(["delta", "iceberg", "doris"])
                     else:
-                        modules.append("hudi")
+                        modules.extend(["hudi", "starrocks"])
                     artifacts = []
                     for module in modules:
                         target = root / f"streamfusion-{module}/target"

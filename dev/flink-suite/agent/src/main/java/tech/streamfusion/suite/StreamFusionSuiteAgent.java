@@ -513,6 +513,14 @@ public final class StreamFusionSuiteAgent {
                     .visit(
                         Advice.to(RecordNativeDeltaWrite.class)
                             .on(named("write").and(takesArguments(3)))))
+        .type(named("tech.streamfusion.starrocks.NativeStarRocksEncoder"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(Advice.to(BindNativeExecution.class).on(isConstructor()))
+                    .visit(
+                        Advice.to(RecordStarRocksEncode.class)
+                            .on(named("begin").and(takesArguments(1)))))
         .type(named(NATIVE_PAIMON_PARQUET_WRITER))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -764,6 +772,10 @@ public final class StreamFusionSuiteAgent {
     public static void exit(
         @Advice.Enter NativeExecution.Scope scope, @Advice.Thrown Throwable failure) {
       if (scope == null) return;
+      if (failure != null && NativeExecution.skipped(failure)) {
+        NativeExecution.abandon(scope);
+        return;
+      }
       try {
         NativeExecution.finish(scope);
       } catch (AssertionError proofFailure) {
@@ -968,6 +980,19 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.This Object writer, @Advice.Argument(2) int rows) {
       NativeExecution.completed(writer, rows);
+    }
+  }
+
+  public static final class RecordStarRocksEncode {
+    @Advice.OnMethodEnter
+    static int enter(@Advice.This Object encoder, @Advice.Argument(0) Object batch)
+        throws ReflectiveOperationException {
+      return NativeExecution.arrowBatchRows(encoder, batch);
+    }
+
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object encoder, @Advice.Enter int rows) {
+      NativeExecution.completed(encoder, rows);
     }
   }
 

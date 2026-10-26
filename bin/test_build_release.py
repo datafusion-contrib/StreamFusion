@@ -62,6 +62,7 @@ for index, arg in enumerate(args):
     def assert_packages(self, calls, line):
         expected = {"streamfusion", *("streamfusion-" + extension for extension in EXTENSIONS)}
         if line == "2.2": expected.add("streamfusion-iceberg")
+        if line == "1.18": expected.add("streamfusion-starrocks")
         for args in calls:
             self.assertEqual(expected, {args[index + 1] for index, arg in enumerate(args) if arg == "-p"})
             self.assertIn("--release", args)
@@ -78,8 +79,9 @@ for index, arg in enumerate(args):
                     self.assertEqual(1, len(calls))
                     self.assert_packages(calls, line)
                     staged = list((repository / "native/target/universal").rglob("libstreamfusion*"))
-                    self.assertEqual(12 if line == "2.2" else 11, len(staged))
+                    self.assertEqual(12, len(staged))
                     self.assertEqual(line == "2.2", any("iceberg" in path.name for path in staged))
+                    self.assertEqual(line == "1.18", any("starrocks" in path.name for path in staged))
                     self.assertTrue((root / "maven-ran").exists())
 
     def test_universal_builds_once_per_darwin_target(self):

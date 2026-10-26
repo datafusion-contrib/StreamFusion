@@ -73,6 +73,7 @@ nav:
       - Apache Iceberg: connectors/iceberg.md
       - Apache Hudi: connectors/hudi.md
       - Apache Paimon: connectors/paimon.md
+      - StarRocks: connectors/starrocks.md
       - Formats:
           - JSON: connectors/formats/json.md
           - CSV: connectors/formats/csv.md
