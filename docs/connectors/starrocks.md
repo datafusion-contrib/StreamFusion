@@ -12,7 +12,7 @@ native library (`libstreamfusion_starrocks`), which depends only on the shared b
 the connector on the classpath the adapter stays inactive.
 
 Set `-Dstreamfusion.starrocks.enabled=false` to keep the stock writer while native SQL operators
-still run upstream of it.
+still run upstream of it. This is the previous-behavior control used by the benchmark.
 
 ## Sink
 
@@ -198,3 +198,28 @@ the script's fixture stops. `bin/starrocks-suite.sh` runs the following layers i
    The 58 transactional writer invocations require positive native encoder work. Six V1
    invocations decline the sink but still run their upstream Calc natively, so they require that
    Calc work; the other 20 require full fallback with the exact reason.
+
+## Release-mode measurements
+
+The [2026-10-26 report](../benchmarks/starrocks-2026-10-26/README.md) retains every trial,
+configuration, plan and profile. Encoding a batch in Rust is 3.12–3.33× faster than the
+connector's own serializer under the small-functionality gate, and 1.35–1.56× faster through the
+production Java entry, including the per-row hand-off. See the
+[optimization ledger](../optimizations/batch-native-starrocks-rows.md) for the techniques.
+
+Complete jobs read a rowwise `datagen` source, project nine columns and commit them through the
+default transactional writer at parallelism two, so both perimeter conversions and the server's
+ingestion are inside the timer. Medians in seconds, with two warmups and six rotated trials:
+
+| Rows | Format | Stock Flink | Previous StreamFusion | Native sink | Stock / native |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1,000,000 | CSV | 3.616 | 3.773 | 3.207 | 1.13× |
+| 1,000,000 | JSON | 4.474 | 4.450 | 3.577 | 1.25× |
+| 5,000,000 | CSV | 12.786 | 11.701 | 10.392 | 1.23× |
+| 5,000,000 | JSON | 15.198 | 17.093 | 14.427 | 1.05× |
+
+Every range overlaps, and native was the slowest mode in three of the 24 measured rounds. Once
+encoding is cheap, the writers wait on StarRocks ingestion on the same host: sustained CSV writing
+is 1.28× faster than stock Flink, while sustained JSON writing stays at parity (0.99–1.07× across
+every recorded cohort of this design). These are bounded jobs on one Apple M1 Max host. They do
+not establish unbounded-stream throughput or a Nexmark result.

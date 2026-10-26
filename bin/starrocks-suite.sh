@@ -13,8 +13,8 @@ readonly upstream_sink_test=com.starrocks.connector.flink.it.sink.StarRocksSinkI
 readonly upstream_kafka_test=com.starrocks.connector.flink.it.sink.kafka.KafkaToStarRocksITTest
 readonly mode="${1:-tests}"
 case "$mode" in
-  tests|adapters|upstream|fixture) ;;
-  *) echo "usage: $0 [tests|adapters|upstream|fixture]" >&2; exit 64 ;;
+  tests|adapters|upstream|benchmark|fixture) ;;
+  *) echo "usage: $0 [tests|adapters|upstream|benchmark|fixture]" >&2; exit 64 ;;
 esac
 if [[ $# -gt 0 ]]; then shift; fi
 mkdir -p "$reports"
@@ -62,6 +62,16 @@ if [[ "$mode" == fixture ]]; then
 fi
 
 native_skip="${SF_STARROCKS_NATIVE_BUILD_SKIP:-false}"
+if [[ "$mode" == benchmark ]]; then
+  SF_STARROCKS_BENCH=true mvn -B -ntp -Pbench,flink-1.18,starrocks,starrocks-it \
+    -pl streamfusion-starrocks -am test -Dsf.testForks=1 -Dnative.build.skip="$native_skip" \
+    -Dsurefire.failIfNoSpecifiedTests=false \
+    -Dtest=StarRocksEncodeBenchmark,StarRocksConnectorBenchmark \
+    '-Dsf.extraJvmArgs=-Xmx4g -Duser.timezone=UTC -Dsf.starrocks.benchmark.profile=release' \
+    "$@" 2>&1 | tee "$reports/benchmark.log"
+  exit
+fi
+
 if [[ "$mode" != upstream ]]; then
   mvn -B -ntp -Pflink-1.18,starrocks,starrocks-it -pl streamfusion-starrocks -am test \
     -Dsf.testForks=1 -Dnative.build.skip="$native_skip" -Dsurefire.failIfNoSpecifiedTests=false \
