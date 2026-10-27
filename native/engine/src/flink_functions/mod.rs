@@ -33,6 +33,7 @@ pub(crate) mod split_index;
 pub(crate) mod substring;
 pub(crate) mod to_date;
 
+mod abs;
 pub(crate) mod array_cast;
 mod array_concat;
 mod array_constructor;
@@ -275,6 +276,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         215 => temporal_extremum::function(arity, true),
         216 => temporal_extremum::function(arity, false),
         217 => array_sort::function(arity),
+        218 => abs::function(),
         _ => return None,
     })
 }

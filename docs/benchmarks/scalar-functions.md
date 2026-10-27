@@ -2574,3 +2574,80 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime test -Pbench \
 Use `engine=flink` for stock. For `engine=previous`, compile the same fixture
 against the preceding planner and require its bound generated ARRAY_SORT route;
 the candidate planner deliberately fails that previous-route assertion.
+
+## Integral ABS
+
+October 27, 2026; Apple M4 Pro/macOS aarch64, JDK 17, released Flink 2.2.1,
+Rust 1.94.0, release build without default features and with the system allocator.
+This replaces the JVM evaluator inside an already-admitted Calc for the verified integer
+ABS subset; it does not expand the set of admitted SQL islands.
+
+The functionality control starts stock Flink on prepared RowData and the native engines on
+matching prepared Arrow RecordBatch inputs. The stock timer is inside Java and the native
+timers are inside Rust. The preceding control uses the existing generated whole-Calc callback;
+its intrinsic JNI, Arrow handoffs and output writing remain timed. The candidate executes the
+compiled production Calc, including result allocation and checksum consumption. Setup,
+initial input import, final output export and perimeter transposes are outside this small
+functionality timer. Checksums, output types and NULL positions agree before timing.
+
+All four widths include mixed signs and minimum negative values. Nullable inputs insert NULL
+every seventh row. Each engine has 16 warmups and 11 measured trials of 131,072 rows, rotating
+engine order. The allocation probe runs outside timing; its counting allocator remains inactive
+during the measured iterations. Table entries are median nanoseconds per row; all trials and
+minimum/maximum variability are in the [raw results](results/integral-abs-2026-10-27.json).
+
+| Type / input profile | Stock Flink | Previous callback | Rust Calc | Stock / Rust |
+| --- | ---: | ---: | ---: | ---: |
+| TINYINT / nullable GenericRowData, batch 1024 | 4.798 | 43.584 | 0.915 | 5.24x |
+| SMALLINT / nullable GenericRowData, batch 1024 | 4.524 | 41.101 | 0.907 | 4.99x |
+| INT / nullable GenericRowData, batch 1024 | 4.557 | 40.236 | 0.916 | 4.98x |
+| BIGINT / nullable GenericRowData, batch 1024 | 4.797 | 41.975 | 0.960 | 5.00x |
+| TINYINT / no-NULL BinaryRowData, batch 1024 | 6.486 | 43.763 | 0.529 | 12.27x |
+| SMALLINT / no-NULL BinaryRowData, batch 1024 | 6.508 | 42.487 | 0.529 | 12.30x |
+| INT / no-NULL BinaryRowData, batch 1024 | 5.988 | 43.962 | 0.536 | 11.17x |
+| BIGINT / no-NULL BinaryRowData, batch 1024 | 6.363 | 43.394 | 0.605 | 10.51x |
+| TINYINT / nullable BinaryRowData, batch 16 | 5.836 | 739.484 | 21.764 | 0.27x |
+| SMALLINT / nullable BinaryRowData, batch 16 | 5.759 | 745.591 | 23.342 | 0.25x |
+| INT / nullable BinaryRowData, batch 16 | 5.613 | 784.946 | 23.013 | 0.24x |
+| BIGINT / nullable BinaryRowData, batch 16 | 6.055 | 764.878 | 22.401 | 0.27x |
+
+The default-size batches are 4.98-12.30x faster than stock and 43.72-82.78x faster than the
+preceding callback. Sixteen-row batches improve 31.94-34.15x over the old callback but remain
+slower than stock. Direct scalar/array dispatch removes the generic scalar adapter's temporary
+vectors, but fixed Calc overhead remains: the final INT probe records 20 Rust allocation
+requests at both batch sizes, requesting 1,255 bytes for 16 rows and 5,287 bytes for 1,024 rows.
+The output value buffer is new and the input validity buffer is shared. The operation still
+constructs a projected input and an output batch per call. These numbers do not claim that
+Rust beats stock for tiny batches.
+
+A separate standalone INT query uses one million runtime rows, parallelism one, a bounded
+row source, a blackhole row sink, default batches, two warmups and five measured runs per
+engine in separate sequential JVM processes. Native runs require consumed NativeCalc work
+and plans containing both RowDataToArrow and ArrowToRowData. Median complete-job seconds
+(minimum-maximum), including submission/startup, intrinsic JNI and both transposes:
+
+| Stock Flink | Previous callback | Rust Calc |
+| ---: | ---: | ---: |
+| 0.127333 (0.123515-0.129871) | 0.160102 (0.157433-0.180064) | 0.144527 (0.136700-0.155362) |
+
+The candidate improves the old standalone median but remains slower than stock. These short
+jobs and sequential process order do not establish a sustained end-to-end throughput win.
+Only the default-size prepared-input functionality comparison establishes a speedup here.
+
+Reproduce after compiling test classes and resolving their released Flink classpath:
+
+```sh
+export SF_NATIVE_BENCH_CLASSPATH="streamfusion-runtime/target/test-classes:streamfusion-runtime/target/classes:$(cat /path/to/test-classpath.txt)"
+export SF_NATIVE_LIB_DIR="$PWD/native/target/release"
+cargo build --manifest-path native/Cargo.toml -p streamfusion --release \
+  --no-default-features --lib --example integral_abs
+native/target/release/examples/integral_abs INT true false 1024 128 16 11
+```
+
+The arguments are type, inject-NULLs, use-BinaryRowData, rows per batch, loops, warmups and
+trials. Select each of TINYINT/SMALLINT/INT/BIGINT; also run `false true 1024 128 16 11`
+and `true true 16 8192 16 11`. The complete-job diagnostic is
+`SF_BENCHMARK=true mvn -pl streamfusion-runtime test -Pbench
+-Dtest=IntegralAbsPipelineBenchmark -Dabs.pipeline.engine=native`; use `flink` for stock.
+For the previous complete-job control, use the parent planner and matching native library
+with the same benchmark class and inputs.

@@ -1352,11 +1352,22 @@ returns NULL. No JVM callback or configuration switch is required for these conv
 
 ### Exact unary and integral functions
 
-Integer and DECIMAL unary minus, ABS and SIGN execute Flink's generated expression code through
-the existing batch JVM bridge. Integral FLOOR/CEIL and INT/BIGINT TRUNCATE use the same path,
+TINYINT, SMALLINT, INT and BIGINT ABS use a Rust Arrow unary kernel for direct inputs,
+typed literals, lossless integer widening of these inputs, and nested admitted ABS calls.
+Both nullable and NOT NULL inputs retain their width. NULL propagates; the minimum negative
+value remains negative, matching Flink's `SqlFunctionUtils.abs` and Java narrowing/wrapping
+rather than DataFusion's checked integer ABS. Input buffers and sliced validity remain owned
+by the input; the kernel allocates the result values and shares validity without a JVM callback.
+Arithmetic, casts outside that whitelist, and other composed ABS arguments retain generated
+Flink evaluation so their overflow, NULL and failure behavior does not change. This replaces
+computation inside an already-admitted Calc and introduces no configuration switch.
+See the [release controls and small-batch limits](../benchmarks/scalar-functions.md#integral-abs).
+
+Integer unary minus and SIGN, and DECIMAL unary minus, ABS and SIGN, execute Flink's generated
+expression code through the existing batch JVM bridge. Integral FLOOR/CEIL and INT/BIGINT TRUNCATE use the same path,
 including per-row TRUNCATE positions. TINYINT/SMALLINT TRUNCATE retains the host compilation
 failure described under exact floating math below. This retains resolved widths, decimal precision/scale, NULL handling,
-and Java overflow behavior, including ABS of the minimum INT/BIGINT value. Adjacent supported
+and Java overflow behavior. Adjacent supported
 host expressions fuse before crossing the Arrow boundary. These are host-evaluated functions
 inside a columnar native Calc, not pure-Rust kernels.
 

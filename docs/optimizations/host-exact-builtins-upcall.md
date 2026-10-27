@@ -1,6 +1,24 @@
-# Host-exact builtins over the same upcall, with a faster pure-Rust opt-in
+# Host-exact builtins and verified Rust replacements
 
-**Applies to:** REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts, DOUBLE TRUNCATE
+**Applies to:** integral ABS, REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts, DOUBLE TRUNCATE
+
+## Removing the callback for integral ABS
+
+The verified integer ABS subset now uses a typed Arrow unary kernel, following Comet's
+wrapping-ABS structure. Flink's minimum negative value remains negative for all four widths;
+DataFusion's checked integer ABS is unsuitable. The planner retains generated evaluation for
+unverified producers, so removing the ABS callback cannot expose a different arithmetic or
+cast implementation in its argument. Scalar literals and arrays dispatch directly without
+the generic scalar-to-array adapter's temporary argument allocations.
+
+The [release controls](../benchmarks/scalar-functions.md#integral-abs) compare stock generated
+RowData, the preceding production JVM callback, and the compiled Rust Calc. Default-size
+1,024-row batches improve over both controls. Sixteen-row diagnostics improve substantially
+over the old callback but remain slower than stock; the generic Calc still constructs input
+projections and output batches per call. This optimization replaces an existing native-Calc
+computation; the small-batch and complete-job results do not establish universal acceleration.
+
+## Existing host-exact paths
 
 Builtins whose Rust implementation can diverge from the JVM's — REGEXP_EXTRACT (regex dialects),
 UPPER/LOWER (locale case folding), DATE_FORMAT/EXTRACT over `TIMESTAMP_LTZ` (time-zone database
