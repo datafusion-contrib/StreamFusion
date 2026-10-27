@@ -2567,6 +2567,7 @@ final class RexExpression {
       return emitFloatUnary(call, 62);
     }
     if ("FLOOR".equals(functionName)) {
+      if (nativeIntegralFloor(call)) return emit(call.getOperands().get(0));
       return emitFloatUnary(call, 63);
     }
     if ("CEIL".equals(functionName) || "CEILING".equals(functionName)) {
@@ -4037,6 +4038,7 @@ final class RexExpression {
       case "SIGN":
         return exact && !nativeIntegralSign(call);
       case "FLOOR":
+        return integral && call.getOperands().size() == 1 && !nativeIntegralFloor(call);
       case "CEIL":
       case "CEILING":
         return integral && call.getOperands().size() == 1;
@@ -4117,6 +4119,30 @@ final class RexExpression {
       default:
         return false;
     }
+  }
+
+  private static boolean nativeIntegralFloor(RexCall call) {
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FLOOR
+        && call.getOperands().size() == 1
+        && SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
+        && call.getType().getSqlTypeName() == call.getOperands().get(0).getType().getSqlTypeName()
+        && nativeIntegralFloorOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeIntegralFloorOperand(RexNode node) {
+    if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    if (nativeIntegralFloor(call)) return true;
+    return call.getKind() == SqlKind.CAST
+        && call.getOperands().size() == 1
+        && SqlTypeFamily.INTEGER.contains(call.getType())
+        && wideningTargetCode(
+                call.getOperands().get(0).getType().getSqlTypeName(),
+                call.getType().getSqlTypeName())
+            >= 0
+        && nativeIntegralFloorOperand(call.getOperands().get(0));
   }
 
   private static boolean nativeIntegralSign(RexCall call) {
@@ -5936,9 +5962,8 @@ final class RexExpression {
 
   /**
    * Emits a unary numeric function (op code {@code op}) admitted only over a float/double operand.
-   * Integer cases are excluded: {@code ABS(INT_MIN)} overflows (Java wraps, DataFusion's checked
-   * kernel errors), and {@code FLOOR}/{@code CEIL} on an integer is an identity Flink keeps in the
-   * integer type — both divergence-prone, so they fall back.
+   * Integer and decimal contracts use separate typed or generated paths: integer rounding retains
+   * its resolved width, and Java integer overflow differs from checked floating-function adapters.
    */
   private boolean emitFloatUnary(RexCall call, int op) {
     if (call.getOperands().size() != 1) {

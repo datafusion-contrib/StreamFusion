@@ -703,3 +703,26 @@ just the outer call into Rust. DECIMAL SIGN remains generated.
 
 Release stock/previous/native controls, allocation diagnostics and complete-job limits are
 reported in [Integral SIGN](../benchmarks/scalar-functions.md#integral-sign).
+
+## Integer FLOOR without a rounding kernel
+
+Released Flink's single-argument integer FLOOR returns its operand expression unchanged.
+Comet likewise shares the buffers of its integral FLOOR input. StreamFusion now emits the
+verified integer operand directly: no floating-point conversion, result values allocation,
+generic scalar-function argument setup or generated JVM callback is needed. This retains
+TINYINT/SMALLINT/INT/BIGINT widths, signed minima, exact large BIGINTs and validity.
+
+Admission is limited to direct inputs, typed literals, nested admitted FLOOR and recursive
+lossless integer widening with matching result/input SQL types. Arithmetic, narrowing and
+other unverified producers stay with their enclosing generated expression. DECIMAL metadata
+and temporal rounding keep their existing boundaries. There is no new opcode, JNI contract,
+operator admission or configuration switch.
+
+The release 1,024-row prepared controls improve 6.41–19.78x over stock and 57.59–128.76x over
+the preceding callback. Sixteen-row controls still lose to stock; the 1M-row complete job
+improves the previous median from 0.158871s to 0.138411s but remains slower than stock's
+0.131442s. An INT allocation probe requests 13 allocations / 606 bytes per batch at both
+16 and 1,024 rows, with all output value/validity buffers shared. Remaining fixed costs
+belong to generic Calc evaluation and batch/result handling, not integer rounding.
+See [Integer FLOOR](../benchmarks/scalar-functions.md#integer-floor) for full methodology,
+variability and the retained slower cases.

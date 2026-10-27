@@ -2818,3 +2818,80 @@ expressions and supplies oracle evidence, while the focused witnesses establish 
 native work. All 814 release Rust core tests pass without default features, including a
 compiled-Calc literal-minimum test that runs without a JVM. Full JVM/upstream suites are left
 to CI.
+
+## Integer FLOOR
+
+Measured on 2026-10-27 against canonical main `1604a3aa`: Apple M4 Pro (14 logical CPUs),
+macOS aarch64, Flink 2.2.1, JDK 17.0.12, Rust 1.94.0 release, default features disabled,
+system allocator. The change removes generated computation from an already-admitted Calc;
+it does not add operator/type admission or a configuration switch.
+
+`integral_rounding` prepares identical typed integer values, minima, BIGINTs above 2^53 and
+NULLs outside timing. Stock uses released generated Java over prepared GenericRowData or
+BinaryRowData. Previous and candidate use production Calc over prepared Arrow; the previous
+JVM callback, its conversion and dispatch remain inside the Rust timer. Candidate integer
+FLOOR emits its operand directly. Full Arrow/schema equality is checked before timing;
+every output value participates in an equal checksum in its own runtime. JNI entry/import,
+final export and perimeter transposes are outside this small-function timer.
+
+All schemas are nullable; the input NULL flag controls actual values (NULL every seventh row
+when true). Each case has 16 warmups and 11 measured trials of 131,072 rows, rotating
+stock/previous/native order. Values are ns/row, median [min, max].
+
+| Type, input NULLs, stock format, batch rows | Stock | Previous callback | Candidate | vs stock | vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| BIGINT, no NULLs, binary, 1024 | 6.403 [6.145, 6.606] | 43.082 [41.289, 44.238] | 0.337 [0.325, 0.340] | 19.00x | 127.85x |
+| BIGINT, with NULLs, generic, 1024 | 4.740 [4.649, 17.621] | 40.934 [39.657, 42.302] | 0.711 [0.699, 0.836] | 6.67x | 57.59x |
+| BIGINT, with NULLs, binary, 16 | 6.242 [5.819, 6.345] | 766.428 [754.580, 802.290] | 14.398 [13.828, 15.580] | 0.43x | 53.23x |
+| INT, no NULLs, binary, 1024 | 6.459 [6.215, 6.724] | 42.038 [40.380, 64.610] | 0.326 [0.295, 0.353] | 19.78x | 128.76x |
+| INT, with NULLs, generic, 1024 | 4.638 [4.491, 5.035] | 42.349 [40.091, 59.744] | 0.714 [0.702, 0.789] | 6.50x | 59.34x |
+| INT, with NULLs, binary, 16 | 5.905 [5.735, 6.150] | 741.679 [736.464, 775.826] | 14.805 [14.082, 15.093] | 0.40x | 50.10x |
+| SMALLINT, no NULLs, binary, 1024 | 6.331 [5.972, 6.491] | 41.370 [41.097, 43.408] | 0.336 [0.294, 0.351] | 18.84x | 123.12x |
+| SMALLINT, with NULLs, generic, 1024 | 4.580 [4.271, 4.637] | 41.599 [39.527, 52.664] | 0.714 [0.611, 0.746] | 6.41x | 58.26x |
+| SMALLINT, with NULLs, binary, 16 | 5.690 [5.347, 6.019] | 782.506 [765.244, 791.278] | 14.865 [13.527, 15.567] | 0.38x | 52.64x |
+| TINYINT, no NULLs, binary, 1024 | 6.172 [5.958, 6.412] | 40.221 [38.532, 41.907] | 0.329 [0.303, 0.407] | 18.76x | 122.25x |
+| TINYINT, with NULLs, generic, 1024 | 4.679 [4.580, 4.944] | 41.606 [40.318, 56.980] | 0.690 [0.630, 0.742] | 6.79x | 60.34x |
+| TINYINT, with NULLs, binary, 16 | 5.444 [5.244, 5.704] | 752.234 [742.954, 769.962] | 14.164 [13.976, 14.453] | 0.38x | 53.11x |
+
+The 1,024-row candidate wins these prepared-input controls. The 16-row controls still lose to
+stock, despite sharing all output value/validity buffers and eliminating the callback. The
+production INT Calc allocation probe requests 13 allocations / 606 bytes at either batch
+size, including RecordBatch/result bookkeeping; no new output buffer bytes are requested.
+A separate five-second native-only sample shows Calc evaluation, RecordBatch projection,
+allocation/free, Arc ownership and checksum consumption as remaining costs. The sample is
+diagnostic; overlapping frames do not establish independent percentages. This experiment does
+not claim that pure Rust or columnar execution always wins.
+
+A separate complete 1M-row INT job retains a bounded Flink row source, both transposes and a
+rowwise blackhole sink. Parallelism is one, with two warmups and five measured jobs in
+separate sequential stock/previous/native JVMs. Previous planning uses the unchanged main
+encoder and requires a FLOOR JVM route; the candidate requires `jvm=[]`. Both native jobs
+require NativeCalc, both transposes and positive consumed native work. Seconds are median
+[min, max]:
+
+| Stock | Previous callback | Candidate |
+| ---: | ---: | ---: |
+| 0.131442 [0.125461, 0.149769] | 0.158871 [0.157430, 0.172846] | 0.138411 [0.132027, 0.139610] |
+
+The candidate improves the preceding implementation but remains slower than stock in this
+complete job. These short jobs include startup, submission and JIT effects; they do not prove
+sustained end-to-end acceleration. Full trials/checksums and allocation observations are in
+[the raw result record](results/integral-floor-2026-10-27.json). Broader Calc/perimeter costs
+remain in [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+The released Java control is `IntegralRoundingBenchmarkFunctions`; the complete job is
+`IntegralRoundingPipelineBenchmark`, enabled by `SF_BENCHMARK=true` and the `bench` profile.
+After building Java test classes, prepare the dependency classpath and set `JAVA_HOME`,
+`SF_NATIVE_BENCH_CLASSPATH` and `SF_NATIVE_LIB_DIR` to the release library directory:
+
+```sh
+cargo build --manifest-path native/Cargo.toml -p streamfusion --release \
+  --no-default-features --lib --example integral_rounding
+SF_INTEGRAL_ROUNDING_FUNCTION=FLOOR \
+  native/target/release/examples/integral_rounding INT true false 1024 128 16 11
+```
+
+For the complete job, use `-Drounding.pipeline.function=FLOOR` and
+`-Drounding.pipeline.engine=flink|previous|native`. The previous control requires the
+preceding encoder first on the classpath; merely changing the engine label is insufficient.
+`SF_NATIVE_BENCH_ENGINE=native` selects only native trials for a separate profiling diagnostic.

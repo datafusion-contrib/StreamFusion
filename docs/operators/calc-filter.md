@@ -1362,6 +1362,21 @@ at their own precision and scale and permits that division. Both paths preserve 
 operand NULL guards, unselected branches and empty batches. Ordinary result overflow still
 returns NULL. No JVM callback or configuration switch is required for these conversions.
 
+### Integer FLOOR
+
+Single-argument FLOOR over TINYINT, SMALLINT, INT and BIGINT preserves the input value,
+resolved width and NULL. Verified direct inputs, typed literals, nested FLOOR and recursive
+lossless integer widening reuse the operand's native expression without a JVM evaluator or
+floating-point conversion. This preserves signed minima and BIGINT values above 2^53.
+Arithmetic, narrowing and other unverified producers retain the enclosing generated FLOOR
+program, including its overflow, selected failures, lazy branches and empty-batch behavior.
+DECIMAL and temporal rounding keep their separate contracts below.
+
+Runtime regressions require consumed native work over 5,003 rows per integer width and
+`jvm=[]` for admitted queries on both supported Flink lines and JDK 11/17. Prepared 1,024-row
+release controls beat stock and the preceding callback; 16-row and complete row-source
+jobs retain the measured limits in [Integer FLOOR](../benchmarks/scalar-functions.md#integer-floor).
+
 ### Exact unary and integral functions
 
 TINYINT, SMALLINT, INT and BIGINT ABS use a Rust Arrow unary kernel for direct inputs,
@@ -1390,7 +1405,7 @@ compare prepared inputs with stock and the previous callback, and separately rep
 complete row-source job with both transposes.
 
 DECIMAL unary minus, ABS and SIGN execute Flink's generated expression code through
-the existing batch JVM bridge. Integral FLOOR/CEIL and INT/BIGINT TRUNCATE use the same path,
+the existing batch JVM bridge. Unverified integer FLOOR producers, integral CEIL and INT/BIGINT TRUNCATE use the same path,
 including per-row TRUNCATE positions. TINYINT/SMALLINT TRUNCATE retains the host compilation
 failure described under exact floating math below. This retains resolved widths, decimal precision/scale, NULL handling,
 and Java overflow behavior. Adjacent supported
