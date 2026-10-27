@@ -2895,3 +2895,60 @@ For the complete job, use `-Drounding.pipeline.function=FLOOR` and
 `-Drounding.pipeline.engine=flink|previous|native`. The previous control requires the
 preceding encoder first on the classpath; merely changing the engine label is insufficient.
 `SF_NATIVE_BENCH_ENGINE=native` selects only native trials for a separate profiling diagnostic.
+
+## Integer CEIL / CEILING
+
+Measured separately on 2026-10-27 against canonical main `1604a3aa`, on the same Apple M4
+Pro, Flink 2.2.1, JDK 17.0.12 and Rust 1.94.0 release configuration as [Integer FLOOR](#integer-floor).
+The input values, all four widths, NULL patterns, stock GenericRowData/BinaryRowData and
+Rust-side production Calc timing boundaries are identical. The query calls CEIL; CEILING
+resolves to the same admitted operator and is additionally covered by runtime parity tests.
+Previous generated JVM computation/conversions remain inside its Rust timer; candidate
+integer rounding reuses the verified operand. Setup, JNI entry/import/export and perimeter
+transposes are excluded from prepared-input timing. Complete schema/Arrow equality and
+checksums verify every output. No operator/type admission or configuration switch is added.
+
+All input schemas are nullable; the flag denotes actual NULL values. Each case rotates
+stock/previous/native for 16 warmups and 11 measured trials of 131,072 rows. Values are
+ns/row, median [min, max].
+
+| Type, input NULLs, stock format, batch rows | Stock | Previous callback | Candidate | vs stock | vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| BIGINT, no NULLs, binary, 1024 | 6.556 [6.260, 6.740] | 43.084 [41.326, 47.007] | 0.344 [0.329, 0.382] | 19.06x | 125.26x |
+| BIGINT, with NULLs, generic, 1024 | 4.680 [4.479, 4.859] | 41.885 [39.602, 55.228] | 0.699 [0.676, 0.774] | 6.70x | 59.95x |
+| BIGINT, with NULLs, binary, 16 | 6.058 [5.987, 6.602] | 756.261 [746.306, 797.435] | 13.754 [13.474, 14.605] | 0.44x | 54.99x |
+| INT, no NULLs, binary, 1024 | 6.361 [6.240, 6.480] | 40.662 [38.870, 41.578] | 0.311 [0.280, 0.325] | 20.48x | 130.92x |
+| INT, with NULLs, generic, 1024 | 4.534 [4.463, 4.759] | 41.025 [39.273, 54.750] | 0.692 [0.669, 0.814] | 6.55x | 59.28x |
+| INT, with NULLs, binary, 16 | 5.335 [5.174, 5.623] | 753.331 [740.801, 781.752] | 14.322 [13.754, 14.870] | 0.37x | 52.60x |
+| SMALLINT, no NULLs, binary, 1024 | 6.587 [6.408, 6.717] | 41.383 [40.316, 43.505] | 0.336 [0.300, 0.353] | 19.60x | 123.16x |
+| SMALLINT, with NULLs, generic, 1024 | 4.627 [4.476, 5.068] | 41.518 [39.421, 54.906] | 0.693 [0.678, 0.739] | 6.67x | 59.88x |
+| SMALLINT, with NULLs, binary, 16 | 5.530 [5.313, 7.826] | 741.658 [735.667, 765.638] | 15.277 [14.481, 15.898] | 0.36x | 48.55x |
+| TINYINT, no NULLs, binary, 1024 | 6.353 [6.011, 6.534] | 39.769 [38.562, 40.987] | 0.367 [0.337, 0.393] | 17.32x | 108.41x |
+| TINYINT, with NULLs, generic, 1024 | 4.728 [4.625, 4.823] | 41.698 [39.988, 54.603] | 0.675 [0.666, 0.692] | 7.01x | 61.78x |
+| TINYINT, with NULLs, binary, 16 | 5.651 [5.270, 5.855] | 747.532 [735.846, 774.913] | 14.199 [13.643, 15.871] | 0.40x | 52.65x |
+
+The candidate beats both controls at 1,024 rows. At 16 rows it remains slower than stock,
+with the same shared-operand Calc path and generic batch/result costs diagnosed for FLOOR.
+The INT allocation probe again requests 13 allocations / 606 bytes at both batch sizes;
+all output value/validity buffers are shared. This is a measured improvement to the existing
+native Calc path, without a universal small-batch acceleration claim.
+
+The independent complete job uses the same 1M-row INT source, parallelism one, rowwise
+blackhole sink, two warmups and five measured jobs in sequential stock/previous/native JVMs.
+Both transposes stay in native plans, and positive consumed NativeCalc work is required.
+The previous unchanged encoder must report a CEIL JVM route; candidate must report `jvm=[]`.
+Seconds are median [min, max]:
+
+| Stock | Previous callback | Candidate |
+| ---: | ---: | ---: |
+| 0.127985 [0.118868, 0.129826] | 0.154719 [0.149769, 0.156016] | 0.139331 [0.128387, 0.145281] |
+
+The candidate improves previous StreamFusion but remains slower than stock. Startup/JIT and
+submission are included; this is not evidence of sustained complete-job acceleration.
+[All measured trials, checksums, configuration and allocation observations](results/integral-ceil-2026-10-27.json)
+are retained. Generic Calc/perimeter costs remain in [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Use the shared `integral_rounding` release example and `IntegralRoundingPipelineBenchmark`
+from the FLOOR instructions, selecting `SF_INTEGRAL_ROUNDING_FUNCTION=CEIL` for prepared
+controls or `-Drounding.pipeline.function=CEIL` for complete jobs. The explicit previous
+encoder and route checks apply to both functions.

@@ -25,7 +25,8 @@ class IntegralRoundingPipelineBenchmark {
     String engine = System.getProperty("rounding.pipeline.engine", "native");
     boolean nativeRun = !engine.equals("flink");
     String function = System.getProperty("rounding.pipeline.function", "FLOOR");
-    assertTrue(function.equals("FLOOR"));
+    assertTrue(java.util.List.of("FLOOR", "CEIL", "CEILING").contains(function));
+    String routeName = function.equals("CEILING") ? "CEIL" : function;
     for (int trial = 0; trial < warmups + runs; trial++) {
       try (var metrics = new RecoveryExecutionMetrics()) {
         var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
@@ -52,9 +53,9 @@ class IntegralRoundingPipelineBenchmark {
               scan.functionExecutions().stream()
                   .anyMatch(
                       route ->
-                          route.contains(function)
+                          route.contains(routeName)
                               && (engine.equals("previous")
-                                  ? route.contains("jvm=[FLOOR")
+                                  ? route.contains("jvm=[" + routeName)
                                   : route.contains("jvm=[]"))),
               scan.functionExecutions().toString());
         }
@@ -71,7 +72,9 @@ class IntegralRoundingPipelineBenchmark {
           RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
         System.out.printf(
             Locale.ROOT,
-            "[integral-rounding-pipeline] engine=%s trial=%d warmup=%s rows=%d seconds=%.9f%n",
+            "[integral-rounding-pipeline] function=%s engine=%s trial=%d warmup=%s rows=%d"
+                + " seconds=%.9f%n",
+            function,
             engine,
             trial,
             trial < warmups,

@@ -704,15 +704,15 @@ just the outer call into Rust. DECIMAL SIGN remains generated.
 Release stock/previous/native controls, allocation diagnostics and complete-job limits are
 reported in [Integral SIGN](../benchmarks/scalar-functions.md#integral-sign).
 
-## Integer FLOOR without a rounding kernel
+## Integer FLOOR and CEIL without rounding kernels
 
-Released Flink's single-argument integer FLOOR returns its operand expression unchanged.
-Comet likewise shares the buffers of its integral FLOOR input. StreamFusion now emits the
+Released Flink's single-argument integer FLOOR/CEIL returns its operand expression unchanged.
+Comet likewise shares the buffers of its integral FLOOR/CEIL input. StreamFusion now emits the
 verified integer operand directly: no floating-point conversion, result values allocation,
 generic scalar-function argument setup or generated JVM callback is needed. This retains
 TINYINT/SMALLINT/INT/BIGINT widths, signed minima, exact large BIGINTs and validity.
 
-Admission is limited to direct inputs, typed literals, nested admitted FLOOR and recursive
+Admission is limited to direct inputs, typed literals, nested admitted FLOOR/CEIL and recursive
 lossless integer widening with matching result/input SQL types. Arithmetic, narrowing and
 other unverified producers stay with their enclosing generated expression. DECIMAL metadata
 and temporal rounding keep their existing boundaries. There is no new opcode, JNI contract,
@@ -726,3 +726,11 @@ improves the previous median from 0.158871s to 0.138411s but remains slower than
 belong to generic Calc evaluation and batch/result handling, not integer rounding.
 See [Integer FLOOR](../benchmarks/scalar-functions.md#integer-floor) for full methodology,
 variability and the retained slower cases.
+
+CEIL and its CEILING alias use the same operand reuse, including mixed nested FLOOR/CEIL
+and widening chains. Independent CEIL 1,024-row controls improve 6.55–20.48x over stock and
+59.28–130.92x over the preceding callback. The 16-row cases remain slower than stock. Complete
+stock/previous/candidate medians are 0.127985/0.154719/0.139331s, retaining both transposes.
+The allocation probe again requests 13 allocations / 606 bytes with shared result buffers.
+These limits and [the full CEIL measurements](../benchmarks/scalar-functions.md#integer-ceil-ceiling)
+remain explicit; the common operand path introduces no separate rounding loop to optimize.

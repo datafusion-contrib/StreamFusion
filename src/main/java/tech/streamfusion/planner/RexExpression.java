@@ -2567,10 +2567,11 @@ final class RexExpression {
       return emitFloatUnary(call, 62);
     }
     if ("FLOOR".equals(functionName)) {
-      if (nativeIntegralFloor(call)) return emit(call.getOperands().get(0));
+      if (nativeIntegralRounding(call)) return emit(call.getOperands().get(0));
       return emitFloatUnary(call, 63);
     }
     if ("CEIL".equals(functionName) || "CEILING".equals(functionName)) {
+      if (nativeIntegralRounding(call)) return emit(call.getOperands().get(0));
       return emitFloatUnary(call, 64);
     }
     if ("SIGN".equals(functionName)) {
@@ -4038,10 +4039,9 @@ final class RexExpression {
       case "SIGN":
         return exact && !nativeIntegralSign(call);
       case "FLOOR":
-        return integral && call.getOperands().size() == 1 && !nativeIntegralFloor(call);
       case "CEIL":
       case "CEILING":
-        return integral && call.getOperands().size() == 1;
+        return integral && call.getOperands().size() == 1 && !nativeIntegralRounding(call);
       case "TRUNCATE":
         return integral
             || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(call.getOperands().get(0).getType());
@@ -4121,20 +4121,22 @@ final class RexExpression {
     }
   }
 
-  private static boolean nativeIntegralFloor(RexCall call) {
-    return call.getOperator()
-            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FLOOR
+  private static boolean nativeIntegralRounding(RexCall call) {
+    return (call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FLOOR
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CEIL)
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
         && call.getType().getSqlTypeName() == call.getOperands().get(0).getType().getSqlTypeName()
-        && nativeIntegralFloorOperand(call.getOperands().get(0));
+        && nativeIntegralRoundingOperand(call.getOperands().get(0));
   }
 
-  private static boolean nativeIntegralFloorOperand(RexNode node) {
+  private static boolean nativeIntegralRoundingOperand(RexNode node) {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralFloor(call)) return true;
+    if (nativeIntegralRounding(call)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())
@@ -4142,7 +4144,7 @@ final class RexExpression {
                 call.getOperands().get(0).getType().getSqlTypeName(),
                 call.getType().getSqlTypeName())
             >= 0
-        && nativeIntegralFloorOperand(call.getOperands().get(0));
+        && nativeIntegralRoundingOperand(call.getOperands().get(0));
   }
 
   private static boolean nativeIntegralSign(RexCall call) {
