@@ -819,3 +819,29 @@ The 1M-row stock/previous/native medians are 0.188721/0.261994/0.132958 seconds 
 both transposes. These measurements apply to the recorded workload, not every job.
 [Full TRUNCATE measurements](../benchmarks/scalar-functions.md#single-argument-integer-truncate)
 retain variability, consumed-work checks and complete-job boundaries.
+
+## Integer ROUND at literal positions
+
+Verified integer ROUND with a literal INT position in -38..38 uses an Arrow primitive
+kernel instead of the emitted scalar JVM callback. For negative positions it computes
+the remainder at the native width, truncates it and applies HALF_UP with wrapping
+arithmetic. When the power of ten exceeds that width, widened comparisons select zero
+or the wrapped positive/negative power. This follows Comet's native/widened split while
+preserving Flink's byte/short/int/long narrowing contract. No floating-point conversion
+or per-element BigDecimal is involved. Nonnegative positions share the input; a NULL
+position produces typed NULLs. Runtime/extreme positions and unverified producers retain
+the complete generated expression, including host exceptions.
+
+On both released Flink lines, 1,024-row release controls improve 6.43-41.38x over stock
+and 23.18-83.80x over the actual previous scalar callback. The 16-row controls still lose
+to stock (0.29-0.40x), while improving 19.93-23.71x over the callback. A native-only sample
+identifies scalar-function argument/result setup and destruction, Arrow allocation,
+Calc projection and checksum consumption as remaining small-batch costs. Overlapping
+sample frames are diagnostic, not independent CPU percentages; this does not establish
+a universal small-batch gain.
+
+The separate 1M-row job retains both transposes: stock/previous/candidate medians are
+0.143764/0.164713/0.139733 seconds. Ranges overlap; the short job does not establish
+sustained complete-job acceleration. The [full measurements and allocation probes](../benchmarks/scalar-functions.md#integer-round-with-a-literal-position)
+retain every trial and the slower controls. Generic Calc/perimeter work remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).

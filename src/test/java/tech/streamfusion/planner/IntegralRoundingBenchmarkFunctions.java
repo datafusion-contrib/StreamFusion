@@ -23,6 +23,7 @@ public final class IntegralRoundingBenchmarkFunctions {
   private static RowData[] rows;
   private static String element;
   private static String schema;
+  private static int resultCode;
   private static volatile long consumed;
 
   private IntegralRoundingBenchmarkFunctions() {}
@@ -37,7 +38,11 @@ public final class IntegralRoundingBenchmarkFunctions {
                 table.sqlQuery(
                     "SELECT "
                         + System.getProperty("sf.integral.rounding.function", "FLOOR")
-                        + "(v) FROM inputs"))
+                        + "(v"
+                        + (Integer.getInteger("sf.integral.rounding.position") == null
+                            ? ""
+                            : "," + Integer.getInteger("sf.integral.rounding.position"))
+                        + ") FROM inputs"))
             .getQueryOperation();
     return (Project) ((PlannerQueryOperation) query).getCalciteTree();
   }
@@ -80,6 +85,47 @@ public final class IntegralRoundingBenchmarkFunctions {
   public static int register(String type) throws Exception {
     var project = project(type);
     var encoded = RexExpression.encodeProjections(project.getProjects(), java.util.List.of("v"));
+    if (Integer.getInteger("sf.integral.rounding.position") != null) {
+      if (encoded == null
+          || encoded.kinds()[0] != 6
+          || encoded.payload()[0] != 230
+          || !encoded.jvmFunctionCalls().isEmpty()) {
+        throw new IllegalStateException("The candidate must use native integer ROUND positions");
+      }
+      LogicalType valueType =
+          LogicalTypeParser.parse(type, IntegralRoundingBenchmarkFunctions.class.getClassLoader());
+      var function =
+          FlinkExpressionGenerator.generate(
+              project.getProjects().get(0),
+              new LogicalType[] {valueType},
+              org.apache.flink.table.api.TableConfig.getDefault(),
+              IntegralRoundingBenchmarkFunctions.class.getClassLoader());
+      switch (type) {
+        case "TINYINT":
+          resultCode = NativeUdf.TYPE_BYTE;
+          break;
+        case "SMALLINT":
+          resultCode = NativeUdf.TYPE_SHORT;
+          break;
+        case "INT":
+          resultCode = NativeUdf.TYPE_INT;
+          break;
+        case "BIGINT":
+          resultCode = NativeUdf.TYPE_LONG;
+          break;
+        default:
+          throw new IllegalArgumentException(type);
+      }
+      var descriptor =
+          NativeUdf.Descriptor.forFunction(
+              function,
+              FlinkExpressionFunction.class.getMethod("eval", Object[].class),
+              new int[] {resultCode},
+              resultCode);
+      previousBinding =
+          new NativeUdf.Binding(new NativeUdf.Descriptor[] {descriptor}, new int[] {0});
+      return (int) open(previousBinding);
+    }
     if (encoded == null
         || !java.util.Arrays.equals(encoded.kinds(), new int[] {0})
         || !java.util.Arrays.equals(encoded.payload(), new int[] {0})
@@ -95,6 +141,10 @@ public final class IntegralRoundingBenchmarkFunctions {
 
   public static String schema() {
     return schema;
+  }
+
+  public static int resultCode() {
+    return resultCode;
   }
 
   public static void prepare(String type, boolean nullable, boolean binary, int count)

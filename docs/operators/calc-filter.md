@@ -1414,11 +1414,32 @@ Verified direct inputs, typed literals, recursive lossless widening and nested a
 integer rounding reuse the native operand expression without a JVM evaluator, a floating
 conversion or a new values buffer. Signed minima, exact BIGINTs, NULLs and resolved widths
 are preserved. Arithmetic, narrowing and other unverified producers retain their complete
-generated rounding program. Every explicit scale, including zero, retains the existing
-generated path: negative positions can overflow and wrap, and extreme positions can fail
-inside released Flink's decimal rounding. DECIMAL and floating ROUND are unchanged.
+generated rounding program. Explicit positions use the bounded native path below;
+unverified positions retain generated evaluation, including extreme-position failures.
+DECIMAL and floating ROUND are unchanged.
 [Release measurements](../benchmarks/scalar-functions.md#single-argument-integer-round)
 retain the slower small-batch and complete-job controls as well as the bulk-batch gains.
+
+### Integer ROUND with a literal position
+
+Integer `ROUND(value, literal_position)` runs in Rust for TINYINT, SMALLINT, INT and BIGINT
+with INT positions from -38 through 38, or a typed NULL position. Direct inputs/literals,
+recursive lossless widening and nested admitted integer rounding retain their declared width.
+Ties round away from zero; an overflowing rounded value wraps to the resolved Java width,
+including BIGINT values beyond 2^53 and rounding to 10^19. Nonnegative positions share the
+input array, a NULL position produces typed NULLs, and negative positions allocate values
+while sharing sliced validity. The input remains unchanged.
+
+The kernel follows Comet's native-width/widened integer split, with Flink's HALF_UP and
+wrapping contract. It does not use floating point. Runtime positions, literals outside -38..38,
+arithmetic, narrowing and other unverified producers retain generated evaluation. In particular,
+released Flink throws for nonzero `ROUND(value, 2147483647)` while zero returns zero;
+the ordinary nonnegative-position identity must not erase that behavior. CASE and empty
+filtered batches retain their existing evaluation guards. This changes computation inside
+an already-admitted Calc and adds no configuration switch.
+[Release measurements](../benchmarks/scalar-functions.md#integer-round-with-a-literal-position)
+include both Flink lines, the actual previous scalar callback, slower small-batch controls
+and a complete job retaining both transposes.
 
 ### Single-argument integer TRUNCATE
 
@@ -2807,7 +2828,7 @@ own conversions and math functions. This preserves deterministic last-bit result
 zero, NaN, infinities, domain results and NULL behavior.
 
 Non-DECIMAL ROUND and INT/BIGINT TRUNCATE use generated evaluation outside the verified
-single-argument integer paths above. FLOAT TRUNCATE also uses generated evaluation,
+single-argument integer and literal-position ROUND paths above. FLOAT TRUNCATE also uses generated evaluation,
 including runtime INT scales.
 Independently emitted DOUBLE TRUNCATE uses an exact
 [bounded shortcut](../optimizations/host-exact-builtins-upcall.md#bounded-double-truncate):

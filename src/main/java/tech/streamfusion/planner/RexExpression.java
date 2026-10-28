@@ -2837,6 +2837,7 @@ final class RexExpression {
         || call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE) {
       if (nativeIntegralRounding(call)) return emit(call.getOperands().get(0));
+      if (nativeIntegralRoundPosition(call)) return emitBuiltinCall(call, 230);
       if (!call.getOperands().isEmpty()
           && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL) {
         return emitDecimalRound(call);
@@ -4333,6 +4334,7 @@ final class RexExpression {
         return input != SqlTypeName.DECIMAL
             && SqlTypeFamily.NUMERIC.contains(call.getOperands().get(0).getType())
             && !nativeIntegralRounding(call)
+            && !nativeIntegralRoundPosition(call)
             && !NativeConfig.allowsIncompatible("ROUND");
       case "EXP":
       case "LN":
@@ -4425,11 +4427,25 @@ final class RexExpression {
         && nativeIntegralRoundingOperand(call.getOperands().get(0));
   }
 
+  private static boolean nativeIntegralRoundPosition(RexCall call) {
+    if (call.getOperator()
+            != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
+        || call.getOperands().size() != 2
+        || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
+        || call.getType().getSqlTypeName() != call.getOperands().get(0).getType().getSqlTypeName()
+        || !(call.getOperands().get(1) instanceof RexLiteral)
+        || call.getOperands().get(1).getType().getSqlTypeName() != SqlTypeName.INTEGER
+        || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return false;
+    var position = (RexLiteral) call.getOperands().get(1);
+    Integer value = position.getValueAs(Integer.class);
+    return position.isNull() || value != null && value >= -38 && value <= 38;
+  }
+
   private static boolean nativeIntegralRoundingOperand(RexNode node) {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralRounding(call)) return true;
+    if (nativeIntegralRounding(call) || nativeIntegralRoundPosition(call)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())

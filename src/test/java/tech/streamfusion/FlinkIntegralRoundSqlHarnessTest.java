@@ -86,8 +86,8 @@ class FlinkIntegralRoundSqlHarnessTest {
             "ROUND(v+1)",
             "ROUND(-v)",
             "ROUND(CAST(CAST(v AS SMALLINT) AS INT))",
-            "ROUND(v, 0)",
-            "ROUND(v, -1)",
+            "ROUND(v, -39)",
+            "ROUND(v, 39)",
             "ROUND(v, id-1)",
             "ROUND(1/(id-id))")) {
       var table = environment("INT");
