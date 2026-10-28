@@ -2248,6 +2248,12 @@ Other collection boundary restrictions remain in force. Runtime coverage compare
 resolved schemas and consumed native local/global work for ARRAY of INT, FLOAT, DOUBLE,
 STRING, DECIMAL, ROW and ARRAY, plus year-month/day-time intervals. Recovery covers memory
 and native RocksDB state with two successive restores, with retention enabled and disabled.
+Checkpoint drains can split local/global mini-batches differently from an uninterrupted
+job, producing different valid intermediate updates. The recovery fixture compares each
+engine's materialized changelog against an explicit nonempty table containing duplicate,
+filtered and NULL inputs. It also checks resolved types, both completed restores and
+positive consumed work in both native aggregate stages. This avoids treating batch
+boundaries as SQL result semantics or allowing two empty final tables to pass by cancellation.
 
 Released Flink's `AggregateUtil.createDistinctKeyType` rejects single-argument DISTINCT
 BINARY, VARBINARY, MAP, ROW and MULTISET keys on both supported lines. These retain the

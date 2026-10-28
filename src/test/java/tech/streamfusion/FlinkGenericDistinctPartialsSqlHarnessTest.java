@@ -186,6 +186,19 @@ class FlinkGenericDistinctPartialsSqlHarnessTest {
       throws Exception {
     var inputs = new ArrayList<Row>();
     for (int i = 0; i < 12; i++) inputs.addAll(rows(true));
+    var expected = new HashMap<List<Object>, Long>();
+    for (Integer key : Arrays.asList(null, 1)) {
+      inputs.add(Row.of(key, 6, true, "6"));
+      inputs.add(Row.of(key, 6, false, "6"));
+      inputs.add(Row.of(key, 7, false, "7"));
+      inputs.add(Row.of(key, null, null, null));
+      if (type.startsWith("STRING_KEY_")) {
+        expected.put(
+            Arrays.asList(key == null ? null : key.toString(), 2L, 1L, 2L, 2L, "7", 4L), 1L);
+      } else {
+        expected.put(Arrays.asList(key, 2L, 1L, 2L, 4L), 1L);
+      }
+    }
     try (var recovery =
         new PortableSqlRecovery(backend, inputs, INPUT_TYPE, SCHEMA, true, 8, 24)
             .withExecutionMetrics()) {
@@ -194,7 +207,12 @@ class FlinkGenericDistinctPartialsSqlHarnessTest {
               () -> configure(recovery.uninterrupted(), "TWO_PHASE", retained),
               () -> configure(recovery.get(), "TWO_PHASE", retained),
               query(type, "recovery_input"));
-      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertNull(runs.host().failure(), runs::toString);
+      assertNull(runs.nativeRun().failure(), runs::toString);
+      assertEquals(NativeFailureParity.Route.NATIVE, runs.nativeRun().route());
+      // Checkpoint drains can change intermediate mini-batch updates, but not the final table.
+      assertEquals(expected, SqlAuditHarness.materialized(runs.host().rows()), runs::toString);
+      assertEquals(expected, SqlAuditHarness.materialized(runs.nativeRun().rows()), runs::toString);
       assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
       recovery.verifyRepeatedRecovery();
       RecoveryExecutionMetrics.assertConsumed(
