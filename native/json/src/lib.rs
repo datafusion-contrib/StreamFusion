@@ -4,6 +4,8 @@ use streamfusion_bridge::prelude::*;
 use streamfusion_bridge::{self as bridge, flink_text, json_string, *};
 use streamfusion_format_support::*;
 streamfusion_bridge::link_allocator!();
+mod canal_filter;
+use canal_filter::*;
 mod formats;
 #[allow(unused_imports)]
 use formats::*;
@@ -13,6 +15,7 @@ streamfusion_format_support::format_jni_facade!(
     Java_tech_streamfusion_format_json_NativeJsonFormat_isLoaded,
     Java_tech_streamfusion_format_json_NativeJsonFormat_nativeBuildVersion,
     Java_tech_streamfusion_format_json_NativeJsonFormat_decodeInto,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_decodeRecordsInto,
     Java_tech_streamfusion_format_json_NativeJsonFormat_closeDecoder
 );
 mod json;

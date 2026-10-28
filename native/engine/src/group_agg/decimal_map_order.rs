@@ -1,6 +1,6 @@
 //! Iteration order of same-scale decimal membership in a Java HashMap.
 
-use super::java_map_order::JavaMapOrder;
+use streamfusion_bridge::java_map_order::JavaMapOrder;
 
 pub(super) struct DecimalMapOrder {
     scale: i8,

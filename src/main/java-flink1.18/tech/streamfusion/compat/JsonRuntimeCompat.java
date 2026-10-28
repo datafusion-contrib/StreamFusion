@@ -11,6 +11,13 @@ public final class JsonRuntimeCompat {
 
   public static final boolean ACCEPTS_ARRAY_ROOTS = false;
 
+  /**
+   * Whether the JSON format's collector path hands its collector a null row for an object it
+   * skips under {@code ignore-parse-errors} (the parser path's array-capable deserialize). The
+   * single-row deserialize of earlier lines returns that null instead, and it is dropped.
+   */
+  public static final boolean COLLECTS_SKIPPED_OBJECTS_AS_NULL = false;
+
   public static final boolean PRESERVES_DECIMAL_SCALE = false;
 
   public static boolean verifiedFactory(JsonFactory factory) {

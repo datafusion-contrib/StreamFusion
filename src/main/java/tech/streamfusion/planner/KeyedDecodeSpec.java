@@ -3,33 +3,40 @@ package tech.streamfusion.planner;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.connectors.kafka.table.KafkaConnectorOptions;
+import org.apache.flink.streaming.connectors.kafka.table.KafkaConnectorOptions.ValueFieldsStrategy;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.format.NativeFormatContext;
 import tech.streamfusion.format.NativeFormatOptions;
+import tech.streamfusion.format.NativeFormatProvider;
 import tech.streamfusion.format.NativeFormatProviders;
 
 /**
- * A keyed Kafka table the shallow decode path reproduces natively: {@code key.format = 'raw'} with
- * one key field, mirroring Flink's key/value merge exactly — the raw key format produces exactly
- * one key row per record (a NULL Kafka key keeps the record with a NULL key column, raw's special
- * null-key rule), so the merge is the value rows with the record's key attached, no cartesian
- * machinery. The resolution mirrors {@code KafkaConnectorOptionsUtil.createKeyFormatProjection} /
- * {@code createValueFormatProjection}: {@code key.fields} names resolve against the physical
- * schema with the mandatory {@code key.fields-prefix}, {@code value.fields-include = ALL} keeps
- * every physical field in the value decode (whose fields then win the overlap, exactly Flink's
- * emit order) while {@code EXCEPT_KEY} removes the key position. Anything the increment doesn't
- * reproduce resolves to null — the planner's fallback gate: a non-raw key format, multiple key
- * fields, an unresolvable name, {@code ALL} with a non-empty prefix (Flink's own rejection), or a
- * value format outside JSON/CSV/raw (the registry Avro paths derive their schemas from the gated
- * row type and stay on Flink for keyed tables for now).
+ * A keyed Kafka table the decode path reproduces natively, mirroring Flink's key/value merge. The
+ * resolution follows {@code KafkaConnectorOptionsUtil.createKeyFormatProjection} /
+ * {@code createValueFormatProjection} (package-private, so by rule, over Flink's own option
+ * parsing): {@code key.fields} names resolve against the physical schema in list order and carry
+ * the {@code key.fields-prefix}, which the key format's field names drop; {@code
+ * value.fields-include = ALL} keeps every physical field in the value decode (whose fields then win
+ * the overlap, exactly Flink's emit order) while {@code EXCEPT_KEY} removes the key positions.
+ *
+ * <p>The key format must be decodable by the value format's native library: {@code raw}, which
+ * every library carries, or the value's own format. Its options come from {@code key.<format>.*}
+ * like Flink's key format factory reads them, and the key format's own provider gates them and
+ * renders the lines its native key decoder is built from. Anything else resolves to null — the
+ * planner's fallback gate: a key format another library decodes, an unresolvable or repeated field,
+ * {@code ALL} with a non-empty prefix (Flink's own rejection), no value fields at all (Flink then
+ * emits key-only rows, while a native value decode needs at least one column), a key option the
+ * native decode can't reproduce, or a value format outside JSON, CSV, raw, Avro and Avro
+ * Confluent.
  */
-final class KeyedDecodeSpec {
+public final class KeyedDecodeSpec {
   private final Map<String, String> optionsWithMarkers;
   private final RowType valueRowType;
 
@@ -39,89 +46,105 @@ final class KeyedDecodeSpec {
   }
 
   /** The table options plus the {@code streamfusion.keyed.*} markers the native decode reads. */
-  Map<String, String> optionsWithMarkers() {
+  public Map<String, String> optionsWithMarkers() {
     return optionsWithMarkers;
   }
 
   /** The row type the value format decodes — the physical schema projected to the value positions. */
-  RowType valueRowType() {
+  public RowType valueRowType() {
     return valueRowType;
   }
 
-  static KeyedDecodeSpec resolve(Map<String, String> options, RowType physical) {
-    if (physical == null || !"raw".equals(options.get("key.format"))) {
+  public static KeyedDecodeSpec resolve(Map<String, String> options, RowType physical) {
+    String keyFormat = options.get("key.format");
+    if (physical == null || keyFormat == null) {
       return null;
     }
-    int valueFormat =
-        FormatCodes.forIdentifier(NativeFormatProviders.formatIdentifier(options));
-    if (valueFormat != FormatCodes.JSON
-        && valueFormat != FormatCodes.CSV
-        && valueFormat != FormatCodes.RAW) {
+    String valueFormat = NativeFormatProviders.formatIdentifier(options);
+    int valueCode = FormatCodes.forIdentifier(valueFormat);
+    if (valueCode != FormatCodes.JSON
+        && valueCode != FormatCodes.CSV
+        && valueCode != FormatCodes.RAW
+        && valueCode != FormatCodes.AVRO
+        && valueCode != FormatCodes.AVRO_CONFLUENT) {
       return null;
     }
-    String fields = options.get("key.fields");
-    if (fields == null || fields.contains(";") || fields.contains(",")) {
-      return null; // raw is a single-column format; Flink's list separator is ';'
-    }
-    String prefix = options.getOrDefault("key.fields-prefix", "");
-    String name = fields.trim();
-    if (!name.startsWith(prefix)) {
+    if (!"raw".equals(keyFormat) && !keyFormat.equals(valueFormat)) {
       return null;
     }
-    int keyPosition = physical.getFieldNames().indexOf(name);
-    if (keyPosition < 0) {
+    Configuration config = Configuration.fromMap(options);
+    List<String> keyFields = config.get(KafkaConnectorOptions.KEY_FIELDS);
+    String prefix = config.getOptional(KafkaConnectorOptions.KEY_FIELDS_PREFIX).orElse("");
+    if (keyFields == null || keyFields.isEmpty() || prefix.contains("\n") || prefix.contains("\r")) {
       return null;
     }
-    String include = options.getOrDefault("value.fields-include", "ALL").toUpperCase(Locale.ROOT);
+    List<String> names = physical.getFieldNames();
+    List<Integer> keyPositions = new ArrayList<>();
+    for (String field : keyFields) {
+      int position = names.indexOf(field);
+      if (position < 0 || !field.startsWith(prefix) || keyPositions.contains(position)) {
+        return null;
+      }
+      keyPositions.add(position);
+    }
     List<Integer> valuePositions;
-    if ("ALL".equals(include)) {
+    if (config.get(KafkaConnectorOptions.VALUE_FIELDS_INCLUDE) == ValueFieldsStrategy.ALL) {
       if (!prefix.isEmpty()) {
         return null; // Flink rejects a key prefix with ALL — field overlaps
       }
+      valuePositions = IntStream.range(0, names.size()).boxed().collect(ListCollectors.toList());
+    } else {
       valuePositions =
-          IntStream.range(0, physical.getFieldCount()).boxed().collect(ListCollectors.toList());
-    } else if ("EXCEPT_KEY".equals(include)) {
-      valuePositions =
-          IntStream.range(0, physical.getFieldCount())
-              .filter(position -> position != keyPosition)
+          IntStream.range(0, names.size())
+              .filter(position -> !keyPositions.contains(position))
               .boxed()
               .collect(ListCollectors.toList());
-    } else {
+    }
+    if (valuePositions.isEmpty()) {
       return null;
     }
-    // The key column decodes through the raw provider verbatim — its gate owns the type
-    // allowlist, the UTF-8 charset rule, and endianness validation. The key format's options
-    // live only under key.raw.* with the factory defaults otherwise, like the sink side.
+    // The key context looks like a table of the key format: its options live under
+    // key.<format>.* with the factory defaults otherwise, and its fields drop the prefix.
     Map<String, String> keyOptions = new HashMap<>();
-    keyOptions.put("format", "raw"); // the key context looks like a raw-format table's options
-    copy(options, "key.raw.charset", keyOptions, "raw.charset");
-    copy(options, "key.raw.endianness", keyOptions, "raw.endianness");
-    RowType keyRowType =
-        RowType.of(
-            new org.apache.flink.table.types.logical.LogicalType[] {
-              physical.getTypeAt(keyPosition)
-            },
-            new String[] {name.substring(prefix.length())});
-    boolean keySupported =
-        NativeFormatProviders.forIdentifier("raw")
-            .map(
-                provider ->
-                    provider.supports(
-                        new NativeFormatContext(keyRowType, keyRowType, keyOptions, false)))
-            .orElse(false);
-    if (!keySupported) {
+    keyOptions.put("format", keyFormat);
+    String keyOptionPrefix = "key." + keyFormat + ".";
+    options.forEach(
+        (key, value) -> {
+          if (key.startsWith(keyOptionPrefix)) {
+            keyOptions.put(keyFormat + "." + key.substring(keyOptionPrefix.length()), value);
+          }
+        });
+    List<RowType.RowField> keyFieldTypes = new ArrayList<>();
+    for (int position : keyPositions) {
+      keyFieldTypes.add(
+          new RowType.RowField(
+              names.get(position).substring(prefix.length()), physical.getTypeAt(position)));
+    }
+    RowType keyRowType = new RowType(false, keyFieldTypes);
+    boolean keySkipsErrors = KafkaTables.ignoreParseErrors(keyOptions);
+    NativeFormatProvider keyProvider = NativeFormatProviders.forIdentifier(keyFormat).orElse(null);
+    if (keyProvider == null || (keySkipsErrors && !keyProvider.supportsIgnoreParseErrors())) {
+      return null;
+    }
+    String keyLines =
+        keyProvider.keyDecoderOptions(
+            new NativeFormatContext(keyRowType, keyRowType, keyOptions, keySkipsErrors));
+    if (keyLines == null) {
       return null;
     }
     Map<String, String> withMarkers = new HashMap<>(options);
-    withMarkers.put(NativeFormatOptions.KEYED_KEY_POSITION, String.valueOf(keyPosition));
     withMarkers.put(
-        NativeFormatOptions.KEYED_VALUE_POSITIONS,
-        valuePositions.stream().map(String::valueOf).collect(Collectors.joining(",")));
-    String endianness = options.get("key.raw.endianness");
-    if (endianness != null) {
-      withMarkers.put(
-          NativeFormatOptions.KEYED_KEY_ENDIANNESS, endianness.toLowerCase(Locale.ROOT));
+        NativeFormatOptions.KEYED_KEY_FORMAT,
+        String.valueOf(FormatCodes.forIdentifier(keyFormat)));
+    withMarkers.put(NativeFormatOptions.KEYED_KEY_POSITIONS, joined(keyPositions));
+    withMarkers.put(NativeFormatOptions.KEYED_VALUE_POSITIONS, joined(valuePositions));
+    if (!prefix.isEmpty()) {
+      withMarkers.put(NativeFormatOptions.KEYED_KEY_PREFIX, prefix);
     }
+    if (keySkipsErrors) {
+      withMarkers.put(NativeFormatOptions.KEYED_KEY_SKIP_ERRORS, "true");
+    }
+    withMarkers.put(NativeFormatOptions.KEYED_KEY_OPTIONS, keyLines);
     List<RowType.RowField> valueFields = new ArrayList<>();
     for (int position : valuePositions) {
       valueFields.add(physical.getFields().get(position));
@@ -129,11 +152,7 @@ final class KeyedDecodeSpec {
     return new KeyedDecodeSpec(Map.copyOf(withMarkers), new RowType(false, valueFields));
   }
 
-  private static void copy(
-      Map<String, String> from, String key, Map<String, String> to, String as) {
-    String value = from.get(key);
-    if (value != null) {
-      to.put(as, value);
-    }
+  private static String joined(List<Integer> positions) {
+    return positions.stream().map(String::valueOf).collect(Collectors.joining(","));
   }
 }

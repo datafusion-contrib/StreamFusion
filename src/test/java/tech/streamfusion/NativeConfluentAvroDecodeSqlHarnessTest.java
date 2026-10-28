@@ -18,6 +18,7 @@ import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.BinaryEncoder;
 import org.apache.avro.io.EncoderFactory;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -71,11 +72,19 @@ class NativeConfluentAvroDecodeSqlHarnessTest {
           .requiredLong("id")
           .endRecord();
 
+  private static final Schema KEY =
+      SchemaBuilder.record("UserKey")
+          .namespace("com.example")
+          .fields()
+          .requiredLong("id")
+          .requiredString("region")
+          .endRecord();
+
   private static HttpServer registry;
 
   @BeforeAll
   static void startRegistry() throws Exception {
-    Map<Integer, Schema> schemas = Map.of(7, WRITER_V1, 9, WRITER_V2);
+    Map<Integer, Schema> schemas = Map.of(7, WRITER_V1, 9, WRITER_V2, 11, KEY);
     registry = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
     registry.createContext(
         "/schemas/ids/",
@@ -118,6 +127,72 @@ class NativeConfluentAvroDecodeSqlHarnessTest {
       NativeParity.assertParity(
           environment(kafka.getBootstrapServers(), "confluent-avro"),
           "SELECT name, score FROM t WHERE id > 100");
+    }
+  }
+
+  /**
+   * A keyed table whose key and value are both Confluent-framed, read with connector metadata: each
+   * side resolves its frames through the registry, a null key yields no key row (its record emits
+   * nothing), and the native source's decode counter accounts for every record it read.
+   */
+  @Test
+  void confluentAvroKeysAndMetadataMatchFlink() throws Exception {
+    try (KafkaContainer kafka =
+            new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
+        RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics()) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      String registryUrl = "http://localhost:" + registry.getAddress().getPort();
+      Properties props = new Properties();
+      props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
+      props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+      props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+      try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(props)) {
+        for (int i = 0; i < 300; i++) {
+          GenericRecord key = new GenericData.Record(KEY);
+          key.put("id", (long) i);
+          key.put("region", "r" + i % 4);
+          GenericRecord value = new GenericData.Record(WRITER_V2);
+          value.put("id", (long) i);
+          value.put("name", "row-" + i);
+          value.put("score", i % 3 == 0 ? null : i + 0.5);
+          producer.send(
+              new ProducerRecord<>(
+                  "confluent-avro-keyed",
+                  0,
+                  1_000L + i,
+                  i % 9 == 0 ? null : framed(11, KEY, key),
+                  framed(9, WRITER_V2, value)));
+        }
+        producer.flush();
+      }
+      Supplier<TableEnvironment> environment =
+          () -> {
+            StreamTableEnvironment tEnv =
+                StreamTableEnvironment.create(metrics.environment(new Configuration(), 1, 0));
+            tEnv.getConfig().set("table.local-time-zone", "UTC");
+            tEnv.executeSql(
+                "CREATE TABLE t (k_id BIGINT, k_region STRING, name STRING, score DOUBLE,"
+                    + " off BIGINT METADATA FROM 'offset',"
+                    + " ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp') WITH ("
+                    + "'connector' = 'kafka', 'topic' = 'confluent-avro-keyed',"
+                    + " 'properties.bootstrap.servers' = '" + brokers + "',"
+                    + " 'properties.group.id' = 'confluent-avro-keyed',"
+                    + " 'scan.startup.mode' = 'earliest-offset',"
+                    + " 'scan.bounded.mode' = 'latest-offset',"
+                    + " 'key.format' = 'avro-confluent', 'key.avro-confluent.url' = '"
+                    + registryUrl
+                    + "', 'key.fields' = 'k_id;k_region', 'key.fields-prefix' = 'k_',"
+                    + " 'value.format' = 'avro-confluent', 'value.avro-confluent.url' = '"
+                    + registryUrl
+                    + "', 'value.fields-include' = 'EXCEPT_KEY')");
+            return tEnv;
+          };
+
+      NativeParity.assertParity(environment, "SELECT k_id, k_region, name, score, off, ts FROM t");
+
+      org.junit.jupiter.api.Assertions.assertEquals(
+          300, metrics.counterValue("nativeKafkaDecodeRecords"));
     }
   }
 

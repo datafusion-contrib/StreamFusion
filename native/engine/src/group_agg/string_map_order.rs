@@ -1,6 +1,6 @@
-use super::java_map_order::JavaMapOrder;
 use crate::flink_key::string_distinct_map_hash;
 use std::sync::Arc;
+use streamfusion_bridge::java_map_order::JavaMapOrder;
 
 pub(super) struct StringMapOrder {
     order: JavaMapOrder<usize>,

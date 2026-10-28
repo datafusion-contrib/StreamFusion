@@ -23,6 +23,14 @@ base64 read (whitespace between four-char groups, padding required, declared len
 enforced), down to its corrupted-input drop granularity. The CDC dialects treat an array-rooted
 envelope as a corrupt message, as Flink does.
 
+As a [Kafka key format](../kafka.md#keyed-tables) over a JSON value, `json` decodes keys with the
+same coercions and its own `key.json.*` options: a null or empty key yields no key row and a
+top-level array fans out (Flink 1.18 rejects it), so the record emits a row per key and value row
+pair. On Flink 2.2 a key with `key.json.ignore-parse-errors` stays on Flink, whose merge
+dereferences the null row its JSON format collects for a skipped key object. A `null` element of
+a key array is such a null key row on 2.2 even without that option, and the native decode trips
+over it as Flink's merge does (see [keyed tables](../kafka.md#keyed-tables)).
+
 On the SIMD scalar decode path, numeric and boolean trimming follows Java `String.trim()`
 (characters at or below U+0020), and integer strings accept Java's BMP decimal digits with
 exact width and overflow checks. Decimal strings also accept those digits. Float suffixes
@@ -38,6 +46,13 @@ allocating a divisor, while retaining Java's scale and supported-integer-range e
 Supported column types (recursively over ROW/ARRAY/MAP/MULTISET): BOOLEAN, TINYINT, SMALLINT,
 INT, BIGINT, FLOAT, DOUBLE, CHAR/VARCHAR, DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ, DECIMAL,
 VARBINARY.
+
+MAP and MULTISET values keep the entry order Flink's converters produce. Both converters fill a
+`java.util.HashMap` keyed by `StringData`, so entries iterate in its bucket order rather than in
+document order: a repeated key keeps its first position and last value, and resizes and tree bins
+follow the JDK's rules. Order is visible to `MAP_KEYS`, `MAP_ENTRIES`, casts to STRING and JSON
+sinks. Distinct keys with identical 32-bit hashes in one tree bin are ordered by first occurrence;
+the JDK breaks that tie by identity hash, so Flink's own order is not deterministic there.
 
 | Fallback condition | Why |
 |---|---|

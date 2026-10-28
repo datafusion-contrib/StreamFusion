@@ -24,6 +24,11 @@ Parity behaviors, pinned against Flink's converter by `AvroDecodeParityTest`:
 - A decimal whose digits exceed the declared precision decodes to NULL.
 - A null Kafka value (a tombstone) is dropped silently.
 
+Kafka [connector metadata](../kafka.md#connector-metadata) composes natively, and a
+[keyed table](../kafka.md#keyed-tables) decodes a `raw` or bare `avro` key beside the value: an
+Avro key's datums use the writer schema Flink derives from the key fields, and a null key yields no
+key row, so its record emits nothing.
+
 `avro.timestamp_mapping.legacy` is honored in both directions: the corrected (`false`) mapping
 derives `local-timestamp-millis`/`micros` for TIMESTAMP and unlocks TIMESTAMP_LTZ up to precision 6
 natively — but only at the top level. Flink itself rejects a nested TIMESTAMP_LTZ under the

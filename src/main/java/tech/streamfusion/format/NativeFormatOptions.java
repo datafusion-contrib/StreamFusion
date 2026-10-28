@@ -10,13 +10,22 @@ public final class NativeFormatOptions {
   private NativeFormatOptions() {}
 
   /** Keyed-table markers the planner injects into the table options (see the connector's
-   * {@code KeyedDecodeSpec}): the physical position the raw-decoded Kafka key fills, the positions
-   * the value decode fills, and the key's endianness. {@link #encode} forwards them as
-   * {@code keyed.*} option lines, so the keyed composition needs no new SPI or JNI surface. */
-  public static final String KEYED_KEY_POSITION = "streamfusion.keyed.key-position";
+   * {@code KeyedDecodeSpec}): the key format's code, the physical positions its fields fill, the
+   * positions the value decode fills, the {@code key.fields-prefix} its field names drop, its skip
+   * mode, and its own option lines. {@link #encode} forwards them as {@code keyed.*} option lines,
+   * so the keyed composition needs no new SPI or JNI surface. */
+  public static final String KEYED_KEY_FORMAT = "streamfusion.keyed.key-format";
 
+  public static final String KEYED_KEY_POSITIONS = "streamfusion.keyed.key-positions";
   public static final String KEYED_VALUE_POSITIONS = "streamfusion.keyed.value-positions";
-  public static final String KEYED_KEY_ENDIANNESS = "streamfusion.keyed.key-endianness";
+  public static final String KEYED_KEY_PREFIX = "streamfusion.keyed.key-prefix";
+  public static final String KEYED_KEY_SKIP_ERRORS = "streamfusion.keyed.key-skip-errors";
+  public static final String KEYED_KEY_OPTIONS = "streamfusion.keyed.key-options";
+
+  /** The Kafka connector metadata columns the decode fills, as {@code position:key} pairs over the
+   * decoder's output schema (for example {@code 3:offset,4:timestamp}); {@link #encode} forwards
+   * them as the {@code metadata.columns} option line. */
+  public static final String METADATA_COLUMNS = "streamfusion.metadata.columns";
 
   /** A value-format option, resolved with Flink's own prefixing ({@code FactoryUtil.getFormatPrefix}):
    * {@code csv.field-delimiter} when the table uses {@code format = 'csv'}, but
@@ -41,21 +50,44 @@ public final class NativeFormatOptions {
    */
   public static String encode(Map<String, String> options) {
     String encoded = encodeFormat(options);
-    String keyPosition = options.get(KEYED_KEY_POSITION);
-    if (encoded == null || keyPosition == null) {
+    String metadata = options.get(METADATA_COLUMNS);
+    if (encoded != null && metadata != null) {
+      encoded = encoded + "metadata.columns=" + metadata + '\n';
+    }
+    String keyFormat = options.get(KEYED_KEY_FORMAT);
+    if (encoded == null || keyFormat == null) {
       return encoded;
     }
     StringBuilder keyed = new StringBuilder(encoded);
-    keyed.append("keyed.key-position=").append(keyPosition).append('\n');
+    keyed.append("keyed.key-format=").append(keyFormat).append('\n');
+    keyed.append("keyed.key-positions=").append(options.get(KEYED_KEY_POSITIONS)).append('\n');
     keyed
         .append("keyed.value-positions=")
         .append(options.get(KEYED_VALUE_POSITIONS))
         .append('\n');
-    String endianness = options.get(KEYED_KEY_ENDIANNESS);
-    if ("little-endian".equals(endianness)) {
-      keyed.append("keyed.key-endianness=little-endian\n");
+    String prefix = options.get(KEYED_KEY_PREFIX);
+    if (prefix != null) {
+      keyed.append("keyed.key-prefix=").append(prefix).append('\n');
+    }
+    if ("true".equals(options.get(KEYED_KEY_SKIP_ERRORS))) {
+      keyed.append("keyed.key-skip-errors=true\n");
+    }
+    for (String line : options.getOrDefault(KEYED_KEY_OPTIONS, "").split("\n")) {
+      if (!line.isEmpty()) {
+        keyed.append("keyed.key.").append(line).append('\n');
+      }
     }
     return keyed.toString();
+  }
+
+  /** One of a keyed table's key option lines ({@link #KEYED_KEY_OPTIONS}), or null when absent. */
+  public static String keyedKeyOption(Map<String, String> options, String key) {
+    for (String line : options.getOrDefault(KEYED_KEY_OPTIONS, "").split("\n")) {
+      if (line.startsWith(key + "=")) {
+        return line.substring(key.length() + 1);
+      }
+    }
+    return null;
   }
 
   private static String encodeFormat(Map<String, String> options) {

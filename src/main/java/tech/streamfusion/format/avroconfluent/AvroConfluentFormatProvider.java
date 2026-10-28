@@ -3,6 +3,7 @@ package tech.streamfusion.format.avroconfluent;
 import tech.streamfusion.format.EncodeFormat;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.format.NativeFormatContext;
+import tech.streamfusion.format.NativeFormatOptions;
 import tech.streamfusion.format.NativeFormatProvider;
 import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.format.avro.AvroDecodeGate;
@@ -26,6 +27,11 @@ public final class AvroConfluentFormatProvider implements NativeFormatProvider {
   }
 
   @Override
+  public boolean composesKafkaMetadata() {
+    return true;
+  }
+
+  @Override
   public boolean supportsIgnoreParseErrors() {
     return false;
   }
@@ -39,11 +45,34 @@ public final class AvroConfluentFormatProvider implements NativeFormatProvider {
         && AvroDecodeGate.supports(context.writerType(), true);
   }
 
+  /** A key's writer schemas come from its own registry; it resolves them to its fields' schema. */
+  @Override
+  public String keyDecoderOptions(NativeFormatContext context) {
+    if (!supports(context)) {
+      return null;
+    }
+    return "avro.reader-schema="
+        + AvroSchemaConverter.convertToSchema(context.outputType().copy(false))
+        + "\n";
+  }
+
   @Override
   public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
-    ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromOptions(context.options());
+    Map<String, String> options = context.options();
+    ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromOptions(options);
     String readerSchema = AvroSchemaConverter.convertToSchema(context.outputType().copy(false)).toString();
-    return () -> new RegistryAvroDecoder(registry, readerSchema, false);
+    String formatOptions = NativeFormatOptions.encode(options);
+    // A Confluent-framed key fetches its writer schemas through the key format's own registry.
+    boolean confluentKey =
+        String.valueOf(FormatCodes.AVRO_CONFLUENT)
+            .equals(options.get(NativeFormatOptions.KEYED_KEY_FORMAT));
+    ConfluentSchemaRegistry keyRegistry =
+        confluentKey ? ConfluentSchemaRegistry.fromKeyOptions(options) : null;
+    String keyReaderSchema =
+        confluentKey ? NativeFormatOptions.keyedKeyOption(options, "avro.reader-schema") : null;
+    return () ->
+        new RegistryAvroDecoder(
+            registry, readerSchema, false, formatOptions, keyRegistry, keyReaderSchema);
   }
 
   @Override

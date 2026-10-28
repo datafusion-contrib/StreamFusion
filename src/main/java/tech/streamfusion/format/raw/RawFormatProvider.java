@@ -54,6 +54,11 @@ public final class RawFormatProvider implements NativeFormatProvider {
   }
 
   @Override
+  public boolean composesKafkaMetadata() {
+    return true;
+  }
+
+  @Override
   public boolean honorsProjection() {
     return false;
   }
@@ -119,6 +124,20 @@ public final class RawFormatProvider implements NativeFormatProvider {
     @Override
     public void decodeInto(long inArray, long inSchema, long outArray, long outSchema) {
       NativeRawFormat.decodeInto(handle, inArray, inSchema, outArray, outSchema);
+    }
+
+    @Override
+    public void decodeRecordsInto(
+        long slabAddress,
+        long slabLength,
+        long[] layout,
+        int count,
+        String topic,
+        int partition,
+        long outArray,
+        long outSchema) {
+      NativeRawFormat.decodeRecordsInto(
+          handle, slabAddress, slabLength, layout, count, topic, partition, outArray, outSchema);
     }
 
     @Override

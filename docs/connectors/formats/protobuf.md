@@ -56,4 +56,6 @@ The decoder falls back to Flink's own deserializer, with each case caught at pla
   JSON-decoded formats honor the per-message skip natively; CSV reproduces Flink's finer per-field
   granularity — see each format's own page);
 - the schema contains a deprecated proto2 **group**, or a **recursive message** that cannot be
-  represented by a finite Arrow schema without choosing an arbitrary maximum depth.
+  represented by a finite Arrow schema without choosing an arbitrary maximum depth;
+- the Kafka table reads a [connector metadata](../kafka.md#connector-metadata) column, which the
+  native protobuf decoder doesn't compose yet.

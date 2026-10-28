@@ -1,0 +1,28 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], changes=[COUNT()], amount=[SUM($1)], score=[SUM($2)], named=[COUNT($3)])
++- LogicalProject(tenant=[$1], amount=[$3], $f2=[$4.score], name=[$2])
+   +- LogicalTableScan(table=[[default_catalog, default_database, cdc]])
+
+== Optimized Physical Plan ==
+NativeColumnarGroupAggregate(reuseBarrier=[273])
++- NativeColumnarExchange(reuseBarrier=[272])
+   +- NativeColumnarLocalGroupAggregate(reuseBarrier=[271])
+      +- NativeCalc(select=[tenant, amount, info.score AS $f2, name], nativeFunctions=[], jvmFunctions=[], reuseBarrier=[270])
+         +- NativeMiniBatchAssigner(reuseBarrier=[269])
+            +- RowDataToArrow(reuseBarrier=[268])
+               +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount, info, attrs, items])
+
+== Optimized Execution Plan ==
+NativeColumnarGroupAggregate
++- NativeColumnarExchange
+   +- NativeColumnarLocalGroupAggregate
+      +- NativeCalc(select=[tenant, amount, info.score AS $f2, name], nativeFunctions=[], jvmFunctions=[])
+         +- NativeMiniBatchAssigner
+            +- RowDataToArrow(fields=[4])
+               +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount, info, attrs, items])
+
+== Native acceleration (StreamFusion) ==
+4 operator(s) ran natively.
+No operators fell back to Flink.
+Function execution:
+  - NativeCalc functions: native=[], jvm=[]

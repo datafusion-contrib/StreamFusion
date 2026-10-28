@@ -1,0 +1,21 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], records=[COUNT()], amount=[SUM($1)], part=[MAX($2)], last_offset=[MAX($3)], latest=[MAX($4)], traced=[COUNT($5)])
++- LogicalProject(tenant=[$1], amount=[$3], part=[$4], off=[$5], ts=[$6], $f5=[ITEM($7, _UTF-16LE'trace')])
+   +- LogicalProject(id=[$0], tenant=[$1], name=[$2], amount=[$3], part=[CAST($4):INTEGER], off=[CAST($6):BIGINT], ts=[CAST($7):TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)], hdrs=[CAST($5):(VARCHAR(2147483647) CHARACTER SET "UTF-16LE", VARBINARY(2147483647)) MAP])
+      +- LogicalTableScan(table=[[default_catalog, default_database, cdc, metadata=[partition, headers, offset, timestamp]]])
+
+== Optimized Physical Plan ==
+GlobalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(count1$0) AS records, SUM(sum$1) AS amount, MAX(max$2) AS part, MAX(max$3) AS last_offset, MAX(max$4) AS latest, COUNT(count$5) AS traced])
++- Exchange(distribution=[hash[tenant]])
+   +- LocalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(*) AS count1$0, SUM(amount) AS sum$1, MAX(part) AS max$2, MAX(off) AS max$3, MAX(ts) AS max$4, COUNT($f5) AS count$5])
+      +- Calc(select=[tenant, amount, CAST(part AS INTEGER) AS part, CAST(off AS BIGINT) AS off, CAST(ts AS TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)) AS ts, ITEM(hdrs, _UTF-16LE'trace') AS $f5])
+         +- MiniBatchAssigner(interval=[1000ms], mode=[ProcTime])
+            +- TableSourceScan(table=[[default_catalog, default_database, cdc, metadata=[partition, headers, offset, timestamp]]], fields=[id, tenant, name, amount, part, hdrs, off, ts])
+
+== Optimized Execution Plan ==
+GlobalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(count1$0) AS records, SUM(sum$1) AS amount, MAX(max$2) AS part, MAX(max$3) AS last_offset, MAX(max$4) AS latest, COUNT(count$5) AS traced])
++- Exchange(distribution=[hash[tenant]])
+   +- LocalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(*) AS count1$0, SUM(amount) AS sum$1, MAX(part) AS max$2, MAX(off) AS max$3, MAX(ts) AS max$4, COUNT($f5) AS count$5])
+      +- Calc(select=[tenant, amount, CAST(part AS INTEGER) AS part, CAST(off AS BIGINT) AS off, CAST(ts AS TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)) AS ts, ITEM(hdrs, 'trace') AS $f5])
+         +- MiniBatchAssigner(interval=[1000ms], mode=[ProcTime])
+            +- TableSourceScan(table=[[default_catalog, default_database, cdc, metadata=[partition, headers, offset, timestamp]]], fields=[id, tenant, name, amount, part, hdrs, off, ts])

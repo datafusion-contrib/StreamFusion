@@ -104,6 +104,20 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public void decodeRecordsInto(
+        long slabAddress,
+        long slabLength,
+        long[] layout,
+        int count,
+        String topic,
+        int partition,
+        long outArray,
+        long outSchema) {
+      NativeProtobufFormat.decodeRecordsInto(
+          handle, slabAddress, slabLength, layout, count, topic, partition, outArray, outSchema);
+    }
+
+    @Override
     public long driverInitAddress() {
       return NativeProtobufFormat.driverInitAddress();
     }

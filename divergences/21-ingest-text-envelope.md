@@ -92,15 +92,24 @@ value — a job that runs on both engines produces identical results.
   raw control characters inside strings (`ALLOW_UNESCAPED_CONTROL_CHARS`), content trailing the
   root document (never read) — re-decode through a token walk that ports Flink's converters
   (`native/json/src/json_retry.rs`) and rewrite into sanitized rows for the fast-path appenders. The
-  CDC envelope dialects keep the spec-strict parse (their `old`-presence pre-scans mirror the
-  skip conditions row for row), so a Jackson-only CDC message still fails/drops as before; for
-  the same reason a FLOAT physical column in a CDC envelope (or on the decimal-bearing
+  CDC envelope dialects keep the spec-strict parse, so a Jackson-only CDC message still
+  fails/drops as before, even where Canal's include filters would have dropped it quietly in
+  Flink. The reverse also holds: the strict parse doesn't enforce Jackson's read limits (number
+  literals over 1,000 characters, nesting deeper than 1,000 levels), which Flink 2.2 applies to
+  the whole message, so where Flink calls such a message corrupt, a native filter that rejects it
+  drops it quietly and one that admits it decodes it. (A decimal-bearing CDC table's envelope decodes through arrow-json, which does read raw
+  control characters; the Maxwell/Canal `old`-presence scan then reads such an update through the
+  same tokenizer.) Likewise a FLOAT physical column in a CDC envelope (or on the decimal-bearing
   arrow-json path) keeps the tape's f64-then-narrow rounding, which is one ULP off Jackson's
   direct-to-float parse exactly when the f64 lands on an f32 rounding midpoint — the plain
   `json` format re-decodes those messages with the raw literal. Two
   tokenizer residuals, both message-level failures exactly like before the retry existed: an
   unpaired `\u` surrogate escape is rejected (Jackson carries the lone surrogate in its UTF-16
-  text, which Rust strings cannot hold), and invalid UTF-8 stays rejected.
+  text, which Rust strings cannot hold), and invalid UTF-8 stays rejected. One unpaired shape
+  never reaches the tokenizer: simd-json accepts a high surrogate escape that no `\u` escape
+  follows and decodes it as U+0000, where Flink's string conversion stores `?` (a decimal-bearing
+  schema's arrow-json decode rejects the message instead). Canal's include filters hand such a
+  value to Jackson, so their verdicts stay exact.
 - **A converter walk that runs past end-of-input fails/drops the message instead of hanging.**
   Certain cursor drifts make Flink's object loop poll a null token forever (`nextToken()` at
   end-of-input never yields the END_OBJECT the loop exits on) — a hung job. The native walk
@@ -128,9 +137,7 @@ value — a job that runs on both engines produces identical results.
   errors.** arrow-json is all-or-nothing per document, so a bad non-decimal value drops the whole
   message (or the whole fanned-out array element) where Flink nulls the field; the decimal cells
   themselves skip per field. The simd path (every schema without a DECIMAL) has Flink's exact
-  per-field granularity. On a decimal-bearing **Maxwell/Canal** table the same all-or-nothing
-  behavior can trip the `old`-presence alignment check under skip mode — a loud failure where
-  Flink skips, never a silent divergence.
+  per-field granularity.
 - **TIME/VARBINARY leaves on a decimal-bearing JSON schema ride arrow-json as coerced text**, and
   the coercion erases the token's type: a number or boolean token under such a column converts
   from its rendered literal, so a base64-shaped literal (`42`, `true`) decodes into a VARBINARY

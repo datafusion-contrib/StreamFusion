@@ -1,0 +1,27 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], records=[COUNT()], amount=[SUM($1)], part=[MAX($2)], last_offset=[MAX($3)], latest=[MAX($4)], traced=[COUNT($5)])
++- LogicalProject(tenant=[$1], amount=[$3], part=[$4], off=[$5], ts=[$6], $f5=[ITEM($7, _UTF-16LE'trace')])
+   +- LogicalProject(id=[$0], tenant=[$1], name=[$2], amount=[$3], part=[CAST($4):INTEGER], off=[CAST($6):BIGINT], ts=[CAST($7):TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)], hdrs=[CAST($5):(VARCHAR(2147483647) CHARACTER SET "UTF-16LE", VARBINARY(2147483647)) MAP])
+      +- LogicalTableScan(table=[[default_catalog, default_database, cdc, metadata=[partition, headers, offset, timestamp]]])
+
+== Optimized Physical Plan ==
+NativeColumnarGroupAggregate(reuseBarrier=[146])
++- NativeColumnarExchange(reuseBarrier=[145])
+   +- NativeColumnarLocalGroupAggregate(reuseBarrier=[144])
+      +- NativeCalc(select=[tenant, amount, CAST(part AS INTEGER) AS part, CAST(off AS BIGINT) AS off, CAST(ts AS TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)) AS ts, ITEM(hdrs, 'trace') AS $f5], nativeFunctions=[CAST], jvmFunctions=[], reuseBarrier=[143])
+         +- NativeMiniBatchAssigner(reuseBarrier=[142])
+            +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc, metadata=[partition, headers, offset, timestamp]]], fields=[id, tenant, name, amount, part, hdrs, off, ts], topic=[json-metadata-10000000-mvqq2sdg], format=[json], metadata=[{part=partition, hdrs=headers, off=offset, ts=timestamp}], reuseBarrier=[141])
+
+== Optimized Execution Plan ==
+NativeColumnarGroupAggregate
++- NativeColumnarExchange
+   +- NativeColumnarLocalGroupAggregate
+      +- NativeCalc(select=[tenant, amount, CAST(part AS INTEGER) AS part, CAST(off AS BIGINT) AS off, CAST(ts AS TIMESTAMP_WITH_LOCAL_TIME_ZONE(3)) AS ts, ITEM(hdrs, 'trace') AS $f5], nativeFunctions=[CAST], jvmFunctions=[])
+         +- NativeMiniBatchAssigner
+            +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc, metadata=[partition, headers, offset, timestamp]]], fields=[id, tenant, name, amount, part, hdrs, off, ts], topic=[json-metadata-10000000-mvqq2sdg], format=[json], metadata=[{part=partition, hdrs=headers, off=offset, ts=timestamp}])
+
+== Native acceleration (StreamFusion) ==
+5 operator(s) ran natively.
+No operators fell back to Flink.
+Function execution:
+  - NativeCalc functions: native=[CAST], jvm=[]

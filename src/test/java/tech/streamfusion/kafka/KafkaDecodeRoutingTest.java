@@ -1,8 +1,11 @@
 package tech.streamfusion.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Arrays;
+import java.util.regex.PatternSyntaxException;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -22,32 +25,233 @@ import tech.streamfusion.planner.NativePlanner;
 class KafkaDecodeRoutingTest {
 
   @Test
-  void metadataColumnKeepsTheScanOnFlink() {
-    // `ts` is filled by the connector from the record's Kafka timestamp; a native value decode
-    // would look for a "ts" key in the message body and emit NULL.
+  void everyConnectorMetadataColumnRoutesToTheNativeDecode() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(
-        table("id BIGINT, name STRING, ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'", "json"));
-    assertStaysOnFlink(tEnv, "SELECT id, name, ts FROM t");
+        table(
+            "id BIGINT, name STRING, tp STRING METADATA FROM 'topic',"
+                + " part INT METADATA FROM 'partition',"
+                + " hdrs MAP<STRING, BYTES> METADATA FROM 'headers',"
+                + " epoch INT METADATA FROM 'leader-epoch', off BIGINT METADATA FROM 'offset',"
+                + " ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp',"
+                + " tst STRING METADATA FROM 'timestamp-type'",
+            "json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT * FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode")
+            && plan.contains(
+                "metadata=[{tp=topic, part=partition, hdrs=headers, epoch=leader-epoch,"
+                    + " off=offset, ts=timestamp, tst=timestamp-type}]"),
+        "every connector metadata column should decode natively:\n" + plan);
   }
 
   @Test
-  void unreferencedMetadataColumnAlsoKeepsTheScanOnFlink() {
-    // Flink does not prune a declared metadata column from the Kafka scan even when the query never
-    // reads it — the scan still produces it, so the gate (which keys on what the scan produces)
-    // declines regardless of the projection.
+  void unreferencedMetadataColumnRoutesToo() {
+    // Flink keeps a declared metadata column in the Kafka scan even when the query never reads it.
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(
         table("id BIGINT, name STRING, ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'", "json"));
-    assertStaysOnFlink(tEnv, "SELECT id, name FROM t");
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
   }
 
   @Test
-  void metadataColumnGateAppliesToEveryInsertOnlyFormat() {
+  void metadataColumnsRouteForEveryInsertOnlyFormat() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(
-        table("id BIGINT, name STRING, ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'", "csv"));
-    assertStaysOnFlink(tEnv, "SELECT id, name, ts FROM t");
+        table("id BIGINT, name STRING, off BIGINT METADATA FROM 'offset'", "csv"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name, off FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void valueFormatMetadataKeepsTheScanOnFlink() {
+    // A CDC format's own metadata comes from the message envelope, which the decode doesn't read.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, name STRING, db STRING METADATA FROM 'value.database'", "canal-json"));
+    assertStaysOnFlink(tEnv, "SELECT id, name, db FROM t");
+  }
+
+  @Test
+  void connectorMetadataRoutesForCdcFormats() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, name STRING, off BIGINT METADATA FROM 'offset'", "canal-json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name, off FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void connectorMetadataRoutesWithCanalIncludeFilters() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, name STRING, off BIGINT METADATA FROM 'offset'", "canal-json")
+            .replace(
+                "'format' = 'canal-json')",
+                "'format' = 'canal-json', 'canal-json.table.include' = 'orders')"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name, off FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void metadataOverAFormatThatDoesNotComposeItKeepsTheScanOnFlink() {
+    // Each native format declares whether its decoder composes Kafka metadata; the Debezium Avro
+    // envelope's doesn't.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, name STRING, off BIGINT METADATA FROM 'offset'", "debezium-avro-confluent")
+            .replace(
+                "'debezium-avro-confluent')",
+                "'debezium-avro-confluent',"
+                    + " 'debezium-avro-confluent.url' = 'http://localhost:8081')"));
+    assertStaysOnFlink(tEnv, "SELECT id, name, off FROM t");
+  }
+
+  @Test
+  void metadataRoutesOverAvroValues() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, name STRING, off BIGINT METADATA FROM 'offset'", "avro"));
+    tEnv.executeSql(
+        table("id BIGINT, name STRING, off BIGINT METADATA FROM 'offset'", "avro-confluent")
+            .replace("CREATE TABLE t ", "CREATE TABLE c ")
+            .replace(
+                "'avro-confluent')",
+                "'avro-confluent', 'avro-confluent.url' = 'http://localhost:8081')"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name, off FROM t");
+    String confluent = NativePlanner.explain(tEnv, "SELECT id, name, off FROM c");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+    assertTrue(confluent.contains("NativeKafkaDecode"), confluent);
+  }
+
+  @Test
+  void theSameAvroTableWithoutMetadataRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, name STRING", "avro"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void aTableOfOnlyMetadataKeepsTheScanOnFlink() {
+    // The value decode counts a message's rows by its columns, and this table declares none.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("off BIGINT METADATA FROM 'offset'", "json"));
+    assertStaysOnFlink(tEnv, "SELECT off FROM t");
+  }
+
+  @Test
+  void theSameTableWithAPhysicalColumnRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, off BIGINT METADATA FROM 'offset'", "json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, off FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void headersReadByKeyRouteOnEveryLine() {
+    // Flink casts the connector's NOT NULL map into the nullable column, and a key lookup lets the
+    // planner drop that cast.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, hdrs MAP<STRING, BYTES> METADATA FROM 'headers'", "json"));
+    tEnv.executeSql("CREATE TABLE sink (id BIGINT, trace BYTES) WITH ('connector' = 'blackhole')");
+    String plan = NativePlanner.explain(tEnv, "INSERT INTO sink SELECT id, hdrs['trace'] FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void wholeHeadersRouteWhereFlinksNullabilityCastIsTheIdentity() {
+    // Emitting the map keeps the cast. 2.2 runs it as the identity; 1.18 rebuilds the map into a
+    // fresh HashMap, which the native Calc doesn't reproduce, so there the job stays on Flink.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, hdrs MAP<STRING, BYTES> METADATA FROM 'headers'", "json"));
+    tEnv.executeSql(
+        "CREATE TABLE sink (id BIGINT, hdrs MAP<STRING, BYTES>) WITH ('connector' = 'blackhole')");
+    String plan = NativePlanner.explain(tEnv, "INSERT INTO sink SELECT id, hdrs FROM t");
+    assertEquals(
+        !org.apache.flink.runtime.util.EnvironmentInformation.getVersion().startsWith("1.18"),
+        plan.contains("NativeKafkaDecode"),
+        plan);
+  }
+
+  @Test
+  void wholeNotNullHeadersRouteOnEveryLine() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, hdrs MAP<STRING, BYTES> NOT NULL METADATA FROM 'headers'", "json"));
+    tEnv.executeSql(
+        "CREATE TABLE sink (id BIGINT, hdrs MAP<STRING, BYTES> NOT NULL)"
+            + " WITH ('connector' = 'blackhole')");
+    String plan = NativePlanner.explain(tEnv, "INSERT INTO sink SELECT id, hdrs FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void keyedTableWithMetadataRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("k STRING, id BIGINT, off BIGINT METADATA FROM 'offset'", "json")
+            .replace(
+                "'format' = 'json')",
+                "'key.format' = 'raw', 'key.fields' = 'k', 'value.format' = 'json',"
+                    + " 'value.fields-include' = 'EXCEPT_KEY')"));
+    String plan = NativePlanner.explain(tEnv, "SELECT k, id, off FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode")
+            && plan.contains("keyFormat=[raw]")
+            && plan.contains("metadata=[{off=offset}]"),
+        plan);
+  }
+
+  @Test
+  void keyedCdcTableKeepsTheScanOnFlink() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("k STRING, id BIGINT", "canal-json")
+            .replace(
+                "'format' = 'canal-json')",
+                "'key.format' = 'raw', 'key.fields' = 'k', 'value.format' = 'canal-json',"
+                    + " 'value.fields-include' = 'EXCEPT_KEY')"));
+    assertStaysOnFlink(tEnv, "SELECT k, id FROM t");
+  }
+
+  @Test
+  void metadataRowtimeKeepsItsWatermarkNatively() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table(
+            "id BIGINT, ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp',"
+                + " WATERMARK FOR ts AS ts - INTERVAL '1' SECOND",
+            "json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, ts FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode") && plan.contains("watermarkColumn=[ts]"),
+        "a TIMESTAMP_LTZ(3) metadata rowtime should keep its native watermark:\n" + plan);
+  }
+
+  @Test
+  void zoneDependentMetadataRowtimeKeepsTheScanOnFlink() {
+    // A TIMESTAMP(3) rowtime reads the record timestamp through the session time zone.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table(
+            "id BIGINT, ts TIMESTAMP(3) METADATA FROM 'timestamp', WATERMARK FOR ts AS ts",
+            "json"));
+    assertStaysOnFlink(tEnv, "SELECT id, ts FROM t");
+  }
+
+  @Test
+  void scansReadingDifferentMetadataDoNotShareADecode() {
+    // Same topic, options and column name and type, but different metadata keys.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, m STRING METADATA FROM 'topic'", "json"));
+    tEnv.executeSql(
+        table("id BIGINT, m STRING METADATA FROM 'timestamp-type'", "json")
+            .replace("CREATE TABLE t ", "CREATE TABLE u "));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, m FROM t UNION ALL SELECT id, m FROM u");
+    assertTrue(
+        plan.contains("metadata=[{m=topic}]") && plan.contains("metadata=[{m=timestamp-type}]"),
+        "each table should decode its own metadata:\n" + plan);
   }
 
   @Test
@@ -107,6 +311,95 @@ class KafkaDecodeRoutingTest {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(table("id BIGINT, b BINARY(4)", "debezium-json"));
     assertStaysOnFlink(tEnv, "SELECT id, b FROM t");
+  }
+
+  @Test
+  void nestedMaxwellSchemaRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table(
+            "id BIGINT, info ROW<name STRING, score DOUBLE>, tags ARRAY<STRING>,"
+                + " attrs MAP<STRING, BIGINT>, bag MULTISET<STRING>,"
+                + " items ARRAY<ROW<id BIGINT, name STRING>>",
+            "maxwell-json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT * FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a nested Maxwell table should decode natively:\n" + plan);
+  }
+
+  @Test
+  void nestedCanalSchemaRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table(
+            "id BIGINT, info ROW<name STRING, score DOUBLE>, tags ARRAY<STRING>,"
+                + " attrs MAP<STRING, BIGINT>, bag MULTISET<STRING>",
+            "canal-json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT * FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a nested Canal table should decode natively:\n" + plan);
+  }
+
+  @Test
+  void maxwellSchemaWiderThan128ColumnsRoutes() {
+    StringBuilder columns = new StringBuilder("c0 BIGINT");
+    for (int i = 1; i < 200; i++) {
+      columns.append(", c").append(i).append(" BIGINT");
+    }
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table(columns.toString(), "maxwell-json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT * FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a 200-column Maxwell table should decode natively:\n" + plan);
+  }
+
+  @Test
+  void nestedCanalUnsupportedLeafKeepsTheScanOnFlink() {
+    // Nesting no longer gates Maxwell/Canal, but the JSON type gate still recurses into it.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, info ROW<name STRING, bin BINARY(4)>", "canal-json"));
+    assertStaysOnFlink(tEnv, "SELECT * FROM t");
+  }
+
+  @Test
+  void canalIncludeFiltersRoute() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, name STRING", "canal-json")
+            .replace(
+                "'canal-json')",
+                "'canal-json', 'canal-json.database.include' = 'shop',"
+                    + " 'canal-json.table.include' = 'order_\\d+|users')"));
+    String plan = NativePlanner.explain(tEnv, "SELECT id, name FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a Canal table with include filters should decode natively:\n" + plan);
+  }
+
+  @Test
+  void invalidCanalIncludePatternFailsWithFlinksOwnError() {
+    // Flink compiles the pattern when it builds the scan's deserializer and fails planning, so the
+    // native path must leave the scan to Flink rather than replace that failure with its own.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table("id BIGINT, name STRING", "canal-json")
+            .replace("'canal-json')", "'canal-json', 'canal-json.table.include' = 'orders[')"));
+    PatternSyntaxException error =
+        assertThrows(
+            PatternSyntaxException.class,
+            () -> NativePlanner.explain(tEnv, "SELECT id, name FROM t"));
+    assertTrue(
+        Arrays.stream(error.getStackTrace())
+            .anyMatch(
+                frame ->
+                    frame
+                        .getClassName()
+                        .equals(
+                            "org.apache.flink.formats.json.canal.CanalJsonDeserializationSchema")),
+        "the pattern error should come from Flink's own Canal deserializer");
   }
 
   @Test
@@ -226,13 +519,123 @@ class KafkaDecodeRoutingTest {
   }
 
   @Test
-  void keyedShapesOutsideTheIncrementStayOnFlink() {
-    // A non-raw key format needs the alignment machinery (a JSON key can drop the whole record).
+  void jsonKeyedTableRoutesToTheDecodePath() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        keyedTable(
+            "k_region STRING, id BIGINT, k_id BIGINT",
+            "'key.format' = 'json', 'key.fields' = 'k_id;k_region', 'key.fields-prefix' = 'k_',"
+                + " 'value.fields-include' = 'EXCEPT_KEY'"));
+    String plan = NativePlanner.explain(tEnv, "SELECT k_region, id, k_id FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode") && plan.contains("keyFormat=[json]"), plan);
+  }
+
+  @Test
+  void aSkippingJsonKeyStaysOnFlinkWhereFlinkCollectsNullKeyRows() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(
         keyedTable(
             "k BIGINT, id BIGINT",
-            "'key.format' = 'json', 'key.fields' = 'k', 'value.fields-include' = 'EXCEPT_KEY'"));
+            "'key.format' = 'json', 'key.fields' = 'k', 'key.json.ignore-parse-errors' = 'true',"
+                + " 'value.fields-include' = 'EXCEPT_KEY'"));
+    String plan = NativePlanner.explain(tEnv, "SELECT k, id FROM t");
+    assertEquals(
+        !tech.streamfusion.compat.JsonRuntimeCompat.COLLECTS_SKIPPED_OBJECTS_AS_NULL,
+        plan.contains("NativeKafkaDecode"),
+        plan);
+  }
+
+  @Test
+  void csvKeyedTableRoutesToTheDecodePath() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        "CREATE TABLE t (k STRING, id BIGINT) WITH ("
+            + " 'connector' = 'kafka', 'topic' = 't',"
+            + " 'properties.bootstrap.servers' = 'localhost:9092',"
+            + " 'scan.startup.mode' = 'earliest-offset', 'value.format' = 'csv',"
+            + " 'key.format' = 'csv', 'key.fields' = 'k', 'value.fields-include' = 'EXCEPT_KEY')");
+    String plan = NativePlanner.explain(tEnv, "SELECT k, id FROM t");
+    assertTrue(plan.contains("NativeKafkaDecode") && plan.contains("keyFormat=[csv]"), plan);
+  }
+
+  @Test
+  void avroKeyedTablesRouteToTheDecodePath() {
+    StreamTableEnvironment confluent = env();
+    confluent.executeSql(
+        "CREATE TABLE t (k_id BIGINT, k_region STRING, name STRING) WITH ("
+            + " 'connector' = 'kafka', 'topic' = 't',"
+            + " 'properties.bootstrap.servers' = 'localhost:9092',"
+            + " 'scan.startup.mode' = 'earliest-offset',"
+            + " 'key.format' = 'avro-confluent', 'key.avro-confluent.url' = 'http://localhost:8081',"
+            + " 'key.fields' = 'k_id;k_region', 'key.fields-prefix' = 'k_',"
+            + " 'value.format' = 'avro-confluent',"
+            + " 'value.avro-confluent.url' = 'http://localhost:8081',"
+            + " 'value.fields-include' = 'EXCEPT_KEY')");
+    StreamTableEnvironment rawKey = env();
+    rawKey.executeSql(
+        "CREATE TABLE t (k STRING, name STRING) WITH ("
+            + " 'connector' = 'kafka', 'topic' = 't',"
+            + " 'properties.bootstrap.servers' = 'localhost:9092',"
+            + " 'scan.startup.mode' = 'earliest-offset', 'key.format' = 'raw', 'key.fields' = 'k',"
+            + " 'value.format' = 'avro-confluent',"
+            + " 'value.avro-confluent.url' = 'http://localhost:8081',"
+            + " 'value.fields-include' = 'EXCEPT_KEY')");
+    StreamTableEnvironment bare = env();
+    bare.executeSql(
+        "CREATE TABLE t (k BIGINT, name STRING) WITH ("
+            + " 'connector' = 'kafka', 'topic' = 't',"
+            + " 'properties.bootstrap.servers' = 'localhost:9092',"
+            + " 'scan.startup.mode' = 'earliest-offset', 'key.format' = 'avro', 'key.fields' = 'k',"
+            + " 'value.format' = 'avro', 'value.fields-include' = 'EXCEPT_KEY')");
+
+    String confluentPlan = NativePlanner.explain(confluent, "SELECT k_id, k_region, name FROM t");
+    String rawKeyPlan = NativePlanner.explain(rawKey, "SELECT k, name FROM t");
+    String barePlan = NativePlanner.explain(bare, "SELECT k, name FROM t");
+
+    assertTrue(
+        confluentPlan.contains("NativeKafkaDecode")
+            && confluentPlan.contains("keyFormat=[avro-confluent]"),
+        confluentPlan);
+    assertTrue(rawKeyPlan.contains("NativeKafkaDecode"), rawKeyPlan);
+    assertTrue(barePlan.contains("NativeKafkaDecode") && barePlan.contains("keyFormat=[avro]"), barePlan);
+  }
+
+  @Test
+  void keysAnotherNativeLibraryDecodesStayOnFlink() {
+    // The key decodes in the value format's library: a JSON key over an Avro Confluent value, or a
+    // bare Avro key over a registry value, stays on Flink until keys compose across formats.
+    StreamTableEnvironment jsonKey = env();
+    jsonKey.executeSql(
+        "CREATE TABLE t (k BIGINT, name STRING) WITH ("
+            + " 'connector' = 'kafka', 'topic' = 't',"
+            + " 'properties.bootstrap.servers' = 'localhost:9092',"
+            + " 'scan.startup.mode' = 'earliest-offset', 'key.format' = 'json', 'key.fields' = 'k',"
+            + " 'value.format' = 'avro-confluent',"
+            + " 'value.avro-confluent.url' = 'http://localhost:8081',"
+            + " 'value.fields-include' = 'EXCEPT_KEY')");
+    StreamTableEnvironment mixedAvro = env();
+    mixedAvro.executeSql(
+        "CREATE TABLE t (k BIGINT, name STRING) WITH ("
+            + " 'connector' = 'kafka', 'topic' = 't',"
+            + " 'properties.bootstrap.servers' = 'localhost:9092',"
+            + " 'scan.startup.mode' = 'earliest-offset', 'key.format' = 'avro', 'key.fields' = 'k',"
+            + " 'value.format' = 'avro-confluent',"
+            + " 'value.avro-confluent.url' = 'http://localhost:8081',"
+            + " 'value.fields-include' = 'EXCEPT_KEY')");
+
+    assertStaysOnFlink(jsonKey, "SELECT k, name FROM t");
+    assertStaysOnFlink(mixedAvro, "SELECT k, name FROM t");
+  }
+
+  @Test
+  void keyedShapesOutsideTheIncrementStayOnFlink() {
+    // The value format's native library decodes the key too, so a key format it doesn't carry
+    // stays on Flink.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        keyedTable(
+            "k BIGINT, id BIGINT",
+            "'key.format' = 'csv', 'key.fields' = 'k', 'value.fields-include' = 'EXCEPT_KEY'"));
     assertStaysOnFlink(tEnv, "SELECT k, id FROM t");
     // A non-UTF-8 key charset decodes through Java's charset machinery — stays on Flink, like the
     // value-side raw gate.
@@ -243,6 +646,18 @@ class KafkaDecodeRoutingTest {
             "'key.format' = 'raw', 'key.fields' = 'k', 'key.raw.charset' = 'UTF-16',"
                 + " 'value.fields-include' = 'EXCEPT_KEY'"));
     assertStaysOnFlink(charset, "SELECT k, id FROM t");
+  }
+
+  @Test
+  void aKeyedTableWithoutValueColumnsStaysOnFlink() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        keyedTable(
+            "k BIGINT, region STRING",
+            "'key.format' = 'json', 'key.fields' = 'k;region',"
+                + " 'value.fields-include' = 'EXCEPT_KEY'"));
+
+    assertStaysOnFlink(tEnv, "SELECT k, region FROM t");
   }
 
   private static String keyedTable(String columns, String keyOptions) {

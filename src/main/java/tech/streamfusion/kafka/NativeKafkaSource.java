@@ -1,6 +1,7 @@
 package tech.streamfusion.kafka;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Properties;
 import java.util.function.Supplier;
 import org.apache.flink.api.connector.source.Boundedness;
@@ -37,6 +38,8 @@ public final class NativeKafkaSource
   private final RowType outputType;
   private final NativeMessageDecoderFactory decoderFactory;
   private final boolean keyed;
+  /** The connector metadata keys the decode reads from each record; empty for none. */
+  private final List<String> metadataKeys;
   private final int rowtimeIndex;
   private final WatermarkExpression watermarkExpression;
 
@@ -46,6 +49,7 @@ public final class NativeKafkaSource
       RowType outputType,
       NativeMessageDecoderFactory decoderFactory,
       boolean keyed,
+      List<String> metadataKeys,
       int rowtimeIndex,
       WatermarkExpression watermarkExpression) {
     this.delegate = delegate;
@@ -53,6 +57,7 @@ public final class NativeKafkaSource
     this.outputType = outputType;
     this.decoderFactory = decoderFactory;
     this.keyed = keyed;
+    this.metadataKeys = List.copyOf(metadataKeys);
     this.rowtimeIndex = rowtimeIndex;
     this.watermarkExpression = watermarkExpression;
   }
@@ -65,15 +70,18 @@ public final class NativeKafkaSource
   @Override
   public SourceReader<ArrowBatch, KafkaPartitionSplit> createReader(SourceReaderContext context) {
     KafkaSourceReaderMetrics metrics = new KafkaSourceReaderMetrics(context.metricGroup());
+    NativeKafkaDecodeMetrics decodeMetrics = new NativeKafkaDecodeMetrics(context.metricGroup());
     Supplier<SplitReader<NativeSourceRecord, KafkaPartitionSplit>> reader =
         () ->
             new NativeKafkaSplitReader(
                 properties,
                 context,
                 metrics,
+                decodeMetrics,
                 outputType,
                 decoderFactory,
                 keyed,
+                metadataKeys,
                 rowtimeIndex,
                 watermarkExpression);
     return new NativeKafkaSourceReader(

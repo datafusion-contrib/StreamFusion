@@ -52,10 +52,14 @@ public class ConfluentSchemaRegistry implements Serializable {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
-  /** Registry-format options with no native translation: any of them present → fall back. */
+  /**
+   * Registry-format options with no native translation: any of them present → fall back. Flink
+   * also reads an explicit reader schema under its fallback key, {@code schema-registry.schema}.
+   */
   private static final Set<String> UNSUPPORTED_OPTIONS =
       Set.of(
           "schema",
+          "schema-registry.schema",
           "properties",
           "ssl.keystore.location",
           "ssl.keystore.password",
@@ -96,15 +100,21 @@ public class ConfluentSchemaRegistry implements Serializable {
   }
 
   /**
+   * {@link #fromOptions} for a keyed table's key format, whose registry options carry Flink's
+   * {@code key.<format>.} prefix.
+   */
+  public static ConfluentSchemaRegistry fromKeyOptions(Map<String, String> options) {
+    String prefix = "key." + options.get("key.format") + ".";
+    return from(options.get(prefix + "url"), key -> options.get(prefix + key));
+  }
+
+  /**
    * Builds the registry accessor from one format instance's prefix-stripped options (the sink
    * seam's spelling — a key format has no table-level prefix to resolve), with the same
    * untranslated-option gate as {@link #fromOptions}. The registry options with fallback keys
    * ({@code schema-registry.url}, {@code schema-registry.schema}) are honored both ways.
    */
   public static ConfluentSchemaRegistry fromFormatOptions(Map<String, String> options) {
-    if (options.containsKey("schema-registry.schema")) {
-      return null;
-    }
     return from(options.getOrDefault("url", options.get("schema-registry.url")), options::get);
   }
 

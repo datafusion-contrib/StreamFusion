@@ -623,6 +623,9 @@ pub(crate) struct StructJsonAppender {
     index: Option<HashMap<String, usize>>,
     nulls: NullBufferBuilder,
     pending_nulls: usize,
+    /// Objects appended through [`Self::try_append_object`] since the last finish — the decoded
+    /// row count when this appender is a batch's root.
+    objects: usize,
 }
 
 // Nexmark's source rows sit in the medium-width range where repeated linear name scans show up in
@@ -650,6 +653,7 @@ impl StructJsonAppender {
             index,
             nulls: NullBufferBuilder::new(capacity),
             pending_nulls: 0,
+            objects: 0,
         }
     }
 
@@ -720,11 +724,13 @@ impl StructJsonAppender {
         for (child, slot) in self.children.iter_mut().zip(slots.iter()) {
             child.append(*slot);
         }
+        self.objects += 1;
         true
     }
 
     fn finish_columns(&mut self) -> Vec<ArrayRef> {
         self.flush_pending_nulls();
+        self.objects = 0;
         self.children.iter_mut().map(|c| c.finish()).collect()
     }
 
@@ -851,7 +857,8 @@ impl JsonAppend for ListJsonAppender {
 }
 
 /// MAP (and MULTISET riding as `MAP<E, INT>`): a JSON object per row, each key parsed by the key
-/// column's scalar appender and each value decoded normally.
+/// column's scalar appender and each value decoded normally. Flink's converters fill a
+/// `java.util.HashMap`, so entries are emitted in its iteration order (see `StringDataMapOrder`).
 pub(crate) struct MapJsonAppender {
     entries_field: FieldRef,
     env: JsonEnv,
@@ -860,6 +867,7 @@ pub(crate) struct MapJsonAppender {
     values: Box<dyn JsonAppend>,
     offsets: Vec<i32>,
     nulls: NullBufferBuilder,
+    order: StringDataMapOrder,
 }
 
 impl MapJsonAppender {
@@ -876,6 +884,7 @@ impl MapJsonAppender {
             entry_fields,
             offsets: vec![0],
             nulls: NullBufferBuilder::new(capacity),
+            order: StringDataMapOrder::default(),
         }
     }
 }
@@ -896,23 +905,11 @@ impl JsonAppend for MapJsonAppender {
             None => self.nulls.append_null(),
             Some(object) => {
                 self.nulls.append_non_null();
-                // Duplicate keys collapse last-value-first-position: Flink's converter builds a
-                // java.util.Map, so a repeated key holds one entry with the final value.
-                let mut keys: Vec<&str> = Vec::with_capacity(object.len());
-                let mut values: Vec<simd_json::tape::Value> = Vec::with_capacity(object.len());
-                for (key, value) in &object {
-                    let existing = keys.iter().position(|k| *k == key);
-                    match existing {
-                        Some(i) => values[i] = value,
-                        None => {
-                            keys.push(key);
-                            values.push(value);
-                        }
-                    }
-                }
-                for (key, value) in keys.iter().zip(&values) {
-                    self.keys.append_key(key);
-                    self.values.append(Some(*value));
+                let (keys, values): (Vec<&str>, Vec<simd_json::tape::Value>) =
+                    object.iter().unzip();
+                for &(first, last) in self.order.entries(&keys) {
+                    self.keys.append_key(keys[first]);
+                    self.values.append(Some(values[last]));
                     end = end.checked_add(1).expect("offset overflow decoding MAP");
                 }
             }
@@ -1264,18 +1261,20 @@ fn skip_blank_body(bytes: &[u8], lenient: bool) -> bool {
 /// (a bad *value* inside a decoded object stays the appenders' per-field null, exactly as for a
 /// single-object body). simd-json parses in place, so each body is copied into a reused scratch
 /// buffer — the copy is part of the measured win over arrow-json.
+#[allow(clippy::too_many_arguments)]
 fn decode_json_bodies_simd(
     schema: &SchemaRef,
     bodies: &RecordBatch,
     env: JsonEnv,
     array_roots: ArrayRootPolicy,
     retryable: bool,
+    collect_null_rows: bool,
     drift: &StructDriftDetector,
     root: &mut StructJsonAppender,
     scratch: &mut Vec<u8>,
     buffers: &mut simd_json::Buffers,
     reusable_tape: &mut Option<simd_json::tape::Tape<'static>>,
-) -> RecordBatch {
+) -> (RecordBatch, Sources, NullRows) {
     use simd_json::prelude::*;
     let column = bodies.column(0);
     let scan_binary = env.lenient
@@ -1283,108 +1282,140 @@ fn decode_json_bodies_simd(
             .fields()
             .iter()
             .any(|f| contains_binary(f.data_type()));
+    let mut sources = SourceRecorder::with_capacity(bodies.num_rows());
+    let mut null_rows = NullRows::new();
     for row in 0..bodies.num_rows() {
-        let Some(bytes) = binary_body(column, row) else {
-            continue;
-        };
-        if skip_blank_body(bytes, env.lenient) {
-            continue;
-        }
-        if array_roots == ArrayRootPolicy::Corrupt
-            && bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'[')
-        {
-            assert!(env.lenient, "JSON body was not a single object");
-            continue;
-        }
-        scratch.clear();
-        scratch.extend_from_slice(bytes);
-        let mut tape = reusable_tape
-            .take()
-            .unwrap_or_else(simd_json::tape::Tape::null)
-            .reset();
-        // A structurally bad document (or a root that is neither object nor fanned-out array)
-        // fails the job like Flink's deserializer; under ignore-parse-errors it drops the whole
-        // message (the value-level skips inside a good document are the appenders' per-field
-        // nulls).
-        match simd_json::fill_tape(scratch, buffers, &mut tape) {
-            Ok(()) => {}
-            // simd-json is spec-strict where Jackson tokenizes more: out-of-range number
-            // literals, raw control characters inside strings, content trailing the root
-            // document. Retryable messages re-decode through the Jackson-faithful walk, which
-            // rewrites them into sanitized rows this fast path appends.
-            Err(_) if retryable => {
-                *reusable_tape = Some(tape.reset());
-                append_rewritten(root, bytes, schema.fields(), env, scan_binary);
-                continue;
+        let start = root.objects;
+        'message: {
+            let Some(bytes) = binary_body(column, row) else {
+                break 'message;
+            };
+            if skip_blank_body(bytes, env.lenient) {
+                break 'message;
             }
-            Err(_) if env.lenient => {
-                *reusable_tape = Some(tape.reset());
-                continue;
+            if array_roots == ArrayRootPolicy::Corrupt
+                && bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'[')
+            {
+                assert!(env.lenient, "JSON body was not a single object");
+                break 'message;
             }
-            Err(e) => {
-                *reusable_tape = Some(tape.reset());
-                panic!("failed to decode JSON record: {e}")
+            scratch.clear();
+            scratch.extend_from_slice(bytes);
+            let mut tape = reusable_tape
+                .take()
+                .unwrap_or_else(simd_json::tape::Tape::null)
+                .reset();
+            // A structurally bad document (or a root that is neither object nor fanned-out array)
+            // fails the job like Flink's deserializer; under ignore-parse-errors it drops the whole
+            // message (the value-level skips inside a good document are the appenders' per-field
+            // nulls).
+            match simd_json::fill_tape(scratch, buffers, &mut tape) {
+                Ok(()) => {}
+                // simd-json is spec-strict where Jackson tokenizes more: out-of-range number
+                // literals, raw control characters inside strings, content trailing the root
+                // document. Retryable messages re-decode through the Jackson-faithful walk, which
+                // rewrites them into sanitized rows this fast path appends.
+                Err(_) if retryable => {
+                    *reusable_tape = Some(tape.reset());
+                    if let Some(rows) = append_rewritten(
+                        root,
+                        bytes,
+                        schema.fields(),
+                        env,
+                        scan_binary,
+                        collect_null_rows,
+                    ) {
+                        record_null_row(&mut null_rows, row, rows);
+                    }
+                    break 'message;
+                }
+                Err(_) if env.lenient => {
+                    *reusable_tape = Some(tape.reset());
+                    break 'message;
+                }
+                Err(e) => {
+                    *reusable_tape = Some(tape.reset());
+                    panic!("failed to decode JSON record: {e}")
+                }
             }
-        }
-        let value = tape.as_value();
-        match value.value_type() {
-            simd_json::ValueType::Array if array_roots == ArrayRootPolicy::FanOut => {
-                let array = value.as_array().expect("array node");
-                // A drift anywhere re-decodes the MESSAGE: Flink's cursor drift crosses element
-                // boundaries (a nested-array element drifts the element loop itself).
-                if array
-                    .iter()
-                    .any(|element| element_needs_token_walk(drift, element))
-                {
-                    append_rewritten(root, bytes, schema.fields(), env, scan_binary);
-                } else {
-                    for element in &array {
-                        match element.as_object() {
-                            Some(object) => {
+            let value = tape.as_value();
+            match value.value_type() {
+                simd_json::ValueType::Array if array_roots == ArrayRootPolicy::FanOut => {
+                    let array = value.as_array().expect("array node");
+                    // A drift anywhere re-decodes the MESSAGE: Flink's cursor drift crosses element
+                    // boundaries (a nested-array element drifts the element loop itself).
+                    if array
+                        .iter()
+                        .any(|element| element_needs_token_walk(drift, element))
+                    {
+                        if let Some(rows) = append_rewritten(
+                            root,
+                            bytes,
+                            schema.fields(),
+                            env,
+                            scan_binary,
+                            collect_null_rows,
+                        ) {
+                            record_null_row(&mut null_rows, row, rows);
+                        }
+                    } else {
+                        for element in &array {
+                            match element.as_object() {
+                                Some(object) => {
+                                    append_checked(root, &object, schema.fields(), scan_binary)
+                                }
+                                // Flink collects a null row for a `null` element.
+                                None if collect_null_rows
+                                    && element.value_type() == simd_json::ValueType::Null =>
+                                {
+                                    record_null_row(&mut null_rows, row, root.objects - start)
+                                }
+                                None if env.lenient => {}
+                                None => panic!(
+                                    "JSON array element was not an object: {:?}",
+                                    element.value_type()
+                                ),
+                            }
+                        }
+                    }
+                }
+                simd_json::ValueType::Array if array_roots == ArrayRootPolicy::UnwrapSingle => {
+                    let array = value.as_array().expect("array node");
+                    if env.lenient {
+                        let mut objects = array.iter().filter_map(|element| element.as_object());
+                        if let (Some(object), None) = (objects.next(), objects.next()) {
+                            append_checked(root, &object, schema.fields(), scan_binary);
+                        }
+                        // else: 0 or 2+ decodable envelopes — the whole message drops.
+                    } else {
+                        let mut elements = array.iter();
+                        match (elements.next().and_then(|e| e.as_object()), elements.next()) {
+                            (Some(object), None) => {
                                 append_checked(root, &object, schema.fields(), scan_binary)
                             }
-                            None if env.lenient => {}
-                            None => panic!(
-                                "JSON array element was not an object: {:?}",
-                                element.value_type()
-                            ),
+                            _ => panic!("CDC message array root did not hold exactly one envelope"),
                         }
                     }
                 }
-            }
-            simd_json::ValueType::Array if array_roots == ArrayRootPolicy::UnwrapSingle => {
-                let array = value.as_array().expect("array node");
-                if env.lenient {
-                    let mut objects = array.iter().filter_map(|element| element.as_object());
-                    if let (Some(object), None) = (objects.next(), objects.next()) {
-                        append_checked(root, &object, schema.fields(), scan_binary);
-                    }
-                    // else: 0 or 2+ decodable envelopes — the whole message drops.
-                } else {
-                    let mut elements = array.iter();
-                    match (elements.next().and_then(|e| e.as_object()), elements.next()) {
-                        (Some(object), None) => {
-                            append_checked(root, &object, schema.fields(), scan_binary)
+                _ => match value.as_object() {
+                    Some(object) => {
+                        if !(scan_binary && object_poisoned(schema.fields(), &object))
+                            && !root.try_append_object(&object, retryable.then_some(drift))
+                        {
+                            append_rewritten(root, bytes, schema.fields(), env, scan_binary, false);
                         }
-                        _ => panic!("CDC message array root did not hold exactly one envelope"),
                     }
-                }
+                    None if env.lenient => {}
+                    None => panic!("JSON body was not a single object"),
+                },
             }
-            _ => match value.as_object() {
-                Some(object) => {
-                    if !(scan_binary && object_poisoned(schema.fields(), &object))
-                        && !root.try_append_object(&object, retryable.then_some(drift))
-                    {
-                        append_rewritten(root, bytes, schema.fields(), env, scan_binary);
-                    }
-                }
-                None if env.lenient => {}
-                None => panic!("JSON body was not a single object"),
-            },
+            *reusable_tape = Some(tape.reset());
         }
-        *reusable_tape = Some(tape.reset());
+        sources.message_done(row, root.objects);
     }
-    RecordBatch::try_new(schema.clone(), root.finish_columns()).expect("failed to build JSON batch")
+    let batch = RecordBatch::try_new(schema.clone(), root.finish_columns())
+        .expect("failed to build JSON batch");
+    (batch, sources.finish(bodies.num_rows()), null_rows)
 }
 
 /// Appends one decoded row object, first applying the lenient BINARY poison pre-scan (a
@@ -1403,15 +1434,25 @@ fn append_checked(
 
 /// Re-decodes one message through the Jackson-faithful walk and appends the sanitized rows it
 /// rewrote (none when the walk dropped the message in skip mode).
+/// Appends the walk's rows for one message and, when asked for null rows, returns how many rows
+/// it appended before the message's first null row.
 fn append_rewritten(
     root: &mut StructJsonAppender,
     bytes: &[u8],
     fields: &Fields,
     env: JsonEnv,
     scan_binary: bool,
-) {
+    collect_null_rows: bool,
+) -> Option<usize> {
     use simd_json::prelude::*;
-    for row in crate::json_retry::rewrite_message(bytes, fields, env) {
+    let start = root.objects;
+    let (rows, first_null) =
+        crate::json_retry::rewrite_message(bytes, fields, env, collect_null_rows);
+    let mut appended_before_null = None;
+    for (index, row) in rows.into_iter().enumerate() {
+        if first_null == Some(index) {
+            appended_before_null = Some(root.objects - start);
+        }
         let mut buf = row.into_bytes();
         let tape = simd_json::to_tape(&mut buf).expect("sanitized row reparses");
         let value = tape.as_value();
@@ -1422,6 +1463,7 @@ fn append_rewritten(
             scan_binary,
         );
     }
+    appended_before_null.or(first_null.map(|_| root.objects - start))
 }
 
 /// A fanned-out element's cursor-drift check: a nested-array element makes Flink's element loop
@@ -1512,6 +1554,9 @@ pub(crate) struct JsonDecoder {
     array_roots: ArrayRootPolicy,
     /// Plain JSON retries through the parser-compatible walk; CDC keeps its envelope scan.
     retryable: bool,
+    /// Report the null rows Flink 2.x collects for fanned-out array elements ([`NullRows`]), for a
+    /// keyed table's JSON key and strict JSON value, whose merge trips over them.
+    null_rows: bool,
     /// Schema-compiled cursor-drift checks shared across all decoded batches.
     drift: StructDriftDetector,
     /// Schema-compiled appender tree. Its builders reset after each finished batch, while the
@@ -1566,6 +1611,7 @@ impl JsonDecoder {
             env,
             array_roots,
             retryable,
+            null_rows: false,
             drift,
             root,
             buffers: std::cell::RefCell::new(simd_json::Buffers::default()),
@@ -1574,10 +1620,28 @@ impl JsonDecoder {
         }
     }
 
+    pub(crate) fn collecting_null_rows(mut self, null_rows: bool) -> JsonDecoder {
+        self.null_rows = null_rows;
+        self
+    }
+
     /// Decodes the single body column of `bodies` into a batch of the target schema. Each row is a
     /// complete document decoding to one row — or, for a fanned-out top-level array, one row per
     /// element; a null body contributes no row.
     pub(crate) fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
+        self.decode_traced(bodies).0
+    }
+
+    pub(crate) fn decode_traced(&self, bodies: &RecordBatch) -> (RecordBatch, Sources) {
+        let (batch, sources, _) = self.decode_traced_null_rows(bodies);
+        (batch, sources)
+    }
+
+    /// The decode, plus the null rows a decoder built to collect them reports.
+    pub(crate) fn decode_traced_null_rows(
+        &self,
+        bodies: &RecordBatch,
+    ) -> (RecordBatch, Sources, NullRows) {
         if self.raw_literals {
             return self.decode_raw_literals(bodies);
         }
@@ -1595,6 +1659,7 @@ impl JsonDecoder {
             self.env,
             self.array_roots,
             self.retryable,
+            self.null_rows,
             &self.drift,
             &mut root,
             &mut scratch,
@@ -1612,7 +1677,7 @@ impl JsonDecoder {
     /// convert through the same Flink-exact parsers the simd path uses — arrow-json's own
     /// time/binary handling has a different envelope. Documents feed one at a time to keep the
     /// decoder's record boundaries aligned with the input rows.
-    fn decode_raw_literals(&self, bodies: &RecordBatch) -> RecordBatch {
+    fn decode_raw_literals(&self, bodies: &RecordBatch) -> (RecordBatch, Sources, NullRows) {
         let column = bodies.column(0);
         let text_schema = Arc::new(Schema::new(
             self.schema
@@ -1635,6 +1700,9 @@ impl JsonDecoder {
         // granularity for non-decimal errors — divergences/21; the decimal cells themselves skip
         // per FIELD in restore_exact_leaves, like the host.
         let mut batches = Vec::new();
+        // Each decoded document is one row, so a row's source is its document's message.
+        let mut sources: Vec<u32> = Vec::with_capacity(bodies.num_rows());
+        let mut null_rows = NullRows::new();
         if self.env.lenient {
             for row in 0..bodies.num_rows() {
                 let Some(bytes) = binary_body(column, row) else {
@@ -1660,6 +1728,7 @@ impl JsonDecoder {
                         .filter(|&consumed| consumed == element.len())
                         .and_then(|_| decoder.flush().ok().flatten());
                     if let Some(batch) = decoded {
+                        sources.resize(sources.len() + batch.num_rows(), row as u32);
                         batches.push(batch);
                     }
                 }
@@ -1669,6 +1738,7 @@ impl JsonDecoder {
             // at its batch size — so gather every document first and size the decoder to fit.
             let mut documents: Vec<&[u8]> = Vec::with_capacity(bodies.num_rows());
             for row in 0..bodies.num_rows() {
+                let start = sources.len();
                 let Some(bytes) = binary_body(column, row) else {
                     continue;
                 };
@@ -1676,14 +1746,22 @@ impl JsonDecoder {
                     continue;
                 }
                 match self.array_body(bytes) {
-                    ArrayBody::Not => documents.push(bytes),
+                    ArrayBody::Not => {
+                        documents.push(bytes);
+                        sources.push(row as u32);
+                    }
                     ArrayBody::Elements(elements) => {
                         for element in elements {
+                            if self.null_rows && element.trim_ascii() == b"null" {
+                                record_null_row(&mut null_rows, row, sources.len() - start);
+                                continue;
+                            }
                             assert!(
                                 starts_with_object(element),
                                 "JSON array element was not an object"
                             );
                             documents.push(element);
+                            sources.push(row as u32);
                         }
                     }
                     ArrayBody::Corrupt => panic!("JSON body was not a single object"),
@@ -1722,7 +1800,18 @@ impl JsonDecoder {
                 collapse_duplicate_map_keys(&column, field.data_type())
             })
             .collect();
-        RecordBatch::try_new(self.schema.clone(), columns).expect("failed to build JSON batch")
+        let batch =
+            RecordBatch::try_new(self.schema.clone(), columns).expect("failed to build JSON batch");
+        debug_assert_eq!(
+            batch.num_rows(),
+            sources.len(),
+            "one row per decoded document"
+        );
+        (
+            batch,
+            Sources::from_rows(sources, bodies.num_rows()),
+            null_rows,
+        )
     }
 
     /// Classifies a body for the raw-literals path: `Not` (the root is not an array — decode it as
@@ -2035,11 +2124,11 @@ fn contains_map(data_type: &DataType) -> bool {
     }
 }
 
-/// arrow-json's map decoder keeps every entry of a duplicate-keyed JSON object, but Flink's
-/// converter builds a `java.util.Map` — a repeated key holds ONE entry with the final value. This
-/// collapses the arrow-json-built maps to the simd path's last-value-first-position rule (hash
-/// order is not reproducible either way); a map-free column passes through untouched and an
-/// already-unique column rebuilds nothing.
+/// arrow-json's map decoder keeps every entry of a duplicate-keyed JSON object in document order,
+/// but Flink's converter fills a `java.util.HashMap` — a repeated key holds ONE entry with the
+/// final value, and entries iterate in the HashMap's order. This rebuilds the arrow-json-built maps
+/// in that order, exactly like the simd path; a map-free column passes through untouched and an
+/// already-ordered column rebuilds nothing.
 fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> ArrayRef {
     if !contains_map(data_type) {
         return column.clone();
@@ -2096,23 +2185,29 @@ fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> Array
                 entry_fields[1].data_type(),
             );
             let offsets = source.offsets();
+            let mut order = StringDataMapOrder::default();
             let mut surviving: Vec<u32> = Vec::with_capacity(keys.len());
             let mut new_offsets: Vec<i32> = Vec::with_capacity(offsets.len());
             new_offsets.push(0);
-            let mut kept: Vec<u32> = Vec::new();
+            let mut row_keys: Vec<&str> = Vec::new();
             for window in offsets.windows(2) {
-                kept.clear();
-                for entry in window[0] as usize..window[1] as usize {
-                    let key = keys.value(entry);
-                    match kept.iter().position(|&k| keys.value(k as usize) == key) {
-                        Some(at) => kept[at] = entry as u32,
-                        None => kept.push(entry as u32),
-                    }
-                }
-                surviving.extend_from_slice(&kept);
+                let start = window[0] as usize;
+                row_keys.clear();
+                row_keys.extend((start..window[1] as usize).map(|entry| keys.value(entry)));
+                surviving.extend(
+                    order
+                        .entries(&row_keys)
+                        .iter()
+                        .map(|&(_, last)| (start + last) as u32),
+                );
                 new_offsets.push(surviving.len() as i32);
             }
-            if surviving.len() == keys.len() && Arc::ptr_eq(&values, source.entries().column(1)) {
+            let reordered = surviving.len() != keys.len()
+                || surviving
+                    .iter()
+                    .enumerate()
+                    .any(|(position, &entry)| entry as usize != position);
+            if !reordered && Arc::ptr_eq(&values, source.entries().column(1)) {
                 return column.clone();
             }
             let indices = UInt32Array::from(surviving);

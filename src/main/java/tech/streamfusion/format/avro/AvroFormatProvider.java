@@ -24,6 +24,11 @@ public final class AvroFormatProvider implements NativeFormatProvider {
   }
 
   @Override
+  public boolean composesKafkaMetadata() {
+    return true;
+  }
+
+  @Override
   public boolean supportsIgnoreParseErrors() {
     return false;
   }
@@ -66,6 +71,18 @@ public final class AvroFormatProvider implements NativeFormatProvider {
     return EncodeFormat.resolved(FormatCodes.AVRO, "avro-schema=" + schema + "\n", null);
   }
 
+  /** A bare key's datums are written with the schema its fields derive, like Flink's key format. */
+  @Override
+  public String keyDecoderOptions(NativeFormatContext context) {
+    if (!supports(context)) {
+      return null;
+    }
+    return "avro.writer-schema="
+        + tech.streamfusion.format.avro.compat.AvroCompat.schema(
+            context.writerType().copy(false), legacyTimestampMapping(context.options()))
+        + "\n";
+  }
+
   @Override
   public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
     boolean legacy = legacyTimestampMapping(context.options());
@@ -79,27 +96,44 @@ public final class AvroFormatProvider implements NativeFormatProvider {
             : tech.streamfusion.format.avro.compat.AvroCompat.schema(
                     context.outputType().copy(false), legacy)
                 .toString();
-    return () -> new Decoder(writerSchema, readerSchema);
+    String formatOptions = NativeFormatOptions.encode(context.options());
+    return () -> new Decoder(writerSchema, readerSchema, formatOptions);
   }
 
   private static final class Decoder extends NativeSchemaMessageDecoder {
     private final String writerSchema;
     private final String readerSchema;
+    private final String formatOptions;
 
-    private Decoder(String writerSchema, String readerSchema) {
+    private Decoder(String writerSchema, String readerSchema, String formatOptions) {
       this.writerSchema = writerSchema;
       this.readerSchema = readerSchema;
+      this.formatOptions = formatOptions;
     }
 
     @Override
     protected long createHandle(long schemaArrayAddress, long schemaAddress) {
       return NativeAvroFormat.createDecoder(
-          false, writerSchema, readerSchema, schemaArrayAddress, schemaAddress);
+          false, writerSchema, readerSchema, schemaArrayAddress, schemaAddress, formatOptions);
     }
 
     @Override
     public void decodeInto(long inArray, long inSchema, long outArray, long outSchema) {
       NativeAvroFormat.decodeInto(handle, inArray, inSchema, outArray, outSchema);
+    }
+
+    @Override
+    public void decodeRecordsInto(
+        long slabAddress,
+        long slabLength,
+        long[] layout,
+        int count,
+        String topic,
+        int partition,
+        long outArray,
+        long outSchema) {
+      NativeAvroFormat.decodeRecordsInto(
+          handle, slabAddress, slabLength, layout, count, topic, partition, outArray, outSchema);
     }
 
     @Override

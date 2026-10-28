@@ -9,7 +9,6 @@ import tech.streamfusion.format.NativeFormatProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -128,8 +127,8 @@ final class DecodeParityHarness {
   /**
    * A value rendered for comparison across engines. Scalars keep their internal-form
    * {@code toString}; binary compares by content (byte[] has none); nested containers render
-   * element-wise (their internal classes differ between engines), maps sorted by key so hash
-   * iteration order cannot fail parity.
+   * element-wise (their internal classes differ between engines), and map entries keep their
+   * iteration order, which downstream consumers such as {@code MAP_KEYS} expose.
    */
   private static Object render(Object value, LogicalType type) {
     if (value == null) {
@@ -177,7 +176,6 @@ final class DecodeParityHarness {
     for (int i = 0; i < keys.size(); i++) {
       entries.add(keys.get(i) + "=" + values.get(i));
     }
-    Collections.sort(entries);
     return entries;
   }
 }

@@ -53,7 +53,8 @@ public final class DebeziumAvroConfluentFormatProvider implements NativeFormatPr
     String readerSchema =
         AvroSchemaConverter.convertToSchema(envelopeType(context.outputType()).copy(false))
             .toString();
-    return () -> new RegistryAvroDecoder(registry, readerSchema, true);
+    String formatOptions = tech.streamfusion.format.NativeFormatOptions.encode(context.options());
+    return () -> new RegistryAvroDecoder(registry, readerSchema, true, formatOptions, null, null);
   }
 
   /** Flink's Debezium envelope row type over the table's physical row. */

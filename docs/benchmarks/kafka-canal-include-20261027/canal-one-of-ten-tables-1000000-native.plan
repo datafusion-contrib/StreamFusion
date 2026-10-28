@@ -1,0 +1,26 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], changes=[COUNT()], amount=[SUM($1)])
++- LogicalProject(tenant=[$1], amount=[$3])
+   +- LogicalTableScan(table=[[default_catalog, default_database, cdc]])
+
+== Optimized Physical Plan ==
+NativeColumnarGroupAggregate(reuseBarrier=[13])
++- NativeColumnarExchange(reuseBarrier=[12])
+   +- NativeColumnarLocalGroupAggregate(reuseBarrier=[11])
+      +- NativeCalc(select=[tenant, amount], nativeFunctions=[], jvmFunctions=[], reuseBarrier=[10])
+         +- NativeMiniBatchAssigner(reuseBarrier=[9])
+            +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount], topic=[canal-one-of-ten-tables-1000000-mvqpp795], format=[canal-json], reuseBarrier=[8])
+
+== Optimized Execution Plan ==
+NativeColumnarGroupAggregate
++- NativeColumnarExchange
+   +- NativeColumnarLocalGroupAggregate
+      +- NativeCalc(select=[tenant, amount], nativeFunctions=[], jvmFunctions=[])
+         +- NativeMiniBatchAssigner
+            +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount], topic=[canal-one-of-ten-tables-1000000-mvqpp795], format=[canal-json])
+
+== Native acceleration (StreamFusion) ==
+5 operator(s) ran natively.
+No operators fell back to Flink.
+Function execution:
+  - NativeCalc functions: native=[], jvm=[]
