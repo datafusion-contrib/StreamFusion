@@ -1,6 +1,6 @@
 # Apache Iceberg
 
-**Status: partial streaming source and sink.**
+**Status: partial streaming source, sink, and data-file maintenance.**
 
 Supported streaming SQL sources and sinks accelerate automatically when the optional
 module is installed and the native planner is enabled. Unsupported contracts retain
@@ -25,8 +25,12 @@ stock SQL sink. The dynamic DataStream API is described below.
 
 The optional `streamfusion-iceberg` module targets the published Iceberg 1.12.0
 Flink 2.2 runtime and requires Java 17 or later. Build it with `-Piceberg`.
-It is separate from connector-neutral core and uses the published `iceberg`
-Rust crate 0.10.1 with Arrow/Parquet 58. No sibling Iceberg build is required.
+It is separate from connector-neutral core and uses Apache iceberg-rust
+0.11.0 RC3 with Arrow/Parquet 58.4. The maintainer explicitly authorized the temporary
+Git tag `v0.11.0-rc.3` (commit `20eb0feddac8f40bb9e9108a0744b7f356d69480`) because
+0.11 is not yet on crates.io. This is an exception to the registry-only dependency
+policy; replace it with the canonical registry release when available. Rust 1.95 is
+required. No sibling Iceberg build is required.
 The normal Flink 2.2 release build stages and packages its own platform native
 library, includes the connector in deployment archives and Maven publication,
 and checks package/JNI isolation. The ordinary optional-module CI matrix runs its
@@ -139,8 +143,8 @@ Duplicate-row, final-value and delete-kind failures include source checkpoint ev
 snapshot summaries. The keyed recovery stress selection alternates both upsert modes for
 20 repetitions by default; increase it locally with `-Dsf.iceberg.recovery.repetitions=100`.
 Live format upgrades, variant/geometry/geography,
-and nanosecond schemas retain their existing exclusions. Native v3 source admission
-remains stock because crate 0.10.1 does not read deletion vectors.
+and nanosecond schemas retain their existing exclusions. Native v3 reads apply Puffin
+deletion vectors through the same Java-planned task reader as v2 deletes.
 
 Timestamp conversion reuses the common Arrow component representation and checked
 unit conversion: negative epochs floor correctly and the full supported calendar
@@ -214,21 +218,21 @@ component gains, focused streaming confirmation and slower dynamic writer result
 The SQL source now retains the released FLIP-27 streaming source,
 including snapshot discovery, assigners, watermarks, split serializers and coordinator
 state. It emits Arrow batches with logical row offsets and counts rows in source IO
-metrics. SQL admission covers plaintext v1/v2 tables, verified top-level scalar types,
+metrics. SQL admission covers plaintext v1/v2/v3 tables, verified top-level scalar types,
 projection (including zero columns), case sensitivity, source filters, partition constants,
 and name mappings. Host split watermarks retain the original emitter and ordered assigner.
 Matching scan contracts can share one source through the normal planner reuse pass.
 
 Each file task has an explicit dispatch contract: admitted plaintext Parquet data/delete
-files decode in Rust; non-Parquet/encrypted tasks, TIME equality-delete keys and tasks
+files and v3 Puffin deletion vectors decode in Rust; non-Parquet/encrypted tasks, TIME equality-delete keys and tasks
 without complete exact source filters use the released Java task reader and transpose
 its output to Arrow. Source counters `nativeParquetTasks` and `stockFallbackTasks` make
 that distinction visible. Mixed Parquet/Avro/ORC tasks preserve file ordinals and restored
 logical offsets with changed batch sizes. This fallback is not native read coverage.
 
 Bounded reads, limits, metadata tables, nested schemas, non-null initial defaults,
-TIME/binary predicates, unsupported source abilities and format-v3 tables keep the stock
-SQL source. Published crate 0.10.1 cannot read deletion vectors. Java-owned streaming
+TIME/binary predicates and unsupported source abilities keep the stock
+SQL source. Java-owned streaming
 snapshot policy remains unchanged; this does not add CDC semantics to append scans.
 
 Continuous SQL tests verify initial discovery, later appends, filters/projection, final
@@ -247,7 +251,7 @@ all transient codec allocations. The released iceberg-rust writer hides this mem
 API, so encoding uses its underlying parquet-rs Arrow writer directly; byte-for-byte
 fixtures compare file bytes, rolling-size estimates, NaN counts and split offsets with
 the released wrapper across codecs/page versions. Iceberg schema conversion, FileIO
-and source task decoding still use crate 0.10.1. Shared Arrow allocations use the same
+and source task decoding use the pinned Apache 0.11 RC3. Shared Arrow allocations use the same
 budget; internal decoder retention remains opaque. Queued batches and native handles
 have explicit cleanup. Supported paths accelerate by default; the standard per-operator
 switches remain available for controlled comparisons. The source follows
@@ -256,7 +260,72 @@ The implementation is available in [PR #386](https://github.com/datafusion-contr
 with the completed [four-partition Iceberg-to-Iceberg Nexmark comparison](../benchmarks/iceberg-optimized-20261017/README.md).
 The original design and reference implementations are recorded in
 [issue #373](https://github.com/datafusion-contrib/StreamFusion/issues/373).
-All work concerns streaming jobs; batch overwrite and maintenance are outside scope.
+Batch overwrite remains outside scope. Data-file maintenance uses the separate API below.
+
+## Data-file maintenance
+
+`NativeIcebergMaintenance.append(env, maintenanceBuilder)` builds Iceberg's normal
+Flink `TableMaintenance` graph and substitutes only its data-file rewrite worker.
+Use the overload with `sort=true` and a sort-memory budget to order each rewrite
+admitted native group by the table's declared sort order. The existing Iceberg planner still chooses
+the files, groups, target size, output spec and parallel work. Its trigger, locks,
+checkpoint flow, commit batching, conflict checks and cleanup remain Java-owned.
+There is no StreamFusion bin-packing implementation or metadata maintenance engine.
+
+```java
+var maintenance = TableMaintenance.forTable(env, tableLoader)
+    .add(RewriteDataFiles.builder().scheduleOnDataFileCount(10));
+NativeIcebergMaintenance.append(env, maintenance, true, 64L << 20);
+env.execute();
+```
+
+The default overload does not sort and reserves no sort capacity. The sorted overload
+uses the supplied per-worker budget; 64 MiB is the one-shot API's default.
+The adapter is version-gated to the published Iceberg 1.12.0 / Flink 2.2 layout.
+Unsupported file groups retain the original worker before any native files open,
+including its stock ordering behavior. Configure sufficient task off-heap memory
+for the reader, writer, equality sets and optional sort (for example 256 MiB).
+
+For a one-shot job, `NativeIcebergMaintenance.rewriteDataFiles(env, table, options,
+sort)` delegates to Iceberg's `BinPackRewriteFilePlanner`, executes its selected
+groups as Flink tasks, and passes the resulting groups to Iceberg's
+`RewriteDataFilesCommitManager`. The options belong to that existing planner.
+The API rejects unsupported native contracts before submission.
+
+Rust reads Parquet into Arrow, applies v2 position/equality deletes or v3 Puffin
+vectors/equality deletes, and writes Parquet again through the existing native sink
+appender. Sequence-number applicability is decided by Iceberg's planned tasks.
+For single integer, long or string equality keys, maintenance uses the existing
+Iceberg decoder plus DataFusion’s static membership filter. This avoids RC3’s large
+per-delete predicate tree. Composite keys and other admitted types use Iceberg’s
+normal delete implementation. Null matching and delete-sequence applicability remain
+covered by stock-reader comparisons. The membership filter’s retained arrays and
+per-key objects have an estimated task off-heap charge; internal decoder and
+transient build allocations remain opaque.
+V3 rewrites read and persist `_row_id` and `_last_updated_sequence_number` alongside
+the payload so physical row reordering does not assign new identities. Java's
+original partition and rolling writer traverses borrowed Arrow views; only selected
+row positions return to Rust. Payloads remain columnar throughout file processing.
+Filtering, gathering, sorting and encoding can allocate new column buffers: this is
+not a claim of zero copying. No row-to-column or column-to-row payload transpose is
+introduced. Flink edges transport file-group metadata rather than payload rows.
+
+Maintenance shares source/sink admission and effective Parquet settings, including
+codecs, compression levels, page/row-group sizing, field IDs and Java metrics policy.
+It admits verified scalar schemas, plaintext Parquet files, table versions 1–3 and
+verified delete-key types. Nested schemas, non-null initial defaults, encryption,
+unsupported Parquet controls and TIME equality-delete keys remain outside coverage.
+Sorting currently supports identity fields with ascending/descending and explicit
+null placement; transformed sort keys and Z-order are outside coverage. DataFusion's
+existing external sort owns ordering, merge and spill. Its configured memory pool is
+reserved against task off-heap memory, with source/output Arrow retention additionally
+accounted. Spill files use Flink's task spill directory. Transient codec allocations
+retain the source/sink accounting limits described above.
+
+The [release rewrite comparison](../benchmarks/iceberg-rewrite-20261028/README.md)
+measures unsorted file processing against stock Flink at 400k and 2M rows, including
+JNI, Java writer traversal, Parquet IO and close/metrics. It does not measure complete
+maintenance-job startup or metadata commits.
 
 ## Separate Iceberg Nexmark comparison
 
@@ -353,7 +422,7 @@ separately from stock Flink and excluded from stock-Flink aggregates. Observatio
 also split total time into corpus/window progress, the settling checkpoint, and final
 drain/commit. `SF_ICEBERG_DYNAMIC_FORMAT_VERSION=3` selects v3 for the separate dynamic
 writer diagnostic; keyed runs with repeated keys require actual Java Puffin deletion
-vectors and stock readback. This does not admit native v3 reads.
+vectors and stock readback. These historical diagnostics predate native v3 reads.
 For separate diagnostics, `SF_ICEBERG_PROFILE_TOOL` can point to the released
 async-profiler `profiler.sh`; `SF_ICEBERG_PROFILE_EVENT` selects `itimer` or `wall`.
 Each trial starts profiling before its timer and stops before stock readback, retaining

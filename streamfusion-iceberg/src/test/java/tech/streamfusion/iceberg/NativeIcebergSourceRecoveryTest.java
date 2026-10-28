@@ -35,10 +35,39 @@ class NativeIcebergSourceRecoveryTest {
   })
   void midFileSavepointRestoresWithNewParallelismAndCommitsEveryRowOnce(
       String distribution, long checkpointInterval) throws Exception {
+    restoreWithNewParallelism(distribution, checkpointInterval, 2);
+  }
+
+  @org.junit.jupiter.api.Test
+  void v3DeletionVectorsSurviveMidFileRestoreAndRescaling() throws Exception {
+    restoreWithNewParallelism("none", 60000, 3);
+  }
+
+  private void restoreWithNewParallelism(String distribution, long checkpointInterval, int version)
+      throws Exception {
     EMITTED.set(0);
     CHECKPOINTED.clear();
     NativeIcebergRangeSinkTest.clearRangeWitnesses();
     var input = NativeIcebergReaderTest.fixture(temp, false);
+    if (version == 3) {
+      input.updateProperties().set("format-version", "3").commit();
+      try (var tasks = input.newScan().planFiles()) {
+        var vectors =
+            new org.apache.iceberg.deletes.BaseDVFileWriter(
+                org.apache.iceberg.io.OutputFileFactory.builderFor(input, 0, 0)
+                    .format(org.apache.iceberg.FileFormat.PUFFIN)
+                    .build(),
+                ignored -> null);
+        try (vectors) {
+          vectors.delete(tasks.iterator().next().file().location(), 17, input.spec(), null);
+        }
+        var delta = input.newRowDelta();
+        vectors.result().deleteFiles().forEach(delta::addDeletes);
+        delta.commit();
+      }
+    }
+    int initialRows = version == 3 ? 2000 : 2001;
+    int finalRows = initialRows + 3;
     NativeIcebergSourceSqlTest.append(input, 101, 2001);
     var output =
         new HadoopTables(new org.apache.hadoop.conf.Configuration())
@@ -84,7 +113,7 @@ class NativeIcebergSourceRecoveryTest {
             NativeIcebergRangeSinkTest.rangeUpdates() > 0,
             "range state must be learned before restoration");
       }
-      assertTrue(EMITTED.get() < 2001, "savepoint must interrupt a partially emitted task");
+      assertTrue(EMITTED.get() < initialRows, "savepoint must interrupt a partially emitted task");
     } finally {
       first.cancel().get(30, TimeUnit.SECONDS);
       first.getJobExecutionResult().handle((result, failure) -> null).get(30, TimeUnit.SECONDS);
@@ -98,7 +127,7 @@ class NativeIcebergSourceRecoveryTest {
     assertEquals(2, checkpointCounts.size(), "both source tasks must snapshot the savepoint");
     int checkpointRows = checkpointCounts.values().stream().mapToInt(Integer::intValue).sum();
     assertTrue(
-        checkpointRows > 0 && checkpointRows < 2001,
+        checkpointRows > 0 && checkpointRows < initialRows,
         "savepoint must retain partial progress: " + checkpointCounts);
     EMITTED.set(checkpointRows);
     NativeIcebergSourceSqlTest.append(input, 2001, 2004);
@@ -109,13 +138,14 @@ class NativeIcebergSourceRecoveryTest {
     try {
       // The restored sink commits only at the drain savepoint; wait for the remaining input first.
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-      while ((EMITTED.get() < 2004 || !NativeIcebergCapturedRecoveryTest.allTasksRunning(restored))
+      while ((EMITTED.get() < finalRows
+              || !NativeIcebergCapturedRecoveryTest.allTasksRunning(restored))
           && System.nanoTime() < deadline) {
         if (restored.getJobStatus().get().isGloballyTerminalState())
           restored.getJobExecutionResult().get();
         Thread.sleep(5);
       }
-      assertTrue(EMITTED.get() >= 2004);
+      assertTrue(EMITTED.get() >= finalRows);
       assertTrue(NativeIcebergCapturedRecoveryTest.allTasksRunning(restored));
       restored
           .stopWithSavepoint(
@@ -132,9 +162,10 @@ class NativeIcebergSourceRecoveryTest {
           assertTrue(ids.add((Integer) row.getField("id")), "duplicate after restore");
         }
       }
-      assertEquals(2004, count);
+      assertEquals(finalRows, count);
       assertEquals(
           java.util.stream.IntStream.range(0, 2004)
+              .filter(id -> version != 3 || id != 17)
               .boxed()
               .collect(java.util.stream.Collectors.toSet()),
           ids);

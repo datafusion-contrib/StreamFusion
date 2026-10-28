@@ -59,6 +59,14 @@ public final class NativeIcebergSink {
 
   static IcebergTaskWriterFactory.Decorator dataWriterDecorator(
       String schema, IcebergParquetSettings settings, MetricsConfig metrics) {
+    return dataWriterDecorator(schema, settings, metrics, null);
+  }
+
+  static IcebergTaskWriterFactory.Decorator dataWriterDecorator(
+      String schema,
+      IcebergParquetSettings settings,
+      MetricsConfig metrics,
+      org.apache.iceberg.SortOrder sortOrder) {
     return (stock, context) ->
         new FileWriterFactory<>() {
           @Override
@@ -71,7 +79,8 @@ public final class NativeIcebergSink {
                 file.encryptingOutputFile().location(),
                 spec,
                 partition,
-                file.keyMetadata());
+                file.keyMetadata(),
+                sortOrder);
           }
 
           @Override

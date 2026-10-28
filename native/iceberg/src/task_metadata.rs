@@ -1,7 +1,7 @@
-use iceberg::expr::{Bind, Predicate, Reference};
-use iceberg::scan::FileScanTask;
+use iceberg::expr::{Bind, BoundPredicate, Predicate, Reference};
 use iceberg::spec::{
-    Datum, Literal, NameMapping, PartitionSpec, PrimitiveLiteral, PrimitiveType, Schema, Type,
+    Datum, Literal, NameMapping, PartitionSpec, PrimitiveLiteral, PrimitiveType, Schema, SchemaRef,
+    Struct, Type,
 };
 use iceberg::{Error, ErrorKind, Result};
 use serde::Deserialize;
@@ -62,34 +62,48 @@ pub(crate) struct TaskMetadata {
 }
 
 impl TaskMetadata {
-    pub(crate) fn apply(self, task: &mut FileScanTask) -> Result<()> {
-        match (self.partition_spec, self.partition_values) {
-            (None, None) => {}
+    pub(crate) fn resolve(
+        self,
+        schema: &SchemaRef,
+        case_sensitive: bool,
+    ) -> Result<ResolvedMetadata> {
+        let (partition_spec, partition) = match (self.partition_spec, self.partition_values) {
+            (None, None) => (None, None),
             (Some(spec), Some(values)) => {
-                let kind = Type::Struct(spec.partition_type(&task.schema)?);
+                let kind = Type::Struct(spec.partition_type(schema)?);
                 let Some(Literal::Struct(values)) = Literal::try_from_json(values, &kind)? else {
                     return Err(invalid("Missing Iceberg partition tuple"));
                 };
-                task.partition_spec = Some(Arc::new(spec));
-                task.partition = Some(values);
+                (Some(Arc::new(spec)), Some(values))
             }
             _ => {
                 return Err(invalid(
                     "Iceberg partition spec and tuple must travel together",
                 ))
             }
-        }
-        task.name_mapping = self.name_mapping.map(Arc::new);
-        task.predicate = self
+        };
+        let predicate = self
             .predicate
             .map(|predicate| {
                 predicate
-                    .unbound(&task.schema)?
-                    .bind(task.schema.clone(), task.case_sensitive)
+                    .unbound(schema)?
+                    .bind(schema.clone(), case_sensitive)
             })
             .transpose()?;
-        Ok(())
+        Ok(ResolvedMetadata {
+            partition_spec,
+            partition,
+            predicate,
+            name_mapping: self.name_mapping.map(Arc::new),
+        })
     }
+}
+
+pub(crate) struct ResolvedMetadata {
+    pub partition_spec: Option<Arc<PartitionSpec>>,
+    pub partition: Option<Struct>,
+    pub name_mapping: Option<Arc<NameMapping>>,
+    pub predicate: Option<BoundPredicate>,
 }
 
 #[derive(Deserialize)]

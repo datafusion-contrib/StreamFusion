@@ -25,24 +25,40 @@ impl MetadataFetch for Footer {
 /// The released reader estimates group offsets cumulatively. Translate the host's
 /// physical midpoint ranges, including padding/index gaps, to that coordinate space.
 pub(crate) async fn tasks(io: &FileIO, task: FileScanTask) -> Result<Vec<FileScanTask>> {
-    if task.start == 0 && task.length >= task.file_size_in_bytes {
+    if task.start() == 0 && task.length() >= task.file_size_in_bytes() {
         return Ok(vec![task]);
     }
-    let file = io.new_input(&task.data_file_path)?;
+    let file = io.new_input(task.data_file_path())?;
     let metadata = ParquetMetaDataReader::new()
-        .load_and_finish(Footer(file.reader().await?), task.file_size_in_bytes)
+        .load_and_finish(Footer(file.reader().await?), task.file_size_in_bytes())
         .await
         .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
-    let ranges = ranges(&metadata, task.start, task.length)?;
-    Ok(ranges
+    let ranges = ranges(&metadata, task.start(), task.length())?;
+    ranges
         .into_iter()
         .map(|range| {
-            let mut selected = task.clone();
-            selected.start = range.start;
-            selected.length = range.end - range.start;
-            selected
+            FileScanTask::builder()
+                .with_file_size_in_bytes(task.file_size_in_bytes())
+                .with_start(range.start)
+                .with_length(range.end - range.start)
+                .with_record_count(task.record_count())
+                .with_first_row_id(task.first_row_id())
+                .with_data_sequence_number(task.data_sequence_number())
+                .with_data_file_path(task.data_file_path().to_owned())
+                .with_data_file_format(task.data_file_format())
+                .with_schema(task.schema_ref())
+                .with_project_field_ids(task.project_field_ids().to_vec())
+                .with_predicate(task.predicate().cloned())
+                .with_deletes(task.deletes().to_vec())
+                .with_partition(task.partition().cloned())
+                .with_partition_spec(task.partition_spec().cloned())
+                .with_name_mapping(task.name_mapping().cloned())
+                .with_unified_partition_type(task.unified_partition_type().cloned())
+                .with_case_sensitive(task.case_sensitive())
+                .with_key_metadata(task.key_metadata().map(Into::into))
+                .build()
         })
-        .collect())
+        .collect()
 }
 
 fn ranges(metadata: &ParquetMetaData, start: u64, length: u64) -> Result<Vec<Range<u64>>> {

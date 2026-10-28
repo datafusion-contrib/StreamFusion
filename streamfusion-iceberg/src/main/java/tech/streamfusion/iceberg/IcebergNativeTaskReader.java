@@ -14,13 +14,16 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.io.FileIO;
 import tech.streamfusion.operator.NativeAllocator;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 
-/** One Java-planned file task, decoded directly to Arrow by the released Iceberg reader. */
+/** One Java-planned file task, decoded directly to Arrow by the pinned Iceberg reader. */
 final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
   private final IcebergTaskFiles files;
   private long handle;
   private final org.apache.arrow.vector.types.pojo.Schema outputType;
   private final IcebergReadCancellation cancellation;
+  private long equalityMemoryOwner;
+  private boolean equalityAccounted;
 
   IcebergNativeTaskReader(
       FileScanTask task,
@@ -59,6 +62,33 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
       String nameMapping,
       IcebergReadCancellation cancellation)
       throws IOException {
+    this(
+        task,
+        schema,
+        projection,
+        io,
+        batchRows,
+        skip,
+        filters,
+        caseSensitive,
+        nameMapping,
+        cancellation,
+        false);
+  }
+
+  IcebergNativeTaskReader(
+      FileScanTask task,
+      Schema schema,
+      List<Integer> projection,
+      FileIO io,
+      int batchRows,
+      long skip,
+      List<org.apache.iceberg.expressions.Expression> filters,
+      boolean caseSensitive,
+      String nameMapping,
+      IcebergReadCancellation cancellation,
+      boolean columnarEqualitySets)
+      throws IOException {
     this.cancellation = cancellation;
     if (task.isDataTask()
         || task.file().format() != FileFormat.PARQUET
@@ -75,6 +105,9 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     descriptor.put("length", task.length());
     descriptor.set("project_ids", mapper.valueToTree(projection));
     descriptor.put("case_sensitive", caseSensitive);
+    descriptor.put("columnar_equality_sets", columnarEqualitySets);
+    descriptor.set("first_row_id", mapper.valueToTree(task.file().firstRowId()));
+    descriptor.set("data_sequence_number", mapper.valueToTree(task.file().dataSequenceNumber()));
     descriptor.set(
         "metadata",
         IcebergTaskMetadata.translate(mapper, task, schema, filters, caseSensitive, nameMapping));
@@ -82,13 +115,21 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     Map<String, Long> lengths = new HashMap<>();
     lengths.put(task.file().location(), task.file().fileSizeInBytes());
     for (var delete : task.deletes()) {
-      if (delete.format() != FileFormat.PARQUET || delete.keyMetadata() != null) {
-        throw new IllegalArgumentException("Native delete reads require plaintext Parquet");
+      if ((delete.format() != FileFormat.PARQUET
+              && !org.apache.iceberg.util.ContentFileUtil.isDV(delete))
+          || delete.keyMetadata() != null) {
+        throw new IllegalArgumentException(
+            "Native delete reads require plaintext Parquet or Puffin DVs");
       }
       var entry = deletes.addObject();
       entry.put("file_path", delete.location());
       entry.put("file_size_in_bytes", delete.fileSizeInBytes());
       entry.put("partition_spec_id", delete.specId());
+      entry.put("file_format", delete.format() == FileFormat.PUFFIN ? "Puffin" : "Parquet");
+      entry.set("referenced_data_file", mapper.valueToTree(delete.referencedDataFile()));
+      entry.set("content_offset", mapper.valueToTree(delete.contentOffset()));
+      entry.set("content_size_in_bytes", mapper.valueToTree(delete.contentSizeInBytes()));
+      entry.put("record_count", delete.recordCount());
       switch (delete.content()) {
         case POSITION_DELETES:
           entry.put("file_type", "PositionDeletes");
@@ -105,13 +146,16 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
         throw new IllegalArgumentException("Conflicting Java-planned file lengths");
       }
     }
-    var selected = new Schema(projection.stream().map(schema::findField).toList());
+    var readSchema = org.apache.iceberg.MetadataColumns.schemaWithRowLineage(schema);
+    var selected = new Schema(projection.stream().map(readSchema::findField).toList());
     outputType =
         tech.streamfusion.arrow.ArrowFileBatch.schema(
             tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
                 org.apache.iceberg.flink.FlinkSchemaUtil.convert(selected)));
     files = new IcebergTaskFiles(io, lengths);
     try (var outputSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      if (columnarEqualitySets)
+        equalityMemoryOwner = TaskOffHeapMemory.registerOwner("iceberg-rewrite", "equality-sets");
       if (cancellation != null) cancellation.add(files);
       Data.exportSchema(
           NativeAllocator.SHARED, outputType, NativeAllocator.DICTIONARIES, outputSchema);
@@ -133,6 +177,7 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
         failure.addSuppressed(cleanup);
       }
       if (cancellation != null) cancellation.remove(files);
+      TaskOffHeapMemory.closeOwner(equalityMemoryOwner);
       throw failure;
     }
   }
@@ -141,7 +186,15 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     if (handle == 0) throw new IllegalStateException("Iceberg native task reader is closed");
     try (var array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
       try {
-        if (!NativeIceberg.nextRead(handle, array.memoryAddress())) return null;
+        boolean present = NativeIceberg.nextRead(handle, array.memoryAddress());
+        if (equalityMemoryOwner != 0 && !equalityAccounted) {
+          long retained = NativeIceberg.readRetainedBytes(handle);
+          if (!TaskOffHeapMemory.tryReserve(equalityMemoryOwner, retained))
+            throw new IllegalStateException(
+                "Iceberg equality sets exceed the task off-heap budget");
+          equalityAccounted = true;
+        }
+        if (!present) return null;
         var root = VectorSchemaRoot.create(outputType, NativeAllocator.SHARED);
         try {
           Data.importIntoVectorSchemaRoot(
@@ -173,6 +226,8 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
         files.close();
       } finally {
         if (cancellation != null) cancellation.remove(files);
+        TaskOffHeapMemory.closeOwner(equalityMemoryOwner);
+        equalityMemoryOwner = 0;
       }
     }
   }

@@ -20,6 +20,16 @@ final class NativeIceberg {
 
   private static native String nativeBuildVersion();
 
+  static native long createSort(long schema, String keys, long memory, String spillDirectory);
+
+  static native void pushSort(long handle, long array);
+
+  static native void finishSort(long handle);
+
+  static native boolean nextSort(long handle, long array);
+
+  static native void closeSort(long handle);
+
   static native String liveNativeHandles();
 
   static native long createWriter(
@@ -52,6 +62,8 @@ final class NativeIceberg {
       String task, Object files, int batchRows, long skip, long outputSchema);
 
   static native boolean nextRead(long handle, long array);
+
+  static native long readRetainedBytes(long handle);
 
   static native void closeReader(long handle);
 }

@@ -71,7 +71,7 @@ jobs:
         id: native-payload
         with:
           path: native/target/release/libstreamfusion.so
-          key: nested-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+          key: nested-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.95.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
       - name: Build the candidate release before measurements
         run: >-
           mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime -am
@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: native/target/release/libstreamfusion.so
-          key: nested-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+          key: nested-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.95.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
       - name: Verify nested callback parity before measurements
         run: >-
           mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime

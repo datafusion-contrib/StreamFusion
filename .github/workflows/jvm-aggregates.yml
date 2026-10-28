@@ -80,7 +80,7 @@ jobs:
         id: native-payload
         with:
           path: native/target/release/libstreamfusion.so
-          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.95.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
       - name: Build and install release modules before measurements
         run: >-
           mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime -am
@@ -90,7 +90,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: native/target/release/libstreamfusion.so
-          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.95.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
       - name: Validate aggregate state and recovery before measurements
         run: |
           for capacity in 65536 3; do

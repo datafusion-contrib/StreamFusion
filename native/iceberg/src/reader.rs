@@ -4,7 +4,7 @@ use futures::{StreamExt, TryStreamExt};
 use iceberg::arrow::ArrowReaderBuilder;
 use iceberg::io::FileIO;
 use iceberg::scan::{ArrowRecordBatchStream, FileScanTask, FileScanTaskDeleteFile};
-use iceberg::spec::{DataFileFormat, Schema};
+use iceberg::spec::{DataContentType, DataFileFormat, PrimitiveType, Schema, Type};
 use iceberg::{Error, ErrorKind, Result, Runtime};
 use serde::Deserialize;
 use std::sync::{Arc, OnceLock};
@@ -32,6 +32,12 @@ pub(crate) struct ScanTask {
     pub length: u64,
     pub project_ids: Vec<i32>,
     pub deletes: Vec<FileScanTaskDeleteFile>,
+    #[serde(default)]
+    pub first_row_id: Option<i64>,
+    #[serde(default)]
+    pub data_sequence_number: Option<i64>,
+    #[serde(default)]
+    pub columnar_equality_sets: bool,
     pub case_sensitive: bool,
     #[serde(default)]
     pub metadata: crate::task_metadata::TaskMetadata,
@@ -39,24 +45,25 @@ pub(crate) struct ScanTask {
 
 impl ScanTask {
     fn task(self) -> Result<FileScanTask> {
-        let mut task = FileScanTask {
-            file_size_in_bytes: self.file_size,
-            start: self.start,
-            length: self.length,
-            record_count: None,
-            data_file_path: self.path,
-            data_file_format: DataFileFormat::Parquet,
-            schema: Arc::new(self.schema),
-            project_field_ids: self.project_ids,
-            predicate: None,
-            deletes: self.deletes,
-            partition: None,
-            partition_spec: None,
-            name_mapping: None,
-            case_sensitive: self.case_sensitive,
-        };
-        self.metadata.apply(&mut task)?;
-        Ok(task)
+        let schema = Arc::new(self.schema);
+        let metadata = self.metadata.resolve(&schema, self.case_sensitive)?;
+        FileScanTask::builder()
+            .with_file_size_in_bytes(self.file_size)
+            .with_start(self.start)
+            .with_length(self.length)
+            .with_data_file_path(self.path)
+            .with_data_file_format(DataFileFormat::Parquet)
+            .with_schema(schema)
+            .with_project_field_ids(self.project_ids)
+            .with_predicate(metadata.predicate)
+            .with_deletes(self.deletes)
+            .with_partition(metadata.partition)
+            .with_partition_spec(metadata.partition_spec)
+            .with_name_mapping(metadata.name_mapping)
+            .with_case_sensitive(self.case_sensitive)
+            .with_first_row_id(self.first_row_id)
+            .with_data_sequence_number(self.data_sequence_number)
+            .build()
     }
 }
 
@@ -64,15 +71,44 @@ pub(crate) struct Reader {
     stream: ArrowRecordBatchStream,
     skip: u64,
     output_schema: Option<SchemaRef>,
+    equality_tasks: Vec<(FileIO, FileScanTask, String)>,
+    equality_sets: Vec<crate::equality::EqualitySet>,
+    pub(crate) retained_bytes: usize,
 }
 
 impl Reader {
-    pub(crate) fn new(io: FileIO, task: ScanTask, batch_rows: usize, skip: u64) -> Result<Self> {
+    pub(crate) fn new(
+        io: FileIO,
+        mut task: ScanTask,
+        batch_rows: usize,
+        skip: u64,
+    ) -> Result<Self> {
         if batch_rows == 0 {
             return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Arrow batch size must be positive",
             ));
+        }
+        let mut equality_deletes = Vec::new();
+        if task.columnar_equality_sets {
+            task.deletes.retain(|delete| {
+                let ids = delete.equality_ids.as_deref().unwrap_or_default();
+                let eligible = delete.file_type == DataContentType::EqualityDeletes
+                    && ids.len() == 1
+                    && task.project_ids.contains(&ids[0])
+                    && task.schema.field_by_id(ids[0]).is_some_and(|field| {
+                        matches!(
+                            field.field_type.as_ref(),
+                            Type::Primitive(
+                                PrimitiveType::Int | PrimitiveType::Long | PrimitiveType::String
+                            )
+                        )
+                    });
+                if eligible {
+                    equality_deletes.push(delete.clone());
+                }
+                !eligible
+            });
         }
         let reader = ArrowReaderBuilder::new(io.clone(), Runtime::new(runtime()))
             .with_batch_size(batch_rows)
@@ -80,6 +116,25 @@ impl Reader {
             .with_row_selection_enabled(false)
             .build();
         let task = task.task()?;
+        let equality_tasks = equality_deletes
+            .into_iter()
+            .map(|delete| {
+                let id = delete.equality_ids.unwrap()[0];
+                let name = task.schema_ref().field_by_id(id).unwrap().name.clone();
+                let scan = FileScanTask::builder()
+                    .with_file_size_in_bytes(delete.file_size_in_bytes)
+                    .with_start(0)
+                    .with_length(delete.file_size_in_bytes)
+                    .with_data_file_path(delete.file_path)
+                    .with_data_file_format(DataFileFormat::Parquet)
+                    .with_schema(task.schema_ref())
+                    .with_project_field_ids(vec![id])
+                    .with_case_sensitive(task.case_sensitive())
+                    .with_name_mapping(task.name_mapping().cloned())
+                    .build()?;
+                Ok((io.clone(), scan, name))
+            })
+            .collect::<Result<Vec<_>>>()?;
         let tasks = futures::stream::once(async move { crate::scan_range::tasks(&io, task).await })
             .map_ok(|tasks| futures::stream::iter(tasks.into_iter().map(Ok)))
             .try_flatten()
@@ -88,6 +143,9 @@ impl Reader {
             stream: reader.read(tasks)?.stream(),
             skip,
             output_schema: None,
+            equality_tasks,
+            equality_sets: Vec::new(),
+            retained_bytes: 0,
         })
     }
 
@@ -98,6 +156,18 @@ impl Reader {
 
     pub(crate) async fn next(&mut self) -> Result<Option<RecordBatch>> {
         while let Some(batch) = self.stream.try_next().await? {
+            for (io, task, name) in std::mem::take(&mut self.equality_tasks) {
+                if let Some(set) =
+                    crate::equality::EqualitySet::load(io, task, &batch.schema(), &name).await?
+                {
+                    self.retained_bytes += set.retained_bytes;
+                    self.equality_sets.push(set);
+                }
+            }
+            let mut batch = batch;
+            for set in &self.equality_sets {
+                batch = set.apply(batch)?;
+            }
             if self.skip >= batch.num_rows() as u64 {
                 self.skip -= batch.num_rows() as u64;
                 continue;
@@ -194,6 +264,9 @@ mod tests {
                         length: bytes.len() as u64,
                         project_ids: vec![17, 38],
                         deletes: vec![],
+                        first_row_id: None,
+                        data_sequence_number: None,
+                        columnar_equality_sets: false,
                         case_sensitive: true,
                         metadata: Default::default(),
                     };
@@ -223,6 +296,9 @@ mod tests {
                 length: bytes.len() as u64,
                 project_ids: vec![38],
                 deletes: vec![],
+                first_row_id: None,
+                data_sequence_number: None,
+                columnar_equality_sets: false,
                 case_sensitive: true,
                 metadata: Default::default(),
             };

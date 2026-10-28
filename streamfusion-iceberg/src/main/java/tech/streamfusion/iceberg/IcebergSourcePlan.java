@@ -91,8 +91,8 @@ public final class IcebergSourcePlan {
     if (!IcebergSinkAdapter.compatible() || !conf.streaming())
       throw new IllegalArgumentException("only streaming discovery is admitted");
     if (table instanceof org.apache.iceberg.BaseMetadataTable
-        || org.apache.iceberg.TableUtil.formatVersion(table) > 2)
-      throw new IllegalArgumentException("metadata/v3 sources retain stock readers");
+        || org.apache.iceberg.TableUtil.formatVersion(table) > 3)
+      throw new IllegalArgumentException("metadata/unknown-format sources retain stock readers");
     if (!(table.encryption() instanceof org.apache.iceberg.encryption.PlaintextEncryptionManager))
       throw new IllegalArgumentException("source encryption is not admitted");
     if (conf.limit() >= 0) throw new IllegalArgumentException("source limits are not admitted");

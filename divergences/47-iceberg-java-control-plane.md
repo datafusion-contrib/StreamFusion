@@ -3,7 +3,7 @@
 Comet provides the model for explicit Iceberg file-task metadata and Arrow/JNI ownership.
 StreamFusion retains Flink's streaming discovery, split ordinals, row offsets, watermark
 emitter, operator/coordinator state, rolling writers, delete encoders and committers.
-Released iceberg-rust reads admitted Parquet tasks; parquet-rs encodes one Java-selected
+Apache iceberg-rust reads admitted Parquet tasks; parquet-rs encodes one Java-selected
 data file at a time. Java FileIO supplies credentials, paths, streams and positional reads.
 This extends the [encoding-only sink boundary](22-parquet-sink-encoding-only-native.md).
 
@@ -57,3 +57,31 @@ it releases records left in Flink's fetch queue when its last fetcher has alread
 exited. Claimed batches belong to downstream consumers, and the fetcher still owns
 native reader destruction. This extends the host-IO cancellation hook without changing
 split offsets, queue scheduling or the Java reader lifecycle.
+
+Data-file maintenance extends the same file-processing boundary. Comet's explicit
+rewrite scan handoff informed the task descriptor; StreamFusion keeps Iceberg's
+existing Flink planner, grouping and commit manager and substitutes the rewrite
+worker. Java views over Arrow retain stock partition/rolling decisions, while
+Parquet decode, delete application and encoding remain Rust-owned. V3 lineage is
+carried as Arrow columns through filtering and sorting. The maintainer approved the
+official 0.11 RC3 Git tag until a registry release provides deletion-vector reads.
+
+Arroyo's filesystem Iceberg sink was consulted for this extension. It has no matching
+external rewrite-sort operator; StreamFusion therefore composes DataFusion's existing
+SortExec with bounded Arrow channels, a task-budgeted memory pool and Flink's spill
+directory. This adds no independent sorting, merging or bin-packing algorithm.
+
+This requires a narrow dependency-boundary exception for the Iceberg DSO: only the
+physical sort and its enumerated DataFusion utility dependencies are admitted by the
+workspace check. DataFusion's SQL planner/session and the StreamFusion engine remain
+forbidden connector dependencies; all other format/connector checks are unchanged.
+
+A release profile found RC3's equality predicate tree repeatedly comparing every row
+with thousands of delete values. Maintenance therefore composes the same Iceberg
+Parquet decoder with DataFusion's existing static membership kernel for single
+integer/long/string keys. Payloads stay Arrow arrays; composite and other keys keep
+Iceberg's normal delete path. Null-safe keep masks preserve Iceberg semantics rather
+than SQL IN's three-valued result. The filter's retained arrays and per-key objects
+are charged with an estimate because DataFusion does not expose the static filter's
+allocation size. This exception applies to maintenance's complete-schema reader;
+streaming-source dispatch is unchanged apart from the V3 admission upgrade.

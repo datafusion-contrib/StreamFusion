@@ -13,7 +13,8 @@ streamfusion-bridge = { path = "../bridge" }
 arrow.workspace = true
 parquet.workspace = true
 jni.workspace = true
-iceberg = "=0.10.1"
+# Temporary official RC pin authorized for V3 reads; replace with the registry release.
+iceberg = { git = "https://github.com/apache/iceberg-rust.git", tag = "v0.11.0-rc.3" }
 async-trait = "0.1"
 bytes.workspace = true
 futures.workspace = true
@@ -21,6 +22,10 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 typetag = "0.2"
+datafusion-common = "54.0.0"
+datafusion-execution = "54.0.0"
+datafusion-physical-expr = "54.0.0"
+datafusion-physical-plan = "54.0.0"
 
 [dependencies.libmimalloc-sys]
 workspace = true

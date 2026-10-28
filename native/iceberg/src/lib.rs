@@ -8,13 +8,113 @@ use streamfusion_bridge::{
 };
 
 streamfusion_bridge::link_allocator!();
+mod equality;
 mod input;
 mod reader;
 mod routing;
 mod scan_range;
+mod sort;
 mod storage;
 mod task_metadata;
 mod writer;
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_createSort(
+    env: JNIEnv,
+    _: JClass,
+    schema: jlong,
+    keys_json: JString,
+    memory: jlong,
+    spill: JString,
+) -> jlong {
+    jni_guard(env, |env| {
+        assert!(
+            memory >= 1 << 20,
+            "Rewrite sort budget must be at least 1 MiB"
+        );
+        let keys: String = env.get_string(&keys_json).expect("Sort keys").into();
+        let keys: Vec<(usize, bool, bool)> =
+            serde_json::from_str(&keys).expect("Sort key descriptors");
+        let keys = keys
+            .into_iter()
+            .map(|(index, descending, nulls_first)| {
+                (
+                    index,
+                    arrow::compute::SortOptions {
+                        descending,
+                        nulls_first,
+                    },
+                )
+            })
+            .collect();
+        let spill: String = env.get_string(&spill).expect("Sort spill directory").into();
+        into_handle(
+            sort::Sorter::new(import_schema(schema), keys, memory as usize, &spill)
+                .expect("Create rewrite sort"),
+        )
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_pushSort(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+    array: jlong,
+) {
+    jni_guard(env, |_| {
+        let sorter = unsafe { &mut *(handle as *mut sort::Sorter) };
+        let batch = import_record_batch_with_schema(array, &sorter.schema);
+        reader::runtime()
+            .block_on(sorter.push(batch))
+            .expect("Feed rewrite sort");
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_finishSort(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+) {
+    jni_guard(env, |_| {
+        unsafe { &mut *(handle as *mut sort::Sorter) }.finish();
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_nextSort(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+    array: jlong,
+) -> jni::sys::jboolean {
+    jni_guard(env, |_| {
+        let sorter = unsafe { &mut *(handle as *mut sort::Sorter) };
+        match reader::runtime()
+            .block_on(sorter.next())
+            .expect("Read rewrite sort")
+        {
+            Some(batch) => {
+                streamfusion_bridge::export_record_batch_array(batch, array);
+                1
+            }
+            None => 0,
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_closeSort(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+) {
+    jni_guard(env, |_| {
+        let mut sorter = unsafe { from_handle::<sort::Sorter>(handle) };
+        reader::runtime().block_on(sorter.close());
+    })
+}
 
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_liveNativeHandles(
@@ -245,6 +345,18 @@ pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_createReader
                 .with_output_schema(import_schema(output_schema)),
         )
     })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_readRetainedBytes(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+) -> jlong {
+    jni_guard(
+        env,
+        |_| unsafe { &*(handle as *const reader::Reader) }.retained_bytes as jlong,
+    )
 }
 
 #[no_mangle]

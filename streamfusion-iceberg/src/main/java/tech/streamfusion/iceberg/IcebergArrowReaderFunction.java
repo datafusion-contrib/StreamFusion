@@ -87,14 +87,20 @@ final class IcebergArrowReaderFunction implements ReaderFunction<ArrowBatch> {
   }
 
   private boolean nativeTask(FileScanTask task) {
+    return nativeTask(task, schema, filters);
+  }
+
+  static boolean nativeTask(
+      FileScanTask task, Schema schema, List<org.apache.iceberg.expressions.Expression> filters) {
     if (task.isDataTask()
         || task.file().format() != org.apache.iceberg.FileFormat.PARQUET
         || task.file().keyMetadata() != null) return false;
     if (task.residual().op() != org.apache.iceberg.expressions.Expression.Operation.TRUE
         && filters.isEmpty()) return false;
     for (var delete : task.deletes()) {
-      if (delete.format() != org.apache.iceberg.FileFormat.PARQUET || delete.keyMetadata() != null)
-        return false;
+      if ((delete.format() != org.apache.iceberg.FileFormat.PARQUET
+              && !org.apache.iceberg.util.ContentFileUtil.isDV(delete))
+          || delete.keyMetadata() != null) return false;
       if (delete.equalityFieldIds() != null) {
         for (int id : delete.equalityFieldIds()) {
           var field = schema.findField(id);
@@ -211,9 +217,7 @@ final class IcebergArrowReaderFunction implements ReaderFunction<ArrowBatch> {
     private final IcebergReadCancellation cancellation;
 
     private Batch(
-        String split,
-        RecordAndPosition<ArrowBatch> record,
-        IcebergReadCancellation cancellation) {
+        String split, RecordAndPosition<ArrowBatch> record, IcebergReadCancellation cancellation) {
       this.split = split;
       this.record = record;
       this.cancellation = cancellation;

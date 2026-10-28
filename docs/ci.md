@@ -109,8 +109,9 @@ workflow run and commit; it is not a release payload or a cache of test outcomes
 the independent debug library builds with one without changing test selection or test concurrency.
 Actual elapsed-time savings must be measured in GitHub Actions after this change runs.
 
+Iceberg Rust 0.11 requires Rust 1.95, so the shared toolchain is 1.95.0.
 All Rust workflows, including the consolidated JVM aggregate and nested-scalar diagnostics,
-use the local `setup-rust` action to install Rust 1.94.0 and remove the
+use the local `setup-rust` action to install Rust 1.95.0 and remove the
 runner image's unused `stable` toolchain before restoring caches. The Rust cache action hashes
 every installed compiler, not just the selected compiler. Previous logs showed the unused
 hosted toolchain changing from 1.99.0 to 1.99.1 while the project stayed on 1.94.0, splitting

@@ -138,7 +138,9 @@ sort before `paimon-flink-*`; see [Apache Paimon](connectors/paimon.md). A missi
 linkage failure — the core image doesn't require any of them.
 Iceberg on Flink 2.2/JDK 17 uses the released `iceberg-flink-runtime-2.2` JAR plus
 `streamfusion-iceberg`; its data encoder and reader live in that module's own native
-library. It does not require `streamfusion-parquet`. See [Iceberg](connectors/iceberg.md).
+library. Rewrite maintenance also links DataFusion’s physical external sort and its utility
+dependencies into this library; the SQL planner, session and StreamFusion engine remain
+separate. It does not require `streamfusion-parquet`. See [Iceberg](connectors/iceberg.md).
 
 ## Bare metal
 
@@ -202,7 +204,7 @@ native build requirements. See [ORC](connectors/orc.md) for deployment and confi
 | `native/fluss` | Fluss compacted bucket-key encoding, bucket grouping and Arrow batch statistics, bundled only in `streamfusion-fluss`. Connection management and statistics wire serialization remain in the Java SDK. |
 | `native/parquet` | Parquet format encoding and decoding, including reads through host FileIO. |
 | `native/orc` | orc-rust decoding, with host-owned I/O and Arrow C Data. Java ORC writing lives in the format/connector JARs. |
-| `native/iceberg` | Optional Iceberg task decode and Parquet data-file encode; Java retains file/table lifecycle and delete encoding. |
+| `native/iceberg` | Optional Iceberg task decode, Parquet data-file encode and external rewrite sort; Java retains file/table lifecycle and delete encoding. |
 | `native/paimon` | Optional Paimon snapshot merge, bundled in `streamfusion-paimon`; consumes the selected file codec's Arrow C Data output. |
 | `native/json`, `native/csv`, `native/raw`, `native/avro`, `native/protobuf` | One decoder library per format JAR. Avro and Avro-Confluent-Registry continue to share the Avro native library. |
 | `native/native-build` | Shared build dependency for library-local mimalloc aliases and the checked free/realloc shim. |

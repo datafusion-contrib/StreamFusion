@@ -252,6 +252,7 @@ impl AsyncFileWriter for HostOutput {
             self.0
                 .close()
                 .await
+                .map(|_| ())
                 .map_err(|failure| parquet::errors::ParquetError::External(Box::new(failure)))
         })
     }

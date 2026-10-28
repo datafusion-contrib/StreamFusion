@@ -9,6 +9,17 @@ import subprocess
 import sys
 
 
+# Iceberg maintenance uses DataFusion's existing external SortExec inside its own DSO.
+# Keep the SQL planner, session and StreamFusion engine outside that connector.
+ICEBERG_SORT_DEPENDENCIES = {
+    "datafusion-common", "datafusion-common-runtime", "datafusion-doc",
+    "datafusion-execution", "datafusion-expr", "datafusion-expr-common",
+    "datafusion-functions", "datafusion-functions-aggregate-common",
+    "datafusion-functions-window-common", "datafusion-macros",
+    "datafusion-physical-expr", "datafusion-physical-expr-common", "datafusion-physical-plan",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--libraries", type=Path, help="Cargo output directory containing the DSOs")
@@ -48,7 +59,10 @@ def main():
                     continue
                 seen.add(dependency)
                 dep_name = packages[dependency]["name"]
-                assert dep_name != "streamfusion" and not dep_name.startswith("datafusion"), (
+                sort_dependency = name == "streamfusion-iceberg" and dep_name in ICEBERG_SORT_DEPENDENCIES
+                assert dep_name != "streamfusion" and (
+                    not dep_name.startswith("datafusion") or sort_dependency
+                ), (
                     f"{name} reaches engine dependency {dep_name}"
                 )
                 if dependency != package_id and dep_name in owners:
