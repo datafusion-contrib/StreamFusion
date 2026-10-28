@@ -2689,9 +2689,6 @@ final class RexExpression {
       return emitEncoding(call, 105, true, true);
     }
     if ("TO_BASE64".equals(functionName)) {
-      if (call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BINARY) {
-        return emitHostExpression(call, true);
-      }
       if (call.getOperands().size() == 1
           && call.getOperands().get(0).getType().getSqlTypeName().getFamily()
               == SqlTypeFamily.BINARY) {

@@ -3401,3 +3401,90 @@ arguments retains the same row count for the small control. The pipeline is opt-
 with `-Ddecimal.sign.pipeline.engine=flink` or `native`; `previous` requires the independently
 compiled baseline encoder at the front of the classpath. Defaults retain one million rows,
 two warmups and five measured runs. Do not compare a debug library with these release results.
+
+## Fixed binary Base64 encoding
+
+Measured on 2026-10-28 against canonical main `d89e03b5`, with released Flink 1.18.1
+and 2.2.1, JDK 17, Apple M4 Pro, Rust 1.94.0 and release/no-default-features native code
+using the system allocator. The fixed-BINARY overload now uses the same byte encoder as
+VARBINARY. Both Arrow Binary and FixedSizeBinary are consumed directly without a preliminary
+byte copy. Legacy actual byte lengths remain unchanged; casts own padding/truncation.
+
+Stock runs the released generated expression over prepared GenericRowData or BinaryRowData.
+Previous and candidate production Calc start on identical prepared Arrow values/types/NULLs,
+with timers inside Rust. The previous control retains the actual main scalar callback
+(kind 17, BINARY argument and STRING result), including its intrinsic marshalling. Setup,
+initial JNI import/export and perimeter transposes are excluded from this small-function
+control. Full schema/Arrow output equality is checked before timing; each trial consumes
+equal length/first/last-byte checksums. All schemas are nullable; enabled NULL values occur
+every seventh row. Sixteen warmups and eleven measured 65,536-row trials rotate engine order.
+Configurations execute serially, without concurrent tests or builds. Values are median
+[min, max] ns/row:
+
+| Flink, bytes, NULL values, stock format, Arrow type, batch rows | Stock ns/row | Previous ns/row | Native ns/row | vs stock | vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1, 16, false, binary, FixedSizeBinary, 1024 | 25.670 [24.779, 47.560] | 84.452 [78.779, 115.376] | 7.149 [7.073, 8.103] | 3.59x | 11.81x |
+| 1.18.1, 16, true, generic, Binary, 1024 | 27.252 [16.367, 42.290] | 97.043 [76.092, 127.300] | 6.220 [5.834, 6.392] | 4.38x | 15.60x |
+| 1.18.1, 16, true, binary, FixedSizeBinary, 16 | 26.383 [23.383, 36.641] | 612.534 [604.555, 641.434] | 35.286 [34.123, 36.072] | 0.75x | 17.36x |
+| 1.18.1, 2, false, binary, FixedSizeBinary, 1024 | 18.431 [17.228, 34.025] | 59.009 [51.335, 86.955] | 6.527 [6.195, 6.877] | 2.82x | 9.04x |
+| 1.18.1, 2, true, generic, Binary, 1024 | 12.836 [10.766, 26.017] | 57.096 [48.562, 76.233] | 5.573 [4.941, 6.486] | 2.30x | 10.25x |
+| 1.18.1, 2, true, binary, FixedSizeBinary, 16 | 14.723 [13.955, 18.323] | 566.812 [554.206, 580.385] | 32.871 [32.306, 34.672] | 0.45x | 17.24x |
+| 1.18.1, 256, false, binary, FixedSizeBinary, 1024 | 45.441 [43.418, 72.034] | 182.394 [172.059, 195.187] | 30.001 [29.427, 30.876] | 1.51x | 6.08x |
+| 1.18.1, 256, true, generic, Binary, 1024 | 29.374 [28.728, 54.389] | 164.123 [153.769, 187.140] | 25.521 [25.085, 26.051] | 1.15x | 6.43x |
+| 1.18.1, 256, true, binary, FixedSizeBinary, 16 | 37.827 [35.375, 40.659] | 735.647 [717.014, 813.629] | 47.815 [47.017, 50.003] | 0.79x | 15.39x |
+| 2.2.1, 16, false, binary, FixedSizeBinary, 1024 | 26.119 [24.993, 43.158] | 91.498 [83.882, 115.524] | 7.357 [7.231, 7.710] | 3.55x | 12.44x |
+| 2.2.1, 16, true, generic, Binary, 1024 | 16.402 [15.439, 34.462] | 77.600 [71.830, 98.326] | 6.156 [5.679, 6.345] | 2.66x | 12.61x |
+| 2.2.1, 16, true, binary, FixedSizeBinary, 16 | 24.954 [22.902, 29.020] | 610.266 [605.935, 625.162] | 36.786 [35.926, 37.446] | 0.68x | 16.59x |
+| 2.2.1, 2, false, binary, FixedSizeBinary, 1024 | 18.450 [17.279, 34.189] | 52.354 [50.027, 75.937] | 6.508 [6.390, 6.891] | 2.83x | 8.04x |
+| 2.2.1, 2, true, generic, Binary, 1024 | 10.519 [10.345, 13.292] | 53.988 [48.670, 71.146] | 5.329 [4.779, 5.461] | 1.97x | 10.13x |
+| 2.2.1, 2, true, binary, FixedSizeBinary, 16 | 14.802 [13.870, 20.783] | 556.320 [547.763, 559.575] | 32.548 [31.918, 32.867] | 0.45x | 17.09x |
+| 2.2.1, 256, false, binary, FixedSizeBinary, 1024 | 43.749 [42.463, 53.862] | 179.748 [170.487, 216.596] | 29.687 [27.475, 30.474] | 1.47x | 6.05x |
+| 2.2.1, 256, true, generic, Binary, 1024 | 30.261 [28.229, 40.974] | 158.586 [156.895, 174.400] | 26.091 [25.161, 26.950] | 1.16x | 6.08x |
+| 2.2.1, 256, true, binary, FixedSizeBinary, 16 | 36.395 [35.843, 41.303] | 742.716 [732.299, 774.394] | 47.683 [46.579, 48.219] | 0.76x | 15.58x |
+
+The 1,024-row configurations improve 1.15-4.38x over stock and 6.05-15.60x over the
+preceding callback. Sixteen-row controls remain slower than stock (0.45-0.79x) while
+improving 15.39-17.36x over the preceding callback: batch setup/allocation is significant
+for tiny inputs. These controls are retained and do not establish universal acceleration.
+
+The initial scalar codec lost to stock on 256-byte inputs. A native CPU sample placed
+1,864 of 2,442 main-thread samples in that codec. The released SIMD encoder removed much
+of that cost, after which redundant UTF-8 validation still accounted for 413 of 2,433
+samples. Checked offsets, exact-size initialized row buffers and the encoder's ASCII-only
+output permit omitting that rescan. Runtime CPU dispatch retains a portable fallback;
+regression tests compare against the independent standard codec and fully validate Arrow
+outputs at vector/padding boundaries, slices, NULLs and empty batches. See the
+[allocation technique](../optimizations/allocation-discipline.md#to_base64).
+
+The separate Flink 2.2.1 complete job uses a bounded 1M-row BINARY(16) source, parallelism
+one, both row/Arrow transposes and a rowwise blackhole sink. Candidate requires `jvm=[]`
+and positive consumed NativeCalc work. The previous control loads main's actual encoder
+first on the classpath and requires its JVM evaluator. Each engine runs two warmups and
+five measured jobs in separate sequential JVMs. Seconds are median [min, max]:
+
+| Stock | Previous callback | Candidate |
+| ---: | ---: | ---: |
+| 0.186338 [0.175739, 0.196376] | 0.270293 [0.265321, 0.280235] | 0.170568 [0.162968, 0.171469] |
+
+This workload reduces elapsed time by about 8.5% versus stock and 36.9% versus previous
+StreamFusion. Startup, submission, JIT and both transposes remain included; these subsecond
+jobs do not establish sustained throughput for arbitrary pipelines. The
+[result record](results/fixed-binary-base64-2026-10-28.json) retains all trials, checksums,
+allocation observations and the measured intermediate codec controls.
+
+After compiling test helpers, set `SF_NATIVE_BENCH_CLASSPATH` to test/production classes
+and released Maven dependencies, and `SF_NATIVE_LIB_DIR` to the release library directory.
+Build/run the prepared control from `native/`:
+
+```sh
+cargo build --release -p streamfusion --no-default-features --example fixed_binary_base64
+./target/release/examples/fixed_binary_base64 16 true false false 1024 64 16 11
+```
+
+Arguments are byte width, actual NULL values, BinaryRowData stock input, FixedSizeBinary
+native input, batch rows, loops, warmups and measured trials. Complete jobs use
+`FixedBinaryBase64PipelineBenchmark`, `SF_BENCHMARK=true` and
+`-Dfixed.binary.base64.pipeline.engine=flink|previous|native`; previous requires the baseline
+encoder first on the classpath. Both released lines and JDK 11/17 retain runtime parity
+and consumed native-work witnesses. FROM_BASE64 keeps the generated decoder and remains
+tracked in [#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).

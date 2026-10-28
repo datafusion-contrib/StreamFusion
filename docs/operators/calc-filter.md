@@ -1707,7 +1707,13 @@ Integer and character inputs are admitted. All four signed integer widths preser
 Character strings and binary columns are encoded as padded RFC 4648 Base64 without line wrapping.
 Strings use their UTF-8 bytes; binary inputs preserve every byte, including invalid UTF-8.
 Both overloads share the direct-output encoder. Empty input stays empty and NULL propagates.
-VARBINARY and fixed-size BINARY literals are native, including typed NULLs.
+VARBINARY and fixed-size BINARY inputs and literals are native, including typed NULLs.
+Fixed inputs use their physical bytes: the encoder accepts both length-delimited Arrow Binary
+and FixedSizeBinary without changing widths. Non-legacy CAST/TRY_CAST applies the requested
+truncation or zero padding before encoding; legacy casts preserve their actual byte lengths,
+even when these differ from the declared BINARY width. Binary selection and character-to-binary
+casts can feed the same encoder. This does not remove the remaining intermediate fixed-BINARY
+boundary restrictions tracked in [#235](https://github.com/datafusion-contrib/StreamFusion/issues/235).
 
 `FROM_BASE64` accepts character and binary inputs through Flink-generated evaluation. Invalid
 encoding raises the same host exception; empty input and NULL retain their host results. Decoded

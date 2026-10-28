@@ -100,6 +100,7 @@ csv-core = "0.1"
 num-traits = "0.2"
 # Flink's JSON format writes binary values as RFC 4648 base64 rather than arrow-json's hexadecimal.
 base64 = "0.22"
+base64-simd = "0.8"
 # Reusable literal substring search, matching DataFusion's strpos kernel.
 memchr = "2"
 # StreamFusion state is owned by Rust and talks to RocksDB through its native C API. Version 0.22

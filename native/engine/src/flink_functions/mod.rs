@@ -203,12 +203,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         148 => json_value::typed_function(json_value::ReturnType::Boolean),
         149 => json_value::typed_function(json_value::ReturnType::Integer),
         150 => json_value::typed_function(json_value::ReturnType::Double),
-        151 => udf(
-            "flink_to_base64_binary",
-            vec![DataType::Binary],
-            DataType::Utf8,
-            |args| binary_strings::encode(args, true),
-        ),
+        151 => binary_strings::base64_binary(),
         152 => json_serialize::function(),
         153 => json_object::function(),
         154 => temporal_round::function(),

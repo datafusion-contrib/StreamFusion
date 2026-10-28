@@ -128,7 +128,19 @@ Output offsets are checked against Arrow Utf8's 32-bit limit before allocating t
 
 ### TO_BASE64
 
-Uses standard padded base64 encoding, computes output offsets with checked sizes, and writes directly into the final Arrow buffer. Unlike Spark's MIME form modeled by Comet, Flink does not wrap lines. Arrow's safe constructor validates the result.
+Uses standard padded base64 encoding, computes output offsets with checked sizes, and writes directly into the final Arrow buffer. Unlike Spark's MIME form modeled by Comet, Flink does not wrap lines.
+
+Binary inputs retain their physical representation. The encoder reads Binary and FixedSizeBinary
+directly through the same byte-access loop, avoiding a preliminary fixed-to-variable cast and its
+per-row byte copies. Fixed logical BINARY expressions therefore need no scalar JVM callback for
+encoding. Legacy casts keep actual byte lengths; width changes belong to the cast, never the encoder.
+
+The released `base64-simd` encoder selects supported CPU instructions at runtime and retains a
+portable fallback. The checked offsets span the initialized output buffer, each exact-size row
+range contains only the encoder's ASCII alphabet/padding, and validity is shared with the same
+input rows. These invariants permit constructing Utf8 without scanning the encoded bytes again;
+regression tests still run Arrow's complete validation and compare against an independent codec.
+This changes encoding only: FROM_BASE64 retains Flink's decoder and arbitrary-byte STRING contract.
 
 Output offsets are checked against Arrow Utf8's 32-bit limit before allocating the final values buffer. NULL rows consume no bytes and reuse input validity.
 
