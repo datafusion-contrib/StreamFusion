@@ -25,6 +25,11 @@ grows toward Comet's scale (nested structs, N-ary functions, casts), switching t
 *wire format* to Protobuf is the natural upgrade — it is a maintainability change,
 not a performance one, since encoding happens once per operator, not per batch.
 
+Builtin function IDs share one namespace between the Java encoder and Rust registry.
+Coordinate IDs across pending implementations as well as merged code; a rebase must not
+assign different functions the same ID. Encoder assertions and prepared-operation helpers
+must use the registry's matching ID so validation measures the intended function.
+
 We **reject Substrait**, the same call Comet made. Substrait describes expressions
 generically; we would still have to map every node onto Flink's exact semantics
 (integer division, decimal scale, null and collation rules), which is the entire

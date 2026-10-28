@@ -99,7 +99,7 @@ fn main() {
         }
     );
     if !previous {
-        assert_eq!(encoded[1], 230);
+        assert_eq!(encoded[1], 232);
     }
     java!(
         env,
@@ -205,7 +205,7 @@ fn main() {
 fn oracle(path: &str) {
     use datafusion::common::ScalarValue;
     use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs};
-    let function = streamfusion::bench::flink_scalar_function(230, 1);
+    let function = streamfusion::bench::flink_scalar_function(232, 1);
     let mut count = 0;
     for line in std::fs::read_to_string(path).unwrap().lines() {
         let (input, expected) = line.split_once('\t').unwrap();

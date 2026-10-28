@@ -2699,7 +2699,7 @@ final class RexExpression {
     if (nativeFromBase64(call)) {
       if (call != projectionRoot) return emitHostExpression(call, true);
       binaryStringProjections.add(projectionRoots.size() - 1);
-      return emitBuiltinCall(call, 230);
+      return emitBuiltinCall(call, 232);
     }
     if ("UNHEX".equals(functionName)) {
       return emitEncoding(call, 108, false, true);

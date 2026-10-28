@@ -23,7 +23,7 @@ class FromBase64EncodingTest {
         var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
         assertNotNull(encoded);
         assertEquals(6, encoded.kinds()[0]);
-        assertEquals(230, encoded.payload()[0]);
+        assertEquals(232, encoded.payload()[0]);
         assertTrue(encoded.isBinaryStringProjection(0));
         assertTrue(encoded.jvmFunctionCalls().isEmpty());
         var constants = encoded.longs();
