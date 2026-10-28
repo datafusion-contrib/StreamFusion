@@ -3486,5 +3486,102 @@ native input, batch rows, loops, warmups and measured trials. Complete jobs use
 `FixedBinaryBase64PipelineBenchmark`, `SF_BENCHMARK=true` and
 `-Dfixed.binary.base64.pipeline.engine=flink|previous|native`; previous requires the baseline
 encoder first on the classpath. Both released lines and JDK 11/17 retain runtime parity
-and consumed native-work witnesses. FROM_BASE64 keeps the generated decoder and remains
-tracked in [#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).
+and consumed native-work witnesses. The subsequent FROM_BASE64 decoder is measured separately.
+
+## FROM_BASE64
+
+Measured on 2026-10-28 with canonical main `5dce7f04`, released Flink 1.18.1/2.2.1,
+JDK 17, Apple M4 Pro, Rust 1.94.0 and release/no-default-features native code using the
+system allocator. The previous implementation is PR #549's preceding commit `ea0268e5`.
+Only direct final projections enter the native decoder; the sensitive-string consumer
+and relational restrictions in the [Calc coverage page](../operators/calc-filter.md#from_base64)
+remain unchanged.
+
+Stock generated evaluation starts on prebuilt GenericRowData or BinaryRowData. The native
+and preceding production Calc start on equivalent prepared Arrow buffers, with their timers
+inside Rust. Initial import/export and perimeter transposes are outside this small-function
+measurement. The preceding encoder is compiled independently and loaded first on the
+classpath: STRING asserts its actual kind-44 original-string evaluator, BYTES asserts kind 17,
+and both return raw Arrow Binary. The candidate asserts kind 6/opcode 230. Intrinsic callbacks
+and argument/result marshalling remain timed in the preceding implementation.
+
+Each encoder runs in its own sequential JVM with a stock control and rotating two-engine
+order. Both stock controls are retained: their JIT/GC variability is visible, and the speedup
+column conservatively uses the **smaller** of their medians. Each process uses sixteen warmups
+and eleven measured trials of 65,536 consumed rows. Output length and first/last-byte checksums
+must match. Values contain deterministic arbitrary bytes before encoding; nullable schemas
+include actual NULLs every seventh row when enabled. No tests or builds run concurrently with
+measurements. Width is decoded byte length; reported values are median [min, max] ns/row:
+
+| Flink, bytes, NULLs, SQL argument, stock format, batch rows | Stock/current process | Stock/previous process | Previous | Native | vs stock, conservative | vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1, 16, false, BYTES, binary, 1024 | 26.901 [26.489, 40.339] | 31.277 [27.017, 49.859] | 62.787 [56.459, 83.304] | 8.784 [8.691, 9.063] | 3.06x | 7.15x |
+| 1.18.1, 16, true, STRING, generic, 1024 | 30.517 [28.866, 61.686] | 36.214 [34.405, 64.553] | 74.523 [66.104, 90.952] | 8.684 [8.558, 9.497] | 3.51x | 8.58x |
+| 1.18.1, 16, true, BYTES, binary, 16 | 22.761 [22.219, 36.091] | 23.008 [22.319, 28.255] | 601.892 [596.954, 617.264] | 34.293 [33.745, 34.853] | 0.66x | 17.55x |
+| 1.18.1, 2, false, BYTES, binary, 1024 | 24.943 [22.899, 37.237] | 23.944 [22.483, 46.245] | 48.325 [43.325, 71.232] | 6.770 [5.990, 7.114] | 3.54x | 7.14x |
+| 1.18.1, 2, true, STRING, generic, 1024 | 41.164 [27.367, 57.690] | 27.501 [27.240, 56.787] | 66.313 [60.933, 105.553] | 6.821 [6.140, 7.190] | 4.03x | 9.72x |
+| 1.18.1, 2, true, BYTES, binary, 16 | 20.885 [19.041, 32.747] | 19.783 [19.346, 23.593] | 560.979 [554.251, 586.925] | 32.129 [31.499, 32.871] | 0.62x | 17.46x |
+| 1.18.1, 256, false, BYTES, binary, 1024 | 65.030 [63.217, 75.474] | 77.693 [68.219, 116.290] | 104.519 [98.938, 123.337] | 33.895 [33.569, 34.896] | 1.92x | 3.08x |
+| 1.18.1, 256, true, STRING, generic, 1024 | 73.407 [68.149, 111.362] | 75.641 [73.624, 103.769] | 126.862 [118.484, 181.338] | 31.077 [29.801, 33.537] | 2.36x | 4.08x |
+| 1.18.1, 256, true, BYTES, binary, 16 | 52.860 [51.834, 65.730] | 52.813 [52.046, 57.954] | 647.031 [641.312, 659.692] | 53.922 [53.396, 54.974] | 0.98x | 12.00x |
+| 2.2.1, 16, false, BYTES, binary, 1024 | 35.700 [27.991, 54.179] | 29.100 [27.502, 46.365] | 57.854 [51.655, 78.010] | 8.886 [8.677, 9.521] | 3.27x | 6.51x |
+| 2.2.1, 16, true, STRING, generic, 1024 | 39.433 [29.179, 43.844] | 33.691 [31.814, 55.526] | 71.623 [66.146, 91.021] | 8.807 [8.603, 9.258] | 3.83x | 8.13x |
+| 2.2.1, 16, true, BYTES, binary, 16 | 29.550 [22.308, 40.774] | 23.141 [21.571, 27.645] | 600.082 [579.973, 628.577] | 34.034 [33.515, 35.280] | 0.68x | 17.63x |
+| 2.2.1, 2, false, BYTES, binary, 1024 | 43.046 [24.864, 45.284] | 24.703 [23.446, 43.276] | 46.487 [43.537, 66.571] | 6.715 [5.974, 6.949] | 3.68x | 6.92x |
+| 2.2.1, 2, true, STRING, generic, 1024 | 29.752 [26.725, 40.999] | 28.487 [26.877, 39.600] | 64.948 [60.902, 84.585] | 6.152 [6.048, 6.826] | 4.63x | 10.56x |
+| 2.2.1, 2, true, BYTES, binary, 16 | 36.005 [18.298, 41.290] | 19.275 [18.974, 24.094] | 557.683 [550.521, 575.581] | 34.298 [31.134, 36.540] | 0.56x | 16.26x |
+| 2.2.1, 256, false, BYTES, binary, 1024 | 75.551 [63.354, 113.574] | 68.417 [64.597, 81.800] | 102.013 [99.084, 115.237] | 34.513 [33.751, 35.754] | 1.98x | 2.96x |
+| 2.2.1, 256, true, STRING, generic, 1024 | 81.366 [67.916, 121.744] | 73.105 [67.038, 89.697] | 121.209 [114.834, 145.936] | 30.738 [29.545, 31.277] | 2.38x | 3.94x |
+| 2.2.1, 256, true, BYTES, binary, 16 | 52.263 [51.912, 64.269] | 58.423 [52.698, 60.040] | 665.132 [654.268, 689.308] | 57.742 [57.051, 60.036] | 0.91x | 11.52x |
+
+The 1,024-row configurations improve 1.92-4.63x over stock and 2.96-10.56x over the
+preceding scalar path. Sixteen-row controls improve over the preceding callback but remain
+slower than stock (0.56-0.98x using the conservative stock median). Calc/batch allocation
+and dispatch are significant at tiny sizes; these results do not establish a universal
+speedup. The implementation sizes checked offsets, writes directly into final Binary
+buffers and decodes complete groups with runtime SIMD dispatch. A short scalar tail preserves
+the JDK's accepted nonzero unused bits; invalid-input diagnostics stay in Rust. See the
+[allocation technique](../optimizations/allocation-discipline.md#from_base64).
+
+The separate Flink 2.2.1 complete job uses one million encoded STRING rows, representing
+16 arbitrary decoded bytes, parallelism one, a bounded row source and a rowwise blackhole
+sink. Source encoding, submission, JIT, JNI and both row/Arrow transposes remain included.
+Candidate requires `jvm=[]`, both transposes and positive consumed NativeCalc work. The
+previous control loads the actual preceding encoder and requires the FROM_BASE64 evaluator.
+Each engine runs two warmups and five measured jobs in a separate sequential JVM. Seconds
+are median [min, max]:
+
+| Stock | Previous callback | Native |
+| ---: | ---: | ---: |
+| 0.243187 [0.235530, 0.244118] | 0.344742 [0.341944, 0.353287] | 0.210599 [0.201220, 0.212980] |
+
+Elapsed time falls about 13.4% versus stock and 38.9% versus previous StreamFusion in this
+bounded workload. These subsecond jobs include startup costs and do not establish sustained
+throughput for other pipelines. The [result record](results/from-base64-2026-10-28.json)
+retains both stock controls, every timing trial, checksums and untimed allocation observations.
+
+Validation includes 542 focused JVM invocations across Flink 1.18.1/2.2.1 and JDK 11/17,
+841 release Rust core tests, and the unchanged released `testFromBase64`/`testToBase64`
+fixtures on both lines. A deterministic 46,443-case oracle covers short encodings, missing
+and malformed padding, unused bits, nonalphabet/signed bytes and mutated longer encodings.
+Both Flink overloads on both JDKs/versions agree, and the production Rust scalar matches every
+case. SQL tests require consumed native work and no JVM evaluator for STRING, CHAR, BYTES
+and fixed-BINARY inputs. Raw decoded bytes, nullable slices, vector boundaries, legacy casts,
+all-filtered batches, lazy branches and retained consumer/sink restrictions remain covered.
+
+After compiling `FromBase64BenchmarkFunctions`, set `SF_NATIVE_BENCH_CLASSPATH` to test and
+production classes plus released dependencies, and `SF_NATIVE_LIB_DIR` to the release library
+directory. Build and run from `native/`:
+
+```sh
+cargo build --release --locked -p streamfusion --no-default-features --example from_base64
+./target/release/examples/from_base64 16 true false false 1024 64 16 11
+java -cp "$SF_NATIVE_BENCH_CLASSPATH" tech.streamfusion.planner.FromBase64BenchmarkFunctions > oracle.tsv
+./target/release/examples/from_base64 --oracle oracle.tsv
+```
+
+Prepared arguments are decoded width, NULL values, binary SQL argument, BinaryRowData stock
+input, batch rows, loops, warmups and measured trials. The previous control sets
+`SF_FROM_BASE64_PREVIOUS=true` and loads the independently compiled preceding encoder first
+on the classpath. Complete jobs use `FromBase64PipelineBenchmark`, `SF_BENCHMARK=true` and
+`-Dfrom.base64.pipeline.engine=flink|previous|native`, with the same previous-classpath rule.

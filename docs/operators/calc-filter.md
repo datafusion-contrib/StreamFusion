@@ -1715,16 +1715,30 @@ even when these differ from the declared BINARY width. Binary selection and char
 casts can feed the same encoder. This does not remove the remaining intermediate fixed-BINARY
 boundary restrictions tracked in [#235](https://github.com/datafusion-contrib/StreamFusion/issues/235).
 
-`FROM_BASE64` accepts character and binary inputs through Flink-generated evaluation. Invalid
-encoding raises the same host exception; empty input and NULL retain their host results. Decoded
-STRING values may contain arbitrary bytes. Final scalar STRING projections therefore travel as
-Arrow Binary and are read as Flink StringData without UTF-8 normalization. Consumers such as
+### FROM_BASE64
+
+Final scalar `FROM_BASE64` projections decode CHAR, VARCHAR, VARBINARY and fixed BINARY inputs
+natively, without a scalar JVM callback. Arrow Utf8 input buffers are viewed as bytes without
+decoding them; Arrow Binary and FixedSizeBinary are consumed directly. Empty input stays empty
+and NULL propagates. The decoder matches the released JDK basic decoder used by Flink: standard
+alphabet, optional padding and accepted nonzero unused tail bits. Whitespace, URL-safe alphabet
+characters, malformed units and trailing data after padding raise `IllegalArgumentException`
+with the JDK diagnostics, including signed-byte hexadecimal values. Complete groups use the
+released SIMD decoder; the last group and invalid-input diagnostics follow Flink's rules.
+
+Decoded STRING values may contain arbitrary bytes. Final scalar STRING projections therefore
+travel as Arrow Binary and are read as Flink StringData without UTF-8 normalization. Consumers such as
 comparison, length, casts and re-encoding fuse in Flink before Arrow export. Sensitive STRING
 results crossing another relational operator, feeding a native columnar sink, or contained in
 whole-Calc complex outputs retain fallback rather than exposing invalid Arrow Utf8. Row sinks
-can consume the final decoded bytes through the Arrow-to-RowData transpose.
+can consume the final decoded bytes through the Arrow-to-RowData transpose. Unselected branches
+retain lazy generated evaluation; an all-filtered batch never invokes the decoder. These
+consumer and relational restrictions remain tracked in
+[#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).
 
-`IS_DECIMAL`, `IS_DIGIT` and `IS_ALPHA` use the same generated evaluator, preserving Flink syntax
+### IS_DECIMAL, IS_DIGIT and IS_ALPHA
+
+`IS_DECIMAL`, `IS_DIGIT` and `IS_ALPHA` use generated evaluation, preserving Flink syntax
 and Unicode classification, including non-nullable FALSE for NULL and empty input.
 
 ### UNHEX

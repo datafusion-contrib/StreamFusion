@@ -140,11 +140,27 @@ portable fallback. The checked offsets span the initialized output buffer, each 
 range contains only the encoder's ASCII alphabet/padding, and validity is shared with the same
 input rows. These invariants permit constructing Utf8 without scanning the encoded bytes again;
 regression tests still run Arrow's complete validation and compare against an independent codec.
-This changes encoding only: FROM_BASE64 retains Flink's decoder and arbitrary-byte STRING contract.
+FROM_BASE64 uses a separate decoder and preserves Flink's arbitrary-byte STRING contract.
 
 Output offsets are checked against Arrow Utf8's 32-bit limit before allocating the final values buffer. NULL rows consume no bytes and reuse input validity.
 
 [Per-function complete-job results](../benchmarks/scalar-functions.md#to_base64) include both transposes.
+
+### FROM_BASE64
+
+The native final-projection decoder sizes output offsets before allocating and decodes directly
+into the final Arrow Binary buffer. It borrows character input offsets and bytes, and accepts
+Binary and FixedSizeBinary without an input normalization copy. NULL rows reuse validity and
+consume no output bytes. No decoded byte sequence is presented as Arrow Utf8.
+
+Complete groups use the released `base64-simd` runtime CPU dispatch. A short scalar tail accepts
+the JDK basic decoder's missing padding and unused nonzero bits. Invalid input takes a cold Rust
+validation path that constructs the existing typed Flink exception; neither success nor failure
+calls a JVM scalar evaluator. Comet's MIME decoder skips invalid characters, so its alphabet and
+trailing-data policy would change Flink results and is deliberately not adopted.
+
+[Measurements and reproduction](../benchmarks/scalar-functions.md#from_base64) separate prepared
+Arrow/RowData controls from complete jobs retaining both transposes.
 
 ### UNHEX
 

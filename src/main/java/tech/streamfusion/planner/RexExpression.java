@@ -2696,6 +2696,11 @@ final class RexExpression {
       }
       return emitEncoding(call, 107, false, true);
     }
+    if (nativeFromBase64(call)) {
+      if (call != projectionRoot) return emitHostExpression(call, true);
+      binaryStringProjections.add(projectionRoots.size() - 1);
+      return emitBuiltinCall(call, 230);
+    }
     if ("UNHEX".equals(functionName)) {
       return emitEncoding(call, 108, false, true);
     }
@@ -3203,6 +3208,7 @@ final class RexExpression {
   }
 
   private boolean mayFailOnRow(RexCall call) {
+    if (nativeFromBase64(call)) return true;
     if (call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.RAND_INTEGER
         && !isIntLiteralAtLeast(call.getOperands().get(call.getOperands().size() - 1), 1)) {
@@ -3505,6 +3511,14 @@ final class RexExpression {
 
   private static boolean isCharacter(RexNode arg) {
     return arg.getType().getSqlTypeName().getFamily() == SqlTypeFamily.CHARACTER;
+  }
+
+  private static boolean nativeFromBase64(RexCall call) {
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FROM_BASE64
+        && call.getOperands().size() == 1
+        && (SqlTypeFamily.CHARACTER.contains(call.getOperands().get(0).getType())
+            || SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType()));
   }
 
   private boolean emitBuiltinCall(RexCall call, int op) {
@@ -4373,6 +4387,7 @@ final class RexExpression {
       case "ELT":
         return input == SqlTypeName.INTEGER && SqlTypeFamily.BINARY.contains(call.getType());
       case "FROM_BASE64":
+        return !nativeFromBase64(call);
       case "IS_DECIMAL":
       case "IS_DIGIT":
       case "IS_ALPHA":
