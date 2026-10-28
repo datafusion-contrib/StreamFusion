@@ -798,8 +798,9 @@ remain explicit; the common operand path introduces no separate rounding loop to
 Single-argument integer ROUND uses this same shared-operand production path. Released
 Flink rounds through BigDecimal but retains every integer exactly at its default zero
 scale. The native admission covers direct inputs, typed literals, recursive lossless
-widening and nested admitted FLOOR/CEIL/ROUND; explicit scales and unverified producers
-keep the complete generated expression. No new kernel, opcode or option is needed.
+widening and nested admitted FLOOR/CEIL/ROUND. The separate literal-position kernel below
+handles verified explicit positions; unverified producers/positions keep the complete
+generated expression. The single-argument identity needs no new kernel, opcode or option.
 Independent release controls on Flink 1.18.1 and 2.2.1 improve 6.30-29.46x over stock and
 52.14-169.98x over the preceding callback at 1,024 rows. Sixteen-row controls still lose
 to stock. The complete 1M-row stock/previous/native medians are
@@ -811,9 +812,10 @@ retain all measured variability and common Calc/perimeter limits.
 Single-argument INT/BIGINT TRUNCATE also reuses the verified operand. At its default
 zero scale, released Flink's DECIMAL(38,18) conversion/truncation returns the same integer
 for every admitted value. Skipping that work preserves NULLs, widths and signed minima.
-TINYINT/SMALLINT keep stock's compilation failure unless explicitly widened. Explicit
-scales and unverified producers keep generated evaluation; DECIMAL and floating paths
-are unchanged. On both released lines, 1,024-row prepared controls improve 64.21-321.56x
+TINYINT/SMALLINT keep stock's compilation failure unless explicitly widened. The separate
+literal-position kernel handles verified explicit positions; unverified producers/positions
+keep generated evaluation. DECIMAL and floating paths are unchanged. On both released lines,
+1,024-row prepared controls improve 64.21-321.56x
 over stock and 126.71-468.70x over the preceding callback; 16-row controls also win.
 The 1M-row stock/previous/native medians are 0.188721/0.261994/0.132958 seconds with
 both transposes. These measurements apply to the recorded workload, not every job.
@@ -845,3 +847,22 @@ The separate 1M-row job retains both transposes: stock/previous/candidate median
 sustained complete-job acceleration. The [full measurements and allocation probes](../benchmarks/scalar-functions.md#integer-round-with-a-literal-position)
 retain every trial and the slower controls. Generic Calc/perimeter work remains in
 [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## Integer TRUNCATE at literal positions
+
+INT/BIGINT TRUNCATE shares ROUND's typed Arrow input/validity handling but uses a separate
+registered kernel mode: subtract the remainder toward zero, with no HALF_UP adjustment.
+When the power exceeds the input width every value truncates to zero; nonnegative
+positions share the input. This eliminates Flink's DECIMAL(38,18) intermediate while
+preserving widths and exact BIGINT values. The whitelist remains literal INT positions
+-38..38 or typed NULL and verified producers; runtime/extreme positions and stock-rejected
+narrow signatures retain their released execution contract. No configuration switch is added.
+
+On both Flink lines, recorded 1,024-row release controls improve 25.86-86.72x over stock
+and 51.59-113.30x over the actual previous scalar callback. Sixteen-row controls also win
+1.83-2.77x over stock and 20.49-25.94x over main. The 1M-row complete job retains both
+transposes: stock/main/candidate medians are 0.210510/0.215636/0.131336 seconds, a 1.60x
+stock improvement on this recorded workload. Short-job startup/JIT and remaining Calc
+costs are included; these numbers do not imply a gain for all jobs. The
+[full measurements](../benchmarks/scalar-functions.md#integer-truncate-with-a-literal-position)
+retain all trials, checksums, allocation probes, routes and applicability limits.

@@ -86,11 +86,15 @@ public final class IntegralRoundingBenchmarkFunctions {
     var project = project(type);
     var encoded = RexExpression.encodeProjections(project.getProjects(), java.util.List.of("v"));
     if (Integer.getInteger("sf.integral.rounding.position") != null) {
+      int opcode =
+          System.getProperty("sf.integral.rounding.function", "FLOOR").equals("TRUNCATE")
+              ? 231
+              : 230;
       if (encoded == null
           || encoded.kinds()[0] != 6
-          || encoded.payload()[0] != 230
+          || encoded.payload()[0] != opcode
           || !encoded.jvmFunctionCalls().isEmpty()) {
-        throw new IllegalStateException("The candidate must use native integer ROUND positions");
+        throw new IllegalStateException("The candidate must use native integer rounding positions");
       }
       LogicalType valueType =
           LogicalTypeParser.parse(type, IntegralRoundingBenchmarkFunctions.class.getClassLoader());

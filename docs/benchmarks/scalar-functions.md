@@ -3522,3 +3522,97 @@ Nested/widened expressions, scalar consumers, filters, empty batches, selected/u
 failures and extreme-position host errors are covered. The unchanged released upstream
 `ScalarFunctionsTest.testRound` passes on both lines; it supplies oracle evidence,
 while the runtime witnesses prove consumed native work. Full JVM/upstream suites remain CI checks.
+
+## Integer TRUNCATE with a literal position
+
+Measured independently on 2026-10-28 against canonical main `d89e03b5`, using the same
+Apple M4 Pro, JDK 17.0.12, Rust 1.94.0 release/no-default-features configuration,
+system/counting allocator and boundaries as [literal-position ROUND](#integer-round-with-a-literal-position).
+The query is `TRUNCATE(v, literal_position)` on INT/BIGINT. Direct narrow-integer
+signatures preserve released Flink's generated-compilation failure; explicit widening
+is supported. Admission covers INT literal positions -38..38 or typed NULL and verified
+producers only; runtime/extreme positions and other producers stay generated.
+
+Stock executes the released generated projection over prepared GenericRowData/BinaryRowData.
+Main's actual kind-17 scalar expression has one integer argument/result and embeds the
+literal position; its callback and intrinsic conversion stay inside the Rust timer.
+Candidate production Calc invokes the Arrow toward-zero kernel. Values, widths, NULLs,
+minima and BIGINTs above 2^53 match. Full output/schema equality precedes timing and all
+measured outputs contribute to matching checksums in their own runtime. Input/operator
+setup, JNI import/export and perimeter transposes are excluded only from this prepared
+functionality measurement. No concurrent tests/builds run during measurement.
+
+Every schema is nullable; actual NULLs appear every seventh row when the flag is true.
+Profiles cover -1, -19 and +2 positions, native-width/large divisors, shared-buffer
+identity and 1,024-/16-row batches. Each case rotates stock/main/candidate order for
+16 warmups and 11 measured trials of 65,536 rows. Values are median [min, max] ns/row.
+
+| Flink / type / NULL values / stock format / rows / position | Stock ns/row | Main ns/row | Native ns/row | Stock/native | Main/native |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1 / BIGINT / false / binary / 1024 / -1 | 82.793 [80.556, 96.215] | 105.433 [99.404, 160.713] | 1.088 [1.046, 1.149] | 76.06x | 96.86x |
+| 1.18.1 / BIGINT / true / generic / 1024 / -1 | 73.506 [70.045, 119.251] | 99.348 [92.960, 154.620] | 1.449 [1.300, 1.569] | 50.73x | 68.57x |
+| 1.18.1 / BIGINT / true / generic / 1024 / 2 | 79.189 [66.412, 109.428] | 96.375 [88.223, 119.227] | 0.942 [0.796, 0.998] | 84.04x | 102.28x |
+| 1.18.1 / BIGINT / true / binary / 1024 / -19 | 29.352 [28.196, 60.632] | 49.988 [47.063, 72.699] | 0.969 [0.942, 1.118] | 30.29x | 51.59x |
+| 1.18.1 / BIGINT / true / binary / 16 / -1 | 66.630 [63.771, 71.818] | 622.942 [606.855, 636.044] | 24.017 [22.496, 30.481] | 2.77x | 25.94x |
+| 1.18.1 / INT / false / binary / 1024 / -1 | 63.423 [61.859, 95.424] | 88.022 [80.719, 137.247] | 1.005 [0.931, 1.125] | 63.10x | 87.57x |
+| 1.18.1 / INT / true / generic / 1024 / -1 | 56.305 [54.621, 109.278] | 81.130 [74.706, 99.076] | 1.493 [1.376, 1.634] | 37.70x | 54.32x |
+| 1.18.1 / INT / true / generic / 1024 / 2 | 54.448 [52.867, 97.235] | 96.239 [73.837, 135.696] | 0.849 [0.821, 0.868] | 64.10x | 113.30x |
+| 1.18.1 / INT / true / binary / 1024 / -19 | 26.170 [24.514, 49.325] | 62.735 [46.422, 148.438] | 1.012 [0.946, 1.991] | 25.86x | 61.98x |
+| 1.18.1 / INT / true / binary / 16 / -1 | 52.738 [50.178, 59.952] | 595.444 [586.147, 614.468] | 24.014 [22.436, 26.831] | 2.20x | 24.80x |
+| 2.2.1 / BIGINT / false / binary / 1024 / -1 | 81.130 [77.929, 119.018] | 106.023 [100.971, 168.556] | 1.126 [1.043, 1.234] | 72.05x | 94.16x |
+| 2.2.1 / BIGINT / true / generic / 1024 / -1 | 71.206 [68.321, 89.049] | 93.903 [89.711, 114.658] | 1.430 [1.390, 1.520] | 49.80x | 65.67x |
+| 2.2.1 / BIGINT / true / generic / 1024 / 2 | 74.601 [61.907, 107.140] | 93.374 [87.193, 154.513] | 0.860 [0.745, 0.956] | 86.72x | 108.55x |
+| 2.2.1 / BIGINT / true / binary / 1024 / -19 | 29.249 [27.757, 61.291] | 66.074 [50.031, 106.862] | 1.003 [0.959, 1.086] | 29.17x | 65.90x |
+| 2.2.1 / BIGINT / true / binary / 16 / -1 | 66.425 [64.204, 75.006] | 623.986 [616.370, 649.518] | 24.160 [23.481, 25.192] | 2.75x | 25.83x |
+| 2.2.1 / INT / false / binary / 1024 / -1 | 63.797 [60.988, 116.205] | 88.085 [79.557, 121.353] | 1.036 [0.984, 1.175] | 61.60x | 85.05x |
+| 2.2.1 / INT / true / generic / 1024 / -1 | 55.975 [53.712, 95.767] | 82.354 [73.753, 118.947] | 1.420 [1.291, 1.466] | 39.41x | 57.98x |
+| 2.2.1 / INT / true / generic / 1024 / 2 | 65.570 [53.518, 104.253] | 85.697 [76.602, 140.537] | 0.852 [0.741, 0.964] | 76.96x | 100.59x |
+| 2.2.1 / INT / true / binary / 1024 / -19 | 25.875 [24.856, 50.336] | 51.790 [44.918, 96.118] | 0.957 [0.909, 1.131] | 27.04x | 54.13x |
+| 2.2.1 / INT / true / binary / 16 / -1 | 52.284 [50.070, 56.420] | 586.700 [566.703, 602.521] | 28.638 [27.205, 29.861] | 1.83x | 20.49x |
+
+At 1,024 rows the recorded candidate improves 25.86-86.72x over stock and 51.59-113.30x
+over main. At 16 rows it improves 1.83-2.77x over stock and 20.49-25.94x over main.
+The kernel avoids released Flink's DECIMAL(38,18) intermediate, uses native integer
+remainder for negative positions, writes zero when the divisor exceeds the input width,
+and shares buffers for nonnegative positions. There is no HALF_UP increment in TRUNCATE.
+Allocation probes in the raw record distinguish shared validity/identity buffers from
+new result values. These measurements do not imply that every Calc or workload accelerates.
+
+The independent complete job retains the bounded row source, both transposes and a
+rowwise blackhole sink: Flink 2.2.1, 1M INT rows, `TRUNCATE(v,-1)`, parallelism one,
+two warmups and five measured jobs per engine in sequential JVMs. The actual main
+encoder is loaded first for the previous control; route checks require its TRUNCATE
+JVM evaluator and candidate `jvm=[]`. Both native modes require consumed NativeCalc
+work and both transposes. Seconds are median [min, max]:
+
+| Stock | Main scalar callback | Candidate |
+| ---: | ---: | ---: |
+| 0.210510 [0.200087, 0.216174] | 0.215636 [0.205634, 0.227845] | 0.131335 [0.127314, 0.152458] |
+
+The recorded complete workload improves 1.60x over stock and 1.64x over main by median.
+Submission, startup, JIT and both transposes remain included; this does not establish
+sustained throughput or a universal gain. [All raw trials, checksums and allocation probes](results/integral-truncate-positions-2026-10-28.json)
+retain variability and the exact configuration. Generic Calc/perimeter costs remain in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Use the shared release example and complete-job fixture from ROUND, selecting
+`SF_INTEGRAL_ROUNDING_FUNCTION=TRUNCATE` / `rounding.pipeline.function=TRUNCATE`,
+with the corresponding position setting. Without a position setting the historical
+single-argument mode is unchanged. The previous mode requires its actual encoder
+first on the classpath.
+
+The final combined regression passes 396 JVM test invocations across 13 classes,
+Flink 1.18.1/2.2.1 and JDK 11/17, plus all 835 release Rust core tests. Fresh all-core
+production compilation targets Java 11 on both lines. TRUNCATE parity covers all 77
+positions, declared nullability, typed NULL positions, signed extrema, exact BIGINTs,
+scalar consumers, filters and ROUND/TRUNCATE nesting. INT/BIGINT witnesses verify exact
+outputs and consumed native work over 5,003 rows per type with no evaluator or fallback.
+Selected/unselected failures, empty batches, extreme-position Underflow and narrow-input
+compilation behavior remain checked. Unchanged released upstream `testRound` and
+`testTruncate` pass on both lines; those supply oracle evidence, while the focused
+witnesses establish execution of the native kernels. Full JVM/upstream suites remain CI checks.
+
+After sharing the ROUND/TRUNCATE input handling, independent ROUND INT/-1 and BIGINT/-19
+1,024-row controls recheck output/schema/checksums and timing against stock and actual main.
+Their full measured trials are included as `shared_round_kernel_rechecks` in the TRUNCATE
+raw record; the original 40-case ROUND matrix records the preceding ROUND-only implementation.

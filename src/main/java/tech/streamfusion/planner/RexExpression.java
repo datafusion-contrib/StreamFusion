@@ -2838,6 +2838,7 @@ final class RexExpression {
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE) {
       if (nativeIntegralRounding(call)) return emit(call.getOperands().get(0));
       if (nativeIntegralRoundPosition(call)) return emitBuiltinCall(call, 230);
+      if (nativeIntegralTruncatePosition(call)) return emitBuiltinCall(call, 231);
       if (!call.getOperands().isEmpty()
           && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL) {
         return emitDecimalRound(call);
@@ -4329,7 +4330,8 @@ final class RexExpression {
       case "TRUNCATE":
         return (integral
                 || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(call.getOperands().get(0).getType()))
-            && !nativeIntegralRounding(call);
+            && !nativeIntegralRounding(call)
+            && !nativeIntegralTruncatePosition(call);
       case "ROUND":
         return input != SqlTypeName.DECIMAL
             && SqlTypeFamily.NUMERIC.contains(call.getOperands().get(0).getType())
@@ -4428,9 +4430,21 @@ final class RexExpression {
   }
 
   private static boolean nativeIntegralRoundPosition(RexCall call) {
-    if (call.getOperator()
-            != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
-        || call.getOperands().size() != 2
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND
+        && nativeIntegralRoundingPosition(call);
+  }
+
+  private static boolean nativeIntegralTruncatePosition(RexCall call) {
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE
+        && (call.getType().getSqlTypeName() == SqlTypeName.INTEGER
+            || call.getType().getSqlTypeName() == SqlTypeName.BIGINT)
+        && nativeIntegralRoundingPosition(call);
+  }
+
+  private static boolean nativeIntegralRoundingPosition(RexCall call) {
+    if (call.getOperands().size() != 2
         || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
         || call.getType().getSqlTypeName() != call.getOperands().get(0).getType().getSqlTypeName()
         || !(call.getOperands().get(1) instanceof RexLiteral)
@@ -4445,7 +4459,9 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralRounding(call) || nativeIntegralRoundPosition(call)) return true;
+    if (nativeIntegralRounding(call)
+        || nativeIntegralRoundPosition(call)
+        || nativeIntegralTruncatePosition(call)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())

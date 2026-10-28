@@ -1448,12 +1448,33 @@ Verified direct inputs, typed literals, recursive lossless widening and nested a
 integer rounding reuse the native operand expression without a JVM evaluator or a new
 values buffer. This removes released Flink's DECIMAL(38,18) intermediate only when the
 default zero scale provably leaves every input unchanged, including signed minima and
-exact BIGINTs above 2^53. Explicit scales and unverified producers retain the complete
-generated program, including its overflow and exception behavior. DECIMAL and floating
+exact BIGINTs above 2^53. Explicit positions use the bounded native path below;
+unverified positions and producers retain the complete generated program, including
+its overflow and exception behavior. DECIMAL and floating
 TRUNCATE retain their separate paths. TINYINT/SMALLINT TRUNCATE still preserves released
 Flink's generated-compilation failure; explicitly widening them to INT/BIGINT is supported.
 [Release measurements](../benchmarks/scalar-functions.md#single-argument-integer-truncate)
 compare stock, the previous JVM route and candidate at both batch and complete-job boundaries.
+
+### Integer TRUNCATE with a literal position
+
+`TRUNCATE(value, literal_position)` over INT and BIGINT executes an Arrow primitive kernel
+for INT positions -38..38, including a typed NULL. The verified producer scope matches
+ROUND: direct inputs/literals, lossless widening and nested admitted integer rounding.
+Negative positions truncate toward zero using integer remainder; a power larger than the
+input width yields zero. Nonnegative positions share the input buffers, NULL positions
+produce typed NULLs, and other results allocate values while retaining sliced validity.
+This removes Flink's DECIMAL(38,18) intermediate only in the verified domain, preserving
+resolved widths, signed minima and exact large BIGINTs without JVM computation.
+
+Runtime/extreme positions, arithmetic, narrowing and other unverified producers keep their
+complete generated expression. In particular, nonzero input with position -2147483648
+keeps Flink's Underflow exception. Direct TINYINT/SMALLINT signatures still preserve
+released Flink's generated-compilation failure; explicit widening is supported. Conditional
+branches and empty filtered batches retain their guards. No configuration switch is added.
+[Release measurements](../benchmarks/scalar-functions.md#integer-truncate-with-a-literal-position)
+compare stock and the actual preceding scalar callback, including both transposes in
+complete jobs.
 
 ### Exact unary and integral functions
 
@@ -1502,8 +1523,8 @@ metadata guards remain unchanged. See the
 [DECIMAL unary-minus controls](../benchmarks/scalar-functions.md#decimal-unary-minus).
 
 DECIMAL SIGN uses the bounded native coverage described above. Unverified integer rounding
-producers and explicit-scale
-INT/BIGINT TRUNCATE use the same path, including per-row TRUNCATE positions. TINYINT/SMALLINT TRUNCATE
+producers and positions use the same path, including per-row ROUND/TRUNCATE positions.
+TINYINT/SMALLINT TRUNCATE
 retains the host compilation
 failure described under exact floating math below. This retains resolved widths, decimal precision/scale, NULL handling,
 and Java overflow behavior. Adjacent supported
@@ -2828,7 +2849,7 @@ own conversions and math functions. This preserves deterministic last-bit result
 zero, NaN, infinities, domain results and NULL behavior.
 
 Non-DECIMAL ROUND and INT/BIGINT TRUNCATE use generated evaluation outside the verified
-single-argument integer and literal-position ROUND paths above. FLOAT TRUNCATE also uses generated evaluation,
+single-argument integer and bounded literal-position ROUND/TRUNCATE paths above. FLOAT TRUNCATE also uses generated evaluation,
 including runtime INT scales.
 Independently emitted DOUBLE TRUNCATE uses an exact
 [bounded shortcut](../optimizations/host-exact-builtins-upcall.md#bounded-double-truncate):

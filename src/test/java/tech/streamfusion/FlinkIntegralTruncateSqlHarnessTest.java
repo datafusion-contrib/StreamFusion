@@ -106,8 +106,8 @@ class FlinkIntegralTruncateSqlHarnessTest {
             "TRUNCATE(v+1)",
             "TRUNCATE(-v)",
             "TRUNCATE(CAST(CAST(v AS SMALLINT) AS INT))",
-            "TRUNCATE(v, 0)",
-            "TRUNCATE(v, -1)",
+            "TRUNCATE(v, -39)",
+            "TRUNCATE(v, 39)",
             "TRUNCATE(v, id-1)",
             "TRUNCATE(1/(id-id))")) {
       var table = environment("INT");

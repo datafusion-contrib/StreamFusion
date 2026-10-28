@@ -185,7 +185,7 @@ fn main() {
     let mut native = if let Some(position) = position {
         CalcProgram::new(
             vec![6, 0, 7],
-            vec![230, 0, 0],
+            vec![if function == "TRUNCATE" { 231 } else { 230 }, 0, 0],
             vec![2, 0, 0],
             vec![i64::from(position)],
             vec![],
