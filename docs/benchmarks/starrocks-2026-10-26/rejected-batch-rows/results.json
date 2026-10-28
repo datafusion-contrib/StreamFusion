@@ -1,0 +1,868 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-26",
+  "status": "superseded before commit: measures the rejected one-row-per-batch hand-off; see README.md and the parent report for the per-row design",
+  "base_commit": "15e7031dbf087d392bcca881d5ae17a09eab330a",
+  "working_tree": "StarRocks sink added on this base and measured before commit; production_source_sha256 identifies the measured sources",
+  "complete_job": {
+    "boundary": "SQL submission through queryable committed StarRocks rows; includes planning, JDBC table preparation, startup, transposes, JNI, encoding, HTTP Stream Load and the final commit",
+    "workload": "INSERT INTO dst SELECT id, CAST(MOD(id, 1000) AS INT), CONCAT('customer-', CAST(id AS STRING)), CAST(MOD(id, 100000) AS DECIMAL(18, 2)), CAST(id AS DOUBLE) / 3, event_day, event_time, MOD(id, 2) = 0, note FROM src",
+    "source": "datagen: id BIGINT sequence 1..rows; event_day DATE, event_time TIMESTAMP(3) and note STRING(48) random",
+    "target": "DUPLICATE KEY(id) table, HASH(id) 4 buckets, replication 1; sink defaults (V2 transactional writer, at-least-once)",
+    "checks": [
+      "Plan assertions on every run: native contains NativeStarRocksSink and NativeCalc; previous contains NativeCalc and ArrowToRowData and the stock sink; stock contains no native operator",
+      "Committed COUNT(*), SUM(id), SUM(quantity) and SUM(active) equal the generated input on every run"
+    ],
+    "warmups_per_cell": 2,
+    "measured_trials_per_cell": 6,
+    "mode_order": "rotated every trial",
+    "results": [
+      {
+        "rows": 1000000,
+        "format": "csv",
+        "modes": {
+          "stock": {
+            "seconds": {
+              "median": 3.3945,
+              "min": 3.28,
+              "max": 3.55,
+              "trials": 6
+            },
+            "measured_seconds": [
+              3.55,
+              3.359,
+              3.37,
+              3.528,
+              3.419,
+              3.28
+            ],
+            "warmup_seconds": [
+              5.138,
+              3.603
+            ],
+            "median_rows_per_second": 294594.1964943291
+          },
+          "previous": {
+            "seconds": {
+              "median": 3.5315,
+              "min": 3.491,
+              "max": 3.664,
+              "trials": 6
+            },
+            "measured_seconds": [
+              3.525,
+              3.538,
+              3.491,
+              3.511,
+              3.583,
+              3.664
+            ],
+            "warmup_seconds": [
+              3.965,
+              3.624
+            ],
+            "median_rows_per_second": 283165.7935721365
+          },
+          "native": {
+            "seconds": {
+              "median": 2.798,
+              "min": 2.755,
+              "max": 3.14,
+              "trials": 6
+            },
+            "measured_seconds": [
+              2.846,
+              2.806,
+              2.79,
+              3.14,
+              2.764,
+              2.755
+            ],
+            "warmup_seconds": [
+              2.948,
+              2.974
+            ],
+            "median_rows_per_second": 357398.14152966405
+          }
+        },
+        "median_speedup_over_stock": 1.2131879914224446,
+        "median_speedup_over_previous": 1.2621515368120084,
+        "native_max_below_stock_min": true
+      },
+      {
+        "rows": 1000000,
+        "format": "json",
+        "modes": {
+          "stock": {
+            "seconds": {
+              "median": 4.0755,
+              "min": 3.978,
+              "max": 4.347,
+              "trials": 6
+            },
+            "measured_seconds": [
+              4.174,
+              4.347,
+              3.978,
+              3.998,
+              4.002,
+              4.149
+            ],
+            "warmup_seconds": [
+              4.432,
+              4.804
+            ],
+            "median_rows_per_second": 245368.666421298
+          },
+          "previous": {
+            "seconds": {
+              "median": 4.46,
+              "min": 4.157,
+              "max": 4.644,
+              "trials": 6
+            },
+            "measured_seconds": [
+              4.563,
+              4.412,
+              4.31,
+              4.157,
+              4.644,
+              4.508
+            ],
+            "warmup_seconds": [
+              4.574,
+              4.774
+            ],
+            "median_rows_per_second": 224215.2466367713
+          },
+          "native": {
+            "seconds": {
+              "median": 3.463,
+              "min": 3.329,
+              "max": 3.876,
+              "trials": 6
+            },
+            "measured_seconds": [
+              3.876,
+              3.828,
+              3.436,
+              3.368,
+              3.49,
+              3.329
+            ],
+            "warmup_seconds": [
+              3.587,
+              3.612
+            ],
+            "median_rows_per_second": 288766.9650591972
+          }
+        },
+        "median_speedup_over_stock": 1.1768697660987582,
+        "median_speedup_over_previous": 1.2879006641640196,
+        "native_max_below_stock_min": true
+      },
+      {
+        "rows": 5000000,
+        "format": "csv",
+        "modes": {
+          "stock": {
+            "seconds": {
+              "median": 11.0235,
+              "min": 9.907,
+              "max": 11.754,
+              "trials": 6
+            },
+            "measured_seconds": [
+              10.64,
+              10.358,
+              9.907,
+              11.637,
+              11.407,
+              11.754
+            ],
+            "warmup_seconds": [
+              11.277,
+              10.257
+            ],
+            "median_rows_per_second": 453576.4503106999
+          },
+          "previous": {
+            "seconds": {
+              "median": 10.719000000000001,
+              "min": 10.096,
+              "max": 11.932,
+              "trials": 6
+            },
+            "measured_seconds": [
+              10.412,
+              11.026,
+              10.375,
+              10.096,
+              11.932,
+              11.339
+            ],
+            "warmup_seconds": [
+              10.535,
+              10.328
+            ],
+            "median_rows_per_second": 466461.4236402649
+          },
+          "native": {
+            "seconds": {
+              "median": 8.5635,
+              "min": 8.295,
+              "max": 9.769,
+              "trials": 6
+            },
+            "measured_seconds": [
+              8.412,
+              8.671,
+              8.295,
+              8.456,
+              9.319,
+              9.769
+            ],
+            "warmup_seconds": [
+              8.579,
+              8.966
+            ],
+            "median_rows_per_second": 583873.4162433585
+          }
+        },
+        "median_speedup_over_stock": 1.2872657207917324,
+        "median_speedup_over_previous": 1.251707829742512,
+        "native_max_below_stock_min": true
+      },
+      {
+        "rows": 5000000,
+        "format": "json",
+        "modes": {
+          "stock": {
+            "seconds": {
+              "median": 14.600999999999999,
+              "min": 14.038,
+              "max": 15.273,
+              "trials": 6
+            },
+            "measured_seconds": [
+              14.463,
+              14.087,
+              14.038,
+              15.273,
+              14.739,
+              14.883
+            ],
+            "warmup_seconds": [
+              13.816,
+              14.749
+            ],
+            "median_rows_per_second": 342442.2984727074
+          },
+          "previous": {
+            "seconds": {
+              "median": 14.3335,
+              "min": 13.396,
+              "max": 16.403,
+              "trials": 6
+            },
+            "measured_seconds": [
+              14.512,
+              13.396,
+              15.911,
+              14.155,
+              13.978,
+              16.403
+            ],
+            "warmup_seconds": [
+              13.864,
+              14.854
+            ],
+            "median_rows_per_second": 348833.15310287086
+          },
+          "native": {
+            "seconds": {
+              "median": 12.156,
+              "min": 11.805,
+              "max": 12.386,
+              "trials": 6
+            },
+            "measured_seconds": [
+              12.153,
+              11.823,
+              11.805,
+              12.386,
+              12.159,
+              12.278
+            ],
+            "warmup_seconds": [
+              12.001,
+              11.997
+            ],
+            "median_rows_per_second": 411319.5129976966
+          }
+        },
+        "median_speedup_over_stock": 1.2011352418558736,
+        "median_speedup_over_previous": 1.179129647910497,
+        "native_max_below_stock_min": true
+      }
+    ],
+    "superseded_cohort": {
+      "directory": "cohort-1",
+      "method": "one warmup and three measured trials per cell, otherwise identical",
+      "results": [
+        {
+          "rows": 1000000,
+          "format": "csv",
+          "modes": {
+            "stock": {
+              "seconds": {
+                "median": 3.979,
+                "min": 3.686,
+                "max": 4.135,
+                "trials": 3
+              },
+              "measured_seconds": [
+                4.135,
+                3.979,
+                3.686
+              ],
+              "warmup_seconds": [
+                5.532
+              ],
+              "median_rows_per_second": 251319.42699170645
+            },
+            "previous": {
+              "seconds": {
+                "median": 3.922,
+                "min": 3.745,
+                "max": 4.058,
+                "trials": 3
+              },
+              "measured_seconds": [
+                4.058,
+                3.745,
+                3.922
+              ],
+              "warmup_seconds": [
+                4.253
+              ],
+              "median_rows_per_second": 254971.9530851606
+            },
+            "native": {
+              "seconds": {
+                "median": 3.181,
+                "min": 2.85,
+                "max": 4.427,
+                "trials": 3
+              },
+              "measured_seconds": [
+                3.181,
+                2.85,
+                4.427
+              ],
+              "warmup_seconds": [
+                3.206
+              ],
+              "median_rows_per_second": 314366.55139893113
+            }
+          },
+          "median_speedup_over_stock": 1.250864508016347,
+          "median_speedup_over_previous": 1.232945614586608,
+          "native_max_below_stock_min": false
+        },
+        {
+          "rows": 1000000,
+          "format": "json",
+          "modes": {
+            "stock": {
+              "seconds": {
+                "median": 4.249,
+                "min": 4.149,
+                "max": 4.913,
+                "trials": 3
+              },
+              "measured_seconds": [
+                4.913,
+                4.149,
+                4.249
+              ],
+              "warmup_seconds": [
+                4.762
+              ],
+              "median_rows_per_second": 235349.49399858792
+            },
+            "previous": {
+              "seconds": {
+                "median": 4.401,
+                "min": 4.319,
+                "max": 4.42,
+                "trials": 3
+              },
+              "measured_seconds": [
+                4.42,
+                4.319,
+                4.401
+              ],
+              "warmup_seconds": [
+                4.65
+              ],
+              "median_rows_per_second": 227221.08611679164
+            },
+            "native": {
+              "seconds": {
+                "median": 3.526,
+                "min": 3.497,
+                "max": 3.904,
+                "trials": 3
+              },
+              "measured_seconds": [
+                3.904,
+                3.526,
+                3.497
+              ],
+              "warmup_seconds": [
+                4.641
+              ],
+              "median_rows_per_second": 283607.48723766307
+            }
+          },
+          "median_speedup_over_stock": 1.2050482132728304,
+          "median_speedup_over_previous": 1.248156551332955,
+          "native_max_below_stock_min": true
+        },
+        {
+          "rows": 5000000,
+          "format": "csv",
+          "modes": {
+            "stock": {
+              "seconds": {
+                "median": 12.73,
+                "min": 11.064,
+                "max": 13.057,
+                "trials": 3
+              },
+              "measured_seconds": [
+                13.057,
+                12.73,
+                11.064
+              ],
+              "warmup_seconds": [
+                12.05
+              ],
+              "median_rows_per_second": 392772.9772191673
+            },
+            "previous": {
+              "seconds": {
+                "median": 12.843,
+                "min": 11.815,
+                "max": 12.9,
+                "trials": 3
+              },
+              "measured_seconds": [
+                11.815,
+                12.843,
+                12.9
+              ],
+              "warmup_seconds": [
+                13.891
+              ],
+              "median_rows_per_second": 389317.13774040336
+            },
+            "native": {
+              "seconds": {
+                "median": 10.176,
+                "min": 9.323,
+                "max": 10.695,
+                "trials": 3
+              },
+              "measured_seconds": [
+                10.695,
+                10.176,
+                9.323
+              ],
+              "warmup_seconds": [
+                10.744
+              ],
+              "median_rows_per_second": 491352.2012578616
+            }
+          },
+          "median_speedup_over_stock": 1.2509827044025157,
+          "median_speedup_over_previous": 1.2620872641509433,
+          "native_max_below_stock_min": true
+        },
+        {
+          "rows": 5000000,
+          "format": "json",
+          "modes": {
+            "stock": {
+              "seconds": {
+                "median": 19.475,
+                "min": 16.494,
+                "max": 21.345,
+                "trials": 3
+              },
+              "measured_seconds": [
+                16.494,
+                19.475,
+                21.345
+              ],
+              "warmup_seconds": [
+                15.738
+              ],
+              "median_rows_per_second": 256739.40949935812
+            },
+            "previous": {
+              "seconds": {
+                "median": 17.454,
+                "min": 16.14,
+                "max": 25.0,
+                "trials": 3
+              },
+              "measured_seconds": [
+                16.14,
+                25.0,
+                17.454
+              ],
+              "warmup_seconds": [
+                15.944
+              ],
+              "median_rows_per_second": 286467.2854360032
+            },
+            "native": {
+              "seconds": {
+                "median": 13.995,
+                "min": 11.833,
+                "max": 17.748,
+                "trials": 3
+              },
+              "measured_seconds": [
+                11.833,
+                17.748,
+                13.995
+              ],
+              "warmup_seconds": [
+                13.459
+              ],
+              "median_rows_per_second": 357270.4537334763
+            }
+          },
+          "median_speedup_over_stock": 1.39156841729189,
+          "median_speedup_over_previous": 1.247159699892819,
+          "native_max_below_stock_min": false
+        }
+      ]
+    }
+  },
+  "encode": {
+    "gate": "stock connector serializer plus the SDK's UTF-8 row bytes, timed in Java over prebuilt BinaryRowData; native encode timed inside Rust by Criterion over the same rows as prebuilt Arrow batches",
+    "rows": "id BIGINT NOT NULL, quantity INT (NULL every 11th), name STRING (NULL every 13th), amount DECIMAL(18,2), score DOUBLE, day DATE, event_time TIMESTAMP(3), active BOOLEAN, comment STRING (NULL every 3rd, otherwise 70 characters with a non-ASCII letter)",
+    "changelog_cases": "primary-key upsert options; row kinds cycle +I/-U/+U/-D and the default sink.ignore.update-before drops -U",
+    "java_trials": 7,
+    "java_warmups": 3,
+    "diagnostics": "native-jni-entry times the production Java entry over a shared prebuilt Arrow batch (C Data export, JNI, Java body array, String hand-off and the SDK's UTF-8 bytes); native-from-rowdata adds the RowData-to-Arrow transpose",
+    "results": [
+      {
+        "format": "csv",
+        "row_kinds": "append",
+        "rows_per_batch": 1024,
+        "stock_java_ns_per_row": {
+          "median": 900.2744925675244,
+          "min": 888.1064223110279,
+          "max": 992.4285989303315,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 272.626953125,
+        "native_rust_batch_ns": {
+          "low": 278700.0,
+          "estimate": 279170.0,
+          "high": 279720.0
+        },
+        "gate_speedup": 3.302221156962227,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 669.2138296850999,
+          "min": 653.4105892777138,
+          "max": 685.791015625,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.345271798987105,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 802.1866104430684,
+          "min": 784.261463733679,
+          "max": 840.9425913258449,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.1222756411631947
+      },
+      {
+        "format": "csv",
+        "row_kinds": "append",
+        "rows_per_batch": 8192,
+        "stock_java_ns_per_row": {
+          "median": 974.4549110287526,
+          "min": 957.6909424828701,
+          "max": 999.9870550437051,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 290.22216796875,
+        "native_rust_batch_ns": {
+          "low": 2342400.0,
+          "estimate": 2377500.0,
+          "high": 2442600.0
+        },
+        "gate_speedup": 3.3576170898622677,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 642.0483613561412,
+          "min": 637.1492064429111,
+          "max": 662.7440115506532,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.5177282112682273,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 783.2778555447939,
+          "min": 766.9455316262167,
+          "max": 865.9835980524782,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.2440731014296187
+      },
+      {
+        "format": "csv",
+        "row_kinds": "upsert",
+        "rows_per_batch": 1024,
+        "stock_java_ns_per_row": {
+          "median": 755.5440423187084,
+          "min": 743.4483931971646,
+          "max": 803.546384968638,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 207.255859375,
+        "native_rust_batch_ns": {
+          "low": 212080.0,
+          "estimate": 212230.0,
+          "high": 212400.0
+        },
+        "gate_speedup": 3.6454652939469323,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 513.0883376536099,
+          "min": 508.94988529265873,
+          "max": 542.9346018145161,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.4725418351425916,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 655.9460640480991,
+          "min": 641.8527035730286,
+          "max": 666.0685453869048,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.15183867047841
+      },
+      {
+        "format": "csv",
+        "row_kinds": "upsert",
+        "rows_per_batch": 8192,
+        "stock_java_ns_per_row": {
+          "median": 779.3392328981494,
+          "min": 763.2154455966637,
+          "max": 821.7840140921171,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 226.5380859375,
+        "native_rust_batch_ns": {
+          "low": 1819400.0,
+          "estimate": 1855800.0,
+          "high": 1897800.0
+        },
+        "gate_speedup": 3.44021284400347,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 498.3829435754995,
+          "min": 484.4330334272541,
+          "max": 519.7891485495645,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.5637357637221951,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 629.3894243084017,
+          "min": 614.5101658555328,
+          "max": 656.2825607549948,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.238246469988781
+      },
+      {
+        "format": "json",
+        "row_kinds": "append",
+        "rows_per_batch": 1024,
+        "stock_java_ns_per_row": {
+          "median": 1197.031526517697,
+          "min": 1196.6743791602662,
+          "max": 1234.3770206293202,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 362.587890625,
+        "native_rust_batch_ns": {
+          "low": 367050.0,
+          "estimate": 371290.0,
+          "high": 378580.0
+        },
+        "gate_speedup": 3.3013554988125775,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 938.8223556307604,
+          "min": 936.891586061508,
+          "max": 946.4246751792115,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.2750351750129079,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 1077.7002853182603,
+          "min": 1074.477787078373,
+          "max": 1085.2015989023298,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.110727669673203
+      },
+      {
+        "format": "json",
+        "row_kinds": "append",
+        "rows_per_batch": 8192,
+        "stock_java_ns_per_row": {
+          "median": 1210.3737167608542,
+          "min": 1201.9897005675268,
+          "max": 1236.2513933025423,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 370.61767578125,
+        "native_rust_batch_ns": {
+          "low": 3018200.0,
+          "estimate": 3036100.0,
+          "high": 3068000.0
+        },
+        "gate_speedup": 3.26582836128748,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 919.7836078581263,
+          "min": 915.1287811779586,
+          "max": 929.6028472400102,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.3159331242915024,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 1048.2491039838947,
+          "min": 1044.3129407538743,
+          "max": 1116.7891455478355,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.1546622955944357
+      },
+      {
+        "format": "json",
+        "row_kinds": "upsert",
+        "rows_per_batch": 1024,
+        "stock_java_ns_per_row": {
+          "median": 945.4746353766641,
+          "min": 939.3492433515745,
+          "max": 979.0928079397081,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 277.724609375,
+        "native_rust_batch_ns": {
+          "low": 283940.0,
+          "estimate": 284390.0,
+          "high": 284900.0
+        },
+        "gate_speedup": 3.4043603031952743,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 747.181902641769,
+          "min": 746.3949982798899,
+          "max": 754.573501204077,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.2653874940410128,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 882.6497185819892,
+          "min": 881.3556357606886,
+          "max": 883.7752906185996,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.0711776319326376
+      },
+      {
+        "format": "json",
+        "row_kinds": "upsert",
+        "rows_per_batch": 8192,
+        "stock_java_ns_per_row": {
+          "median": 949.7681289422708,
+          "min": 948.7528981693456,
+          "max": 966.017572121542,
+          "trials": 7
+        },
+        "native_rust_ns_per_row": 287.17041015625,
+        "native_rust_batch_ns": {
+          "low": 2347300.0,
+          "estimate": 2352500.0,
+          "high": 2358400.0
+        },
+        "gate_speedup": 3.3073328426334037,
+        "diagnostic_native_jni_entry_ns_per_row": {
+          "median": 727.1928215652216,
+          "min": 720.650782350634,
+          "max": 752.4068033187116,
+          "trials": 7
+        },
+        "diagnostic_native_jni_entry_speedup": 1.306074676174573,
+        "diagnostic_native_from_rowdata_ns_per_row": {
+          "median": 856.2729212026127,
+          "min": 854.673291816086,
+          "max": 888.6018971927831,
+          "trials": 7
+        },
+        "diagnostic_native_from_rowdata_speedup": 1.109188560591577
+      }
+    ]
+  },
+  "configuration": {
+    "starrocks": "4.1.6 allin1",
+    "starrocks_image_digest": "starrocks/allin1-ubuntu@sha256:5cbf09c4c788d2ca41a8e38599b650f04dbc6af0de51ebda0952770fb8333e5d",
+    "starrocks_container_memory_bytes": 8589934592,
+    "connector": "com.starrocks:flink-connector-starrocks:1.2.16_flink-1.18",
+    "flink": "1.18.1 MiniCluster",
+    "java": "OpenJDK 17.0.20",
+    "rustc": "1.94.0",
+    "host": "Apple M1 Max, 10 cores, 32 GiB, macOS 26.5.2 arm64; Docker VM 10 CPUs, 15.6 GiB; image runs natively on arm64",
+    "jvm_heap_bytes": 4294967296,
+    "jvm_time_zone": "UTC",
+    "parallelism": 2,
+    "native_profile": "release, mimalloc (bench Maven profile; streamfusion.exchange.zeroCopyLocal=false)",
+    "native_library_sha256": {
+      "libstreamfusion.dylib": "0ab2b31f6447e24f634182d84241d517ec31d274af933979bc01cc86a591748b",
+      "libstreamfusion_starrocks.dylib": "c32e2ce3ed8bb1281147f04a690dff66fee40e2ee6da69e94a0a7ac644fb3549"
+    }
+  },
+  "controls": {
+    "stock": "stock Flink planner, datagen, Calc and the released StarRocks sink",
+    "previous": "StreamFusion with streamfusion.starrocks.enabled=false: native Calc between the row transposes, then the released StarRocks writer",
+    "native": "StreamFusion: RowData-to-Arrow transpose after datagen, native Calc and the native StarRocks load-body encoder in the released writer; no exit transpose"
+  },
+  "production_source_sha256": {
+    "native/bridge/src/jdk_decimal.rs": "61089e0d55ae88bd20765e9d2f2017da15fe5d3a3415bc79d8789d39aab5549e",
+    "native/starrocks/Cargo.toml": "4abdb66a45e106fff9c485dfda780a49bbc462b88d072d771b3ac3142c30a811",
+    "native/starrocks/benches/starrocks_encode.rs": "a051fb019acc9652fcdcccf175ce4e78682714de06f255889490c3339fed125a",
+    "native/starrocks/build.rs": "48fd653cc38da9fc53d2412b7d7b28a98de1a40f3d6c89c9a19acd3d4840fa42",
+    "native/starrocks/src/encoder.rs": "cf2be541e69dd639ed6a9b5da05fbd1cd561a22c34c762c233a7d3e841bb33b7",
+    "native/starrocks/src/fastjson.rs": "5249b1d2876d9382c1e4f723247c57c54bd7ab4e26e40cae6caedef4ac633a03",
+    "native/starrocks/src/java_text.rs": "4a5ab78a0ac7c104dbb894fd3970627aa2cab5309a652631a326b35e363d097d",
+    "native/starrocks/src/lib.rs": "7193856d61d03989ea95563e4525b8f5ae066607e9654f96c9fae0b97ac99412",
+    "src/main/java/tech/streamfusion/planner/ColumnarSinkRouting.java": "408943c4b63463736489d0d56190ee87e5aa2ef1ef9684fa70954a6fef21cd48",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/planner/NativeStarRocksSinkExecNode.java": "e2c645b10b9b07354a564904a17ce637d5b7d21593402621ac3f2e341e007195",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/planner/StarRocksPlannerExtension.java": "aad0dccc0b1ad6ae1016450e69a1f3ec4e5d8d3a34305bc55a379459e52ed1e1",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/planner/StarRocksSinkRuntime.java": "06e045d4b10d82f1bb3ececd0418d100b9ae6e79ab9e5e37f86c2fefd5b23334",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/planner/StarRocksTables.java": "a69a274146c622bb8f4c5ffb45819f3d964f2fbff0bbf10ffe2af076f13c7250",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/planner/StreamPhysicalNativeStarRocksSink.java": "db69b95ad412f64a242dfbf6bdcb6c52c0bc7209c9bb88a55b110698450b851b",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/starrocks/NativeStarRocks.java": "36a6f7c5072fc83433312330782012c09f162491a2b1040fbaa9f8957901c06a",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/starrocks/NativeStarRocksEncoder.java": "c513adcecac16b547ae0035d71749562c37b53089e51b880071822408f953af6",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/starrocks/NativeStarRocksSerializationSchema.java": "8a47b89d440e9c2c07fa471d2b3c687984f29bb11583c2a322a9165f109641e3",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/starrocks/NativeStarRocksSinkFunction.java": "3e1d0d3e7bce046d1fd24258d7ad45d877e20e2765ff4b459e3fa3b6ef63dd37",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/starrocks/StarRocksEncoding.java": "d162bb8ab1abacde4c3442c240c3908289a036af14b9a31c24cca16606f32247",
+    "streamfusion-starrocks/src/main/java/tech/streamfusion/starrocks/StarRocksSpellingProbe.java": "50877696767a842dc77165eb6c6df35f542c529561970d22db66f6f768462a4c",
+    "streamfusion-starrocks/src/main/resources/META-INF/services/tech.streamfusion.planner.NativePlannerExtension": "20eb326a9afff2319a2c7d0f76c2ae2fb19ee75beabacf9977b8e2dac9ddfd0c"
+  }
+}

@@ -198,11 +198,39 @@ public final class NativeExecution {
 
   public static int elementRows(Object operator, Object record)
       throws ReflectiveOperationException {
+    return arrowBatchRows(operator, record.getClass().getMethod("getValue").invoke(record));
+  }
+
+  /** Counts an Arrow batch through its measuring accessor, never the consuming root hand-off. */
+  public static int arrowBatchRows(Object operator, Object batch)
+      throws ReflectiveOperationException {
     if (!tracked(operator)) {
       return 0;
     }
-    Object batch = record.getClass().getMethod("getValue").invoke(record);
     return (int) batch.getClass().getMethod("rowCount").invoke(batch);
+  }
+
+  /**
+   * Ends an invocation that a test assumption skipped. It ran nothing to prove, so it leaves no
+   * evidence; the audit still requires each contracted method to execute in some invocation.
+   */
+  public static synchronized void abandon(Scope scope) {
+    if (scope != active) {
+      throw new AssertionError("Native execution scope mismatch");
+    }
+    active = null;
+    OPERATORS.values().removeIf(value -> value == scope);
+  }
+
+  /** Whether a test method ended through a JUnit 4 or JUnit Platform assumption. */
+  public static boolean skipped(Throwable failure) {
+    for (Class<?> type = failure.getClass(); type != null; type = type.getSuperclass()) {
+      if (type.getName().equals("org.junit.internal.AssumptionViolatedException")
+          || type.getName().equals("org.opentest4j.TestAbortedException")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public static synchronized void finish(Scope scope) {

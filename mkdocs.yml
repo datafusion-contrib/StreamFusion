@@ -70,6 +70,7 @@ nav:
       - Apache Doris: connectors/doris.md
       - Apache Iceberg: connectors/iceberg.md
       - Apache Paimon: connectors/paimon.md
+      - StarRocks: connectors/starrocks.md
       - Formats:
           - JSON: connectors/formats/json.md
           - CSV: connectors/formats/csv.md
@@ -203,6 +204,7 @@ nav:
       - Preserve Paimon partition pruning: optimizations/paimon-partition-pruning.md
       - Indexed pending rowtime deduplication: optimizations/pending-dedup-index.md
       - Batch-native Kafka JSON serialization: optimizations/batch-native-kafka-json-serialization.md
+      - Batch-native StarRocks rows: optimizations/batch-native-starrocks-rows.md
       - Fluss Arrow transport: optimizations/fluss-arrow-transport.md
       - DATE_FORMAT pattern cache: optimizations/date-format-pattern-cache.md
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md

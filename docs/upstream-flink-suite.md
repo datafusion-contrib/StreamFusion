@@ -324,7 +324,9 @@ invocation marker and report/case index. Parameterized method suffixes are norma
 contract lookup while each invocation retains its full identity. Every executed contracted
 case needs exactly one matching test/fixture witness; duplicate, missing, stale or unmatched
 links fail the summary. Witness row counts cannot exceed the enclosing invocation's observed
-work. Skipped cases need no fabricated identity. The join publishes exact associations only
+work. Skipped cases need no fabricated identity: a contracted invocation that a JUnit 4 or JUnit
+Platform assumption skips writes no witness, because it ran nothing to prove. Each contracted
+method must still execute in some invocation. The join publishes exact associations only
 when all links validate, and retains uncontracted row observations without yet assigning them
 a route.
 

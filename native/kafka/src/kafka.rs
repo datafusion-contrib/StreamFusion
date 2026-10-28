@@ -1371,51 +1371,9 @@ fn encode_decimal(
         }
     }
     if plain {
-        return encode_plain_decimal(unscaled, scale, output);
-    }
-    let digits = unscaled.unsigned_abs().to_string();
-    let adjusted_exponent = digits.len() as i64 - 1 - scale;
-    if scale >= 0 && adjusted_exponent >= -6 {
-        encode_plain_decimal(unscaled, scale, output);
-        return;
-    }
-    if unscaled < 0 {
-        output.push(b'-');
-    }
-    output.push(digits.as_bytes()[0]);
-    if digits.len() > 1 {
-        output.push(b'.');
-        output.extend_from_slice(&digits.as_bytes()[1..]);
-    }
-    output.push(b'E');
-    if adjusted_exponent > 0 {
-        output.push(b'+');
-    }
-    output.extend_from_slice(adjusted_exponent.to_string().as_bytes());
-}
-
-/// `BigDecimal.toPlainString()`: positional digits with exactly `scale` fraction digits.
-fn encode_plain_decimal(unscaled: i128, scale: i64, output: &mut Vec<u8>) {
-    if unscaled < 0 {
-        output.push(b'-');
-    }
-    let digits = unscaled.unsigned_abs().to_string();
-    if scale <= 0 {
-        output.extend_from_slice(digits.as_bytes());
-        for _ in 0..-scale {
-            output.push(b'0');
-        }
-    } else if digits.len() as i64 > scale {
-        let split = digits.len() - scale as usize;
-        output.extend_from_slice(digits[..split].as_bytes());
-        output.push(b'.');
-        output.extend_from_slice(digits[split..].as_bytes());
+        streamfusion_bridge::jdk_decimal::write_big_decimal_plain(unscaled, scale, output);
     } else {
-        output.extend_from_slice(b"0.");
-        for _ in 0..scale - digits.len() as i64 {
-            output.push(b'0');
-        }
-        output.extend_from_slice(digits.as_bytes());
+        streamfusion_bridge::jdk_decimal::write_big_decimal_string(unscaled, scale, output);
     }
 }
 

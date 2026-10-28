@@ -28,6 +28,7 @@ def main():
         "streamfusion-iceberg": "Java_tech_streamfusion_iceberg_NativeIceberg_",
         "streamfusion-orc": "Java_tech_streamfusion_orc_NativeOrc_",
         "streamfusion-parquet": "Java_tech_streamfusion_parquet_NativeParquet_",
+        "streamfusion-starrocks": "Java_tech_streamfusion_starrocks_NativeStarRocks_",
     }
     for name in ("json", "csv", "raw", "avro", "protobuf"):
         owners[f"streamfusion-{name}"] = (

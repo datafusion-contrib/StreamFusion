@@ -35,7 +35,8 @@ No connector or format dependency is replaced with a local or forked build.
 
 The normal reactor includes core, loader, Kafka, Fluss, and the separate JSON, CSV, raw,
 Avro, Confluent Avro, Protobuf, Parquet and ORC modules. The opt-in Delta module remains a
-2.2-only integration; Paimon 2.0 supports both lines. Their declared dependencies pass the
+2.2-only integration, and the opt-in StarRocks module is 1.18-only because StarRocks publishes no
+Flink 2.x connector; Paimon 2.0 supports both lines. Their declared dependencies pass the
 same Java 11 gate, and the lake CI runs both JDKs. The legacy Paimon 1.0 compatibility suite
 and upstream Flink instrumentation are separate development workflows; their execution
 coverage is documented in their respective pages. The instrumentation agent itself uses

@@ -14,6 +14,10 @@ and postpone buckets, with Paimon's own compaction)
 also have native paths, but they have not seen the same production hardening as Kafka — treat them
 as experimental.
 
+[StarRocks](starrocks.md) has an optional adapter on the Flink 1.18 line: Rust encodes the
+released connector's exact CSV/JSON Stream Load bodies from Arrow batches, while the connector keeps
+transactions, labels, retries and recovery.
+
 [Apache Fluss](fluss.md) is an experimental Java Arrow transport for append-only and primary-key
 log reads and append-only production, enabled by default when installed. Its connector-owned Rust
 helper handles scalar bucket-key routing and batch statistics. Primary-key writes stay on Flink.

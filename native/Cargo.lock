@@ -4936,6 +4936,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "streamfusion-starrocks"
+version = "0.1.0-rc4"
+dependencies = [
+ "arrow 58.3.0",
+ "criterion",
+ "itoa",
+ "jni",
+ "libmimalloc-sys",
+ "num-bigint 0.4.6",
+ "streamfusion-benchmark-support",
+ "streamfusion-bridge",
+ "streamfusion-native-build",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

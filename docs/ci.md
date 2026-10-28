@@ -239,3 +239,22 @@ inventory and nonempty Arrow source-read witnesses are audited. One stale upstre
 timestamp assertion is accepted only after reproducing and matching its exact failure with
 StreamFusion disabled; all original test SQL and assertions still execute. The incremental reader has unit coverage; a compatible Doris 5.0 server is not
 yet available as a released CI fixture.
+
+## StarRocks connector
+
+The required `starrocks-tests` job runs `bin/starrocks-suite.sh` on the Flink 1.18 line against
+the released `starrocks/allin1-ubuntu:4.1.6` image, pinned by digest. It runs, in order:
+
+- the encoder referee and planner tests;
+- the real-server `StarRocksSqlIT` comparisons with the stock writer;
+- the unchanged `StarRocksSinkITTest` and `KafkaToStarRocksITTest` from connector release 1.2.16,
+  pinned by commit, compiled against the released connector and run under the upstream-suite
+  agent. They start the pinned image themselves on fixed ports, after the script's own fixture
+  stops, and the Kafka test starts its own Kafka container.
+
+The upstream audit requires StreamFusion activation, every contracted method and positive native
+encoder work for each transactional writer invocation. A non-transactional invocation whose
+upstream Calc still runs natively requires that Calc work; every other declined invocation
+requires full fallback with its exact reason. Upstream assumption skips of the non-transactional
+writer leave no evidence rather than failing their contract. The job retains Surefire reports,
+the execution audit, the SQL inventory and the fixture's server log.

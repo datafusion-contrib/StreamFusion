@@ -331,6 +331,44 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  starrocks-tests:
+    needs: native-build
+    name: StarRocks connector and upstream SQL tests (Flink 1.18)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - name: Free disk space
+        run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: debug-native-${{ github.sha }}
+          path: native/target/debug
+      - name: Resolve StarRocks dependencies before tests
+        run: >
+          python3 bin/ci-maven-dependencies.py
+          --profile flink-1.18,starrocks,starrocks-it,starrocks-upstream
+          --projects streamfusion-starrocks --also-make
+      - name: Run byte parity, real-server SQL and upstream connector tests
+        env:
+          SF_STARROCKS_NATIVE_BUILD_SKIP: 'true'
+        run: bin/starrocks-suite.sh
+      - name: Retain StarRocks assertions, execution audit and server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: starrocks-sql-parity
+          path: |
+            streamfusion-starrocks/target/surefire-reports/
+            streamfusion-starrocks/target/starrocks-suite/
+          if-no-files-found: error
+          retention-days: 7
+
   image-integration:
     name: Flink image integration (optimized native build)${{ matrix.suffix }}
     runs-on: ubuntu-22.04
@@ -447,7 +485,7 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ always() && !cancelled() }}
-    needs: [native-build, native-tests, java-tests, lake-module-tests, image-integration, doris-tests]
+    needs: [native-build, native-tests, java-tests, lake-module-tests, image-integration, doris-tests, starrocks-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

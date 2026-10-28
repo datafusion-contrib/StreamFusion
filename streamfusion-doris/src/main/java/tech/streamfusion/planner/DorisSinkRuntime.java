@@ -5,7 +5,6 @@ import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.SimpleOperatorFactory;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
-import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
 import org.apache.flink.table.types.logical.RowType;
@@ -14,8 +13,6 @@ import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeConstraintEnforcer;
 import tech.streamfusion.operator.NativeSinkConstraintEnforcer;
 import tech.streamfusion.operator.NativeSinkMaterializer;
-import tech.streamfusion.operator.OrderedKeyGroupReassembler;
-import tech.streamfusion.operator.SplitByKeyGroupOperator;
 
 /**
  * Carries the stock SQL sink's constraints, parallelism and primary-key routing to its Arrow edge.
@@ -107,44 +104,16 @@ final class DorisSinkRuntime {
               input.getParallelism(),
               false);
     int target = parallelism == null ? input.getParallelism() : parallelism;
-    var policy = config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_KEYED_SHUFFLE);
-    boolean shuffle =
-        materialize
-            || keys.length != 0
-                && target != 1
-                && (policy == ExecutionConfigOptions.SinkKeyedShuffle.FORCE
-                    || policy == ExecutionConfigOptions.SinkKeyedShuffle.AUTO
-                        && target != input.getParallelism());
-    if (!shuffle) return input;
-    int groups = FlinkKeyGroupUtils.maxParallelism(environment, target);
-    boolean recoverable = environment.getCheckpointConfig().isUnalignedCheckpointsEnabled();
-    var split =
-        new OneInputTransformation<>(
-            input,
-            "doris-primary-key-split",
-            SimpleOperatorFactory.of(
-                new SplitByKeyGroupOperator(keys, timestampPrecisions, groups, recoverable)),
-            ArrowBatchTypeInformation.INSTANCE,
-            input.getParallelism(),
-            false);
-    var partition =
-        new PartitionTransformation<>(split, new ColumnarKeyGroupPartitioner(groups, recoverable));
-    partition.setParallelism(target);
-    partition.setMaxParallelism(groups);
-    Transformation<ArrowBatch> routed = partition;
-    if (recoverable) {
-      var reassembled =
-          new OneInputTransformation<>(
-              partition,
-              "doris-primary-key-reassemble",
-              SimpleOperatorFactory.of(new OrderedKeyGroupReassembler(groups)),
-              ArrowBatchTypeInformation.INSTANCE,
-              target,
-              false);
-      reassembled.setMaxParallelism(groups);
-      routed = reassembled;
-    }
+    if (!ColumnarSinkRouting.shuffles(
+        config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_KEYED_SHUFFLE),
+        keys,
+        target,
+        input.getParallelism(),
+        materialize)) return input;
+    var routed =
+        ColumnarSinkRouting.route(input, environment, keys, timestampPrecisions, target, "doris");
     if (!materialize) return routed;
+    int groups = FlinkKeyGroupUtils.maxParallelism(environment, target);
     // Flink 2.2 explicitly disables TTL for its non-legacy materializer strategies.
     var strategy = config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_UPSERT_MATERIALIZE_STRATEGY);
     long retention = config.getStateRetentionTime();

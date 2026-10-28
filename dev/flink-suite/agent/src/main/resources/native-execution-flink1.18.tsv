@@ -105,3 +105,75 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedG
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=false&changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=true&aggMode=OFF	!GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with non-character aggregate results and synchronous single-phase execution without mini-batching, specialization, approximate or ordered calls
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=true&aggMode=ON	!local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys
+# Released StarRocks 1.2.16 sink ITs: V2 writers must encode nonempty Arrow batches natively,
+# while declined options keep the connector's own writer for the stated reason.
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAbortLingeringTransactions	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAbortLingeringTransactions	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAbortLingeringTransactionsWithCheckNum	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAbortLingeringTransactionsWithCheckNum	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAtLeastOncePreparedTimeout	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAtLeastOncePreparedTimeout	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAtLeastOnceWithTransaction	isSinkV2=false	NativeCalcOperator
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAtLeastOnceWithTransaction	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAtLeastOnceWithoutTransaction	isSinkV2=false	NativeCalcOperator
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testAtLeastOnceWithoutTransaction	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testColumnsFromFlinkSchemaLetsDefaultFire	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testColumnsFromFlinkSchemaLetsDefaultFire	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testColumnsFromFlinkSchemaWithAllColumnsDeclared	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testColumnsFromFlinkSchemaWithAllColumnsDeclared	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testConditionalUpdateMergeCondition	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testConditionalUpdateMergeCondition	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testCsvFormatWithColumnSeparatorAndRowDelimiter	isSinkV2=false	NativeCalcOperator
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testCsvFormatWithColumnSeparatorAndRowDelimiter	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testCsvLz4Compression	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testCsvLz4Compression	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWriteFullColumnsInOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWriteFullColumnsInOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWriteFullColumnsOutOfOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWriteFullColumnsOutOfOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWritePartialColumnsInOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWritePartialColumnsInOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWritePartialColumnsOutOfOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testDupKeyWritePartialColumnsOutOfOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testEnableExactlyOnceLabelGen	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testEnableExactlyOnceLabelGen	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testErrorLog	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testErrorLog	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testExactlyOnce	isSinkV2=false	NativeCalcOperator
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testExactlyOnce	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testExactlyOncePreparedTimeout	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testExactlyOncePreparedTimeout	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testJsonFormat	isSinkV2=false	NativeCalcOperator
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testJsonFormat	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testJsonLz4Compression	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testJsonLz4Compression	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testJsonType	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testJsonType	isSinkV2=true	!starrocks sink: text column c2 targets a StarRocks JSON column, which the connector re-serializes through fastjson
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testMergeCommitAsync	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testMergeCommitAsync	isSinkV2=true	!starrocks sink: merge commit (sink.properties.enable_merge_commit) is not natively verified
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testMergeCommitBackendDirectConnection	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testMergeCommitBackendDirectConnection	isSinkV2=true	!starrocks sink: merge commit (sink.properties.enable_merge_commit) is not natively verified
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testMergeCommitInOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testMergeCommitInOrder	isSinkV2=true	!starrocks sink: merge commit (sink.properties.enable_merge_commit) is not natively verified
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPKPartialUpdateDelete	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPKPartialUpdateDelete	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPKUpsertAndDelete	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPKUpsertAndDelete	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWriteFullColumnsInOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWriteFullColumnsInOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWriteFullColumnsOutOfOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWriteFullColumnsOutOfOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWritePartialColumnsInOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWritePartialColumnsInOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWritePartialColumnsOutOfOrder	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testPkWritePartialColumnsOutOfOrder	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testTimestampType	isSinkV2=false	NativeCalcOperator
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testTimestampType	isSinkV2=true	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testUnalignedTypes	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testUnalignedTypes	isSinkV2=true	!starrocks sink: text column c1 targets a StarRocks unrecognized or differently cased column, which the connector re-serializes through fastjson
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testWithoutTheOptionTheDefaultIsOverwritten	isSinkV2=false	!starrocks sink: sink.version=V1 keeps the connector's non-transactional writer
+com.starrocks.connector.flink.it.sink.StarRocksSinkITTest#testWithoutTheOptionTheDefaultIsOverwritten	isSinkV2=true	NativeStarRocksEncoder
+# Released StarRocks 1.2.16 Kafka-to-StarRocks IT: Debezium changelogs reach primary-key tables
+# through the native encoder, including update-before deletes when a key changes.
+com.starrocks.connector.flink.it.sink.kafka.KafkaToStarRocksITTest#testUpdateWithPkChanged	*	NativeStarRocksEncoder
+com.starrocks.connector.flink.it.sink.kafka.KafkaToStarRocksITTest#testUpsertAndDelete	*	NativeStarRocksEncoder

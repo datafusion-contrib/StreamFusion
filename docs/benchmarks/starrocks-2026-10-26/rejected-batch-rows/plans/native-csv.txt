@@ -1,0 +1,16 @@
+== Abstract Syntax Tree ==
+LogicalSink(table=[default_catalog.default_database.dst], fields=[id, EXPR$1, EXPR$2, EXPR$3, EXPR$4, event_day, event_time, EXPR$7, note])
++- LogicalProject(id=[$0], EXPR$1=[MOD($0, 1000)], EXPR$2=[CONCAT(_UTF-16LE'customer-', CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE")], EXPR$3=[CAST(MOD($0, 100000)):DECIMAL(18, 2)], EXPR$4=[/(CAST($0):DOUBLE, 3)], event_day=[$1], event_time=[$2], EXPR$7=[=(MOD($0, 2), 0)], note=[$3])
+   +- LogicalTableScan(table=[[default_catalog, default_database, src]])
+
+== Optimized Physical Plan ==
+NativeStarRocksSink(reuseBarrier=[419], table=[default_catalog.default_database.dst], format=[csv], writer=[sink-function])
++- NativeCalc(select=[id, MOD(id, 1000) AS EXPR$1, CONCAT('customer-', CAST(id AS VARCHAR(2147483647))) AS EXPR$2, CAST(MOD(id, 100000) AS DECIMAL(18, 2)) AS EXPR$3, /(CAST(id AS DOUBLE), 3) AS EXPR$4, event_day, event_time, =(MOD(id, 2), 0) AS EXPR$7, note], nativeFunctions=[MOD, CAST, CONCAT], jvmFunctions=[], reuseBarrier=[418])
+   +- RowDataToArrow(reuseBarrier=[417])
+      +- TableSourceScan(table=[[default_catalog, default_database, src]], fields=[id, event_day, event_time, note])
+
+== Optimized Execution Plan ==
+NativeStarRocksSink(table=[default_catalog.default_database.dst], format=[csv], writer=[sink-function])
++- NativeCalc(select=[id, MOD(id, 1000) AS EXPR$1, CONCAT('customer-', CAST(id AS VARCHAR(2147483647))) AS EXPR$2, CAST(MOD(id, 100000) AS DECIMAL(18, 2)) AS EXPR$3, /(CAST(id AS DOUBLE), 3) AS EXPR$4, event_day, event_time, =(MOD(id, 2), 0) AS EXPR$7, note], nativeFunctions=[MOD, CAST, CONCAT], jvmFunctions=[])
+   +- RowDataToArrow(fields=[4])
+      +- TableSourceScan(table=[[default_catalog, default_database, src]], fields=[id, event_day, event_time, note])

@@ -305,6 +305,55 @@ class NativeExecutionTest {
     }
   }
 
+  @Test
+  void assumptionSkippedInvocationsLeaveNoEvidence() throws Exception {
+    NativeExecution.Scope skipped = begin(CALC);
+    assertTrue(NativeExecution.skipped(new org.opentest4j.TestAbortedException("assumption")));
+    assertTrue(NativeExecution.skipped(new VersionAssumption()));
+    assertFalse(NativeExecution.skipped(new AssertionError("failure")));
+
+    NativeExecution.abandon(skipped);
+
+    try (var files = Files.list(reports)) {
+      assertEquals(0, files.count());
+    }
+    NativeExecution.Scope next = begin(CALC);
+    Object calc = new NativeCalcOperator();
+    NativeExecution.opened(calc);
+    NativeExecution.completed(calc, 1);
+    NativeExecution.finish(next);
+  }
+
+  private static final class VersionAssumption extends org.opentest4j.TestAbortedException {}
+
+  @Test
+  void arrowBatchesAreCountedWithoutTakingTheirRoot() throws Exception {
+    NativeExecution.Scope scope = begin(CALC);
+    Object encoder = new NativeCalcOperator();
+    NativeExecution.opened(encoder);
+
+    assertEquals(5, NativeExecution.arrowBatchRows(encoder, new MeasuredBatch(5)));
+    assertEquals(0, NativeExecution.arrowBatchRows(new NativeCalcOperator(), new MeasuredBatch(5)));
+    NativeExecution.completed(encoder, 5);
+    NativeExecution.finish(scope);
+  }
+
+  public static final class MeasuredBatch {
+    private final int rows;
+
+    MeasuredBatch(int rows) {
+      this.rows = rows;
+    }
+
+    public int rowCount() {
+      return rows;
+    }
+
+    public Object root() {
+      throw new AssertionError("Measuring a batch must not take its root");
+    }
+  }
+
   private static class NativeCalcOperator {}
 
   private static class NativeColumnarGroupAggregateOperator {}

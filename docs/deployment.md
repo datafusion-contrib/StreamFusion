@@ -109,6 +109,12 @@ targets Java 11. The Flink 2.2 release archive includes this Java-only adapter; 
 DSO or separate format JAR. The base image does not include it. Stock Arrow sink fallback also
 requires the matching Flink `flink-python` JAR from `opt/` at runtime.
 
+The optional [StarRocks adapter](connectors/starrocks.md) builds with the `starrocks` Maven
+profile on the Flink 1.18 line (`-Pflink-1.18,starrocks`). Install
+`streamfusion-starrocks-flink1.18` and the released
+`flink-connector-starrocks-1.2.16_flink-1.18.jar` with the loader and core. The Flink 1.18 release
+archive includes the adapter and its native encoder library; the base image does not.
+
 The base image contains the loader and self-contained core runtime JAR and remains connector- and
 format-neutral: every optional connector or format is its own
 `streamfusion-*` artifact, matching Flink's own connector/format module split. Derive a small image

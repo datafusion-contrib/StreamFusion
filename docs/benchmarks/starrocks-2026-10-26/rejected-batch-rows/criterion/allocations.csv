@@ -1,0 +1,9 @@
+package,suite,case,allocation_calls,requested_bytes,shared_output_buffer_bytes,new_output_buffer_bytes
+streamfusion-starrocks,starrocks_encode,csv/append/1024,5,228224,0,0
+streamfusion-starrocks,starrocks_encode,csv/upsert/1024,5,228224,0,0
+streamfusion-starrocks,starrocks_encode,json/append/1024,7890,744592,0,0
+streamfusion-starrocks,starrocks_encode,json/upsert/1024,6,531328,0,0
+streamfusion-starrocks,starrocks_encode,csv/append/8192,5,1819520,0,0
+streamfusion-starrocks,starrocks_encode,csv/upsert/8192,5,1819520,0,0
+streamfusion-starrocks,starrocks_encode,json/append/8192,6,4244352,0,0
+streamfusion-starrocks,starrocks_encode,json/upsert/8192,6,4244352,0,0

@@ -78,6 +78,67 @@ impl DecimalRescale {
     }
 }
 
+/// Writes the base-10 digits of an unscaled magnitude into the tail of `buffer`.
+fn magnitude_digits(unscaled: i128, buffer: &mut [u8; 40]) -> &[u8] {
+    let mut magnitude = unscaled.unsigned_abs();
+    let mut start = buffer.len();
+    loop {
+        start -= 1;
+        buffer[start] = b'0' + (magnitude % 10) as u8;
+        magnitude /= 10;
+        if magnitude == 0 {
+            return &buffer[start..];
+        }
+    }
+}
+
+/// `BigDecimal.toPlainString()`: positional digits with exactly `scale` fraction digits.
+pub fn write_big_decimal_plain(unscaled: i128, scale: i64, output: &mut Vec<u8>) {
+    let mut buffer = [0; 40];
+    let digits = magnitude_digits(unscaled, &mut buffer);
+    if unscaled < 0 {
+        output.push(b'-');
+    }
+    if scale <= 0 {
+        output.extend_from_slice(digits);
+        output.resize(output.len() + scale.unsigned_abs() as usize, b'0');
+    } else if digits.len() as i64 > scale {
+        let split = digits.len() - scale as usize;
+        output.extend_from_slice(&digits[..split]);
+        output.push(b'.');
+        output.extend_from_slice(&digits[split..]);
+    } else {
+        output.extend_from_slice(b"0.");
+        output.resize(output.len() + (scale - digits.len() as i64) as usize, b'0');
+        output.extend_from_slice(digits);
+    }
+}
+
+/// `BigDecimal.toString()`: plain while the scale is non-negative and the adjusted exponent is at
+/// least -6, otherwise one integer digit and an `E` exponent (`0E-7`, `1.5E-9`, `1E+2`).
+pub fn write_big_decimal_string(unscaled: i128, scale: i64, output: &mut Vec<u8>) {
+    let mut buffer = [0; 40];
+    let digits = magnitude_digits(unscaled, &mut buffer);
+    let adjusted_exponent = digits.len() as i64 - 1 - scale;
+    if scale >= 0 && adjusted_exponent >= -6 {
+        write_big_decimal_plain(unscaled, scale, output);
+        return;
+    }
+    if unscaled < 0 {
+        output.push(b'-');
+    }
+    output.push(digits[0]);
+    if digits.len() > 1 {
+        output.push(b'.');
+        output.extend_from_slice(&digits[1..]);
+    }
+    output.push(b'E');
+    if adjusted_exponent > 0 {
+        output.push(b'+');
+    }
+    output.extend_from_slice(adjusted_exponent.to_string().as_bytes());
+}
+
 /// `BigDecimal.setScale(scale, HALF_UP)` + `DecimalData.fromBigDecimal`'s precision check: rescale an
 /// (unscaled, scale) big value to `target_scale`, rounding half away from zero, and return None (SQL
 /// NULL) when the result needs more than `precision` digits.
@@ -230,6 +291,45 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn plain_and_scientific_spellings_follow_big_decimal() {
+        let cases: [(i128, i64, &str, &str); 12] = [
+            (0, 0, "0", "0"),
+            (0, 2, "0.00", "0.00"),
+            (0, 7, "0.0000000", "0E-7"),
+            (1, 6, "0.000001", "0.000001"),
+            (1, 7, "0.0000001", "1E-7"),
+            (-15, 10, "-0.0000000015", "-1.5E-9"),
+            (12345, 2, "123.45", "123.45"),
+            (-12345, 0, "-12345", "-12345"),
+            (1, -2, "100", "1E+2"),
+            (123, -1, "1230", "1.23E+3"),
+            (i128::MIN, 0, &i128::MIN.to_string(), &i128::MIN.to_string()),
+            (
+                10_i128.pow(38) - 1,
+                38,
+                "0.99999999999999999999999999999999999999",
+                "0.99999999999999999999999999999999999999",
+            ),
+        ];
+        for (unscaled, scale, plain, string) in cases {
+            let mut actual = Vec::new();
+            write_big_decimal_plain(unscaled, scale, &mut actual);
+            assert_eq!(
+                std::str::from_utf8(&actual).unwrap(),
+                plain,
+                "{unscaled} {scale}"
+            );
+            actual.clear();
+            write_big_decimal_string(unscaled, scale, &mut actual);
+            assert_eq!(
+                std::str::from_utf8(&actual).unwrap(),
+                string,
+                "{unscaled} {scale}"
+            );
         }
     }
 

@@ -73,6 +73,7 @@ host — verified by the parity harness.
 - [45 — Parquet INT96 encoding](45-parquet-int96-writer.md) — use released parquet-rs column writers for INT96 leaves and retain Arrow writers for other leaves; a batched JVM conversion preserves Flink’s local calendar semantics.
 
 - [48 — JVM aggregate managed state](48-jvm-aggregate-managed-state.md) — a default-off columnar boundary retains released Flink incremental functions, DataViews and checkpoint ownership instead of Arroyo's vector-taking UDAF ABI.
+- [49 — StarRocks loads keep the connector; Rust reproduces its text bodies](49-starrocks-text-load-bodies.md) — without released Arrow Stream Load, the server parses text, so the native encoder matches the connector's CSV/JSON bytes exactly (JVM-dependent spellings are probed by the planner and by every writer task, which otherwise keeps the connector's serializer) while the connector keeps transactions, headers and recovery.
 
 ## Resolved: early per-operator transposition (historical)
 

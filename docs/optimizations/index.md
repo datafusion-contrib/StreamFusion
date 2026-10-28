@@ -40,6 +40,7 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Indexed pending rowtime deduplication](pending-dedup-index.md): incoming-key probes over bounded Arrow chunks.
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
 - [Fluss Arrow transport](fluss-arrow-transport.md): retained receive buffers, exactly sized serialization and bounded acknowledgement pipelining.
+- [Batch-native StarRocks rows](batch-native-starrocks-rows.md): Rust-encoded connector rows in bounded slabs, handed to the stream-load SDK row by row under a shared table key.
 
 ## How these numbers are measured
 

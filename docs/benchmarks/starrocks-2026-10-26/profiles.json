@@ -1,0 +1,91 @@
+{
+  "method": "JFR profile settings on the committed code. Sink-thread samples (jdk.ExecutionSample and jdk.NativeMethodSample) are grouped by inclusive stack membership and compare categories within a mode; JFR caps threads sampled per period, so totals do not compare modes. Parked seconds sum jdk.ThreadPark durations under the stream-load SDK's blockIfCacheFull per sink subtask over every profiled job of that mode, while the SDK waits for buffered rows to drain to StarRocks.",
+  "csv_5m": {
+    "job_seconds": {
+      "stock": [
+        12.805,
+        12.029
+      ],
+      "previous": [
+        13.558,
+        15.194
+      ],
+      "native": [
+        11.311,
+        12.807
+      ]
+    },
+    "sink_thread_samples": {
+      "native": {
+        "samples": 145,
+        "inclusive_percent": {
+          "native_encode": 25.5,
+          "native_begin": 2.1,
+          "row_string": 2.8,
+          "sdk_write": 12.4,
+          "sdk_region_lookup": 2.1
+        }
+      },
+      "previous": {
+        "samples": 1127,
+        "inclusive_percent": {
+          "sdk_write": 9.1,
+          "sdk_region_lookup": 5.9,
+          "stock_transform": 42.7,
+          "stock_serialize": 19.3
+        }
+      },
+      "stock": {
+        "samples": 241,
+        "inclusive_percent": {
+          "sdk_write": 5.4,
+          "sdk_region_lookup": 4.1,
+          "sdk_block_if_cache_full": 0.4,
+          "stock_transform": 22.8,
+          "stock_serialize": 13.3
+        }
+      }
+    },
+    "parked_seconds_per_subtask": {
+      "native": [
+        4.05,
+        3.88
+      ],
+      "previous": [
+        1.09,
+        1.08
+      ],
+      "stock": [
+        1.02,
+        0.98
+      ]
+    }
+  },
+  "json_5m": {
+    "job_seconds": {
+      "stock": [
+        16.53
+      ],
+      "previous": [
+        15.923
+      ],
+      "native": [
+        13.345
+      ]
+    },
+    "parked_seconds_per_subtask": {
+      "native": [
+        4.76,
+        4.72
+      ],
+      "previous": [
+        2.41,
+        2.25
+      ],
+      "stock": [
+        3.11,
+        2.95
+      ]
+    }
+  }
+}
