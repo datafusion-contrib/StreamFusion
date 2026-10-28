@@ -92,10 +92,11 @@ value — a job that runs on both engines produces identical results.
   raw control characters inside strings (`ALLOW_UNESCAPED_CONTROL_CHARS`), content trailing the
   root document (never read) — re-decode through a token walk that ports Flink's converters
   (`native/json/src/json_retry.rs`) and rewrite into sanitized rows for the fast-path appenders. The
-  CDC envelope dialects keep the spec-strict parse (their `old`-presence pre-scans mirror the
-  skip conditions row for row), so a Jackson-only CDC message still fails/drops as before; for
-  the same reason a FLOAT physical column in a CDC envelope (or on the decimal-bearing
-  arrow-json path) keeps the tape's f64-then-narrow rounding, which is one ULP off Jackson's
+  CDC envelope dialects keep the spec-strict parse, so a Jackson-only CDC message still
+  fails/drops as before. (A decimal-bearing CDC table's envelope decodes through arrow-json, which
+  does read raw control characters; the Maxwell/Canal `old`-presence scan then reads such an
+  update through the same tokenizer.) Likewise a FLOAT physical column in a CDC envelope (or on
+  the decimal-bearing arrow-json path) keeps the tape's f64-then-narrow rounding, which is one ULP off Jackson's
   direct-to-float parse exactly when the f64 lands on an f32 rounding midpoint — the plain
   `json` format re-decodes those messages with the raw literal. Two
   tokenizer residuals, both message-level failures exactly like before the retry existed: an
@@ -128,9 +129,7 @@ value — a job that runs on both engines produces identical results.
   errors.** arrow-json is all-or-nothing per document, so a bad non-decimal value drops the whole
   message (or the whole fanned-out array element) where Flink nulls the field; the decimal cells
   themselves skip per field. The simd path (every schema without a DECIMAL) has Flink's exact
-  per-field granularity. On a decimal-bearing **Maxwell/Canal** table the same all-or-nothing
-  behavior can trip the `old`-presence alignment check under skip mode — a loud failure where
-  Flink skips, never a silent divergence.
+  per-field granularity.
 - **TIME/VARBINARY leaves on a decimal-bearing JSON schema ride arrow-json as coerced text**, and
   the coercion erases the token's type: a number or boolean token under such a column converts
   from its rendered literal, so a base64-shaped literal (`42`, `true`) decodes into a VARBINARY

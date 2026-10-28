@@ -531,6 +531,52 @@ pub(crate) fn tokenize(bytes: &[u8]) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
+/// Re-spells a token stream as a document simd-json parses: the same containers and field names,
+/// with every scalar a `null`. Only structure and names survive, which is all a key-presence scan
+/// reads.
+pub(crate) fn skeleton(tokens: &[Token]) -> String {
+    let mut out = String::new();
+    let mut first = vec![true];
+    let mut after_name = false;
+    for token in tokens {
+        if !after_name && !matches!(token, Token::EndObject | Token::EndArray) {
+            let first = first.last_mut().expect("an open container");
+            if !*first {
+                out.push(',');
+            }
+            *first = false;
+        }
+        after_name = false;
+        match token {
+            Token::StartObject => {
+                out.push('{');
+                first.push(true);
+            }
+            Token::StartArray => {
+                out.push('[');
+                first.push(true);
+            }
+            Token::EndObject => {
+                out.push('}');
+                first.pop();
+            }
+            Token::EndArray => {
+                out.push(']');
+                first.pop();
+            }
+            Token::FieldName(name) => {
+                write_json_string(&mut out, name);
+                out.push(':');
+                after_name = true;
+            }
+            Token::Str(_) | Token::Number { .. } | Token::True | Token::False | Token::Null => {
+                out.push_str("null")
+            }
+        }
+    }
+    out
+}
+
 struct Reader<'a> {
     bytes: &'a [u8],
     pos: usize,

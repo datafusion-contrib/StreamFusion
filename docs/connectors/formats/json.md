@@ -39,6 +39,13 @@ Supported column types (recursively over ROW/ARRAY/MAP/MULTISET): BOOLEAN, TINYI
 INT, BIGINT, FLOAT, DOUBLE, CHAR/VARCHAR, DATE, TIME, TIMESTAMP, TIMESTAMP_LTZ, DECIMAL,
 VARBINARY.
 
+MAP and MULTISET values keep the entry order Flink's converters produce. Both converters fill a
+`java.util.HashMap` keyed by `StringData`, so entries iterate in its bucket order rather than in
+document order: a repeated key keeps its first position and last value, and resizes and tree bins
+follow the JDK's rules. Order is visible to `MAP_KEYS`, `MAP_ENTRIES`, casts to STRING and JSON
+sinks. Distinct keys with identical 32-bit hashes in one tree bin are ordered by first occurrence;
+the JDK breaks that tie by identity hash, so Flink's own order is not deterministic there.
+
 | Fallback condition | Why |
 |---|---|
 | `fail-on-missing-field = true` | Not modeled — a missing field decodes as null natively (Flink's default mode). |

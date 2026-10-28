@@ -1,7 +1,10 @@
-//! Java HashMap iteration order for caller-supplied spread hashes and tie order.
-//! Callers supply keys whose Ord matches the host key comparison for equal hashes.
+//! `java.util.HashMap` iteration order for caller-supplied spread hashes and tie order, shared by
+//! the native operators and format decoders that must emit map entries in the order Flink's
+//! HashMap-backed values iterate. Callers supply keys whose Ord matches the host key comparison
+//! for equal hashes.
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct Node<K> {
     key: K,
     hash: i32,
@@ -12,21 +15,22 @@ struct Node<K> {
     red: bool,
 }
 
-#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct Bucket {
     first: Option<usize>,
     tree: bool,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) struct JavaMapOrder<K> {
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct JavaMapOrder<K> {
     buckets: Vec<Bucket>,
     nodes: Vec<Node<K>>,
     size: usize,
 }
 
 impl<K: Copy + Ord> JavaMapOrder<K> {
-    pub(crate) fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
             buckets: vec![Bucket::default(); capacity],
             nodes: Vec::new(),
@@ -34,13 +38,23 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
         }
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.buckets.fill(Bucket::default());
         self.nodes = Vec::new();
         self.size = 0;
     }
 
-    pub(crate) fn insert(&mut self, key: K, hash: i32) -> bool {
+    /// Starts over as a freshly constructed map of `capacity` buckets. Unlike [`Self::clear`],
+    /// which mirrors `HashMap.clear()` keeping a grown table, the bucket count resets too; the
+    /// allocations are retained for reuse.
+    pub fn reset(&mut self, capacity: usize) {
+        self.buckets.clear();
+        self.buckets.resize(capacity, Bucket::default());
+        self.nodes.clear();
+        self.size = 0;
+    }
+
+    pub fn insert(&mut self, key: K, hash: i32) -> bool {
         let bucket = hash as u32 as usize & (self.buckets.len() - 1);
         let mut current = self.buckets[bucket].first;
         let tree = self.buckets[bucket].tree;
@@ -104,14 +118,14 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
         true
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = K> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = K> + '_ {
         self.buckets.iter().flat_map(|bucket| {
             std::iter::successors(bucket.first, |&index| self.nodes[index].next)
                 .map(|index| self.nodes[index].key)
         })
     }
 
-    pub(crate) fn copy_preserves_order(&self, capacity: usize) -> bool {
+    pub fn copy_preserves_order(&self, capacity: usize) -> bool {
         self.buckets.len() == capacity
             && self.buckets.iter().all(|bucket| {
                 !bucket.tree
@@ -122,17 +136,21 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
             })
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.size
     }
 
-    pub(crate) fn bytes(&self) -> usize {
+    pub fn is_empty(&self) -> bool {
+        self.size == 0
+    }
+
+    pub fn bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.buckets.capacity() * std::mem::size_of::<Bucket>()
             + self.nodes.capacity() * std::mem::size_of::<Node<K>>()
     }
 
-    pub(crate) fn remove(&mut self, key: K, hash: i32) -> bool {
+    pub fn remove(&mut self, key: K, hash: i32) -> bool {
         let bucket = hash as u32 as usize & (self.buckets.len() - 1);
         let mut current = self.buckets[bucket].first;
         while let Some(index) = current {
@@ -146,7 +164,7 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
         false
     }
 
-    pub(super) fn compact(&mut self) {
+    pub fn compact(&mut self) {
         if self.nodes.len() <= self.size.saturating_mul(2).saturating_add(64) {
             return;
         }
@@ -464,9 +482,167 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
     }
 }
 
-#[cfg(test)]
+/// `BinaryStringData.hashCode()`: Flink's seed-42 Murmur3 over the string's UTF-8 bytes, words
+/// read in native byte order and trailing bytes mixed one sign-extended byte at a time
+/// (`MurmurHashUtils.hashBytes`).
+pub fn flink_string_hash(bytes: &[u8]) -> i32 {
+    let mix = |hash: u32, key: u32| {
+        let key = key
+            .wrapping_mul(0xcc9e2d51)
+            .rotate_left(15)
+            .wrapping_mul(0x1b873593);
+        (hash ^ key)
+            .rotate_left(13)
+            .wrapping_mul(5)
+            .wrapping_add(0xe6546b64)
+    };
+    let mut hash = 42u32;
+    let mut words = bytes.chunks_exact(4);
+    for word in &mut words {
+        hash = mix(hash, u32::from_ne_bytes(word.try_into().unwrap()));
+    }
+    for &byte in words.remainder() {
+        hash = mix(hash, (byte as i8 as i32) as u32);
+    }
+    hash ^= bytes.len() as u32;
+    hash ^= hash >> 16;
+    hash = hash.wrapping_mul(0x85ebca6b);
+    hash ^= hash >> 13;
+    hash = hash.wrapping_mul(0xc2b2ae35);
+    (hash ^ (hash >> 16)) as i32
+}
+
+/// `HashMap.hash`: the key's `hashCode()` with its high half folded into the low bits.
+pub fn java_spread_hash(hash: i32) -> i32 {
+    hash ^ ((hash as u32) >> 16) as i32
+}
+
+/// The entry order of a `new HashMap<>()` that Flink fills with `put(StringData, value)` for each
+/// entry in turn — its JSON map converters and the Kafka `headers` metadata. A repeated key keeps
+/// its first insertion's position and its last value. Distinct keys whose full hashes collide
+/// inside a tree bin are ordered by first insertion; the JDK breaks that tie by identity hash, so
+/// Flink's own order is not deterministic there. The buffers are reused across maps.
+pub struct StringDataMapOrder {
+    order: JavaMapOrder<usize>,
+    distinct: Vec<(usize, usize)>,
+    /// `HashMap.hash` of each distinct key.
+    hashes: Vec<i32>,
+    by_bucket: Vec<(u32, u32)>,
+    ordered: Vec<(usize, usize)>,
+}
+
+impl Default for StringDataMapOrder {
+    fn default() -> Self {
+        Self {
+            order: JavaMapOrder::with_capacity(16),
+            distinct: Vec::new(),
+            hashes: Vec::new(),
+            by_bucket: Vec::new(),
+            ordered: Vec::new(),
+        }
+    }
+}
+
+impl StringDataMapOrder {
+    /// For each distinct key in iteration order, the index of its first and last occurrence in
+    /// `keys` (the entry's position and its value).
+    pub fn entries<K: AsRef<[u8]>>(&mut self, keys: &[K]) -> &[(usize, usize)] {
+        self.distinct.clear();
+        self.hashes.clear();
+        if keys.len() <= 32 {
+            for (index, key) in keys.iter().enumerate() {
+                let key = key.as_ref();
+                let hash = java_spread_hash(flink_string_hash(key));
+                match self
+                    .distinct
+                    .iter()
+                    .zip(&self.hashes)
+                    .position(|((first, _), &seen)| seen == hash && keys[*first].as_ref() == key)
+                {
+                    Some(entry) => self.distinct[entry].1 = index,
+                    None => {
+                        self.distinct.push((index, index));
+                        self.hashes.push(hash);
+                    }
+                }
+            }
+        } else {
+            let mut positions: ahash::HashMap<&[u8], usize> = ahash::HashMap::default();
+            for (index, key) in keys.iter().enumerate() {
+                match positions.entry(key.as_ref()) {
+                    std::collections::hash_map::Entry::Occupied(position) => {
+                        self.distinct[*position.get()].1 = index
+                    }
+                    std::collections::hash_map::Entry::Vacant(position) => {
+                        self.hashes
+                            .push(java_spread_hash(flink_string_hash(position.key())));
+                        position.insert(self.distinct.len());
+                        self.distinct.push((index, index));
+                    }
+                }
+            }
+        }
+        self.ordered.clear();
+        if self.distinct.len() <= 1 {
+            self.ordered.extend_from_slice(&self.distinct);
+            return &self.ordered;
+        }
+        if let Some(capacity) = untreeified_capacity(&self.hashes) {
+            // No bin ever reaches the treeify threshold, so the map only appends to chains and
+            // splits them in order on resize: iteration is by bucket in the final table, then by
+            // insertion.
+            let mask = (capacity - 1) as u32;
+            self.by_bucket.clear();
+            self.by_bucket.extend(
+                self.hashes
+                    .iter()
+                    .enumerate()
+                    .map(|(position, &hash)| (hash as u32 & mask, position as u32)),
+            );
+            self.by_bucket.sort_unstable();
+            self.ordered.extend(
+                self.by_bucket
+                    .iter()
+                    .map(|&(_, position)| self.distinct[position as usize]),
+            );
+            return &self.ordered;
+        }
+        self.order.reset(16);
+        for (position, &hash) in self.hashes.iter().enumerate() {
+            self.order.insert(position, hash);
+        }
+        self.ordered
+            .extend(self.order.iter().map(|position| self.distinct[position]));
+        &self.ordered
+    }
+}
+
+/// The final table capacity of a `new HashMap<>()` holding keys with these `hash`es, when no bin
+/// can reach the treeify threshold: a bin is longest in the initial 16-slot table, where every key
+/// it will ever hold already collides. `None` when one might, which also changes how the table
+/// grows (a small table resizes instead of treeifying).
+fn untreeified_capacity(hashes: &[i32]) -> Option<usize> {
+    const TREEIFY_THRESHOLD: u8 = 8;
+    let mut initial_bins = [0_u8; 16];
+    for &hash in hashes {
+        let bin = &mut initial_bins[(hash & 15) as usize];
+        *bin += 1;
+        if *bin > TREEIFY_THRESHOLD {
+            return None;
+        }
+    }
+    let mut capacity = 16;
+    while hashes.len() > capacity / 4 * 3 {
+        capacity *= 2;
+    }
+    Some(capacity)
+}
+
 impl<K: Copy + Ord> JavaMapOrder<K> {
-    pub(crate) fn assert_structure(&self) {
+    /// Test support: panics unless the chains and tree bins satisfy the JDK's structural
+    /// invariants.
+    #[doc(hidden)]
+    pub fn assert_structure(&self) {
         let map = self;
         fn tree<K: Copy + Ord>(
             map: &JavaMapOrder<K>,
@@ -519,12 +695,58 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn string_data_order_takes_the_bucket_shortcut_only_where_it_matches_the_map() {
+        let simulated = |keys: &[String]| -> Vec<(usize, usize)> {
+            let mut distinct: Vec<(usize, usize)> = Vec::new();
+            for (index, key) in keys.iter().enumerate() {
+                match distinct.iter_mut().find(|(first, _)| keys[*first] == *key) {
+                    Some(entry) => entry.1 = index,
+                    None => distinct.push((index, index)),
+                }
+            }
+            let mut map = JavaMapOrder::with_capacity(16);
+            for (position, (first, _)) in distinct.iter().enumerate() {
+                map.insert(
+                    position,
+                    java_spread_hash(flink_string_hash(keys[*first].as_bytes())),
+                );
+            }
+            map.iter().map(|position| distinct[position]).collect()
+        };
+        let mut order = StringDataMapOrder::default();
+        for size in 1..=200_usize {
+            // A repeated key keeps its first position and takes its last value.
+            let keys: Vec<String> = (0..size)
+                .map(|i| format!("k{}", (i * 7919) % 1009))
+                .chain(std::iter::once("k0".to_string()))
+                .collect();
+            assert_eq!(
+                order.entries(&keys),
+                simulated(&keys).as_slice(),
+                "{size} keys"
+            );
+        }
+        // Keys sharing their low four hash bits overfill one initial bin, so the map treeifies.
+        let colliding: Vec<String> = (0..100_000)
+            .map(|i| format!("c{i}"))
+            .filter(|key| java_spread_hash(flink_string_hash(key.as_bytes())) & 15 == 0)
+            .take(40)
+            .collect();
+        let hashes: Vec<i32> = colliding
+            .iter()
+            .map(|key| java_spread_hash(flink_string_hash(key.as_bytes())))
+            .collect();
+        assert_eq!(untreeified_capacity(&hashes), None);
+        assert_eq!(order.entries(&colliding), simulated(&colliding).as_slice());
+    }
     use super::*;
 
     #[test]
     fn mutations_match_jdk_removal_resize_and_reinsertion_order() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../src/test/resources/java-map-removal-order.json"
+            "../../../src/test/resources/java-map-removal-order.json"
         ))
         .unwrap();
         for case in fixtures.as_array().unwrap() {
@@ -563,7 +785,7 @@ mod tests {
     #[test]
     fn matches_released_flink_binary_group_fixtures() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../src/test/resources/group-map-order.json"
+            "../../../src/test/resources/group-map-order.json"
         ))
         .unwrap();
         for case in fixtures.as_array().unwrap() {

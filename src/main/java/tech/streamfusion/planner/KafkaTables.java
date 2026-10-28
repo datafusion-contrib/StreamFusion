@@ -143,17 +143,16 @@ final class KafkaTables {
   }
 
   /** Whether this scan is a CDC changelog format the native decode reproduces <em>identically</em> to
-   * Flink. Debezium/OGG JSON (full pre/post images) route for any converter-supported schema;
-   * Maxwell/Canal (post-image + partial {@code old}) route for flat scalar schemas — their
-   * UPDATE_BEFORE follows Flink's findValue key-presence rule, reproduced by a native per-message
-   * key scan of the raw {@code old}. {@code ignore-parse-errors} is supported both ways — the
+   * Flink. Every dialect routes for any converter-supported schema, nested columns and any width
+   * included: Debezium/OGG carry full pre/post images, and the Maxwell/Canal UPDATE_BEFORE follows
+   * Flink's recursive findValue key-presence rule, reproduced by a native per-message key scan of
+   * the raw {@code old}. {@code ignore-parse-errors} is supported both ways — the
    * native decoder skips an undecodable message per Flink's catch-everything-per-message semantics.
    * {@code debezium-avro-confluent} (the same envelope with registry-Avro bodies) routes under its
    * provider's registry-option and avro-type gates; it defines no error-skip or schema-include
    * options, so those clauses never engage for it.
    * Still falling back: a {@code schema-include} wrapper, metadata/computed columns the value decode
-   * doesn't produce, Canal's database/table include regexes, and nested Maxwell/Canal schemas. See
-   * https://github.com/datafusion-contrib/StreamFusion/issues/15 for the follow-ups. */
+   * doesn't produce, and Canal's database/table include regexes. */
   static boolean isCdcDecode(RelNode node) {
     if (!(node instanceof StreamPhysicalTableSourceScan)) {
       return false;
@@ -180,20 +179,10 @@ final class KafkaTables {
     if (!FormatCodes.isCdc(code)) {
       return false;
     }
-    if (code == FormatCodes.MAXWELL_JSON || code == FormatCodes.CANAL_JSON) {
-      // Maxwell/Canal: the partial-`old` pre-image follows Flink's findValue KEY-presence rule,
-      // reproduced natively by a per-message key scan — but findValue searches the `old` subtree
-      // recursively, so a nested column's name could false-match inside another field's object.
-      // Route only flat scalar schemas (capped at the presence bitmask's 128 columns); Canal's
-      // database/table include filters are Java regexes the native decode doesn't run.
-      if (!flatScalarColumns(scan)) {
-        return false;
-      }
-      if (code == FormatCodes.CANAL_JSON
-          && (NativeFormatOptions.option(options, "database.include") != null
-              || NativeFormatOptions.option(options, "table.include") != null)) {
-        return false;
-      }
+    if (code == FormatCodes.CANAL_JSON
+        && (NativeFormatOptions.option(options, "database.include") != null
+            || NativeFormatOptions.option(options, "table.include") != null)) {
+      return false; // Java regex filters the native decode doesn't run
     }
     if ("true".equalsIgnoreCase(NativeFormatOptions.option(options, "schema-include"))) {
       return false; // the {schema, payload} envelope wrapper isn't handled
@@ -209,27 +198,6 @@ final class KafkaTables {
       Map<String, String> options, RowType rowType) {
     return NativeFormatProviders.find(
         new NativeFormatContext(rowType, rowType, options, ignoreParseErrors(options)));
-  }
-
-  /** Whether every physical column is non-nested (and the arity fits the native presence bitmask). */
-  private static boolean flatScalarColumns(StreamPhysicalTableSourceScan scan) {
-    org.apache.flink.table.types.logical.RowType rowType = FilesystemTables.physicalRowType(scan);
-    if (rowType == null || rowType.getFieldCount() > 128) {
-      return false;
-    }
-    return rowType.getChildren().stream()
-        .noneMatch(
-            type -> {
-              switch (type.getTypeRoot()) {
-                case ROW:
-                case ARRAY:
-                case MAP:
-                case MULTISET:
-                  return true;
-                default:
-                  return false;
-              }
-            });
   }
 
   /**

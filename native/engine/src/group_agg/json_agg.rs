@@ -2,6 +2,7 @@ use crate::*;
 use arrow::array::ArrayBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use streamfusion_bridge::java_map_order::JavaMapOrder;
 
 #[derive(Default, Serialize, Deserialize)]
 struct JsonViewTimestamps {
@@ -35,14 +36,14 @@ pub(super) fn object_partial_type() -> DataType {
 struct LocalObjectOrder {
     keys: Vec<(Option<String>, i32)>,
     payload: usize,
-    order: super::java_map_order::JavaMapOrder<usize>,
+    order: JavaMapOrder<usize>,
 }
 impl LocalObjectOrder {
     fn new() -> Self {
         Self {
             keys: Vec::new(),
             payload: 0,
-            order: super::java_map_order::JavaMapOrder::with_capacity(16),
+            order: JavaMapOrder::with_capacity(16),
         }
     }
     fn bytes(&self) -> usize {
@@ -70,7 +71,7 @@ pub(super) fn object_partials<'a>(states: impl Iterator<Item = &'a JsonAggState>
             }
             let mut empty_alias: Option<(usize, usize)> = None;
             let copied = (legacy_null || !order.order.copy_preserves_order(capacity)).then(|| {
-                let mut copied = super::java_map_order::JavaMapOrder::with_capacity(16);
+                let mut copied = JavaMapOrder::with_capacity(16);
                 for index in order.order.iter() {
                     let key = order.keys[index].0.as_deref();
                     let hash = if legacy_null && (key.is_none() || key == Some("")) {

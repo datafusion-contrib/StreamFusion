@@ -851,7 +851,8 @@ impl JsonAppend for ListJsonAppender {
 }
 
 /// MAP (and MULTISET riding as `MAP<E, INT>`): a JSON object per row, each key parsed by the key
-/// column's scalar appender and each value decoded normally.
+/// column's scalar appender and each value decoded normally. Flink's converters fill a
+/// `java.util.HashMap`, so entries are emitted in its iteration order (see `StringDataMapOrder`).
 pub(crate) struct MapJsonAppender {
     entries_field: FieldRef,
     env: JsonEnv,
@@ -860,6 +861,7 @@ pub(crate) struct MapJsonAppender {
     values: Box<dyn JsonAppend>,
     offsets: Vec<i32>,
     nulls: NullBufferBuilder,
+    order: StringDataMapOrder,
 }
 
 impl MapJsonAppender {
@@ -876,6 +878,7 @@ impl MapJsonAppender {
             entry_fields,
             offsets: vec![0],
             nulls: NullBufferBuilder::new(capacity),
+            order: StringDataMapOrder::default(),
         }
     }
 }
@@ -896,23 +899,11 @@ impl JsonAppend for MapJsonAppender {
             None => self.nulls.append_null(),
             Some(object) => {
                 self.nulls.append_non_null();
-                // Duplicate keys collapse last-value-first-position: Flink's converter builds a
-                // java.util.Map, so a repeated key holds one entry with the final value.
-                let mut keys: Vec<&str> = Vec::with_capacity(object.len());
-                let mut values: Vec<simd_json::tape::Value> = Vec::with_capacity(object.len());
-                for (key, value) in &object {
-                    let existing = keys.iter().position(|k| *k == key);
-                    match existing {
-                        Some(i) => values[i] = value,
-                        None => {
-                            keys.push(key);
-                            values.push(value);
-                        }
-                    }
-                }
-                for (key, value) in keys.iter().zip(&values) {
-                    self.keys.append_key(key);
-                    self.values.append(Some(*value));
+                let (keys, values): (Vec<&str>, Vec<simd_json::tape::Value>) =
+                    object.iter().unzip();
+                for &(first, last) in self.order.entries(&keys) {
+                    self.keys.append_key(keys[first]);
+                    self.values.append(Some(values[last]));
                     end = end.checked_add(1).expect("offset overflow decoding MAP");
                 }
             }
@@ -2035,11 +2026,11 @@ fn contains_map(data_type: &DataType) -> bool {
     }
 }
 
-/// arrow-json's map decoder keeps every entry of a duplicate-keyed JSON object, but Flink's
-/// converter builds a `java.util.Map` — a repeated key holds ONE entry with the final value. This
-/// collapses the arrow-json-built maps to the simd path's last-value-first-position rule (hash
-/// order is not reproducible either way); a map-free column passes through untouched and an
-/// already-unique column rebuilds nothing.
+/// arrow-json's map decoder keeps every entry of a duplicate-keyed JSON object in document order,
+/// but Flink's converter fills a `java.util.HashMap` — a repeated key holds ONE entry with the
+/// final value, and entries iterate in the HashMap's order. This rebuilds the arrow-json-built maps
+/// in that order, exactly like the simd path; a map-free column passes through untouched and an
+/// already-ordered column rebuilds nothing.
 fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> ArrayRef {
     if !contains_map(data_type) {
         return column.clone();
@@ -2096,23 +2087,29 @@ fn collapse_duplicate_map_keys(column: &ArrayRef, data_type: &DataType) -> Array
                 entry_fields[1].data_type(),
             );
             let offsets = source.offsets();
+            let mut order = StringDataMapOrder::default();
             let mut surviving: Vec<u32> = Vec::with_capacity(keys.len());
             let mut new_offsets: Vec<i32> = Vec::with_capacity(offsets.len());
             new_offsets.push(0);
-            let mut kept: Vec<u32> = Vec::new();
+            let mut row_keys: Vec<&str> = Vec::new();
             for window in offsets.windows(2) {
-                kept.clear();
-                for entry in window[0] as usize..window[1] as usize {
-                    let key = keys.value(entry);
-                    match kept.iter().position(|&k| keys.value(k as usize) == key) {
-                        Some(at) => kept[at] = entry as u32,
-                        None => kept.push(entry as u32),
-                    }
-                }
-                surviving.extend_from_slice(&kept);
+                let start = window[0] as usize;
+                row_keys.clear();
+                row_keys.extend((start..window[1] as usize).map(|entry| keys.value(entry)));
+                surviving.extend(
+                    order
+                        .entries(&row_keys)
+                        .iter()
+                        .map(|&(_, last)| (start + last) as u32),
+                );
                 new_offsets.push(surviving.len() as i32);
             }
-            if surviving.len() == keys.len() && Arc::ptr_eq(&values, source.entries().column(1)) {
+            let reordered = surviving.len() != keys.len()
+                || surviving
+                    .iter()
+                    .enumerate()
+                    .any(|(position, &entry)| entry as usize != position);
+            if !reordered && Arc::ptr_eq(&values, source.entries().column(1)) {
                 return column.clone();
             }
             let indices = UInt32Array::from(surviving);

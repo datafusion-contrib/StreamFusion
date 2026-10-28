@@ -1,6 +1,6 @@
-use super::java_map_order::JavaMapOrder;
 use crate::*;
 use serde::{Deserialize, Serialize};
+use streamfusion_bridge::java_map_order::JavaMapOrder;
 
 pub(super) fn is_collection(kind: i64) -> bool {
     (48..=53).contains(&kind)

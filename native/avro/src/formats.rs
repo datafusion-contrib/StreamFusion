@@ -149,13 +149,20 @@ impl AvroCdcDecoder {
                 row,
                 row,
                 CdcShape::BeforeAfter,
-                0,
+                row,
                 before,
                 after,
                 &mut out_rows,
             );
         }
-        gather_cdc_batch(&out_rows, before, after, self.arity, &self.output)
+        gather_cdc_batch(
+            &out_rows,
+            before,
+            after,
+            self.arity,
+            &self.output,
+            &OldKeyPresence::new(0),
+        )
     }
 }
 

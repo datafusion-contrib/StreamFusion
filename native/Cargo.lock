@@ -4733,6 +4733,8 @@ dependencies = [
  "jni",
  "num-bigint 0.4.6",
  "num-traits",
+ "serde",
+ "serde_json",
  "streamfusion-benchmark-support",
 ]
 

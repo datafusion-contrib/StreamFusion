@@ -328,7 +328,7 @@ fn convert_map(
     let mut result_offsets = vec![0_i32];
     let mut failed = Vec::new();
     for range in offsets.windows(2) {
-        let mut order = crate::group_agg::java_map_order::JavaMapOrder::with_capacity(16);
+        let mut order = streamfusion_bridge::java_map_order::JavaMapOrder::with_capacity(16);
         let mut slots = Vec::<(usize, usize)>::new();
         let mut buckets: HashMap<i32, Vec<usize>> = HashMap::new();
         let mut bad = false;

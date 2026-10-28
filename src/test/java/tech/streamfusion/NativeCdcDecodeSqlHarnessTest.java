@@ -138,6 +138,84 @@ class NativeCdcDecodeSqlHarnessTest {
 
   private static final String SCALAR_COLUMNS = "id BIGINT, name STRING, score DOUBLE";
 
+  private static final String NESTED_COLUMNS =
+      "id BIGINT, name STRING, info ROW<name STRING, score DOUBLE>, tags ARRAY<STRING>,"
+          + " attrs MAP<STRING, BIGINT>, bag MULTISET<STRING>,"
+          + " items ARRAY<ROW<id BIGINT, name STRING>>";
+
+  /**
+   * Nested and wide Maxwell/Canal tables route natively with the exact changelog, RowKinds
+   * included: a column name found inside a nested {@code old} value keeps that UPDATE_BEFORE field
+   * NULL, presence spans Canal's whole {@code old} array, and columns past the 128th coalesce like
+   * any other. Map entry order is pinned message by message by {@code CdcDecodeParityTest}.
+   */
+  @Test
+  void nestedAndWideMaxwellAndCanalRouteNativelyWithParity() throws Exception {
+    try (KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
+      kafka.start();
+      String brokers = kafka.getBootstrapServers();
+      StringBuilder manyKeys = new StringBuilder("{");
+      for (int i = 0; i < 40; i++) {
+        manyKeys.append(i == 0 ? "" : ",").append("\"k").append(i).append("\":").append(i);
+      }
+      manyKeys.append('}');
+      String first =
+          "{\"id\":1,\"name\":\"a\",\"info\":{\"name\":\"n1\",\"score\":1.5},\"tags\":[\"t1\"],"
+              + "\"attrs\":" + manyKeys + ",\"bag\":{\"b\":1},\"items\":[{\"id\":9,\"name\":\"i\"}]}";
+      String firstUpdated =
+          "{\"id\":1,\"name\":\"a\",\"info\":{\"name\":\"n2\",\"score\":1.5},\"tags\":[\"t1\"],"
+              + "\"attrs\":{\"x\":1,\"id\":2},\"bag\":{\"b\":1},\"items\":[]}";
+      String second =
+          "{\"id\":2,\"name\":\"b\",\"info\":null,\"tags\":[],\"attrs\":{},\"bag\":null,"
+              + "\"items\":null}";
+      produce(
+          brokers,
+          "cdc-maxwell-nested",
+          List.of(
+              "{\"data\":" + first + ",\"type\":\"insert\"}",
+              "{\"data\":" + second + ",\"type\":\"insert\"}",
+              "{\"data\":" + firstUpdated + ",\"old\":{\"info\":{\"name\":\"n1\"},"
+                  + "\"attrs\":" + manyKeys + ",\"items\":[{\"id\":9,\"name\":\"i\"}]},"
+                  + "\"type\":\"update\"}",
+              "{\"data\":" + second + ",\"type\":\"delete\"}"));
+      NativeParity.assertKindedParity(
+          environment(brokers, "cdc-maxwell-nested", "maxwell-json", NESTED_COLUMNS),
+          "SELECT * FROM cdc");
+
+      produce(
+          brokers,
+          "cdc-canal-nested",
+          List.of(
+              "{\"data\":[" + first + "," + second + "],\"type\":\"INSERT\"}",
+              "{\"data\":[" + firstUpdated + "," + second + "],"
+                  + "\"old\":[{\"info\":{\"name\":\"n1\"}},{\"bag\":{\"id\":1}}],"
+                  + "\"type\":\"UPDATE\"}",
+              "{\"data\":[" + second + "],\"type\":\"DELETE\"}"));
+      NativeParity.assertKindedParity(
+          environment(brokers, "cdc-canal-nested", "canal-json", NESTED_COLUMNS),
+          "SELECT * FROM cdc");
+
+      StringBuilder wideColumns = new StringBuilder();
+      StringBuilder wideRow = new StringBuilder("{");
+      for (int i = 0; i < 140; i++) {
+        wideColumns.append(i == 0 ? "" : ", ").append("c").append(i).append(" BIGINT");
+        wideRow.append(i == 0 ? "" : ",").append("\"c").append(i).append("\":").append(i);
+      }
+      wideRow.append('}');
+      produce(
+          brokers,
+          "cdc-maxwell-wide",
+          List.of(
+              "{\"data\":" + wideRow + ",\"type\":\"insert\"}",
+              "{\"data\":" + wideRow + ",\"old\":{\"c2\":-2,\"c130\":-130,\"c139\":null},"
+                  + "\"type\":\"update\"}"));
+      NativeParity.assertKindedParity(
+          environment(brokers, "cdc-maxwell-wide", "maxwell-json", wideColumns.toString()),
+          "SELECT * FROM cdc");
+    }
+  }
+
   private static void assertParity(
       String brokers, String topic, String format, List<String> messages) throws Exception {
     assertParity(brokers, topic, format, SCALAR_COLUMNS, messages);

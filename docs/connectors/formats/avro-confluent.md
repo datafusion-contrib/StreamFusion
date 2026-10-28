@@ -132,4 +132,4 @@ BINARY(n) and the other legacy-mapping exclusions apply to the physical columns.
 | Row-type and registry-option gates | Same as plain `avro-confluent` — see the tables above. |
 | The `schema-include` envelope wrapper | Not supported. |
 | A metadata or computed column | Not supported on the CDC decode path. |
-| Nested Maxwell/Canal columns, Canal's `database.include`/`table.include` filters | Gaps in the sibling JSON dialects, not this format — see [CDC JSON](cdc-json.md). |
+| Canal's `database.include`/`table.include` filters | A gap in the sibling Canal JSON dialect, not this format — see [CDC JSON](cdc-json.md). |
