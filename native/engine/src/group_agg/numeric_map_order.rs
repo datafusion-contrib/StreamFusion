@@ -1,5 +1,6 @@
-use super::{decimal_map_order::DecimalMapOrder, java_map_order::JavaMapOrder, OrdF64};
+use super::{decimal_map_order::DecimalMapOrder, OrdF64};
 use crate::*;
+use streamfusion_bridge::java_map_order::JavaMapOrder;
 
 enum Order {
     Decimal(DecimalMapOrder),

@@ -11,16 +11,15 @@ use distinct_retention::{
     DistinctViewRetention, APPEND_DISTINCT, PRESERVED_DISTINCT_APPEND, PRESERVED_DISTINCT_STATE,
     RETAINED_DISTINCT_COLUMN,
 };
-pub(crate) mod java_map_order;
 mod mapped_extreme;
 mod nested_hash;
 mod numeric_map_order;
 mod string_map_order;
 #[cfg(test)]
 use decimal_map_order::DecimalMapOrder;
-use java_map_order::JavaMapOrder;
 use mapped_extreme::MappedExtreme;
 use numeric_map_order::NumericMapOrder;
+use streamfusion_bridge::java_map_order::JavaMapOrder;
 #[cfg(test)]
 mod floating_tests;
 #[cfg(test)]

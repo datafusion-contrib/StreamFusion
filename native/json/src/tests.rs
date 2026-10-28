@@ -407,6 +407,176 @@ fn cdc_maxwell_keeps_explicit_null_in_old() {
     assert_eq!(id.values(), &[1, 1]); // absent from `old` → unchanged → copied from `data`
 }
 
+// Under ignore-parse-errors the envelope drops corrupt bodies, and each update's presence must
+// still come from its own body. The batch decodes in one pass — the inner decoder, without the
+// per-message retry that would mask a misalignment.
+#[test]
+fn cdc_maxwell_presence_follows_each_update_past_dropped_bodies() {
+    let body = bodies(vec![
+        Some(br#"{"data":"#.as_slice()),
+        Some(br#"{"data":{"id":1,"name":"a","score":1.5},"type":"insert"}"#),
+        Some(br#"{"data":{"id":2,"name":"b2","score":2.5},"old":{"name":null},"type":"update"}"#),
+        Some(br#"[{"data":{"id":9,"name":"x","score":9.5},"type":"insert"}]"#),
+        Some(br#"{"data":{"id":3,"name":"c2","score":3.5},"old":{"score":null},"type":"update"}"#),
+        Some(br#"{"data":{"id":4,"name":"d","score":4.5},"type":"delete"}"#),
+    ]);
+
+    let out = new_decoder(FORMAT_MAXWELL_JSON, json_schema(), "", "", 0, true, "")
+        .decoder
+        .decode(&body);
+
+    assert_eq!(values(&out, 0), vec![1, 2, 2, 3, 3, 4]);
+    let names = out
+        .column(1)
+        .as_any()
+        .downcast_ref::<arrow::array::StringArray>()
+        .unwrap();
+    assert_eq!(
+        (0..6)
+            .map(|i| names.is_valid(i).then(|| names.value(i)))
+            .collect::<Vec<_>>(),
+        vec![
+            Some("a"),
+            None,
+            Some("b2"),
+            Some("c2"),
+            Some("c2"),
+            Some("d")
+        ]
+    );
+    let scores = out
+        .column(2)
+        .as_any()
+        .downcast_ref::<arrow::array::Float64Array>()
+        .unwrap();
+    assert_eq!(
+        (0..6)
+            .map(|i| scores.is_valid(i).then(|| scores.value(i)))
+            .collect::<Vec<_>>(),
+        vec![Some(1.5), Some(2.5), Some(2.5), None, Some(3.5), Some(4.5)]
+    );
+    let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+    assert_eq!(kinds.values(), &[0, 1, 2, 1, 2, 3]);
+}
+
+#[test]
+fn cdc_canal_presence_follows_each_update_past_dropped_bodies() {
+    let body = bodies(vec![
+        Some(br#"{"data":["#.as_slice()),
+        Some(br#"{"data":[{"id":1,"name":"a","score":1.5}],"type":"INSERT"}"#),
+        Some(br#"{"data":[{"id":2,"name":"b2","score":2.5}],"old":[{"name":null}],"type":"UPDATE"}"#),
+        Some(br#""not an envelope""#),
+        Some(br#"{"data":[{"id":3,"name":"c2","score":3.5}],"old":[{"score":null}],"type":"UPDATE"}"#),
+    ]);
+
+    let out = new_decoder(FORMAT_CANAL_JSON, json_schema(), "", "", 0, true, "")
+        .decoder
+        .decode(&body);
+
+    assert_eq!(values(&out, 0), vec![1, 2, 2, 3, 3]);
+    let names = out
+        .column(1)
+        .as_any()
+        .downcast_ref::<arrow::array::StringArray>()
+        .unwrap();
+    assert_eq!(
+        (0..5)
+            .map(|i| names.is_valid(i).then(|| names.value(i)))
+            .collect::<Vec<_>>(),
+        vec![Some("a"), None, Some("b2"), Some("c2"), Some("c2")]
+    );
+    let scores = out
+        .column(2)
+        .as_any()
+        .downcast_ref::<arrow::array::Float64Array>()
+        .unwrap();
+    assert_eq!(
+        (0..5)
+            .map(|i| scores.is_valid(i).then(|| scores.value(i)))
+            .collect::<Vec<_>>(),
+        vec![Some(1.5), Some(2.5), Some(2.5), None, Some(3.5)]
+    );
+    let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+    assert_eq!(kinds.values(), &[0, 1, 2, 1, 2]);
+}
+
+// A DECIMAL column puts the envelope on arrow-json, which (like Flink's Jackson) reads a raw
+// control character inside a string where simd-json refuses it. The update's presence then comes
+// from Jackson's tokens, so the explicit null in `old` still survives into UPDATE_BEFORE.
+#[test]
+fn cdc_maxwell_presence_reads_bodies_simd_json_rejects() {
+    use arrow::array::Decimal128Array;
+    let schema: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, true),
+        Field::new("amount", DataType::Decimal128(10, 2), true),
+        Field::new("name", DataType::Utf8, true),
+    ]));
+    let update = b"{\"data\":{\"id\":1,\"amount\":1.50,\"name\":\"a\tb\"},\"old\":{\"name\":null},\"type\":\"update\"}";
+    let body = bodies(vec![Some(update.as_slice())]);
+
+    let out = new_decoder(FORMAT_MAXWELL_JSON, schema, "", "", 0, false, "")
+        .decoder
+        .decode(&body);
+
+    assert_eq!(values(&out, 0), vec![1, 1]);
+    let amounts = out
+        .column(1)
+        .as_any()
+        .downcast_ref::<Decimal128Array>()
+        .unwrap();
+    assert_eq!(amounts.values(), &[150, 150]);
+    let names = out
+        .column(2)
+        .as_any()
+        .downcast_ref::<arrow::array::StringArray>()
+        .unwrap();
+    assert!(names.is_null(0));
+    assert_eq!(names.value(1), "a\tb");
+    let kinds = out.column(3).as_any().downcast_ref::<Int8Array>().unwrap();
+    assert_eq!(kinds.values(), &[1, 2]);
+}
+
+// Presence is a per-message bitset sized to the schema, so columns beyond the old 128-bit mask
+// coalesce like any other: present keys (explicit nulls included, and names found nested) keep
+// the pre-image, absent ones copy `data`.
+#[test]
+fn cdc_maxwell_presence_covers_schemas_wider_than_128_columns() {
+    use arrow::array::Array;
+    let width = 200;
+    let schema: SchemaRef = Arc::new(Schema::new(
+        (0..width)
+            .map(|i| Field::new(format!("c{i}"), DataType::Int64, true))
+            .collect::<Vec<_>>(),
+    ));
+    let data = (0..width)
+        .map(|i| format!("\"c{i}\":{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let update = format!(
+        r#"{{"data":{{{data}}},"old":{{"c3":-3,"c129":null,"c150":-150,"deep":[{{"c199":0}}]}},"type":"update"}}"#
+    );
+    let body = bodies(vec![Some(update.as_bytes())]);
+
+    let out = new_decoder(FORMAT_MAXWELL_JSON, schema, "", "", 0, false, "").decode(&body);
+
+    assert_eq!(out.num_rows(), 2);
+    let before = |column: usize| {
+        let values = out
+            .column(column)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        values.is_valid(0).then(|| values.value(0))
+    };
+    assert_eq!(before(3), Some(-3));
+    assert_eq!(before(4), Some(4));
+    assert_eq!(before(128), Some(128));
+    assert_eq!(before(129), None);
+    assert_eq!(before(150), Some(-150));
+    assert_eq!(before(198), Some(198));
+    assert_eq!(before(199), None);
+}
+
 // Flink's findValue is a RECURSIVE depth-first search: a physical field name buried inside a
 // nested container under `old` counts as present, and since the top-level decode of `old` saw
 // nothing there, UPDATE_BEFORE keeps the null — it must NOT copy the post-image value.
@@ -1175,10 +1345,11 @@ fn json_decode_decimal_path_collapses_duplicate_map_keys() {
         .as_any()
         .downcast_ref::<Decimal128Array>()
         .unwrap();
-    // Row 0: k keeps its first position with the LAST value (HALF_UP of 3.456), j follows.
+    // Row 0: entries iterate in Flink's HashMap order (j before k), and k keeps its LAST value
+    // (HALF_UP of 3.456).
     assert_eq!(maps.value_length(0), 2);
-    assert_eq!((keys.value(0), values.value(0)), ("k", 346));
-    assert_eq!((keys.value(1), values.value(1)), ("j", 200));
+    assert_eq!((keys.value(0), values.value(0)), ("j", 200));
+    assert_eq!((keys.value(1), values.value(1)), ("k", 346));
     // Row 1 (no duplicates) is untouched.
     assert_eq!(maps.value_length(1), 1);
     assert_eq!((keys.value(2), values.value(2)), ("u", 700));
@@ -1694,4 +1865,242 @@ fn extreme_decimal_exponents_decode_without_materializing_powers_of_ten() {
         decimals.iter().collect::<Vec<_>>(),
         vec![Some(0), Some(0), Some(0), None, Some(0), None, None]
     );
+}
+
+/// A stand-in for the JVM's verdicts: exact matching, recording every token it is asked about.
+struct RecordedVerdicts {
+    database: Option<&'static str>,
+    table: Option<&'static str>,
+    asked: Asked,
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl IncludeVerdicts for RecordedVerdicts {
+    fn matches(&self, field: IncludeField, tokens: &[IncludeToken]) -> Vec<bool> {
+        self.calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let pattern = match field {
+            IncludeField::Database => self.database,
+            IncludeField::Table => self.table,
+        }
+        .expect("asked about an unconfigured filter");
+        tokens
+            .iter()
+            .map(|token| {
+                self.asked.lock().unwrap().push((field, token.clone()));
+                match token {
+                    IncludeToken::Text(text) => text == pattern,
+                    IncludeToken::Literal(literal) => literal == pattern.as_bytes(),
+                }
+            })
+            .collect()
+    }
+}
+
+type Asked = Arc<std::sync::Mutex<Vec<(IncludeField, IncludeToken)>>>;
+
+fn canal_filter(
+    database: Option<&'static str>,
+    table: Option<&'static str>,
+) -> (
+    CanalIncludeFilter,
+    Asked,
+    Arc<std::sync::atomic::AtomicUsize>,
+) {
+    let asked: Asked = Arc::default();
+    let calls: Arc<std::sync::atomic::AtomicUsize> = Arc::default();
+    let verdicts = RecordedVerdicts {
+        database,
+        table,
+        asked: asked.clone(),
+        calls: calls.clone(),
+    };
+    (
+        CanalIncludeFilter::new(database.is_some(), table.is_some(), Box::new(verdicts)),
+        asked,
+        calls,
+    )
+}
+
+// Canal's include filters run before row conversion: a rejected message is dropped even when its
+// data could not convert or its type is unknown, while admitted messages decode normally.
+#[test]
+fn canal_include_filter_drops_rejected_messages_before_conversion() {
+    let (filter, _, _) = canal_filter(None, Some("orders"));
+    let decoder = new_canal_decoder(json_schema(), false, filter);
+    let kept = br#"{"data":[{"id":1,"name":"a","score":1.5}],"table":"orders","type":"INSERT"}"#;
+    let bad_data =
+        br#"{"data":[{"id":"x","name":"b","score":"y"}],"table":"users","type":"INSERT"}"#;
+    let unknown_type = br#"{"data":null,"table":"","type":"QUERY"}"#;
+    let body = bodies(vec![
+        Some(kept.as_slice()),
+        Some(bad_data),
+        Some(unknown_type),
+    ]);
+
+    let out = decoder.decode(&body);
+
+    assert_eq!(out.num_rows(), 1);
+    assert_eq!(values(&out, 0), vec![1]);
+}
+
+// Flink matches `root.get(key).asText()`: strings as written, JSON null as "null", booleans as
+// their literal, containers as "", the last of repeated keys, and numbers as their raw literal for
+// the JVM to spell.
+#[test]
+fn canal_include_filter_reads_the_value_jackson_would() {
+    let (filter, asked, _) = canal_filter(Some("never"), None);
+    let decoder = new_canal_decoder(json_schema(), false, filter);
+    let messages: Vec<&[u8]> = vec![
+        br#"{"database":"shop","type":"INSERT"}"#,
+        br#"{"database":null,"type":"INSERT"}"#,
+        br#"{"database":true,"type":"INSERT"}"#,
+        br#"{"database":{"a":1},"type":"INSERT"}"#,
+        br#"{"database":[1],"type":"INSERT"}"#,
+        br#"{"database":"first","database":"last","type":"INSERT"}"#,
+        br#"{"database" : 12.50 ,"type":"INSERT"}"#,
+        br#"{"d\u0061tabase":-7e3,"type":"INSERT"}"#,
+    ];
+
+    let out = decoder.decode(&bodies(messages.into_iter().map(Some).collect()));
+
+    assert_eq!(out.num_rows(), 0);
+    let text = |value: &str| (IncludeField::Database, IncludeToken::Text(value.to_owned()));
+    let number = |value: &str| {
+        (
+            IncludeField::Database,
+            IncludeToken::Literal(value.as_bytes().to_vec()),
+        )
+    };
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![
+            text("shop"),
+            text("null"),
+            text("true"),
+            text(""),
+            text("last"),
+            number("12.50"),
+            number("-7e3"),
+        ]
+    );
+}
+
+// simd-json spells a lone high surrogate escape as U+0000 where Jackson keeps the surrogate, so a
+// string that decodes with a NUL reaches the JVM as its raw literal (an escaped NUL too, which
+// Jackson spells the same way). A surrogate pair decodes cleanly and stays text.
+#[test]
+fn canal_include_filter_lets_jackson_spell_strings_simd_json_cannot() {
+    let (filter, asked, _) = canal_filter(Some("never"), None);
+    let decoder = new_canal_decoder(json_schema(), false, filter);
+    let messages: Vec<&[u8]> = vec![
+        br#"{"database":"shop\ud800","type":"INSERT"}"#,
+        br#"{"database":"a\u0000b","type":"INSERT"}"#,
+        br#"{"database":"\ud83d\ude00","type":"INSERT"}"#,
+    ];
+
+    let out = decoder.decode(&bodies(messages.into_iter().map(Some).collect()));
+
+    assert_eq!(out.num_rows(), 0);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![
+            (
+                IncludeField::Database,
+                IncludeToken::Literal(br#""shop\ud800""#.to_vec())
+            ),
+            (
+                IncludeField::Database,
+                IncludeToken::Literal(br#""a\u0000b""#.to_vec())
+            ),
+            (
+                IncludeField::Database,
+                IncludeToken::Text("\u{1F600}".to_owned())
+            ),
+        ]
+    );
+}
+
+// A message the filter cannot read — unparseable, a non-object root, or a filtered key missing
+// from the root — is corrupt: the job fails, or the message drops under ignore-parse-errors.
+#[test]
+fn canal_include_filter_treats_unreadable_messages_as_corrupt() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let ok = br#"{"data":[{"id":1,"name":"a","score":1.5}],"table":"orders","type":"INSERT"}"#;
+    for corrupt in [
+        br#"{"data":[],"table":"orders","type":"INSERT""#.as_slice(),
+        br#"[{"table":"orders"}]"#,
+        br#""orders""#,
+        br#"{"data":[],"type":"INSERT"}"#,
+    ] {
+        let (strict, _, _) = canal_filter(None, Some("orders"));
+        let strict = new_canal_decoder(json_schema(), false, strict);
+        let failed = catch_unwind(AssertUnwindSafe(|| {
+            strict.decode(&bodies(vec![Some(ok.as_slice()), Some(corrupt)]))
+        }));
+        assert!(failed.is_err(), "{}", String::from_utf8_lossy(corrupt));
+
+        let (skipping, _, _) = canal_filter(None, Some("orders"));
+        let skipping = new_canal_decoder(json_schema(), true, skipping);
+        let out = skipping.decode(&bodies(vec![Some(ok.as_slice()), Some(corrupt)]));
+        assert_eq!(
+            values(&out, 0),
+            vec![1],
+            "{}",
+            String::from_utf8_lossy(corrupt)
+        );
+    }
+}
+
+// The database filter is checked first: once it rejects a message, a missing table is never read,
+// so the message is dropped rather than corrupt.
+#[test]
+fn canal_include_filter_checks_database_before_table() {
+    let (filter, asked, _) = canal_filter(Some("shop"), Some("orders"));
+    let decoder = new_canal_decoder(json_schema(), false, filter);
+    let body = bodies(vec![Some(
+        br#"{"database":"other","type":"INSERT"}"#.as_slice(),
+    )]);
+
+    let out = decoder.decode(&body);
+
+    assert_eq!(out.num_rows(), 0);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![(
+            IncludeField::Database,
+            IncludeToken::Text("other".to_owned())
+        )]
+    );
+}
+
+// Each distinct value is decided once, a batch's undecided values in one call, and a steady
+// stream of known tables makes no further calls.
+#[test]
+fn canal_include_filter_caches_each_distinct_value() {
+    let (filter, asked, calls) = canal_filter(None, Some("orders"));
+    let decoder = new_canal_decoder(json_schema(), false, filter);
+    let messages: Vec<String> = (0..300)
+        .map(|i| {
+            format!(
+                r#"{{"data":[{{"id":{i},"name":"a","score":1.5}}],"table":"{}","type":"INSERT"}}"#,
+                ["orders", "users", "items"][i % 3]
+            )
+        })
+        .collect();
+
+    let out = decoder.decode(&bodies(
+        messages.iter().map(|m| Some(m.as_bytes())).collect(),
+    ));
+
+    assert_eq!(out.num_rows(), 100);
+    assert_eq!(asked.lock().unwrap().len(), 3);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+
+    let again = decoder.decode(&bodies(
+        messages.iter().map(|m| Some(m.as_bytes())).collect(),
+    ));
+
+    assert_eq!(again.num_rows(), 100);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
 }

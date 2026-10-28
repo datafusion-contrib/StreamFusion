@@ -10,6 +10,7 @@ import org.apache.flink.api.common.functions.util.ListCollector;
 import org.apache.flink.formats.common.TimestampFormat;
 import org.apache.flink.formats.json.JsonParserRowDataDeserializationSchema;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.BooleanType;
@@ -598,6 +599,46 @@ class JsonDecodeParityTest {
     for (String scenario : duplicateMapScenarios) {
       assertParity(DECIMAL_MAP_TYPE, scenario, TimestampFormat.SQL, "", false);
       assertParity(DECIMAL_MAP_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+  }
+
+  /**
+   * Flink's JSON map converters fill a {@code java.util.HashMap} keyed by {@code StringData}, so
+   * decoded entries iterate in its bucket order: chains in insertion order, order-preserving
+   * resizes, and red-black tree bins once nine keys share a bucket of a 64-slot table. The keys
+   * below force each shape on the parser path and on the DECIMAL (arrow-json) path.
+   */
+  @Test
+  void mapEntriesIterateInFlinksHashMapOrder() throws Exception {
+    RowType bigintMap =
+        RowType.of(
+            new LogicalType[] {
+              new MapType(new VarCharType(VarCharType.MAX_LENGTH), new BigIntType())
+            },
+            new String[] {"m"});
+    StringBuilder resized = new StringBuilder("{\"m\": {");
+    for (int i = 0; i < 40; i++) {
+      resized.append(i == 0 ? "" : ",").append("\"k").append(i).append("\":").append(i);
+    }
+    resized.append(",\"k7\":-7}, \"dec\": 1.5}");
+    List<String> colliding = new ArrayList<>();
+    for (int i = 0; colliding.size() < 14; i++) {
+      int hash = StringData.fromString("t" + i).hashCode();
+      if (((hash ^ (hash >>> 16)) & 63) == 5) {
+        colliding.add("t" + i);
+      }
+    }
+    StringBuilder treeified = new StringBuilder("{\"m\": {");
+    for (int i = 0; i < colliding.size(); i++) {
+      treeified.append(i == 0 ? "" : ",").append('"').append(colliding.get(i)).append("\":");
+      treeified.append(i);
+    }
+    treeified.append(",\"").append(colliding.get(3)).append("\":-3}, \"dec\": 1.5}");
+    for (String scenario : new String[] {resized.toString(), treeified.toString()}) {
+      for (boolean skipErrors : new boolean[] {false, true}) {
+        assertParity(bigintMap, scenario, TimestampFormat.SQL, "", skipErrors);
+        assertParity(DECIMAL_MAP_TYPE, scenario, TimestampFormat.SQL, "", skipErrors);
+      }
     }
   }
 

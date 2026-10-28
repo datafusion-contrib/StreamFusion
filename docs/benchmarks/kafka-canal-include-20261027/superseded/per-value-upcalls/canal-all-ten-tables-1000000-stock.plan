@@ -1,0 +1,20 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], changes=[COUNT()], amount=[SUM($1)])
++- LogicalProject(tenant=[$1], amount=[$3])
+   +- LogicalTableScan(table=[[default_catalog, default_database, cdc]])
+
+== Optimized Physical Plan ==
+GlobalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT_RETRACT(count1$0) AS changes, SUM_RETRACT((sum$1, count$2)) AS amount])
++- Exchange(distribution=[hash[tenant]])
+   +- LocalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT_RETRACT(*) AS count1$0, SUM_RETRACT(amount) AS (sum$1, count$2)])
+      +- Calc(select=[tenant, amount])
+         +- MiniBatchAssigner(interval=[1000ms], mode=[ProcTime])
+            +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount])
+
+== Optimized Execution Plan ==
+GlobalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT_RETRACT(count1$0) AS changes, SUM_RETRACT((sum$1, count$2)) AS amount])
++- Exchange(distribution=[hash[tenant]])
+   +- LocalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT_RETRACT(*) AS count1$0, SUM_RETRACT(amount) AS (sum$1, count$2)])
+      +- Calc(select=[tenant, amount])
+         +- MiniBatchAssigner(interval=[1000ms], mode=[ProcTime])
+            +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount])

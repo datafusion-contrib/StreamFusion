@@ -958,31 +958,7 @@ pub(crate) fn string_distinct_map_hash(value: Option<&str>, separator: Option<&s
         hash_bytes_by_words(writer.row_bytes()) as u32
     } else {
         let Some(value) = value else { return 0 };
-        let bytes = value.as_bytes();
-        let mix = |hash: u32, key: u32| {
-            let key = key
-                .wrapping_mul(0xcc9e2d51)
-                .rotate_left(15)
-                .wrapping_mul(0x1b873593);
-            (hash ^ key)
-                .rotate_left(13)
-                .wrapping_mul(5)
-                .wrapping_add(0xe6546b64)
-        };
-        let mut hash = DEFAULT_SEED;
-        let mut words = bytes.chunks_exact(4);
-        for word in &mut words {
-            hash = mix(hash, u32::from_ne_bytes(word.try_into().unwrap()));
-        }
-        for &byte in words.remainder() {
-            hash = mix(hash, (byte as i8 as i32) as u32);
-        }
-        hash ^= bytes.len() as u32;
-        hash ^= hash >> 16;
-        hash = hash.wrapping_mul(0x85ebca6b);
-        hash ^= hash >> 13;
-        hash = hash.wrapping_mul(0xc2b2ae35);
-        hash ^ (hash >> 16)
+        streamfusion_bridge::java_map_order::flink_string_hash(value.as_bytes()) as u32
     };
     (hash ^ (hash >> 16)) as i32
 }

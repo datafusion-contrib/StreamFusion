@@ -35,6 +35,19 @@ public final class NativeJsonFormat {
       boolean skipParseErrors,
       String formatOptions);
 
+  /**
+   * A Canal decoder that applies {@code database.include} / {@code table.include} before any row
+   * conversion, asking {@code include} once per distinct value.
+   */
+  static native long createCanalDecoder(
+      long schemaArrayAddress,
+      long schemaAddress,
+      boolean skipParseErrors,
+      String formatOptions,
+      CanalIncludeFilter include,
+      boolean database,
+      boolean table);
+
   static native void decodeInto(
       long handle,
       long inArrayAddress,
