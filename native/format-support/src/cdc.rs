@@ -177,14 +177,15 @@ impl CdcDialect {
 /// UPDATE_AFTER. A null image where the dialect requires one fails the job, exactly where Flink's
 /// deserializer hits a NullPointerException and reports a corrupt message: a null pre-image on a
 /// `BeforeAfter` update/delete (the REPLICA IDENTITY case), a null `old` on a `DataOld` update, and a
-/// null row wherever the emitted row would read from.
+/// null row wherever the emitted row would read from. `presence_row` is the message's row in its
+/// [`OldKeyPresence`] (read only by a `DataOld` update).
 #[allow(clippy::too_many_arguments)]
 pub fn cdc_emit(
     action: &CdcAction,
     before_idx: usize,
     after_idx: usize,
     shape: CdcShape,
-    old_presence: u128,
+    presence_row: usize,
     before: &StructArray,
     after: &StructArray,
     out: &mut Vec<(i8, usize, usize, RowSource)>,
@@ -214,7 +215,7 @@ pub fn cdc_emit(
                 }
                 CdcShape::DataOld => {
                     require(before, before_idx, "\"old\"/pre");
-                    RowSource::Coalesce(old_presence)
+                    RowSource::Coalesce(presence_row)
                 }
             };
             require(after, after_idx, "post");
@@ -243,8 +244,7 @@ pub fn cdc_emit(
 /// field from the pre-image when its key appears anywhere under the message's `old` (Flink's
 /// recursive `findValue` presence rule — an explicit null is present, a key absent from the whole
 /// subtree copies the post-image) — a per-field choice, so it can't share one gather index across
-/// columns. The bitmask holds bit `i` for physical field `i` present in `old` (the arity is capped
-/// at 128, enforced at construction).
+/// columns. It holds the message's row in the batch's [`OldKeyPresence`].
 #[derive(Clone, Copy)]
 pub enum RowSource {
     /// The pre-image (`before` / `old`), envelope column 0.
@@ -252,9 +252,48 @@ pub enum RowSource {
     /// The post-image (`after` / `data`), envelope column 1.
     After,
     /// Per field: pre-image where its key is present in `old`, else post-image.
-    Coalesce(u128),
+    Coalesce(usize),
 }
 
+/// Per message, the physical columns whose names Flink's `findValue` finds anywhere under the
+/// message's `old` (Maxwell/Canal): one bit per column, so any schema width fits.
+pub struct OldKeyPresence {
+    words: usize,
+    bits: Vec<u64>,
+}
+
+impl OldKeyPresence {
+    pub fn new(arity: usize) -> OldKeyPresence {
+        OldKeyPresence {
+            words: arity.div_ceil(64),
+            bits: Vec::new(),
+        }
+    }
+
+    /// Appends a message with no column present, returning its bits to fill.
+    pub fn push_message(&mut self) -> &mut [u64] {
+        let start = self.bits.len();
+        self.bits.resize(start + self.words, 0);
+        &mut self.bits[start..]
+    }
+
+    pub fn messages(&self) -> usize {
+        self.bits.len().checked_div(self.words).unwrap_or(0)
+    }
+
+    pub fn is_present(&self, message: usize, field: usize) -> bool {
+        self.bits[message * self.words + field / 64] & (1 << (field % 64)) != 0
+    }
+}
+
+/// Marks physical column `field` present in one message's presence bits.
+pub fn mark_present(bits: &mut [u64], field: usize) {
+    bits[field / 64] |= 1 << (field % 64);
+}
+
+/// Builds the fanned-out changelog batch: each physical column gathered from the pre/post-image
+/// struct children per output row, plus the trailing `$row_kind$` bytes. The source is the same
+/// across columns except for `Coalesce`, which picks per field by the key's presence in the
 /// message's `old` — so the gather index is built per field.
 pub fn gather_cdc_batch(
     out_rows: &[(i8, usize, usize, RowSource)],
@@ -262,6 +301,7 @@ pub fn gather_cdc_batch(
     after: &StructArray,
     arity: usize,
     output: &SchemaRef,
+    presence: &OldKeyPresence,
 ) -> RecordBatch {
     const BEFORE: usize = 0;
     const AFTER: usize = 1;
@@ -274,8 +314,8 @@ pub fn gather_cdc_batch(
             .map(|&(_, before_idx, after_idx, source)| match source {
                 RowSource::Before => (BEFORE, before_idx),
                 RowSource::After => (AFTER, after_idx),
-                RowSource::Coalesce(present) => {
-                    if present & (1u128 << field) != 0 {
+                RowSource::Coalesce(message) => {
+                    if presence.is_present(message, field) {
                         (BEFORE, before_idx)
                     } else {
                         (AFTER, after_idx)

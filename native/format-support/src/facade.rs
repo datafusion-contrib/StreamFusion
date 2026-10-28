@@ -5,6 +5,7 @@ macro_rules! format_jni_facade {
         $is_loaded:ident,
         $native_build_version:ident,
         $decode_into:ident,
+        $decode_records_into:ident,
         $close_decoder:ident
     ) => {
         #[no_mangle]
@@ -45,6 +46,36 @@ macro_rules! format_jni_facade {
         ) {
             $crate::decode_into(
                 env, class, handle, in_array, in_schema, out_array, out_schema,
+            )
+        }
+
+        #[no_mangle]
+        #[allow(clippy::too_many_arguments)]
+        pub extern "system" fn $decode_records_into<'local>(
+            env: JNIEnv<'local>,
+            class: JClass<'local>,
+            handle: jlong,
+            slab_address: jlong,
+            slab_length: jlong,
+            layout: jni::objects::JLongArray<'local>,
+            count: jni::sys::jint,
+            topic: jni::objects::JString<'local>,
+            partition: jni::sys::jint,
+            out_array: jlong,
+            out_schema: jlong,
+        ) {
+            $crate::decode_records_into(
+                env,
+                class,
+                handle,
+                slab_address,
+                slab_length,
+                layout,
+                count,
+                topic,
+                partition,
+                out_array,
+                out_schema,
             )
         }
 

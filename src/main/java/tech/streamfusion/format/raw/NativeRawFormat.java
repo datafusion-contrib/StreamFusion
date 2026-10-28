@@ -37,5 +37,17 @@ public final class NativeRawFormat {
       long outArrayAddress,
       long outSchemaAddress);
 
+  /** Decodes Kafka records with their connector metadata; see {@code NativeMessageDecoder}. */
+  static native void decodeRecordsInto(
+      long handle,
+      long slabAddress,
+      long slabLength,
+      long[] layout,
+      int count,
+      String topic,
+      int partition,
+      long outArrayAddress,
+      long outSchemaAddress);
+
   static native void closeDecoder(long handle);
 }

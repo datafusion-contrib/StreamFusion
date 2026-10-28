@@ -1,13 +1,94 @@
 use crate::*;
 
+/// Which input message each decoded row came from: output row `i` was decoded from input message
+/// `rows[i]`. Messages yield their rows in order, so the indices never decrease. A message may
+/// yield no row (a tombstone, a skipped or filtered message) or several (a JSON array, a Canal
+/// data list, an update's before and after images). Per-record columns such as Kafka metadata are
+/// gathered through it, the way Arroyo aligns a message's metadata with the rows it produced.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Sources {
+    /// Every message yielded exactly one row: row `i` came from message `i`.
+    Identity,
+    Rows(Vec<u32>),
+}
+
+impl Sources {
+    /// The recorded rows, collapsed to [`Sources::Identity`] when each of the batch's `messages`
+    /// yielded exactly its own row.
+    pub fn from_rows(rows: Vec<u32>, messages: usize) -> Sources {
+        if rows.len() == messages && rows.iter().enumerate().all(|(row, &m)| m as usize == row) {
+            Sources::Identity
+        } else {
+            Sources::Rows(rows)
+        }
+    }
+
+    /// The source message of output row `row`.
+    pub fn message(&self, row: usize) -> usize {
+        match self {
+            Sources::Identity => row,
+            Sources::Rows(rows) => rows[row] as usize,
+        }
+    }
+
+    /// These sources traced back through an earlier stage of the same decode: this stage's input
+    /// row `m` came from message `earlier.message(m)` of the original batch.
+    pub fn after(self, earlier: &Sources) -> Sources {
+        match (self, earlier) {
+            (sources, Sources::Identity) => sources,
+            (Sources::Identity, Sources::Rows(earlier)) => Sources::Rows(earlier.clone()),
+            (Sources::Rows(rows), Sources::Rows(earlier)) => {
+                Sources::Rows(rows.iter().map(|&m| earlier[m as usize]).collect())
+            }
+        }
+    }
+}
+
+/// Records the rows a decode loop appends for each message: after message `message` is decoded
+/// and the output holds `rows` rows, every row not yet attributed came from it.
+#[derive(Default)]
+pub struct SourceRecorder {
+    rows: Vec<u32>,
+}
+
+impl SourceRecorder {
+    pub fn with_capacity(capacity: usize) -> SourceRecorder {
+        SourceRecorder {
+            rows: Vec::with_capacity(capacity),
+        }
+    }
+
+    pub fn message_done(&mut self, message: usize, rows: usize) {
+        debug_assert!(rows >= self.rows.len(), "decoded rows never shrink");
+        self.rows.resize(rows, message as u32);
+    }
+
+    pub fn finish(self, messages: usize) -> Sources {
+        Sources::from_rows(self.rows, messages)
+    }
+}
+
 /// A decoder is constructed and called only inside its owning native library.
 pub trait Decoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch;
+    /// Decodes one batch of messages, reporting the message each output row came from.
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources);
+    fn decode(&self, body: &RecordBatch) -> RecordBatch {
+        self.decode_traced(body).0
+    }
     fn output_schema(&self) -> SchemaRef {
         panic!("skip-mode decode is only wired for JSON and CDC formats")
     }
     fn register_writer_schema(&mut self, _id: u32, _schema: &str) {
         panic!("registerAvroSchema on a non-Confluent-Avro decoder")
+    }
+    /// Whether a decoded batch may share buffers with the input bodies (a pass-through decode),
+    /// so input borrowed from the JVM must be copied first.
+    fn output_may_alias_input(&self) -> bool {
+        true
+    }
+    /// The metadata composition of a table that reads Kafka connector metadata.
+    fn metadata_decoder(&self) -> Option<&MetadataDecoder> {
+        None
     }
 }
 
@@ -20,9 +101,23 @@ impl MessageDecoder {
     pub fn register_writer_schema(&mut self, id: u32, schema: &str) {
         self.decoder.register_writer_schema(id, schema);
     }
+    pub fn output_may_alias_input(&self) -> bool {
+        self.decoder.output_may_alias_input()
+    }
+    /// Decodes whole Kafka records: the bodies with their records' connector metadata.
+    pub fn decode_records(&self, bodies: &RecordBatch, metadata: &RecordMetadata) -> RecordBatch {
+        self.decoder
+            .metadata_decoder()
+            .expect("this table's decode reads no Kafka metadata")
+            .decode_records(bodies, metadata)
+    }
     pub fn decode(&self, body: &RecordBatch) -> RecordBatch {
+        self.decode_traced(body).0
+    }
+
+    pub fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
         if !self.skip_errors {
-            return self.decoder.decode(body);
+            return self.decoder.decode_traced(body);
         }
         // `ignore-parse-errors`: Flink wraps each message's whole decode in a catch-everything and
         // skips the message on any failure — malformed JSON, a bad envelope shape, an unconvertible
@@ -31,19 +126,24 @@ impl MessageDecoder {
         // per-message state is fresh each try, so a failed attempt leaves nothing behind.
         use std::panic::{catch_unwind, AssertUnwindSafe};
         silence_expected_decode_panics(|| {
-            if let Ok(batch) = catch_unwind(AssertUnwindSafe(|| self.decoder.decode(body))) {
-                return batch;
+            if let Ok(decoded) = catch_unwind(AssertUnwindSafe(|| self.decoder.decode_traced(body)))
+            {
+                return decoded;
             }
             let mut kept = Vec::new();
+            let mut sources = SourceRecorder::default();
+            let mut rows = 0;
             for row in 0..body.num_rows() {
                 let single = body.slice(row, 1);
                 if let Ok(batch) = catch_unwind(AssertUnwindSafe(|| self.decoder.decode(&single))) {
+                    rows += batch.num_rows();
                     if batch.num_rows() > 0 {
                         kept.push(batch);
                     }
                 }
+                sources.message_done(row, rows);
             }
-            match kept.len() {
+            let batch = match kept.len() {
                 0 => RecordBatch::new_empty(self.decoder.output_schema()),
                 1 => kept.into_iter().next().unwrap(),
                 _ => {
@@ -51,7 +151,8 @@ impl MessageDecoder {
                     arrow::compute::concat_batches(&schema, &kept)
                         .expect("skip-mode batch concat failed")
                 }
-            }
+            };
+            (batch, sources.finish(body.num_rows()))
         })
     }
 }
@@ -91,7 +192,7 @@ pub fn silence_expected_decode_panics<R>(work: impl FnOnce() -> R) -> R {
 }
 
 impl Decoder for KeyedDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        self.decode_traced(body)
     }
 }

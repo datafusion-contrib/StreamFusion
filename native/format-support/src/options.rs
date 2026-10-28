@@ -32,6 +32,8 @@ pub struct FormatOptions {
     pub json_reject_array_roots: bool,
     pub raw_little_endian: bool,
     pub keyed: Option<KeyedSpec>,
+    /// The Kafka connector metadata columns the decode fills: each output position and its key.
+    pub metadata: Vec<(usize, KafkaMetadata)>,
 }
 
 /// A keyed table's decode composition (Flink's `key.format` on the source side): which physical
@@ -53,6 +55,7 @@ pub fn parse_format_options(encoded: &str) -> FormatOptions {
     let mut keyed_key_position = None;
     let mut keyed_value_positions = None;
     let mut keyed_key_little_endian = false;
+    let mut metadata = Vec::new();
     for line in encoded.lines().filter(|l| !l.is_empty()) {
         let (key, value) = line
             .split_once('=')
@@ -102,6 +105,20 @@ pub fn parse_format_options(encoded: &str) -> FormatOptions {
                     other => panic!("unknown keyed.key-endianness {other}"),
                 }
             }
+            "metadata.columns" => {
+                metadata = value
+                    .split(',')
+                    .map(|column| {
+                        let (position, key) = column
+                            .split_once(':')
+                            .expect("metadata column is not position:key");
+                        (
+                            position.parse::<usize>().expect("metadata column position"),
+                            KafkaMetadata::parse(key),
+                        )
+                    })
+                    .collect()
+            }
             other => panic!("unknown format option {other}"),
         }
     }
@@ -116,5 +133,6 @@ pub fn parse_format_options(encoded: &str) -> FormatOptions {
         json_reject_array_roots,
         raw_little_endian,
         keyed,
+        metadata,
     }
 }

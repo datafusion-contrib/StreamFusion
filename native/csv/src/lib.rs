@@ -13,6 +13,7 @@ streamfusion_format_support::format_jni_facade!(
     Java_tech_streamfusion_format_csv_NativeCsvFormat_isLoaded,
     Java_tech_streamfusion_format_csv_NativeCsvFormat_nativeBuildVersion,
     Java_tech_streamfusion_format_csv_NativeCsvFormat_decodeInto,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_decodeRecordsInto,
     Java_tech_streamfusion_format_csv_NativeCsvFormat_closeDecoder
 );
 mod csv;

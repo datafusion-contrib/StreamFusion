@@ -18,22 +18,23 @@ pub struct KeyedDecoder {
 }
 
 impl KeyedDecoder {
-    pub fn decode(&self, records: &RecordBatch) -> RecordBatch {
+    pub fn decode_traced(&self, records: &RecordBatch) -> (RecordBatch, Sources) {
         let keys = records.column(0);
         let bodies = records
             .project(&[1])
             .expect("keyed decode expects a two-column [key, body] batch");
         let mut kept = Vec::new();
-        let mut sources = Vec::with_capacity(records.num_rows());
+        let mut sources = SourceRecorder::with_capacity(records.num_rows());
+        let mut rows = 0;
         for row in 0..records.num_rows() {
             let decoded = self.value.decode(&bodies.slice(row, 1));
-            for _ in 0..decoded.num_rows() {
-                sources.push(row as i32);
-            }
+            rows += decoded.num_rows();
+            sources.message_done(row, rows);
             if decoded.num_rows() > 0 {
                 kept.push(decoded);
             }
         }
+        let sources = sources.finish(records.num_rows());
         let value_schema: SchemaRef = Arc::new(Schema::new(
             self.value_positions
                 .iter()
@@ -45,8 +46,11 @@ impl KeyedDecoder {
             1 => kept.into_iter().next().unwrap(),
             _ => concat_batches(&value_schema, &kept).expect("keyed value concat failed"),
         };
-        let indices = Int32Array::from(sources);
-        let gathered = take(keys, &indices, None).expect("failed to gather Kafka keys");
+        let gathered = match &sources {
+            Sources::Identity => keys.clone(),
+            Sources::Rows(rows) => take(keys, &UInt32Array::from(rows.clone()), None)
+                .expect("failed to gather Kafka keys"),
+        };
         let key_input = RecordBatch::try_new(
             Arc::new(Schema::new(vec![Field::new(
                 "key",
@@ -66,7 +70,8 @@ impl KeyedDecoder {
             .into_iter()
             .map(|column| column.expect("keyed decode left a physical column unfilled"))
             .collect();
-        RecordBatch::try_new(self.output.clone(), columns)
-            .expect("failed to compose the keyed decode batch")
+        let batch = RecordBatch::try_new(self.output.clone(), columns)
+            .expect("failed to compose the keyed decode batch");
+        (batch, sources)
     }
 }

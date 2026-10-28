@@ -13,6 +13,7 @@ streamfusion_format_support::format_jni_facade!(
     Java_tech_streamfusion_format_raw_NativeRawFormat_isLoaded,
     Java_tech_streamfusion_format_raw_NativeRawFormat_nativeBuildVersion,
     Java_tech_streamfusion_format_raw_NativeRawFormat_decodeInto,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_decodeRecordsInto,
     Java_tech_streamfusion_format_raw_NativeRawFormat_closeDecoder
 );
 

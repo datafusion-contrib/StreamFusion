@@ -37,6 +37,7 @@ mirrors exactly.
 | A row type Flink's own avro-confluent factory rejects at job submission (RAW and other unmapped types, TIMESTAMP_LTZ under the always-active legacy mapping, TIMESTAMP/TIME precision beyond the mapping's limit, a non-string map key) | Declined at plan time, reproducing Flink's own submission failure — the same derivation as bare [Avro](avro.md#decode-fallback-conditions). |
 | `TIME(0)` column | Same second-vs-millisecond gap as bare Avro. |
 | `BINARY(n)` column | Same fixed-size boundary gap as bare Avro (decode only — encode is fine, below). |
+| A Kafka connector metadata column | Same as bare Avro: the decoder doesn't compose [connector metadata](../kafka.md#connector-metadata) yet. |
 | An explicit reader `schema` option | Not translated to the native registry client. |
 | Any `ssl.*` registry option | Not translated. |
 | Pass-through client `properties` | Not translated. |
@@ -131,5 +132,4 @@ BINARY(n) and the other legacy-mapping exclusions apply to the physical columns.
 |---|---|
 | Row-type and registry-option gates | Same as plain `avro-confluent` — see the tables above. |
 | The `schema-include` envelope wrapper | Not supported. |
-| A metadata or computed column | Not supported on the CDC decode path. |
-| Nested Maxwell/Canal columns, Canal's `database.include`/`table.include` filters | Gaps in the sibling JSON dialects, not this format — see [CDC JSON](cdc-json.md). |
+| A metadata or computed column | The decoder doesn't compose [connector metadata](../kafka.md#connector-metadata) yet, and the CDC decode path takes no computed columns. |

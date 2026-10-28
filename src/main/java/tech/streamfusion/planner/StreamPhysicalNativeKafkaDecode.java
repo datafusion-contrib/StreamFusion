@@ -29,6 +29,8 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
   // it as the writer schema (its datums are schema-less) and resolves the pruned output as the reader.
   private final RelDataType writerRowType;
   private final Map<String, String> options;
+  /** The metadata columns, each output column's name mapped to the connector metadata key. */
+  private final Map<String, String> metadata;
   private final NativePlanDetails planDetails;
   private final ScanWatermarkSpec watermark;
   private final long shareToken;
@@ -46,6 +48,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
         traitSet,
         outputRowType,
         options,
+        Map.of(),
         watermark,
         preserveFullSchemaForSharing,
         NativePlanDetails.EMPTY);
@@ -56,6 +59,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
       RelTraitSet traitSet,
       RelDataType outputRowType,
       Map<String, String> options,
+      Map<String, String> metadata,
       ScanWatermarkSpec watermark,
       boolean preserveFullSchemaForSharing,
       NativePlanDetails planDetails) {
@@ -65,6 +69,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
         outputRowType,
         outputRowType,
         options,
+        metadata,
         watermark,
         0,
         preserveFullSchemaForSharing,
@@ -77,6 +82,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
       RelDataType outputRowType,
       RelDataType writerRowType,
       Map<String, String> options,
+      Map<String, String> metadata,
       ScanWatermarkSpec watermark,
       long shareToken,
       boolean preserveFullSchemaForSharing,
@@ -85,6 +91,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
     this.outputRowType = outputRowType;
     this.writerRowType = writerRowType;
     this.options = options;
+    this.metadata = metadata;
     this.planDetails = planDetails;
     this.watermark = watermark;
     this.shareToken = shareToken;
@@ -99,6 +106,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
         outputRowType,
         writerRowType,
         options,
+        metadata,
         watermark,
         token,
         preserveFullSchemaForSharing,
@@ -107,15 +115,18 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
 
   @Override
   public String sharingKey() {
-    return sharingKey(options, writerRowType, outputRowType, watermark);
+    return sharingKey(options, metadata, writerRowType, outputRowType, watermark);
   }
 
   static String sharingKey(
       Map<String, String> options,
+      Map<String, String> metadata,
       RelDataType writerRowType,
       RelDataType outputRowType,
       ScanWatermarkSpec watermark) {
     return new TreeMap<>(options)
+        + "|"
+        + metadata
         + "|"
         + writerRowType.getFullTypeString()
         + '|'
@@ -153,6 +164,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
         projected,
         outputRowType,
         options,
+        metadata,
         projectedWatermark,
         shareToken,
         preserveFullSchemaForSharing,
@@ -164,7 +176,9 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
   public boolean supportsProjection(RelDataType projected) {
     return !preserveFullSchemaForSharing
         && KafkaTables.decodeHonorsProjection(options)
-        && (watermark == null || projected.getFieldNames().contains(watermark.rowtimeFieldName));
+        && (watermark == null || projected.getFieldNames().contains(watermark.rowtimeFieldName))
+        // The value decode needs a column of its own; metadata alone is never decoded.
+        && !metadata.keySet().containsAll(projected.getFieldNames());
   }
 
   @Override
@@ -185,6 +199,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
         outputRowType,
         writerRowType,
         options,
+        metadata,
         watermark,
         shareToken,
         preserveFullSchemaForSharing,
@@ -211,6 +226,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
                 "watermarkExpression",
                 watermark == null ? null : watermark.expression,
                 watermark != null)
+            .itemIf("metadata", metadata, !metadata.isEmpty())
             .itemIf("keyFormat", options.get("key.format"), options.containsKey("key.format"))
             .itemIf("keyFields", options.get("key.fields"), options.containsKey("key.fields"))
             .itemIf(
@@ -236,6 +252,7 @@ public class StreamPhysicalNativeKafkaDecode extends AbstractRelNode
         FlinkTypeFactory$.MODULE$.toLogicalRowType(writerRowType),
         getRelDetailedDescription(),
         options,
+        metadata,
         watermark);
   }
 }

@@ -1,5 +1,29 @@
 use crate::*;
 #[cfg(test)]
+pub(crate) fn new_canal_decoder(
+    schema: SchemaRef,
+    skip_errors: bool,
+    include: CanalIncludeFilter,
+) -> MessageDecoder {
+    MessageDecoder {
+        decoder: Box::new(
+            CdcJsonDecoder::new(
+                schema,
+                CdcDialect::Canal,
+                crate::json::JsonEnv {
+                    mode: flink_text::TimestampMode::default(),
+                    lenient: false,
+                    tree_duplicates: true,
+                },
+                skip_errors,
+                false,
+            )
+            .with_include(include),
+        ),
+        skip_errors,
+    }
+}
+#[cfg(test)]
 pub(crate) fn new_decoder(
     format: i32,
     schema: SchemaRef,
@@ -21,7 +45,7 @@ pub(crate) fn new_decoder(
     )
 }
 
-fn build_decoder(
+pub(crate) fn build_decoder(
     format: i32,
     output_schema: SchemaRef,
     _avro_schema: &str,
@@ -69,16 +93,22 @@ fn build_decoder(
 }
 
 impl Decoder for JsonDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        self.decode_traced(body)
+    }
+    fn output_may_alias_input(&self) -> bool {
+        false
     }
     fn output_schema(&self) -> SchemaRef {
         self.schema.clone()
     }
 }
 impl Decoder for CdcJsonDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        self.decode_traced(body)
+    }
+    fn output_may_alias_input(&self) -> bool {
+        false
     }
     fn output_schema(&self) -> SchemaRef {
         self.output.clone()
@@ -106,8 +136,9 @@ pub(crate) struct CdcJsonDecoder {
     output: SchemaRef,
     /// Number of physical columns (envelope/output arity excludes op and `$row_kind$`).
     arity: usize,
-    /// Physical column names, for the `old`-key presence scan of the `DataOld` dialects.
-    field_names: Vec<String>,
+    /// Physical column positions by name, for the `old`-key presence scan of the `DataOld`
+    /// dialects.
+    field_positions: HashMap<String, usize>,
     dialect: CdcDialect,
     /// Flink's `ignore-parse-errors`, handled here (not by a generic wrapper) because the CDC skip
     /// has three granularities at once: a structurally bad message drops whole, a bad value inside
@@ -115,6 +146,8 @@ pub(crate) struct CdcJsonDecoder {
     /// fanning a message out KEEPS the rows emitted before it — Flink's deserializers accumulate
     /// into a list and collect whatever it holds after the catch.
     skip_errors: bool,
+    /// Canal's `database.include` / `table.include`, applied before any row conversion.
+    include: Option<CanalIncludeFilter>,
 }
 
 impl CdcJsonDecoder {
@@ -149,12 +182,6 @@ impl CdcJsonDecoder {
         let mut output_fields: Vec<FieldRef> = nullable.iter().cloned().collect();
         output_fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
         let output = Arc::new(Schema::new(output_fields));
-        if spec.shape == CdcShape::DataOld {
-            assert!(
-                nullable.len() <= 128,
-                "the old-key presence bitmask carries up to 128 columns"
-            );
-        }
         // A CDC envelope never fans a top-level array out the way the plain `json` format does:
         // Maxwell/Canal hand the root to the tree converter (any array is corrupt), while
         // Debezium/OGG decode through Flink's deprecated one-row entry, which unwraps an array
@@ -179,21 +206,64 @@ impl CdcJsonDecoder {
             ),
             output,
             arity: nullable.len(),
-            field_names: physical.fields().iter().map(|f| f.name().clone()).collect(),
+            field_positions: physical
+                .fields()
+                .iter()
+                .enumerate()
+                .map(|(position, f)| (f.name().clone(), position))
+                .collect(),
             dialect,
             skip_errors,
+            include: None,
         }
+    }
+
+    pub(crate) fn with_include(mut self, include: CanalIncludeFilter) -> CdcJsonDecoder {
+        self.include = Some(include);
+        self
+    }
+
+    /// Drops the messages Canal's include filters reject, before the envelope decode converts
+    /// anything: a rejected message never fails on bad data, as in Flink. A message the filter
+    /// cannot read is corrupt — the job fails, or it drops under `ignore-parse-errors`.
+    fn apply_include(
+        &self,
+        include: &CanalIncludeFilter,
+        bodies: &RecordBatch,
+    ) -> (RecordBatch, Sources) {
+        let column = bodies.column(0);
+        let mut kept: Vec<u32> = Vec::with_capacity(bodies.num_rows());
+        for (row, admission) in include.admit(column).into_iter().enumerate() {
+            match admission {
+                Admission::Keep => kept.push(row as u32),
+                Admission::Drop => {}
+                Admission::Corrupt if self.skip_errors => {}
+                Admission::Corrupt => panic!(
+                    "Corrupt {} JSON message '{}'.",
+                    self.dialect.name(),
+                    String::from_utf8_lossy(
+                        binary_body(column, row).expect("tombstones are stripped first")
+                    )
+                ),
+            }
+        }
+        if kept.len() == bodies.num_rows() {
+            return (bodies.clone(), Sources::Identity);
+        }
+        let indices = arrow::array::UInt32Array::from(kept.clone());
+        let column = take(column, &indices, None).expect("failed to drop filtered messages");
+        let batch = RecordBatch::try_new(bodies.schema(), vec![column])
+            .expect("failed to rebuild the filtered body batch");
+        (batch, Sources::Rows(kept))
     }
 
     /// Emits one envelope row's — one message's — output rows. Any failure in here is the
     /// message's own corruption (unknown op, null image, uneven Canal arrays), which fails the job
     /// in default mode and is caught per message in skip mode, keeping the rows already emitted.
-    #[allow(clippy::too_many_arguments)]
     fn emit_message(
         &self,
         row: usize,
         spec: &CdcSpec,
-        presence: &[u128],
         envelope: &RecordBatch,
         before: &StructArray,
         after: &StructArray,
@@ -217,7 +287,6 @@ impl CdcJsonDecoder {
             // Flink throws on an unrecognized op by default; we fail too (never drop it silently).
             CdcOp::Unknown => panic!("unknown CDC operation \"{op}\""),
         };
-        let mask = presence.get(row).copied().unwrap_or(0);
         if spec.arrays {
             let after_list = envelope
                 .column(1)
@@ -258,14 +327,14 @@ impl CdcJsonDecoder {
                     before_idx,
                     after_off + i,
                     spec.shape,
-                    mask,
+                    row,
                     before,
                     after,
                     out_rows,
                 );
             }
         } else {
-            cdc_emit(&action, row, row, spec.shape, mask, before, after, out_rows);
+            cdc_emit(&action, row, row, spec.shape, row, before, after, out_rows);
         }
     }
 
@@ -275,7 +344,7 @@ impl CdcJsonDecoder {
     /// message (job failure in default mode, a whole-message drop under `ignore-parse-errors`).
     /// The plain JSON decode underneath has its own whitespace rule (it drops such a body without
     /// error, per its Flink parity), so the CDC granularity is applied here, never inherited.
-    fn strip_tombstones(&self, bodies: &RecordBatch) -> RecordBatch {
+    fn strip_tombstones(&self, bodies: &RecordBatch) -> (RecordBatch, Sources) {
         let column = bodies.column(0);
         let mut kept: Vec<u32> = Vec::with_capacity(bodies.num_rows());
         for row in 0..bodies.num_rows() {
@@ -294,96 +363,121 @@ impl CdcJsonDecoder {
             }
         }
         if kept.len() == bodies.num_rows() {
-            return bodies.clone();
+            return (bodies.clone(), Sources::Identity);
         }
-        let indices = arrow::array::UInt32Array::from(kept);
+        let indices = arrow::array::UInt32Array::from(kept.clone());
         let column = take(column, &indices, None).expect("failed to drop CDC tombstones");
-        RecordBatch::try_new(bodies.schema(), vec![column])
-            .expect("failed to rebuild the CDC body batch")
+        let batch = RecordBatch::try_new(bodies.schema(), vec![column])
+            .expect("failed to rebuild the CDC body batch");
+        (batch, Sources::Rows(kept))
     }
 
-    /// The `DataOld` presence scan: per surviving body (same null/whitespace skips as the envelope
-    /// decode, asserted below), the set of physical field keys Flink's `oldField.findValue` would
-    /// find under the message's `old` node — a recursive depth-first search of the whole subtree
-    /// (nested objects AND arrays; for Canal the array node's elements fall out of the same
-    /// descent). The envelope's `old` is the LAST top-level occurrence, matching the Jackson tree
-    /// `root.get` reads. A message without a usable `old` contributes an empty mask (only updates
-    /// read it, and a null `old` on an update already failed in `cdc_emit`).
-    fn old_key_presence(&self, bodies: &RecordBatch) -> Vec<u128> {
-        use simd_json::prelude::*;
+    /// The `DataOld` presence scan: per envelope row, the set of physical field keys Flink's
+    /// `oldField.findValue` would find under its message's `old` node — a recursive depth-first
+    /// search of the whole subtree (nested objects AND arrays; for Canal the array node's elements
+    /// fall out of the same descent). The envelope's `old` is the LAST top-level occurrence,
+    /// matching the Jackson tree `root.get` reads. Only an update reads its presence, so
+    /// `reads_old` spares every other row the parse and leaves its mask empty; a null `old` on an
+    /// update already failed in `cdc_emit`. Each update parses the body its envelope row came from
+    /// (`body_of`), so a body the envelope dropped can't shift the rows after it. A body the
+    /// envelope accepted but simd-json rejects (arrow-json reads raw control characters, for one)
+    /// is read through Jackson's tokens instead, which keep its keys.
+    fn old_key_presence(
+        &self,
+        bodies: &RecordBatch,
+        envelope_rows: usize,
+        body_of: impl Fn(usize) -> usize,
+        reads_old: impl Fn(usize) -> bool,
+    ) -> OldKeyPresence {
         let spec = self.dialect.spec();
         let column = bodies.column(0);
-        let mut masks = Vec::with_capacity(bodies.num_rows());
+        let mut presence = OldKeyPresence::new(self.arity);
         let mut scratch: Vec<u8> = Vec::new();
         let mut buffers = simd_json::Buffers::default();
-        for row in 0..bodies.num_rows() {
-            let Some(bytes) = binary_body(column, row) else {
-                continue;
-            };
-            if bytes.iter().all(u8::is_ascii_whitespace) {
+        let mut reusable = Some(simd_json::tape::Tape::null());
+        let mark_old_keys = |root: simd_json::tape::Value<'_, '_>, bits: &mut [u64]| {
+            let old = root.as_object().and_then(|envelope| {
+                envelope
+                    .iter()
+                    .filter(|(key, _)| *key == spec.before_field)
+                    .last()
+            });
+            if let Some((_, value)) = old {
+                self.find_value_presence(value, bits);
+            }
+        };
+        for row in 0..envelope_rows {
+            let bits = presence.push_message();
+            if !reads_old(row) {
                 continue;
             }
+            let bytes = binary_body(column, body_of(row)).expect("an enveloped body is present");
             scratch.clear();
             scratch.extend_from_slice(bytes);
-            let Ok(tape) = simd_json::to_tape_with_buffers(&mut scratch, &mut buffers) else {
-                if self.skip_errors {
-                    continue; // the lenient envelope decode dropped this message too
-                }
-                masks.push(0); // the strict envelope decode fails this body first
-                continue;
-            };
-            let root = tape.as_value();
-            if self.skip_errors && root.as_object().is_none() {
-                continue; // ditto: a non-object root is dropped by the lenient envelope decode
+            let mut tape = reusable
+                .take()
+                .unwrap_or_else(simd_json::tape::Tape::null)
+                .reset();
+            if simd_json::fill_tape(&mut scratch, &mut buffers, &mut tape).is_ok() {
+                mark_old_keys(tape.as_value(), bits);
+            } else {
+                let tokens = crate::json_retry::tokenize(bytes).unwrap_or_else(|error| {
+                    panic!("Corrupt {} JSON message: {error}", self.dialect.name())
+                });
+                let mut skeleton = crate::json_retry::skeleton(&tokens).into_bytes();
+                let skeleton = simd_json::to_tape(&mut skeleton).expect("a skeleton reparses");
+                mark_old_keys(skeleton.as_value(), bits);
             }
-            let old = root
-                .as_object()
-                .and_then(|envelope| {
-                    envelope
-                        .iter()
-                        .filter(|(key, _)| *key == spec.before_field)
-                        .last()
-                })
-                .map(|(_, value)| value);
-            let mut mask = 0u128;
-            if let Some(value) = old {
-                self.find_value_mask(value, &mut mask);
-            }
-            masks.push(mask);
+            reusable = Some(tape.reset());
         }
-        masks
+        presence
     }
 
-    /// Jackson `findValue` presence over a tape subtree: sets bit `i` when physical field `i`'s
-    /// name appears as an object key anywhere under `value`. A duplicate key within an object
-    /// collapses to its LAST occurrence first (Jackson's tree build overwrites the earlier value,
-    /// so names reachable only through a discarded subtree are not found).
-    fn find_value_mask(&self, value: simd_json::tape::Value<'_, '_>, mask: &mut u128) {
-        use simd_json::prelude::*;
+    /// Jackson `findValue` presence over a tape subtree: marks physical field `i` when its name
+    /// appears as an object key anywhere under `value`. A duplicate key within an object collapses
+    /// to its LAST occurrence first (Jackson's tree build overwrites the earlier value, so names
+    /// reachable only through a discarded subtree are not found).
+    fn find_value_presence(&self, value: simd_json::tape::Value<'_, '_>, bits: &mut [u64]) {
         if let Some(object) = value.as_object() {
             let entries: Vec<(&str, simd_json::tape::Value<'_, '_>)> = object.iter().collect();
-            for (i, (key, child)) in entries.iter().enumerate() {
-                if entries[i + 1..].iter().any(|(later, _)| later == key) {
+            let mut seen: HashSet<&str> = HashSet::default();
+            for (position, (key, child)) in entries[..].iter().enumerate().rev() {
+                let repeated = if entries.len() <= 8 {
+                    entries[position + 1..]
+                        .iter()
+                        .any(|(later, _)| later == key)
+                } else {
+                    !seen.insert(key)
+                };
+                if repeated {
                     continue;
                 }
-                if let Some(field) = self.field_names.iter().position(|name| name == key) {
-                    *mask |= 1 << field;
+                if let Some(&field) = self.field_positions.get(*key) {
+                    mark_present(bits, field);
                 }
-                self.find_value_mask(*child, mask);
+                self.find_value_presence(*child, bits);
             }
         } else if let Some(array) = value.as_array() {
             for element in &array {
-                self.find_value_mask(element, mask);
+                self.find_value_presence(element, bits);
             }
         }
     }
 
-    fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
+    fn decode_traced(&self, bodies: &RecordBatch) -> (RecordBatch, Sources) {
         use arrow::array::ListArray;
-        let bodies = &self.strip_tombstones(bodies);
-        let envelope = self.envelope.decode(bodies);
+        let (bodies, stripped) = self.strip_tombstones(bodies);
+        let (bodies, included) = match &self.include {
+            Some(include) => self.apply_include(include, &bodies),
+            None => (bodies, Sources::Identity),
+        };
+        let bodies = &bodies;
+        let (envelope, enveloped) = self.envelope.decode_traced(bodies);
         if envelope.num_rows() == 0 {
-            return RecordBatch::new_empty(self.output.clone());
+            return (
+                RecordBatch::new_empty(self.output.clone()),
+                Sources::Rows(Vec::new()),
+            );
         }
 
         let spec = self.dialect.spec();
@@ -420,24 +514,29 @@ impl CdcJsonDecoder {
             .downcast_ref::<StructArray>()
             .expect("post-image struct");
 
-        // The DataOld dialects need per-message key presence in `old` (Flink's findValue rule);
-        // the scan mirrors the envelope decode's skip conditions, asserted here.
+        // The DataOld dialects need per-message key presence in `old` (Flink's findValue rule).
         let presence = if spec.shape == CdcShape::DataOld {
-            let masks = self.old_key_presence(bodies);
-            assert_eq!(
-                masks.len(),
+            self.old_key_presence(
+                bodies,
                 envelope.num_rows(),
-                "old-key presence misaligned"
-            );
-            masks
+                |row| enveloped.message(row),
+                |row| {
+                    ops.is_valid(row)
+                        && matches!(
+                            self.dialect.classify(ops.value(row)),
+                            CdcOp::Change(CdcAction::Update)
+                        )
+                },
+            )
         } else {
-            Vec::new()
+            OldKeyPresence::new(0)
         };
 
         // Per output row: its RowKind byte (0 +I, 1 -U, 2 +U, 3 -D — `RowKind.toByteValue()`), and the
         // rows to read in the pre/post-image struct arrays, and which image to read each column from.
         let mut out_rows: Vec<(i8, usize, usize, RowSource)> =
             Vec::with_capacity(envelope.num_rows());
+        let mut sources = SourceRecorder::with_capacity(envelope.num_rows());
         for row in 0..envelope.num_rows() {
             if self.skip_errors {
                 // Flink's skip keeps whatever a message emitted before its failure: the
@@ -447,80 +546,30 @@ impl CdcJsonDecoder {
                 use std::panic::{catch_unwind, AssertUnwindSafe};
                 let _ = silence_expected_decode_panics(|| {
                     catch_unwind(AssertUnwindSafe(|| {
-                        self.emit_message(
-                            row,
-                            &spec,
-                            &presence,
-                            &envelope,
-                            before,
-                            after,
-                            &mut out_rows,
-                        )
+                        self.emit_message(row, &spec, &envelope, before, after, &mut out_rows)
                     }))
                 });
             } else {
-                self.emit_message(
-                    row,
-                    &spec,
-                    &presence,
-                    &envelope,
-                    before,
-                    after,
-                    &mut out_rows,
-                );
+                self.emit_message(row, &spec, &envelope, before, after, &mut out_rows);
             }
+            sources.message_done(row, out_rows.len());
         }
 
-        gather_cdc_batch(&out_rows, before, after, self.arity, &self.output)
+        let batch = gather_cdc_batch(
+            &out_rows,
+            before,
+            after,
+            self.arity,
+            &self.output,
+            &presence,
+        );
+        let sources = sources
+            .finish(envelope.num_rows())
+            .after(&enveloped)
+            .after(&included)
+            .after(&stripped);
+        (batch, sources)
     }
-}
-
-/// Builds the fanned-out changelog batch: each physical column gathered from the pre/post-image
-/// struct children per output row, plus the trailing `$row_kind$` bytes. The source is the same
-/// across columns except for `Coalesce`, which picks per field by the key's presence in the/// Builds a binary input column over a contiguous values region. `copy_values` is used for keyed
-/// raw columns because a raw decode may legally pass those buffers through to the exported output;
-/// JSON bodies are consumed synchronously into fresh Arrow builders and can borrow the JVM slab.
-fn contiguous_binary_array(
-    address: usize,
-    values_len: usize,
-    lengths: impl Iterator<Item = i32>,
-    copy_values: bool,
-) -> BinaryArray {
-    let mut offsets = Vec::new();
-    let mut nulls = NullBufferBuilder::new(0);
-    offsets.push(0_i32);
-    let mut offset = 0_i32;
-    for length in lengths {
-        if length < 0 {
-            nulls.append_null();
-        } else {
-            nulls.append_non_null();
-            offset = offset
-                .checked_add(length)
-                .expect("contiguous Kafka byte batch exceeds Arrow binary offsets");
-        }
-        offsets.push(offset);
-    }
-    assert_eq!(
-        offset as usize, values_len,
-        "Kafka byte slab length mismatch"
-    );
-    let values = if copy_values {
-        let bytes = unsafe { std::slice::from_raw_parts(address as *const u8, values_len) };
-        arrow::buffer::Buffer::from(bytes)
-    } else {
-        let pointer =
-            std::ptr::NonNull::new(address as *mut u8).unwrap_or_else(std::ptr::NonNull::dangling);
-        // The Java ArrowBuf owns this memory for the duration of the JNI call. JSON decode consumes
-        // it synchronously and never exposes it in the output batch; the custom owner intentionally
-        // performs no deallocation when this temporary input array drops.
-        unsafe { arrow::buffer::Buffer::from_custom_allocation(pointer, values_len, Arc::new(())) }
-    };
-    BinaryArray::new(
-        OffsetBuffer::new(ScalarBuffer::from(offsets)),
-        values,
-        nulls.finish(),
-    )
 }
 
 /// JSON-source fast boundary: the JVM copies polled Kafka records once into `[keys][values]` and
@@ -628,4 +677,66 @@ pub extern "system" fn Java_tech_streamfusion_format_json_NativeJsonFormat_creat
         skip_parse_errors,
         format_options,
     )
+}
+
+/// A Canal decoder applying `database.include` / `table.include`. `filter` is the JVM object
+/// that decides each distinct value with Flink's own regex and number semantics; the decoder holds
+/// it for its lifetime.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_tech_streamfusion_format_json_NativeJsonFormat_createCanalDecoder<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    schema_array_address: jlong,
+    schema_address: jlong,
+    skip_parse_errors: jboolean,
+    format_options: JString<'local>,
+    filter: jni::objects::JObject<'local>,
+    database: jboolean,
+    table: jboolean,
+) -> jlong {
+    streamfusion_bridge::jni_guard(env, move |env| {
+        let schema = import_record_batch(schema_array_address, schema_address).schema();
+        let format_options: String = env
+            .get_string(&format_options)
+            .map(Into::into)
+            .unwrap_or_default();
+        let verdicts = JvmIncludeVerdicts {
+            vm: env.get_java_vm().expect("failed to read the JavaVM"),
+            filter: env
+                .new_global_ref(&filter)
+                .expect("failed to retain the Canal include filter"),
+        };
+        let skip_errors = skip_parse_errors != 0;
+        into_handle(compose_metadata(
+            FORMAT_CANAL_JSON,
+            schema,
+            &format_options,
+            |schema, format_options| {
+                let options = parse_format_options(format_options);
+                let decoder = CdcJsonDecoder::new(
+                    schema,
+                    CdcDialect::Canal,
+                    crate::json::JsonEnv {
+                        mode: options.timestamp_mode,
+                        lenient: false,
+                        tree_duplicates: true,
+                    },
+                    skip_errors,
+                    options.json_reject_array_roots,
+                )
+                .with_include(CanalIncludeFilter::new(
+                    database != 0,
+                    table != 0,
+                    Box::new(verdicts),
+                ));
+                MessageDecoder {
+                    decoder: Box::new(decoder),
+                    skip_errors,
+                }
+            },
+        ))
+    })
 }

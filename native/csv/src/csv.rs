@@ -83,9 +83,14 @@ impl CsvDecoder {
     }
 
     pub(crate) fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
+        self.decode_traced(bodies).0
+    }
+
+    pub(crate) fn decode_traced(&self, bodies: &RecordBatch) -> (RecordBatch, Sources) {
         let column = bodies.column(0);
         let arity = self.schema.fields().len();
         let mut rows: Vec<Vec<Converted>> = Vec::with_capacity(bodies.num_rows());
+        let mut sources: Vec<u32> = Vec::with_capacity(bodies.num_rows());
         let mut fields_buf: Vec<u8> = Vec::new();
         let mut ends: Vec<usize> = Vec::new();
         for row in 0..bodies.num_rows() {
@@ -155,6 +160,7 @@ impl CsvDecoder {
                 }
             }
             rows.push(converted);
+            sources.push(row as u32);
         }
         let columns: Vec<ArrayRef> = self
             .schema
@@ -163,7 +169,9 @@ impl CsvDecoder {
             .enumerate()
             .map(|(i, field)| build_column(field.data_type(), &rows, i))
             .collect();
-        RecordBatch::try_new(self.schema.clone(), columns).expect("failed to build CSV batch")
+        let batch =
+            RecordBatch::try_new(self.schema.clone(), columns).expect("failed to build CSV batch");
+        (batch, Sources::from_rows(sources, bodies.num_rows()))
     }
 
     /// Reads the FIRST record of `input` like Jackson's `readValue`: skips the comment/blank

@@ -53,16 +53,22 @@ fn build_decoder(
     }
 }
 impl Decoder for crate::avro::AvroDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        self.decode_traced(body)
+    }
+    fn output_may_alias_input(&self) -> bool {
+        false
     }
     fn register_writer_schema(&mut self, id: u32, schema: &str) {
         self.register_writer_schema(id, schema);
     }
 }
 impl Decoder for AvroCdcDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        self.decode_traced(body)
+    }
+    fn output_may_alias_input(&self) -> bool {
+        false
     }
     fn register_writer_schema(&mut self, id: u32, schema: &str) {
         self.register_writer_schema(id, schema);
@@ -114,8 +120,8 @@ impl AvroCdcDecoder {
         self.envelope.register_writer_schema(id, schema);
     }
 
-    fn decode(&self, bodies: &RecordBatch) -> RecordBatch {
-        let envelope = self.envelope.decode(bodies);
+    fn decode_traced(&self, bodies: &RecordBatch) -> (RecordBatch, Sources) {
+        let (envelope, enveloped) = self.envelope.decode_traced(bodies);
         let before = envelope
             .column(0)
             .as_any()
@@ -133,29 +139,42 @@ impl AvroCdcDecoder {
             .expect("op string");
         let mut out_rows: Vec<(i8, usize, usize, RowSource)> =
             Vec::with_capacity(envelope.num_rows());
+        let mut sources = SourceRecorder::with_capacity(envelope.num_rows());
         for row in 0..envelope.num_rows() {
-            let op = if ops.is_valid(row) {
-                ops.value(row)
-            } else {
-                panic!("CDC message has no operation field");
-            };
-            let action = match CdcDialect::Debezium.classify(op) {
-                CdcOp::Change(action) => action,
-                CdcOp::Skip => continue,
-                CdcOp::Unknown => panic!("unknown CDC operation \"{op}\""),
-            };
-            cdc_emit(
-                &action,
-                row,
-                row,
-                CdcShape::BeforeAfter,
-                0,
-                before,
-                after,
-                &mut out_rows,
-            );
+            'message: {
+                let op = if ops.is_valid(row) {
+                    ops.value(row)
+                } else {
+                    panic!("CDC message has no operation field");
+                };
+                let action = match CdcDialect::Debezium.classify(op) {
+                    CdcOp::Change(action) => action,
+                    CdcOp::Skip => break 'message,
+                    CdcOp::Unknown => panic!("unknown CDC operation \"{op}\""),
+                };
+                cdc_emit(
+                    &action,
+                    row,
+                    row,
+                    CdcShape::BeforeAfter,
+                    row,
+                    before,
+                    after,
+                    &mut out_rows,
+                );
+            }
+            sources.message_done(row, out_rows.len());
         }
-        gather_cdc_batch(&out_rows, before, after, self.arity, &self.output)
+        let batch = gather_cdc_batch(
+            &out_rows,
+            before,
+            after,
+            self.arity,
+            &self.output,
+            &OldKeyPresence::new(0),
+        );
+        let sources = sources.finish(envelope.num_rows()).after(&enveloped);
+        (batch, sources)
     }
 }
 

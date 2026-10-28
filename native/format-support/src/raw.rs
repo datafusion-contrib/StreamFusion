@@ -121,7 +121,7 @@ pub fn binary_body(column: &ArrayRef, row: usize) -> Option<&[u8]> {
 }
 
 impl Decoder for RawDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        (self.decode(body), Sources::Identity)
     }
 }

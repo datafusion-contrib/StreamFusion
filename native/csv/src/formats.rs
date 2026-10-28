@@ -41,8 +41,11 @@ fn build_decoder(
     }
 }
 impl Decoder for crate::csv::CsvDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        self.decode_traced(body)
+    }
+    fn output_may_alias_input(&self) -> bool {
+        false
     }
 }
 #[no_mangle]

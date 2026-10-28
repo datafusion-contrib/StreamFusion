@@ -45,23 +45,33 @@ final class RegistryAvroDecoder extends NativeSchemaMessageDecoder {
   @Override
   public void beforeDecode(VarBinaryVector bodies, int count) {
     for (int i = 0; i < count; i++) {
-      byte[] message = bodies.get(i);
-      if (message == null || message.length < 5 || message[0] != 0) {
-        continue;
-      }
-      int id =
-          ((message[1] & 0xff) << 24)
-              | ((message[2] & 0xff) << 16)
-              | ((message[3] & 0xff) << 8)
-              | (message[4] & 0xff);
-      if (registeredSchemaIds.add(id)) {
-        try {
-          Schema writer = registry.fetchWriterSchema(id);
-          NativeAvroFormat.registerWriterSchema(
-              handle, id, ConfluentSchemaRegistry.alignedToReader(writer, readerSchema).toString());
-        } catch (IOException e) {
-          throw new UncheckedIOException(e);
-        }
+      registerWriterSchemaOf(bodies.get(i));
+    }
+  }
+
+  @Override
+  public void beforeDecode(byte[][] bodies, int count) {
+    for (int i = 0; i < count; i++) {
+      registerWriterSchemaOf(bodies[i]);
+    }
+  }
+
+  private void registerWriterSchemaOf(byte[] message) {
+    if (message == null || message.length < 5 || message[0] != 0) {
+      return;
+    }
+    int id =
+        ((message[1] & 0xff) << 24)
+            | ((message[2] & 0xff) << 16)
+            | ((message[3] & 0xff) << 8)
+            | (message[4] & 0xff);
+    if (registeredSchemaIds.add(id)) {
+      try {
+        Schema writer = registry.fetchWriterSchema(id);
+        NativeAvroFormat.registerWriterSchema(
+            handle, id, ConfluentSchemaRegistry.alignedToReader(writer, readerSchema).toString());
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
       }
     }
   }
@@ -69,6 +79,20 @@ final class RegistryAvroDecoder extends NativeSchemaMessageDecoder {
   @Override
   public void decodeInto(long inArray, long inSchema, long outArray, long outSchema) {
     NativeAvroFormat.decodeInto(handle, inArray, inSchema, outArray, outSchema);
+  }
+
+  @Override
+  public void decodeRecordsInto(
+      long slabAddress,
+      long slabLength,
+      long[] layout,
+      int count,
+      String topic,
+      int partition,
+      long outArray,
+      long outSchema) {
+    NativeAvroFormat.decodeRecordsInto(
+        handle, slabAddress, slabLength, layout, count, topic, partition, outArray, outSchema);
   }
 
   @Override

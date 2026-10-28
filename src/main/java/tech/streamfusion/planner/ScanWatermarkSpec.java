@@ -115,7 +115,8 @@ final class ScanWatermarkSpec {
     boolean valid =
         isEpochMillisTerm(term)
             ? fieldType.getSqlTypeName() == org.apache.calcite.sql.type.SqlTypeName.BIGINT
-            : FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(fieldType);
+            : identityTimestampCast(term) != null
+                || FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(fieldType);
     if (!valid) {
       return UNSUPPORTED;
     }
@@ -173,10 +174,43 @@ final class ScanWatermarkSpec {
     if (node instanceof RexInputRef) {
       return ((RexInputRef) node).getIndex();
     }
+    RexInputRef cast = identityTimestampCast(node);
+    if (cast != null) {
+      return cast.getIndex();
+    }
     if (isEpochMillisTerm(node)) {
       return ((RexInputRef) ((RexCall) node).getOperands().get(0)).getIndex();
     }
     return null;
+  }
+
+  /**
+   * The column an identity cast reads: a millisecond {@code TIMESTAMP_LTZ} column cast to the same
+   * type, as Flink pushes a watermark over a {@code TIMESTAMP_LTZ(3)} metadata rowtime. A cast to
+   * {@code TIMESTAMP} depends on the session time zone and is not an identity.
+   */
+  static RexInputRef identityTimestampCast(RexNode node) {
+    if (!(node instanceof RexCall)) {
+      return null;
+    }
+    RexCall call = (RexCall) node;
+    if ((call.getKind() != SqlKind.CAST && call.getKind() != SqlKind.REINTERPRET)
+        || call.getOperands().size() != 1
+        || !(call.getOperands().get(0) instanceof RexInputRef)) {
+      return null;
+    }
+    RexInputRef column = (RexInputRef) call.getOperands().get(0);
+    return isMillisLocalZonedTimestamp(column.getType())
+            && isMillisLocalZonedTimestamp(call.getType())
+        ? column
+        : null;
+  }
+
+  private static boolean isMillisLocalZonedTimestamp(
+      org.apache.calcite.rel.type.RelDataType type) {
+    return type.getSqlTypeName()
+            == org.apache.calcite.sql.type.SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+        && type.getPrecision() == 3;
   }
 
   /** Whether this is {@code TO_TIMESTAMP_LTZ(colRef, 3)} — millisecond precision only, matching the

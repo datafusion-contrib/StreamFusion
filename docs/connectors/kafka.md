@@ -57,6 +57,12 @@ export, or re-import Arrow binary input vectors. The decoded output still crosse
 Interface, while the parser buffers, schema lookup plan, and recursive appenders remain attached to
 the decoder handle across polls.
 
+Each native source reader reports its decode work beside Flink's own source metrics, the source-side
+twin of the sink's `nativeKafkaSerialization*` counters: `nativeKafkaDecodeBatches`,
+`nativeKafkaDecodeRecords` (the Kafka records decoded), `nativeKafkaDecodeRows` (the rows they
+produced) and `nativeKafkaDecodeNanos`. The end-to-end Kafka tests require them to account for every
+record read, so a job that substituted only downstream operators can't pass as a native decode.
+
 Native value decoding covers insert-only [JSON](formats/json.md), [CSV](formats/csv.md),
 [raw](formats/raw.md), bare [Avro](formats/avro.md), [Avro Confluent](formats/avro-confluent.md),
 and [Protobuf](formats/protobuf.md), plus the supported [CDC JSON](formats/cdc-json.md) envelopes
@@ -72,14 +78,55 @@ JSON, bare Avro, Avro Confluent, and Protobuf can push a physical-column project
 decode. CSV and raw decode their complete positional record. A keyed table currently also decodes
 the full value record.
 
+### Connector metadata
+
+Every metadata key of Flink's Kafka connector decodes natively over JSON, CSV and raw values and
+the CDC JSON dialects: `topic`, `partition`, `headers`, `leader-epoch`, `offset`, `timestamp` and
+`timestamp-type`. Each decoder reports which record every row came from, and the record's
+metadata is gathered through that, so a record that fans out into several rows (a Canal data list,
+a JSON array, an update's before and after images) repeats its metadata, and a record that yields
+no row (a tombstone, a filtered or skipped message) contributes none. The split reader writes the
+requested metadata into the same reusable direct buffer as the record values; the topic and
+partition are the split's.
+
+The values are Flink's exactly:
+
+- `headers` is the `HashMap` Flink builds from the record's headers, in that map's entry order: a
+  repeated key keeps its first position and its last value, and a NULL value stays NULL. The
+  order is observable downstream (map functions, casts to STRING, JSON sinks), so it is not left to
+  chance.
+- `leader-epoch` is NULL for a record without one.
+- `timestamp` is the record's timestamp as epoch milliseconds, `-1` included, and `timestamp-type`
+  is `NoTimestampType`, `CreateTime` or `LogAppendTime`.
+
+Reading a header by key (`hdrs['trace']`) stays native. Casting a header's bytes to `STRING` is a
+VARBINARY-to-VARCHAR cast native Calc doesn't run yet, so such a query stays on Flink. Flink casts
+the connector's `NOT NULL` headers map into a nullable `headers` column; Flink 2.2 runs that cast as
+the identity, but 1.18 rebuilds the map, so on 1.18 a query that emits the whole map from a nullable
+column stays on Flink. Declaring the column `MAP<STRING, BYTES> NOT NULL` needs no cast.
+
+A watermark over a `TIMESTAMP_LTZ(3)` metadata rowtime is regenerated natively, like a physical
+rowtime. `KafkaMetadataParityTest` pins every key against Flink's own record deserializer, including
+records no modern broker produces (no timestamp type, no leader epoch).
+
+On ten million JSON records reading `partition`, `offset`, `timestamp` and `headers`, a mini-batch
+aggregate ran 1.68× faster than the previous route (Flink's decode feeding native operators) and
+1.93× faster than stock Flink. See the
+[benchmark archive](../benchmarks/kafka-metadata-20261027/README.md).
+
 ### Source admission and fallbacks
 
-- A metadata column falls back because connector metadata is not present in the message value.
+- Connector metadata decodes natively (above). A value format's own metadata (a CDC format's
+  `value.*` keys, such as Canal's `value.database`), a keyed table that reads metadata, a table
+  whose columns are all metadata, and connector metadata over Avro, Avro Confluent, Debezium Avro
+  Confluent or Protobuf values (whose native decoders don't compose it yet) stay on Flink.
+- A `TIMESTAMP(3)` metadata rowtime reads the record timestamp through the session time zone and
+  stays on Flink; declare it `TIMESTAMP_LTZ(3)` to keep the watermark native.
 - A source bounded by anything other than `latest-offset` stays on Flink's stock source path.
 - Pushed periodic bounded-out-of-orderness watermarks (`rowtime` or `rowtime - INTERVAL constant`
   with non-negative day-time or year-month intervals, including chained subtractions)
   are regenerated from each partition's decoded Arrow batches, including the common
-  `TO_TIMESTAMP_LTZ(epoch_millis, 3)` rowtime form. Flink runs one generator per Kafka split and
+  `TO_TIMESTAMP_LTZ(epoch_millis, 3)` rowtime form and a `TIMESTAMP_LTZ(3)` metadata rowtime. Flink runs one generator per Kafka split and
   combines them with its normal minimum/idleness logic. On-event emission, watermark alignment,
   connector-defined source watermarks, CDC changelog tables, and other expressions stay on Flink.
   YEAR, MONTH and YEAR TO MONTH use Flink's calendar subtraction. The decoder computes

@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 base64.workspace = true
-streamfusion-bridge = { path = "../bridge" }
+streamfusion-bridge = { path = "../bridge", features = ["serde"] }
 arrow = { workspace = true, features = ["json"] }
 arrow-ord.workspace = true
 jni.workspace = true

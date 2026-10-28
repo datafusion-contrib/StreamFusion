@@ -38,6 +38,7 @@ failure.
 | A row type Flink's own Avro factory rejects at job submission (RAW and other unmapped types, TIMESTAMP_LTZ under the legacy mapping, TIMESTAMP/TIME precision beyond the mapping's limit, a non-string map key) | Declined at plan time — the provider runs the same schema/converter derivation Flink's factory runs, so the fallback reproduces Flink's exact submission failure instead of a native-planner abort. |
 | `TIME(0)` column | Flink keeps an avro `time-millis` value's full milliseconds in a TIME(0) column, while the Arrow boundary's second-precision form would truncate them. TIME(1..3) is native and exact — but SQL DDL resolves every `TIME(p)` column to TIME(0) in the catalog, so a TIME column in a SQL-defined table always stays on Flink; TIME(1..3) is reachable only through Table-API-defined schemas. |
 | `BINARY(n)` column | Flink accepts avro `bytes` of any length into a BINARY(n) column, which the boundary's fixed-size form can't hold. (VARBINARY is native; BINARY(n) *encodes* fine — see below.) |
+| A Kafka connector metadata column | The native Avro decoder doesn't compose [connector metadata](../kafka.md#connector-metadata) yet. |
 | `avro.encoding = 'json'` | Avro's JSON encoding is a different wire format the native decode doesn't read. |
 | A nested TIMESTAMP_LTZ column under `avro.timestamp_mapping.legacy = false` | Flink's own converter factory and schema derivation both reject this shape; the native gate mirrors the submission failure. |
 
