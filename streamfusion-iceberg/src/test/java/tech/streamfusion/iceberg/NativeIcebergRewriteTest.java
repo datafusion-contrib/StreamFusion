@@ -402,6 +402,77 @@ class NativeIcebergRewriteTest {
     }
   }
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void rewritePreservesTimeMicrosecondsThroughBorrowedFlinkViews(boolean sort) throws Exception {
+    var schema =
+        new org.apache.iceberg.Schema(
+            org.apache.iceberg.types.Types.NestedField.required(
+                1, "id", org.apache.iceberg.types.Types.IntegerType.get()),
+            org.apache.iceberg.types.Types.NestedField.optional(
+                2, "clock", org.apache.iceberg.types.Types.TimeType.get()));
+    var table =
+        new org.apache.iceberg.hadoop.HadoopTables(new org.apache.hadoop.conf.Configuration())
+            .create(
+                schema,
+                org.apache.iceberg.PartitionSpec.unpartitioned(),
+                Map.of("format-version", "2"),
+                temp.resolve("microseconds").toString());
+    var values = new java.util.TreeMap<Integer, java.time.LocalTime>();
+    values.put(0, java.time.LocalTime.ofNanoOfDay(1_234_567_000L));
+    values.put(1, java.time.LocalTime.ofNanoOfDay(1_000));
+    values.put(2, java.time.LocalTime.of(23, 59, 59, 999_999_000));
+    values.put(3, null);
+    values.put(4, java.time.LocalTime.ofNanoOfDay(1_234_566_000L));
+    var factory =
+        new GenericFileWriterFactory.Builder(table).dataFileFormat(FileFormat.PARQUET).build();
+    var input =
+        factory.newDataWriter(
+            table
+                .encryption()
+                .encrypt(table.io().newOutputFile(table.location() + "/input.parquet")),
+            table.spec(),
+            null);
+    try (input) {
+      for (var entry : values.entrySet()) {
+        var row = GenericRecord.create(schema);
+        row.setField("id", entry.getKey());
+        row.setField("clock", entry.getValue());
+        input.write(row);
+      }
+    }
+    table.newAppend().appendFile(input.toDataFile()).commit();
+    if (sort)
+      table.replaceSortOrder().asc("clock", org.apache.iceberg.NullOrder.NULLS_LAST).commit();
+    long snapshot = table.currentSnapshot().snapshotId();
+    var planner = new BinPackRewriteFilePlanner(table, Expressions.alwaysTrue(), snapshot, true);
+    planner.init(Map.of("rewrite-all", "true"));
+    var rewritten = new LinkedHashSet<RewriteFileGroup>();
+    try (var groups = planner.plan().groups()) {
+      for (var group : groups) {
+        group.setOutputFiles(
+            IcebergRewriteFiles.rewrite(table, group, 0, 0, sort, 2L << 20, temp.toString()));
+        rewritten.add(group);
+      }
+    }
+    new RewriteDataFilesCommitManager(table, snapshot).commitOrClean(rewritten);
+    table.refresh();
+    var actual = new java.util.TreeMap<Integer, java.time.LocalTime>();
+    var order = new ArrayList<Integer>();
+    try (var rows = IcebergGenerics.read(table).build()) {
+      for (var row : rows) {
+        int id = (Integer) row.getField("id");
+        actual.put(id, (java.time.LocalTime) row.getField("clock"));
+        order.add(id);
+      }
+    }
+    assertEquals(values, actual);
+    assertEquals(sort ? List.of(1, 4, 0, 2, 3) : List.of(0, 1, 2, 3, 4), order);
+    table.updateSpec().addField("clock").commit();
+    assertThrows(
+        IllegalArgumentException.class, () -> IcebergRewriteFiles.validateTable(table, sort));
+  }
+
   private static void assertNativeFile(
       org.apache.iceberg.Table table, org.apache.iceberg.DataFile file) throws Exception {
     try (var footer =

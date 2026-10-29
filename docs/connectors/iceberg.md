@@ -302,6 +302,10 @@ normal delete implementation. Null matching and delete-sequence applicability re
 covered by stock-reader comparisons. The membership filter’s retained arrays and
 per-key objects have an estimated task off-heap charge; internal decoder and
 transient build allocations remain opaque.
+Iceberg TIME payloads keep their full microsecond precision in Arrow through reading,
+sorting and writing. Borrowed Flink TIME views expose milliseconds for control
+access only; output partition specs using TIME fields remain outside native
+maintenance admission because their Java routing wrapper cannot preserve microseconds.
 V3 rewrites read and persist `_row_id` and `_last_updated_sequence_number` alongside
 the payload so physical row reordering does not assign new identities. Java's
 original partition and rolling writer traverses borrowed Arrow views; only selected
@@ -314,7 +318,8 @@ Maintenance shares source/sink admission and effective Parquet settings, includi
 codecs, compression levels, page/row-group sizing, field IDs and Java metrics policy.
 It admits verified scalar schemas, plaintext Parquet files, table versions 1–3 and
 verified delete-key types. Nested schemas, non-null initial defaults, encryption,
-unsupported Parquet controls and TIME equality-delete keys remain outside coverage.
+unsupported Parquet controls, TIME partition routing and TIME equality-delete keys
+remain outside maintenance coverage.
 Sorting currently supports identity fields with ascending/descending and explicit
 null placement; transformed sort keys and Z-order are outside coverage. DataFusion's
 existing external sort owns ordering, merge and spill. Its configured memory pool is

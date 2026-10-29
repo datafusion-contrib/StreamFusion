@@ -23,6 +23,7 @@ final class IcebergRewriteFiles {
 
   static void validate(Table table, RewriteFileGroup group, boolean sort) {
     validateTable(table, sort);
+    validatePartitionSpec(table, table.specs().get(group.outputSpecId()));
     for (var task : group.fileScanTasks()) {
       if (!IcebergArrowReaderFunction.nativeTask(task, table.schema(), List.of()))
         throw new IllegalArgumentException(
@@ -34,6 +35,7 @@ final class IcebergRewriteFiles {
     if (!IcebergSinkAdapter.compatible())
       throw new IllegalArgumentException("Unverified Iceberg maintenance version");
     NativeIcebergSink.validate(table, new Configuration(), java.util.Map.of());
+    validatePartitionSpec(table, table.spec());
     for (var field : table.schema().columns()) {
       if (field.initialDefault() != null)
         throw new IllegalArgumentException("Non-null initial rewrite defaults are not admitted");
@@ -44,6 +46,18 @@ final class IcebergRewriteFiles {
           throw new IllegalArgumentException(
               "Native rewrite sorting requires identity sort fields");
       }
+    }
+  }
+
+  private static void validatePartitionSpec(Table table, org.apache.iceberg.PartitionSpec spec) {
+    for (var field : spec.fields()) {
+      var type = table.schema().findType(field.sourceId());
+      if (type == null)
+        throw new IllegalArgumentException(
+            "Output partition field is absent from the current schema");
+      if (type.typeId() == org.apache.iceberg.types.Type.TypeID.TIME)
+        throw new IllegalArgumentException(
+            "Flink TIME partition routing cannot preserve microseconds");
     }
   }
 
@@ -97,9 +111,7 @@ final class IcebergRewriteFiles {
             null);
     adapter.initialize(taskId, attemptId);
     var writer = adapter.create();
-    var arrowSchema =
-        tech.streamfusion.arrow.ArrowFileBatch.schema(
-            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(type));
+    var arrowSchema = IcebergNativeTaskReader.arrowSchema(writeSchema, true);
     try (writer) {
       try (var sorter =
           sort && table.sortOrder().isSorted()

@@ -85,3 +85,9 @@ than SQL IN's three-valued result. The filter's retained arrays and per-key obje
 are charged with an estimate because DataFusion does not expose the static filter's
 allocation size. This exception applies to maintenance's complete-schema reader;
 streaming-source dispatch is unchanged apart from the V3 admission upgrade.
+
+Maintenance retains Iceberg TIME payloads in microsecond Arrow vectors. The existing
+borrowed Flink views can read those vectors for controls using their millisecond
+interface; the native encoder still sees the original microseconds. TIME output
+partition keys are excluded because the stock Java partition wrapper reconstructs
+TIME from that lossy millisecond view. Sorting uses the original Arrow values.

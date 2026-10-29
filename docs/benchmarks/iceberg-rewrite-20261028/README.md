@@ -69,3 +69,9 @@ module selection (13 existing batch exclusions), plus focused wholly-deleted-fil
 V3 mid-file savepoint/rescaling and sort-failure cleanup checks. Seven native unit tests pass, including
 forced external-sort spill and byte/statistics parity with the pinned Iceberg writer.
 Sorting is verified for order, metadata and V3 lineage but is outside this timing.
+
+The recorded cohorts use the main implementation subsequently committed in
+`5f595536adef0d4015f23b3aa9b1b57bdb029609`. A follow-up preserves microsecond TIME
+payloads through borrowed Flink views and excludes TIME partition routing. The
+integer/string benchmark corpus and native DSO are unchanged; TIME correctness and
+ordering are tested separately, with no TIME throughput claim.

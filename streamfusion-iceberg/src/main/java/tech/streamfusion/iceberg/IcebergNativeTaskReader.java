@@ -87,7 +87,7 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
       boolean caseSensitive,
       String nameMapping,
       IcebergReadCancellation cancellation,
-      boolean columnarEqualitySets)
+      boolean rewrite)
       throws IOException {
     this.cancellation = cancellation;
     if (task.isDataTask()
@@ -105,7 +105,7 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     descriptor.put("length", task.length());
     descriptor.set("project_ids", mapper.valueToTree(projection));
     descriptor.put("case_sensitive", caseSensitive);
-    descriptor.put("columnar_equality_sets", columnarEqualitySets);
+    descriptor.put("columnar_equality_sets", rewrite);
     descriptor.set("first_row_id", mapper.valueToTree(task.file().firstRowId()));
     descriptor.set("data_sequence_number", mapper.valueToTree(task.file().dataSequenceNumber()));
     descriptor.set(
@@ -148,13 +148,10 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     }
     var readSchema = org.apache.iceberg.MetadataColumns.schemaWithRowLineage(schema);
     var selected = new Schema(projection.stream().map(readSchema::findField).toList());
-    outputType =
-        tech.streamfusion.arrow.ArrowFileBatch.schema(
-            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
-                org.apache.iceberg.flink.FlinkSchemaUtil.convert(selected)));
+    outputType = arrowSchema(selected, rewrite);
     files = new IcebergTaskFiles(io, lengths);
     try (var outputSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      if (columnarEqualitySets)
+      if (rewrite)
         equalityMemoryOwner = TaskOffHeapMemory.registerOwner("iceberg-rewrite", "equality-sets");
       if (cancellation != null) cancellation.add(files);
       Data.exportSchema(
@@ -180,6 +177,32 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
       TaskOffHeapMemory.closeOwner(equalityMemoryOwner);
       throw failure;
     }
+  }
+
+  static org.apache.arrow.vector.types.pojo.Schema arrowSchema(Schema schema, boolean rewrite) {
+    var arrow =
+        tech.streamfusion.arrow.ArrowFileBatch.schema(
+            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
+                org.apache.iceberg.flink.FlinkSchemaUtil.convert(schema)));
+    if (!rewrite) return arrow;
+    var fields =
+        arrow.getFields().stream()
+            .map(
+                field -> {
+                  if (!(field.getType()
+                      instanceof org.apache.arrow.vector.types.pojo.ArrowType.Time)) return field;
+                  return new org.apache.arrow.vector.types.pojo.Field(
+                      field.getName(),
+                      new org.apache.arrow.vector.types.pojo.FieldType(
+                          field.isNullable(),
+                          new org.apache.arrow.vector.types.pojo.ArrowType.Time(
+                              org.apache.arrow.vector.types.TimeUnit.MICROSECOND, 64),
+                          field.getDictionary(),
+                          field.getMetadata()),
+                      field.getChildren());
+                })
+            .toList();
+    return new org.apache.arrow.vector.types.pojo.Schema(fields, arrow.getCustomMetadata());
   }
 
   public VectorSchemaRoot next() {
