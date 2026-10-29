@@ -173,7 +173,7 @@ state in one of ten unaligned fault runs; retaining it passed the stress run and
 combined suite. Captured-channel tests also verify changing keyed values after rescaling.
 `bin/flink-suite.sh iceberg` requires
 matching published upstream streaming cases on stock and StreamFusion. The
-[current validation](../benchmarks/iceberg-boundary-round2-20261017/validation/summary.json) passes 303 tests
+[earlier streaming validation](../benchmarks/iceberg-boundary-round2-20261017/validation/summary.json) passes 303 tests
 with 13 batch exclusions, plus six release Rust unit tests. Native
 Criterion's `iceberg_io` suite separately exercises 126 release fixtures across
 encoding, routing, task reads, and scalar adaptation;

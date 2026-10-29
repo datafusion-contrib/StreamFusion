@@ -86,6 +86,12 @@ When native support changes, update those expectations alongside the upstream co
 These checks establish correct results and the expected execution path; throughput claims
 still require explicit release-mode comparisons against stock Flink and previous behavior.
 
+The nested-scalar release comparison pins a historical runtime whose Calc metrics use
+`NativeCalcExecNode[...]`. Its Rust arithmetic control must show positive consumed
+rows under that historical name. Candidate checks retain the detailed `NativeCalc(...)`
+name, and fallback controls require zero native operators. This compatibility changes
+only metric-name recognition; workloads, timing and the pinned baseline stay unchanged.
+
 ## Shared debug native libraries
 
 Ordinary CI builds all workspace debug native libraries once in a dedicated Ubuntu 24.04
