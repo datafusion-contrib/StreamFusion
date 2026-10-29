@@ -78,16 +78,28 @@ forbidden connector dependencies; all other format/connector checks are unchange
 
 A release profile found RC3's equality predicate tree repeatedly comparing every row
 with thousands of delete values. Maintenance therefore composes the same Iceberg
-Parquet decoder with DataFusion's existing static membership kernel for single
-integer/long/string keys. Payloads stay Arrow arrays; composite and other keys keep
-Iceberg's normal delete path. Null-safe keep masks preserve Iceberg semantics rather
+Parquet decoder with DataFusion's existing static membership kernel for integer/long/string keys. Composite keys use an Arrow struct view and
+DataFusion's generic hash membership; struct-descendant leaves use its existing
+get-field expression. Other flat key types keep Iceberg's normal delete path. Null-safe keep masks preserve Iceberg semantics rather
 than SQL IN's three-valued result. The filter's retained arrays and per-key objects
 are charged with an estimate because DataFusion does not expose the static filter's
-allocation size. This exception applies to maintenance's complete-schema reader;
-streaming-source dispatch is unchanged apart from the V3 admission upgrade.
+allocation size. This path applies to maintenance and nested-schema source tasks; flat streaming
+sources retain the original RC3 delete implementation.
 
 Maintenance retains Iceberg TIME payloads in microsecond Arrow vectors. The existing
 borrowed Flink views can read those vectors for controls using their millisecond
 interface; the native encoder still sees the original microseconds. TIME output
 partition keys are excluded because the stock Java partition wrapper reconstructs
 TIME from that lossy millisecond view. Sorting uses the original Arrow values.
+
+Nested payload support follows Comet's borrowed nested Arrow views. Iceberg RC3's
+schema transformer only evolves top-level fields, so the decoder receives a schema
+with physical nested shape and logical primitive promotions, followed by field-ID
+alignment over Arrow arrays. This narrow adapter handles rename/reorder/nullable
+additions without replacing Parquet decoding. Struct parent validity is overlaid on
+children before DataFusion extracts nested keys; child value buffers remain shared.
+Nested legacy name mappings, pushed nested predicates and nested partition source
+fields remain outside read/maintenance admission because RC3 does not implement
+their full nested contracts. Java still owns grouping, sorting policy, partitioning,
+rolling, triggering, checkpoints and commits. Spill counters observe DataFusion's
+existing sort metrics; they do not change its algorithm.

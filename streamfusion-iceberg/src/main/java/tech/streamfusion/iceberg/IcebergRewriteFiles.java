@@ -21,6 +21,11 @@ import tech.streamfusion.operator.ArrowBatch;
 final class IcebergRewriteFiles {
   private IcebergRewriteFiles() {}
 
+  static final class Statistics {
+    long sortSpills;
+    long sortSpillBytes;
+  }
+
   static void validate(Table table, RewriteFileGroup group, boolean sort) {
     validateTable(table, sort);
     validatePartitionSpec(table, table.specs().get(group.outputSpecId()));
@@ -36,10 +41,12 @@ final class IcebergRewriteFiles {
       throw new IllegalArgumentException("Unverified Iceberg maintenance version");
     NativeIcebergSink.validate(table, new Configuration(), java.util.Map.of());
     validatePartitionSpec(table, table.spec());
-    for (var field : table.schema().columns()) {
-      if (field.initialDefault() != null)
-        throw new IllegalArgumentException("Non-null initial rewrite defaults are not admitted");
-    }
+    for (var spec : table.specs().values())
+      NativeIcebergSink.validateReadPartitionSpec(table, spec);
+    NativeIcebergSink.validateSchema(table.schema(), true);
+    if (table.properties().containsKey(org.apache.iceberg.TableProperties.DEFAULT_NAME_MAPPING)
+        && table.schema().columns().stream().anyMatch(f -> f.type().isNestedType()))
+      throw new IllegalArgumentException("Nested name-mapped files retain stock readers");
     if (sort) {
       for (var field : table.sortOrder().fields()) {
         if (!field.transform().isIdentity())
@@ -75,6 +82,20 @@ final class IcebergRewriteFiles {
       boolean sort,
       long sortMemory,
       String spillDirectory)
+      throws Exception {
+    return rewrite(
+        table, group, taskId, attemptId, sort, sortMemory, spillDirectory, new Statistics());
+  }
+
+  static Set<DataFile> rewrite(
+      Table table,
+      RewriteFileGroup group,
+      int taskId,
+      int attemptId,
+      boolean sort,
+      long sortMemory,
+      String spillDirectory,
+      Statistics statistics)
       throws Exception {
     validate(table, group, sort);
     Schema writeSchema =
@@ -144,6 +165,9 @@ final class IcebergRewriteFiles {
           sorter.finish();
           org.apache.arrow.vector.VectorSchemaRoot root;
           while ((root = sorter.next()) != null) writer.write(new ArrowBatch(root));
+          var sorted = sorter.statistics();
+          statistics.sortSpills += sorted[0];
+          statistics.sortSpillBytes += sorted[1];
         }
         return new LinkedHashSet<>(List.of(writer.complete().dataFiles()));
       } catch (Throwable failure) {

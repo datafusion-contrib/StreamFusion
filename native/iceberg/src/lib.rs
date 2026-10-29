@@ -10,9 +10,11 @@ use streamfusion_bridge::{
 streamfusion_bridge::link_allocator!();
 mod equality;
 mod input;
+mod nan_counts;
 mod reader;
 mod routing;
 mod scan_range;
+mod schema;
 mod sort;
 mod storage;
 mod task_metadata;
@@ -33,13 +35,14 @@ pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_createSort(
             "Rewrite sort budget must be at least 1 MiB"
         );
         let keys: String = env.get_string(&keys_json).expect("Sort keys").into();
-        let keys: Vec<(usize, bool, bool)> =
+        let keys: Vec<(usize, Vec<String>, bool, bool)> =
             serde_json::from_str(&keys).expect("Sort key descriptors");
         let keys = keys
             .into_iter()
-            .map(|(index, descending, nulls_first)| {
+            .map(|(index, children, descending, nulls_first)| {
                 (
                     index,
+                    children,
                     arrow::compute::SortOptions {
                         descending,
                         nulls_first,
@@ -113,6 +116,21 @@ pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_closeSort(
     jni_guard(env, |_| {
         let mut sorter = unsafe { from_handle::<sort::Sorter>(handle) };
         reader::runtime().block_on(sorter.close());
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_iceberg_NativeIceberg_sortStatistics(
+    env: JNIEnv,
+    _: JClass,
+    handle: jlong,
+) -> jni::sys::jlongArray {
+    jni_guard(env, |env| {
+        let sorter = unsafe { &*(handle as *const sort::Sorter) };
+        let result = env.new_long_array(2).expect("Sort statistics array");
+        env.set_long_array_region(&result, 0, &sorter.statistics())
+            .expect("Sort statistics");
+        result.into_raw()
     })
 }
 

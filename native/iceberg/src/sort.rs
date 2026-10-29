@@ -6,8 +6,8 @@ use datafusion_execution::config::SessionConfig;
 use datafusion_execution::memory_pool::GreedyMemoryPool;
 use datafusion_execution::runtime_env::RuntimeEnvBuilder;
 use datafusion_execution::TaskContext;
-use datafusion_physical_expr::expressions::Column;
-use datafusion_physical_expr::{LexOrdering, PhysicalSortExpr};
+use datafusion_physical_expr::expressions::{Column, Literal};
+use datafusion_physical_expr::{LexOrdering, PhysicalExpr, PhysicalSortExpr, ScalarFunctionExpr};
 use datafusion_physical_plan::sorts::sort::SortExec;
 use datafusion_physical_plan::stream::RecordBatchReceiverStreamBuilder;
 use datafusion_physical_plan::streaming::{PartitionStream, StreamingTableExec};
@@ -48,14 +48,13 @@ pub(crate) struct Sorter {
     input: Option<Sender<Result<RecordBatch>>>,
     output: Receiver<Result<RecordBatch>>,
     driver: Option<JoinHandle<()>>,
-    #[cfg(test)]
     plan: Arc<SortExec>,
 }
 
 impl Sorter {
     pub(crate) fn new(
         schema: SchemaRef,
-        keys: Vec<(usize, SortOptions)>,
+        keys: Vec<(usize, Vec<String>, SortOptions)>,
         memory: usize,
         spill_path: &str,
     ) -> Result<Self> {
@@ -74,13 +73,32 @@ impl Sorter {
             false,
             None,
         )?);
-        let ordering = LexOrdering::new(keys.into_iter().map(|(index, options)| {
-            PhysicalSortExpr::new(
-                Arc::new(Column::new(schema.field(index).name(), index)),
-                options,
-            )
-        }))
-        .ok_or_else(|| DataFusionError::Plan("Rewrite sort requires keys".into()))?;
+        let expressions = keys
+            .into_iter()
+            .map(|(index, children, options)| {
+                let column: Arc<dyn PhysicalExpr> =
+                    Arc::new(Column::new(schema.field(index).name(), index));
+                let expression = if children.is_empty() {
+                    column
+                } else {
+                    let mut args = vec![column];
+                    args.extend(children.into_iter().map(|name| {
+                        Arc::new(Literal::new(datafusion_common::ScalarValue::Utf8(Some(
+                            name,
+                        )))) as Arc<dyn PhysicalExpr>
+                    }));
+                    Arc::new(ScalarFunctionExpr::try_new(
+                        datafusion_functions::core::get_field(),
+                        args,
+                        &schema,
+                        Default::default(),
+                    )?)
+                };
+                Ok(PhysicalSortExpr::new(expression, options))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let ordering = LexOrdering::new(expressions)
+            .ok_or_else(|| DataFusionError::Plan("Rewrite sort requires keys".into()))?;
         let plan = Arc::new(SortExec::new(ordering, source));
         let resources = RuntimeEnvBuilder::new()
             .with_memory_pool(Arc::new(GreedyMemoryPool::new(memory)))
@@ -101,7 +119,6 @@ impl Sorter {
             resources,
         ));
         let (sender, output) = tokio::sync::mpsc::channel(1);
-        #[cfg(test)]
         let measured_plan = plan.clone();
         let driver = runtime.spawn(async move {
             let mut sorted = match plan.execute(0, context) {
@@ -123,7 +140,6 @@ impl Sorter {
             input: Some(input),
             output,
             driver: Some(driver),
-            #[cfg(test)]
             plan: measured_plan,
         })
     }
@@ -139,6 +155,14 @@ impl Sorter {
 
     pub(crate) fn finish(&mut self) {
         self.input.take();
+    }
+
+    pub(crate) fn statistics(&self) -> [i64; 2] {
+        let metrics = self.plan.metrics().expect("Rewrite sort metrics");
+        [
+            metrics.spill_count().unwrap_or(0) as i64,
+            metrics.spilled_bytes().unwrap_or(0) as i64,
+        ]
     }
 
     pub(crate) async fn next(&mut self) -> Result<Option<RecordBatch>> {
@@ -192,6 +216,7 @@ mod tests {
                 schema.clone(),
                 vec![(
                     0,
+                    vec![],
                     SortOptions {
                         descending: false,
                         nulls_first: true,

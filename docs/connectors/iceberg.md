@@ -8,7 +8,7 @@ the stock connector through the normal admission checks.
 The admitted path is the normal legacy sink, unencrypted
 format-v1/v2/v3 Parquet, distribution `none`/`hash`/`range`, and verified integer, long, string,
 boolean, binary, date, float, double, decimal, time, and microsecond timestamp
-columns (with and without a time zone). Java fanout handles partitioned append; a
+columns (with and without a time zone), recursively inside structs, lists and maps. Java fanout handles partitioned append; a
 four-bucket test verifies interleaved Arrow selections and independent rolling.
 Java's original partition/key selector assigns destinations through borrowed Arrow
 views. Rust splits the batches, then the existing columnar key-group exchange
@@ -18,8 +18,8 @@ identifier fields also admit INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE and the
 normal upsert option. SQL primary keys must match the table identifier fields;
 upsert materialization retains the stock sink. Java retains equality/position
 delete encoding, partition validation, and key bookkeeping. For keyed tables,
-`range` keeps Iceberg's normal hash fallback. Nested
-structs/lists/maps, fixed-width binary/UUID, nanosecond timestamps, arbitrary dynamic
+`range` keeps Iceberg's normal hash fallback. Fixed-width binary/UUID,
+nanosecond timestamps, arbitrary dynamic
 payload generators, normal Sink V2, and unknown writer-affecting options retain the
 stock SQL sink. The dynamic DataStream API is described below.
 
@@ -72,7 +72,7 @@ assignments, SQL entry points, and restoration of learned statistics at parallel
 `nativeRangeStatisticsUpdates` exposes applied host assignments.
 
 The `NativeIcebergDynamicSink.append` API accepts Arrow input, one fixed
-scalar payload schema and a routing-only callback. The callback returns destination,
+payload schema and a routing-only callback. The callback returns destination,
 branch, spec, distribution, parallelism and key settings; it cannot replace the payload.
 The original dynamic processor/updater perform catalog operations, table/branch creation
 and Java routing. Both forward and shuffled paths carry target metadata plus Arrow IPC
@@ -218,9 +218,14 @@ component gains, focused streaming confirmation and slower dynamic writer result
 The SQL source now retains the released FLIP-27 streaming source,
 including snapshot discovery, assigners, watermarks, split serializers and coordinator
 state. It emits Arrow batches with logical row offsets and counts rows in source IO
-metrics. SQL admission covers plaintext v1/v2/v3 tables, verified top-level scalar types,
-projection (including zero columns), case sensitivity, source filters, partition constants,
-and name mappings. Host split watermarks retain the original emitter and ordered assigner.
+metrics. SQL admission covers plaintext v1/v2/v3 tables, verified scalar leaves inside
+struct/list/map payloads, pruned nested projection (including zero columns), case
+sensitivity, top-level scalar source filters and partition constants. Nested layouts evolve
+by Iceberg field ID through rename, reorder, nullable additions and supported primitive
+promotions. RC3's decoder retains the physical nested shape; a columnar adapter then
+aligns it to the requested logical Arrow schema. Null struct parents mask child validity
+before nested equality/sort expressions read the children. Value buffers remain shared
+where no cast or gather is needed. Legacy name mappings remain admitted for flat schemas. Host split watermarks retain the original emitter and ordered assigner.
 Matching scan contracts can share one source through the normal planner reuse pass.
 
 Each file task has an explicit dispatch contract: admitted plaintext Parquet data/delete
@@ -230,7 +235,8 @@ its output to Arrow. Source counters `nativeParquetTasks` and `stockFallbackTask
 that distinction visible. Mixed Parquet/Avro/ORC tasks preserve file ordinals and restored
 logical offsets with changed batch sizes. This fallback is not native read coverage.
 
-Bounded reads, limits, metadata tables, nested schemas, non-null initial defaults,
+Bounded reads, limits, metadata tables, nested predicate pushdown, nested partition
+source fields, nested schemas with legacy name mappings, non-null initial defaults,
 TIME/binary predicates and unsupported source abilities keep the stock
 SQL source. Java-owned streaming
 snapshot policy remains unchanged; this does not add CDC semantics to append scans.
@@ -295,10 +301,13 @@ The API rejects unsupported native contracts before submission.
 Rust reads Parquet into Arrow, applies v2 position/equality deletes or v3 Puffin
 vectors/equality deletes, and writes Parquet again through the existing native sink
 appender. Sequence-number applicability is decided by Iceberg's planned tasks.
-For single integer, long or string equality keys, maintenance uses the existing
-Iceberg decoder plus DataFusion’s static membership filter. This avoids RC3’s large
-per-delete predicate tree. Composite keys and other admitted types use Iceberg’s
-normal delete implementation. Null matching and delete-sequence applicability remain
+For integer, long or string equality keys, maintenance uses the existing Iceberg
+decoder plus DataFusion's static membership filter, including composite tuples and
+struct-descendant leaves. Composite arrays form Arrow struct views; inner nulls compare
+equal, including null parent structs. This avoids RC3's large per-delete predicate
+tree without converting payload rows. Nested-schema source tasks use the same filter.
+Flat sources and other admitted flat key types retain Iceberg's normal delete path.
+Keys inside lists/maps and other nested-key types retain the stock task reader. Null matching and delete-sequence applicability remain
 covered by stock-reader comparisons. The membership filter’s retained arrays and
 per-key objects have an estimated task off-heap charge; internal decoder and
 transient build allocations remain opaque.
@@ -316,16 +325,31 @@ introduced. Flink edges transport file-group metadata rather than payload rows.
 
 Maintenance shares source/sink admission and effective Parquet settings, including
 codecs, compression levels, page/row-group sizing, field IDs and Java metrics policy.
-It admits verified scalar schemas, plaintext Parquet files, table versions 1–3 and
-verified delete-key types. Nested schemas, non-null initial defaults, encryption,
-unsupported Parquet controls, TIME partition routing and TIME equality-delete keys
-remain outside maintenance coverage.
-Sorting currently supports identity fields with ascending/descending and explicit
-null placement; transformed sort keys and Z-order are outside coverage. DataFusion's
+It admits verified scalar leaves recursively inside struct/list/map payloads, plaintext
+Parquet files, table versions 1–3 and verified delete-key types. Nested name mappings,
+nested partition source fields, non-null initial defaults, encryption, unsupported
+Parquet controls, TIME partition routing and TIME equality-delete keys remain outside
+maintenance coverage. Nested equality keys must be integer/long/string struct descendants;
+unsupported groups retain the original worker before any native file opens.
+Sorting currently supports identity fields, including struct-descendant scalar keys,
+with ascending/descending and explicit null placement; transformed sort keys and Z-order are outside coverage. DataFusion's
 existing external sort owns ordering, merge and spill. Its configured memory pool is
 reserved against task off-heap memory, with source/output Arrow retention additionally
 accounted. Spill files use Flink's task spill directory. Transient codec allocations
-retain the source/sink accounting limits described above.
+retain the source/sink accounting limits described above. Worker counters
+`nativeRewriteSortSpills` and `nativeRewriteSortSpillBytes` expose actual sort spills;
+group/error counters retain one registered counter across successive groups.
+
+Upstream rewrite SQL action tests preserve their planner/commit implementation and
+assertions under a test-only file-worker adapter, including filters and stale-snapshot
+equality-delete conflicts. The published streaming rewrite suite runs against stock
+and native workers, covering branches, metrics and V3 lineage. See the
+[upstream validation scope](../upstream-flink-suite.md) for the Hadoop fixture scope,
+format fallbacks and the distinction between SQL setup and streaming maintenance.
+
+The [sorted/equality maintenance comparison](../benchmarks/iceberg-nested-20261029/README.md)
+separates complete continuous-job commit latency from file-worker throughput and
+includes forced spilling and nested payloads.
 
 The [release rewrite comparison](../benchmarks/iceberg-rewrite-20261028/README.md)
 measures unsorted file processing against stock Flink at 400k and 2M rows, including

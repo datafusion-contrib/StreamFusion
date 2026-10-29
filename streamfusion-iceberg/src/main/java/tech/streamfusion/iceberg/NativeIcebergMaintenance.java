@@ -29,6 +29,27 @@ import tech.streamfusion.operator.NativeAllocator;
 public final class NativeIcebergMaintenance {
   private NativeIcebergMaintenance() {}
 
+  private static final class RewriteMetrics {
+    final org.apache.flink.metrics.Counter nativeGroups,
+        stockGroups,
+        errors,
+        sortSpills,
+        sortSpillBytes;
+
+    RewriteMetrics(org.apache.flink.metrics.MetricGroup group) {
+      nativeGroups = group.counter("nativeRewriteGroups");
+      stockGroups = group.counter("stockRewriteGroups");
+      errors = group.counter("nativeRewriteErrors");
+      sortSpills = group.counter("nativeRewriteSortSpills");
+      sortSpillBytes = group.counter("nativeRewriteSortSpillBytes");
+    }
+
+    void sorted(IcebergRewriteFiles.Statistics statistics) {
+      sortSpills.inc(statistics.sortSpills);
+      sortSpillBytes.inc(statistics.sortSpillBytes);
+    }
+  }
+
   /** Runs Iceberg's bin-pack plan and commit manager with native file processing in Flink. */
   public static List<RewriteFileGroup> rewriteDataFiles(
       StreamExecutionEnvironment env,
@@ -75,6 +96,7 @@ public final class NativeIcebergMaintenance {
       implements OneInputStreamOperator<RewriteFileGroup, RewriteFileGroup> {
     private final SerializableTable table;
     private final boolean sort;
+    private transient RewriteMetrics metrics;
 
     RewriteOperator(SerializableTable table, boolean sort) {
       this.table = table;
@@ -85,11 +107,13 @@ public final class NativeIcebergMaintenance {
     public void open() throws Exception {
       super.open();
       NativeAllocator.initializeFor(this);
+      metrics = new RewriteMetrics(getMetricGroup());
     }
 
     @Override
     public void processElement(StreamRecord<RewriteFileGroup> record) throws Exception {
       var group = record.getValue();
+      var statistics = new IcebergRewriteFiles.Statistics();
       group.setOutputFiles(
           IcebergRewriteFiles.rewrite(
               table,
@@ -98,10 +122,10 @@ public final class NativeIcebergMaintenance {
               getRuntimeContext().getTaskInfo().getAttemptNumber(),
               sort,
               64L << 20,
-              getContainingTask()
-                  .getEnvironment()
-                  .getIOManager()
-                  .getSpillingDirectoriesPaths()[0]));
+              getContainingTask().getEnvironment().getIOManager().getSpillingDirectoriesPaths()[0],
+              statistics));
+      metrics.sorted(statistics);
+      metrics.nativeGroups.inc();
       output.collect(record);
     }
   }
@@ -192,6 +216,13 @@ public final class NativeIcebergMaintenance {
     private final boolean sort;
     private final long sortMemoryBytes;
     private transient String spillDirectory;
+    private transient RewriteMetrics metrics;
+
+    @Override
+    public void open(org.apache.flink.api.common.functions.OpenContext context) {
+      super.open(context);
+      metrics = new RewriteMetrics(getRuntimeContext().getMetricGroup());
+    }
 
     Runner(String table, String task, int index, boolean sort, long sortMemoryBytes) {
       super(table, task, index);
@@ -209,11 +240,12 @@ public final class NativeIcebergMaintenance {
       try {
         IcebergRewriteFiles.validate(table, group, sort);
       } catch (IllegalArgumentException unsupported) {
-        getRuntimeContext().getMetricGroup().counter("stockRewriteGroups").inc();
+        metrics.stockGroups.inc();
         super.processElement(planned, context, out);
         return;
       }
       try {
+        var statistics = new IcebergRewriteFiles.Statistics();
         group.setOutputFiles(
             IcebergRewriteFiles.rewrite(
                 table,
@@ -222,7 +254,9 @@ public final class NativeIcebergMaintenance {
                 getRuntimeContext().getTaskInfo().getAttemptNumber(),
                 sort,
                 sortMemoryBytes,
-                spillDirectory));
+                spillDirectory,
+                statistics));
+        metrics.sorted(statistics);
         Constructor<ExecutedGroup> constructor =
             ExecutedGroup.class.getDeclaredConstructor(
                 long.class, int.class, RewriteFileGroup.class);
@@ -230,10 +264,10 @@ public final class NativeIcebergMaintenance {
           throw new IllegalStateException("Cannot construct Iceberg rewrite result");
         out.collect(
             constructor.newInstance(table.snapshot(branch).snapshotId(), groupsPerCommit, group));
-        getRuntimeContext().getMetricGroup().counter("nativeRewriteGroups").inc();
+        metrics.nativeGroups.inc();
       } catch (Exception failure) {
         context.output(TaskResultAggregator.ERROR_STREAM, failure);
-        getRuntimeContext().getMetricGroup().counter("nativeRewriteErrors").inc();
+        metrics.errors.inc();
         ((org.apache.flink.metrics.Counter)
                 field(DataFileRewriteRunner.class, "errorCounter").get(this))
             .inc();

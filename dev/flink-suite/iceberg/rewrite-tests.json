@@ -1,0 +1,31 @@
+{
+  "source": "https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/flink/v2.2/flink/src/test/java/org/apache/iceberg/flink/actions/TestRewriteDataFilesAction.java",
+  "source_sha256": "7b2c85d45a04a67599261f3b8c2a27b25e13edc2802dd1915aa85a820f9c84a8",
+  "source_tag": "apache-iceberg-1.12.0",
+  "changes": [
+    "Renamed test class and substituted a Hadoop-only catalog fixture; both base namespaces retained.",
+    "Added stock/native execution as a parameter; all formats and versions retained.",
+    "Substituted only Actions.forTable with a test adapter preserving the original BaseRewriteDataFilesAction planner and commit implementation.",
+    "All test method bodies, SQL, options and assertions otherwise preserved."
+  ],
+  "catalog_scope": "Hadoop, empty and l0.l1 base namespaces; Hive/REST services are outside this file-worker port.",
+  "junit": "iceberg-upstream profile uses 5.14.4, matching the official Iceberg 1.12.0 tag and supporting FieldSource.",
+  "streaming_tests": {
+    "class": "org.apache.iceberg.flink.maintenance.api.TestRewriteDataFiles",
+    "artifact": "org.apache.iceberg:iceberg-flink-2.2:1.12.0:tests",
+    "method": "Subclass without copying test methods; native subclass substitutes the production worker immediately before the existing execution helper.",
+    "expected_invocations_per_engine": 19
+  },
+  "sql_invocations": {
+    "total": 288,
+    "executed": 108,
+    "skipped": 180,
+    "versions": [
+      2,
+      3,
+      4
+    ],
+    "note": "V2 action rewrite cases execute. V3/V4 constructor-rejection checks execute; their action rewrite cases retain upstream assumptions. Native streaming V3 is covered by the separate maintenance suite."
+  },
+  "port_diff": "rewrite-sql.patch.gz"
+}

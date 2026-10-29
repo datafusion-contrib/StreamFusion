@@ -1332,3 +1332,35 @@ positive input consumption by `NativeColumnarUnnestOperator` on both released
 lines, including the 1.18 state contract inventory. These unchanged upstream
 fixtures complement runtime-source regressions for preserved string carriers
 and collection aggregate recovery.
+
+
+Iceberg's native evidence inventory also requires nested source/sink and maintenance
+round-trips, nested schema evolution, nested equality-key/null-parent handling,
+v2 position deletes/v3 vectors and row lineage, plus nested savepoint/rescaling
+through normal, range and dynamic sinks. SQL witnesses require native source/sink
+nodes, no payload transpose nodes, native task counters and Rust data-file footers.
+Unsupported nested name mapping, pushed predicates and partition sources have explicit
+admission checks. These are StreamFusion witness tests alongside the unchanged
+published Iceberg streaming test inventory.
+
+
+The Iceberg profile also ports the released 1.12.0 rewrite tests. Streaming maintenance
+cases are inherited directly from the published `TestRewriteDataFiles` test class
+and run with stock and native workers. The SQL-backed action test keeps the upstream
+queries, options and assertions; its adapter substitutes only file processing under
+the original action planner and optimistic commit logic. The port uses Hadoop with
+both original Hadoop base namespaces, all three file formats, and the released v2-and-above parameters;
+Hive/REST fixture services are excluded. Parquet admits the native worker, while
+Avro/ORC remain stock. The older action API's V3/V4 rejection assertions remain intact;
+streaming V3 rewrite support is checked by the separate maintenance cases.
+
+These SQL setup/readback queries retain the upstream batch TableEnvironment. Actual
+native file processing explicitly uses Flink STREAMING execution; the inherited
+maintenance tests use the upstream live trigger source. This does not enable bounded
+SQL sources or introduce a new SQL CALL procedure. The test-only boundary retains
+Iceberg's bin packing, residual handling, stale-snapshot conflict checks, starting
+sequence numbers and commit cleanup. Native rewritten Parquet footers are required;
+empty/constructor-rejection/control-only cases do not invent file-work witnesses.
+The upstream test profile pins JUnit 5.14.4 to match Iceberg's release and execute its
+`FieldSource` cases. [Provenance](https://github.com/datafusion-contrib/StreamFusion/blob/main/dev/flink-suite/iceberg/rewrite-tests.json)
+and the adjacent compressed port diff record the fixture and entry-point adaptations.

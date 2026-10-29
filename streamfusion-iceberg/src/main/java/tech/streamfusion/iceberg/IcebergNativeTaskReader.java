@@ -89,6 +89,35 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
       IcebergReadCancellation cancellation,
       boolean rewrite)
       throws IOException {
+    this(
+        task,
+        schema,
+        projection,
+        io,
+        batchRows,
+        skip,
+        filters,
+        caseSensitive,
+        nameMapping,
+        cancellation,
+        rewrite,
+        null);
+  }
+
+  IcebergNativeTaskReader(
+      FileScanTask task,
+      Schema schema,
+      List<Integer> projection,
+      FileIO io,
+      int batchRows,
+      long skip,
+      List<org.apache.iceberg.expressions.Expression> filters,
+      boolean caseSensitive,
+      String nameMapping,
+      IcebergReadCancellation cancellation,
+      boolean rewrite,
+      Schema requested)
+      throws IOException {
     this.cancellation = cancellation;
     if (task.isDataTask()
         || task.file().format() != FileFormat.PARQUET
@@ -105,7 +134,9 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     descriptor.put("length", task.length());
     descriptor.set("project_ids", mapper.valueToTree(projection));
     descriptor.put("case_sensitive", caseSensitive);
-    descriptor.put("columnar_equality_sets", rewrite);
+    boolean equalitySets =
+        rewrite || schema.columns().stream().anyMatch(f -> f.type().isNestedType());
+    descriptor.put("columnar_equality_sets", equalitySets);
     descriptor.set("first_row_id", mapper.valueToTree(task.file().firstRowId()));
     descriptor.set("data_sequence_number", mapper.valueToTree(task.file().dataSequenceNumber()));
     descriptor.set(
@@ -148,11 +179,11 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     }
     var readSchema = org.apache.iceberg.MetadataColumns.schemaWithRowLineage(schema);
     var selected = new Schema(projection.stream().map(readSchema::findField).toList());
-    outputType = arrowSchema(selected, rewrite);
+    outputType = arrowSchema(requested == null ? selected : requested, rewrite);
     files = new IcebergTaskFiles(io, lengths);
     try (var outputSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      if (rewrite)
-        equalityMemoryOwner = TaskOffHeapMemory.registerOwner("iceberg-rewrite", "equality-sets");
+      if (equalitySets)
+        equalityMemoryOwner = TaskOffHeapMemory.registerOwner("iceberg-read", "equality-sets");
       if (cancellation != null) cancellation.add(files);
       Data.exportSchema(
           NativeAllocator.SHARED, outputType, NativeAllocator.DICTIONARIES, outputSchema);
@@ -184,25 +215,47 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
         tech.streamfusion.arrow.ArrowFileBatch.schema(
             tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
                 org.apache.iceberg.flink.FlinkSchemaUtil.convert(schema)));
-    if (!rewrite) return arrow;
-    var fields =
-        arrow.getFields().stream()
-            .map(
-                field -> {
-                  if (!(field.getType()
-                      instanceof org.apache.arrow.vector.types.pojo.ArrowType.Time)) return field;
-                  return new org.apache.arrow.vector.types.pojo.Field(
-                      field.getName(),
-                      new org.apache.arrow.vector.types.pojo.FieldType(
-                          field.isNullable(),
-                          new org.apache.arrow.vector.types.pojo.ArrowType.Time(
-                              org.apache.arrow.vector.types.TimeUnit.MICROSECOND, 64),
-                          field.getDictionary(),
-                          field.getMetadata()),
-                      field.getChildren());
-                })
-            .toList();
+    var fields = new java.util.ArrayList<org.apache.arrow.vector.types.pojo.Field>();
+    for (int i = 0; i < schema.columns().size(); i++)
+      fields.add(icebergField(arrow.getFields().get(i), schema.columns().get(i), rewrite));
     return new org.apache.arrow.vector.types.pojo.Schema(fields, arrow.getCustomMetadata());
+  }
+
+  private static org.apache.arrow.vector.types.pojo.Field icebergField(
+      org.apache.arrow.vector.types.pojo.Field field,
+      org.apache.iceberg.types.Types.NestedField iceberg,
+      boolean rewrite) {
+    var type = field.getType();
+    if (rewrite && type instanceof org.apache.arrow.vector.types.pojo.ArrowType.Time)
+      type =
+          new org.apache.arrow.vector.types.pojo.ArrowType.Time(
+              org.apache.arrow.vector.types.TimeUnit.MICROSECOND, 64);
+    var metadata = new HashMap<>(field.getMetadata());
+    metadata.put("PARQUET:field_id", Integer.toString(iceberg.fieldId()));
+    var children = field.getChildren();
+    if (iceberg.type().isMapType()) {
+      var entry = children.get(0);
+      var keyValue = iceberg.type().asMapType().fields();
+      children =
+          List.of(
+              new org.apache.arrow.vector.types.pojo.Field(
+                  entry.getName(),
+                  entry.getFieldType(),
+                  List.of(
+                      icebergField(entry.getChildren().get(0), keyValue.get(0), rewrite),
+                      icebergField(entry.getChildren().get(1), keyValue.get(1), rewrite))));
+    } else if (iceberg.type().isNestedType()) {
+      var nested = iceberg.type().asNestedType().fields();
+      var converted = new java.util.ArrayList<org.apache.arrow.vector.types.pojo.Field>();
+      for (int i = 0; i < nested.size(); i++)
+        converted.add(icebergField(children.get(i), nested.get(i), rewrite));
+      children = converted;
+    }
+    return new org.apache.arrow.vector.types.pojo.Field(
+        field.getName(),
+        new org.apache.arrow.vector.types.pojo.FieldType(
+            field.isNullable(), type, field.getDictionary(), metadata),
+        children);
   }
 
   public VectorSchemaRoot next() {

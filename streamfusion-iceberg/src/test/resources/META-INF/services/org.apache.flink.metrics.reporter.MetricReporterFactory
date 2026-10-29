@@ -1,1 +1,2 @@
 tech.streamfusion.iceberg.NativeIcebergRangeSinkTest$WitnessFactory
+tech.streamfusion.iceberg.IcebergNativeMetrics

@@ -1,5 +1,5 @@
 use arrow::array::{RecordBatch, UInt32Array};
-use arrow::compute::{cast, take};
+use arrow::compute::take;
 use arrow::datatypes::SchemaRef;
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -61,7 +61,6 @@ pub(crate) struct Encoder {
     pub input_schema: SchemaRef,
     write_schema: SchemaRef,
     writer: Option<AsyncArrowWriter<HostOutput>>,
-    nan_columns: Vec<(usize, i32)>,
     nan_counts: HashMap<i32, u64>,
     metadata_bytes: usize,
     flushed_groups: usize,
@@ -85,26 +84,6 @@ impl Encoder {
         let schema = Arc::new(schema);
         let write_schema: SchemaRef =
             Arc::new(schema.as_ref().try_into().expect("Iceberg Arrow schema"));
-        let nan_columns = write_schema
-            .fields()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, field)| {
-                matches!(
-                    field.data_type(),
-                    arrow::datatypes::DataType::Float32 | arrow::datatypes::DataType::Float64
-                )
-                .then(|| {
-                    (
-                        index,
-                        field.metadata()["PARQUET:field_id"]
-                            .parse::<i32>()
-                            .expect("Iceberg field id"),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
-        let nan_counts = nan_columns.iter().map(|(_, id)| (*id, 0)).collect();
         let writer = AsyncArrowWriter::try_new(
             HostOutput(output.writer().await.expect("Iceberg output writer")),
             write_schema.clone(),
@@ -115,8 +94,7 @@ impl Encoder {
             input_schema,
             write_schema,
             writer: Some(writer),
-            nan_columns,
-            nan_counts,
+            nan_counts: HashMap::new(),
             metadata_bytes: 0,
             flushed_groups: 0,
         }
@@ -146,42 +124,13 @@ impl Encoder {
                     )
                     .expect("Iceberg Arrow selection")
                 };
-                if column.data_type() == field.data_type() {
-                    column
-                } else if streamfusion_bridge::timestamp::is_timestamp(column.data_type())
-                    && streamfusion_bridge::timestamp::is_timestamp(field.data_type())
-                {
-                    streamfusion_bridge::timestamp::cast_timestamp(&column, field.data_type())
-                        .expect("Iceberg timestamp column conversion")
-                } else {
-                    cast(&column, field.data_type()).expect("Iceberg physical column conversion")
-                }
+                streamfusion_bridge::timestamp::cast_array(&column, field.data_type())
+                    .expect("Iceberg physical column conversion")
             })
             .collect::<Vec<_>>();
         let selected = RecordBatch::try_new(self.write_schema.clone(), columns)
             .expect("Iceberg selected record batch");
-        for (index, id) in &self.nan_columns {
-            let column = selected.column(*index);
-            let count = if let Some(values) =
-                column.as_any().downcast_ref::<arrow::array::Float32Array>()
-            {
-                values
-                    .iter()
-                    .flatten()
-                    .filter(|value| value.is_nan())
-                    .count()
-            } else {
-                column
-                    .as_any()
-                    .downcast_ref::<arrow::array::Float64Array>()
-                    .expect("Iceberg float column")
-                    .iter()
-                    .flatten()
-                    .filter(|value| value.is_nan())
-                    .count()
-            };
-            *self.nan_counts.get_mut(id).expect("Iceberg NaN count") += count as u64;
-        }
+        crate::nan_counts::accumulate(&selected, &mut self.nan_counts);
         let writer = self.writer.as_mut().expect("Iceberg writer closed");
         writer
             .write(&selected)

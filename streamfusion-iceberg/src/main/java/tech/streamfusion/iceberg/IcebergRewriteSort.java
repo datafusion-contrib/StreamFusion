@@ -30,7 +30,10 @@ final class IcebergRewriteSort implements AutoCloseable {
     for (var field : order.fields()) {
       if (!field.transform().isIdentity())
         throw new IllegalArgumentException("Native rewrite sorting requires identity sort fields");
-      String name = tableSchema.findField(field.sourceId()).name();
+      var path = fieldPath(tableSchema.columns(), field.sourceId());
+      if (path == null)
+        throw new IllegalArgumentException("Missing sort field ID " + field.sourceId());
+      String name = path.get(0);
       int index = -1;
       for (int i = 0; i < schema.getFields().size(); i++) {
         if (schema.getFields().get(i).getName().equals(name)) index = i;
@@ -39,6 +42,7 @@ final class IcebergRewriteSort implements AutoCloseable {
       keys.add(
           java.util.List.of(
               index,
+              path.subList(1, path.size()),
               field.direction() == SortDirection.DESC,
               field.nullOrder() == NullOrder.NULLS_FIRST));
     }
@@ -61,6 +65,23 @@ final class IcebergRewriteSort implements AutoCloseable {
     }
   }
 
+  private static java.util.List<String> fieldPath(
+      java.util.List<org.apache.iceberg.types.Types.NestedField> fields, int id) {
+    for (var field : fields) {
+      if (field.fieldId() == id) return java.util.List.of(field.name());
+      if (field.type().isStructType()) {
+        var child = fieldPath(field.type().asStructType().fields(), id);
+        if (child != null) {
+          var path = new ArrayList<String>();
+          path.add(field.name());
+          path.addAll(child);
+          return path;
+        }
+      }
+    }
+    return null;
+  }
+
   void push(VectorSchemaRoot batch) {
     try (batch;
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
@@ -76,6 +97,10 @@ final class IcebergRewriteSort implements AutoCloseable {
 
   void finish() {
     NativeIceberg.finishSort(handle);
+  }
+
+  long[] statistics() {
+    return NativeIceberg.sortStatistics(handle);
   }
 
   VectorSchemaRoot next() {

@@ -43,12 +43,38 @@ class NativeIcebergSourceRecoveryTest {
     restoreWithNewParallelism("none", 60000, 3);
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"none", "range", "dynamic-unaligned"})
+  void nestedPayloadsSurviveMidFileRestoreAndRescaling(String distribution) throws Exception {
+    restoreWithNewParallelism(distribution, 60000, 3, true);
+  }
+
   private void restoreWithNewParallelism(String distribution, long checkpointInterval, int version)
       throws Exception {
+    restoreWithNewParallelism(distribution, checkpointInterval, version, false);
+  }
+
+  private void restoreWithNewParallelism(
+      String distribution, long checkpointInterval, int version, boolean nested) throws Exception {
     EMITTED.set(0);
     CHECKPOINTED.clear();
     NativeIcebergRangeSinkTest.clearRangeWitnesses();
     var input = NativeIcebergReaderTest.fixture(temp, false);
+    if (nested) {
+      input
+          .updateSchema()
+          .addColumn(
+              "nested",
+              org.apache.iceberg.types.Types.StructType.of(
+                  org.apache.iceberg.types.Types.NestedField.optional(
+                      4, "n", org.apache.iceberg.types.Types.LongType.get()),
+                  org.apache.iceberg.types.Types.NestedField.optional(
+                      5,
+                      "values",
+                      org.apache.iceberg.types.Types.ListType.ofOptional(
+                          6, org.apache.iceberg.types.Types.StringType.get()))))
+          .commit();
+    }
     if (version == 3) {
       input.updateProperties().set("format-version", "3").commit();
       try (var tasks = input.newScan().planFiles()) {
@@ -68,7 +94,8 @@ class NativeIcebergSourceRecoveryTest {
     }
     int initialRows = version == 3 ? 2000 : 2001;
     int finalRows = initialRows + 3;
-    NativeIcebergSourceSqlTest.append(input, 101, 2001);
+    if (nested) appendNested(input, 101, 2001);
+    else NativeIcebergSourceSqlTest.append(input, 101, 2001);
     var output =
         new HadoopTables(new org.apache.hadoop.conf.Configuration())
             .create(
@@ -130,7 +157,8 @@ class NativeIcebergSourceRecoveryTest {
         checkpointRows > 0 && checkpointRows < initialRows,
         "savepoint must retain partial progress: " + checkpointCounts);
     EMITTED.set(checkpointRows);
-    NativeIcebergSourceSqlTest.append(input, 2001, 2004);
+    if (nested) appendNested(input, 2001, 2004);
+    else NativeIcebergSourceSqlTest.append(input, 2001, 2004);
     var restored =
         environment(input, output, 3, savepoint, false, distribution, checkpointInterval)
             .executeAsync("iceberg-source-recovery");
@@ -159,7 +187,16 @@ class NativeIcebergSourceRecoveryTest {
       try (var rows = IcebergGenerics.read(output).build()) {
         for (var row : rows) {
           count++;
-          assertTrue(ids.add((Integer) row.getField("id")), "duplicate after restore");
+          int id = (Integer) row.getField("id");
+          assertTrue(ids.add(id), "duplicate after restore");
+          if (nested) {
+            var value = (org.apache.iceberg.data.Record) row.getField("nested");
+            if (id < 101 || id % 3 == 0) assertNull(value);
+            else {
+              assertEquals((long) id, value.getField("n"));
+              assertEquals(java.util.Arrays.asList("v-é🐍-" + id, null), value.getField("values"));
+            }
+          }
         }
       }
       assertEquals(finalRows, count);
@@ -182,6 +219,32 @@ class NativeIcebergSourceRecoveryTest {
     assertEquals("", NativeIceberg.liveNativeHandles());
     assertEquals(0L, tech.streamfusion.operator.NativeAllocator.SHARED.getAllocatedMemory());
     assertEquals(0L, tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes());
+  }
+
+  private static void appendNested(Table table, int start, int end) throws Exception {
+    var factory =
+        new org.apache.iceberg.data.GenericFileWriterFactory.Builder(table)
+            .dataFileFormat(org.apache.iceberg.FileFormat.PARQUET)
+            .build();
+    var file = table.io().newOutputFile(table.location() + "/nested-" + start + ".parquet");
+    var writer = factory.newDataWriter(table.encryption().encrypt(file), table.spec(), null);
+    try (writer) {
+      for (int id = start; id < end; id++) {
+        var row = org.apache.iceberg.data.GenericRecord.create(table.schema());
+        row.setField("id", id);
+        row.setField("payload", "p" + id);
+        if (id % 3 != 0) {
+          var value =
+              org.apache.iceberg.data.GenericRecord.create(
+                  table.schema().findType("nested").asStructType());
+          value.setField("n", (long) id);
+          value.setField("values", java.util.Arrays.asList("v-é🐍-" + id, null));
+          row.setField("nested", value);
+        }
+        writer.write(row);
+      }
+    }
+    table.newAppend().appendFile(writer.toDataFile()).commit();
   }
 
   private static StreamExecutionEnvironment environment(

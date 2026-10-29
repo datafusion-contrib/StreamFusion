@@ -128,26 +128,48 @@ public final class NativeIcebergSink {
     }
   }
 
+  static void validateReadPartitionSpec(Table table, PartitionSpec spec) {
+    for (var field : spec.fields()) {
+      if (table.schema().findField(field.sourceId()) != null
+          && table.schema().columns().stream().noneMatch(f -> f.fieldId() == field.sourceId()))
+        throw new IllegalArgumentException("Nested partition source fields retain stock readers");
+    }
+  }
+
   static void validateSchema(org.apache.iceberg.Schema schema) {
+    validateSchema(schema, false);
+  }
+
+  static void validateSchema(org.apache.iceberg.Schema schema, boolean reading) {
     if (schema.columns().isEmpty())
       throw new IllegalArgumentException("Native Iceberg writes require data columns");
-    for (var field : schema.columns()) {
-      switch (field.type().typeId()) {
-        case INTEGER:
-        case LONG:
-        case STRING:
-        case BOOLEAN:
-        case BINARY:
-        case DATE:
-        case FLOAT:
-        case DOUBLE:
-        case DECIMAL:
-        case TIME:
-        case TIMESTAMP:
-          break;
-        default:
-          throw new IllegalArgumentException("Unverified native Iceberg type: " + field.type());
-      }
+    for (var field : schema.columns()) validateField(field, reading);
+  }
+
+  private static void validateField(
+      org.apache.iceberg.types.Types.NestedField field, boolean reading) {
+    if (reading && field.initialDefault() != null)
+      throw new IllegalArgumentException("Non-null initial Iceberg defaults are not admitted");
+    switch (field.type().typeId()) {
+      case STRUCT:
+      case LIST:
+      case MAP:
+        for (var child : field.type().asNestedType().fields()) validateField(child, reading);
+        break;
+      case INTEGER:
+      case LONG:
+      case STRING:
+      case BOOLEAN:
+      case BINARY:
+      case DATE:
+      case FLOAT:
+      case DOUBLE:
+      case DECIMAL:
+      case TIME:
+      case TIMESTAMP:
+        break;
+      default:
+        throw new IllegalArgumentException("Unverified native Iceberg type: " + field.type());
     }
   }
 }

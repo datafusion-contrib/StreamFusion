@@ -71,7 +71,8 @@ pub(crate) struct Reader {
     stream: ArrowRecordBatchStream,
     skip: u64,
     output_schema: Option<SchemaRef>,
-    equality_tasks: Vec<(FileIO, FileScanTask, String)>,
+    equality_tasks: Vec<(FileIO, FileScanTask, Vec<i32>)>,
+    equality_schema: Option<SchemaRef>,
     equality_sets: Vec<crate::equality::EqualitySet>,
     pub(crate) retained_bytes: usize,
 }
@@ -94,15 +95,19 @@ impl Reader {
             task.deletes.retain(|delete| {
                 let ids = delete.equality_ids.as_deref().unwrap_or_default();
                 let eligible = delete.file_type == DataContentType::EqualityDeletes
-                    && ids.len() == 1
-                    && task.project_ids.contains(&ids[0])
-                    && task.schema.field_by_id(ids[0]).is_some_and(|field| {
-                        matches!(
-                            field.field_type.as_ref(),
-                            Type::Primitive(
-                                PrimitiveType::Int | PrimitiveType::Long | PrimitiveType::String
-                            )
-                        )
+                    && !ids.is_empty()
+                    && ids.iter().all(|id| {
+                        crate::schema::root_id(&task.schema, *id).is_some()
+                            && task.schema.field_by_id(*id).is_some_and(|field| {
+                                matches!(
+                                    field.field_type.as_ref(),
+                                    Type::Primitive(
+                                        PrimitiveType::Int
+                                            | PrimitiveType::Long
+                                            | PrimitiveType::String
+                                    )
+                                )
+                            })
                     });
                 if eligible {
                     equality_deletes.push(delete.clone());
@@ -110,6 +115,22 @@ impl Reader {
                 !eligible
             });
         }
+        for delete in &equality_deletes {
+            for id in delete.equality_ids.as_ref().unwrap() {
+                let root = crate::schema::root_id(&task.schema, *id).unwrap();
+                if !task.project_ids.contains(&root) {
+                    task.project_ids.push(root);
+                }
+            }
+        }
+        let equality_schema = if equality_deletes.is_empty() {
+            None
+        } else {
+            Some(crate::schema::projected_schema(
+                &task.schema,
+                &task.project_ids,
+            )?)
+        };
         let reader = ArrowReaderBuilder::new(io.clone(), Runtime::new(runtime()))
             .with_batch_size(batch_rows)
             .with_data_file_concurrency_limit(1)
@@ -119,8 +140,14 @@ impl Reader {
         let equality_tasks = equality_deletes
             .into_iter()
             .map(|delete| {
-                let id = delete.equality_ids.unwrap()[0];
-                let name = task.schema_ref().field_by_id(id).unwrap().name.clone();
+                let ids = delete.equality_ids.unwrap();
+                let mut roots = Vec::new();
+                for id in &ids {
+                    let root = crate::schema::root_id(task.schema(), *id).unwrap();
+                    if !roots.contains(&root) {
+                        roots.push(root);
+                    }
+                }
                 let scan = FileScanTask::builder()
                     .with_file_size_in_bytes(delete.file_size_in_bytes)
                     .with_start(0)
@@ -128,11 +155,11 @@ impl Reader {
                     .with_data_file_path(delete.file_path)
                     .with_data_file_format(DataFileFormat::Parquet)
                     .with_schema(task.schema_ref())
-                    .with_project_field_ids(vec![id])
+                    .with_project_field_ids(roots)
                     .with_case_sensitive(task.case_sensitive())
                     .with_name_mapping(task.name_mapping().cloned())
                     .build()?;
-                Ok((io.clone(), scan, name))
+                Ok((io.clone(), scan, ids))
             })
             .collect::<Result<Vec<_>>>()?;
         let tasks = futures::stream::once(async move { crate::scan_range::tasks(&io, task).await })
@@ -144,6 +171,7 @@ impl Reader {
             skip,
             output_schema: None,
             equality_tasks,
+            equality_schema,
             equality_sets: Vec::new(),
             retained_bytes: 0,
         })
@@ -156,9 +184,29 @@ impl Reader {
 
     pub(crate) async fn next(&mut self) -> Result<Option<RecordBatch>> {
         while let Some(batch) = self.stream.try_next().await? {
-            for (io, task, name) in std::mem::take(&mut self.equality_tasks) {
+            let batch = match &self.equality_schema {
+                Some(schema) => {
+                    let mut fields = schema.fields().to_vec();
+                    let extra = batch
+                        .schema()
+                        .fields()
+                        .iter()
+                        .filter(|field| {
+                            !fields
+                                .iter()
+                                .any(|expected| expected.name() == field.name())
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    fields.extend(extra);
+                    crate::schema::align(batch, Arc::new(arrow::datatypes::Schema::new(fields)))
+                        .map_err(|e| Error::new(ErrorKind::DataInvalid, e.to_string()))?
+                }
+                None => batch,
+            };
+            for (io, task, ids) in std::mem::take(&mut self.equality_tasks) {
                 if let Some(set) =
-                    crate::equality::EqualitySet::load(io, task, &batch.schema(), &name).await?
+                    crate::equality::EqualitySet::load(io, task, &batch.schema(), &ids).await?
                 {
                     self.retained_bytes += set.retained_bytes;
                     self.equality_sets.push(set);
@@ -168,45 +216,17 @@ impl Reader {
             for set in &self.equality_sets {
                 batch = set.apply(batch)?;
             }
+            if let Some(schema) = &self.output_schema {
+                batch = crate::schema::align(batch, schema.clone())
+                    .map_err(|e| Error::new(ErrorKind::DataInvalid, e.to_string()))?;
+            }
             if self.skip >= batch.num_rows() as u64 {
                 self.skip -= batch.num_rows() as u64;
                 continue;
             }
             let skip = std::mem::take(&mut self.skip) as usize;
             let batch = batch.slice(skip, batch.num_rows() - skip);
-            let Some(schema) = &self.output_schema else {
-                return Ok(Some(batch));
-            };
-            if batch.num_columns() != schema.fields().len() {
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "Iceberg output projection mismatch",
-                ));
-            }
-            let columns = batch
-                .columns()
-                .iter()
-                .zip(schema.fields())
-                .map(|(column, field)| {
-                    if column.data_type() == field.data_type() {
-                        Ok(column.clone())
-                    } else if streamfusion_bridge::timestamp::is_timestamp(column.data_type())
-                        && streamfusion_bridge::timestamp::is_timestamp(field.data_type())
-                    {
-                        streamfusion_bridge::timestamp::cast_timestamp(column, field.data_type())
-                    } else {
-                        arrow::compute::cast(column, field.data_type())
-                    }
-                })
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(|e| Error::new(ErrorKind::DataInvalid, e.to_string()))?;
-            let output = RecordBatch::try_new_with_options(
-                schema.clone(),
-                columns,
-                &arrow::array::RecordBatchOptions::new().with_row_count(Some(batch.num_rows())),
-            )
-            .map_err(|e| Error::new(ErrorKind::DataInvalid, e.to_string()))?;
-            return Ok(Some(output));
+            return Ok(Some(batch));
         }
         if self.skip != 0 {
             return Err(Error::new(

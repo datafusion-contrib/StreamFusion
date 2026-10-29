@@ -20,6 +20,7 @@ import tech.streamfusion.operator.ArrowBatch;
 final class IcebergArrowReaderFunction implements ReaderFunction<ArrowBatch> {
   private final Schema schema;
   private final List<Integer> projection;
+  private final Schema projectedSchema;
   private final FileIO io;
   private final int batchRows;
   private final List<org.apache.iceberg.expressions.Expression> filters;
@@ -58,21 +59,37 @@ final class IcebergArrowReaderFunction implements ReaderFunction<ArrowBatch> {
       String nameMapping,
       org.apache.iceberg.encryption.EncryptionManager encryption,
       org.apache.flink.configuration.ReadableConfig configuration) {
+    this(
+        schema,
+        new Schema(projection.stream().map(schema::findField).toList()),
+        io,
+        batchRows,
+        filters,
+        caseSensitive,
+        nameMapping,
+        encryption,
+        configuration);
+  }
+
+  IcebergArrowReaderFunction(
+      Schema schema,
+      Schema projection,
+      FileIO io,
+      int batchRows,
+      List<org.apache.iceberg.expressions.Expression> filters,
+      boolean caseSensitive,
+      String nameMapping,
+      org.apache.iceberg.encryption.EncryptionManager encryption,
+      org.apache.flink.configuration.ReadableConfig configuration) {
     this.stock =
         new org.apache.iceberg.flink.source.reader.RowDataReaderFunction(
-            configuration,
-            schema,
-            new Schema(projection.stream().map(schema::findField).toList()),
-            nameMapping,
-            caseSensitive,
-            io,
-            encryption,
-            filters);
+            configuration, schema, projection, nameMapping, caseSensitive, io, encryption, filters);
     this.filters = List.copyOf(filters);
     this.caseSensitive = caseSensitive;
     this.nameMapping = nameMapping;
     this.schema = schema;
-    this.projection = List.copyOf(projection);
+    this.projectedSchema = projection;
+    this.projection = projection.columns().stream().map(f -> f.fieldId()).toList();
     this.io = io;
     this.batchRows = batchRows;
   }
@@ -102,10 +119,20 @@ final class IcebergArrowReaderFunction implements ReaderFunction<ArrowBatch> {
               && !org.apache.iceberg.util.ContentFileUtil.isDV(delete))
           || delete.keyMetadata() != null) return false;
       if (delete.equalityFieldIds() != null) {
+        boolean nestedKey =
+            delete.equalityFieldIds().stream()
+                .anyMatch(id -> schema.columns().stream().noneMatch(f -> f.fieldId() == id));
         for (int id : delete.equalityFieldIds()) {
           var field = schema.findField(id);
-          if (field == null || field.type().typeId() == org.apache.iceberg.types.Type.TypeID.TIME)
-            return false;
+          if (field == null
+              || schema.accessorForField(id) == null
+              || field.type().typeId() == org.apache.iceberg.types.Type.TypeID.TIME) return false;
+          if (nestedKey
+              && !java.util.Set.of(
+                      org.apache.iceberg.types.Type.TypeID.INTEGER,
+                      org.apache.iceberg.types.Type.TypeID.LONG,
+                      org.apache.iceberg.types.Type.TypeID.STRING)
+                  .contains(field.type().typeId())) return false;
         }
       }
     }
@@ -147,16 +174,13 @@ final class IcebergArrowReaderFunction implements ReaderFunction<ArrowBatch> {
                         filters,
                         caseSensitive,
                         nameMapping,
-                        cancellation());
+                        cancellation(),
+                        false,
+                        projectedSchema);
               } else {
                 if (stockTasks != null) stockTasks.inc();
                 reader =
-                    new IcebergStockTaskReader(
-                        task,
-                        new Schema(projection.stream().map(schema::findField).toList()),
-                        stock,
-                        batchRows,
-                        rowOffset);
+                    new IcebergStockTaskReader(task, projectedSchema, stock, batchRows, rowOffset);
               }
             }
             pending = reader.next();

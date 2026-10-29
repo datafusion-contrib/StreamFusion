@@ -30,6 +30,8 @@ final class NativeIceberg {
 
   static native void closeSort(long handle);
 
+  static native long[] sortStatistics(long handle);
+
   static native String liveNativeHandles();
 
   static native long createWriter(

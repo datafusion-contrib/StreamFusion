@@ -96,26 +96,15 @@ public final class IcebergSourcePlan {
     if (!(table.encryption() instanceof org.apache.iceberg.encryption.PlaintextEncryptionManager))
       throw new IllegalArgumentException("source encryption is not admitted");
     if (conf.limit() >= 0) throw new IllegalArgumentException("source limits are not admitted");
-    for (var field : table.schema().columns()) {
-      if (field.initialDefault() != null)
-        throw new IllegalArgumentException("non-null initial source defaults are not admitted");
-      switch (field.type().typeId()) {
-        case INTEGER:
-        case LONG:
-        case STRING:
-        case BOOLEAN:
-        case BINARY:
-        case DATE:
-        case FLOAT:
-        case DOUBLE:
-        case DECIMAL:
-        case TIME:
-        case TIMESTAMP:
-          break;
-        default:
-          throw new IllegalArgumentException("unverified source type: " + field.type());
-      }
-    }
+    NativeIcebergSink.validateSchema(table.schema(), true);
+    for (var spec : table.specs().values())
+      NativeIcebergSink.validateReadPartitionSpec(table, spec);
+    if ((conf.nameMapping() != null
+            || table
+                .properties()
+                .containsKey(org.apache.iceberg.TableProperties.DEFAULT_NAME_MAPPING))
+        && table.schema().columns().stream().anyMatch(f -> f.type().isNestedType()))
+      throw new IllegalArgumentException("Nested name-mapped files retain stock readers");
     IcebergTaskMetadata.predicate(
         new com.fasterxml.jackson.databind.ObjectMapper(),
         table.schema(),
@@ -123,7 +112,7 @@ public final class IcebergSourcePlan {
         conf.caseSensitive());
     if (conf.nameMapping() != null)
       org.apache.iceberg.mapping.NameMappingParser.fromJson(conf.nameMapping());
-    for (var field : projection.columns()) {
+    for (var field : org.apache.iceberg.types.TypeUtil.indexById(projection.asStruct()).values()) {
       if (table.schema().findField(field.fieldId()) == null)
         throw new IllegalArgumentException("unknown source field ID");
     }

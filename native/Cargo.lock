@@ -4816,6 +4816,7 @@ dependencies = [
  "criterion",
  "datafusion-common",
  "datafusion-execution",
+ "datafusion-functions",
  "datafusion-physical-expr",
  "datafusion-physical-plan",
  "futures",

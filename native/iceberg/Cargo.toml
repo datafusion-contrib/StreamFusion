@@ -24,6 +24,7 @@ tokio.workspace = true
 typetag = "0.2"
 datafusion-common = "54.0.0"
 datafusion-execution = "54.0.0"
+datafusion-functions = { version = "54.0.0", default-features = false }
 datafusion-physical-expr = "54.0.0"
 datafusion-physical-plan = "54.0.0"
 

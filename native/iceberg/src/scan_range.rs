@@ -25,7 +25,13 @@ impl MetadataFetch for Footer {
 /// The released reader estimates group offsets cumulatively. Translate the host's
 /// physical midpoint ranges, including padding/index gaps, to that coordinate space.
 pub(crate) async fn tasks(io: &FileIO, task: FileScanTask) -> Result<Vec<FileScanTask>> {
-    if task.start() == 0 && task.length() >= task.file_size_in_bytes() {
+    let nested = task
+        .project_field_ids()
+        .iter()
+        .filter_map(|id| task.schema().field_by_id(*id))
+        .any(|field| !field.field_type.is_primitive());
+    let full = task.start() == 0 && task.length() >= task.file_size_in_bytes();
+    if full && !nested {
         return Ok(vec![task]);
     }
     let file = io.new_input(task.data_file_path())?;
@@ -33,7 +39,21 @@ pub(crate) async fn tasks(io: &FileIO, task: FileScanTask) -> Result<Vec<FileSca
         .load_and_finish(Footer(file.reader().await?), task.file_size_in_bytes())
         .await
         .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
-    let ranges = ranges(&metadata, task.start(), task.length())?;
+    let schema = if nested {
+        let physical = parquet::arrow::parquet_to_arrow_schema(
+            metadata.file_metadata().schema_descr(),
+            metadata.file_metadata().key_value_metadata(),
+        )
+        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        crate::schema::read_schema(&task.schema_ref(), &physical)?
+    } else {
+        task.schema_ref()
+    };
+    let ranges = if full {
+        vec![0..task.file_size_in_bytes()]
+    } else {
+        ranges(&metadata, task.start(), task.length())?
+    };
     ranges
         .into_iter()
         .map(|range| {
@@ -46,7 +66,7 @@ pub(crate) async fn tasks(io: &FileIO, task: FileScanTask) -> Result<Vec<FileSca
                 .with_data_sequence_number(task.data_sequence_number())
                 .with_data_file_path(task.data_file_path().to_owned())
                 .with_data_file_format(task.data_file_format())
-                .with_schema(task.schema_ref())
+                .with_schema(schema.clone())
                 .with_project_field_ids(task.project_field_ids().to_vec())
                 .with_predicate(task.predicate().cloned())
                 .with_deletes(task.deletes().to_vec())

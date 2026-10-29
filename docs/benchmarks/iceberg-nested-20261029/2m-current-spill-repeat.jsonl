@@ -1,0 +1,8 @@
+{"case":"sort-spill","native":false,"previous":false,"trial":-1,"input_rows":2000000,"output_rows":2000000,"seconds":6.197342078,"sort_memory_bytes":8388608,"spill_count":28,"spill_bytes":198311936,"output_files":1}
+{"case":"sort-spill","native":true,"previous":false,"trial":-1,"input_rows":2000000,"output_rows":2000000,"seconds":4.364783689,"sort_memory_bytes":8388608,"spill_count":53,"spill_bytes":368453928,"output_files":1}
+{"case":"sort-spill","native":true,"previous":false,"trial":0,"input_rows":2000000,"output_rows":2000000,"seconds":1.052819917,"sort_memory_bytes":8388608,"spill_count":53,"spill_bytes":368453928,"output_files":1}
+{"case":"sort-spill","native":false,"previous":false,"trial":0,"input_rows":2000000,"output_rows":2000000,"seconds":5.484779243,"sort_memory_bytes":8388608,"spill_count":28,"spill_bytes":198311936,"output_files":1}
+{"case":"sort-spill","native":false,"previous":false,"trial":1,"input_rows":2000000,"output_rows":2000000,"seconds":5.476925712,"sort_memory_bytes":8388608,"spill_count":28,"spill_bytes":198311936,"output_files":1}
+{"case":"sort-spill","native":true,"previous":false,"trial":1,"input_rows":2000000,"output_rows":2000000,"seconds":1.044553116,"sort_memory_bytes":8388608,"spill_count":53,"spill_bytes":368453928,"output_files":1}
+{"case":"sort-spill","native":true,"previous":false,"trial":2,"input_rows":2000000,"output_rows":2000000,"seconds":0.972906007,"sort_memory_bytes":8388608,"spill_count":53,"spill_bytes":368453928,"output_files":1}
+{"case":"sort-spill","native":false,"previous":false,"trial":2,"input_rows":2000000,"output_rows":2000000,"seconds":5.475383901,"sort_memory_bytes":8388608,"spill_count":28,"spill_bytes":198311936,"output_files":1}
