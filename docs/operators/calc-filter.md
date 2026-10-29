@@ -1102,6 +1102,15 @@ Native, unconditionally, with no host involvement:
   This can differ from rounding a decimal directly to FLOAT. Array casts convert the element
   buffers and preserve offsets, empty arrays, nullable containers/elements and declared types.
   Other changes of collection element type still require a separately supported cast.
+- **`CAST(d AS STRING)` for a direct DECIMAL input or literal** — a native Decimal128
+  formatter retains scale and trailing zeros, including zero and precision-38 coefficients.
+  It uses ordinary decimal notation, so `DECIMAL(38,38)` with unscaled value 1 becomes
+  `0.00000000000000000000000000000000000001`, without passing through floating point.
+  NULL stays NULL. Modern and legacy modes share this unbounded STRING conversion.
+  Bounded CHAR/VARCHAR targets, computed DECIMAL operands and TRY_CAST retain their existing
+  evaluator/admission rules. In particular, rounding-result metadata guards still apply;
+  this does not replace their host-exact consumers. See the
+  [DECIMAL formatting measurements](../benchmarks/scalar-functions.md#decimal-to-string).
 - **`CHAR`/`VARCHAR` → `VARCHAR`** when the target length is ≥ the source length — an unpadded
   no-op (e.g. the common `COALESCE(s, 'x')` pattern).
 - **Widening timestamp precision** within `TIMESTAMP` or within `TIMESTAMP_LTZ` — Arrow stores both

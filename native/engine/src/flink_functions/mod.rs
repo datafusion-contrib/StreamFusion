@@ -58,6 +58,7 @@ mod charset;
 mod chr;
 pub(crate) mod collection_cast;
 mod collection_string;
+pub(crate) mod decimal_string;
 mod element;
 mod from_base64;
 mod hash_code;

@@ -4702,6 +4702,7 @@ dependencies = [
  "criterion",
  "datafusion",
  "futures",
+ "itoa",
  "jni",
  "libmimalloc-sys",
  "log",
