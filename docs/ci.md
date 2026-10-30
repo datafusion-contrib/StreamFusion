@@ -142,6 +142,22 @@ additional tagged-module jobs. Standalone native package checks remain in the Ru
 `bin/test_ci_module_groups.py` exercises the actual runtime Surefire configuration with one
 fixture for every declared module tag and one untagged fixture, requiring each to run once.
 
+## Java test memory budget
+
+Each ordinary Java matrix job runs one Surefire fork with a 2 GiB heap, including the
+second JVM-boundary/cache verification phase. Local Maven defaults remain configurable;
+the CI invocation overrides them explicitly. The default 8 GiB per-fork heap combined with
+CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
+operators, embedded clusters and the Maven process on hosted runners. One bounded fork
+also keeps independent private clusters from competing across test JVMs.
+
+The complete test selection, both Flink lines and both JDKs remain required. Tests stay
+serial within the fork, and result, native-route, leak and recovery assertions are unchanged.
+The Java suite logs host memory/swap/CPU counters with `vmstat` every 30 seconds, so a runner
+shutdown retains resource evidence in the job log even when artifact upload cannot run.
+A shutdown signal alone does not prove a JVM or host out-of-memory condition; inspect these
+counters and any JVM diagnostics before assigning a cause. The job timeout remains 150 minutes.
+
 ## Consolidated feature validation
 
 Keep related coverage and default-enable changes on one PR while repairing their combined CI.
@@ -183,7 +199,7 @@ Separate mini-batch configurations, recovery runs and unordered-only comparisons
 own executions. In particular, the updating-limit ranked mini-batch case still runs its
 materialized comparison when ordered parity does not apply. Standalone materialized checks
 continue to fold the result iterator as a stream, without buffering an entire changelog.
-The existing job matrix and Surefire fork counts stay the same.
+Result reuse does not change the job matrix or test selections.
 
 ## MiniCluster reuse within a test JVM
 
@@ -193,7 +209,7 @@ launches a separate JUnit root for each class. Each test still gets a fresh
 execution-environment binding, which is cleared afterwards; Flink 1.18 also binds and clears
 its batch test context. The launcher closes the cluster and its temporary directories when
 its session finishes, including after test failures. Surefire forks retain their independent clusters;
-JUnit tests remain serial within each fork, and the existing fork counts do not change.
+JUnit tests remain serial within each fork.
 
 After each test, the extension still checks live JNI handles, Arrow allocator bytes and
 TaskManager pool reservations. At each class boundary it cancels unfinished jobs and waits
@@ -251,7 +267,7 @@ Each Fluss SQL test invocation keeps one stock and one native table environment 
 DDL, reads and inserts. `@AfterEach` attempts to close both catalogs and clears the cache,
 including when the test fails. Parameterized invocations receive fresh environments.
 Job completion, result iterator closure, discovery-job cancellation and native-memory checks
-retain their existing boundaries. This uses the existing Java and image jobs and fork counts.
+retain their existing boundaries. This uses the existing Java and image jobs.
 
 Previously every SQL helper created and closed a catalog. Phase timings and thread dumps
 identified the Fluss client's two-second Netty shutdown quiet period on each close, including
