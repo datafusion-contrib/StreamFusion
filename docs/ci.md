@@ -226,12 +226,15 @@ custom memory budgets, metrics and separate task-JVM deployment. The launcher-se
 regression also restores the default memory budget after a failing class changes it,
 preserving later operator-harness defaults.
 
-The primitive and binary collection parity suites are an exception: their private metrics
-cluster belongs to one parameterized invocation. Retained Flink gauges can reference finished
-tasks, execution graphs and collection state, and the embedded job-result store also retains
+The collection parity suites are an exception: their private metrics cluster belongs to one
+test invocation. This includes primitive, binary, string, structured and nested aggregates,
+string and array keys, legacy consumers, standalone expressions and native collection kernels.
+Retained Flink gauges can reference finished tasks, execution graphs and collection state,
+and the embedded job-result store also retains
 serialized collection results until cluster shutdown. Keeping that cluster for an entire class
-accumulates results across hundreds of jobs. `@AfterEach` closes its cluster and reporter after
-the invocation's value, type, native-work and recovery assertions, including on failure or skip.
+accumulates results across jobs. Each suite explicitly uses `PER_METHOD`; `@AfterEach` closes
+its cluster and reporter after the invocation's value, type, native-work and recovery assertions,
+including on failure or skip.
 The SQL, input rows, changelog comparisons, recovery prefixes and test parallelism stay the same.
 The automatic shared MiniCluster still belongs to the launcher session.
 

@@ -10,16 +10,18 @@ import org.apache.flink.table.api.*;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FlinkNestedCollectionSqlHarnessTest {
-  private static final RecoveryExecutionMetrics METRICS = new RecoveryExecutionMetrics();
+  private final RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics();
 
-  @AfterAll
-  static void closeCluster() {
-    METRICS.close();
+  @AfterEach
+  void closeCluster() {
+    metrics.close();
   }
 
   private static List<Row> rows() {
@@ -83,8 +85,8 @@ class FlinkNestedCollectionSqlHarnessTest {
         + " END";
   }
 
-  private static TableEnvironment environment(String shape, int parallelism) {
-    var env = METRICS.environment(new Configuration(), parallelism, 0);
+  private TableEnvironment environment(String shape, int parallelism) {
+    var env = metrics.environment(new Configuration(), parallelism, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
@@ -123,8 +125,8 @@ class FlinkNestedCollectionSqlHarnessTest {
         true);
   }
 
-  private static TableEnvironment internalEnvironment(String shape, boolean binaryMaps) {
-    var env = METRICS.environment(new Configuration(), 1, 0);
+  private TableEnvironment internalEnvironment(String shape, boolean binaryMaps) {
+    var env = metrics.environment(new Configuration(), 1, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
@@ -167,8 +169,8 @@ class FlinkNestedCollectionSqlHarnessTest {
         true);
   }
 
-  private static TableEnvironment structuredEnvironment() {
-    var env = METRICS.environment(new Configuration(), 1, 0);
+  private TableEnvironment structuredEnvironment() {
+    var env = metrics.environment(new Configuration(), 1, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
@@ -201,7 +203,7 @@ class FlinkNestedCollectionSqlHarnessTest {
     for (var factory :
         List.<Supplier<TableEnvironment>>of(
             () -> internalEnvironment("DIRECT_ROW", false),
-            FlinkNestedCollectionSqlHarnessTest::structuredEnvironment)) {
+            this::structuredEnvironment)) {
       var runs =
           NativeFailureParity.run(
               factory, "SELECT k," + function + "(v),COUNT(*) FROM src GROUP BY k");
@@ -421,11 +423,11 @@ class FlinkNestedCollectionSqlHarnessTest {
     check(function, () -> internalEnvironment(shape, false), sql, true);
   }
 
-  private static void check(
+  private void check(
       String function, Supplier<TableEnvironment> factory, String sql, boolean keyed) {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction(function);
     var previous =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
     var runs = NativeFailureParity.run(factory, sql);
@@ -434,7 +436,7 @@ class FlinkNestedCollectionSqlHarnessTest {
     if (keyed) assertPerKey(runs.host().rows(), runs.nativeRun().rows());
     else assertRows(runs.host().rows(), runs.nativeRun().rows());
     RecoveryExecutionMetrics.assertConsumed(
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .filter(row -> !previous.contains(row.get("jobId")))
             .collect(java.util.stream.Collectors.toList()),
         "NativeJvmGroup");
