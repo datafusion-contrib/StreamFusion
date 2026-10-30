@@ -150,6 +150,22 @@ class JsonDecodeParityTest {
           new LogicalType[] {new DecimalType(5, 2), new TimeType(3), new VarBinaryType(8)},
           new String[] {"dec", "t", "b"});
 
+  private static final RowType DECIMAL_DATE_TYPE =
+      RowType.of(
+          new LogicalType[] {
+            new DecimalType(5, 2), new DateType(), new ArrayType(new DateType())
+          },
+          new String[] {"dec", "d", "a"});
+
+  private static final RowType DECIMAL_BOOLEAN_TYPE =
+      RowType.of(
+          new LogicalType[] {
+            new DecimalType(5, 2),
+            new BooleanType(),
+            new MapType(new VarCharType(VarCharType.MAX_LENGTH), new BooleanType())
+          },
+          new String[] {"dec", "b", "m"});
+
   private static final RowType DECIMAL_MAP_TYPE =
       RowType.of(
           new LogicalType[] {
@@ -231,6 +247,14 @@ class JsonDecodeParityTest {
     "{\"d\": \"2020-02-30\"}",
     "{\"d\": 42}",
     "{\"d\": \"2020-01-02T00:00:00\"}",
+    // Its EXCEEDS_PAD year: a sign exactly when the year leaves 0000-9999, no minus zero, and the
+    // epoch day narrowed by an int cast.
+    "{\"d\": \"-0001-01-01\"}",
+    "{\"d\": \"+10000-02-29\"}",
+    "{\"d\": \"+999999999-12-31\"}",
+    "{\"d\": \"+2024-01-05\"}",
+    "{\"d\": \"12024-01-05\"}",
+    "{\"d\": \"-0000-01-01\"}",
     // TIMESTAMP, SQL standard: space separator, seconds required, 0-9 fraction digits, no offsets,
     // no bare numbers.
     "{\"ts\": \"2020-01-02 03:04:05\"}",
@@ -517,6 +541,65 @@ class JsonDecodeParityTest {
     for (String scenario : scenarios) {
       assertParity(TIME_BINARY_TYPE, scenario, TimestampFormat.SQL, "", false);
       assertParity(TIME_BINARY_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+  }
+
+  @Test
+  void theDecimalPathIgnoresContentAfterTheRootValue() throws Exception {
+    // Jackson reads one root value and never looks past it, so Flink ignores what trails it; a
+    // DECIMAL-bearing schema reads only that value, like the simd path's Jackson-faithful walk.
+    String[] scenarios = {
+      "{\"dec\": 1.5, \"b\": true}}",
+      "{\"dec\": 2, \"m\": {\"k\": \"}\"}} {\"dec\": 3}",
+      "[{\"dec\": 4}] trailing",
+      // Escapes: a quote escaped before a brace, and an escaped backslash ending a string.
+      "{\"m\": {\"\\\"}\": true}, \"dec\": 1}}",
+      "{\"m\": {\"\\\\\": false}, \"dec\": 1}]",
+      // An unterminated root: strict fails, lenient drops.
+      "{\"dec\": 1",
+    };
+    for (String scenario : scenarios) {
+      assertParity(DECIMAL_BOOLEAN_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(DECIMAL_BOOLEAN_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+  }
+
+  @Test
+  void datesRideTheDecimalPathExactly() throws Exception {
+    // arrow-json accepts an unpadded date that Flink's strict ISO_LOCAL_DATE rejects, so a
+    // DECIMAL-bearing schema converts DATE leaves from their text like the simd path.
+    String[] scenarios = {
+      "{\"dec\": 1.5, \"d\": \"2024-01-05\", \"a\": [\"1970-01-01\", null]}",
+      "{\"d\": \"2024-1-5\"}",
+      "{\"a\": [\"2024-01-05\", \"2024-1-5\"]}",
+      "{\"d\": \"2023-02-29\"}",
+      "{\"d\": \" 2024-01-05\"}",
+      "{\"d\": 20240105}",
+      "{\"d\": null}",
+      "{\"d\": \"-0001-01-01\", \"a\": [\"+10000-01-01\", \"+2024-01-05\"]}",
+      "{\"d\": \"-0000-01-01\"}",
+      "{\"d\": \"+999999999-12-31\"}",
+    };
+    for (String scenario : scenarios) {
+      assertParity(DECIMAL_DATE_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(DECIMAL_DATE_TYPE, scenario, TimestampFormat.SQL, "", true);
+    }
+  }
+
+  @Test
+  void booleansRideTheDecimalPathExactly() throws Exception {
+    // arrow-json rejects a quoted boolean that Flink's parseBoolean reads, so a DECIMAL-bearing
+    // schema converts BOOLEAN leaves from their text like the simd path.
+    String[] scenarios = {
+      "{\"dec\": 1.5, \"b\": true, \"m\": {\"k\": false}}",
+      "{\"b\": \"TRUE\", \"m\": {\"k\": \" true \", \"j\": \"yes\"}}",
+      "{\"b\": \"no\"}",
+      "{\"b\": 1, \"m\": {\"k\": 0}}",
+      "{\"b\": null, \"m\": {\"k\": null}}",
+    };
+    for (String scenario : scenarios) {
+      assertParity(DECIMAL_BOOLEAN_TYPE, scenario, TimestampFormat.SQL, "", false);
+      assertParity(DECIMAL_BOOLEAN_TYPE, scenario, TimestampFormat.SQL, "", true);
     }
   }
 

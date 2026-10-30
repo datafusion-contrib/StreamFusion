@@ -31,6 +31,310 @@ fn bodies(docs: Vec<Option<&[u8]>>) -> RecordBatch {
     .unwrap()
 }
 
+// A decimal-bearing schema decodes through arrow-json, which rejects a quoted boolean; Flink's
+// `parseBoolean` reads it, so that path converts BOOLEAN leaves from their text the way the SIMD
+// path does.
+#[test]
+fn decimal_bearing_schemas_read_booleans_like_the_simd_path() {
+    let messages = bodies(vec![
+        Some(br#"{"b":true}"#.as_slice()),
+        Some(br#"{"b":"TRUE"}"#.as_slice()),
+        Some(br#"{"b":" true "}"#.as_slice()),
+        Some(br#"{"b":"yes"}"#.as_slice()),
+        Some(br#"{"b":1}"#.as_slice()),
+        Some(br#"{"b":null}"#.as_slice()),
+        Some(br#"{"b":false,"m":{"k":"true"}}"#.as_slice()),
+    ]);
+    let booleans = Field::new("b", DataType::Boolean, true);
+    let map = Field::new_map(
+        "m",
+        "entries",
+        Field::new("keys", DataType::Utf8, false),
+        Field::new("values", DataType::Boolean, true),
+        false,
+        true,
+    );
+    let simd_schema: SchemaRef = Arc::new(Schema::new(vec![booleans.clone(), map.clone()]));
+    let decimal_schema: SchemaRef = Arc::new(Schema::new(vec![
+        booleans,
+        map,
+        Field::new("d", DataType::Decimal128(10, 2), true),
+    ]));
+
+    let simd = new_decoder(FORMAT_JSON, simd_schema, "", "", 0, false, "").decode(&messages);
+    let decimal = new_decoder(FORMAT_JSON, decimal_schema, "", "", 0, false, "").decode(&messages);
+
+    let expected: Vec<Option<bool>> = vec![
+        Some(true),
+        Some(true),
+        Some(true),
+        Some(false),
+        Some(false),
+        None,
+        Some(false),
+    ];
+    let column = |batch: &RecordBatch| {
+        batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(column(&simd), expected);
+    assert_eq!(column(&decimal), expected);
+    assert_eq!(simd.column(1).to_data(), decimal.column(1).to_data());
+}
+
+// Jackson reads one root value and never looks past it, so Flink's plain JSON format ignores the
+// content after it; a DECIMAL-bearing schema reads only that value, like the simd path's walk.
+#[test]
+fn decimal_bearing_schemas_ignore_content_after_the_root_value() {
+    let messages = bodies(vec![
+        Some(br#"{"d": 1.5, "s": "a"}}"#.as_slice()),
+        Some(br#"[{"d": 2, "s": "]"}] trailing"#.as_slice()),
+        Some(br#"{"d": 3, "s": "}"} {"d": 4}"#.as_slice()),
+    ]);
+    let strings = Field::new("s", DataType::Utf8, true);
+    let simd_schema: SchemaRef = Arc::new(Schema::new(vec![strings.clone()]));
+    let decimal_schema: SchemaRef = Arc::new(Schema::new(vec![
+        strings,
+        Field::new("d", DataType::Decimal128(10, 2), true),
+    ]));
+
+    let simd = new_decoder(FORMAT_JSON, simd_schema, "", "", 0, false, "").decode(&messages);
+    let strict =
+        new_decoder(FORMAT_JSON, decimal_schema.clone(), "", "", 0, false, "").decode(&messages);
+    let lenient = new_decoder(FORMAT_JSON, decimal_schema, "", "", 0, true, "").decode(&messages);
+
+    let column = |batch: &RecordBatch| {
+        batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .iter()
+            .map(|value| value.unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(column(&simd), vec!["a", "]", "}"]);
+    assert_eq!(column(&strict), vec!["a", "]", "}"]);
+    assert_eq!(column(&lenient), vec!["a", "]", "}"]);
+}
+
+// An unterminated root leaves arrow-json mid-record: strict mode fails that message rather than
+// let the next message's bytes complete the record, and skip mode drops it alone.
+#[test]
+fn decimal_bearing_schemas_never_finish_a_root_with_the_next_message() {
+    let messages = bodies(vec![
+        Some(br#"{"d": 1.5,"#.as_slice()),
+        Some(br#""e": 2}"#.as_slice()),
+        Some(br#"{"d": 2.5, "e": 3}"#.as_slice()),
+    ]);
+    let schema: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("e", DataType::Int32, true),
+        Field::new("d", DataType::Decimal128(10, 2), true),
+    ]));
+    let strict = new_decoder(FORMAT_JSON, schema.clone(), "", "", 0, false, "");
+
+    let lenient = new_decoder(FORMAT_JSON, schema, "", "", 0, true, "").decode(&messages);
+    let strict_failed =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strict.decode(&messages)))
+            .is_err();
+
+    assert!(strict_failed);
+    let ints = lenient
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow::array::Int32Array>()
+        .unwrap()
+        .iter()
+        .collect::<Vec<_>>();
+    assert_eq!(ints, vec![Some(3)]);
+}
+
+// Flink parses DATE with the strict ISO_LOCAL_DATE whatever the schema holds; arrow-json's own
+// date parse accepts an unpadded date, so a DECIMAL-bearing schema converts DATE leaves from
+// their text like the simd path.
+#[test]
+fn decimal_bearing_schemas_read_dates_like_the_simd_path() {
+    let messages = bodies(vec![
+        Some(br#"{"d":"2024-01-05","a":["2024-1-5","1970-01-01"]}"#.as_slice()),
+        Some(br#"{"d":"2024-1-5"}"#.as_slice()),
+        Some(br#"{"d":"2023-02-29"}"#.as_slice()),
+        Some(br#"{"d":" 2024-01-05"}"#.as_slice()),
+        Some(br#"{"d":20240105}"#.as_slice()),
+        Some(br#"{"d":null}"#.as_slice()),
+        Some(br#"{"d":"-0001-01-01","a":["+10000-01-01","+2024-01-05"]}"#.as_slice()),
+        Some(br#"{"d":"-0000-01-01"}"#.as_slice()),
+        Some(br#"{"d":"+999999999-12-31"}"#.as_slice()),
+    ]);
+    let dates = Field::new("d", DataType::Date32, true);
+    let array = Field::new(
+        "a",
+        DataType::List(Arc::new(Field::new("item", DataType::Date32, true))),
+        true,
+    );
+    let simd_schema: SchemaRef = Arc::new(Schema::new(vec![dates.clone(), array.clone()]));
+    let decimal_schema: SchemaRef = Arc::new(Schema::new(vec![
+        dates,
+        array,
+        Field::new("x", DataType::Decimal128(10, 2), true),
+    ]));
+
+    let simd = new_decoder(FORMAT_JSON, simd_schema.clone(), "", "", 0, true, "").decode(&messages);
+    let decimal =
+        new_decoder(FORMAT_JSON, decimal_schema.clone(), "", "", 0, true, "").decode(&messages);
+    let unpadded = bodies(vec![Some(br#"{"d":"2024-1-5"}"#.as_slice())]);
+    let strict_simd = new_decoder(FORMAT_JSON, simd_schema, "", "", 0, false, "");
+    let strict_decimal = new_decoder(FORMAT_JSON, decimal_schema, "", "", 0, false, "");
+
+    let column = |batch: &RecordBatch| {
+        batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::Date32Array>()
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>()
+    };
+    let expected = vec![
+        Some(19727),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(-719_893),
+        None,
+        Some(169_560_311),
+    ];
+    assert_eq!(column(&simd), expected);
+    assert_eq!(column(&decimal), expected);
+    assert_eq!(simd.column(1).to_data(), decimal.column(1).to_data());
+    let fails = |decoder: &MessageDecoder| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decoder.decode(&unpadded)))
+            .is_err()
+    };
+    assert!(fails(&strict_simd));
+    assert!(fails(&strict_decimal));
+}
+
+// Flink's CDC dialects read a DECIMAL-bearing envelope into a tree whose floats are BigDecimals and
+// whose integers are IntNodes, so a zero number token loses its sign (a quoted one keeps it); the
+// plain `json` parser path reads the token's own text and keeps it.
+#[test]
+fn cdc_decimal_bearing_schemas_read_zero_number_tokens_unsigned() {
+    let schema: SchemaRef = Arc::new(Schema::new(vec![
+        Field::new("d", DataType::Float64, true),
+        Field::new("f", DataType::Float32, true),
+        Field::new("s", DataType::Utf8, true),
+        Field::new(
+            "a",
+            DataType::List(Arc::new(Field::new("item", DataType::Float64, true))),
+            true,
+        ),
+        Field::new("x", DataType::Decimal128(10, 2), true),
+    ]));
+    let messages = bodies(vec![
+        Some(br#"{"d": -0.0, "f": -0, "s": -0, "a": [-0.0, -0e3, -0.5], "x": -0.00}"#.as_slice()),
+        Some(br#"{"d": "-0.0", "f": "-0", "s": "q\"-0", "a": ["-0.0"], "x": "-0.00"}"#.as_slice()),
+    ]);
+    let tree = crate::json::JsonEnv {
+        tree_duplicates: true,
+        ..Default::default()
+    };
+
+    let cdc = JsonDecoder::new(schema.clone(), tree).decode(&messages);
+    let plain = JsonDecoder::new(schema, crate::json::JsonEnv::default()).decode(&messages);
+
+    let bits = |batch: &RecordBatch| {
+        let d = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::Float64Array>()
+            .unwrap();
+        let f = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow::array::Float32Array>()
+            .unwrap();
+        let a = batch
+            .column(3)
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let a = a
+            .values()
+            .as_any()
+            .downcast_ref::<arrow::array::Float64Array>()
+            .unwrap();
+        (
+            d.values().iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            f.values().iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            a.values().iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        )
+    };
+    let strings = |batch: &RecordBatch| {
+        let s = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        s.iter().map(|v| v.unwrap().to_string()).collect::<Vec<_>>()
+    };
+    let (zero, negative_zero) = (0f64.to_bits(), (-0f64).to_bits());
+    let (zero32, negative_zero32) = (0f32.to_bits(), (-0f32).to_bits());
+    assert_eq!(
+        bits(&cdc),
+        (
+            vec![zero, negative_zero],
+            vec![zero32, negative_zero32],
+            vec![zero, zero, (-0.5f64).to_bits(), negative_zero],
+        )
+    );
+    assert_eq!(strings(&cdc), vec!["0", "q\"-0"]);
+    assert_eq!(
+        bits(&plain),
+        (
+            vec![negative_zero, negative_zero],
+            vec![negative_zero32, negative_zero32],
+            vec![
+                negative_zero,
+                negative_zero,
+                (-0.5f64).to_bits(),
+                negative_zero
+            ],
+        )
+    );
+    assert_eq!(strings(&plain), vec!["-0", "q\"-0"]);
+}
+
+#[test]
+fn only_zero_number_tokens_lose_their_sign() {
+    let rewrite = |document: &[u8]| {
+        String::from_utf8(crate::json::unsigned_zero_numbers(document).into_owned()).unwrap()
+    };
+
+    assert_eq!(
+        rewrite(br#"[-0, -0.0, -0.000E-5, -0e+2]"#),
+        "[0, 0.0, 0.000E-5, 0e+2]"
+    );
+    assert_eq!(
+        rewrite(br#"[-0.5, -10, -01, 1e-0, -Infinity]"#),
+        "[-0.5, -10, -01, 1e-0, -Infinity]"
+    );
+    assert_eq!(
+        rewrite(br#"{"-0": "-0", "e": "\\", "k": -0}"#),
+        r#"{"-0": "-0", "e": "\\", "k": 0}"#
+    );
+    assert!(matches!(
+        crate::json::unsigned_zero_numbers(br#"{"k": -1}"#),
+        std::borrow::Cow::Borrowed(_)
+    ));
+}
+
 #[test]
 fn legacy_array_rejection_keeps_plain_json_parser_retries() {
     let schema = Arc::new(Schema::new(vec![Field::new("f", DataType::Float32, true)]));

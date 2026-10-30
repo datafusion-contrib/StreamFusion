@@ -62,8 +62,9 @@ field failed — all reproduced.
 
 ## Deliberate residual divergences
 
-All are **accept-where-Flink-rejects** (or the reverse) on data that never decodes to a different
-value — a job that runs on both engines produces identical results.
+Most are **accept-where-Flink-rejects** (or the reverse) on data that never decodes to a different
+value — a strict job that runs on both engines produces identical results. The residuals that
+differ even then, or that skip a different amount than Flink under `ignore-parse-errors`, say so.
 
 - **A trailing `Z` is tolerated on any timestamp column.** Flink's `*_WITH_LOCAL_TIMEZONE` formats
   *require* the literal `Z` and the plain-timestamp formats *forbid* it, but the Arrow boundary
@@ -72,21 +73,23 @@ value — a job that runs on both engines produces identical results.
   both shapes is accepted rather than plumbing an LTZ marker through the boundary for a pure
   strictness gain.
 - **Java-only numeric exotica are rejected**: hex float literals (`0x1.8p1`) and expanded ISO years
-  beyond four digits (`+10000-01-01`) fail natively where Java parses them.
+  inside a timestamp (`+10000-01-01 00:00:00`) fail natively where Java parses them. A DATE reads
+  `ISO_LOCAL_DATE`'s signed expanded years exactly.
 - **An unterminated quote parses as field content** (csv-core prefers *a* parse over *no* parse)
   where Jackson throws on EOF inside a quote.
 - **A message holding several CSV records emits only the first** — same as Flink (Jackson's
   `readValue` reads one), noted here because the pre-rewrite native decode emitted them all.
-- **A float token under a JSON STRING column fails loudly instead of echoing.** Flink echoes the
-  producer's raw literal (`1.50` stays `"1.50"`), but the tape parse discards it and Flink's own
-  two decode paths already disagree on the rendering (the parser path echoes raw, the tree path
-  re-renders via `Double.toString`), so the native decode fails the job rather than silently pick
-  one. Integer, boolean, and float-free container values echo exactly (containers serialize to
-  Jackson's compact form, duplicate keys collapsing last-value-first-position). Under
-  `ignore-parse-errors` the field nulls — a null where Flink keeps a value, the one lenient-mode
-  value divergence. On the Jackson-faithful retry walk (below) the raw literal IS available, so a
-  float token at a scalar STRING position echoes exactly there; a float inside an echoed
-  *container* keeps this rule on both paths (the tree rendering re-spells it).
+- **A float token under a JSON STRING column fails loudly on the simd path instead of echoing.**
+  Flink echoes the producer's raw literal (`1.50` stays `"1.50"`), but the tape parse discards it
+  and Flink's own two decode paths already disagree on the rendering (the parser path echoes raw,
+  the tree path re-renders via `Double.toString`), so the native decode fails the job rather than
+  silently pick one. Integer, boolean, and float-free container values echo exactly (containers
+  serialize to Jackson's compact form, duplicate keys collapsing last-value-first-position). Under
+  `ignore-parse-errors` the field nulls — a null where Flink keeps a value, a lenient-mode value
+  divergence. On the Jackson-faithful retry walk (below) the raw literal IS available, so a float
+  token at a scalar STRING position echoes exactly there; a float inside an echoed *container* keeps
+  this rule on both paths (the tree rendering re-spells it). A decimal-bearing schema echoes the raw
+  literal instead (below).
 - **The Jackson-faithful retry covers the plain `json` format only.** Messages simd-json rejects
   but Jackson tokenizes — out-of-range number literals (converted per field from the raw text),
   raw control characters inside strings (`ALLOW_UNESCAPED_CONTROL_CHARS`), content trailing the
@@ -124,13 +127,28 @@ value — a job that runs on both engines produces identical results.
   of the wrong kind): the drift is deterministic over the token stream, so the walk reproduces
   Flink's exact outcome, parity-pinned. The exception is a drift that would spin Flink's loop
   past end-of-input (below).
-- **Skip granularity on a decimal-bearing JSON schema is per message/element for non-decimal
-  errors.** arrow-json is all-or-nothing per document, so a bad non-decimal value drops the whole
-  message (or the whole fanned-out array element) where Flink nulls the field; the decimal cells
-  themselves skip per field. The simd path (every schema without a DECIMAL) has Flink's exact
-  per-field granularity. On a decimal-bearing **Maxwell/Canal** table the same all-or-nothing
-  behavior can trip the `old`-presence alignment check under skip mode — a loud failure where
-  Flink skips, never a silent divergence.
+- **A decimal-bearing JSON schema converts only its text-restored leaves field by field.** Such a
+  schema decodes through arrow-json to keep raw number literals. Its DECIMAL, DATE, TIME, TIMESTAMP,
+  VARBINARY and BOOLEAN leaves decode as text and convert afterwards with the Flink-exact parsers,
+  so a bad value there nulls just that field like Flink, and BOOLEAN's `parseBoolean` never fails.
+  arrow-json reads every other value itself, all-or-nothing per document. It rejects a container
+  token under any scalar column, text-restored ones included, and under a numeric column a boolean
+  token, an out-of-range number, or a string Java parses differently: its numeric parse neither
+  trims nor reads Java's suffixes or non-ASCII digits (`" 42 "`, `" 1.5"`, `"1.5d"`). A rejected
+  value fails the message in strict mode and drops the whole message (or the whole fanned-out array
+  element) in skip mode. Flink converts each such value on its own: it reads those strings, a
+  container under STRING as its JSON text (under BOOLEAN on the CDC tree path, as `false`), and
+  nulls just the field for the rest. In the other direction arrow-json accepts values Flink rejects:
+  a number token with a fraction or an exponent truncates under TINYINT and SMALLINT (`1.9` reads 1
+  and `1e2` reads 100, where `parseByte`/`parseShort` fail), and FLOAT and DOUBLE read `inf`,
+  `infinity` and `nan` in any case, where Java reads only `NaN` and `Infinity`. There a strict job
+  runs natively where Flink fails, and skip mode keeps the value Flink nulls. A float token under
+  STRING reads as its raw literal, as plain `json`'s parser path does, but the CDC dialects' tree
+  path spells the BigDecimal Jackson parsed (`1.50` as `1.5`, `100.0` as `1E+2`), so a
+  decimal-bearing CDC table produces a different string even in strict mode. The simd path (every
+  schema without a DECIMAL) has Flink's exact per-field behavior. On a decimal-bearing
+  **Maxwell/Canal** table the same all-or-nothing behavior can trip the `old`-presence alignment
+  check under skip mode — a loud failure where Flink skips, never a silent divergence.
 - **TIME/VARBINARY leaves on a decimal-bearing JSON schema ride arrow-json as coerced text**, and
   the coercion erases the token's type: a number or boolean token under such a column converts
   from its rendered literal, so a base64-shaped literal (`42`, `true`) decodes into a VARBINARY

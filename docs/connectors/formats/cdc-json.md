@@ -65,7 +65,15 @@ This reconstruction is parity-pinned against Flink (`CdcDecodeParityTest`).
 `ignore-parse-errors` is native across all four dialects, with Flink's exact granularity: a
 structurally malformed message drops whole, a bad value inside an image nulls just that one field,
 and a failure partway through a fan-out (a JSON array carrying multiple logical records) keeps the
-rows already emitted before the failure.
+rows already emitted before the failure. A schema that declares a `DECIMAL` is the exception: there
+a bad DECIMAL, DATE, TIME, TIMESTAMP or VARBINARY value still nulls just its field and BOOLEAN never
+fails, but a value the JSON reader itself rejects drops the whole message: a container under any
+scalar column, or under a numeric column a boolean, an out-of-range number or a string it can't
+parse, including padded and suffixed numbers Flink reads. That reader also accepts values Flink
+rejects (a number with a fraction or an exponent under `TINYINT` or `SMALLINT` truncates, and
+`FLOAT` and `DOUBLE` read `inf`, `infinity` and `nan` in any case), and it reads a float under a
+`STRING` column as its literal (`1.50`) where Flink spells the parsed decimal (`1.5`). See
+[the ingest divergence note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/21-ingest-text-envelope.md).
 
 `debezium-avro-confluent` also decodes natively — see [Avro Confluent](avro-confluent.md) for its
 registry, schema-evolution, and type-coverage details, which layer the Debezium envelope onto the

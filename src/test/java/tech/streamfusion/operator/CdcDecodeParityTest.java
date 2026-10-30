@@ -13,9 +13,13 @@ import org.apache.flink.formats.json.ogg.OggJsonDeserializationSchema;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.BooleanType;
+import org.apache.flink.table.types.logical.DateType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.DoubleType;
+import org.apache.flink.table.types.logical.FloatType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
@@ -73,6 +77,84 @@ class CdcDecodeParityTest {
     for (String scenario : scenarios) {
       assertParity(MAXWELL, scenario, false);
       assertParity(MAXWELL, scenario, true);
+    }
+  }
+
+  /** A DECIMAL-bearing envelope reads BOOLEAN through {@code parseBoolean} over trimmed text. */
+  @Test
+  void decimalSchemasReadBooleansLikeFlink() throws Exception {
+    RowType decimal =
+        RowType.of(
+            new LogicalType[] {new DecimalType(10, 2), new BooleanType()},
+            new String[] {"amount", "flag"});
+    DecodeParityHarness harness = new DecodeParityHarness(decimal, true);
+    String[] images = {
+      "{\"amount\":1.5,\"flag\":\"true\"}",
+      "{\"amount\":1.5,\"flag\":\" TRUE \"}",
+      "{\"amount\":1.5,\"flag\":\"1\"}",
+      "{\"amount\":1.5,\"flag\":1}",
+      "{\"amount\":1.5,\"flag\":true}",
+      "{\"amount\":1.5,\"flag\":null}",
+    };
+    for (String image : images) {
+      for (boolean skipErrors : new boolean[] {false, true}) {
+        assertParity(
+            harness, decimal, MAXWELL, "{\"data\":" + image + ",\"type\":\"insert\"}", skipErrors);
+        assertParity(
+            harness, decimal, CANAL, "{\"data\":[" + image + "],\"type\":\"INSERT\"}", skipErrors);
+        assertParity(
+            harness,
+            decimal,
+            DEBEZIUM,
+            "{\"before\":null,\"after\":" + image + ",\"op\":\"c\"}",
+            skipErrors);
+      }
+    }
+  }
+
+  /**
+   * DATE reads through the strict {@code ISO_LOCAL_DATE}, signed {@code EXCEEDS_PAD} years and the
+   * int-narrowed epoch day included, with and without a DECIMAL in the schema; a date that fails
+   * nulls just that field under ignore-parse-errors.
+   */
+  @Test
+  void datesReadLikeIsoLocalDateOnBothPaths() throws Exception {
+    RowType simd =
+        RowType.of(new LogicalType[] {new BigIntType(), new DateType()}, new String[] {"id", "day"});
+    RowType decimal =
+        RowType.of(
+            new LogicalType[] {new DecimalType(10, 2), new DateType()},
+            new String[] {"id", "day"});
+    String[] dates = {
+      "\"2024-01-05\"",
+      "\"-0001-01-01\"",
+      "\"+10000-02-29\"",
+      "\"+999999999-12-31\"",
+      "\"+2024-01-05\"",
+      "\"12024-01-05\"",
+      "\"-0000-01-01\"",
+      "\"2024-1-5\"",
+      "\"2023-02-29\"",
+      "20240105",
+      "null",
+    };
+    for (RowType rowType : List.of(simd, decimal)) {
+      DecodeParityHarness harness = new DecodeParityHarness(rowType, true);
+      for (String date : dates) {
+        String image = "{\"id\":1,\"day\":" + date + "}";
+        for (boolean skipErrors : new boolean[] {false, true}) {
+          assertParity(
+              harness, rowType, MAXWELL, "{\"data\":" + image + ",\"type\":\"insert\"}", skipErrors);
+          assertParity(
+              harness, rowType, CANAL, "{\"data\":[" + image + "],\"type\":\"INSERT\"}", skipErrors);
+          assertParity(
+              harness,
+              rowType,
+              DEBEZIUM,
+              "{\"before\":null,\"after\":" + image + ",\"op\":\"c\"}",
+              skipErrors);
+        }
+      }
     }
   }
 
@@ -279,6 +361,45 @@ class CdcDecodeParityTest {
     for (boolean skipErrors : new boolean[] {false, true}) {
       for (String scenario : scenarios) {
         assertParity(harness, decimal, DEBEZIUM, scenario, skipErrors);
+      }
+    }
+  }
+
+  /**
+   * A DECIMAL-bearing envelope parses into a tree whose floats are BigDecimals and whose integers
+   * are IntNodes, so a zero number token loses its sign while a quoted zero keeps it.
+   */
+  @Test
+  void decimalSchemasReadZeroNumberTokensUnsigned() throws Exception {
+    RowType decimal =
+        RowType.of(
+            new LogicalType[] {
+              new DecimalType(10, 2),
+              new DoubleType(),
+              new FloatType(),
+              new VarCharType(VarCharType.MAX_LENGTH),
+              new ArrayType(new DoubleType())
+            },
+            new String[] {"amount", "score", "ratio", "note", "scores"});
+    DecodeParityHarness harness = new DecodeParityHarness(decimal, true);
+    String[] images = {
+      "{\"amount\":-0.00,\"score\":-0.0,\"ratio\":-0,\"note\":-0,\"scores\":[-0.0,-0e3,-0.5]}",
+      "{\"amount\":-0,\"score\":-0,\"ratio\":-0.0E-2,\"note\":\"-0\",\"scores\":[-0]}",
+      "{\"amount\":\"-0.00\",\"score\":\"-0.0\",\"ratio\":\"-0\",\"note\":\"-0\","
+          + "\"scores\":[\"-0.0\"]}",
+    };
+    for (String image : images) {
+      for (boolean skipErrors : new boolean[] {false, true}) {
+        assertParity(
+            harness, decimal, MAXWELL, "{\"data\":" + image + ",\"type\":\"insert\"}", skipErrors);
+        assertParity(
+            harness, decimal, CANAL, "{\"data\":[" + image + "],\"type\":\"INSERT\"}", skipErrors);
+        assertParity(
+            harness,
+            decimal,
+            DEBEZIUM,
+            "{\"before\":null,\"after\":" + image + ",\"op\":\"c\"}",
+            skipErrors);
       }
     }
   }
