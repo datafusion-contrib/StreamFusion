@@ -139,6 +139,11 @@ snapshot while another writer's rows remain in channel state; even when all rows
 committed, an earlier recovery checkpoint may still retain those records. The later boundary
 separates cross-checkpoint equality deletes from same-writer position deletes. Both delete
 kinds, exact readback without duplicate keys and native-handle cleanup remain asserted.
+After emitting the update batch, the fixture advances its source progress under the checkpoint
+lock before throwing the injected failure. A queued checkpoint may acquire the lock while the
+legacy source thread propagates its exception to the task; its source offset must agree with
+the emitted batch, including when that batch remains in captured channel state. A deterministic
+fixture regression checks that progress immediately after the injected failure.
 Duplicate-row, final-value and delete-kind failures include source checkpoint events and table
 snapshot summaries. The keyed recovery stress selection alternates both upsert modes for
 20 repetitions by default; increase it locally with `-Dsf.iceberg.recovery.repetitions=100`.
