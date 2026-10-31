@@ -4,7 +4,7 @@ Flink's string IS_ALPHA/IS_DIGIT delegate to Commons Lang, which tests Java UTF-
 with `Character.isLetter(char)` / `Character.isDigit(char)`. Rust's Unicode properties can use a different Unicode
 release and classify supplementary code points as letters even though Java's two surrogate
 units both fail these functions. Rust alphabetic/numeric predicates are therefore not compatible
-replacement.
+replacements.
 
 Comet's JNI bridge initializes JVM metadata once, confines attached-thread calls to a local
 reference frame, and retains only the state needed by native execution. We use that lifecycle
@@ -17,7 +17,7 @@ planner/worker JDK difference never serializes the wrong Unicode table into the 
 There is no new JNI entry point or batch/row callback.
 
 The native kernels read Arrow UTF-8, accept ASCII letters/digits through a byte fast path, and
-looks up other BMP characters in that bitmap. Supplementary characters fail immediately,
+look up other BMP characters in that bitmap. Supplementary characters fail immediately,
 matching the UTF-16 loop. An isolated surrogate encoded as `?` also remains nonalphabetic;
 the normalization cannot turn a failed string into an accepted one. Superscript digits and
 Roman numerals fail the digit classifier because Java requires the decimal-digit property.
@@ -30,3 +30,13 @@ contract belongs to the JDK running that task. Correctness tests compare every B
 with the released stock function on each supported Flink/JDK pair, alongside supplementary,
 NULL, empty, conditional and multi-batch cases. Performance measurements and remaining
 classification/casing gaps live in the Calc and scalar benchmark pages.
+
+IS_DECIMAL is a separate predicate: released Flink tries Java integer, long and double
+parsing. Its native ASCII path checks the exact lexical double grammar, including signed
+NaN/Infinity, hex exponents, floating suffixes and U+0000..U+0020 trimming. Magnitude overflow
+is valid double syntax, so computing a floating value is unnecessary. The additional
+Unicode integer path uses a 32 KiB packed snapshot of `Character.digit(char, 10)` and checked
+signed-long bounds. It does not trim or accept supplementary digits. ASCII numeric overflow
+can succeed as double syntax while equivalent Unicode digits fail the integer bounds.
+This snapshot uses the same bounded setup frame and owns only native words; no Java parser
+or exception allocation remains in row/batch classification.

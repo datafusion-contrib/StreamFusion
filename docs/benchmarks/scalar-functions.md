@@ -4393,6 +4393,12 @@ batch and row execution do not call Java. ASCII letters take a byte fast path. T
 UTF-16-char contract rejects supplementary letters, combining marks and isolated
 surrogates, and returns nonnullable FALSE for NULL or empty strings.
 
+The original alpha matrix uses nullable generated Java/encoder signatures for both data
+populations; its nullable flag selects whether rows contain NULL. It does not establish
+the cost of a declared NOT NULL signature. The separate
+[matching NOT NULL controls](#declared-not-null-classification-controls) below qualify that
+signature explicitly. Original trials remain available with their source-commit metadata.
+
 Prepared controls use released Flink 1.18.1/2.2.1, JDK 17.0.12, Apple M4 Pro, one thread
 and a release/default-feature/mimalloc native build. Flink starts with prepared
 GenericRowData or BinaryRowData and times its released generated expression in Java.
@@ -4473,6 +4479,10 @@ NULL/empty strings, supplementary digits, signs, decimal points, superscripts an
 numerals return nonnullable FALSE. ASCII decimal digits have a specialized byte loop.
 There are no batch/row JVM calls in the classifier.
 
+As in the original alpha matrix, generated Java/encoder signatures are nullable in all
+original digit cells; the flag selects data NULLs. See the separate
+[declared NOT NULL controls](#declared-not-null-classification-controls) for that signature.
+
 The prepared controls cover ASCII digit bodies of 16/128 characters, mixed ASCII, BMP
 digits, mixed Unicode digits and supplementary-digit rejection with 16-character bodies,
 varying prefixes, NULL every seven rows, GenericRowData/BinaryRowData and 16/1,024-row
@@ -4529,3 +4539,105 @@ Reproduce with the IS_ALPHA commands and arguments, additionally setting
 `-Dsf.classification.digit=true` instead. Both are benchmark controls, not production switches.
 The old control keeps its matching `SF_CLASSIFICATION_PREVIOUS=true` or
 `-Dsf.classification.previous=true` and independently compiled encoder classpath.
+
+## STRING IS_DECIMAL
+
+Flink's predicate tries Java integer, long and double parsing. Native ASCII lexical
+classification therefore accepts signed integers/fractions, decimal/hexadecimal exponents,
+floating suffixes, signed NaN/Infinity and magnitude overflow. It trims only U+0000..U+0020
+on the double path. A separate worker-JDK snapshot supplies packed BMP radix-10 digit
+values for Unicode integers, which require signed-long bounds and no trimming. No row/batch
+Java parser, exception allocation or floating conversion remains in the classifier.
+
+Controls use released Flink 1.18.1/2.2.1, JDK 17.0.12, Apple M4 Pro, one thread and a
+release/default-feature/mimalloc build. The generated released RowData evaluator and
+production Arrow Calc consume matching Boolean TRUE counts in their own runtimes. Native
+timers are inside Rust after Arrow preparation and before export. Perimeter JNI and both
+transposes are outside this small-operation timer; intrinsic previous JVM callbacks remain
+inside. Candidate and actual `3af56f9a` encoder processes retain independent stock controls.
+
+The 160 prepared configurations cover ASCII digit bodies of 1/6/16/128 characters, fractions,
+decimal/hexadecimal exponents, mixed invalid/empty strings, BMP/Unicode digits, Unicode
+integer overflow, special values and supplementary-digit rejection. Each has GenericRowData/
+BinaryRowData and nullable/nonnullable controls at 1,024 rows. Six representative corpora also
+have 16-row controls. Trials process 32,768 rows with 16 warmups and nine measurements,
+alternating paired engines, with all timing jobs run serially.
+
+| Flink line | Batch rows | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.653–54.114x | 35.620–81.912x |
+| 1.18.1 | 1,024 | 2.310–229.729x | 10.439–256.494x |
+| 2.2.1 | 16 | 1.369–59.370x | 28.012–84.348x |
+| 2.2.1 | 1,024 | 3.261–203.293x | 9.438–215.964x |
+
+All 1,024-row cells improve over paired stock, including cached GenericRowData and actual
+NOT NULL declarations. Four 16-row 1.18 cells lose to stock; fixed Calc/output cost remains
+visible on short integer strings. The strongest gains avoid released Flink's caught parser
+exceptions for fractional, invalid or non-int numeric syntax; they do not describe arbitrary
+numeric arithmetic or every string input. Independent stock controls drift by 0.423–2.257x,
+and previous/native ratios include that variability. The
+[result record](results/string-is-decimal-2026-11-01.json) and
+[raw trials](results/string-is-decimal-2026-11-01.csv.gz) retain every qualified cell and trial.
+
+Separate one-million-row jobs retain production JNI, startup/planning, a rowwise source,
+BOOLEAN NOT NULL blackhole and both transposes. They use nullable ASCII bodies of six
+characters or mixed Unicode bodies of sixteen, parallelism one, two warmups and five
+measurements. Both native modes require consumed Calc work; the candidate additionally
+requires empty JVM evaluator descriptors. The independent previous process keeps its own
+stock control.
+
+| Flink line / corpus | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / ASCII 6 | 0.204180 (0.188094–0.212755) | 0.192536 (0.189526–0.208814) | 0.190818 (0.186239–0.199758) | 0.252382 (0.245369–0.265800) |
+| 2.2.1 / ASCII 6 | 0.199403 (0.196239–0.213949) | 0.183029 (0.177659–0.187342) | 0.211075 (0.209459–0.220351) | 0.259388 (0.247681–0.320371) |
+| 1.18.1 / Unicode 16 | 1.459045 (1.447974–1.466384) | 0.250724 (0.242249–0.255112) | 1.468166 (1.455251–1.487260) | 1.802646 (1.780039–1.815647) |
+| 2.2.1 / Unicode 16 | 1.311750 (1.308548–1.336238) | 0.237144 (0.225340–0.255713) | 1.340659 (1.302556–1.365580) | 1.691473 (1.621389–1.739532) |
+
+The ASCII native medians improve 5.7%/8.2% over paired stock and 23.7%/29.4% over
+previous StreamFusion on 1.18/2.2 respectively. Stock/native ranges overlap on 1.18;
+independent stock controls also vary. Unicode medians improve 5.82x/5.53x over paired
+stock on these exact jobs: longer Unicode integer strings cause the released predicate
+to allocate and catch integer-parser failures before trying long parsing. These bounded
+jobs do not establish a universal or sustained whole-job gain, and neither the source
+string construction nor the sink/transpose costs are removed.
+
+Focused classification checks pass 76 JVM invocations across released Flink 1.18.1/2.2.1
+and JDK 11/17, including the three classifiers after shared initialization changes. The
+decimal witnesses compare all 65,536 BMP single units and 82,556 embedded-unit,
+grammar-combination and seeded random strings, plus positive/negative signed-long bounds
+for every BMP digit, against the released
+parser and stock runtime SQL. Unique source IDs, complete output counts, consumed native
+work, no fallback and empty JVM descriptors are required. Unchanged released upstream
+`ScalarFunctionsTest.testIsDecimal` passes on all four pairs; local expression assertions
+are separate from the native witnesses. Default-feature release/mimalloc Rust core:
+1,007 pass, two pre-existing ignores.
+
+Reproduce with the classification example and `SF_CLASSIFICATION_DECIMAL=true` instead of
+the digit flag. The complete-job launcher takes `-Dsf.classification.decimal=true`, plus
+`-Dclassification.pipeline.corpus=ascii -Dclassification.pipeline.width=6` or
+`-Dclassification.pipeline.corpus=unicode -Dclassification.pipeline.width=16`.
+These are benchmark-only controls. The example additionally accepts `fraction`, `exponent`,
+`hex`, `special` and `unicode-overflow` corpora. Previous controls prepend the independently
+compiled main encoder and enable the existing previous-mode flag.
+
+## Declared NOT NULL classification controls
+
+These additional controls declare STRING NOT NULL in the actual encoder and generated
+released Java input signature and use a matching nonnullable Arrow field with no NULL data.
+They separate that signature from the original alpha/digit matrices, whose no-NULL data
+populations still used nullable Java signatures. `StringClassificationBenchmarkFunctions`
+requires the fixture's data setting to match its signature. The native example passes that
+setting before creating the JVM; it is not a production option.
+
+The 176 configurations cover 48 alpha, 48 digit and 80 decimal cells on both releases,
+with the same corpora, prepared timing boundaries, one thread, release/default/mimalloc,
+16 warmups and nine measurements. Alpha/digit trials process 131,072 rows and decimal
+trials 32,768 rows. Every 1,024-row cell beats its paired stock control. Twelve alpha,
+eleven digit and two decimal 16-row cells lose to stock; no small-batch win is assumed.
+The decimal NOT NULL cells are included in its 160-cell qualified matrix, not extra
+independent evidence for that total.
+
+The [result record](results/classification-not-null-2026-11-01.json) and
+[raw trials](results/classification-not-null-2026-11-01.csv.gz) retain both stock controls,
+all variability and each slower case. Existing nullable-signature data remains in the
+original alpha/digit records with its scope and source commits explicitly identified.

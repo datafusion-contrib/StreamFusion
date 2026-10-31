@@ -5,7 +5,10 @@ use jni::objects::JValue;
 use std::{hint::black_box, sync::Arc, time::Instant};
 use streamfusion::bench::CalcProgram;
 
-fn value(corpus: &str, width: usize, row: usize, digit: bool) -> String {
+fn value(corpus: &str, width: usize, row: usize, digit: bool, decimal: bool) -> String {
+    if decimal {
+        return decimal_value(corpus, width, row);
+    }
     let unit = match (matches!(corpus, "bmp" | "unicode"), digit) {
         (true, true) => "\u{661}\u{967}\u{ff11}\u{6f2}",
         (true, false) => "\u{4e2d}\u{6587}\u{e9}\u{3a9}",
@@ -41,6 +44,63 @@ fn value(corpus: &str, width: usize, row: usize, digit: bool) -> String {
     format!("{}{body}", char::from(prefix))
 }
 
+fn decimal_value(corpus: &str, width: usize, row: usize) -> String {
+    if corpus == "special" {
+        return [
+            "NaN",
+            "+NaN",
+            "-NaN",
+            "Infinity",
+            "+Infinity",
+            "-Infinity",
+            "\0 NaN \t",
+            "InfinityD",
+            "nan",
+            "Inf",
+            "",
+        ][row % 11]
+            .to_owned();
+    }
+    let unit = if matches!(corpus, "bmp" | "unicode" | "unicode-overflow") {
+        "\u{661}\u{967}\u{ff11}\u{6f2}"
+    } else if corpus == "hex" {
+        "abcdef0123456789"
+    } else {
+        "012789"
+    };
+    let body: String = unit.chars().cycle().take(width).collect();
+    if corpus == "supplementary" {
+        return format!("1\u{1d7ce}{body}");
+    }
+    if corpus == "hex" {
+        return format!("0x{body}p-{}D", row % 400);
+    }
+    let body = format!("{}{body}", char::from(b'0' + (row % 10) as u8));
+    if corpus == "fraction" {
+        return format!(
+            "{body}.{}{}",
+            row % 100,
+            if row % 3 == 0 { "f" } else { "" }
+        );
+    }
+    if corpus == "exponent" {
+        return format!(
+            "{body}e{}{}",
+            if row % 2 == 0 { "+" } else { "-" },
+            row % 400
+        );
+    }
+    if matches!(corpus, "mixed" | "unicode") {
+        if row % 17 == 0 {
+            return String::new();
+        }
+        if row % 3 == 0 {
+            return format!("{body}x");
+        }
+    }
+    body
+}
+
 fn checksum(batch: &RecordBatch) -> i64 {
     batch
         .column(0)
@@ -63,6 +123,7 @@ fn main() {
     let runs: usize = args.get(8).map_or(9, |s| s.parse().unwrap());
     let previous = std::env::var("SF_CLASSIFICATION_PREVIOUS").is_ok();
     let digit = std::env::var("SF_CLASSIFICATION_DIGIT").is_ok();
+    let decimal = std::env::var("SF_CLASSIFICATION_DECIMAL").is_ok();
     let cp = format!(
         "-Djava.class.path={}",
         std::env::var("SF_NATIVE_BENCH_CLASSPATH").unwrap()
@@ -73,12 +134,16 @@ fn main() {
     );
     let flag = format!("-Dsf.classification.previous={previous}");
     let digit_flag = format!("-Dsf.classification.digit={digit}");
+    let decimal_flag = format!("-Dsf.classification.decimal={decimal}");
+    let nullable_flag = format!("-Dsf.classification.nullable={nullable}");
     let options = jni::InitArgsBuilder::new()
         .version(jni::JNIVersion::V8)
         .option(&cp)
         .option(&lib)
         .option(&flag)
         .option(&digit_flag)
+        .option(&decimal_flag)
+        .option(&nullable_flag)
         .option("-Xms256m")
         .option("-Xmx512m")
         .option("-Dstreamfusion.native.development=true")
@@ -112,10 +177,9 @@ fn main() {
         ],
     )
     .unwrap();
-    let strings = StringArray::from_iter(
-        (0..rows)
-            .map(|row| (!(nullable && row % 7 == 0)).then(|| value(corpus, width, row, digit))),
-    );
+    let strings = StringArray::from_iter((0..rows).map(|row| {
+        (!(nullable && row % 7 == 0)).then(|| value(corpus, width, row, digit, decimal))
+    }));
     let batch = RecordBatch::try_from_iter(vec![("v", Arc::new(strings) as ArrayRef)]).unwrap();
     let mut calc = CalcProgram::new(
         vec![program[0], 0],

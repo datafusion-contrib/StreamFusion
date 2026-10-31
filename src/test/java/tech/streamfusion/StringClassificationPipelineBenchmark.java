@@ -24,6 +24,8 @@ class StringClassificationPipelineBenchmark {
     int count = Integer.getInteger("classification.pipeline.rows", 1_000_000);
     int warmups = Integer.getInteger("classification.pipeline.warmups", 2);
     int runs = Integer.getInteger("classification.pipeline.runs", 5);
+    String corpus = System.getProperty("classification.pipeline.corpus", "unicode");
+    int width = Integer.getInteger("classification.pipeline.width", 16);
     for (int trial = 0; trial < warmups + runs; trial++) {
       for (int turn = 0; turn < 2; turn++) {
         boolean nativeRun = ((trial + turn) & 1) == 1;
@@ -31,12 +33,13 @@ class StringClassificationPipelineBenchmark {
           var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
           var table = StreamTableEnvironment.create(env);
           var source = env.fromSequence(0, count - 1).map(row -> Row.of(row % 7 == 0 ? null
-              : StringClassificationBenchmarkFunctions.value("unicode", 16, row.intValue())))
+              : StringClassificationBenchmarkFunctions.value(corpus, width, row.intValue())))
               .returns(Types.ROW_NAMED(new String[] {"s"}, Types.STRING));
           table.createTemporaryView("inputs", source,
               Schema.newBuilder().column("s", DataTypes.STRING()).build());
           table.executeSql("CREATE TABLE output_rows(v BOOLEAN NOT NULL) WITH ('connector'='blackhole')");
-          String function = Boolean.getBoolean("sf.classification.digit") ? "IS_DIGIT" : "IS_ALPHA";
+          String function = Boolean.getBoolean("sf.classification.decimal") ? "IS_DECIMAL"
+              : Boolean.getBoolean("sf.classification.digit") ? "IS_DIGIT" : "IS_ALPHA";
           String sql = "INSERT INTO output_rows SELECT " + function + "(s) FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
           String plan = table.explainSql(sql);

@@ -3907,6 +3907,8 @@
     "pipeline": "1000000 nullable mixed Unicode digit strings; rowwise source, BOOLEAN NOT NULL blackhole, parallelism 1, two warmups, five measurements, production JNI and both transposes included",
     "initialization": "Worker JDK 8 KiB BMP digit bitmap copied once during expression compilation, outside prepared timers; candidate classifier has no row/batch JVM calls",
     "timing_order": "Serial, alternating paired engines, independent previous/candidate stock controls retained",
-    "alpha_regression": "Eight 1024-row alpha controls after sharing initialization, 16 warmups/nine trials, same boundaries; raw trials in string-alpha-shared-2026-11-01.csv.gz"
+    "alpha_regression": "Eight 1024-row alpha controls after sharing initialization, 16 warmups/nine trials, same boundaries; raw trials in string-alpha-shared-2026-11-01.csv.gz",
+    "logical_nullability": "Historical nullable Java/encoder signatures for all data populations; nullable selects data NULLs, and Arrow field metadata follows batch validity. Separate matching NOT NULL signature controls are in classification-not-null-2026-11-01.json.",
+    "source_commit": "a8507dc3"
   }
 }

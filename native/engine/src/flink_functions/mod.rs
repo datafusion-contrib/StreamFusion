@@ -89,6 +89,7 @@ mod scalar;
 pub(crate) mod sha2_runtime;
 mod sign;
 mod string_classification;
+mod string_decimal;
 pub(crate) mod string_fusion;
 mod string_to_boolean;
 mod temporal_arithmetic;
@@ -104,6 +105,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
     Some(match op {
         238 => string_classification::alpha(),
         239 => string_classification::digit(),
+        240 => string_decimal::function(),
         65 => sign::function(),
         67 => ascii::function(),
         81 => chr::function(),
