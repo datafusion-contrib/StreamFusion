@@ -5,15 +5,16 @@ use jni::objects::JValue;
 use std::{hint::black_box, sync::Arc, time::Instant};
 use streamfusion::bench::CalcProgram;
 
-fn value(corpus: &str, width: usize, row: usize) -> String {
-    let unit = if matches!(corpus, "bmp" | "unicode") {
-        "\u{4e2d}\u{6587}\u{e9}\u{3a9}"
-    } else {
-        "abcXYZ"
+fn value(corpus: &str, width: usize, row: usize, digit: bool) -> String {
+    let unit = match (matches!(corpus, "bmp" | "unicode"), digit) {
+        (true, true) => "\u{661}\u{967}\u{ff11}\u{6f2}",
+        (true, false) => "\u{4e2d}\u{6587}\u{e9}\u{3a9}",
+        (false, true) => "012789",
+        (false, false) => "abcXYZ",
     };
     let body: String = unit.chars().cycle().take(width).collect();
     if corpus == "supplementary" {
-        return format!("a\u{10400}{body}");
+        return format!("{}{body}", if digit { "1\u{1d7ce}" } else { "a\u{10400}" });
     }
     if matches!(corpus, "mixed" | "unicode") {
         if row % 17 == 0 {
@@ -22,11 +23,22 @@ fn value(corpus: &str, width: usize, row: usize) -> String {
         if row % 3 == 0 {
             return format!(
                 "{body}{}",
-                if corpus == "unicode" { "\u{301}" } else { "7" }
+                if digit {
+                    "x"
+                } else if corpus == "unicode" {
+                    "\u{301}"
+                } else {
+                    "7"
+                }
             );
         }
     }
-    format!("{}{body}", char::from(b'a' + (row % 26) as u8))
+    let prefix = if digit {
+        b'0' + (row % 10) as u8
+    } else {
+        b'a' + (row % 26) as u8
+    };
+    format!("{}{body}", char::from(prefix))
 }
 
 fn checksum(batch: &RecordBatch) -> i64 {
@@ -50,6 +62,7 @@ fn main() {
     let warmups: usize = args.get(7).map_or(16, |s| s.parse().unwrap());
     let runs: usize = args.get(8).map_or(9, |s| s.parse().unwrap());
     let previous = std::env::var("SF_CLASSIFICATION_PREVIOUS").is_ok();
+    let digit = std::env::var("SF_CLASSIFICATION_DIGIT").is_ok();
     let cp = format!(
         "-Djava.class.path={}",
         std::env::var("SF_NATIVE_BENCH_CLASSPATH").unwrap()
@@ -59,11 +72,13 @@ fn main() {
         std::env::var("SF_NATIVE_LIB_DIR").unwrap()
     );
     let flag = format!("-Dsf.classification.previous={previous}");
+    let digit_flag = format!("-Dsf.classification.digit={digit}");
     let options = jni::InitArgsBuilder::new()
         .version(jni::JNIVersion::V8)
         .option(&cp)
         .option(&lib)
         .option(&flag)
+        .option(&digit_flag)
         .option("-Xms256m")
         .option("-Xmx512m")
         .option("-Dstreamfusion.native.development=true")
@@ -98,7 +113,8 @@ fn main() {
     )
     .unwrap();
     let strings = StringArray::from_iter(
-        (0..rows).map(|row| (!(nullable && row % 7 == 0)).then(|| value(corpus, width, row))),
+        (0..rows)
+            .map(|row| (!(nullable && row % 7 == 0)).then(|| value(corpus, width, row, digit))),
     );
     let batch = RecordBatch::try_from_iter(vec![("v", Arc::new(strings) as ArrayRef)]).unwrap();
     let mut calc = CalcProgram::new(

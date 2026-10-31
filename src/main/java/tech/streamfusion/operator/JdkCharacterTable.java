@@ -5,9 +5,19 @@ public final class JdkCharacterTable {
   private JdkCharacterTable() {}
 
   public static long[] letters() {
+    return properties(false);
+  }
+
+  public static long[] digits() {
+    return properties(true);
+  }
+
+  private static long[] properties(boolean digits) {
     long[] bits = new long[1024];
     for (int unit = 0; unit <= Character.MAX_VALUE; unit++) {
-      if (Character.isLetter((char) unit)) bits[unit >>> 6] |= 1L << (unit & 63);
+      if (digits ? Character.isDigit((char) unit) : Character.isLetter((char) unit)) {
+        bits[unit >>> 6] |= 1L << (unit & 63);
+      }
     }
     return bits;
   }

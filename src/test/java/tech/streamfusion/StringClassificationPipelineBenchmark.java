@@ -36,7 +36,8 @@ class StringClassificationPipelineBenchmark {
           table.createTemporaryView("inputs", source,
               Schema.newBuilder().column("s", DataTypes.STRING()).build());
           table.executeSql("CREATE TABLE output_rows(v BOOLEAN NOT NULL) WITH ('connector'='blackhole')");
-          String sql = "INSERT INTO output_rows SELECT IS_ALPHA(s) FROM inputs";
+          String function = Boolean.getBoolean("sf.classification.digit") ? "IS_DIGIT" : "IS_ALPHA";
+          String sql = "INSERT INTO output_rows SELECT " + function + "(s) FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
           String plan = table.explainSql(sql);
           if (nativeRun) {

@@ -21,6 +21,7 @@ import tech.streamfusion.operator.NativeUdf;
 
 /** Released generated RowData control and actual planner binding for native classification. */
 public final class StringClassificationBenchmarkFunctions {
+  private static final boolean DIGIT = Boolean.getBoolean("sf.classification.digit");
   private static final LogicalType[] TYPES = {new VarCharType(VarCharType.MAX_LENGTH)};
   private static FlinkExpressionFunction stock;
   private static NativeUdf.Binding binding;
@@ -36,7 +37,8 @@ public final class StringClassificationBenchmarkFunctions {
     var input = types.createTypeWithNullability(
         types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE), true);
     return (RexCall) rex.makeCall(types.createSqlType(SqlTypeName.BOOLEAN),
-        FlinkSqlOperatorTable.IS_ALPHA, List.of(rex.makeInputRef(input, 0)));
+        DIGIT ? FlinkSqlOperatorTable.IS_DIGIT : FlinkSqlOperatorTable.IS_ALPHA,
+        List.of(rex.makeInputRef(input, 0)));
   }
 
   private static FunctionContext context() {
@@ -60,7 +62,7 @@ public final class StringClassificationBenchmarkFunctions {
       throw new IllegalStateException("Expected one classification call over a runtime input");
     boolean previous = Boolean.getBoolean("sf.classification.previous");
     if (encoded.kinds()[0] != (previous ? 17 : 6)
-        || !previous && encoded.payload()[0] != 238)
+        || !previous && encoded.payload()[0] != (DIGIT ? 239 : 238))
       throw new IllegalStateException("Unexpected classification route");
     binding = encoded.udfBinding();
     long[] constants = binding.bind(encoded.longs(), context());
@@ -72,14 +74,16 @@ public final class StringClassificationBenchmarkFunctions {
   }
 
   public static String value(String corpus, int width, int row) {
-    String unit = corpus.equals("bmp") || corpus.equals("unicode") ? "\u4e2d\u6587\u00e9\u03a9" : "abcXYZ";
+    String unit = corpus.equals("bmp") || corpus.equals("unicode")
+        ? DIGIT ? "\u0661\u0967\uff11\u06f2" : "\u4e2d\u6587\u00e9\u03a9"
+        : DIGIT ? "012789" : "abcXYZ";
     String body = unit.repeat((width + unit.length() - 1) / unit.length()).substring(0, width);
-    if (corpus.equals("supplementary")) return "a\ud801\udc00" + body;
+    if (corpus.equals("supplementary")) return (DIGIT ? "1\ud835\udfce" : "a\ud801\udc00") + body;
     if (corpus.equals("mixed") || corpus.equals("unicode")) {
       if (row % 17 == 0) return "";
-      if (row % 3 == 0) return body + (corpus.equals("unicode") ? "\u0301" : "7");
+      if (row % 3 == 0) return body + (DIGIT ? "x" : corpus.equals("unicode") ? "\u0301" : "7");
     }
-    return (char) ('a' + row % 26) + body;
+    return (char) (DIGIT ? '0' + row % 10 : 'a' + row % 26) + body;
   }
 
   public static void prepare(String corpus, int width, boolean nullable, boolean binary, int count)
