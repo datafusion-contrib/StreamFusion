@@ -22,6 +22,11 @@ finalization. Duplicate, orphaned, excessive and missing membership is rejected.
 any draining accumulator before calling the writer, including on writer failure. NULL markers in
 released byte-set accumulators do not contribute to COUNT and are omitted from membership rows.
 Incoming C Data is consumed before slot validation, so malformed requests release exported buffers.
+The bit-flag view helper writes stock MapState in each slice namespace, retaining its key/value
+serializers and NULL-marker descriptor. It reconstructs grouping keys with the stock binary
+projection, validates view namespaces against scalar accumulators, and transfers shared membership
+bits independently for each aggregate. Multiplicity layouts need a frequency-bearing native
+contract and must be excluded by the caller until that contract is implemented.
 This foundation does not yet qualify DISTINCT in the portable planner: the stock namespaced
 MapView binding, filtered/shared-view layout and released-operator/process tests remain required.
 
