@@ -2694,6 +2694,9 @@ final class RexExpression {
       return emitBuiltinCall(call, 124);
     }
     if ("STARTSWITH".equals(functionName)) {
+      if (call.getOperands().size() == 2
+          && call.getOperands().stream().allMatch(arg -> SqlTypeFamily.BINARY.contains(arg.getType())))
+        return emitBuiltinCall(call, 235);
       return emitCharacterFunction(call, 100, 2, 2);
     }
     if ("ENDSWITH".equals(functionName)) {
@@ -4425,6 +4428,7 @@ final class RexExpression {
       case "PRINTF":
         return true;
       case "STARTSWITH":
+        return false;
       case "ENDSWITH":
         return SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType());
       case "ELT":

@@ -1207,3 +1207,24 @@ The prototype is rejected and removed; the prior generated exit remains in use.
 and [16 summaries](../benchmarks/generated-segment-wholejob-summary-2026-10-04.csv)
 retain the identity controls and unfavorable results. This does not resolve the
 fixed-BINARY performance gate or reopen the rejected manual per-field projection.
+
+## Native binary prefix comparison
+
+Binary `STARTSWITH` compares Arrow byte slices without decoding or constructing strings.
+The released Flink implementation supplies the semantic oracle; DataFusion's use of Arrow
+comparison kernels supplies the batch structure. The first Arrow matcher implementation
+established the byte contract, but its dynamic-column loop checked both inputs' validity on
+every row. The current kernel builds comparison bits independently and unions validity once.
+Comparing bytes beneath NULLs cannot fail and those result bits remain unobservable.
+
+FixedSizeBinary inputs reuse their values and sliced validity while constructing variable
+offsets; they do not pass through Arrow's copying fixed-to-variable cast. Scalar operands
+remain scalars. The production expression, output bitmap allocation and equivalent checksum
+are retained in the prepared measurement.
+
+On released Flink 2.2.1/JDK 17, the 1,024-row BinaryRowData controls improve 3.878–62.816x
+over stock and 8.338–70.478x over the preceding JVM callback. GenericRowData already owns byte
+arrays and remains faster than native in those same cheap comparisons; small batches also
+retain Calc setup/allocation overhead. A complete million-row job improves 16.4% over the
+callback but remains 9.8% slower than stock with both transposes. Full configurations,
+variability and raw trials are on the [function benchmark page](../benchmarks/scalar-functions.md#binary-startswith).

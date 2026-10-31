@@ -1698,10 +1698,16 @@ benchmark results and do not disable otherwise verified expressions.
 
 ### STARTSWITH
 
-Binary overloads of STARTSWITH and ENDSWITH use released Flink code through the batch JVM
-bridge. They compare bytes directly, retaining empty-prefix/suffix and NULL behavior, and never
-decode binary inputs as text. Literal and runtime binary operands are supported within the
-generated expression.
+On released Flink 2.2, binary `STARTSWITH` uses a native byte-comparison kernel for
+literal and runtime BINARY/VARBINARY operands, including mixtures of the two. It never
+decodes bytes as text. Empty prefixes match every non-NULL input; a longer prefix does
+not match, and either NULL operand returns NULL. Fixed-width bytes retain their padding;
+the comparison creates variable offsets without copying their values buffer. SQL casts
+that produce those bytes retain their separately documented admission rules. Scalar
+operands are evaluated once rather than expanded to a full batch. Sliced inputs retain
+their offsets and validity; empty filtered batches do not evaluate projections.
+These binary overloads are absent from released Flink 1.18 and are not an additional
+StreamFusion SQL extension. Binary ENDSWITH retains its generated JVM evaluator.
 
 Two character arguments, literal or column. Matches a literal prefix, including Unicode and
 empty strings; any NULL argument returns NULL. Wildcard characters have no special meaning.

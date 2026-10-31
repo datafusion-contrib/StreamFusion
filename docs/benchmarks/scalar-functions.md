@@ -4068,3 +4068,73 @@ warmups and measured trials. The previous control also sets `SF_DECIMAL_STRING_P
 and prepends the independently compiled preceding encoder to the classpath. Complete jobs use
 `DecimalStringPipelineBenchmark`, `SF_BENCHMARK=true` and the corresponding
 `sf.decimal.string.previous` property/classpath pair.
+
+## Binary STARTSWITH
+
+Released Flink 2.2.1, Oracle JDK 17.0.12 and a release/mimalloc engine are compared on an
+Apple M4 Pro, at one thread. Stock executes the released generated expression over prepared
+GenericRowData or BinaryRowData. Native executes the production Calc over equivalent prepared
+Arrow Binary or FixedSizeBinary inputs. Both consume a Boolean checksum including NULLs.
+Inputs, compilation and setup are outside the timers; native timing starts and stops inside
+Rust. Output allocation, validity work and the previous implementation's JVM callback remain
+inside timing. Initial JNI entry, Arrow export and row/Arrow transposes are excluded only from
+this prepared-function gate.
+
+The 40 configurations cover 16/1,024-row batches, widths 8/64/4,096, fixed/variable bytes,
+Generic/BinaryRowData and NULL/non-NULL inputs. Needles include matching and non-matching bytes,
+empty needles and needles longer than the input. Fixed-width needles contain four bytes;
+padding is retained. Each independent JVM alternates engine order for 24 warmups and nine
+measured trials, processing 131,072 rows per trial. Previous controls prepend the independently
+compiled encoder from canonical main `3af56f9a`, assert its JVM binding and retain that callback
+inside the same production Calc. They each retain their own stock control. All runs are serial.
+
+Ranges of medians across the matching configurations, in nanoseconds per row:
+
+| Stock input | Batch rows | Stock Flink | Previous StreamFusion | Native |
+| --- | ---: | ---: | ---: | ---: |
+| GenericRowData | 16 | 1.521–2.047 | 525.025–776.607 | 19.858–29.297 |
+| GenericRowData | 1,024 | 2.043–3.137 | 36.469–220.812 | 3.028–4.568 |
+| BinaryRowData | 16 | 10.491–183.693 | 554.351–839.167 | 19.851–29.036 |
+| BinaryRowData | 1,024 | 15.052–190.540 | 37.113–213.782 | 3.033–4.622 |
+
+For 1,024-row BinaryRowData inputs, matching stock/native ratios are 3.878–62.816x and
+previous/native ratios are 8.338–70.478x. The stock generated binary getter copies bytes from
+BinaryRowData; native compares existing Arrow buffers. GenericRowData already holds byte
+arrays, so its cheap getter avoids that copying: those controls still beat native, whose
+stock/native ratios are 0.474–0.829x at 1,024 rows. Sixteen-row native batches also lose to
+stock for all GenericRowData and several BinaryRowData cases. This is a qualified bulk binary
+comparison improvement, not a universal scalar or complete-job acceleration claim.
+
+The [raw trials](results/binary-starts-2026-11-01.csv) distinguish each control and include all
+warmups, samples and checksums. The [record](results/binary-starts-2026-11-01.json) includes
+per-case min/median/max and the release library SHA-256.
+
+The separate million-row job uses nullable 64-byte inputs, parallelism 1, a rowwise sequence/map
+source and a blackhole BOOLEAN sink. Two warmups and five measured trials alternate engine
+order. JNI, planning/startup and both transposes remain included. Native operators must consume
+rows, and evaluator descriptors must match the intended native or previous JVM route.
+
+| Job control | Stock median (min–max), seconds | StreamFusion median (min–max), seconds |
+| --- | ---: | ---: |
+| Candidate | 0.170384 (0.162449–0.181901) | 0.187063 (0.185032–0.198267) |
+| Previous | 0.166628 (0.157360–0.177254) | 0.223773 (0.215104–0.239078) |
+
+Native improves 16.4% over previous StreamFusion but takes 9.8% longer than its paired stock
+control. Separate-JVM stock medians drift 2.3%; these short bounded jobs do not establish
+sustained throughput. [All complete-job trials](results/binary-starts-pipeline-2026-11-01.json)
+retain the unfavorable results as well as the gains over the callback.
+
+After compiling the test helper, set `JAVA_HOME` to the supported JDK and provide the matching
+runtime/test classpath through `SF_NATIVE_BENCH_CLASSPATH`, plus `SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example binary_starts
+native/target/release/examples/binary_starts 64 false true true 1024 128 24 9
+```
+
+Arguments are width, fixed-width input, nullable input, BinaryRowData stock input, batch rows,
+loops, warmups and measured trials. Previous controls additionally set
+`SF_BINARY_STARTS_PREVIOUS=true` and prepend the actual preceding encoder's compiled classes.
+Complete jobs use `BinaryStartsWithPipelineBenchmark` with `SF_BENCHMARK=true`; its test-only
+`sf.binary.starts.previous` property must agree with that classpath.
