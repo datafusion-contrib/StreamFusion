@@ -108,6 +108,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
             .clone(),
         101 => datafusion::functions::string::ends_with().as_ref().clone(),
         235 => binary_boundary::starts_with(),
+        236 => binary_boundary::ends_with(),
         102 => datafusion::functions::unicode::strpos().as_ref().clone(),
         103 => ScalarUDF::new_from_impl(locate::FlinkLocate::new()),
         104 => udf(

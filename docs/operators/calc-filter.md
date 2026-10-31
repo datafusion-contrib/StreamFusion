@@ -1707,12 +1707,18 @@ that produce those bytes retain their separately documented admission rules. Sca
 operands are evaluated once rather than expanded to a full batch. Sliced inputs retain
 their offsets and validity; empty filtered batches do not evaluate projections.
 These binary overloads are absent from released Flink 1.18 and are not an additional
-StreamFusion SQL extension. Binary ENDSWITH retains its generated JVM evaluator.
+StreamFusion SQL extension. Binary ENDSWITH uses the same byte contract at the suffix boundary.
 
 Two character arguments, literal or column. Matches a literal prefix, including Unicode and
 empty strings; any NULL argument returns NULL. Wildcard characters have no special meaning.
 
 ### ENDSWITH
+
+On released Flink 2.2, BINARY/VARBINARY arguments use the native byte-comparison kernel
+described under STARTSWITH, comparing the trailing bytes. Empty suffixes, longer needles,
+NULLs, arbitrary byte values, fixed padding, scalar arguments and slices follow the same
+rules. No generated JVM evaluator is bound for either binary comparison. Released Flink
+1.18 does not register these binary overloads.
 
 Two character arguments with the same NULL and type rules as STARTSWITH. Matches a literal
 suffix; an empty suffix matches every non-NULL string. Wildcards have no special meaning.

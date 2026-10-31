@@ -1208,9 +1208,9 @@ and [16 summaries](../benchmarks/generated-segment-wholejob-summary-2026-10-04.c
 retain the identity controls and unfavorable results. This does not resolve the
 fixed-BINARY performance gate or reopen the rejected manual per-field projection.
 
-## Native binary prefix comparison
+## Native binary prefix and suffix comparison
 
-Binary `STARTSWITH` compares Arrow byte slices without decoding or constructing strings.
+Binary `STARTSWITH` and `ENDSWITH` compare Arrow byte slices without decoding or constructing strings.
 The released Flink implementation supplies the semantic oracle; DataFusion's use of Arrow
 comparison kernels supplies the batch structure. The first Arrow matcher implementation
 established the byte contract, but its dynamic-column loop checked both inputs' validity on
@@ -1219,7 +1219,8 @@ Comparing bytes beneath NULLs cannot fail and those result bits remain unobserva
 
 FixedSizeBinary inputs reuse their values and sliced validity while constructing variable
 offsets; they do not pass through Arrow's copying fixed-to-variable cast. Scalar operands
-remain scalars. The production expression, output bitmap allocation and equivalent checksum
+remain scalars. A shared kernel selects the leading or trailing bytes without reversing or
+copying the input. The production expression, output bitmap allocation and equivalent checksum
 are retained in the prepared measurement.
 
 On released Flink 2.2.1/JDK 17, the 1,024-row BinaryRowData controls improve 3.878–62.816x
@@ -1228,3 +1229,10 @@ arrays and remains faster than native in those same cheap comparisons; small bat
 retain Calc setup/allocation overhead. A complete million-row job improves 16.4% over the
 callback but remains 9.8% slower than stock with both transposes. Full configurations,
 variability and raw trials are on the [function benchmark page](../benchmarks/scalar-functions.md#binary-startswith).
+
+The suffix controls use the same matrix and boundaries. At 1,024 rows with BinaryRowData,
+ENDSWITH improves 3.677–62.521x over stock and 8.218–68.381x over the preceding callback.
+Its GenericRowData stock/native range is 0.571–1.223x. The complete job takes 16.5% less
+time than the callback but 11.6% more than stock. The
+[suffix benchmark record](../benchmarks/scalar-functions.md#binary-endswith) retains every
+trial and the slower controls; neither comparison is a universal complete-job speedup.

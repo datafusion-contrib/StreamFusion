@@ -9,19 +9,33 @@ use datafusion::logical_expr::{
 };
 
 pub(super) fn starts_with() -> ScalarUDF {
-    ScalarUDF::new_from_impl(BinaryStartsWith {
+    function(false)
+}
+
+pub(super) fn ends_with() -> ScalarUDF {
+    function(true)
+}
+
+fn function(suffix: bool) -> ScalarUDF {
+    ScalarUDF::new_from_impl(BinaryBoundary {
+        suffix,
         signature: Signature::any(2, Volatility::Immutable),
     })
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct BinaryStartsWith {
+struct BinaryBoundary {
+    suffix: bool,
     signature: Signature,
 }
 
-impl ScalarUDFImpl for BinaryStartsWith {
+impl ScalarUDFImpl for BinaryBoundary {
     fn name(&self) -> &str {
-        "flink_binary_starts_with"
+        if self.suffix {
+            "flink_binary_ends_with"
+        } else {
+            "flink_binary_starts_with"
+        }
     }
 
     fn signature(&self) -> &Signature {
@@ -36,12 +50,12 @@ impl ScalarUDFImpl for BinaryStartsWith {
         {
             Ok(DataType::Boolean)
         } else {
-            exec_err!("Binary STARTSWITH expects two binary arguments")
+            exec_err!("Binary prefix/suffix comparison expects two binary arguments")
         }
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
-        compare(&args.args)
+        compare(self.suffix, &args.args)
     }
 }
 
@@ -71,13 +85,13 @@ fn binary_array(value: &ColumnarValue) -> Result<ArrayRef> {
                 fixed.nulls().cloned(),
             )))
         }
-        _ => exec_err!("Binary STARTSWITH expects two binary arguments"),
+        _ => exec_err!("Binary prefix/suffix comparison expects two binary arguments"),
     }
 }
 
-fn compare(args: &[ColumnarValue]) -> Result<ColumnarValue> {
+fn compare(suffix: bool, args: &[ColumnarValue]) -> Result<ColumnarValue> {
     let [left, right] = args else {
-        return exec_err!("Binary STARTSWITH expects two binary arguments");
+        return exec_err!("Binary prefix/suffix comparison expects two binary arguments");
     };
     let a = binary_array(left)?;
     let b = binary_array(right)?;
@@ -95,8 +109,13 @@ fn compare(args: &[ColumnarValue]) -> Result<ColumnarValue> {
         // Byte comparisons cannot fail. Compute their bitmap independently of validity instead
         // of branching on both inputs' NULL bits for every row as Arrow's generic matcher does.
         let values = BooleanBuffer::collect_bool(len, |i| {
-            a.value(if a_scalar { 0 } else { i })
-                .starts_with(b.value(if b_scalar { 0 } else { i }))
+            let value = a.value(if a_scalar { 0 } else { i });
+            let needle = b.value(if b_scalar { 0 } else { i });
+            if suffix {
+                value.ends_with(needle)
+            } else {
+                value.starts_with(needle)
+            }
         });
         BooleanArray::new(
             values,
@@ -124,6 +143,94 @@ mod tests {
     use arrow::array::{Array, BinaryArray, BooleanArray};
 
     #[test]
+    fn suffix_comparison_preserves_every_byte_slices_and_scalar_nulls() {
+        let values: Vec<_> = (0..256)
+            .map(|i| {
+                if i % 7 == 0 {
+                    None
+                } else {
+                    Some(vec![97, i as u8, 0, 255])
+                }
+            })
+            .collect();
+        let needles: Vec<_> = (0..256)
+            .map(|i| match i % 6 {
+                0 => None,
+                1 => Some(vec![]),
+                2 => Some(vec![0, 255]),
+                3 => Some(vec![255, 0]),
+                4 => Some(vec![97, i as u8, 0, 255, 0]),
+                _ => Some(vec![i as u8, 0, 255]),
+            })
+            .collect();
+        let left: ArrayRef = Arc::new(BinaryArray::from_iter(values.clone()));
+        let right: ArrayRef = Arc::new(BinaryArray::from_iter(needles.clone()));
+        for offset in 0..8 {
+            for length in [0, 1, 63, 64, 65, 127, 128, 129] {
+                for suffix in [false, true] {
+                    let ColumnarValue::Array(result) = compare(
+                        suffix,
+                        &[
+                            ColumnarValue::Array(left.slice(offset, length)),
+                            ColumnarValue::Array(right.slice(offset, length)),
+                        ],
+                    )
+                    .unwrap() else {
+                        panic!("expected array");
+                    };
+                    let expected = BooleanArray::from_iter((offset..offset + length).map(|i| {
+                        Some(if suffix {
+                            values[i].as_ref()?.ends_with(needles[i].as_ref()?)
+                        } else {
+                            values[i].as_ref()?.starts_with(needles[i].as_ref()?)
+                        })
+                    }));
+                    assert_eq!(
+                        result.as_any().downcast_ref::<BooleanArray>().unwrap(),
+                        &expected
+                    );
+                    result.to_data().validate_full().unwrap();
+                }
+            }
+        }
+        let fixed = arrow::compute::cast(&left, &DataType::FixedSizeBinary(4)).unwrap();
+        let ColumnarValue::Array(result) = compare(
+            true,
+            &[
+                ColumnarValue::Array(fixed.slice(1, 65)),
+                ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![0, 255]))),
+            ],
+        )
+        .unwrap() else {
+            panic!("expected array");
+        };
+        assert_eq!(
+            result.as_any().downcast_ref::<BooleanArray>().unwrap(),
+            &BooleanArray::from_iter(values[1..66].iter().map(|v| v.as_ref().map(|_| true)))
+        );
+        for (a, b) in [
+            (None, Some(vec![])),
+            (Some(vec![255, 0]), Some(vec![0])),
+            (Some(vec![]), Some(vec![])),
+        ] {
+            let ColumnarValue::Scalar(result) = compare(
+                true,
+                &[
+                    ColumnarValue::Scalar(ScalarValue::Binary(a.clone())),
+                    ColumnarValue::Scalar(ScalarValue::Binary(b.clone())),
+                ],
+            )
+            .unwrap() else {
+                panic!("expected scalar");
+            };
+            assert_eq!(
+                result,
+                ScalarValue::Boolean(a.zip(b).map(|(a, b)| a.ends_with(&b)))
+            );
+        }
+    }
+
+    #[test]
     fn arbitrary_bytes_empty_needles_nulls_and_offset_arrays() {
         let left = BinaryArray::from_iter([
             Some(&b"unused"[..]),
@@ -145,10 +252,13 @@ mod tests {
             Some(&b"b"[..]),
         ])
         .slice(1, 6);
-        let output = compare(&[
-            ColumnarValue::Array(Arc::new(left)),
-            ColumnarValue::Array(Arc::new(right)),
-        ])
+        let output = compare(
+            false,
+            &[
+                ColumnarValue::Array(Arc::new(left)),
+                ColumnarValue::Array(Arc::new(right)),
+            ],
+        )
         .unwrap();
         let ColumnarValue::Array(output) = output else {
             panic!("expected array");
@@ -176,10 +286,13 @@ mod tests {
         ]));
         let fixed = arrow::compute::cast(&variable, &DataType::FixedSizeBinary(2)).unwrap();
         for input in [variable, fixed] {
-            let ColumnarValue::Array(output) = compare(&[
-                ColumnarValue::Array(input.clone()),
-                ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![255]))),
-            ])
+            let ColumnarValue::Array(output) = compare(
+                false,
+                &[
+                    ColumnarValue::Array(input.clone()),
+                    ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![255]))),
+                ],
+            )
             .unwrap() else {
                 panic!("expected array");
             };
@@ -187,19 +300,25 @@ mod tests {
                 output.as_any().downcast_ref::<BooleanArray>().unwrap(),
                 &BooleanArray::from(vec![Some(true), Some(false), None])
             );
-            let ColumnarValue::Array(empty) = compare(&[
-                ColumnarValue::Scalar(ScalarValue::Binary(None)),
-                ColumnarValue::Array(input.slice(0, 0)),
-            ])
+            let ColumnarValue::Array(empty) = compare(
+                false,
+                &[
+                    ColumnarValue::Scalar(ScalarValue::Binary(None)),
+                    ColumnarValue::Array(input.slice(0, 0)),
+                ],
+            )
             .unwrap() else {
                 panic!("expected array");
             };
             assert_eq!(empty.len(), 0);
         }
-        let ColumnarValue::Scalar(output) = compare(&[
-            ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![255, 0]))),
-            ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![255]))),
-        ])
+        let ColumnarValue::Scalar(output) = compare(
+            false,
+            &[
+                ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![255, 0]))),
+                ColumnarValue::Scalar(ScalarValue::Binary(Some(vec![255]))),
+            ],
+        )
         .unwrap() else {
             panic!("expected scalar");
         };

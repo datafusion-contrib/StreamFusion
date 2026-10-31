@@ -1,4 +1,4 @@
-//! Prepared binary STARTSWITH with production Calc and released generated RowData expressions.
+//! Prepared binary prefix/suffix comparisons with production Calc and released generated RowData expressions.
 use arrow::array::{ArrayRef, BinaryArray, BooleanArray};
 use arrow::record_batch::RecordBatch;
 use jni::objects::JValue;
@@ -26,7 +26,8 @@ fn main() {
     let loops: usize = args.get(6).map_or(256, |s| s.parse().unwrap());
     let warmups: usize = args.get(7).map_or(16, |s| s.parse().unwrap());
     let runs: usize = args.get(8).map_or(9, |s| s.parse().unwrap());
-    let previous = std::env::var("SF_BINARY_STARTS_PREVIOUS").is_ok();
+    let suffix = args.get(9).is_some_and(|s| s == "ends");
+    let previous = std::env::var("SF_BINARY_BOUNDARY_PREVIOUS").is_ok();
     let cp = format!(
         "-Djava.class.path={}",
         std::env::var("SF_NATIVE_BENCH_CLASSPATH").unwrap()
@@ -35,12 +36,14 @@ fn main() {
         "-Djava.library.path={}",
         std::env::var("SF_NATIVE_LIB_DIR").unwrap()
     );
-    let previous_flag = format!("-Dsf.binary.starts.previous={previous}");
+    let previous_flag = format!("-Dsf.binary.boundary.previous={previous}");
+    let suffix_flag = format!("-Dsf.binary.boundary.suffix={suffix}");
     let options = jni::InitArgsBuilder::new()
         .version(jni::JNIVersion::V8)
         .option(&cp)
         .option(&lib)
         .option(&previous_flag)
+        .option(&suffix_flag)
         .option("-Xms256m")
         .option("-Xmx512m")
         .option("-Dstreamfusion.native.development=true")
@@ -50,7 +53,7 @@ fn main() {
     let vm = jni::JavaVM::new(options).unwrap();
     streamfusion_bridge::capture_jvm_raw(vm.get_java_vm_pointer());
     let mut env = vm.attach_current_thread().unwrap();
-    let class = "tech/streamfusion/planner/BinaryStartsWithBenchmarkFunctions";
+    let class = "tech/streamfusion/planner/BinaryBoundaryBenchmarkFunctions";
     let encoded = env
         .call_static_method(
             class,
@@ -90,7 +93,12 @@ fn main() {
         } else {
             width.min(4)
         };
-        let mut prefix = value[..length.min(width)].to_vec();
+        let start = if suffix {
+            width.saturating_sub(length)
+        } else {
+            0
+        };
+        let mut prefix = value[start..start + length.min(width)].to_vec();
         prefix.resize(length, 0);
         if i % 3 == 0 && !prefix.is_empty() {
             prefix[0] ^= 1;
@@ -128,6 +136,11 @@ fn main() {
     );
     let expected = checksum(&calc.run(batch.clone())) * loops as i64;
     for trial in 0..warmups + runs {
+        let function = if suffix {
+            "binary_ends"
+        } else {
+            "binary_starts"
+        };
         for engine in (0..2).map(|i| (i + trial) % 2) {
             let name = if engine == 0 {
                 "flink"
@@ -155,7 +168,7 @@ fn main() {
                 (start.elapsed().as_nanos(), black_box(sum))
             };
             assert_eq!(digest, expected);
-            println!("binary_starts,{width},{fixed},{nullable},{binary},{rows},{},{trial},{},{name},{nanos},{digest}",
+            println!("{function},{width},{fixed},{nullable},{binary},{rows},{},{trial},{},{name},{nanos},{digest}",
                 rows*loops,trial<warmups);
         }
     }

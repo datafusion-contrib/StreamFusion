@@ -20,37 +20,45 @@ import org.apache.flink.table.types.logical.VarBinaryType;
 import tech.streamfusion.operator.NativeUdf;
 
 /** Actual released generated expressions and independently selected production encoders. */
-public final class BinaryStartsWithBenchmarkFunctions {
+public final class BinaryBoundaryBenchmarkFunctions {
   private static FlinkExpressionFunction stock;
   private static NativeUdf.Binding binding;
   private static RowData[] rows;
   private static volatile long consumed;
   private static RexNode call;
 
-  private BinaryStartsWithBenchmarkFunctions() {}
+  private BinaryBoundaryBenchmarkFunctions() {}
+
+  public static boolean suffix() {
+    return Boolean.getBoolean("sf.binary.boundary.suffix");
+  }
+
+  public static String functionName() {
+    return suffix() ? "ENDSWITH" : "STARTSWITH";
+  }
 
   private static FunctionContext context() {
     return new FunctionContext(null) {
       @Override public ClassLoader getUserCodeClassLoader() {
-        return BinaryStartsWithBenchmarkFunctions.class.getClassLoader();
+        return BinaryBoundaryBenchmarkFunctions.class.getClassLoader();
       }
     };
   }
 
   public static long[] register(int width, boolean fixed) throws Exception {
-    Thread.currentThread().setContextClassLoader(BinaryStartsWithBenchmarkFunctions.class.getClassLoader());
+    Thread.currentThread().setContextClassLoader(BinaryBoundaryBenchmarkFunctions.class.getClassLoader());
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
     String b = fixed ? "BINARY(" + width + ")" : "BYTES";
     String p = fixed ? "BINARY(4)" : "BYTES";
     table.executeSql("CREATE TABLE inputs(b " + b + ",p " + p + ") WITH ('connector'='datagen')");
-    var query = ((TableImpl) table.sqlQuery("SELECT STARTSWITH(b,p) FROM inputs")).getQueryOperation();
+    var query = ((TableImpl) table.sqlQuery("SELECT " + functionName() + "(b,p) FROM inputs")).getQueryOperation();
     call = ((Project) ((PlannerQueryOperation) query).getCalciteTree()).getProjects().get(0);
     var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
-    boolean previous = Boolean.getBoolean("sf.binary.starts.previous");
+    boolean previous = Boolean.getBoolean("sf.binary.boundary.previous");
     if (encoded == null || encoded.kinds().length != 3
         || encoded.kinds()[0] != (previous ? 17 : 6)
-        || encoded.childCounts()[0] != 2 || !previous && encoded.payload()[0] != 235)
-      throw new IllegalStateException("Unexpected binary STARTSWITH route");
+        || encoded.childCounts()[0] != 2 || !previous && encoded.payload()[0] != (suffix() ? 236 : 235))
+      throw new IllegalStateException("Unexpected binary prefix/suffix route");
     binding = encoded.udfBinding();
     long[] constants = binding.bind(encoded.longs(), context());
     long[] result = new long[constants.length + 2];
@@ -65,14 +73,16 @@ public final class BinaryStartsWithBenchmarkFunctions {
     LogicalType[] types = fixed ? new LogicalType[] {new BinaryType(width), new BinaryType(4)}
         : new LogicalType[] {new VarBinaryType(VarBinaryType.MAX_LENGTH), new VarBinaryType(VarBinaryType.MAX_LENGTH)};
     stock = FlinkExpressionGenerator.generate(call, types, TableConfig.getDefault(),
-        BinaryStartsWithBenchmarkFunctions.class.getClassLoader(), false);
+        BinaryBoundaryBenchmarkFunctions.class.getClassLoader(), false);
     stock.open(context());
     var serializer = new RowDataSerializer(RowType.of(types));
     rows = new RowData[count];
     for (int i = 0; i < count; i++) {
       byte[] b = new byte[width];
       for (int j = 0; j < width; j++) b[j] = (byte) (i * 131 + j * 127);
-      byte[] p = Arrays.copyOf(b, fixed ? 4 : i % 5 == 0 ? 0 : i % 7 == 0 ? width + 1 : Math.min(width, 4));
+      int length = fixed ? 4 : i % 5 == 0 ? 0 : i % 7 == 0 ? width + 1 : Math.min(width, 4);
+      int start = suffix() ? Math.max(0, b.length - length) : 0;
+      byte[] p = Arrays.copyOfRange(b, start, start + length);
       if (i % 3 == 0 && p.length > 0) p[0] ^= 1;
       RowData row = GenericRowData.of(nullable && i % 7 == 0 ? null : b,
           nullable && i % 11 == 0 ? null : p);
