@@ -1364,3 +1364,35 @@ empty/constructor-rejection/control-only cases do not invent file-work witnesses
 The upstream test profile pins JUnit 5.14.4 to match Iceberg's release and execute its
 `FieldSource` cases. [Provenance](https://github.com/datafusion-contrib/StreamFusion/blob/main/dev/flink-suite/iceberg/rewrite-tests.json)
 and the adjacent compressed port diff record the fixture and entry-point adaptations.
+
+
+## Native witnesses for canonical restore programs
+
+With `streamfusion.flink-suite.canonical=true`, the suite agent binds the inherited released
+`RestoreTestBase.testRestore` invocation to its concrete operator family and program ID.
+The declarations live in `dev/flink-suite/agent/src/main/resources/canonical-native-execution.tsv`.
+Continuation programs require positive consumed input in the declared native family; an
+unrelated Calc, stock fallback, or imported state cannot satisfy that requirement. Program
+selectors normalize hyphens to underscores. Exact family fallbacks require their recorded
+planner reason and no input or imported state in that family.
+
+The released literal-aggregate join program supplies no post-restore input. Its explicit
+`@restore:NativeColumnarUpdatingJoinOperator` contract instead requires successful nonempty
+JNI state import and a successful native operator open, with no resumed native input or
+fallback. The agent records batches after the JNI import returns; failure or opening alone
+cannot prove restoration. Reports retain consumed inputs in the original field and add an
+optional fifth field for imported rows in opened native operators. The verifier exposes
+`native_canonical_import_rows` separately and classifies that scoped proof as `native_restore`.
+These counts establish restored native work, not throughput or future-input continuation.
+
+Run the contract self-tests with:
+
+```sh
+mvn -f dev/flink-suite/agent/pom.xml -Dstreamfusion.flink-suite.canonical=true \
+  -Dtest=CanonicalRestoreExecutionTest test
+python3 -m unittest discover -s dev/flink-suite -p test_summarize.py
+```
+
+The state adapters and complete compatibility matrix remain tracked by
+[P0 #569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking and
+tuning are deferred until functionality is complete.

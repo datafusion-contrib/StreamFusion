@@ -1,0 +1,34 @@
+# Released restore method<TAB>fixture selector<TAB>required native state family.
+# These are implementation gates: an unrelated native Calc cannot satisfy a state restore.
+org.apache.flink.table.planner.plan.nodes.exec.stream.GroupAggregateRestoreTest#testRestore	*	NativeColumnarGroupAggregateOperator|NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.DeduplicationRestoreTest#testRestore	*	NativeColumnarDeduplicateOperator|NativeColumnarKeepLastDeduplicateOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_non_window_inner_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_non_window_inner_join_with_null_cond	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_cross_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_with_filter	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_inner_join_with_duplicate_key	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_inner_join_with_non_equi_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_inner_join_with_equal_pk	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_inner_join_with_pk	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_outer_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_left_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_right_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_semi_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_anti_join	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_with_state_ttl_hint	NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=semi_anti_join_with_literal_agg	@restore:NativeColumnarUpdatingJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_test_append_fast_strategy	NativeColumnarTopNOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_test_retract_strategy	NativeColumnarTopNOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_test_update_fast_strategy	NativeColumnarTopNOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.RankRestoreTest#testRestore	program=rank_n_test	NativeColumnarFirstNOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowAggregateEventTimeRestoreTest#testRestore	*	NativeColumnarWindowAggregateOperator|NativeColumnarGlobalWindowAggregateOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowJoinEventTimeRestoreTest#testRestore	*	NativeWindowJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#testRestore	*	NativeColumnarWindowRankOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore	*	NativeIntervalJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	*	NativeTemporalJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.OverAggregateRestoreTest#testRestore	*	NativeOverAggregateOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_source	NativeColumnarChangelogNormalizeOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_source_mini_batch	NativeColumnarChangelogNormalizeOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_upsert	NativeColumnarChangelogNormalizeOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_upsert_filter	!@NativeColumnarChangelogNormalizeOperator:changelog normalize: a pushed filter condition is not supported
+org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_upsert_filter_watermark	!@NativeColumnarChangelogNormalizeOperator:changelog normalize: a pushed filter condition is not supported

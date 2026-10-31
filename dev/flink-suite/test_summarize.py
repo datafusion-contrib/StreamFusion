@@ -174,6 +174,9 @@ class NativeExecutionSummaryTest(unittest.TestCase):
             "",
             "garbage",
             f"{self.CALC}\t*\tNativeCalcOperator\n{self.CALC}\t*\tNativeCalcOperator",
+            f"{self.CALC}\t*\t!@MissingReason",
+            f"{self.CALC}\t*\t!@:reason",
+            f"{self.CALC}\t*\t!@NativeCalcOperator:",
         ):
             with self.subTest(content=content):
                 path.write_text(content)
@@ -196,6 +199,18 @@ class NativeExecutionSummaryTest(unittest.TestCase):
             "NativeColumnarWindowAggregateOperator=1",
             reasons=self.FALLBACK_REASON,
         )
+        self.assertTrue(self.check({self.FALLBACK: 1})[2])
+
+    def test_family_fallback_allows_other_native_work_but_rejects_wrong_admission(self):
+        self.contracts[self.FALLBACK] = {
+            "*": f"!@NativeColumnarChangelogNormalizeOperator:{self.FALLBACK_REASON}"
+        }
+        self.record(self.FALLBACK, "NativeCalcOperator=3", reasons=self.FALLBACK_REASON)
+        self.assertEqual((0, 1, []), self.check({self.FALLBACK: 1}))
+        self.record(self.FALLBACK, "NativeColumnarChangelogNormalizeOperator=1",
+                    reasons=self.FALLBACK_REASON)
+        self.assertTrue(self.check({self.FALLBACK: 1})[2])
+        self.record(self.FALLBACK, "NativeCalcOperator=3", reasons="different reason")
         self.assertTrue(self.check({self.FALLBACK: 1})[2])
 
     def test_split_distinct_requires_work_from_both_window_stages(self):
@@ -313,6 +328,60 @@ class ProcessExitSummaryTest(unittest.TestCase):
         for xml in (None, "<broken", "<other/>", '<testsuite tests="2"><testcase/></testsuite>',
                     '<testsuite tests="NaN"/>', '<testsuite tests="-1"/>'):
             self.assertNotEqual(0, self.summarize(xml, 0, marker))
+
+
+class CanonicalRestoreSummaryTest(unittest.TestCase):
+    TEST = "org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore"
+    FAMILY = "NativeColumnarUpdatingJoinOperator"
+
+    def check(self, contract, counts="", imported=None, reasons=""):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            encoded = base64.b64encode(reasons.encode()).decode()
+            suffix = "" if imported is None else "\t" + imported
+            (root / "one.tsv").write_text(f"{self.TEST}\t*\t{counts}\t{encoded}{suffix}\n")
+            observations = []
+            result = summarize.check_execution(root, Counter({self.TEST: 1}),
+                {self.TEST: {"*": contract}}, observations)
+            return result, observations
+
+    def test_restore_only_evidence_is_separate_from_input_rows(self):
+        result, observations = self.check("@restore:" + self.FAMILY, imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual({}, observations[0]["native_input_rows"])
+        self.assertEqual({self.FAMILY: 3}, observations[0]["native_canonical_import_rows"])
+        self.assertEqual("native_restore", observations[0]["observed_route"])
+
+    def test_empty_zero_or_another_family_cannot_prove_import(self):
+        for imported in (None, "", self.FAMILY + "=0", "NativeCalcOperator=3"):
+            with self.subTest(imported=imported):
+                result, _ = self.check("@restore:" + self.FAMILY, imported=imported)
+                self.assertTrue(result[2])
+
+    def test_import_cannot_replace_consumed_input(self):
+        result, _ = self.check(self.FAMILY, imported=self.FAMILY + "=3")
+        self.assertTrue(result[2])
+
+    def test_restore_only_contract_rejects_input_or_fallback(self):
+        for counts, reasons in ((self.FAMILY + "=1", ""), ("", "join unsupported")):
+            result, _ = self.check("@restore:" + self.FAMILY, counts=counts,
+                imported=self.FAMILY + "=3", reasons=reasons)
+            self.assertTrue(result[2])
+
+    def test_import_does_not_satisfy_full_or_family_fallback(self):
+        for contract in ("!join unsupported", "!@" + self.FAMILY + ":join unsupported"):
+            result, _ = self.check(contract, imported=self.FAMILY + "=3", reasons="join unsupported")
+            self.assertTrue(result[2])
+
+    def test_invalid_import_counts_cannot_satisfy_restore(self):
+        for imported in (self.FAMILY + "=-1", self.FAMILY + "=bad", self.FAMILY + "=3," + self.FAMILY + "=4"):
+            result, _ = self.check("@restore:" + self.FAMILY, imported=imported)
+            self.assertTrue(result[2])
+
+    def test_recorded_import_does_not_weaken_an_input_contract(self):
+        result, observations = self.check(self.FAMILY, counts=self.FAMILY + "=2", imported=self.FAMILY + "=3")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual("native", observations[0]["observed_route"])
 
 
 if __name__ == "__main__":

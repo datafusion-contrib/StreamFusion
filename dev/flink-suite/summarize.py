@@ -32,7 +32,8 @@ def execution_contracts(
             len(fields) != 3
             or not re.fullmatch(r"[\w.$]+#[\w$]+", fields[0])
             or not re.fullmatch(r"\*|\w+=\w+(?:&\w+=\w+)*", fields[1])
-            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+", fields[2])
+            or not re.fullmatch(r"\w+(?:[+|]\w+)*|!.+|@restore:\w+", fields[2])
+            or fields[2].startswith("!@") and not re.fullmatch(r"!@\w+:.+", fields[2])
         ):
             raise ValueError(f"Invalid native execution contract: {line}")
         variants = contracts.setdefault(fields[0], {})
@@ -58,26 +59,46 @@ def check_execution(
         try:
             fields = path.read_text().rstrip("\n").split("\t")
             if (
-                len(fields) != 4
+                len(fields) not in (4, 5)
                 or fields[0] not in contracts
                 or fields[1] not in contracts[fields[0]]
             ):
                 raise ValueError("unknown test or malformed record")
-            test, variant, raw_counts, raw_reasons = fields
+            test, variant, raw_counts, raw_reasons = fields[:4]
             reasons = base64.b64decode(raw_reasons, validate=True).decode().splitlines()
-            counts = {}
-            for item in raw_counts.split(",") if raw_counts else []:
-                if not re.fullmatch(r"\w+=\d+", item):
-                    raise ValueError(f"invalid operator count: {item}")
-                operator, count = item.split("=")
-                if operator in counts:
-                    raise ValueError(f"duplicate operator count: {operator}")
-                counts[operator] = int(count)
+            def parse_counts(raw):
+                counts = {}
+                for item in raw.split(",") if raw else []:
+                    if not re.fullmatch(r"\w+=\d+", item):
+                        raise ValueError(f"invalid operator count: {item}")
+                    operator, count = item.split("=")
+                    if operator in counts:
+                        raise ValueError(f"duplicate operator count: {operator}")
+                    counts[operator] = int(count)
+                return counts
+            counts = parse_counts(raw_counts)
+            restored = parse_counts(fields[4]) if len(fields) == 5 else {}
             observed[test] += 1
             contract = contracts[test][variant]
             matched = False
-            if contract.startswith("!"):
-                if not counts and contract[1:] in reasons:
+            if contract.startswith("@restore:"):
+                operator = contract.removeprefix("@restore:")
+                if not counts and not reasons and restored.get(operator, 0) > 0:
+                    proved += 1
+                    matched = True
+                else:
+                    problems.append(f"{test} [{variant}]: missing native canonical import; observed {restored}")
+            elif contract.startswith("!@"):
+                operator, reason = contract[2:].split(":", 1)
+                if counts.get(operator, 0) == 0 and restored.get(operator, 0) == 0 and reason in reasons:
+                    fallback += 1
+                    matched = True
+                else:
+                    problems.append(
+                        f"{test} [{variant}]: expected {operator} fallback with reason {reason}"
+                    )
+            elif contract.startswith("!"):
+                if not counts and not restored and contract[1:] in reasons:
                     fallback += 1
                     matched = True
                 else:
@@ -99,6 +120,7 @@ def check_execution(
                 route = (
                     "mixed" if native_work and reasons else
                     "native" if native_work else
+                    "native_restore" if contract.startswith("@restore:") and matched else
                     "full_fallback" if reasons else "unclassified"
                 )
                 observations.append({
@@ -106,6 +128,7 @@ def check_execution(
                     "variant": variant,
                     "evidence_file": path.name,
                     "native_input_rows": counts,
+                    "native_canonical_import_rows": restored,
                     "fallback_reasons": reasons,
                     "observed_route": route,
                     "expected_contract": contract,

@@ -32,7 +32,10 @@ public final class NativeExecution {
     String flinkLine = System.getProperty("streamfusion.flink-suite.flink-line", "2.2");
     String resource =
         switch (flinkLine) {
-          case "2.2" -> "/native-execution.tsv";
+          case "2.2" ->
+              Boolean.getBoolean("streamfusion.flink-suite.canonical")
+                  ? "/canonical-native-execution.tsv"
+                  : "/native-execution.tsv";
           case "1.18" ->
               Boolean.getBoolean("streamfusion.flink-suite.native-rocksdb")
                   ? "/native-execution-flink1.18-state.tsv"
@@ -54,7 +57,10 @@ public final class NativeExecution {
         if (fields.length != 3
             || !fields[0].matches("[\\w.$]+#[\\w$]+")
             || !fields[1].matches("\\*|\\w+=\\w+(?:&\\w+=\\w+)*")
-            || !(fields[2].matches("\\w+(?:[+|]\\w+)*") || fields[2].matches("!.+"))) {
+            || !(fields[2].matches("\\w+(?:[+|]\\w+)*")
+                || fields[2].matches("!.+")
+                || fields[2].matches("@restore:\\w+"))
+            || fields[2].startsWith("!@") && !fields[2].matches("!@\\w+:.+")) {
           throw new IllegalStateException("Invalid native execution contract: " + line);
         }
         Map<String, String> variants =
@@ -105,15 +111,36 @@ public final class NativeExecution {
     return active;
   }
 
+  public static Scope beginRestore(String fixtureClass, Object fixture) {
+    return beginRestore(fixtureClass, fixture, null);
+  }
+
+  public static Scope beginRestore(String fixtureClass, Object fixture, Object program) {
+    String test = fixtureClass + "#testRestore";
+    return CONTRACTS.containsKey(test) ? begin(test, new RestoreFixture(fixture, program)) : null;
+  }
+
+  private record RestoreFixture(Object fixture, Object program) {}
+
   static boolean matches(String selector, Object fixture) {
     if (selector.equals("*")) return true;
     for (String condition : selector.split("&")) {
       String[] parts = condition.split("=", 2);
+      Object actual = fixture instanceof RestoreFixture restore ? restore.fixture() : fixture;
       Object value =
           switch (parts[0]) {
-            case "changelog" -> changelogEnabled(fixture);
-            case "miniBatch" -> miniBatchEnabled(fixture);
-            default -> field(fixture, parts[0]);
+            case "program" -> {
+              if (!(fixture instanceof RestoreFixture restore) || restore.program() == null)
+                throw new AssertionError("Missing canonical restore program");
+              Object program = restore.program();
+              yield (program instanceof String
+                      ? (String) program
+                      : String.valueOf(field(program, "id")))
+                  .replace('-', '_');
+            }
+            case "changelog" -> changelogEnabled(actual);
+            case "miniBatch" -> miniBatchEnabled(actual);
+            default -> field(actual, parts[0]);
           };
       if (!String.valueOf(value).equals(parts[1])) return false;
     }
@@ -163,7 +190,12 @@ public final class NativeExecution {
     SqlInventory.opened(operator);
     if (active != null) {
       OPERATORS.putIfAbsent(operator, active);
+      active.opened.add(operator.getClass().getSimpleName());
     }
+  }
+
+  public static synchronized void restored(String operator, int rows) {
+    if (active != null && rows > 0) active.importedRows.merge(operator, (long) rows, Long::sum);
   }
 
   public static synchronized void fallback(String reason) {
@@ -215,6 +247,12 @@ public final class NativeExecution {
         scope.rows.entrySet().stream()
             .map(entry -> entry.getKey() + "=" + entry.getValue())
             .collect(Collectors.joining(","));
+    Map<String, Long> restored = new TreeMap<>(scope.importedRows);
+    restored.keySet().retainAll(scope.opened);
+    String restoredCounts =
+        restored.entrySet().stream()
+            .map(entry -> entry.getKey() + "=" + entry.getValue())
+            .collect(Collectors.joining(","));
     String reportDirectory = System.getProperty("streamfusion.flink-suite.native-reports");
     if (reportDirectory == null) {
       throw new AssertionError("Missing streamfusion.flink-suite.native-reports directory");
@@ -234,20 +272,37 @@ public final class NativeExecution {
               + Base64.getEncoder()
                   .encodeToString(
                       String.join("\n", scope.fallbacks).getBytes(StandardCharsets.UTF_8))
+              + (restored.isEmpty() ? "" : "\t" + restoredCounts)
               + "\n");
       SqlInventory.contract(recordId, scope.test, scope.variant);
     } catch (IOException e) {
       throw new AssertionError("Cannot write native execution evidence", e);
     }
     String contract = CONTRACTS.get(scope.test).get(scope.variant);
-    boolean satisfied =
-        contract.startsWith("!")
-            ? scope.rows.isEmpty() && scope.fallbacks.contains(contract.substring(1))
-            : Arrays.stream(contract.split("\\|"))
-                .anyMatch(
-                    route ->
-                        Arrays.stream(route.split("\\+"))
-                            .allMatch(operator -> scope.rows.getOrDefault(operator, 0L) > 0));
+    boolean satisfied;
+    if (contract.startsWith("@restore:")) {
+      satisfied =
+          scope.rows.isEmpty()
+              && scope.fallbacks.isEmpty()
+              && restored.getOrDefault(contract.substring(9), 0L) > 0;
+    } else if (contract.startsWith("!@")) {
+      String[] requirement = contract.substring(2).split(":", 2);
+      satisfied =
+          scope.rows.getOrDefault(requirement[0], 0L) == 0
+              && restored.getOrDefault(requirement[0], 0L) == 0
+              && scope.fallbacks.contains(requirement[1]);
+    } else {
+      satisfied =
+          contract.startsWith("!")
+              ? scope.rows.isEmpty()
+                  && restored.isEmpty()
+                  && scope.fallbacks.contains(contract.substring(1))
+              : Arrays.stream(contract.split("\\|"))
+                  .anyMatch(
+                      route ->
+                          Arrays.stream(route.split("\\+"))
+                              .allMatch(operator -> scope.rows.getOrDefault(operator, 0L) > 0));
+    }
     if (!satisfied) {
       throw new AssertionError(
           "Execution contract failed for "
@@ -259,6 +314,8 @@ public final class NativeExecution {
               + contract
               + ", observed nonempty native input rows "
               + scope.rows
+              + "; imported rows in opened native operators "
+              + restored
               + "; planner fallback reasons "
               + scope.fallbacks);
     }
@@ -268,13 +325,19 @@ public final class NativeExecution {
             + " ["
             + scope.variant
             + "]: "
-            + (contract.startsWith("!") ? "fallback: " + contract.substring(1) : counts));
+            + (contract.startsWith("!")
+                ? "fallback: " + contract.substring(1)
+                : contract.startsWith("@restore:")
+                    ? "canonical import: " + restoredCounts
+                    : counts));
   }
 
   public static final class Scope {
     private final String test;
     private final String variant;
     private final Map<String, Long> rows = new TreeMap<>();
+    private final Map<String, Long> importedRows = new TreeMap<>();
+    private final Set<String> opened = new LinkedHashSet<>();
     private final Set<String> fallbacks = new LinkedHashSet<>();
 
     private Scope(String test, String variant) {
