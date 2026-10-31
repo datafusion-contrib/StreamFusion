@@ -3990,3 +3990,81 @@ After sharing the ROUND/TRUNCATE input handling, independent ROUND INT/-1 and BI
 1,024-row controls recheck output/schema/checksums and timing against stock and actual main.
 Their full measured trials are included as `shared_round_kernel_rechecks` in the TRUNCATE
 raw record; the original 40-case ROUND matrix records the preceding ROUND-only implementation.
+
+## DECIMAL to STRING
+
+The direct-input `CAST(d AS STRING)` comparison uses released Flink 1.18.1 and 2.2.1,
+JDK 17, one thread and a release/mimalloc native build. Stock Flink starts with prepared
+GenericRowData or BinaryRowData; StreamFusion starts with the same logical decimals in
+prepared Arrow Decimal128 buffers. Setup and input preparation are outside both timers.
+Stock uses the released generated expression and consumes UTF-8 result lengths; native
+times the production Calc and the same length checksum inside Rust. Output allocation and
+the previous implementation's JVM callbacks remain inside the timer. Perimeter JNI entry,
+export and row/Arrow transposes are excluded from this small-functionality comparison.
+
+Inputs cover DECIMAL(18,3), DECIMAL(38,0) and DECIMAL(38,38), with signed varying coefficients,
+maxima, zero, coefficients above 2^53 and optional NULL every seven rows. Batch sizes are
+16 and 1,024 rows. Each independent JVM runs 16 warmups and nine measured trials, alternating
+engine order. Each timed trial processes 131,072 rows. The previous control loads the actual
+preceding encoder from `2441db79` first on the classpath and verifies its JVM expression
+binding; it uses the unchanged callback implementation in the same release engine build.
+Candidate and previous controls each retain their paired stock trials. Benchmarks run serially.
+
+On Apple M4 Pro with JDK 17.0.12, the measured median ranges are:
+
+| Flink line | Batch rows | Flink / native | Previous StreamFusion / native |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 1.008–2.362x | 19.776–23.101x |
+| 1.18.1 | 1,024 | 2.861–6.438x | 5.725–8.238x |
+| 2.2.1 | 16 | 1.087–1.964x | 20.088–22.412x |
+| 2.2.1 | 1,024 | 2.816–6.363x | 5.743–8.234x |
+
+The near-1x small-batch observation is within timing variability, not evidence of a reliable
+speedup. Separate-JVM stock controls drift between 0.786x and 1.380x, so previous/candidate
+ratios do not isolate only the implementation change. The [prepared raw trials](results/decimal-string-2026-10-29.csv)
+retain every warmup/sample, paired stock control and checksum. The
+[result record](results/decimal-string-2026-10-29.json) retains min/median/max for every
+configuration, the release DSO hash and all complete-job trials.
+
+The separate bounded job compares one million nullable DECIMAL(18,3) rows at parallelism 1,
+with a rowwise sequence/map source and blackhole STRING sink. Two warmups and five measured
+trials alternate engine order. Planning, startup, production JNI and both perimeter transposes
+remain included. Each native job must consume NativeCalc rows, and its plan and evaluator
+descriptors must match the expected native or previous JVM route.
+
+| Flink line | Candidate's stock (s) | Native (s) | Previous's stock (s) | Previous StreamFusion (s) |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.205514 | 0.174687 | 0.206497 | 0.237319 |
+| 2.2.1 | 0.203710 | 0.176602 | 0.198950 | 0.232253 |
+
+Native job medians improve by 15.0% and 13.3% versus their paired stock controls, and 26.4%
+and 24.0% versus previous StreamFusion. These subsecond bounded jobs include startup and
+do not establish sustained throughput for other pipelines or configurations.
+
+The released DecimalData oracle checks 28,823 boundary and deterministic random values across
+every precision 1–38 and every valid scale against released DecimalData's plain formatting.
+The focused SQL matrix additionally checks resolved types, legacy/modern mode, consumers,
+nullable runtime inputs, unselected failures, empty filtered results and retained bounded and
+computed-DECIMAL paths. The unchanged released DecimalTypeTest literal, field-access and
+CASE fixtures supplement that oracle; their local expression tests are not native-work evidence.
+The runtime SQL tests separately require native execution and empty JVM evaluator descriptors.
+All 352 focused JVM invocations pass across Flink 1.18.1/2.2.1 and JDK 11/17 with no skips;
+855 release Rust core tests also pass. Each of the four version/JDK oracle runs matches all
+28,823 values. This does not replace the full upstream integration suite or CI.
+
+After compiling `DecimalStringBenchmarkFunctions`, use the released test/runtime classpath as
+`SF_NATIVE_BENCH_CLASSPATH` and the release library directory as `SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --no-default-features --features mimalloc --example decimal_string
+native/target/release/examples/decimal_string 18 3 true false 1024 128 16 9
+java -cp "$SF_NATIVE_BENCH_CLASSPATH" tech.streamfusion.planner.DecimalStringBenchmarkFunctions > oracle.csv
+native/target/release/examples/decimal_string --oracle oracle.csv
+```
+
+Arguments are precision, scale, NULL values, BinaryRowData stock input, batch rows, loops,
+warmups and measured trials. The previous control also sets `SF_DECIMAL_STRING_PREVIOUS=true`
+and prepends the independently compiled preceding encoder to the classpath. Complete jobs use
+`DecimalStringPipelineBenchmark`, `SF_BENCHMARK=true` and the corresponding
+`sf.decimal.string.previous` property/classpath pair.

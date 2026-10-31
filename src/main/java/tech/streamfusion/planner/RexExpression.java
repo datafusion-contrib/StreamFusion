@@ -136,6 +136,7 @@ final class RexExpression {
   private static final int CAST_BIGINT = 3;
   private static final int CAST_FLOAT = 4;
   private static final int CAST_DOUBLE = 5;
+  private static final int CAST_STRING = 6;
 
   private final List<Integer> kinds = new ArrayList<>();
   private final List<Integer> payload = new ArrayList<>();
@@ -3841,6 +3842,15 @@ final class RexExpression {
     }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
+    if (!tryCast
+        && source == SqlTypeName.DECIMAL
+        && targetType == SqlTypeName.VARCHAR
+        && resultType.getPrecision() == Integer.MAX_VALUE
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)) {
+      add(KIND_CAST, CAST_STRING, 1);
+      return emit(call.getOperands().get(0));
+    }
     if ((source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)
         && targetInteger >= 0
         && targetInteger <= 3) {
@@ -3965,10 +3975,9 @@ final class RexExpression {
       add(KIND_CAST_NARROW, narrowTarget, 1);
       return emit(call.getOperands().get(0));
     }
-    // The casts whose formatting/parsing the native engine cannot reproduce byte-for-byte — a
-    // float/double/decimal to/from a string, narrowing a string / padding to CHAR(n), and the
-    // inexact
-    // float/double→DECIMAL — run Flink's own CastExecutor through the columnar JVM upcall, so
+    // Remaining formatting/parsing casts — floating/string, string-to-DECIMAL, bounded or
+    // computed DECIMAL-to-character, narrowing/padding strings and inexact float/double→DECIMAL —
+    // run Flink's own CastExecutor through the columnar JVM upcall, so
     // trailing zeros, scientific-notation thresholds, trim semantics, and failure behavior are the
     // host's own (see HostCastFunction).
     if (hostCastSupported(sourceType, resultType)) {

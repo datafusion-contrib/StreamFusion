@@ -104,7 +104,7 @@ only metric-name recognition; workloads, timing and the pinned baseline stay unc
 
 Ordinary CI builds all workspace debug native libraries once in a dedicated Ubuntu 24.04
 job. That job verifies the package dependencies and JNI export boundaries, then uploads only
-the shared libraries as a commit-specific artifact. The four Java and eleven lake-module
+the shared libraries as a commit-specific artifact. The eight Java and eleven lake-module
 test jobs download those libraries into `native/target/debug` and pass
 `-Dnative.build.skip=true` to Maven. Both JDKs and Flink lines exercise the same native build;
 each consumer still compiles its selected Java reactor and runs its existing tests. A failed
@@ -141,6 +141,65 @@ execution runs ORC with its isolated protobuf classpath. These same tests do not
 additional tagged-module jobs. Standalone native package checks remain in the Rust job.
 `bin/test_ci_module_groups.py` exercises the actual runtime Surefire configuration with one
 fixture for every declared module tag and one untagged fixture, requiring each to run once.
+
+## Java test memory budget
+
+Each ordinary Java matrix job runs at most one Surefire fork at a time with a 4 GiB heap,
+including the second JVM-boundary/cache verification phase. CI disables fork reuse, so each
+test class gets a fresh JVM. Local Maven defaults keep fork reuse enabled; the CI invocation
+sets `-Dsf.testForks=1 -Dsf.testReuseForks=false` explicitly. The default 8 GiB per-fork heap
+combined with CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
+operators, embedded clusters and the Maven process on hosted runners. One bounded fork
+also keeps independent private clusters from competing across test JVMs.
+
+Released Flink MiniClusters keep completed execution graphs and serialized results in an
+unbounded in-memory archive. Its JVM shutdown hook can retain this archive even after the
+cluster stops, so closing private clusters or rotating the shared cluster does not reliably
+release their results inside a reused JVM. A fresh process per class bounds this accumulation
+without reflecting into Flink internals or evicting results during a scenario. Classes retain
+their shared launcher-session cluster and all within-class lifecycle, failure and recovery checks.
+The tradeoff is additional JVM and native-library startup per class;
+complete CI elapsed time, rather than local function throughput, measures that overhead.
+The 4 GiB cap also leaves room for the temporary copies made while checkpointing and serializing
+large binary collection results; the smaller focused expression matrix does not establish the
+memory requirement of these complete integration scenarios.
+
+The complete test selection, both Flink lines and both JDKs remain required. Tests stay
+serial within the fork, and result, native-route, leak and recovery assertions are unchanged.
+The Java suite logs host memory/swap/CPU counters with `vmstat` every 30 seconds, so a runner
+shutdown retains resource evidence in the job log even when artifact upload cannot run.
+A shutdown signal alone does not prove a JVM or host out-of-memory condition; inspect these
+counters and any JVM diagnostics before assigning a cause. The job timeout remains 150 minutes.
+
+## Ordinary runtime test shards
+
+Each Flink/JDK pair runs two Java jobs. The complete reactor is compiled first with tests
+deferred; `bin/ci_runtime_test_shards.py` then partitions the compiled runtime classes matching
+Surefire's default `Test*`, `*Test`, `*Tests` and `*TestCase` names. SHA-256 of the relative
+class path assigns each candidate to one shard. Nested classes stay with their outer class,
+and all parameterized invocations stay together. Empty inventories, empty shards and invalid
+indices fail before test execution rather than restoring an unfiltered Surefire run.
+
+The `sf.runtime.testIncludesFile` property activates a runtime-only Maven profile with that
+shard's includes file. Both existing Surefire executions retain their ordinary/ORC tag filters and classpaths.
+The two main-suite selections therefore cover the same runtime tests once per Flink/JDK pair;
+the additional JVM-boundary/cache phase still runs once on JDK 17 for each Flink line, in
+shard 1. Deployment-module tests and bytecode/package checks repeat in each shard, preserving
+the complete reactor's assembly order and module-owned test selections. Local `mvn test`
+does not activate this profile.
+
+The three classes producing the required portable, recovery and rescale SQL audit JSON files
+stay in shard 1, whose upload still fails if those files are absent. A regression checks that
+the artifact producers match this pinned set. Each job also uploads its selected classes and
+complete-inventory digest as a runtime-partition artifact; failure diagnostics have unique
+shard names. The aggregate gate requires all eight Java jobs across both Flink lines and JDKs.
+
+Actual Maven regression fixtures compare the unpartitioned test cases with the combined
+shards, including ORC tags, nested classes, parameterized invocations and existing skips.
+Duplicate executions fail through exclusive result creation, and an intentionally failing
+selected test must still fail Maven. Sharding retains the fresh-process memory boundary
+and distributes its startup cost across jobs under the unchanged 150-minute budget; it does not
+reduce data, assertions, native-work checks or recovery scenarios.
 
 ## Consolidated feature validation
 
@@ -183,7 +242,7 @@ Separate mini-batch configurations, recovery runs and unordered-only comparisons
 own executions. In particular, the updating-limit ranked mini-batch case still runs its
 materialized comparison when ordered parity does not apply. Standalone materialized checks
 continue to fold the result iterator as a stream, without buffering an entire changelog.
-The existing job matrix and Surefire fork counts stay the same.
+Result reuse does not change the job matrix or test selections.
 
 ## MiniCluster reuse within a test JVM
 
@@ -193,7 +252,7 @@ launches a separate JUnit root for each class. Each test still gets a fresh
 execution-environment binding, which is cleared afterwards; Flink 1.18 also binds and clears
 its batch test context. The launcher closes the cluster and its temporary directories when
 its session finishes, including after test failures. Surefire forks retain their independent clusters;
-JUnit tests remain serial within each fork, and the existing fork counts do not change.
+JUnit tests remain serial within each fork.
 
 After each test, the extension still checks live JNI handles, Arrow allocator bytes and
 TaskManager pool reservations. At each class boundary it cancels unfinished jobs and waits
@@ -226,12 +285,15 @@ custom memory budgets, metrics and separate task-JVM deployment. The launcher-se
 regression also restores the default memory budget after a failing class changes it,
 preserving later operator-harness defaults.
 
-The primitive and binary collection parity suites are an exception: their private metrics
-cluster belongs to one parameterized invocation. Retained Flink gauges can reference finished
-tasks, execution graphs and collection state, and the embedded job-result store also retains
+The collection parity suites are an exception: their private metrics cluster belongs to one
+test invocation. This includes primitive, binary, string, structured and nested aggregates,
+string and array keys, legacy consumers, standalone expressions and native collection kernels.
+Retained Flink gauges can reference finished tasks, execution graphs and collection state,
+and the embedded job-result store also retains
 serialized collection results until cluster shutdown. Keeping that cluster for an entire class
-accumulates results across hundreds of jobs. `@AfterEach` closes its cluster and reporter after
-the invocation's value, type, native-work and recovery assertions, including on failure or skip.
+accumulates results across jobs. Each suite explicitly uses `PER_METHOD`; `@AfterEach` closes
+its cluster and reporter after the invocation's value, type, native-work and recovery assertions,
+including on failure or skip.
 The SQL, input rows, changelog comparisons, recovery prefixes and test parallelism stay the same.
 The automatic shared MiniCluster still belongs to the launcher session.
 
@@ -248,7 +310,7 @@ Each Fluss SQL test invocation keeps one stock and one native table environment 
 DDL, reads and inserts. `@AfterEach` attempts to close both catalogs and clears the cache,
 including when the test fails. Parameterized invocations receive fresh environments.
 Job completion, result iterator closure, discovery-job cancellation and native-memory checks
-retain their existing boundaries. This uses the existing Java and image jobs and fork counts.
+retain their existing boundaries. This uses the existing Java and image jobs.
 
 Previously every SQL helper created and closed a catalog. Phase timings and thread dumps
 identified the Fluss client's two-second Netty shutdown quiet period on each close, including

@@ -255,7 +255,7 @@ pub(crate) fn build_expr(
             crate::flink_functions::array_cast::function(target).call(vec![child])
         }
         11 => {
-            // A widening numeric cast: build the single child, then wrap it. `arg` is the target code.
+            // `arg` identifies the target; decimal formatting avoids Arrow's per-row Strings.
             let child = build_expr(
                 schema,
                 kinds,
@@ -266,10 +266,14 @@ pub(crate) fn build_expr(
                 strings,
                 cursor,
             );
-            datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
-                Box::new(child),
-                cast_data_type(arg),
-            ))
+            if arg == 6 {
+                crate::flink_functions::decimal_string::function().call(vec![child])
+            } else {
+                datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
+                    Box::new(child),
+                    cast_data_type(arg),
+                ))
+            }
         }
         // A narrowing cast to an integer target (`arg` is the target int code). Uses the NarrowingCast
         // kernel so the value wraps (integer source) / saturates with NaN→0 (float source) like Flink's
@@ -595,6 +599,7 @@ pub(crate) fn cast_data_type(code: usize) -> DataType {
         3 => DataType::Int64,
         4 => DataType::Float32,
         5 => DataType::Float64,
+        6 => DataType::Utf8,
         other => panic!("unsupported cast target: {other}"),
     }
 }
@@ -1471,6 +1476,92 @@ fn rescale_compact_quotient(value: i128, scale: i16, precision: u8, target: i8) 
         0
     };
     (result.abs() < 10_i128.pow(precision as u32)).then_some(result)
+}
+
+#[cfg(test)]
+mod decimal_string_cast_tests {
+    use super::*;
+    use arrow::array::{Decimal128Array, StringArray};
+
+    fn projection() -> CalcExpression {
+        CalcExpression {
+            kinds: vec![11, 0],
+            payload: vec![6, 0],
+            child_counts: vec![1, 0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["v".into()],
+            compiled: None,
+        }
+    }
+
+    #[test]
+    fn decimal_cast_preserves_plain_notation_scale_nulls_and_slices() {
+        for (precision, scale, expected) in [
+            (4, 3, "0.001".to_owned()),
+            (18, 18, format!("0.{}1", "0".repeat(17))),
+            (38, 38, format!("0.{}1", "0".repeat(37))),
+            (38, 0, "1".to_owned()),
+        ] {
+            let values = Decimal128Array::from(vec![Some(7), Some(1), Some(-1), Some(0), None])
+                .with_precision_and_scale(precision, scale)
+                .unwrap();
+            let batch = RecordBatch::try_from_iter(vec![("d", Arc::new(values) as ArrayRef)])
+                .unwrap()
+                .slice(1, 4);
+            let zero = if scale == 0 {
+                "0".to_owned()
+            } else {
+                format!("0.{}", "0".repeat(scale as usize))
+            };
+            let negative = format!("-{expected}");
+            let mut cast = projection();
+            assert_eq!(
+                cast.evaluate(batch.clone()).column(0).as_ref(),
+                &StringArray::from(vec![
+                    Some(expected.as_str()),
+                    Some(&negative),
+                    Some(&zero),
+                    None
+                ])
+            );
+            assert_eq!(cast.evaluate(batch.slice(0, 0)).num_rows(), 0);
+        }
+    }
+
+    #[test]
+    fn decimal_cast_does_not_round_large_integer_coefficients() {
+        let max = 10_i128.pow(38) - 1;
+        let values = Decimal128Array::from(vec![max, -max, 9_007_199_254_740_993])
+            .with_precision_and_scale(38, 0)
+            .unwrap();
+        let batch = RecordBatch::try_from_iter(vec![("d", Arc::new(values) as ArrayRef)]).unwrap();
+        let expected = StringArray::from(vec![
+            max.to_string(),
+            (-max).to_string(),
+            "9007199254740993".into(),
+        ]);
+        assert_eq!(projection().evaluate(batch).column(0).as_ref(), &expected);
+    }
+
+    #[test]
+    fn decimal_literal_formatting_broadcasts_without_rounding() {
+        let input = Decimal128Array::from(vec![1, 2, 3])
+            .with_precision_and_scale(4, 3)
+            .unwrap();
+        let batch = RecordBatch::try_from_iter(vec![("d", Arc::new(input) as ArrayRef)]).unwrap();
+        let mut cast = projection();
+        cast.kinds[1] = 16;
+        cast.strings = vec![Some("-1|38|38".into())];
+        let expected = format!("-0.{}1", "0".repeat(37));
+        assert_eq!(
+            cast.evaluate(batch).column(0).as_ref(),
+            &StringArray::from(vec![expected; 3])
+        );
+    }
 }
 
 #[cfg(test)]

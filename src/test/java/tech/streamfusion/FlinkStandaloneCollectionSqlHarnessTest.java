@@ -15,18 +15,20 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.runtime.typeutils.ExternalTypeInfo;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FlinkStandaloneCollectionSqlHarnessTest {
-  private static final RecoveryExecutionMetrics METRICS = new RecoveryExecutionMetrics();
+  private final RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics();
 
-  @AfterAll
-  static void closeCluster() {
-    METRICS.close();
+  @AfterEach
+  void closeCluster() {
+    metrics.close();
   }
 
   @ParameterizedTest
@@ -123,7 +125,7 @@ class FlinkStandaloneCollectionSqlHarnessTest {
         run(
             () -> {
               var table =
-                  StreamTableEnvironment.create(METRICS.environment(new Configuration(), 1, 0));
+                  StreamTableEnvironment.create(metrics.environment(new Configuration(), 1, 0));
               table.getConfig().set("streamfusion.transpose.batchRows", "2");
               table.executeSql(
                   "CREATE TABLE src (id BIGINT,t ARRAY<STRING>,r ARRAY<ROW<n INT>>,"
@@ -274,7 +276,7 @@ class FlinkStandaloneCollectionSqlHarnessTest {
   void fixedBinaryMapValuesPreserveAllInputChangelogKinds(boolean notNull) {
     Supplier<TableEnvironment> factory =
         () -> {
-          var env = METRICS.environment(new Configuration(), 1, 0);
+          var env = metrics.environment(new Configuration(), 1, 0);
           env.getConfig().enableObjectReuse();
           var table = StreamTableEnvironment.create(env);
           table.getConfig().set("streamfusion.transpose.batchRows", "2");
@@ -315,9 +317,9 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment binaryKeys(
+  private TableEnvironment binaryKeys(
       boolean legacy, boolean notNull, boolean binaryValues) {
-    var env = METRICS.environment(new Configuration(), 1, 0);
+    var env = metrics.environment(new Configuration(), 1, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("streamfusion.transpose.batchRows", "3");
@@ -480,9 +482,9 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment notNullBinaryMaps(
+  private TableEnvironment notNullBinaryMaps(
       boolean legacy, boolean keyNotNull, boolean valueNotNull, boolean binary) {
-    var env = METRICS.environment(new Configuration(), 1, 0);
+    var env = metrics.environment(new Configuration(), 1, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("streamfusion.transpose.batchRows", "3");
@@ -542,7 +544,7 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment binaryMaps(boolean legacy) {
+  private TableEnvironment binaryMaps(boolean legacy) {
     var rows = new java.util.ArrayList<Row>();
     int id = 0;
     for (int length : new int[] {0, 1, 3, 4, 5, 17, 4097}) {
@@ -657,16 +659,16 @@ class FlinkStandaloneCollectionSqlHarnessTest {
         scan::explainSummary);
   }
 
-  private static NativeFailureParity.Comparison run(
+  private NativeFailureParity.Comparison run(
       Supplier<TableEnvironment> factory, String sql) {
     var earlier =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
     var runs = NativeFailureParity.run(factory, sql);
     if (runs.nativeRun().failure() == null) {
       var work =
-          METRICS.nativeOperators().stream()
+          metrics.nativeOperators().stream()
               .filter(row -> !earlier.contains(row.get("jobId")))
               .collect(java.util.stream.Collectors.toList());
       RecoveryExecutionMetrics.assertConsumed(work, "NativeCalc");
@@ -685,7 +687,7 @@ class FlinkStandaloneCollectionSqlHarnessTest {
     assertTrue(runs.nativeRun().plan().contains("NativeCalc"), runs::toString);
   }
 
-  private static TableEnvironment casts(boolean legacy) {
+  private TableEnvironment casts(boolean legacy) {
     var map = new LinkedHashMap<String, Integer>();
     map.put("a", 1);
     map.put(null, -2);
@@ -747,8 +749,8 @@ class FlinkStandaloneCollectionSqlHarnessTest {
             Row.of(10, "\ud83d\ude00|x", "|")));
   }
 
-  private static TableEnvironment environment(DataType type, List<Row> rows) {
-    var env = METRICS.environment(new Configuration(), 1, 0);
+  private TableEnvironment environment(DataType type, List<Row> rows) {
+    var env = metrics.environment(new Configuration(), 1, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("streamfusion.transpose.batchRows", "3");

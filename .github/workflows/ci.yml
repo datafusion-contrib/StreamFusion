@@ -107,27 +107,20 @@ jobs:
 
   java-tests:
     needs: native-build
-    name: Java tests (debug native build)${{ matrix.suffix }}${{ matrix.jdk == '11' && ' (JDK 11)' || '' }}
+    name: Java tests (debug native build)${{ matrix.suffix }}${{ matrix.jdk == '11' && ' (JDK 11)' || '' }} (shard ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
+        line: ['2.2', '1.18']
+        jdk: ['17', '11']
+        shard: [1, 2]
         include:
           - line: '2.2'
             profile: ''
             suffix: ''
-            jdk: '17'
           - line: '1.18'
             profile: '-Pflink-1.18'
             suffix: ' (Flink 1.18)'
-            jdk: '17'
-          - line: '2.2'
-            profile: ''
-            suffix: ''
-            jdk: '11'
-          - line: '1.18'
-            profile: '-Pflink-1.18'
-            suffix: ' (Flink 1.18)'
-            jdk: '11'
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -144,7 +137,7 @@ jobs:
 
       # The upstream-suite instrumentation agent is a separate JDK 17 development tool.
       - name: Test upstream execution evidence checks
-        if: matrix.jdk == '17'
+        if: matrix.jdk == '17' && matrix.shard == 1
         run: |
           python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3
@@ -155,11 +148,12 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
           python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
+          python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
 
       - name: Test Flink 1.18 native and fallback contract selection
-        if: matrix.line == '1.18' && matrix.jdk == '17'
+        if: matrix.line == '1.18' && matrix.jdk == '17' && matrix.shard == 1
         run: |
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml -Dstreamfusion.flink-suite.flink-line=1.18 test
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml -Dstreamfusion.flink-suite.flink-line=1.18 -Dstreamfusion.flink-suite.native-rocksdb=true test
@@ -175,18 +169,33 @@ jobs:
           python3 bin/ci-maven-dependencies.py --profile "${{ matrix.line == '1.18' && 'flink-1.18' || '' }}"
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
 
+      - name: Compile the complete reactor and partition runtime test classes
+        run: |
+          mvn -B -ntp ${{ matrix.profile }} test -DskipTests -Dnative.build.skip=true
+          python3 bin/ci_runtime_test_shards.py \
+            --classes streamfusion-runtime/target/test-classes \
+            --count 2 --index ${{ matrix.shard }} \
+            --output "$RUNNER_TEMP/runtime-test-includes.txt"
+
       - name: Run Java test suite
-        run: mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true
+        run: |
+          vmstat -w 30 &
+          memory_sampler=$!
+          trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
+          mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true \
+            "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/runtime-test-includes.txt" \
+            -Dsf.testForks=1 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx4g"
 
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
-        if: matrix.jdk == '17'
+        if: matrix.jdk == '17' && matrix.shard == 1
         run: >-
           mvn -B -ntp ${{ matrix.profile }} -pl streamfusion-runtime
           -Dnative.build.skip=true
           -Dnative.resource.directory="$GITHUB_WORKSPACE/native/target/debug"
           -Dtest=FlinkJvmAggregateSqlHarnessTest,FlinkNestedScalarSqlHarnessTest,FlinkNestedFixedBinarySqlHarnessTest,FlinkTemporalUdfSqlHarnessTest,FlinkBinaryRowHashParityTest,FlinkMapJsonJvmSqlHarnessTest,FlinkJsonJvmSqlHarnessTest,NativeParityValueTest,TransposeOperatorsTest,Utf8WriterReuseTest,FlinkEltSqlHarnessTest,FlinkFixedBinarySqlHarnessTest,FlinkBinaryStringBuiltinsSqlHarnessTest,FlinkVariableBinaryEltSqlHarnessTest,FlinkNestedScalarRecoveryTest,FlinkNestedScalarRemoteDeploymentTest
           -Dsf.testForks=1
-          "-Dsf.extraJvmArgs=-Djava.library.path=$GITHUB_WORKSPACE/native/target/debug -Dstreamfusion.experimental.temporalScalarUdfs=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Dstreamfusion.experimental.borrowedStringExit=true"
+          -Dsf.testReuseForks=false
+          "-Dsf.extraJvmArgs=-Xmx4g -Djava.library.path=$GITHUB_WORKSPACE/native/target/debug -Dstreamfusion.experimental.temporalScalarUdfs=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Dstreamfusion.experimental.borrowedStringExit=true"
           surefire:test@default-test
 
       - name: Check deployed Java 11 bytecode including embedded payloads
@@ -199,7 +208,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: java-failure-diagnostics-${{ matrix.line }}${{ matrix.jdk == '11' && '-jdk11' || '' }}
+          name: java-failure-diagnostics-${{ matrix.line }}${{ matrix.jdk == '11' && '-jdk11' || '' }}-shard${{ matrix.shard }}
           path: |
             **/surefire-reports/*.xml
             **/surefire-reports/*.txt
@@ -210,8 +219,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Upload portable SQL audit outcomes
+      - name: Upload runtime test partition
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-runtime-partition-${{ matrix.line }}-jdk${{ matrix.jdk }}-shard${{ matrix.shard }}
+          path: ${{ runner.temp }}/runtime-test-includes.*
+          if-no-files-found: error
+
+      - name: Upload portable SQL audit outcomes
+        if: always() && matrix.shard == 1
         uses: actions/upload-artifact@v4
         with:
           name: portable-sql-audit-${{ matrix.line }}${{ matrix.jdk == '11' && '-jdk11' || '' }}

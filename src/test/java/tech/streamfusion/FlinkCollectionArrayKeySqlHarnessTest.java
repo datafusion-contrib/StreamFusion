@@ -13,14 +13,16 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FlinkCollectionArrayKeySqlHarnessTest {
-  private static final RecoveryExecutionMetrics METRICS = new RecoveryExecutionMetrics();
+  private final RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics();
   private static final List<String> ELEMENTS =
       List.of(
           "TINYINT",
@@ -36,9 +38,9 @@ class FlinkCollectionArrayKeySqlHarnessTest {
           "TIME",
           "ARRAY<DOUBLE>");
 
-  @AfterAll
-  static void closeCluster() {
-    METRICS.close();
+  @AfterEach
+  void closeCluster() {
+    metrics.close();
   }
 
   static java.util.stream.Stream<Arguments> signatures() {
@@ -153,8 +155,8 @@ class FlinkCollectionArrayKeySqlHarnessTest {
     return result;
   }
 
-  private static TableEnvironment environment(String type, int parallelism) {
-    var env = METRICS.environment(new Configuration(), parallelism, 0);
+  private TableEnvironment environment(String type, int parallelism) {
+    var env = metrics.environment(new Configuration(), parallelism, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     onePhase(table);
@@ -201,15 +203,15 @@ class FlinkCollectionArrayKeySqlHarnessTest {
     check(function, type, parallelism);
   }
 
-  private static void check(String function, String type, int parallelism) {
+  private void check(String function, String type, int parallelism) {
     check(function, type, parallelism, sql(function, "src"));
   }
 
-  private static void check(
+  private void check(
       String function, String type, int parallelism, String query, String... additionalOperators) {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction(function);
     var previous =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
     var runs = NativeFailureParity.run(() -> environment(type, parallelism), query);
@@ -217,7 +219,7 @@ class FlinkCollectionArrayKeySqlHarnessTest {
     assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
     assertEquals(perKey(runs.host().rows()), perKey(runs.nativeRun().rows()));
     var work =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .filter(row -> !previous.contains(row.get("jobId")))
             .collect(java.util.stream.Collectors.toList());
     RecoveryExecutionMetrics.assertConsumed(work, "NativeColumnarGroupAggregate");

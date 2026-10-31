@@ -24,6 +24,21 @@ experiments; they do not imply that the direct STRING kernel is enabled. Boolean
 ARRAY_DISTINCT, fixed binary casts, and the scale-dependent exact DOUBLE TRUNCATE helper
 remain admitted. See [current Calc coverage](../operators/calc-filter.md).
 
+## DECIMAL formatting
+
+Direct DECIMAL-to-STRING casts format the unscaled integer into reusable stack buffers, insert
+the declared decimal point and zero padding, then append to Arrow's offset/value buffers.
+The input validity buffer is shared, including sliced NULL masks. There is no floating conversion,
+per-row String allocation or JVM callback. Array arguments bypass generic scalar-to-array
+adaptation; scalar literals retain their ordinary scalar result and broadcast behavior.
+
+The buffer-reuse structure follows Comet's decimal formatter, while Flink always requires plain
+notation and retains trailing zeros. The initial generic Arrow cast matched those values but
+lost to Flink; sampling identified per-value formatting/String allocation as its main cost.
+The final prepared-input measurements at 1,024 rows are 2.82–6.44x stock across the two released
+Flink lines. Sixteen-row results range from near parity to 2.36x; the smallest difference is
+within timing variability. See the [fixtures, raw trials and full-job diagnostics](../benchmarks/scalar-functions.md#decimal-to-string).
+
 ## Certified string builtins
 
 A verified ASCII batch runs regex, LIKE ESCAPE and SIMILAR matching in Rust. Its original
