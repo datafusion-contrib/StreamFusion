@@ -78,3 +78,12 @@ into released stock operator state schemas. The state accessor for this work rea
 Flink's serialized TTL envelope with its original entry timestamp. Conversion can therefore copy
 state without expiring it or refreshing its age through the running job's clock wrapper.
 Operator adapters, automatic restore binding and cross-engine qualification remain part of #569.
+
+### Canonical import batches
+
+A typed RocksDB store releases its decoded working rows after each bundle. A canonical restore
+that transfers one logical partition in several batches must hydrate previously committed rows
+before merging the next batch. Otherwise a non-resident value is mistaken for an absent value
+and overwritten. The restore hook uses actual serialized keys and preserves raw TTL write ages;
+ordinary input reads continue to apply normal expiry checks. This is correctness groundwork for
+stock-compatible state projection; benchmarking remains deferred until that functionality is complete.
