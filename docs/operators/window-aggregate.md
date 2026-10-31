@@ -7,6 +7,12 @@ and the two-phase local/global split — and the windowing-TVF operator that ass
 window(s) ahead of a downstream consumer (an aggregate, a [window join](joins/window-join.md), or
 window Top-N/dedup).
 
+Timestamp grouping keys retain their millisecond and sub-millisecond components in memory and
+direct RocksDB, including NULLs and epochs outside the signed nanosecond range. The declared
+RocksDB key schema matches the live vectors before input, so restore can import those keys
+immediately. Sixteen ordinary-checkpoint controls cover TIMESTAMP/TIMESTAMP_LTZ at precision
+0/3/6/9, both stores, NULLs, negative epochs and extended-range values.
+
 ## Parallelism and state key groups
 
 The two-phase global window aggregate without business grouping keys is a SINGLETON:

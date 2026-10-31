@@ -2551,6 +2551,7 @@ fn window_key_data_type(code: i64) -> DataType {
         9 => DataType::Time32(arrow::datatypes::TimeUnit::Millisecond),
         11 => DataType::Binary,
         12 => DataType::Int32,
+        1000..=1009 => streamfusion_bridge::timestamp::timestamp_type(),
         code if code >= 2000 => {
             let packed = code - 2000;
             DataType::Decimal128((packed / 100) as u8, (packed % 100) as i8)
