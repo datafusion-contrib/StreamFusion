@@ -99,11 +99,13 @@ restore. These changes apply to ordinary native checkpoints as well as canonical
 ## Stock-schema restore inventory
 
 The stock-schema import work under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569)
-uses a read-only inventory validator. It checks declared descriptor names and state kinds, the
-current adapters' stock void namespaces, and timer key/namespace serializers. Unknown descriptors
-or timer services are errors even when empty. Pending timers require explicit adapter ownership;
-only Flink's known empty user-timer queues may otherwise be omitted. Aggregate declarations include
-their DISTINCT/null-marker and extrema data views.
+uses a read-only inventory validator. It checks declared descriptor names and state kinds, exact
+namespace serializers per descriptor, and timer key/namespace serializers per service. These
+declarations can mix void, window-end and session-window namespaces; matching only a serializer's
+class is insufficient. Unknown descriptors or timer services are errors even when empty. Pending
+timers require explicit adapter ownership. An adapter can declare an unused service with its exact
+namespace only when its captured queue is empty; Flink's known empty user-timer queues remain the
+default exception. Aggregate declarations include their DISTINCT/null-marker and extrema data views.
 
 Inspection captures released Flink snapshot resources and checks queue emptiness through their
 state iterator. It does not open/register timer queues, consume records, expire or refresh TTL
