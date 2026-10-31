@@ -2709,6 +2709,9 @@ final class RexExpression {
     if ("BIN".equals(functionName)) {
       return emitEncoding(call, 104, true, false);
     }
+    if ("IS_ALPHA".equals(functionName) && nativeStringClassification(call)) {
+      return emitCharacterFunction(call, 238, 1, 1);
+    }
     if ("HEX".equals(functionName)) {
       return emitEncoding(call, 105, true, true);
     }
@@ -4433,8 +4436,9 @@ final class RexExpression {
         return !nativeFromBase64(call);
       case "IS_DECIMAL":
       case "IS_DIGIT":
-      case "IS_ALPHA":
         return true;
+      case "IS_ALPHA":
+        return !nativeStringClassification(call);
       case "SHA2":
         return call.getOperands().size() == 2
             && (!(call.getOperands().get(1) instanceof RexLiteral)
@@ -4480,6 +4484,10 @@ final class RexExpression {
             || call.getType().getSqlTypeName() == SqlTypeName.INTEGER
             || call.getType().getSqlTypeName() == SqlTypeName.BIGINT)
         && nativeIntegralRoundingOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeStringClassification(RexCall call) {
+    return call.getOperands().size() == 1 && isCharacter(call.getOperands().get(0));
   }
 
   private static boolean nativeIntegralRoundPosition(RexCall call) {

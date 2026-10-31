@@ -1794,8 +1794,24 @@ consumer and relational restrictions remain tracked in
 
 ### IS_DECIMAL, IS_DIGIT and IS_ALPHA
 
-`IS_DECIMAL`, `IS_DIGIT` and `IS_ALPHA` use generated evaluation, preserving Flink syntax
-and Unicode classification, including non-nullable FALSE for NULL and empty input.
+`IS_ALPHA` on character arguments uses a native Arrow kernel. It returns non-nullable FALSE
+for NULL or empty input and requires every UTF-16 `char` to satisfy the actual worker JDK's
+`Character.isLetter`. Supplementary letters therefore return FALSE, as do isolated surrogates,
+combining marks, digits and replacement characters. It does not use Rust's Unicode version
+or a code-point alphabetic predicate. ASCII letters have a byte fast path.
+
+Each JVM copies its own 8 KiB BMP letter bitmap once when the expression is first compiled;
+workers obtain their own tables rather than inheriting the planner JDK's classification.
+JNI setup uses a bounded local-reference frame and retains only immutable Rust bytes. Batch
+and row evaluation make no JVM calls. Replacing an isolated surrogate with `?` cannot change
+this predicate, because both fail the letter test; existing sensitive-expression and arbitrary
+binary STRING boundaries retain their separate admission rules. Already-generated operands
+may still contain their own JVM evaluators. Noncharacter IS_ALPHA overloads retain generated
+evaluation. The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
+include stock Flink and the actual previous callback as well as complete row-source jobs.
+
+`IS_DECIMAL` and `IS_DIGIT` retain generated evaluation, preserving their released syntax,
+object overloads and Unicode classification, including FALSE for NULL and empty input.
 
 ### UNHEX
 

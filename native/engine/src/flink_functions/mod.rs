@@ -86,6 +86,7 @@ mod row_constructor;
 mod scalar;
 pub(crate) mod sha2_runtime;
 mod sign;
+mod string_classification;
 pub(crate) mod string_fusion;
 mod string_to_boolean;
 mod temporal_arithmetic;
@@ -99,6 +100,7 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
 pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
     Some(match op {
+        238 => string_classification::alpha(),
         65 => sign::function(),
         67 => ascii::function(),
         81 => chr::function(),
