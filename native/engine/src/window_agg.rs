@@ -3,6 +3,7 @@ use crate::*;
 use arrow::array::UInt8Array;
 use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
 
+mod canonical;
 mod shared;
 #[cfg(test)]
 pub(crate) mod tests;

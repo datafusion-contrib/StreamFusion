@@ -15,6 +15,13 @@ public final class Native {
   /** Key descriptor prefix selecting Flink's generated projection layout, including NULL slots. */
   public static final int STOCK_KEY_PROJECTION = Integer.MIN_VALUE;
 
+  public static native void exportTumblingAggregatorCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importTumblingAggregatorCanonical(
+      long handle, int keyArity, long arrayAddress, long schemaAddress);
+
+  public static native void restoreTumblingCanonicalWatermark(long handle, long watermark);
+
   public static final int AGGREGATE_DISTINCT_TTL = 1 << 10;
   public static final int AGGREGATE_DISTINCT_APPEND = 1 << 11;
 

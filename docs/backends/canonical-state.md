@@ -142,3 +142,13 @@ intermediate native snapshot. Window watermark support prepares the released `wa
 list with its `LongSerializer` and minimum-on-restore rule, including Flink's maximum-value sentinel;
 it rejects unexpected operator/broadcast state and incompatible metadata. These foundations do not
 yet qualify native windows for stock savepoint interchange under #569.
+
+The native tumbling transfer primitive exposes running scalar accumulator fields, grouping keys
+and window bounds directly from memory or typed RocksDB. Transfer batches contain at most 1,024
+rows; the initial RocksDB reader uses its decoded state view after draining pending updates.
+Export can be retried after a failed receiver without losing live state. Import rejects malformed
+schemas, bounds and duplicate keyed windows before committing a batch. Resource-limit failures
+retain their native memory-limit exception, and borrowed Arrow buffers are released before Java
+failures are raised. Restored stock watermarks convert from inclusive timestamps to the native
+exclusive firing frontier. This primitive produces no intermediate serialized native snapshot;
+full window-family integration and qualification remain part of #569.
