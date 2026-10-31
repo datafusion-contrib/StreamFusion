@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) fn is_distinct(aggregate: &WindowAggregate) -> bool {
     match aggregate {
-        WindowAggregate::FloatingDistinctCount(..) => true,
+        WindowAggregate::FloatingDistinctCount(..) | WindowAggregate::CountedDistinct(_) => true,
         WindowAggregate::Builtin(function) => function.is_distinct(),
         _ => false,
     }
@@ -34,6 +34,7 @@ struct ViewRow {
     end: i64,
     key: OwnedRow,
     value: ScalarValue,
+    count: i64,
 }
 
 impl TumblingAggregator {
@@ -43,14 +44,17 @@ impl TumblingAggregator {
             .get(index)
             .ok_or_else(|| invalid("invalid DISTINCT slot"))?;
         let count = match aggregate {
-            WindowAggregate::FloatingDistinctCount(..) => true,
+            WindowAggregate::FloatingDistinctCount(..) | WindowAggregate::CountedDistinct(_) => {
+                true
+            }
             WindowAggregate::Builtin(function) => {
                 function.is_distinct() && function.fun().name() == "count"
             }
             _ => false,
         };
         if !count
-            || !matches!(aggregate.state_fields().as_slice(), [field] if matches!(field.data_type(), DataType::List(_)))
+            || !(matches!(aggregate, WindowAggregate::CountedDistinct(_))
+                || matches!(aggregate.state_fields().as_slice(), [field] if matches!(field.data_type(), DataType::List(_))))
         {
             return Err(invalid("unqualified DISTINCT view factory"));
         }
@@ -103,6 +107,7 @@ impl TumblingAggregator {
         converter: Option<&RowConverter>,
         key_types: &[DataType],
         value_type: &DataType,
+        counted: bool,
         rows: &[ViewRow],
     ) -> Result<RecordBatch, DataFusionError> {
         let mut fields = vec![Field::new("window_end", DataType::Int64, false)];
@@ -119,6 +124,12 @@ impl TumblingAggregator {
         columns.push(ScalarValue::iter_to_array(
             rows.iter().map(|row| row.value.clone()),
         )?);
+        if counted {
+            fields.push(Field::new("count", DataType::Int64, false));
+            columns.push(Arc::new(Int64Array::from_iter_values(
+                rows.iter().map(|row| row.count),
+            )));
+        }
         Ok(RecordBatch::try_new(
             Arc::new(Schema::new(fields)),
             columns,
@@ -131,6 +142,7 @@ impl TumblingAggregator {
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         let value_type = self.canonical_distinct_type(index)?;
+        let counted = matches!(self.aggregates[index], WindowAggregate::CountedDistinct(_));
         self.validate_canonical_distinct_complete()?;
         let result = (|| {
             let mut rows = Vec::with_capacity(CHUNK_ROWS);
@@ -138,23 +150,34 @@ impl TumblingAggregator {
                 for (key, accumulators) in &mut window.keys {
                     // Restore before invoking the writer: some released DataFusion factories drain
                     // their set when reading state, and a failed receiver must leave the job intact.
-                    let values =
-                        retained_values(&self.aggregates[index], &mut accumulators[index])?;
-                    for row in 0..values.len() {
-                        if values.is_null(row) {
-                            // Released byte sets retain NULL but exclude it from COUNT.
-                            continue;
-                        }
+                    let entries = if counted {
+                        (accumulators[index].as_ref() as &dyn std::any::Any)
+                            .downcast_ref::<CountedDistinctAccumulator>()
+                            .unwrap()
+                            .entries()
+                    } else {
+                        let values =
+                            retained_values(&self.aggregates[index], &mut accumulators[index])?;
+                        (0..values.len())
+                            .filter(|&row| !values.is_null(row))
+                            .map(|row| {
+                                ScalarValue::try_from_array(&values, row).map(|value| (value, 1))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                    };
+                    for (value, count) in entries {
                         rows.push(ViewRow {
                             end,
                             key: key.clone(),
-                            value: ScalarValue::try_from_array(&values, row)?,
+                            value,
+                            count,
                         });
                         if rows.len() == CHUNK_ROWS {
                             accept(Self::canonical_view_batch(
                                 self.key_converter.as_ref(),
                                 &self.key_types,
                                 &value_type,
+                                counted,
                                 &rows,
                             )?)?;
                             rows.clear();
@@ -167,6 +190,7 @@ impl TumblingAggregator {
                     self.key_converter.as_ref(),
                     &self.key_types,
                     &value_type,
+                    counted,
                     &rows,
                 )?)?;
             }
@@ -199,9 +223,10 @@ impl TumblingAggregator {
         batch: &RecordBatch,
     ) -> Result<(), DataFusionError> {
         let value_type = self.canonical_distinct_type(index)?;
+        let counted = matches!(self.aggregates[index], WindowAggregate::CountedDistinct(_));
         let arity = self.key_types.len();
         let schema = batch.schema();
-        if batch.num_columns() != 2 + arity
+        if batch.num_columns() != 2 + arity + usize::from(counted)
             || batch.num_rows() > CHUNK_ROWS
             || schema.field(0).name() != "window_end"
             || schema.field(0).data_type() != &DataType::Int64
@@ -212,6 +237,24 @@ impl TumblingAggregator {
         {
             return Err(invalid("invalid DISTINCT view schema"));
         }
+        let counts = if counted {
+            let column = 2 + arity;
+            if schema.field(column).name() != "count"
+                || schema.field(column).data_type() != &DataType::Int64
+                || batch.column(column).null_count() != 0
+            {
+                return Err(invalid("invalid DISTINCT counter schema"));
+            }
+            Some(
+                batch
+                    .column(column)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
         for (position, data_type) in self.key_types.iter().enumerate() {
             if schema.field(1 + position).name() != &format!("key{position}")
                 || schema.field(1 + position).data_type() != data_type
@@ -245,12 +288,31 @@ impl TumblingAggregator {
                     .and_then(|window| window.keys.get_mut(&key))
                     .and_then(|accumulators| accumulators.get_mut(index))
                     .ok_or_else(|| invalid("DISTINCT view without its native accumulator"))?;
-                let values = retained_values(&self.aggregates[index], accumulator)?;
                 let mut candidate = self.aggregates[index].create_accumulator();
-                candidate.update_batch(&[values])?;
+                if counted {
+                    let states = accumulator
+                        .state()?
+                        .iter()
+                        .map(ScalarValue::to_array)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    restore_accumulator_state(&mut candidate, &states)?;
+                } else {
+                    let values = retained_values(&self.aggregates[index], accumulator)?;
+                    candidate.update_batch(&[values])?;
+                }
                 candidates.insert(entry.clone(), candidate);
             }
             let candidate = candidates.get_mut(&entry).unwrap();
+            if let Some(counts) = counts {
+                (candidate.as_mut() as &mut dyn std::any::Any)
+                    .downcast_mut::<CountedDistinctAccumulator>()
+                    .unwrap()
+                    .import_entry(
+                        ScalarValue::try_from_array(batch.column(1 + arity), row)?,
+                        counts.value(row),
+                    )?;
+                continue;
+            }
             let before = candidate.evaluate()?;
             candidate.update_batch(&[batch.column(1 + arity).slice(row, 1)])?;
             let after = candidate.evaluate()?;

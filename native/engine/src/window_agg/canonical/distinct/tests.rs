@@ -17,6 +17,177 @@ fn aggregator(shape: &str, value_type: i64) -> TumblingAggregator {
     value
 }
 
+fn counted_aggregator(shape: &str, value_type: i64) -> TumblingAggregator {
+    let size = if shape == "TUMBLE" { 1000 } else { 3000 };
+    let mut value = TumblingAggregator::new(
+        size,
+        1000,
+        shape == "CUMULATE",
+        vec![value_type, 0],
+        vec![COUNT_DISTINCT_WITH_COUNTS, 3],
+    );
+    value.bind_canonical_distinct(0).unwrap();
+    if shape != "TUMBLE" {
+        value.enable_canonical_slicing(1).unwrap();
+    }
+    value
+}
+
+#[test]
+fn counted_views_preserve_exact_frequencies_through_checkpoint_and_engine_transfer() {
+    for shape in ["TUMBLE", "HOP", "CUMULATE"] {
+        for keyless in [false, true] {
+            let mut source = counted_aggregator(shape, 0);
+            for time in [100, 200, 1100, 1150] {
+                source
+                    .update(&input(
+                        Arc::new(Int64Array::from(vec![10, 10, 20])),
+                        keyless,
+                        time,
+                    ))
+                    .unwrap();
+            }
+            source.flush(1000).unwrap();
+            let original = views(&mut source);
+            assert!(original.iter().any(|batch| batch
+                .column(batch.num_columns() - 1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .iter()
+                .flatten()
+                .any(|count| count > 1)));
+            let partitions = source
+                .snapshot_partitions(
+                    128,
+                    if keyless {
+                        &[i32::MIN]
+                    } else {
+                        &[i32::MIN, -1]
+                    },
+                )
+                .into_values()
+                .collect::<Vec<_>>();
+            let mut checkpoint = TumblingAggregator::restore_partitions(
+                if shape == "TUMBLE" { 1000 } else { 3000 },
+                1000,
+                shape == "CUMULATE",
+                vec![0, 0],
+                vec![COUNT_DISTINCT_WITH_COUNTS, 3],
+                &partitions,
+            );
+            checkpoint.bind_canonical_distinct(0).unwrap();
+            let collect = |batches: Vec<RecordBatch>| {
+                let mut rows = batches.iter().flat_map(render).collect::<Vec<_>>();
+                rows.sort();
+                rows
+            };
+            assert_eq!(collect(original), collect(views(&mut checkpoint)));
+            let mut target = counted_aggregator(shape, 0);
+            for batch in state(&mut checkpoint) {
+                target
+                    .import_canonical_state(&batch, usize::from(!keyless), 1000)
+                    .unwrap();
+            }
+            for batch in views(&mut checkpoint) {
+                target.import_canonical_distinct(0, &batch).unwrap();
+            }
+            target.finish_canonical_distinct().unwrap();
+            if shape != "TUMBLE" {
+                checkpoint
+                    .visit_canonical_timers(|batch| {
+                        target.import_canonical_timers(&batch, usize::from(!keyless))
+                    })
+                    .unwrap();
+            }
+            target.current_watermark = checkpoint.current_watermark;
+            for time in [1200, 1600, 2100] {
+                let suffix = input(Arc::new(Int64Array::from(vec![10, 20, 30])), keyless, time);
+                source.update(&suffix).unwrap();
+                checkpoint.update(&suffix).unwrap();
+                target.update(&suffix).unwrap();
+            }
+            assert_eq!(collect(views(&mut source)), collect(views(&mut target)));
+            for watermark in [2000, 3000, 6000, i64::MAX] {
+                let expected = render(&source.flush(watermark).unwrap());
+                assert_eq!(expected, render(&checkpoint.flush(watermark).unwrap()));
+                assert_eq!(expected, render(&target.flush(watermark).unwrap()));
+            }
+        }
+    }
+}
+
+#[test]
+fn counted_view_import_is_atomic_and_preserves_signed_counts_without_normalizing() {
+    let mut source = counted_aggregator("HOP", 0);
+    source
+        .update(&input(
+            Arc::new(Int64Array::from(vec![10, 10, 20])),
+            true,
+            100,
+        ))
+        .unwrap();
+    let main = state(&mut source).remove(0);
+    let view = views(&mut source).remove(0);
+    for corrupt in ["duplicate", "zero", "orphan"] {
+        let mut target = counted_aggregator("HOP", 0);
+        target.import_canonical_state(&main, 0, 1000).unwrap();
+        let damaged = match corrupt {
+            "duplicate" => arrow::compute::concat_batches(
+                &view.schema(),
+                [&view.slice(0, 1), &view.slice(0, 1)],
+            )
+            .unwrap(),
+            "zero" => RecordBatch::try_new(
+                view.schema(),
+                vec![
+                    view.column(0).clone(),
+                    view.column(1).clone(),
+                    Arc::new(Int64Array::from(vec![0; view.num_rows()])),
+                ],
+            )
+            .unwrap(),
+            _ => RecordBatch::try_new(
+                view.schema(),
+                vec![
+                    Arc::new(Int64Array::from(vec![2000; view.num_rows()])),
+                    view.column(1).clone(),
+                    view.column(2).clone(),
+                ],
+            )
+            .unwrap(),
+        };
+        assert!(target.import_canonical_distinct(0, &damaged).is_err());
+        target.import_canonical_distinct(0, &view).unwrap();
+        target.finish_canonical_distinct().unwrap();
+        assert_eq!(render(&view), render(&views(&mut target).remove(0)));
+    }
+    let signed = RecordBatch::try_new(
+        view.schema(),
+        vec![
+            view.column(0).clone(),
+            view.column(1).clone(),
+            Arc::new(Int64Array::from(vec![i64::MIN, i64::MAX])),
+        ],
+    )
+    .unwrap();
+    let mut target = counted_aggregator("HOP", 0);
+    target.import_canonical_state(&main, 0, 1000).unwrap();
+    target.import_canonical_distinct(0, &signed).unwrap();
+    target.finish_canonical_distinct().unwrap();
+    assert_eq!(render(&signed), render(&views(&mut target).remove(0)));
+    let mut restored = TumblingAggregator::restore(
+        3000,
+        1000,
+        false,
+        vec![0, 0],
+        vec![COUNT_DISTINCT_WITH_COUNTS, 3],
+        &target.snapshot(),
+    );
+    restored.bind_canonical_distinct(0).unwrap();
+    assert_eq!(render(&signed), render(&views(&mut restored).remove(0)));
+}
+
 fn input(values: ArrayRef, keyless: bool, time: i64) -> RecordBatch {
     let count = values.len();
     let mut columns = Vec::new();

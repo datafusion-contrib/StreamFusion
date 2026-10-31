@@ -35,6 +35,16 @@ public final class StockWindowDistinctView implements Serializable {
   private final TypeSerializer<Object> valueKeys;
   private final TypeSerializer<Object> counters;
   private final int[] aggregates;
+  private final boolean counted;
+
+  public StockWindowDistinctView(
+      String name,
+      LogicalType valueType,
+      TypeSerializer<?> valueKeys,
+      TypeSerializer<?> counters,
+      int[] aggregates) {
+    this(name, valueType, valueKeys, counters, aggregates, false);
+  }
 
   @SuppressWarnings("unchecked")
   public StockWindowDistinctView(
@@ -42,13 +52,15 @@ public final class StockWindowDistinctView implements Serializable {
       LogicalType valueType,
       TypeSerializer<?> valueKeys,
       TypeSerializer<?> counters,
-      int[] aggregates) {
+      int[] aggregates,
+      boolean counted) {
     if (aggregates.length == 0) throw new IllegalArgumentException("Empty window DISTINCT view");
     this.name = name;
     this.valueType = valueType;
     this.valueKeys = (TypeSerializer<Object>) valueKeys.duplicate();
     this.counters = (TypeSerializer<Object>) counters.duplicate();
     this.aggregates = aggregates.clone();
+    this.counted = counted;
   }
 
   void configure(long handle) {
@@ -73,6 +85,7 @@ public final class StockWindowDistinctView implements Serializable {
     for (int i = 0; i < keys.getFieldCount(); i++)
       fields.add(new RowType.RowField("key" + i, keys.getTypeAt(i)));
     fields.add(new RowType.RowField("value", valueType.copy(true)));
+    if (counted) fields.add(new RowType.RowField("count", new BigIntType(false)));
     return new RowType(fields);
   }
 
@@ -125,6 +138,9 @@ public final class StockWindowDistinctView implements Serializable {
                     Data.importVectorSchemaRoot(
                         NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
               var reader = ArrowConversion.createArrowReader(root, type);
+              if (root.getFieldVectors().size() != type.getFieldCount())
+                throw new IllegalStateException(
+                    "Window DISTINCT counter layout differs from its native factory");
               for (int row = 0; row < root.getRowCount(); row++) {
                 var input = reader.read(row);
                 var key = new GenericRowData(keyGetters.length);
@@ -137,7 +153,14 @@ public final class StockWindowDistinctView implements Serializable {
                   throw new IllegalStateException("NULL window DISTINCT membership");
                 Object previous = view.get(value);
                 Object merged;
-                if (aggregates.length <= Long.SIZE)
+                if (counted && aggregates.length == 1)
+                  merged = input.getLong(keyGetters.length + 2);
+                else if (counted) {
+                  long[] counts =
+                      previous == null ? new long[aggregates.length] : ((long[]) previous).clone();
+                  counts[position] = input.getLong(keyGetters.length + 2);
+                  merged = counts;
+                } else if (aggregates.length <= Long.SIZE)
                   merged = (previous == null ? 0L : (Long) previous) | 1L << position;
                 else {
                   long[] bits =
@@ -158,6 +181,16 @@ public final class StockWindowDistinctView implements Serializable {
   }
 
   private long membership(Object value, int slot) {
+    if (counted) {
+      if (aggregates.length == 1) {
+        if (!(value instanceof Long))
+          throw new IllegalStateException("Invalid window DISTINCT multiplicity");
+        return (Long) value;
+      }
+      if (!(value instanceof long[]) || ((long[]) value).length != aggregates.length)
+        throw new IllegalStateException("Invalid window DISTINCT counter array");
+      return ((long[]) value)[slot];
+    }
     if (aggregates.length <= Long.SIZE) {
       if (!(value instanceof Long)
           || (aggregates.length < Long.SIZE && ((Long) value) >>> aggregates.length != 0))
@@ -217,12 +250,14 @@ public final class StockWindowDistinctView implements Serializable {
           for (var member : state(backend, entry.f1).entries()) {
             if (member.getKey() == null)
               throw new IllegalStateException("NULL in window DISTINCT map");
-            if (membership(member.getValue(), slot) == 0) continue;
+            long count = membership(member.getValue(), slot);
+            if (count == 0) continue;
             var row = new GenericRowData(type.getFieldCount());
             row.setField(0, namespace.applyAsLong(entry.f1));
             for (int i = 0; i < getters.length; i++)
               row.setField(1 + i, getters[i].getFieldOrNull(key));
             row.setField(1 + getters.length, valueKeys.copy(member.getKey()));
+            if (counted) row.setField(2 + getters.length, count);
             rows.add(row);
             if (rows.size() == CHUNK_ROWS) {
               importBatch(rows, type, handle, aggregates[slot]);

@@ -53,6 +53,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   public static final int KIND_RETRACT_COUNT = 10;
   public static final int KIND_LIVE_COUNT = 11;
   public static final int KIND_HIDDEN_LIVE_COUNT = 12;
+  public static final int KIND_COUNT_DISTINCT_WITH_COUNTS = 43;
 
   protected static final int TIMESTAMP_PRECISION = 3;
 

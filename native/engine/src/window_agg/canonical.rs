@@ -513,8 +513,13 @@ impl TumblingAggregator {
                         .downcast_ref::<Int64Array>()
                         .unwrap()
                         .value(row);
-                    if count < 0 {
+                    if count < 0 && !matches!(aggregate, WindowAggregate::CountedDistinct(_)) {
                         return Err(invalid("negative DISTINCT cardinality"));
+                    }
+                    if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
+                        .downcast_mut::<CountedDistinctAccumulator>()
+                    {
+                        counted.set_cardinality(count);
                     }
                     expected_counts.push(((ends.value(row), keys.row(row).owned(), index), count));
                     accumulators.push(accumulator);

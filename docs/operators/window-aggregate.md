@@ -17,18 +17,32 @@ immediately. Sixteen ordinary-checkpoint controls cover TIMESTAMP/TIMESTAMP_LTZ 
 
 The native transfer foundation can explicitly bind COUNT(DISTINCT) slots, project each scalar
 cardinality and visit its retained values as flat, namespaced rows. Import validates every
-namespace/key/slot against the scalar state and requires all cardinalities to match before
-finalization. Duplicate, orphaned, excessive and missing membership is rejected. Export restores
+namespace/key/slot against the scalar state. Set-based imports validate the cardinality against
+their membership; counted imports preserve the independent stock scalar and exact counters.
+Duplicate and orphaned membership is rejected, with additional cardinality checks for sets. Export restores
 any draining accumulator before calling the writer, including on writer failure. NULL markers in
 released byte-set accumulators do not contribute to COUNT and are omitted from membership rows.
 Incoming C Data is consumed before slot validation, so malformed requests release exported buffers.
-The bit-flag view helper writes stock MapState in each slice namespace, retaining its key/value
+The view helper writes stock MapState in each slice namespace, retaining its key/value
 serializers and NULL-marker descriptor. It reconstructs grouping keys with the stock binary
 projection, validates view namespaces against scalar accumulators, and transfers shared membership
-bits independently for each aggregate. Multiplicity layouts need a frequency-bearing native
-contract and must be excluded by the caller until that contract is implemented.
-This foundation does not yet qualify DISTINCT in the portable planner: the stock namespaced
-MapView binding, filtered/shared-view layout and released-operator/process tests remain required.
+bits or full signed counters independently for each aggregate. Flink selects multiplicity counters
+for HOP even with append-only input, so the planner derives the layout from released aggregate
+information instead of inferring it from the input changelog.
+
+The multiplicity-bearing native accumulator has a separate kind and retains values, exact counters
+and the scalar count in its native checkpoint state. Existing set-based checkpoint formats remain
+unchanged. Snapshot restoration copies the saved scalar exactly; pane merging uses stock counter
+transitions. Those operations must differ when counters wrap, because the scalar is not always the
+number of positive counters. Canonical export visits the live counters directly, without a native
+snapshot. The stock artifact retains only stock scalar/MapView serializers. Native/JNI tests cover
+signed extrema, overflow, duplicate updates, snapshot restoration and atomic import failures.
+The kernel accepts the row-kind sidecar used by production columnar batches. Snapshot reads retain
+the live counted map and its charged capacity instead of replacing it behind memory accounting.
+
+Portable planner integration and broader filtered/value-type qualification remain tracked in
+[P0 #569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred
+while functional interoperability is completed.
 
 ## Parallelism and state key groups
 

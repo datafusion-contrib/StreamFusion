@@ -546,7 +546,7 @@ impl DistinctSet {
         }
     }
 
-    pub(super) fn scalar_count(&self, value: &ScalarValue) -> i64 {
+    pub(crate) fn scalar_count(&self, value: &ScalarValue) -> i64 {
         match (self, value) {
             (Self::Timestamp(m), ScalarValue::Decimal128(Some(nanos), 38, 0)) => {
                 m.counts.get(nanos).copied().unwrap_or(0)
@@ -703,14 +703,14 @@ impl DistinctSet {
         }
     }
 
-    pub(super) fn merge_scalar_delta(&mut self, value: &ScalarValue, delta: i64) -> bool {
+    pub(crate) fn merge_scalar_delta(&mut self, value: &ScalarValue, delta: i64) -> bool {
         self.change_scalar(value, Change::Delta(delta))
     }
 
     pub(crate) fn remove_scalar(&mut self, v: &ScalarValue) -> bool {
         self.change_scalar(v, Change::Remove)
     }
-    pub(super) fn insert_restored(&mut self, v: ScalarValue, n: i64) {
+    pub(crate) fn insert_restored(&mut self, v: ScalarValue, n: i64) {
         self.change_value(v, Change::Restore(n));
     }
     pub(super) fn insert_imported(&mut self, v: ScalarValue, n: i64) {

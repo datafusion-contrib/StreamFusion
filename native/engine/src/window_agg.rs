@@ -2133,8 +2133,7 @@ impl TumblingAggregator {
                     let state: Vec<ArrayRef> = (column..column + count)
                         .map(|c| batch.column(c).slice(row, 1))
                         .collect();
-                    accumulator
-                        .merge_batch(&state)
+                    restore_accumulator_state(accumulator, &state)
                         .expect("failed to restore window");
                     column += count;
                 }
