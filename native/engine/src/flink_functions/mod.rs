@@ -10,6 +10,7 @@ use datafusion::logical_expr::{ScalarUDF, Volatility};
 use std::sync::Arc;
 
 pub(crate) mod binary_cast;
+mod binary_character;
 pub(crate) mod binary_elt;
 pub(crate) mod calendar;
 mod calendar_round;
@@ -297,6 +298,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         230 => integral_round::function(false),
         231 => integral_round::function(true),
         232 => from_base64::function(),
+        237 => binary_character::function(),
         _ => return None,
     })
 }

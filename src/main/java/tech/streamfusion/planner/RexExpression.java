@@ -3848,6 +3848,13 @@ final class RexExpression {
     }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
+    if (SqlTypeFamily.BINARY.contains(sourceType)
+        && SqlTypeFamily.CHARACTER.contains(resultType)
+        && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
+            || Boolean.TRUE.equals(legacyCastBehaviour))) {
+      // Released Flink decodes with new String(bytes, UTF_8), including JDK error grouping.
+      return emitBuiltinCall(call, 237);
+    }
     if (!tryCast
         && source == SqlTypeName.DECIMAL
         && targetType == SqlTypeName.VARCHAR

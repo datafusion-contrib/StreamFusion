@@ -31,6 +31,7 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Decimal Arrow reads](decimal-arrow-reads.md): reconstruct signed-long values directly while retaining wide-value and overflow contracts.
 - [Transfer Calc schemas once](calc-schema-once-c-data.md): cache immutable input and output schemas while retaining independent per-batch buffer ownership.
 - [Fuse exact string consumers](native-string-fusion.md): compare padding/overlay UTF-16 spans before encoding and replace verified ASCII characters directly in the final Arrow buffer.
+- [Preserve JDK UTF-8 decoding](jdk-utf8-decoding.md): share valid buffers and write replacement groups directly into Arrow.
 - [Shared-window state costs](shared-window-state.md): exact memory deltas, batched reservations and preserved accumulator state.
 - [Compact window-rank timestamp cells](window-rank-timestamp-cells.md): exact numeric digits avoid per-row timestamp struct slicing.
 - [Bounded rank payload rejection](bounded-rank-payloads.md): skip full payload encoding for batches already outside fixed rank bounds.

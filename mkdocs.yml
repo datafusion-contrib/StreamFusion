@@ -190,6 +190,7 @@ nav:
       - Sub-plan reuse digest barriers: optimizations/subplan-reuse-digest-barriers.md
       - UDFs via columnar upcall: optimizations/udf-columnar-upcall.md
       - Native string fusion: optimizations/native-string-fusion.md
+      - JDK UTF-8 decoding: optimizations/jdk-utf8-decoding.md
       - Host-exact builtins via upcall: optimizations/host-exact-builtins-upcall.md
       - Regex pattern cache: optimizations/regexp-pattern-cache.md
       - Lookup joins kept in the island: optimizations/lookup-join-in-island.md

@@ -1228,6 +1228,30 @@ The parser fast path does not establish a speedup for noncanonical formats or co
 
 ### Binary casts and fixed-width generated expressions
 
+`CAST(binary_value AS STRING)` and `TRY_CAST(binary_value AS STRING)` use a native
+UTF-8 decoder on both released Flink lines. BINARY and VARBINARY inputs retain their
+actual bytes, including fixed padding, embedded zeros and sliced validity. Well-formed
+UTF-8 shares Arrow values/offsets/NULLs; fixed-size inputs construct offsets without copying
+their bytes. Malformed input uses the running JDK's released UTF-8 replacement contract:
+`ED A0 80`, for example, becomes one U+FFFD rather than three. This conversion is distinct
+from raw `FROM_BASE64` STRING transport and never exposes malformed Arrow Utf8.
+
+The unbounded conversion has the same decoding behavior in modern and legacy cast modes.
+Legacy bounded CHAR/VARCHAR casts also use this kernel because the released rule ignores
+their length. Modern bounded targets retain fallback: their UTF-16 truncation/padding can
+produce an isolated surrogate and is not equivalent to truncating Unicode code points.
+TRY_CAST catches conversion failures, not failures while computing its operand; binary UTF-8
+decoding itself replaces malformed input instead of throwing. CASE remains lazy and an
+empty filtered batch never evaluates the cast.
+
+Admitted value-only consumers such as length, HEX, equality, LIKE and re-encoding compose
+with the native conversion. Existing string-ordering and representation-sensitive trim
+rules remain in force. A decoded STRING feeding another relational operator retains
+fallback so its original Java-backed representation cannot be lost before a comparator
+observes it; a CAST delayed until the final projection by the released optimizer does not
+cross that boundary. The remaining bounded/boundary scope is tracked in
+[#493](https://github.com/datafusion-contrib/StreamFusion/issues/493).
+
 CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
 use a native byte-copy kernel when their operands do not require Flink's rowwise error handling.
 Default-mode BINARY(n) zero-pads or truncates

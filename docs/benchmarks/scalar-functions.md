@@ -4194,3 +4194,136 @@ without JVM evaluator bindings or fallback. The Rust core suite without default 
 passes 865 tests, including sliced value/validity buffers, all 256 byte values, empty arrays,
 scalar NULLs and byte-for-byte comparison oracles. The default-feature release suite also
 passes 1,004 tests with two existing ignores. CI supplies the broader version matrix.
+
+## Binary to STRING
+
+The 2026-11-01 comparison uses Apple M4 Pro / 24 GiB, released Flink 1.18.1 and
+2.2.1, JDK 17.0.12 and a Rust 1.95.0 release/mimalloc build with default features.
+JDK 11 correctness is checked separately. Stock executes the released generated
+cast over prepared GenericRowData or BinaryRowData. Native executes the complete
+production Calc over equivalent prepared Arrow Binary or FixedSizeBinary batches;
+the timer starts and stops inside Rust. Setup, initial JNI entry, final export and
+perimeter transposes are outside this small-functionality timer. Allocation and
+all conversions intrinsic to the expression remain inside it.
+
+Both timers consume NULL as -1, empty as zero, otherwise the first UTF-16 unit plus
+one. The cast still computes its complete result. Complete outputs are separately
+verified against released generated casts over 90,404 deterministic inputs per
+Flink/JDK pair. Earlier full-length consumption added a UTF-16 scan on Arrow that
+Java String.length does not perform; those diagnostics are retained separately,
+not pooled with the final results.
+
+The actual preceding encoder from main `3af56f9a` is independently compiled and
+loaded first for the previous control. It must reject the binary cast, so its
+prepared operation is the resulting generated Flink fallback, rather than a
+simulated JVM callback. Each candidate JVM alternates stock/native order; the
+previous control runs in a separate JVM with the same values and resources.
+All runs are serial, with no concurrent builds or tests, 256/512 MiB initial/max
+heap, 16 warmups, nine measured trials and 65,536 processed rows per trial.
+
+The 71 configurations include widths 8/64/4096, batches 16/1024, fixed/variable
+bytes, both stock RowData forms, NULL/non-NULL controls, ASCII, supplementary/CJK
+text, malformed surrogate tails, mixed tails and dense deterministic arbitrary
+bytes. NULL appears every seventh row when enabled. Flink 2.2 has the full
+55-configuration matrix; Flink 1.18 has 16 representative controls including
+dense invalid input. At 1,024 rows with BinaryRowData:
+
+| Flink | Stock / native median | Previous fallback / native median |
+| --- | ---: | ---: |
+| 1.18.1 | 1.225-27.153x | 1.206-26.926x |
+| 2.2.1 | 1.220-27.143x | 1.181-26.864x |
+
+Selected variable-width nullable inputs, ns/row, median [minimum-maximum]:
+
+| Flink | Bytes / content | Stock | Previous fallback | Native |
+| --- | --- | ---: | ---: | ---: |
+| 2.2.1 | 8 / ASCII | 18.90 [18.69-19.16] | 17.46 [16.40-18.01] | 1.98 [1.92-2.08] |
+| 2.2.1 | 64 / supplementary+CJK | 55.18 [50.66-91.12] | 54.81 [53.80-84.05] | 21.44 [21.19-27.80] |
+| 2.2.1 | 4096 / malformed tail | 3541.72 [3488.84-3632.33] | 3505.34 [3437.55-3646.49] | 130.49 [126.02-131.81] |
+| 2.2.1 | 4096 / dense arbitrary | 3187.90 [3090.52-3303.64] | 3085.71 [3070.70-3224.00] | 2612.54 [2536.02-2682.08] |
+| 1.18.1 | 4096 / supplementary+CJK | 2202.27 [2169.05-2249.56] | 2182.91 [2153.31-2273.44] | 1264.74 [1201.06-1324.22] |
+
+Small batches remain a limit. Across the Flink 2.2 16-row controls, stock/native
+median ratios range from 0.504x to 20.828x, and previous/native from 0.528x to
+20.673x. One 1,024-row GenericRowData case also loses to its independent previous
+fallback control despite beating paired stock. Independent stock/fallback control
+medians drift by factors 0.625-1.736. Retain both controls and their variability;
+these measurements do not isolate a universal throughput improvement.
+
+The [complete record](results/binary-character-2026-11-01.json) includes all
+configuration ranges, the production library hash, validation and full-job trials.
+[All prepared trials](results/binary-character-2026-11-01.csv.gz) retain warmups
+and checksums. The implementation shares valid buffers, copies validated prefixes,
+writes directly into Arrow and batches independent invalid-byte replacements;
+see the [decoder technique](../optimizations/jdk-utf8-decoding.md).
+
+### Complete row-source jobs
+
+Each Flink line also runs a one-million-row job at parallelism one, with 64-byte
+inputs, a malformed tail every seventh row and independent NULL every eleventh
+row. A rowwise sequence/map source feeds the cast and a blackhole STRING sink.
+Planning, startup, production JNI and both RowData/Arrow transposes stay timed.
+The candidate must show both transposes, no evaluator/fallback and consumed
+NativeCalc work; the old encoder must show stock fallback and zero native work.
+Each independent JVM uses the same 2 GiB maximum heap, two warmups and five
+measured jobs with alternating engine order. Seconds, median [minimum-maximum]:
+
+| Flink | Candidate's stock | Native | Previous's stock | Previous fallback |
+| --- | ---: | ---: | ---: | ---: |
+| 2.2.1 | 0.228064 [0.225555-0.241543] | 0.210187 [0.209547-0.220651] | 0.213727 [0.206077-0.250102] | 0.212407 [0.206951-0.222358] |
+| 1.18.1 | 0.239151 [0.219020-0.254718] | 0.204987 [0.202946-0.213079] | 0.212720 [0.205804-0.217317] | 0.213624 [0.204449-0.216186] |
+
+Native is 7.8%/14.3% lower than paired stock medians, but the independent stock
+controls drift and ranges overlap. Gains versus the actual preceding fallback
+are only 1.0%/4.0%, also with overlapping ranges. These short jobs do not establish
+a reliable whole-job speedup or sustained connector throughput.
+
+### Profiling and validation
+
+Earlier experiments are retained as diagnostics with their original consumption
+method. The [initial partial matrix](results/binary-character-before-opt-2026-11-01.csv.gz),
+[prefix-validation experiment](results/binary-character-opt-diag-2026-11-01.csv.gz)
+and [UTF-8-chunks experiment](results/binary-character-chunks-diag-2026-11-01.csv.gz)
+consume full UTF-16 length. Profiling first located most long-ASCII samples in
+that extra result scan. After changing to constant output consumption, the
+[prefix/manual decoder](results/binary-character-prefix-copy-diagnostic-2026-11-01.csv.gz)
+still lost on dense invalid bytes. The
+[direct-builder version](results/binary-character-direct-builder-diagnostic-2026-11-01.csv.gz)
+measured 3412 ns/row versus stock 3164 for 4096-byte dense inputs. Batching
+independent replacement writes reduces that profile to 2596 versus stock 3129
+in the [final preflight](results/binary-character-final-diagnostic-2026-11-01.csv.gz).
+Only the subsequent frozen 71-configuration matrix supplies the reported ranges.
+
+Final validation passes 142 focused JVM test invocations across both released
+lines and JDK 11/17, without skips, and 1004 release Rust core tests with two
+existing ignores. Each of the four generated-expression oracles matches all
+90,404 inputs, including every single/two-byte input, surrogate continuation
+boundaries and deterministic longer arbitrary bytes. SQL coverage adds modern
+and legacy modes, fixed padding, composed consumers, TRY_CAST operand failures,
+lazy CASE, all-filtered batches, multi-batch ownership and retained fallbacks.
+Separate fixed/variable witnesses consume 5,003 rows and require `jvm=[]` plus
+positive native work. Full CI and unchanged upstream suites remain required.
+
+### Reproduce
+
+Compile the test helper with the released runtime/test classpath, then use JDK 17:
+
+```sh
+mvn -Pbench -pl streamfusion-runtime -am -Dnative.build.skip=true -DskipTests test-compile
+mvn -pl streamfusion-runtime dependency:build-classpath -Dmdep.outputFile=target/binary-character.classpath
+export SF_NATIVE_BENCH_CLASSPATH="$PWD/streamfusion-runtime/target/test-classes:$PWD/streamfusion-runtime/target/classes:$(cat streamfusion-runtime/target/binary-character.classpath)"
+export SF_NATIVE_LIB_DIR="$PWD/native/target/release"
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example binary_character
+native/target/release/examples/binary_character 64 4 false true true 1024 64 16 9
+java -cp "$SF_NATIVE_BENCH_CLASSPATH" tech.streamfusion.planner.BinaryCharacterBenchmarkFunctions > oracle.csv
+native/target/release/examples/binary_character --oracle oracle.csv
+```
+
+Arguments are byte width, content mode 0-4, fixed-width input, nullable values,
+BinaryRowData stock input, batch rows, loops, warmups and measured trials. The
+previous control prepends the independently compiled main encoder and sets
+`SF_BINARY_CHARACTER_PREVIOUS=true`; it fails if that encoder admits the cast.
+Use the `flink-1.18` Maven profile for the other released line. Complete jobs use
+`BinaryCharacterPipelineBenchmark`, `SF_BENCHMARK=true` and the matching
+`sf.binary.character.previous` property/classpath pair.

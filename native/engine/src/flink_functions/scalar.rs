@@ -542,19 +542,70 @@ pub(crate) fn java_hex_digit(ch: char) -> Option<u8> {
 }
 
 pub(crate) fn append_java_utf8(bytes: &[u8], output: &mut String) {
-    let mut i = 0;
+    write_java_utf8(bytes, output).expect("writing to a String cannot fail");
+}
+
+pub(crate) fn write_java_utf8(bytes: &[u8], output: &mut impl std::fmt::Write) -> std::fmt::Result {
+    let mut i = match std::str::from_utf8(bytes) {
+        Ok(text) => {
+            output.write_str(text)?;
+            return Ok(());
+        }
+        Err(error) => {
+            let end = error.valid_up_to();
+            // The validator established that this prefix is valid UTF-8.
+            output.write_str(unsafe { std::str::from_utf8_unchecked(&bytes[..end]) })?;
+            end
+        }
+    };
     while i < bytes.len() {
         let first = bytes[i];
         if first < 0x80 {
-            output.push(first as char);
-            i += 1;
+            if i + 32 <= bytes.len() && bytes[i..i + 32].is_ascii() {
+                let start = i;
+                i += 32;
+                while i + 32 <= bytes.len() && bytes[i..i + 32].is_ascii() {
+                    i += 32;
+                }
+                while i < bytes.len() && bytes[i].is_ascii() {
+                    i += 1;
+                }
+                // Every byte in this run was checked to be ASCII.
+                output.write_str(unsafe { std::str::from_utf8_unchecked(&bytes[start..i]) })?;
+            } else {
+                output.write_char(first as char)?;
+                i += 1;
+            }
+            continue;
+        }
+        if !(0xc2..=0xf4).contains(&first) || bytes.get(i + 1).is_none_or(|b| b & 0xc0 != 0x80) {
+            // Dense malformed input otherwise performs one three-byte builder write per byte.
+            let mut block = [0; 96];
+            let mut written = 0;
+            let end = (i + 32).min(bytes.len());
+            while i < end {
+                let byte = bytes[i];
+                if byte < 0x80 {
+                    block[written] = byte;
+                    written += 1;
+                } else if !(0xc2..=0xf4).contains(&byte)
+                    || bytes.get(i + 1).is_none_or(|b| b & 0xc0 != 0x80)
+                {
+                    block[written..written + 3].copy_from_slice(&[0xef, 0xbf, 0xbd]);
+                    written += 3;
+                } else {
+                    break;
+                }
+                i += 1;
+            }
+            // The block contains only ASCII and complete U+FFFD encodings.
+            output.write_str(unsafe { std::str::from_utf8_unchecked(&block[..written]) })?;
             continue;
         }
         let width = match first {
             0xc2..=0xdf => 2,
             0xe0..=0xef => 3,
-            0xf0..=0xf4 => 4,
-            _ => 1,
+            _ => 4,
         };
         let mut consumed = 1;
         let mut code = (first & (0x7f >> width)) as u32;
@@ -571,15 +622,16 @@ pub(crate) fn append_java_utf8(bytes: &[u8], output: &mut String) {
             code = (code << 6) | (next & 0x3f) as u32;
             consumed += 1;
         }
-        // Java consumes the whole malformed surrogate triplet as one replacement, unlike
-        // Rust's from_utf8_lossy. Other malformed sequences consume their valid prefix.
-        output.push(if width > 1 && consumed == width {
+        // Java replaces a surrogate triplet once; other malformed sequences consume
+        // their valid continuation prefix. Rust's lossy decoder groups these differently.
+        output.write_char(if consumed == width {
             char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER)
         } else {
             char::REPLACEMENT_CHARACTER
-        });
+        })?;
         i += consumed;
     }
+    Ok(())
 }
 
 #[cfg(test)]
