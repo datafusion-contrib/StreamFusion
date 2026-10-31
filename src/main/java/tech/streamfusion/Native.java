@@ -22,6 +22,14 @@ public final class Native {
 
   public static native void restoreTumblingCanonicalWatermark(long handle, long watermark);
 
+  public static native void configureSlicingWindowCanonical(long handle, int countStarAggregate);
+
+  public static native void exportSlicingWindowCanonical(
+      long handle, boolean timers, BatchReceiver receiver);
+
+  public static native void importSlicingWindowCanonical(
+      long handle, int keyArity, boolean timers, long arrayAddress, long schemaAddress);
+
   public static final int AGGREGATE_DISTINCT_TTL = 1 << 10;
   public static final int AGGREGATE_DISTINCT_APPEND = 1 << 11;
 

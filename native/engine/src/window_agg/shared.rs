@@ -8,11 +8,19 @@ impl TumblingAggregator {
     }
 
     fn shared_base(&self, end: i64) -> i64 {
-        (end - 1).div_euclid(self.window_millis) * self.window_millis
+        (end + self.assignment_offset_millis - 1).div_euclid(self.window_millis)
+            * self.window_millis
+            - self.assignment_offset_millis
+    }
+
+    fn slice_end_thresholds(&self, ends: impl IntoIterator<Item = i64>) -> BTreeMap<i64, i64> {
+        match &self.calendar {
+            Some(calendar) => calendar.end_thresholds(ends),
+            None => ends.into_iter().map(|end| (end, end)).collect(),
+        }
     }
 
     fn shared_assignments(&mut self, slice_ends: &[i64]) -> Vec<Option<(i64, i64)>> {
-        let calendar = self.calendar.as_ref().expect("shared slice calendar");
         let last_end = |end| {
             if self.cumulative_prefix() {
                 self.shared_base(end) + self.window_millis
@@ -20,7 +28,7 @@ impl TumblingAggregator {
                 end - self.slide_millis + self.window_millis
             }
         };
-        let deadlines = calendar.end_thresholds(
+        let deadlines = self.slice_end_thresholds(
             slice_ends
                 .iter()
                 .copied()
@@ -37,7 +45,7 @@ impl TumblingAggregator {
                 continue;
             }
             let mut timer = end + self.slide_millis;
-            while calendar.end_thresholds([timer])[&timer] <= self.current_watermark {
+            while self.slice_end_thresholds([timer])[&timer] <= self.current_watermark {
                 timer += self.slide_millis;
             }
             let target = if self.cumulative_prefix() {
@@ -54,7 +62,7 @@ impl TumblingAggregator {
         assignments
     }
 
-    fn add_slice_timer(
+    pub(super) fn add_slice_timer(
         &mut self,
         end: i64,
         key: OwnedRow,
@@ -115,7 +123,12 @@ impl TumblingAggregator {
         let ends = column_i64(batch, "ts")
             .values()
             .iter()
-            .map(|time| time.div_euclid(self.slide_millis) * self.slide_millis + self.slide_millis)
+            .map(|time| {
+                (time + self.assignment_offset_millis).div_euclid(self.slide_millis)
+                    * self.slide_millis
+                    + self.slide_millis
+                    - self.assignment_offset_millis
+            })
             .collect::<Vec<_>>();
         let assignments = if discard_closed_windows {
             self.shared_assignments(&ends)
@@ -388,11 +401,7 @@ impl TumblingAggregator {
     pub(super) fn flush_shared(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
         #[cfg(feature = "rocksdb-state")]
         self.hydrate_slice_timers()?;
-        let mut deadlines = self
-            .calendar
-            .as_ref()
-            .unwrap()
-            .end_thresholds(self.slice_timers.keys().copied());
+        let mut deadlines = self.slice_end_thresholds(self.slice_timers.keys().copied());
         let mut queue = deadlines
             .iter()
             .map(|(&end, &epoch)| Reverse((epoch, end)))
@@ -478,9 +487,9 @@ impl TumblingAggregator {
                     let first_for_end = !self.slice_timers.contains_key(&next);
                     self.add_slice_timer(next, key.clone(), key_group)?;
                     if first_for_end {
-                        let epoch = *deadlines.entry(next).or_insert_with(|| {
-                            self.calendar.as_ref().unwrap().end_thresholds([next])[&next]
-                        });
+                        let epoch = *deadlines
+                            .entry(next)
+                            .or_insert_with(|| self.slice_end_thresholds([next])[&next]);
                         queue.push(Reverse((epoch, next)));
                     }
                 }

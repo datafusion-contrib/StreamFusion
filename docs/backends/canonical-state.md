@@ -152,3 +152,12 @@ retain their native memory-limit exception, and borrowed Arrow buffers are relea
 failures are raised. Restored stock watermarks convert from inclusive timestamps to the native
 exclusive firing frontier. This primitive produces no intermediate serialized native snapshot;
 full window-family integration and qualification remain part of #569.
+
+The shared-window transfer primitive preserves HOP panes, CUMULATE prefixes and a separate
+pending timer ledger, including timers whose last pane has expired. It reuses the running
+shared-slice lifecycle for memory and typed RocksDB and supports fixed-offset assignment grids.
+Import retains the same Arrow key converter across state and timer batches: retained owned keys
+must remain associated with the converter that produced them. Regression controls transfer
+1,539 keys in bounded batches, re-export without new input and continue window firing on both
+stores. These native controls establish the transfer primitive; stock planner and whole-job
+qualification are documented separately as they complete under #569. Benchmarking remains deferred.

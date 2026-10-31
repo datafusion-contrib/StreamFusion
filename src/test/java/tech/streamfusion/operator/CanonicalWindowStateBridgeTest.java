@@ -42,17 +42,45 @@ class CanonicalWindowStateBridgeTest {
 
   @ParameterizedTest
   @CsvSource({
-    "bounds,false", "bounds,true", "arity,false", "arity,true",
-    "count,false", "count,true", "type,false", "type,true",
-    "nullable,false", "nullable,true", "key-name,false", "key-name,true",
-    "state-name,false", "state-name,true", "duplicate,false", "duplicate,true"
+    "bounds,false,false",
+    "bounds,false,true",
+    "bounds,true,false",
+    "bounds,true,true",
+    "arity,false,false",
+    "arity,false,true",
+    "arity,true,false",
+    "arity,true,true",
+    "count,false,false",
+    "count,false,true",
+    "count,true,false",
+    "count,true,true",
+    "type,false,false",
+    "type,false,true",
+    "type,true,false",
+    "type,true,true",
+    "nullable,false,false",
+    "nullable,false,true",
+    "nullable,true,false",
+    "nullable,true,true",
+    "key-name,false,false",
+    "key-name,false,true",
+    "key-name,true,false",
+    "key-name,true,true",
+    "state-name,false,false",
+    "state-name,false,true",
+    "state-name,true,false",
+    "state-name,true,true",
+    "duplicate,false,false",
+    "duplicate,false,true",
+    "duplicate,true,false",
+    "duplicate,true,true"
   })
   void malformedCanonicalBatchesThrowThroughArrowReleaseWithoutPartialImport(
-      String mode, boolean persistent) {
+      String mode, boolean persistent, boolean shared) {
     long handle =
         persistent
             ? Native.createRocksDBWindowAggregator(
-                1000,
+                shared ? 3000 : 1000,
                 1000,
                 false,
                 new int[] {0, 0},
@@ -72,23 +100,23 @@ class CanonicalWindowStateBridgeTest {
                 new byte[0][],
                 Long.MIN_VALUE)
             : Native.createTumblingAggregator(
-                1000, 1000, new int[] {0, 0}, new int[] {0, 3}, 1 << 24);
+                shared ? 3000 : 1000, 1000, new int[] {0, 0}, new int[] {0, 3}, 1 << 24);
     try {
-      assertThrows(RuntimeException.class, () -> importRows(handle, mode));
-      assertEquals(0, exportedRows(handle));
-      importRows(handle, "valid");
-      assertEquals(1, exportedRows(handle));
-      assertThrows(RuntimeException.class, () -> importRows(handle, "valid"));
-      assertEquals(1, exportedRows(handle));
+      if (shared) Native.configureSlicingWindowCanonical(handle, 1);
+      assertThrows(RuntimeException.class, () -> importRows(handle, mode, shared));
+      assertEquals(0, exportedRows(handle, shared));
+      importRows(handle, "valid", shared);
+      assertEquals(1, exportedRows(handle, shared));
+      assertThrows(RuntimeException.class, () -> importRows(handle, "valid", shared));
+      assertEquals(1, exportedRows(handle, shared));
     } finally {
       Native.closeTumblingAggregator(handle);
     }
   }
 
-  private static int exportedRows(long handle) {
+  private static int exportedRows(long handle, boolean shared) {
     var rows = new AtomicInteger();
-    Native.exportTumblingAggregatorCanonical(
-        handle,
+    Native.BatchReceiver receiver =
         (arrayAddress, schemaAddress) -> {
           try (var array = ArrowArray.wrap(arrayAddress);
               var schema = ArrowSchema.wrap(schemaAddress);
@@ -97,11 +125,17 @@ class CanonicalWindowStateBridgeTest {
                       NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
             rows.addAndGet(root.getRowCount());
           }
-        });
+        };
+    if (shared) Native.exportSlicingWindowCanonical(handle, false, receiver);
+    else Native.exportTumblingAggregatorCanonical(handle, receiver);
     return rows.get();
   }
 
   private static void importRows(long handle, String mode) {
+    importRows(handle, mode, false);
+  }
+
+  private static void importRows(long handle, String mode, boolean shared) {
     var fields = new ArrayList<RowType.RowField>();
     fields.add(new RowType.RowField("window_start", new BigIntType(false)));
     fields.add(new RowType.RowField("window_end", new BigIntType(false)));
@@ -129,8 +163,16 @@ class CanonicalWindowStateBridgeTest {
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(
           NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
-      Native.importTumblingAggregatorCanonical(
-          handle, mode.equals("arity") ? -1 : 1, array.memoryAddress(), schema.memoryAddress());
+      if (shared)
+        Native.importSlicingWindowCanonical(
+            handle,
+            mode.equals("arity") ? -1 : 1,
+            false,
+            array.memoryAddress(),
+            schema.memoryAddress());
+      else
+        Native.importTumblingAggregatorCanonical(
+            handle, mode.equals("arity") ? -1 : 1, array.memoryAddress(), schema.memoryAddress());
     }
   }
 }

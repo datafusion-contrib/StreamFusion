@@ -1,5 +1,195 @@
 use super::*;
 
+fn shared(
+    path: Option<&std::path::Path>,
+    keyless: bool,
+    cumulative: bool,
+    count_only: bool,
+) -> TumblingAggregator {
+    let mut value = create(path, keyless, count_only);
+    value.window_millis = 3000;
+    value.cumulative = cumulative;
+    value
+        .enable_canonical_slicing(if count_only { 0 } else { 1 })
+        .unwrap();
+    value
+}
+
+fn shared_input(keyless: bool, offset: usize, count: usize) -> RecordBatch {
+    let batch = input(keyless, false, offset, count);
+    let mut columns = batch.columns().to_vec();
+    let index = batch.schema().index_of("value1").unwrap();
+    columns[index] = Arc::new(Int64Array::from(vec![1; count]));
+    RecordBatch::try_new(batch.schema(), columns).unwrap()
+}
+
+fn copy_shared(source: &mut TumblingAggregator, target: &mut TumblingAggregator, keyless: bool) {
+    source
+        .visit_canonical_state(|batch| {
+            target.import_canonical_state(&batch, usize::from(!keyless), 1000)
+        })
+        .unwrap();
+    source
+        .visit_canonical_timers(|batch| {
+            target.import_canonical_timers(&batch, usize::from(!keyless))
+        })
+        .unwrap();
+    target.current_watermark = source.current_watermark;
+}
+
+#[test]
+fn shared_panes_and_cumulative_prefixes_continue_across_native_stores() {
+    for cumulative in [false, true] {
+        for source_rocks in [false, true] {
+            for target_rocks in [false, true] {
+                for keyless in [false, true] {
+                    let directory = tempfile::tempdir().unwrap();
+                    let source_path = directory.path().join("source");
+                    let target_path = directory.path().join("target");
+                    let mut source = shared(
+                        source_rocks.then_some(source_path.as_path()),
+                        keyless,
+                        cumulative,
+                        false,
+                    );
+                    let mut target = shared(
+                        target_rocks.then_some(target_path.as_path()),
+                        keyless,
+                        cumulative,
+                        false,
+                    );
+                    source.update(&shared_input(keyless, 0, 45)).unwrap();
+                    source.flush(2000).unwrap();
+                    copy_shared(&mut source, &mut target, keyless);
+                    let suffix = shared_input(keyless, 45, 50);
+                    source.update(&suffix).unwrap();
+                    target.update(&suffix).unwrap();
+                    for watermark in [2000, 3000, 4000, 6000, i64::MAX] {
+                        assert_eq!(
+                            rows(&source.flush(watermark).unwrap()),
+                            rows(&target.flush(watermark).unwrap())
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn timer_only_namespaces_survive_bounded_transfer_and_failed_receiver() {
+    for rocks in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("source");
+        let mut source = shared(rocks.then_some(path.as_path()), false, false, true);
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "key0",
+                Arc::new(Int64Array::from_iter_values(0..1539)) as ArrayRef,
+            ),
+            ("value0", Arc::new(Int64Array::from(vec![1; 1539]))),
+            ("ts", Arc::new(Int64Array::from(vec![100; 1539]))),
+        ])
+        .unwrap();
+        source.update(&batch).unwrap();
+        assert_eq!(source.flush(3000).unwrap().num_rows(), 1539 * 3);
+        source
+            .visit_canonical_state(|_| panic!("all panes expired"))
+            .unwrap();
+        assert!(source
+            .visit_canonical_timers(|_| Err(invalid("receiver failed")))
+            .is_err());
+        let target_path = directory.path().join("target");
+        let mut target = shared(
+            (!rocks).then_some(target_path.as_path()),
+            false,
+            false,
+            true,
+        );
+        let mut chunks = Vec::new();
+        source
+            .visit_canonical_timers(|batch| {
+                chunks.push(batch.num_rows());
+                target.import_canonical_timers(&batch, 1)
+            })
+            .unwrap();
+        assert_eq!(chunks, vec![1024, 515]);
+        assert!(source.flush(4000).unwrap().num_rows() == 0);
+        assert!(target.flush(4000).unwrap().num_rows() == 0);
+        source
+            .visit_canonical_timers(|_| panic!("empty firing must clear the final timer"))
+            .unwrap();
+        target
+            .visit_canonical_timers(|_| panic!("restored empty firing must clear the final timer"))
+            .unwrap();
+    }
+}
+
+#[test]
+fn malformed_timer_batches_never_commit_partial_ledger_entries() {
+    for rocks in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("target");
+        let mut target = shared(rocks.then_some(path.as_path()), false, false, true);
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "window_end",
+                Arc::new(Int64Array::from(vec![1000, 1000])) as ArrayRef,
+            ),
+            ("key0", Arc::new(Int64Array::from(vec![7, 7]))),
+        ])
+        .unwrap();
+        assert!(target.import_canonical_timers(&batch, 1).is_err());
+        target
+            .visit_canonical_timers(|_| panic!("rejected duplicate ledger was committed"))
+            .unwrap();
+        let valid = batch.slice(0, 1);
+        target.import_canonical_timers(&valid, 1).unwrap();
+        assert!(target.import_canonical_timers(&valid, 1).is_err());
+        let mut actual = Vec::new();
+        target
+            .visit_canonical_timers(|batch| {
+                actual.extend(rows(&batch));
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(rows(&valid), actual);
+    }
+}
+
+#[test]
+fn fixed_offset_shared_assignment_uses_the_same_grid_as_its_namespaces() {
+    for cumulative in [false, true] {
+        let mut source = shared(None, false, cumulative, false);
+        source.set_assignment_offset(750);
+        source.update(&shared_input(false, 0, 45)).unwrap();
+        source.flush(1250).unwrap();
+        let mut target = shared(None, false, cumulative, false);
+        target.set_assignment_offset(750);
+        copy_shared(&mut source, &mut target, false);
+        let suffix = shared_input(false, 45, 30);
+        source.update(&suffix).unwrap();
+        target.update(&suffix).unwrap();
+        for watermark in [2250, 3250, 6250, i64::MAX] {
+            assert_eq!(
+                rows(&source.flush(watermark).unwrap()),
+                rows(&target.flush(watermark).unwrap())
+            );
+        }
+    }
+}
+
+#[test]
+fn changing_a_populated_final_window_layout_to_shared_panes_is_rejected() {
+    for rocks in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("source");
+        let mut source = create(rocks.then_some(path.as_path()), false, false);
+        source.update(&input(false, false, 0, 3)).unwrap();
+        assert!(source.enable_canonical_slicing(1).is_err());
+    }
+}
+
 fn create(path: Option<&std::path::Path>, keyless: bool, count_only: bool) -> TumblingAggregator {
     let (types, kinds) = if count_only {
         (vec![0], vec![3])
@@ -264,4 +454,76 @@ fn canonical_import_reserves_state_and_releases_the_pool_on_close() {
         assert!(pool.reserved() > 0);
     }
     assert_eq!(pool.reserved(), 0);
+}
+
+#[test]
+fn successive_state_and_timer_batches_retain_the_original_key_converter() {
+    for shape in 0..3 {
+        for source_rocks in [false, true] {
+            for target_rocks in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let source_path = directory.path().join("source");
+                let target_path = directory.path().join("target");
+                let make = |path| {
+                    if shape == 0 {
+                        create(path, false, true)
+                    } else {
+                        shared(path, false, shape == 2, true)
+                    }
+                };
+                let mut source = make(source_rocks.then_some(source_path.as_path()));
+                let mut target = make(target_rocks.then_some(target_path.as_path()));
+                let batch = RecordBatch::try_from_iter(vec![
+                    (
+                        "key0",
+                        Arc::new(Int64Array::from_iter_values(0..1539)) as ArrayRef,
+                    ),
+                    ("value0", Arc::new(Int64Array::from(vec![1; 1539]))),
+                    ("ts", Arc::new(Int64Array::from(vec![100; 1539]))),
+                ])
+                .unwrap();
+                source.update(&batch).unwrap();
+                let mut expected = Vec::new();
+                source
+                    .visit_canonical_state(|batch| {
+                        expected.extend(rows(&batch));
+                        for offset in (0..batch.num_rows()).step_by(127) {
+                            let chunk = batch.slice(offset, (batch.num_rows() - offset).min(127));
+                            target.import_canonical_state(&chunk, 1, 1000)?;
+                        }
+                        Ok(())
+                    })
+                    .unwrap();
+                if shape != 0 {
+                    source
+                        .visit_canonical_timers(|batch| {
+                            for offset in (0..batch.num_rows()).step_by(127) {
+                                target.import_canonical_timers(
+                                    &batch.slice(offset, (batch.num_rows() - offset).min(127)),
+                                    1,
+                                )?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap();
+                }
+                let mut actual = Vec::new();
+                target
+                    .visit_canonical_state(|batch| {
+                        actual.extend(rows(&batch));
+                        Ok(())
+                    })
+                    .unwrap();
+                expected.sort();
+                actual.sort();
+                assert_eq!(expected, actual);
+                for watermark in [1000, 2000, 3000, 4000] {
+                    assert_eq!(
+                        rows(&source.flush(watermark).unwrap()),
+                        rows(&target.flush(watermark).unwrap())
+                    );
+                }
+            }
+        }
+    }
 }
