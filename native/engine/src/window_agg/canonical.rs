@@ -3,6 +3,8 @@ use jni::objects::JObject;
 
 const CHUNK_ROWS: usize = 1024;
 
+mod distinct;
+
 fn invalid(message: &str) -> DataFusionError {
     DataFusionError::Execution(format!("canonical window: {message}"))
 }
@@ -204,11 +206,14 @@ impl TumblingAggregator {
         Ok(())
     }
     fn validate_canonical_scalar(&self) -> Result<(), DataFusionError> {
-        if self.aggregates.iter().any(|aggregate| match aggregate {
-            WindowAggregate::FloatingDistinctCount(..) => true,
-            WindowAggregate::Builtin(function) => function.is_distinct(),
-            _ => false,
-        }) {
+        if self
+            .aggregates
+            .iter()
+            .enumerate()
+            .any(|(index, aggregate)| {
+                distinct::is_distinct(aggregate) && !self.canonical_distinct.contains(&index)
+            })
+        {
             return Err(invalid("state requires a data-view adapter"));
         }
         Ok(())
@@ -288,7 +293,14 @@ impl TumblingAggregator {
     fn canonical_state_fields(&self) -> Vec<Field> {
         self.aggregates
             .iter()
-            .flat_map(WindowAggregate::state_fields)
+            .enumerate()
+            .flat_map(|(index, aggregate)| {
+                if self.canonical_distinct.contains(&index) {
+                    vec![Field::new("count", DataType::Int64, false)]
+                } else {
+                    aggregate.state_fields()
+                }
+            })
             .enumerate()
             .map(|(index, field)| {
                 Field::new(
@@ -321,6 +333,7 @@ impl TumblingAggregator {
         &mut self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.validate_canonical_distinct_complete()?;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.write_through_store()?;
@@ -348,13 +361,15 @@ impl TumblingAggregator {
         let key_types = self.key_types.clone();
         let state_fields = self.canonical_state_fields();
         let converter = self.key_converter.as_ref();
-        // Only the admitted scalar accumulator factories are inspected here; their state reads
-        // retain the live accumulator. DISTINCT factories with draining state are rejected above.
         for (&end, window) in &mut self.windows {
             for (key, accumulators) in &mut window.keys {
                 let mut state = Vec::with_capacity(state_fields.len());
-                for accumulator in accumulators {
-                    state.extend(accumulator.state()?);
+                for (index, accumulator) in accumulators.iter_mut().enumerate() {
+                    if self.canonical_distinct.contains(&index) {
+                        state.push(accumulator.evaluate()?);
+                    } else {
+                        state.extend(accumulator.state()?);
+                    }
                 }
                 rows.push(StateRow {
                     start: window.start,
@@ -485,15 +500,31 @@ impl TumblingAggregator {
             return Ok(());
         }
         let mut restored = Vec::with_capacity(batch.num_rows());
+        let mut expected_counts = Vec::new();
         for row in 0..batch.num_rows() {
             let mut column = 2 + arity;
             let mut accumulators = Vec::with_capacity(self.aggregates.len());
-            for aggregate in &self.aggregates {
+            for (index, aggregate) in self.aggregates.iter().enumerate() {
+                let mut accumulator = aggregate.create_accumulator();
+                if self.canonical_distinct.contains(&index) {
+                    let count = batch
+                        .column(column)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .value(row);
+                    if count < 0 {
+                        return Err(invalid("negative DISTINCT cardinality"));
+                    }
+                    expected_counts.push(((ends.value(row), keys.row(row).owned(), index), count));
+                    accumulators.push(accumulator);
+                    column += 1;
+                    continue;
+                }
                 let width = aggregate.state_fields().len();
                 let state = (column..column + width)
                     .map(|field| batch.column(field).slice(row, 1))
                     .collect::<Vec<_>>();
-                let mut accumulator = aggregate.create_accumulator();
                 accumulator.merge_batch(&state)?;
                 accumulators.push(accumulator);
                 column += width;
@@ -520,6 +551,7 @@ impl TumblingAggregator {
                 .keys
                 .insert(key, accumulators);
         }
+        self.canonical_distinct_counts.extend(expected_counts);
         if self.memory.tracking() {
             self.memory.set(self.computed_state_bytes());
             self.memory.account()?;

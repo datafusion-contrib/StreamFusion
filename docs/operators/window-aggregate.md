@@ -13,6 +13,18 @@ RocksDB key schema matches the live vectors before input, so restore can import 
 immediately. Sixteen ordinary-checkpoint controls cover TIMESTAMP/TIMESTAMP_LTZ at precision
 0/3/6/9, both stores, NULLs, negative epochs and extended-range values.
 
+## Stock canonical savepoint interoperability
+
+The native transfer foundation can explicitly bind COUNT(DISTINCT) slots, project each scalar
+cardinality and visit its retained values as flat, namespaced rows. Import validates every
+namespace/key/slot against the scalar state and requires all cardinalities to match before
+finalization. Duplicate, orphaned, excessive and missing membership is rejected. Export restores
+any draining accumulator before calling the writer, including on writer failure. NULL markers in
+released byte-set accumulators do not contribute to COUNT and are omitted from membership rows.
+Incoming C Data is consumed before slot validation, so malformed requests release exported buffers.
+This foundation does not yet qualify DISTINCT in the portable planner: the stock namespaced
+MapView binding, filtered/shared-view layout and released-operator/process tests remain required.
+
 ## Parallelism and state key groups
 
 The two-phase global window aggregate without business grouping keys is a SINGLETON:

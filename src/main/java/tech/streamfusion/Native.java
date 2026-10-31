@@ -30,6 +30,16 @@ public final class Native {
   public static native void importSlicingWindowCanonical(
       long handle, int keyArity, boolean timers, long arrayAddress, long schemaAddress);
 
+  public static native void bindWindowCanonicalDistinct(long handle, int aggregate);
+
+  public static native void exportWindowCanonicalDistinct(
+      long handle, int aggregate, BatchReceiver receiver);
+
+  public static native void importWindowCanonicalDistinct(
+      long handle, int aggregate, long arrayAddress, long schemaAddress);
+
+  public static native void finishWindowCanonicalDistinct(long handle);
+
   public static final int AGGREGATE_DISTINCT_TTL = 1 << 10;
   public static final int AGGREGATE_DISTINCT_APPEND = 1 << 11;
 

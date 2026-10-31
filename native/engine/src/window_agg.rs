@@ -329,6 +329,8 @@ pub(crate) struct TumblingAggregator {
     aggregates: Vec<WindowAggregate>,
     exact_panes: bool,
     live_count: Option<usize>,
+    canonical_distinct: std::collections::BTreeSet<usize>,
+    canonical_distinct_counts: HashMap<(i64, OwnedRow, usize), i64>,
     windows: BTreeMap<i64, AlignedWindow>,
     // Groups are keyed by the arrow-row memcomparable encoding of the key columns, not a
     // `Vec<ScalarValue>` — the same trade the non-windowed GROUP BY made: the scalar key's per-row
@@ -400,6 +402,8 @@ impl TumblingAggregator {
             live_count: kinds
                 .iter()
                 .position(|kind| matches!(*kind, LIVE_COUNT | HIDDEN_LIVE_COUNT)),
+            canonical_distinct: Default::default(),
+            canonical_distinct_counts: HashMap::default(),
             windows: BTreeMap::new(),
             key_converter: None,
             key_types: Vec::new(),
@@ -562,6 +566,11 @@ impl TumblingAggregator {
                 .values()
                 .flat_map(|keys| keys.keys())
                 .map(|key| owned_row_bytes(key) + std::mem::size_of::<(i64, i32)>())
+                .sum::<usize>()
+            + self
+                .canonical_distinct_counts
+                .keys()
+                .map(|(_, key, _)| owned_row_bytes(key) + std::mem::size_of::<(i64, usize, i64)>())
                 .sum::<usize>();
         #[cfg(feature = "rocksdb-state")]
         let bytes = bytes
