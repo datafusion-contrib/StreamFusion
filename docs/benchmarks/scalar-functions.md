@@ -4641,3 +4641,108 @@ The [result record](results/classification-not-null-2026-11-01.json) and
 [raw trials](results/classification-not-null-2026-11-01.csv.gz) retain both stock controls,
 all variability and each slower case. Existing nullable-signature data remains in the
 original alpha/digit records with its scope and source commits explicitly identified.
+
+## Integer ABS over arithmetic
+
+The admitted producer tree contains only integer inputs, typed literals, recursive lossless
+widening, nested ABS, addition, subtraction and multiplication. Every arithmetic node wraps
+to its resolved Java width. Division, remainder, narrowing and other unverified producers
+retain the complete generated outer expression.
+
+`IntegralExpressionBenchmarkFunctions` parses real SQL through each released planner and
+uses the actual encoder, including the independently compiled preceding main encoder.
+The candidate must have no JVM descriptors; the previous control must bind one. Stock uses
+the released generated evaluator on prepared GenericRowData/BinaryRowData. The native
+example prepares matching Arrow input and times production Calc plus equal output checksum
+consumption inside Rust. Perimeter JNI/import/export and both row/Arrow transposes are
+outside this small-operation timer; previous intrinsic callbacks stay inside.
+
+The release/default-feature/mimalloc controls use JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups, nine measurements and 131,072 rows per trial. Input declarations and Arrow
+metadata match the selected nullable/NOT NULL data. The matrix covers all four integer
+widths, varying values including signed minima, optional NULL every seven rows and both
+RowData representations. Both `ABS(v+1)` and `ABS((v+1)*(v-1))` use typed literals in
+1,024-row batches; INT/BIGINT addition also has 16-row controls. Independent paired-stock
+processes, checksums and all unfavorable timings are retained.
+
+The initial correct native implementation still lost to stock in twelve bulk cells per
+release. Result casts after every narrow arithmetic node widened already-correct arrays
+to BIGINT and reconstructed their original width. Sharing only actual same-width integer
+arrays removes that work without changing true narrowing or scalar materialization.
+
+| Flink line | Batch rows | Initial stock/native median range | Qualified stock/native median range | Qualified previous/native median range |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.054–0.124x | 0.067–0.128x | 9.650–10.806x |
+| 1.18.1 | 1,024 | 0.369–4.570x | 1.477–7.808x | 11.416–41.864x |
+| 2.2.1 | 16 | 0.057–0.126x | 0.070–0.129x | 10.010–11.365x |
+| 2.2.1 | 1,024 | 0.369–4.637x | 1.498–8.087x | 10.858–50.934x |
+
+All 64 qualified bulk cells beat their paired stock control. All sixteen small-batch
+cells remain slower than stock: fixed Calc/result costs dominate this tiny computation.
+Independent stock controls drift by 0.611–1.638x. Initial/qualified processes are separate
+measurements, so their timing ratios do not isolate a causal effect from that variability.
+The [result record](results/integral-arithmetic-abs-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-abs-2026-11-01.csv.gz) retain both matrices,
+including the rejected initial bulk path and every small-batch loss.
+
+Single-batch allocation probes use the same production operation after compilation, with
+1,024 nullable GenericRowData-equivalent inputs on 2.2.1. They count requests/bytes, not
+retained memory or copied bytes. The accompanying prepared timing cells are reported
+separately; allocation probes themselves are not elapsed-time evidence.
+
+| Input / expression | Initial allocation requests / bytes | Qualified allocation requests / bytes | Initial / qualified median ns per row |
+| --- | ---: | ---: | ---: |
+| INT / addition | 52 / 23,876 | 41 / 10,820 | 4.151 / 1.259 |
+| INT / nested | 129 / 61,704 | 96 / 22,536 | 11.249 / 2.711 |
+| BIGINT / addition | 39 / 18,728 | 39 / 18,728 | 1.320 / 1.306 |
+| BIGINT / nested | 76 / 37,399 | 76 / 37,399 | 2.471 / 2.473 |
+
+The BIGINT controls already lack the narrow result casts and retain their allocation
+counts. Rust tests require pointer-identical same-width slices/NULLs/empty arrays,
+unchanged scalar materialization and real narrowing. The default-feature release/mimalloc
+Rust suite passes 1,003 tests with two pre-existing ignores. Eighty focused JVM invocations
+pass across released 1.18.1/2.2.1 and JDK 11/17, including width/overflow/NULL parity,
+multi-batch IDs, consumed native work and empty evaluator descriptors. The independently
+compiled preceding encoder fails the new route regression. Released upstream `testAbs`
+passes unchanged on all four pairs; those local assertions are not native-work evidence.
+
+The allocation executable retains its counting wrapper with counts disabled during timing;
+link-symbol inspection confirms its System calls resolve through the enabled engine aliases
+(`malloc=mi_malloc`, `free=sf_free`). JVM/C++/other-thread allocations are outside the probe.
+
+Separate million-row INT source/blackhole jobs retain production JNI, planning/startup
+and both transposes. They use nullable inputs, parallelism one, two warmups and five
+measurements. Both native modes require consumed Calc work; the candidate additionally
+requires empty evaluator descriptors. Each previous process has its own paired stock.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / addition | 0.132738 (0.125002–0.135948) | 0.148356 (0.143165–0.164692) | 0.125945 (0.121515–0.144187) | 0.164539 (0.153559–0.179181) |
+| 1.18.1 / nested | 0.134089 (0.123711–0.144396) | 0.147029 (0.144632–0.161026) | 0.124107 (0.120619–0.128548) | 0.164153 (0.154318–0.174387) |
+| 2.2.1 / addition | 0.134425 (0.128763–0.179637) | 0.147232 (0.142800–0.159292) | 0.128637 (0.124836–0.164790) | 0.168241 (0.153037–0.189463) |
+| 2.2.1 / nested | 0.129607 (0.121807–0.147824) | 0.142487 (0.139940–0.152310) | 0.128585 (0.121173–0.152629) | 0.171499 (0.160844–0.192563) |
+
+Native medians improve 9.8–16.9% over previous StreamFusion, but remain 9.5–11.8%
+slower than paired stock. The 2.2 stock/native ranges overlap; independent stock
+controls also drift. Source/sink and perimeter conversion costs remain in these
+startup-heavy bounded jobs. This qualifies the bulk small-operation gate, not a
+standalone-job or universal sustained throughput win over Flink. Generic small-batch
+and perimeter costs remain in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Reproduce after compiling the Java fixture and providing its matching released runtime/test
+classpath as `SF_NATIVE_BENCH_CLASSPATH` and the release library directory as
+`SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example integral_expression
+SF_INTEGRAL_EXPRESSION='ABS((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))' \
+  native/target/release/examples/integral_expression INT true false 1024 128 16 9
+```
+
+The example arguments are SQL integer type, NULL inputs, BinaryRowData input, batch rows,
+loops, warmups and measurements. The previous control sets `SF_INTEGRAL_PREVIOUS=true`
+and prepends the actual preceding encoder to the classpath. Complete jobs use
+`IntegralExpressionPipelineBenchmark`, `SF_BENCHMARK=true` and the corresponding
+`sf.integral.expression` / `sf.integral.previous` properties. These are benchmark controls,
+not production switches.

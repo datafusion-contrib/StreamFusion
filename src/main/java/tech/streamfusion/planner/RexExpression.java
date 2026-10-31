@@ -4644,7 +4644,8 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralAbs(call)) return true;
+    if (nativeIntegralAbs(call)
+        || nativeIntegralArithmetic(call, RexExpression::nativeIntegralAbsOperand)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())
@@ -4653,6 +4654,21 @@ final class RexExpression {
                 call.getType().getSqlTypeName())
             >= 0
         && nativeIntegralAbsOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeIntegralArithmetic(
+      RexCall call, java.util.function.Predicate<RexNode> operand) {
+    if (call.getOperands().size() != 2 || !SqlTypeFamily.INTEGER.contains(call.getType()))
+      return false;
+    switch (call.getKind()) {
+      case PLUS:
+      case MINUS:
+      case TIMES:
+        return call.getOperands().stream()
+            .allMatch(node -> SqlTypeFamily.INTEGER.contains(node.getType()) && operand.test(node));
+      default:
+        return false;
+    }
   }
 
   private static boolean containsMetadataDependentDecimalRounding(RexNode node) {

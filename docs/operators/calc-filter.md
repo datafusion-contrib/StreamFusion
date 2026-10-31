@@ -1527,15 +1527,21 @@ complete jobs.
 ### Exact unary and integral functions
 
 TINYINT, SMALLINT, INT and BIGINT ABS use a Rust Arrow unary kernel for direct inputs,
-typed literals, lossless integer widening of these inputs, and nested admitted ABS calls.
+typed literals, recursive lossless integer widening, nested admitted ABS calls and
+recursively verified integer addition, subtraction and multiplication of those producers.
+Each arithmetic node retains its resolved integer width and Java overflow wrapping;
+no floating conversion or JVM arithmetic callback is introduced. Same-width integer
+result casts share their Arrow array instead of widening and reconstructing it.
 Both nullable and NOT NULL inputs retain their width. NULL propagates; the minimum negative
 value remains negative, matching Flink's `SqlFunctionUtils.abs` and Java narrowing/wrapping
 rather than DataFusion's checked integer ABS. Input buffers and sliced validity remain owned
 by the input; the kernel allocates the result values and shares validity without a JVM callback.
-Arithmetic, casts outside that whitelist, and other composed ABS arguments retain generated
-Flink evaluation so their overflow, NULL and failure behavior does not change. This replaces
+Division, remainder, casts outside that whitelist, DECIMAL arithmetic and other unverified
+ABS producers retain the enclosing generated Flink evaluation. This replaces
 computation inside an already-admitted Calc and introduces no configuration switch.
 See the [release controls and small-batch limits](../benchmarks/scalar-functions.md#integral-abs).
+The [arithmetic-producer controls](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
+also retain the initially slower native implementation and the cost of the removed casts.
 
 Integer unary minus on direct TINYINT/SMALLINT/INT/BIGINT inputs, typed literals, lossless
 integer widening and nested admitted negation executes a Rust Arrow kernel without a JVM

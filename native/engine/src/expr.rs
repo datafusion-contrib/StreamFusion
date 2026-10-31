@@ -1176,6 +1176,15 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
         args: datafusion::logical_expr::ScalarFunctionArgs,
     ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
         use datafusion::logical_expr::ColumnarValue;
+        if let [ColumnarValue::Array(input)] = args.args.as_slice() {
+            if matches!(
+                self.target,
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+            ) && input.data_type() == &self.target
+            {
+                return Ok(ColumnarValue::Array(input.clone()));
+            }
+        }
         let arrays = ColumnarValue::values_to_arrays(&args.args)?;
         let input = &arrays[0];
         let result: ArrayRef = match input.data_type() {
@@ -1277,6 +1286,90 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
             }
         };
         Ok(ColumnarValue::Array(result))
+    }
+}
+
+#[cfg(test)]
+mod narrowing_identity_tests {
+    use super::*;
+    use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl};
+
+    fn invoke(input: ColumnarValue, target: DataType) -> ColumnarValue {
+        let source = input.data_type();
+        NarrowingCast::new(target.clone())
+            .invoke_with_args(ScalarFunctionArgs {
+                args: vec![input],
+                arg_fields: vec![Arc::new(arrow::datatypes::Field::new("v", source, true))],
+                number_rows: 1,
+                return_field: Arc::new(arrow::datatypes::Field::new("v", target, true)),
+                config_options: Arc::new(Default::default()),
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn same_width_arrays_retain_slices_validity_and_owned_buffers() {
+        let arrays: Vec<ArrayRef> = vec![
+            Arc::new(arrow::array::Int8Array::from(vec![
+                Some(42),
+                Some(i8::MIN),
+                None,
+            ])),
+            Arc::new(arrow::array::Int16Array::from(vec![
+                Some(42),
+                Some(i16::MIN),
+                None,
+            ])),
+            Arc::new(arrow::array::Int32Array::from(vec![
+                Some(42),
+                Some(i32::MIN),
+                None,
+            ])),
+            Arc::new(arrow::array::Int64Array::from(vec![
+                Some(42),
+                Some(i64::MIN),
+                None,
+            ])),
+        ];
+        for array in arrays {
+            for len in [0, 2] {
+                let input = array.slice(1, len);
+                let ColumnarValue::Array(output) = invoke(
+                    ColumnarValue::Array(input.clone()),
+                    input.data_type().clone(),
+                ) else {
+                    panic!("expected array")
+                };
+                assert!(Arc::ptr_eq(&input, &output));
+                assert_eq!(output.len(), len);
+                output.to_data().validate_full().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_materialization_and_real_narrowing_keep_their_existing_contract() {
+        for input in [ScalarValue::Int32(Some(i32::MIN)), ScalarValue::Int32(None)] {
+            let ColumnarValue::Array(output) =
+                invoke(ColumnarValue::Scalar(input.clone()), DataType::Int32)
+            else {
+                panic!("expected existing scalar materialization")
+            };
+            assert_eq!(output.len(), 1);
+            assert_eq!(ScalarValue::try_from_array(&output, 0).unwrap(), input);
+        }
+        let input: ArrayRef = Arc::new(Int64Array::from(vec![Some(i64::MAX), None, Some(128)]));
+        let ColumnarValue::Array(output) = invoke(ColumnarValue::Array(input), DataType::Int8)
+        else {
+            panic!("expected narrowed array")
+        };
+        assert_eq!(
+            output
+                .as_any()
+                .downcast_ref::<arrow::array::Int8Array>()
+                .unwrap(),
+            &arrow::array::Int8Array::from(vec![Some(-1), None, Some(-128)])
+        );
     }
 }
 
