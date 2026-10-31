@@ -12,6 +12,9 @@ import org.slf4j.LoggerFactory;
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
 
+  /** Key descriptor prefix selecting Flink's generated projection layout, including NULL slots. */
+  public static final int STOCK_KEY_PROJECTION = Integer.MIN_VALUE;
+
   public static final int AGGREGATE_DISTINCT_TTL = 1 << 10;
   public static final int AGGREGATE_DISTINCT_APPEND = 1 << 11;
 

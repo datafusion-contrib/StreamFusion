@@ -111,3 +111,23 @@ values, or build a serialized native snapshot. Captured resources are released o
 failure. A failed inventory check closes and disposes the stock import view before native backend
 creation. This check belongs to stock canonical import; ordinary native checkpoints keep their
 existing restore path.
+
+
+## Physical grouping-key projections
+
+Flink's generated grouping-key projection reserves variable slots for NULL non-compact
+DECIMAL and high-precision timestamp fields. Its row serializer instead omits those slots.
+The rows are logically equal but have different bytes and hashes, so re-encoding only while
+writing a savepoint would leave live state and key-group routing inconsistent.
+
+Native callers can select the stock generated root projection layout with a leading
+`Native.STOCK_KEY_PROJECTION` in the recursive timestamp/type descriptor. Unprefixed
+descriptors retain the existing serializer layout. This supplies exact grouping-key bytes;
+stock operator identities, state serializers and a complete state adapter are separate
+requirements under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+Byte/hash controls compare production Rust encoding with released Flink-generated selectors
+for decimal precision 18/19/38, millisecond/nanosecond timestamps, negative epochs, NULLs,
+nested generic rows and arrays. These controls pass against Flink 2.2.1 and 1.18.1. They do
+not establish cross-version savepoint interoperability. Benchmarking and tuning remain
+deferred until the full functional handoff is complete.
