@@ -70,3 +70,11 @@ payloads and their firing thresholds in nonzero-offset LTZ jobs. A previous epoc
 cannot be read as local-boundary state. The common checkpoint envelopes therefore advance together
 and reject earlier versions before decoding, including older asynchronous canonical state. This
 upgrade requires restarting from durable inputs; it does not provide an in-place state migration.
+
+## Stock-compatible transfer groundwork
+
+[P0 #569](https://github.com/datafusion-contrib/StreamFusion/issues/569) is adding direct projection
+into released stock operator state schemas. The state accessor for this work reads and writes
+Flink's serialized TTL envelope with its original entry timestamp. Conversion can therefore copy
+state without expiring it or refreshing its age through the running job's clock wrapper.
+Operator adapters, automatic restore binding and cross-engine qualification remain part of #569.
