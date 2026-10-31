@@ -1794,24 +1794,29 @@ consumer and relational restrictions remain tracked in
 
 ### IS_DECIMAL, IS_DIGIT and IS_ALPHA
 
-`IS_ALPHA` on character arguments uses a native Arrow kernel. It returns non-nullable FALSE
-for NULL or empty input and requires every UTF-16 `char` to satisfy the actual worker JDK's
-`Character.isLetter`. Supplementary letters therefore return FALSE, as do isolated surrogates,
-combining marks, digits and replacement characters. It does not use Rust's Unicode version
-or a code-point alphabetic predicate. ASCII letters have a byte fast path.
+`IS_ALPHA` and `IS_DIGIT` on character arguments use native Arrow kernels. They return non-nullable FALSE
+for NULL or empty input and require every UTF-16 `char` to satisfy the actual worker JDK's
+`Character.isLetter` or `Character.isDigit`, respectively. Supplementary letters/digits therefore
+return FALSE, as do isolated surrogates, combining marks and replacement characters. `IS_DIGIT`
+accepts BMP decimal digits such as Arabic-Indic and fullwidth digits, but rejects signs,
+decimal points, superscripts and Roman numerals. These kernels do not use Rust's Unicode version
+or code-point classification. ASCII letters/digits have specialized byte fast paths.
 
-Each JVM copies its own 8 KiB BMP letter bitmap once when the expression is first compiled;
+Each JVM copies its own 8 KiB BMP property bitmap once per classifier when first compiled;
 workers obtain their own tables rather than inheriting the planner JDK's classification.
 JNI setup uses a bounded local-reference frame and retains only immutable Rust bytes. Batch
 and row evaluation make no JVM calls. Replacing an isolated surrogate with `?` cannot change
-this predicate, because both fail the letter test; existing sensitive-expression and arbitrary
+these predicates, because both fail the letter/digit tests; existing sensitive-expression and arbitrary
 binary STRING boundaries retain their separate admission rules. Already-generated operands
-may still contain their own JVM evaluators. Noncharacter IS_ALPHA overloads retain generated
-evaluation. The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
+may still contain their own JVM evaluators. Noncharacter overloads retain generated evaluation,
+including TRUE for integral numeric objects passed to `IS_DIGIT` regardless of sign.
+The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
 include stock Flink and the actual previous callback as well as complete row-source jobs.
+The [digit measurements](../benchmarks/scalar-functions.md#string-is_digit) cover the separate
+digit corpora and preserve small-batch and complete-job costs.
 
-`IS_DECIMAL` and `IS_DIGIT` retain generated evaluation, preserving their released syntax,
-object overloads and Unicode classification, including FALSE for NULL and empty input.
+`IS_DECIMAL` retains generated evaluation, preserving its released syntax, object overloads
+and Unicode integer parsing, including FALSE for NULL and empty input.
 
 ### UNHEX
 
@@ -3019,6 +3024,10 @@ bridge is retained to allow composition with existing native operators; future p
 claims require measuring that complete pipeline. Reproduce with `ScalarFunctionBenchmark`
 under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` and
 `-Dscalar.warmup=1 -Dscalar.runs=3`, selecting the corresponding `scalar.functions` names.
+
+The IS_ALPHA row records the previous generated evaluator. Current native alpha/digit
+coverage and paired measurements are documented in the classification section and scalar
+benchmark page; this historical table does not describe their current implementation.
 
 ## Flink 1.18 compatibility
 

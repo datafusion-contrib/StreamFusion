@@ -4148,3 +4148,68 @@ and `supplementary`. The old control also sets `SF_CLASSIFICATION_PREVIOUS=true`
 an independently compiled `3af56f9a` encoder. Complete jobs use
 `StringClassificationPipelineBenchmark`, `SF_BENCHMARK=true` and the matching
 `sf.classification.previous` property/classpath pair.
+
+## STRING IS_DIGIT
+
+The digit classifier uses the same worker-JDK snapshot lifecycle and Arrow/RowData timing
+boundaries as IS_ALPHA. A separate 8 KiB BMP digit bitmap preserves `Character.isDigit(char)`;
+NULL/empty strings, supplementary digits, signs, decimal points, superscripts and Roman
+numerals return nonnullable FALSE. ASCII decimal digits have a specialized byte loop.
+There are no batch/row JVM calls in the classifier.
+
+The prepared controls cover ASCII digit bodies of 16/128 characters, mixed ASCII, BMP
+digits, mixed Unicode digits and supplementary-digit rejection with 16-character bodies,
+varying prefixes, NULL every seven rows, GenericRowData/BinaryRowData and 16/1,024-row
+batches. Flink 1.18.1/2.2.1, JDK 17.0.12, Apple M4 Pro, one thread and a release/default-feature/
+mimalloc build match the alpha controls. Every trial consumes 131,072 Boolean results,
+with 16 warmups and nine measurements, alternating paired engines and retaining both
+independent stock controls. The previous process uses the actual `3af56f9a` encoder and
+its generated JVM callback.
+
+| Flink line | Batch rows | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.527–3.017x | 10.051–32.780x |
+| 1.18.1 | 1,024 | 1.160–13.203x | 2.605–25.935x |
+| 2.2.1 | 16 | 0.530–2.556x | 9.431–31.182x |
+| 2.2.1 | 1,024 | 1.172–12.236x | 2.471–25.662x |
+
+Every 1,024-row configuration improves over paired stock, including cached GenericRowData.
+Twenty-three 16-row cells lose to stock: fixed Calc/output costs remain visible on tiny
+batches. Independent stock controls drift by 0.710–1.553x. Supplementary-digit rejection
+does not measure the cost of scanning a full digit string. The
+[raw trials](results/string-digit-2026-11-01.csv.gz) and
+[result record](results/string-digit-2026-11-01.json) retain these limitations and all losses.
+
+The separate one-million-row jobs use nullable mixed Unicode digits, a rowwise source and
+BOOLEAN NOT NULL blackhole, parallelism one, two warmups and five measurements. Production
+JNI, planning/startup and both transposes stay in the job path. Both candidates require
+consumed NativeCalc work; only the candidate requires empty JVM evaluator descriptors.
+
+| Flink line | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.208241 (0.206801–0.219251) | 0.214863 (0.209152–0.225335) | 0.207409 (0.202933–0.213170) | 0.331346 (0.322421–0.333293) |
+| 2.2.1 | 0.220444 (0.216505–0.229146) | 0.217703 (0.213208–0.220951) | 0.214789 (0.209489–0.223645) | 0.315420 (0.306975–0.349680) |
+
+The 2.2 native median is 1.2% faster than paired stock and 31.0% faster than previous
+StreamFusion. The 1.18 median is 3.2% slower than paired stock and 35.2% faster than previous
+StreamFusion. Stock/native ranges overlap on both lines. These startup-heavy jobs do not
+establish a reliable whole-job win over stock or a universal sustained throughput gain.
+
+Focused classification checks pass 56 JVM invocations across released Flink 1.18.1/2.2.1
+and JDK 11/17, including both alpha/digit kernels after shared initialization was factored.
+Every BMP unit, supplementary characters, NULL/empty inputs, CHAR casts, consumers, grouping,
+lazy and selected failures, and multi-batch IDs are checked against stock. The unchanged
+released `ScalarFunctionsTest.testIsDigit` also passes on all four pairs; these local
+expression tests do not establish native work. Default-feature release/mimalloc Rust core:
+1,004 pass, two pre-existing ignores.
+
+Eight 1,024-row alpha controls after sharing initialization cover ASCII 16/128, nullable
+mixed Unicode BinaryRowData and BMP GenericRowData on both lines. All remain faster than
+paired stock, by 1.350–4.314x. Their summaries are in the digit result record and
+[raw trials](results/string-alpha-shared-2026-11-01.csv.gz) retain the separate controls.
+
+Reproduce with the IS_ALPHA commands and arguments, additionally setting
+`SF_CLASSIFICATION_DIGIT=true` for the native example. For the complete-job launcher set
+`-Dsf.classification.digit=true` instead. Both are benchmark controls, not production switches.
+The old control keeps its matching `SF_CLASSIFICATION_PREVIOUS=true` or
+`-Dsf.classification.previous=true` and independently compiled encoder classpath.
