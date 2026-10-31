@@ -144,12 +144,25 @@ fixture for every declared module tag and one untagged fixture, requiring each t
 
 ## Java test memory budget
 
-Each ordinary Java matrix job runs one Surefire fork with a 2 GiB heap, including the
-second JVM-boundary/cache verification phase. Local Maven defaults remain configurable;
-the CI invocation overrides them explicitly. The default 8 GiB per-fork heap combined with
-CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
+Each ordinary Java matrix job runs at most one Surefire fork at a time with a 4 GiB heap,
+including the second JVM-boundary/cache verification phase. CI disables fork reuse, so each
+test class gets a fresh JVM. Local Maven defaults keep fork reuse enabled; the CI invocation
+sets `-Dsf.testForks=1 -Dsf.testReuseForks=false` explicitly. The default 8 GiB per-fork heap
+combined with CPU-based fork counts leaves insufficient predictable headroom for Arrow buffers, native
 operators, embedded clusters and the Maven process on hosted runners. One bounded fork
 also keeps independent private clusters from competing across test JVMs.
+
+Released Flink MiniClusters keep completed execution graphs and serialized results in an
+unbounded in-memory archive. Its JVM shutdown hook can retain this archive even after the
+cluster stops, so closing private clusters or rotating the shared cluster does not reliably
+release their results inside a reused JVM. A fresh process per class bounds this accumulation
+without reflecting into Flink internals or evicting results during a scenario. Classes retain
+their shared launcher-session cluster and all within-class lifecycle, failure and recovery checks.
+The tradeoff is additional JVM and native-library startup per class;
+complete CI elapsed time, rather than local function throughput, measures that overhead.
+The 4 GiB cap also leaves room for the temporary copies made while checkpointing and serializing
+large binary collection results; the smaller focused expression matrix does not establish the
+memory requirement of these complete integration scenarios.
 
 The complete test selection, both Flink lines and both JDKs remain required. Tests stay
 serial within the fork, and result, native-route, leak and recovery assertions are unchanged.

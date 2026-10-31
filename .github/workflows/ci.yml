@@ -181,7 +181,7 @@ jobs:
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
           mvn -B -ntp ${{ matrix.profile }} test -Dnative.build.skip=true \
-            -Dsf.testForks=1 "-Dsf.extraJvmArgs=-Xmx2g"
+            -Dsf.testForks=1 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx4g"
 
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
         if: matrix.jdk == '17'
@@ -191,7 +191,8 @@ jobs:
           -Dnative.resource.directory="$GITHUB_WORKSPACE/native/target/debug"
           -Dtest=FlinkJvmAggregateSqlHarnessTest,FlinkNestedScalarSqlHarnessTest,FlinkNestedFixedBinarySqlHarnessTest,FlinkTemporalUdfSqlHarnessTest,FlinkBinaryRowHashParityTest,FlinkMapJsonJvmSqlHarnessTest,FlinkJsonJvmSqlHarnessTest,NativeParityValueTest,TransposeOperatorsTest,Utf8WriterReuseTest,FlinkEltSqlHarnessTest,FlinkFixedBinarySqlHarnessTest,FlinkBinaryStringBuiltinsSqlHarnessTest,FlinkVariableBinaryEltSqlHarnessTest,FlinkNestedScalarRecoveryTest,FlinkNestedScalarRemoteDeploymentTest
           -Dsf.testForks=1
-          "-Dsf.extraJvmArgs=-Xmx2g -Djava.library.path=$GITHUB_WORKSPACE/native/target/debug -Dstreamfusion.experimental.temporalScalarUdfs=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Dstreamfusion.experimental.borrowedStringExit=true"
+          -Dsf.testReuseForks=false
+          "-Dsf.extraJvmArgs=-Xmx4g -Djava.library.path=$GITHUB_WORKSPACE/native/target/debug -Dstreamfusion.experimental.temporalScalarUdfs=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Dstreamfusion.experimental.borrowedStringExit=true"
           surefire:test@default-test
 
       - name: Check deployed Java 11 bytecode including embedded payloads
