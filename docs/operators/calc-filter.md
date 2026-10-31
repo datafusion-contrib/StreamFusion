@@ -1102,12 +1102,13 @@ Native, unconditionally, with no host involvement:
   This can differ from rounding a decimal directly to FLOAT. Array casts convert the element
   buffers and preserve offsets, empty arrays, nullable containers/elements and declared types.
   Other changes of collection element type still require a separately supported cast.
-- **`CAST(d AS STRING)` for a direct DECIMAL input or literal** — a native Decimal128
+- **`CAST(d AS STRING)` and `TRY_CAST(d AS STRING)` for a direct DECIMAL input or literal** — a native Decimal128
   formatter retains scale and trailing zeros, including zero and precision-38 coefficients.
   It uses ordinary decimal notation, so `DECIMAL(38,38)` with unscaled value 1 becomes
   `0.00000000000000000000000000000000000001`, without passing through floating point.
   NULL stays NULL. Modern and legacy modes share this unbounded STRING conversion.
-  Bounded CHAR/VARCHAR targets, computed DECIMAL operands and TRY_CAST retain their existing
+  TRY_CAST reuses the same non-failing formatting operation; it does not suppress failures
+  while computing an operand. Bounded CHAR/VARCHAR targets and computed DECIMAL operands retain their existing
   evaluator/admission rules. In particular, rounding-result metadata guards still apply;
   this does not replace their host-exact consumers. See the
   [DECIMAL formatting measurements](../benchmarks/scalar-functions.md#decimal-to-string).
@@ -1329,6 +1330,12 @@ DECIMAL-to-DECIMAL TRY_CAST reuses the native exact rescaling kernel, including 
 NULL on narrowing overflow. Tests cover precision 38, invalid text, signs/exponents, whitespace,
 filters, conditional consumers, grouping and aggregation across multiple batches.
 
+Direct DECIMAL input references and literals also format to unbounded STRING through the
+native formatter described above. It preserves scale, plain notation and NULLs in modern
+and legacy modes without a JVM evaluator. Bounded character targets and computed DECIMAL
+operands keep their previous rules; in particular, TRY_CAST does not catch an error raised
+while computing its input. See the [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast).
+
 Already-evaluated internal Flink decimals cross Arrow without another precision check. Flink's
 compact text parser can retain a rounding carry (`999.995` to DECIMAL(5,2) yields `1000.00`);
 the bridge preserves that internal unscaled value and its non-NULL status. External BigDecimal
@@ -1342,7 +1349,9 @@ A second group of casts is **native by default, and this is not a fallback** —
 back into Flink's own cast machinery (`CastExecutor`/`CastRuleProvider`) for the one column being
 cast, with the rest of the expression tree still evaluated natively around it:
 
-- **FLOAT/DOUBLE/DECIMAL ↔ string, both directions** — including bounded VARCHAR/CHAR targets.
+- **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **DECIMAL → bounded VARCHAR/CHAR
+  or from a computed DECIMAL operand**. Direct DECIMAL inputs/literals to unbounded STRING
+  use the native formatter described above for both CAST and TRY_CAST.
 - **Narrowing a `VARCHAR`** (truncation).
 - **String to `CHAR(n)`** (space-padding).
 - **`→ DECIMAL` from a `float`/`double`.**
@@ -1368,8 +1377,9 @@ STRING/CHAR/VARCHAR to DECIMAL; BOOLEAN or DECIMAL to CHAR/VARCHAR; and characte
 character. STRING to DECIMAL uses Flink's complete generated expression, including
 its catch-on-conversion-failure contract: malformed strings and overflow become NULL.
 Setting only the cast executor's legacy flag would still throw for malformed strings.
-BOOLEAN uses the host's legacy lowercase spelling; DECIMAL rendering uses the configured
-host executor. Legacy character casts preserve the original text without applying default
+BOOLEAN uses the host's legacy lowercase spelling; bounded/computed DECIMAL rendering uses the
+configured host executor, while direct DECIMAL inputs/literals to unbounded STRING use Rust.
+Legacy character casts preserve the original text without applying default
 projection trimming or padding, including empty, overlength and surrogate-containing
 strings. Sink length and NOT NULL enforcement remain separate downstream contracts.
 Legacy FLOAT/DOUBLE to DECIMAL is admitted by default. A direct unary cast first tries a native

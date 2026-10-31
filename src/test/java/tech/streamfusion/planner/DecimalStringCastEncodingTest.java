@@ -25,14 +25,16 @@ class DecimalStringCastEncodingTest {
         var max = new BigDecimal(BigInteger.TEN.pow(precision).subtract(BigInteger.ONE), scale);
         for (RexNode value : List.of(rex.makeInputRef(type, 0),
             rex.makeExactLiteral(max.negate(), type), rex.makeNullLiteral(type))) {
-          var call = rex.makeCall(string, FlinkSqlOperatorTable.CAST, List.of(value));
-          var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
-          assertNotNull(encoded, call.toString());
-          assertEquals(11, encoded.kinds()[0]);
-          assertEquals(6, encoded.payload()[0]);
-          assertTrue(encoded.jvmFunctionCalls().isEmpty());
-          long[] constants = encoded.longs();
-          assertSame(constants, encoded.udfBinding().bind(constants, null));
+          for (var operator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
+            var call = rex.makeCall(string, operator, List.of(value));
+            var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
+            assertNotNull(encoded, call.toString());
+            assertEquals(11, encoded.kinds()[0]);
+            assertEquals(6, encoded.payload()[0]);
+            assertTrue(encoded.jvmFunctionCalls().isEmpty());
+            long[] constants = encoded.longs();
+            assertSame(constants, encoded.udfBinding().bind(constants, null));
+          }
         }
       }
     }

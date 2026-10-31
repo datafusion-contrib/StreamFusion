@@ -4327,3 +4327,60 @@ previous control prepends the independently compiled main encoder and sets
 Use the `flink-1.18` Maven profile for the other released line. Complete jobs use
 `BinaryCharacterPipelineBenchmark`, `SF_BENCHMARK=true` and the matching
 `sf.binary.character.previous` property/classpath pair.
+
+## DECIMAL to STRING TRY_CAST
+
+Direct-input `TRY_CAST(d AS STRING)` reuses the qualified native formatter above. Its
+previous encoder at `3af56f9a` rejects this signature, so the previous control verifies that
+rejection and measures released Flink's generated fallback; it does not substitute a JVM
+callback that the old query would never execute. Modern and legacy modes share the same
+plain formatting. Bounded targets and computed DECIMAL operands retain their existing rules.
+
+The prepared comparison uses released Flink 1.18.1/2.2.1 on JDK 17.0.12, Apple M4 Pro,
+one thread, and a release/default-feature/mimalloc build. It retains the preceding comparison's
+RowData and Arrow timer boundaries, UTF-8 length checksum, three DECIMAL types, signed
+coefficients, optional NULLs, GenericRowData/BinaryRowData and 16/1,024-row batches. Each
+of the 48 configurations processes 131,072 rows per trial, with 16 warmups and nine
+measurements per engine. Separate candidate/previous processes retain both stock controls;
+all timings run serially. Median ratio ranges are:
+
+| Flink line | Batch rows | Stock / native | Previous fallback / native |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 1.084–2.549x | 1.215–3.082x |
+| 1.18.1 | 1,024 | 3.103–7.309x | 3.451–7.837x |
+| 2.2.1 | 16 | 1.089–2.716x | 1.082–3.022x |
+| 2.2.1 | 1,024 | 2.830–7.505x | 3.104–7.949x |
+
+The small-batch results closest to 1x do not establish a reliable speedup. Independent
+stock controls drift by 0.994–1.491x, so the previous/candidate ratios also contain run
+variation. The [raw trials](results/decimal-try-string-2026-11-01.csv.gz) keep every warmup,
+measurement and checksum; the [result record](results/decimal-try-string-2026-11-01.json)
+includes per-configuration min/median/max, build hash and complete-job samples.
+
+The separate complete job processes one million nullable DECIMAL(18,3) rows with a rowwise
+sequence/map source and blackhole STRING sink at parallelism one. Two warmups and five
+measurements alternate paired engines. Planning, startup, production JNI and both candidate
+perimeter transposes remain included. Candidate plans require consumed NativeCalc work and
+`jvm=[]`; previous plans require the actual unsupported-TRY_CAST fallback and no native work.
+
+| Flink line | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous fallback median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.210033 (0.198174–0.341704) | 0.178884 (0.175655–0.193307) | 0.173271 (0.171626–0.178455) | 0.176192 (0.171641–0.181437) |
+| 2.2.1 | 0.200191 (0.189743–0.214374) | 0.176218 (0.172520–0.180682) | 0.180489 (0.175176–0.203107) | 0.171967 (0.163684–0.176673) |
+
+Candidate medians improve over their paired stock controls, but the previous fallback is
+1.5%/2.5% faster than native. The independent stock drift, overlapping ranges and subsecond
+startup cost prevent a reliable complete-job improvement claim. These observations do not
+establish sustained throughput for other jobs.
+
+The focused suite passes 91 tests on each released line/JDK 11/17 pair, 364 invocations
+with no skips. It retains the CAST regressions and adds TRY_CAST to the all-precision/scale
+encoding checks, runtime multi-batch witnesses, consumers, NULLs, lazy branches and empty
+filtered results. Computing a failing operand still fails; bounded TRY_CAST remains fallback.
+The unchanged formatting kernel keeps its preceding released-DecimalData oracle coverage;
+this admission change does not replace the full upstream integration suite or CI.
+
+Use the preceding `decimal_string` commands with `SF_DECIMAL_STRING_TRY_CAST=true`.
+For the old control also set `SF_DECIMAL_STRING_PREVIOUS=true` and prepend an independently
+compiled `3af56f9a` encoder. Complete jobs set `SF_BENCHMARK=true` and
+`-Dsf.decimal.string.tryCast=true`, plus the matching previous property/classpath when required.

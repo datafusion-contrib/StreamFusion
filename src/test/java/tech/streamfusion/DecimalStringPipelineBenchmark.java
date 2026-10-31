@@ -23,7 +23,10 @@ class DecimalStringPipelineBenchmark {
     int warmups = Integer.getInteger("decimal.string.pipeline.warmups", 2);
     int runs = Integer.getInteger("decimal.string.pipeline.runs", 5);
     boolean previous = Boolean.getBoolean("sf.decimal.string.previous");
-    assertEquals(previous ? 17 : 11, DecimalStringBenchmarkFunctions.register(18, 3)[0]);
+    boolean tryCast = Boolean.getBoolean("sf.decimal.string.tryCast");
+    boolean fallback = previous && tryCast;
+    assertEquals(fallback ? -1 : previous ? 17 : 11,
+        DecimalStringBenchmarkFunctions.register(18, 3)[0]);
     DecimalStringBenchmarkFunctions.close();
     for (int trial = 0; trial < warmups + runs; trial++) {
       for (int turn = 0; turn < 2; turn++) {
@@ -38,10 +41,11 @@ class DecimalStringPipelineBenchmark {
           table.createTemporaryView("inputs", source,
               Schema.newBuilder().column("d", DataTypes.DECIMAL(18, 3)).build());
           table.executeSql("CREATE TABLE output_rows(v STRING) WITH ('connector'='blackhole')");
-          String sql = "INSERT INTO output_rows SELECT CAST(d AS STRING) FROM inputs";
+          String sql = "INSERT INTO output_rows SELECT " + (tryCast ? "TRY_CAST" : "CAST")
+              + "(d AS STRING) FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
           String plan = table.explainSql(sql);
-          if (nativeRun) {
+          if (nativeRun && !fallback) {
             assertTrue(plan.contains("NativeCalc"), plan);
             assertTrue(plan.contains("RowDataToArrow"), plan);
             assertTrue(plan.contains("ArrowToRowData"), plan);
@@ -50,11 +54,18 @@ class DecimalStringPipelineBenchmark {
             assertTrue(scan.functionExecutions().stream()
                 .allMatch(route -> previous != route.contains("jvm=[]")),
                 scan.functionExecutions().toString());
+          } else if (nativeRun) {
+            assertEquals(0, scan.substitutions());
+            assertTrue(scan.fallbackReasons().stream()
+                .anyMatch(reason -> reason.contains("unsupported TRY_CAST")),
+                scan.fallbackReasons().toString());
           }
           long start = System.nanoTime();
           table.executeSql(sql).await();
           double seconds = (System.nanoTime() - start) / 1e9;
-          if (nativeRun) RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+          if (nativeRun && !fallback)
+            RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+          if (nativeRun && fallback) assertTrue(metrics.nativeOperators().isEmpty());
           System.out.printf(Locale.ROOT,
               "[decimal-string-pipeline] engine=%s trial=%d warmup=%s rows=%d seconds=%.9f%n",
               nativeRun ? previous ? "previous" : "native" : "stock", trial, trial < warmups, count, seconds);

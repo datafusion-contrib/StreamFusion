@@ -3855,8 +3855,7 @@ final class RexExpression {
       // Released Flink decodes with new String(bytes, UTF_8), including JDK error grouping.
       return emitBuiltinCall(call, 237);
     }
-    if (!tryCast
-        && source == SqlTypeName.DECIMAL
+    if (source == SqlTypeName.DECIMAL
         && targetType == SqlTypeName.VARCHAR
         && resultType.getPrecision() == Integer.MAX_VALUE
         && (call.getOperands().get(0) instanceof RexInputRef
