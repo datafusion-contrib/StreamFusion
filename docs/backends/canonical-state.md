@@ -95,3 +95,19 @@ Readers accept older kind-less snapshots as INSERT rows, while all-INSERT values
 previous representation. Projected fixed ranks also retain the first overflow sort group visited
 by Flink, so a later version of an already retained hidden key keeps its update identity after
 restore. These changes apply to ordinary native checkpoints as well as canonical handoff.
+
+## Stock-schema restore inventory
+
+The stock-schema import work under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569)
+uses a read-only inventory validator. It checks declared descriptor names and state kinds, the
+current adapters' stock void namespaces, and timer key/namespace serializers. Unknown descriptors
+or timer services are errors even when empty. Pending timers require explicit adapter ownership;
+only Flink's known empty user-timer queues may otherwise be omitted. Aggregate declarations include
+their DISTINCT/null-marker and extrema data views.
+
+Inspection captures released Flink snapshot resources and checks queue emptiness through their
+state iterator. It does not open/register timer queues, consume records, expire or refresh TTL
+values, or build a serialized native snapshot. Captured resources are released on success and
+failure. A failed inventory check closes and disposes the stock import view before native backend
+creation. This check belongs to stock canonical import; ordinary native checkpoints keep their
+existing restore path.
