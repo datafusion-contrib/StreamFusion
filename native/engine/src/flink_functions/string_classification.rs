@@ -22,7 +22,7 @@ fn classifier<const DIGIT: bool>(
     cache: &OnceLock<std::result::Result<Arc<[u64]>, String>>,
 ) -> ScalarUDF {
     let table = cache
-        .get_or_init(|| load_table(if DIGIT { "digits" } else { "letters" }))
+        .get_or_init(|| load_table(if DIGIT { "digits" } else { "letters" }, 1024))
         .as_ref()
         .expect("worker JDK character table");
     ScalarUDF::new_from_impl(Classification::<DIGIT> {
@@ -31,7 +31,7 @@ fn classifier<const DIGIT: bool>(
     })
 }
 
-fn load_table(method: &str) -> std::result::Result<Arc<[u64]>, String> {
+pub(super) fn load_table(method: &str, words: usize) -> std::result::Result<Arc<[u64]>, String> {
     let vm = streamfusion_bridge::JVM
         .get()
         .ok_or_else(|| "JVM not captured for character-table initialization".to_owned())?;
@@ -51,7 +51,7 @@ fn load_table(method: &str) -> std::result::Result<Arc<[u64]>, String> {
         Ok(table)
     });
     let table = table.map_err(|e| e.to_string())?;
-    if table.len() != 1024 {
+    if table.len() != words {
         return Err("Worker JDK character table has an invalid length".into());
     }
     Ok(table.into_iter().map(|word| word as u64).collect())

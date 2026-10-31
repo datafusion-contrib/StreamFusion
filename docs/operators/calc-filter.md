@@ -1815,8 +1815,19 @@ include stock Flink and the actual previous callback as well as complete row-sou
 The [digit measurements](../benchmarks/scalar-functions.md#string-is_digit) cover the separate
 digit corpora and preserve small-batch and complete-job costs.
 
-`IS_DECIMAL` retains generated evaluation, preserving its released syntax, object overloads
-and Unicode integer parsing, including FALSE for NULL and empty input.
+`IS_DECIMAL` on character arguments also runs in a native Arrow kernel, with nonnullable
+FALSE for NULL/empty strings. Its released meaning is successful Java integer, long or
+double parsing, not a Decimal SQL type check. Native ASCII lexical parsing accepts signs,
+fractions, decimal/hexadecimal exponents, floating suffixes, NaN and Infinity, including
+overflow to infinity. Only leading/trailing characters at or below U+0020 are trimmed on
+the double path. Non-ASCII integers require every UTF-16 unit to have a worker-JDK radix-10
+digit value and the signed result to fit BIGINT, without trimming. ASCII integers beyond
+BIGINT still succeed through double syntax, whereas Unicode-digit overflow fails.
+
+The worker snapshots a separate 32 KiB packed radix-10 digit-value table once. No row/batch
+JVM calls or floating conversion are needed to answer the predicate. Numeric and other
+noncharacter object overloads retain generated evaluation. Operand failures and conditional/
+empty-batch rules remain unchanged. See the [decimal classification measurements](../benchmarks/scalar-functions.md#string-is_decimal).
 
 ### UNHEX
 

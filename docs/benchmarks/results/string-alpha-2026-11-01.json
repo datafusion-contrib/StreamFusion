@@ -3737,7 +3737,9 @@
     "corpora": "ASCII bodies with 16/128 characters; mixed ASCII, BMP letters, mixed Unicode and supplementary-letter rejection with 16-character bodies; varying prefix and optional NULL every seven rows",
     "pipeline": "1000000 nullable Unicode/mixed strings; rowwise sequence/map source, BOOLEAN NOT NULL blackhole, parallelism 1, two warmups/five measurements, production JNI and both transposes included",
     "timing_order": "Serial, alternating paired engines, separate stock controls retained",
-    "initialization": "Worker-JDK 8 KiB character bitmap copied once during expression compilation, outside prepared timers; no batch/row JNI calls in the candidate classifier"
+    "initialization": "Worker-JDK 8 KiB character bitmap copied once during expression compilation, outside prepared timers; no batch/row JNI calls in the candidate classifier",
+    "logical_nullability": "Historical nullable Java/encoder signatures for all data populations; nullable selects data NULLs, and Arrow field metadata follows batch validity. Separate matching NOT NULL signature controls are in classification-not-null-2026-11-01.json.",
+    "source_commit": "459e1ecc"
   },
   "rust_validation": {
     "release_default_mimalloc": {

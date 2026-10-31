@@ -22,7 +22,12 @@ import tech.streamfusion.operator.NativeUdf;
 /** Released generated RowData control and actual planner binding for native classification. */
 public final class StringClassificationBenchmarkFunctions {
   private static final boolean DIGIT = Boolean.getBoolean("sf.classification.digit");
-  private static final LogicalType[] TYPES = {new VarCharType(VarCharType.MAX_LENGTH)};
+  private static final boolean DECIMAL = Boolean.getBoolean("sf.classification.decimal");
+  private static final boolean NULLABLE = Boolean.parseBoolean(
+      System.getProperty("sf.classification.nullable", "true"));
+  private static final String[] SPECIAL = {"NaN", "+NaN", "-NaN", "Infinity", "+Infinity", "-Infinity",
+      "\0 NaN \t", "InfinityD", "nan", "Inf", ""};
+  private static final LogicalType[] TYPES = {new VarCharType(NULLABLE, VarCharType.MAX_LENGTH)};
   private static FlinkExpressionFunction stock;
   private static NativeUdf.Binding binding;
   private static RowData[] rows;
@@ -35,9 +40,10 @@ public final class StringClassificationBenchmarkFunctions {
         FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     var input = types.createTypeWithNullability(
-        types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE), true);
+        types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE), NULLABLE);
     return (RexCall) rex.makeCall(types.createSqlType(SqlTypeName.BOOLEAN),
-        DIGIT ? FlinkSqlOperatorTable.IS_DIGIT : FlinkSqlOperatorTable.IS_ALPHA,
+        DECIMAL ? FlinkSqlOperatorTable.IS_DECIMAL
+            : DIGIT ? FlinkSqlOperatorTable.IS_DIGIT : FlinkSqlOperatorTable.IS_ALPHA,
         List.of(rex.makeInputRef(input, 0)));
   }
 
@@ -62,7 +68,7 @@ public final class StringClassificationBenchmarkFunctions {
       throw new IllegalStateException("Expected one classification call over a runtime input");
     boolean previous = Boolean.getBoolean("sf.classification.previous");
     if (encoded.kinds()[0] != (previous ? 17 : 6)
-        || !previous && encoded.payload()[0] != (DIGIT ? 239 : 238))
+        || !previous && encoded.payload()[0] != (DECIMAL ? 240 : DIGIT ? 239 : 238))
       throw new IllegalStateException("Unexpected classification route");
     binding = encoded.udfBinding();
     long[] constants = binding.bind(encoded.longs(), context());
@@ -74,6 +80,7 @@ public final class StringClassificationBenchmarkFunctions {
   }
 
   public static String value(String corpus, int width, int row) {
+    if (DECIMAL) return decimalValue(corpus, width, row);
     String unit = corpus.equals("bmp") || corpus.equals("unicode")
         ? DIGIT ? "\u0661\u0967\uff11\u06f2" : "\u4e2d\u6587\u00e9\u03a9"
         : DIGIT ? "012789" : "abcXYZ";
@@ -86,8 +93,28 @@ public final class StringClassificationBenchmarkFunctions {
     return (char) (DIGIT ? '0' + row % 10 : 'a' + row % 26) + body;
   }
 
+  private static String decimalValue(String corpus, int width, int row) {
+    if (corpus.equals("special")) {
+      return SPECIAL[row % SPECIAL.length];
+    }
+    boolean unicode = corpus.equals("bmp") || corpus.equals("unicode") || corpus.equals("unicode-overflow");
+    String unit = unicode ? "\u0661\u0967\uff11\u06f2" : corpus.equals("hex") ? "abcdef0123456789" : "012789";
+    String body = unit.repeat((width + unit.length() - 1) / unit.length()).substring(0, width);
+    if (corpus.equals("supplementary")) return "1\ud835\udfce" + body;
+    if (corpus.equals("hex")) return "0x" + body + "p-" + row % 400 + "D";
+    body = (char) ('0' + row % 10) + body;
+    if (corpus.equals("fraction")) return body + "." + row % 100 + (row % 3 == 0 ? "f" : "");
+    if (corpus.equals("exponent")) return body + "e" + (row % 2 == 0 ? "+" : "-") + row % 400;
+    if (corpus.equals("mixed") || corpus.equals("unicode")) {
+      if (row % 17 == 0) return "";
+      if (row % 3 == 0) return body + "x";
+    }
+    return body;
+  }
+
   public static void prepare(String corpus, int width, boolean nullable, boolean binary, int count)
       throws Exception {
+    if (nullable != NULLABLE) throw new IllegalArgumentException("Benchmark signature/data nullability mismatch");
     stock = FlinkExpressionGenerator.generate(call(), TYPES, TableConfig.getDefault(),
         StringClassificationBenchmarkFunctions.class.getClassLoader(), false);
     stock.open(context());
