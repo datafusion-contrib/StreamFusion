@@ -5204,8 +5204,8 @@ fn topn_is_per_partition() {
     let out = ranker
         .push(&topn_batch(vec![1, 2, 1], vec![5, 7, 3]), 0)
         .unwrap();
-    // p1: +I5; p2: +I7; p1 sees 3 < 5 -> -D5 then +I3 (delete first, as the host emits).
-    assert_eq!(row_kinds(&out), vec![0, 0, 3, 0]);
+    // Constant Top-1 has a unique partition key: replacements use the host's update changelog.
+    assert_eq!(row_kinds(&out), vec![0, 0, 1, 2]);
     assert_eq!(values(&out, 0), vec![1, 2, 1, 1]); // partition of each emitted row
     assert_eq!(values(&out, 1), vec![5, 7, 5, 3]);
 }
@@ -10180,7 +10180,7 @@ fn component_timestamp_topn_checkpoint_preserves_fractional_order_and_payload() 
     let next = make(1);
     let actual = restored.push(&next, 0).unwrap();
     assert_eq!(actual, ranker.push(&next, 0).unwrap());
-    assert_eq!(row_kinds(&actual), vec![3, 0]);
+    assert_eq!(row_kinds(&actual), vec![1, 2]);
     let sorted = TimestampColumn::try_new(actual.column(1).as_ref()).unwrap();
     assert_eq!(sorted.value(0).unwrap().nano_of_milli(), 999999);
     assert_eq!(sorted.value(1).unwrap().nano_of_milli(), 1);

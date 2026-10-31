@@ -24,7 +24,10 @@ implementations, chosen from the input's changelog kind and key structure. Strea
 three natively:
 
 - **Append-only ranker** — the input is insert-only; a per-partition sorted list of the current
-  top rows. TTL expires per sort-key list — every list write refreshes all of that list's tie rows.
+  top rows. Projected-rank plans also retain Flink's first overflow sort group, even though it
+  emits nothing beyond the visible bound. This hidden state can affect later TTL behavior and
+  must survive canonical handoff. Mini-batch result diffs include only visible ranks. TTL expires
+  per sort-key list — every list write refreshes all of that list's tie rows.
 - **Update-fast ranker** — the input carries a unique key and the sort key is inferred monotonic
   against updates on that key (e.g. ranking by a descending `COUNT(*)`), mirroring Flink's
   `UpdatableTopNFunction`. For the constant `rn <= 1` special case this is `FastTop1Function`: rather than
@@ -36,6 +39,12 @@ three natively:
   `RetractableTopNFunction`. TTL expires the *whole* per-partition buffer at once, on a clock
   refreshed by every record processed for that partition — modeling Flink's own per-record
   `SortedMap` rewrite.
+
+Constant AppendFast Top-1 uses Flink's update changelog even when the rank column is hidden:
+replacement emits UPDATE_BEFORE when requested, followed by UPDATE_AFTER. Its generic and
+specialized implementations follow the same contract in immediate and mini-batch modes.
+Projected wider ranks retain the hidden overflow group in both modes, with result diffs limited
+to visible ranks. These correctness changes do not change the native checkpoint encoding.
 
 With the RocksDB backend, all three strategies charge their live read-through working sets
 rather than accumulating reservations for persisted keys. Active mini-batches retain charges

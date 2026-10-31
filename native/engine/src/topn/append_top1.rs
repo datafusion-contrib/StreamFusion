@@ -179,14 +179,14 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
             };
             if !self.net_diff {
                 if let Some(old) = old {
-                    if !self.output_rank_number || self.generate_update_before {
+                    if self.generate_update_before {
                         output.push(old.payload);
-                        kinds.push(if self.output_rank_number { 1 } else { 3 });
+                        kinds.push(1);
                         if self.output_rank_number {
                             ranks.push(1);
                         }
                     }
-                    kinds.push(if self.output_rank_number { 2 } else { 0 });
+                    kinds.push(2);
                 } else {
                     kinds.push(0);
                 }

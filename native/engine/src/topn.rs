@@ -9,6 +9,8 @@ mod non_time_row_number_tests;
 mod retract_offset;
 #[cfg(all(test, feature = "rocksdb-state"))]
 mod rocks_memory_tests;
+#[cfg(test)]
+mod stock_state_tests;
 
 fn sort_array(array: &ArrayRef) -> ArrayRef {
     use arrow::array::AsArray;
@@ -674,6 +676,17 @@ fn refresh_evicted_ties(buffer: &mut [TopNRow], evicted: &TopNRow, now_ms: i64) 
     }
 }
 
+fn append_rank_state_end(buffer: &[TopNRow], limit: usize) -> usize {
+    let mut end = limit.min(buffer.len());
+    if end < buffer.len() {
+        let overflow = &buffer[end].sort;
+        while end < buffer.len() && buffer[end].sort == *overflow {
+            end += 1;
+        }
+    }
+    end
+}
+
 /// Drops a buffer's expired rows (Flink's expired map-state entries read as absent), returning the
 /// reclaimed bytes when `track`. Silent by contract: expiry emits nothing downstream.
 fn prune_expired_topn_rows(buffer: &mut Vec<TopNRow>, ttl: StateTtl, track: bool) -> isize {
@@ -1033,13 +1046,21 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
             {
                 continue;
             }
+            if rank_ends.is_none()
+                && output_rank
+                && !self.non_time_row_number
+                && buffer.len() >= limit
+                && buffer.last().is_some_and(|last| key_row >= last.sort.row())
+            {
+                continue;
+            }
             let (pos, floating_group) = floating_row_number.as_ref().map_or_else(
                 || (buffer.partition_point(|e| e.sort.row() <= key_row), None),
                 |order| order.position(buffer, key_row),
             );
 
             if output_rank {
-                if pos >= limit && !self.first_bound {
+                if pos >= limit && !self.first_bound && rank_ends.is_some() {
                     continue; // beyond rank N — the new row never enters the top-N (nothing allocated)
                 }
                 let old_len = buffer.len();
@@ -1108,20 +1129,19 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                         }
                     }
                 }
-                // Flink retains the whole first overflow sort group. An expiring bound may
-                // widen later, making these rows observable even when they never emitted.
+                // The stock with-rank algorithm retains the whole first overflow sort group,
+                // including fixed bounds. These rows remain part of durable managed state.
                 let keep = if self.first_bound {
                     if rank_end < 0 {
                         0
                     } else {
-                        let mut end = limit.min(buffer.len());
-                        if end < buffer.len() {
-                            let last_sort = buffer[end].sort.clone();
-                            while end < buffer.len() && buffer[end].sort == last_sort {
-                                end += 1;
-                            }
-                        }
-                        end
+                        append_rank_state_end(buffer, limit)
+                    }
+                } else if rank_ends.is_none() && !self.non_time_row_number {
+                    if self.limit == 1 {
+                        limit
+                    } else {
+                        append_rank_state_end(buffer, limit)
                     }
                 } else {
                     limit
@@ -1134,6 +1154,8 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                     buffer.truncate(keep);
                 }
             } else {
+                let fast_top1 = self.limit == 1 && rank_ends.is_none();
+                let mut replaced = false;
                 let payload = Arc::new(payloads.row(row).owned());
                 buffer.insert(
                     pos,
@@ -1162,11 +1184,14 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                     if *evicted.payload == *payload {
                         continue; // the new row was itself rank N+1 — it never entered the top-N
                     }
-                    out_rows.push(evicted.payload);
-                    out_kinds.push(3); // -D the displaced row
+                    if !fast_top1 || self.generate_update_before {
+                        out_rows.push(evicted.payload);
+                        out_kinds.push(if fast_top1 { 1 } else { 3 });
+                    }
+                    replaced = true;
                 }
                 out_rows.push(payload);
-                out_kinds.push(0); // +I the new row
+                out_kinds.push(if fast_top1 && replaced { 2 } else { 0 });
             }
         }
         self.account(delta)?;
@@ -1267,7 +1292,16 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                     delta -= prune_expired_topn_rows(buffer, ttl, track);
                 }
                 let key = ByteKey::from(part);
-                let old: Vec<Arc<OwnedRow>> = buffer.iter().map(|e| e.payload.clone()).collect();
+                let visible = if output_rank && rank_ends.is_none() {
+                    limit
+                } else {
+                    usize::MAX
+                };
+                let old: Vec<Arc<OwnedRow>> = buffer
+                    .iter()
+                    .take(visible)
+                    .map(|e| e.payload.clone())
+                    .collect();
                 if track {
                     delta += topn_staged_entry_bytes(&key, &old) as isize;
                 }
@@ -1281,7 +1315,13 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                 continue;
             }
             let pos = buffer.partition_point(|e| e.sort.row() <= key_row);
-            if pos >= limit {
+            if output_rank && rank_ends.is_none() {
+                if buffer.len() >= limit
+                    && buffer.last().is_some_and(|last| key_row >= last.sort.row())
+                {
+                    continue;
+                }
+            } else if pos >= limit {
                 continue; // beyond rank N — never enters (a buffer never exceeds the limit)
             }
             buffer.insert(
@@ -1300,7 +1340,20 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
             if ttl.enabled() {
                 refresh_sort_key_ties(buffer, pos, ttl.now());
             }
-            if buffer.len() > limit {
+            if output_rank && rank_ends.is_none() {
+                let keep = if self.limit == 1 {
+                    limit
+                } else {
+                    append_rank_state_end(buffer, limit)
+                };
+                if buffer.len() > keep {
+                    if track {
+                        delta -=
+                            buffer[keep..].iter().map(topn_entry_bytes).sum::<usize>() as isize;
+                    }
+                    buffer.truncate(keep);
+                }
+            } else if buffer.len() > limit {
                 let evicted = buffer.pop().expect("buffer over limit is non-empty");
                 if track {
                     delta -= topn_entry_bytes(&evicted) as isize;
@@ -1334,13 +1387,13 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
             let Some(old) = &old_tops[&part] else {
                 continue;
             };
-            if self.top1_fast && self.limit == 1 && self.rank_end_column.is_none() {
+            if self.limit == 1 && self.rank_end_column.is_none() {
                 let new = self.groups.get(&part.0).expect("staged partition resident");
                 let new = new.first().map(|entry| &entry.payload);
                 if self.output_rank_number {
                     diff_top(
                         true,
-                        true,
+                        self.generate_update_before,
                         0,
                         old,
                         new.map_or(&[], std::slice::from_ref),
@@ -1350,12 +1403,14 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                     );
                 } else if old.first().map(|row| row.row()) != new.map(|row| row.row()) {
                     if let Some(row) = old.first() {
-                        out_rows.push(Arc::clone(row));
-                        out_kinds.push(3);
+                        if self.generate_update_before || new.is_none() {
+                            out_rows.push(Arc::clone(row));
+                            out_kinds.push(if new.is_some() { 1 } else { 3 });
+                        }
                     }
                     if let Some(row) = new {
                         out_rows.push(Arc::clone(row));
-                        out_kinds.push(0);
+                        out_kinds.push(if old.is_empty() { 0 } else { 2 });
                     }
                 }
                 continue;
@@ -1365,6 +1420,13 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
                 .get(&part.0)
                 .expect("staged partition resident")
                 .iter()
+                .take(
+                    if self.output_rank_number && self.rank_end_column.is_none() {
+                        self.limit.max(0) as usize
+                    } else {
+                        usize::MAX
+                    },
+                )
                 .map(|e| Arc::clone(&e.payload))
                 .collect();
             if self.output_rank_number {
