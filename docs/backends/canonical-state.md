@@ -161,3 +161,12 @@ must remain associated with the converter that produced them. Regression control
 1,539 keys in bounded batches, re-export without new input and continue window firing on both
 stores. These native controls establish the transfer primitive; stock planner and whole-job
 qualification are documented separately as they complete under #569. Benchmarking remains deferred.
+
+When an adapter reconstructs a key from logical fields, ordinary row serialization is not the
+same operation as Flink's generated key projection. The projection reserves NULL variable slots
+for non-compact decimals and timestamps; omitting them changes binary equality and key-group
+hashes. The runtime projection helper uses stock binary writers with those exact NULL rules,
+without loading planner classes on workers. It produces binary rows for stock serializers;
+no StreamFusion serializer is added to savepoint metadata. Controls compare bytes and hashes
+with released generated selectors across compact/non-compact types, nested values, writer reuse,
+row kinds, empty keys and multiword NULL bitmaps.
