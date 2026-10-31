@@ -4384,3 +4384,83 @@ Use the preceding `decimal_string` commands with `SF_DECIMAL_STRING_TRY_CAST=tru
 For the old control also set `SF_DECIMAL_STRING_PREVIOUS=true` and prepend an independently
 compiled `3af56f9a` encoder. Complete jobs set `SF_BENCHMARK=true` and
 `-Dsf.decimal.string.tryCast=true`, plus the matching previous property/classpath when required.
+
+## STRING IS_ALPHA
+
+The native classifier uses the actual worker JDK's immutable BMP letter bitmap. It
+copies 8 KiB once during expression compilation, outside the prepared-operation timer;
+batch and row execution do not call Java. ASCII letters take a byte fast path. The
+UTF-16-char contract rejects supplementary letters, combining marks and isolated
+surrogates, and returns nonnullable FALSE for NULL or empty strings.
+
+Prepared controls use released Flink 1.18.1/2.2.1, JDK 17.0.12, Apple M4 Pro, one thread
+and a release/default-feature/mimalloc native build. Flink starts with prepared
+GenericRowData or BinaryRowData and times its released generated expression in Java.
+StreamFusion starts with equivalent Arrow strings and times the production Calc and a
+TRUE-count checksum inside Rust. Both engines consume the same logical Boolean results.
+Perimeter JNI/import/export and row/Arrow transposes are outside this small-operation
+timer; output allocation and previous behavior's intrinsic JVM callback remain inside.
+
+The 96 configurations cover ASCII letter bodies of 16/128 characters, mixed ASCII,
+BMP letters, mixed Unicode and supplementary-letter rejection with 16-character bodies,
+varying prefixes and optional NULL every seven rows. Each independently prepared JVM
+runs 16 warmups and nine measurements, 131,072 rows per trial, with alternating paired
+engines. The previous control prepends the actual `3af56f9a` encoder and requires its
+generated evaluator binding. Candidate and previous processes retain separate stock
+controls. All measurements run serially.
+
+| Flink line | Batch rows | Stock / native median range | Previous / native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.612–2.389x | 9.915–31.988x |
+| 1.18.1 | 1,024 | 1.321–13.424x | 3.189–25.839x |
+| 2.2.1 | 16 | 0.628–2.359x | 10.343–33.583x |
+| 2.2.1 | 1,024 | 1.312–12.425x | 3.058–26.485x |
+
+All 1,024-row cells improve over their paired stock controls, including cached
+GenericRowData. Twenty-three 16-row cells lose to stock: small batches and early-rejecting
+strings expose fixed Calc/output costs. These losses remain in the
+[raw trials](results/string-alpha-2026-11-01.csv.gz) and
+[result record](results/string-alpha-2026-11-01.json). Independent stock controls drift
+by 0.761–1.774x; previous/candidate ratios include that variability. The strongest
+supplementary-string ratios do not describe the cost of scanning an entire letter string.
+
+The separate complete job processes one million nullable mixed-Unicode strings with a
+rowwise sequence/map source and BOOLEAN NOT NULL blackhole sink at parallelism one.
+Two warmups and five measurements alternate paired engines. The measured job retains
+planning, startup, production JNI and both perimeter transposes. Candidate and previous
+plans both require consumed NativeCalc work, with empty versus present JVM evaluator
+descriptors respectively.
+
+| Flink line | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 0.209614 (0.204382–0.218415) | 0.213378 (0.205885–0.222676) | 0.218010 (0.205615–0.228056) | 0.334182 (0.320680–0.358193) |
+| 2.2.1 | 0.233453 (0.226726–0.262184) | 0.213483 (0.209738–0.218223) | 0.220989 (0.211911–0.226113) | 0.315859 (0.307981–0.323943) |
+
+The 2.2 native median improves 8.6% over its paired stock and 32.4% over previous
+StreamFusion. The 1.18 native median is 1.8% slower than paired stock, with overlapping
+ranges, while improving 36.2% over previous StreamFusion. These startup-heavy bounded
+jobs do not establish a universal or sustained whole-job speedup.
+
+Focused SQL checks every BMP unit, supplementary letters, NULL/empty inputs, CHAR casts,
+consumers, filters, CASE, grouping, selected failures and empty filtered batches on each
+released Flink/JDK 11/17 pair. The multi-batch witness checks every input ID exactly once,
+positive native work and `jvm=[]`. Released upstream `ScalarFunctionsTest.testIsAlpha`
+assertions also run unchanged on all four pairs; those local expression tests are not
+native-work evidence. Noncharacter and sensitive-expression evaluator rules remain separate.
+
+After compiling `StringClassificationBenchmarkFunctions`, supply the corresponding released
+runtime/test classpath as `SF_NATIVE_BENCH_CLASSPATH` and release library directory as
+`SF_NATIVE_LIB_DIR`:
+
+```sh
+cargo build --manifest-path native/Cargo.toml --release --locked -p streamfusion \
+  --features mimalloc --lib --example string_classification
+native/target/release/examples/string_classification unicode 16 true true 1024 128 16 9
+```
+
+Arguments are corpus, body characters, NULL inputs, BinaryRowData stock input, batch rows,
+loops, warmups and measured trials. Available corpora are `ascii`, `mixed`, `bmp`, `unicode`
+and `supplementary`. The old control also sets `SF_CLASSIFICATION_PREVIOUS=true` and prepends
+an independently compiled `3af56f9a` encoder. Complete jobs use
+`StringClassificationPipelineBenchmark`, `SF_BENCHMARK=true` and the matching
+`sf.classification.previous` property/classpath pair.
