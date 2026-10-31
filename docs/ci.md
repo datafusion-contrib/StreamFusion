@@ -104,7 +104,7 @@ only metric-name recognition; workloads, timing and the pinned baseline stay unc
 
 Ordinary CI builds all workspace debug native libraries once in a dedicated Ubuntu 24.04
 job. That job verifies the package dependencies and JNI export boundaries, then uploads only
-the shared libraries as a commit-specific artifact. The four Java and eleven lake-module
+the shared libraries as a commit-specific artifact. The eight Java and eleven lake-module
 test jobs download those libraries into `native/target/debug` and pass
 `-Dnative.build.skip=true` to Maven. Both JDKs and Flink lines exercise the same native build;
 each consumer still compiles its selected Java reactor and runs its existing tests. A failed
@@ -170,6 +170,36 @@ The Java suite logs host memory/swap/CPU counters with `vmstat` every 30 seconds
 shutdown retains resource evidence in the job log even when artifact upload cannot run.
 A shutdown signal alone does not prove a JVM or host out-of-memory condition; inspect these
 counters and any JVM diagnostics before assigning a cause. The job timeout remains 150 minutes.
+
+## Ordinary runtime test shards
+
+Each Flink/JDK pair runs two Java jobs. The complete reactor is compiled first with tests
+deferred; `bin/ci_runtime_test_shards.py` then partitions the compiled runtime classes matching
+Surefire's default `Test*`, `*Test`, `*Tests` and `*TestCase` names. SHA-256 of the relative
+class path assigns each candidate to one shard. Nested classes stay with their outer class,
+and all parameterized invocations stay together. Empty inventories, empty shards and invalid
+indices fail before test execution rather than restoring an unfiltered Surefire run.
+
+The `sf.runtime.testIncludesFile` property activates a runtime-only Maven profile with that
+shard's includes file. Both existing Surefire executions retain their ordinary/ORC tag filters and classpaths.
+The two main-suite selections therefore cover the same runtime tests once per Flink/JDK pair;
+the additional JVM-boundary/cache phase still runs once on JDK 17 for each Flink line, in
+shard 1. Deployment-module tests and bytecode/package checks repeat in each shard, preserving
+the complete reactor's assembly order and module-owned test selections. Local `mvn test`
+does not activate this profile.
+
+The three classes producing the required portable, recovery and rescale SQL audit JSON files
+stay in shard 1, whose upload still fails if those files are absent. A regression checks that
+the artifact producers match this pinned set. Each job also uploads its selected classes and
+complete-inventory digest as a runtime-partition artifact; failure diagnostics have unique
+shard names. The aggregate gate requires all eight Java jobs across both Flink lines and JDKs.
+
+Actual Maven regression fixtures compare the unpartitioned test cases with the combined
+shards, including ORC tags, nested classes, parameterized invocations and existing skips.
+Duplicate executions fail through exclusive result creation, and an intentionally failing
+selected test must still fail Maven. Sharding retains the fresh-process memory boundary
+and distributes its startup cost across jobs under the unchanged 150-minute budget; it does not
+reduce data, assertions, native-work checks or recovery scenarios.
 
 ## Consolidated feature validation
 
