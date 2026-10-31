@@ -96,3 +96,113 @@ fn fast_top1_replacements_emit_updates_even_when_rank_is_not_projected() {
         }
     }
 }
+
+fn updating_ranker(projected: bool) -> UpdatableTopNRanker {
+    UpdatableTopNRanker::new(
+        vec![0],
+        vec![-1],
+        vec![0, 1],
+        vec![-1, -1],
+        vec![SortColumn {
+            index: 2,
+            ascending: true,
+            nulls_first: true,
+        }],
+        3,
+        projected,
+        true,
+    )
+}
+
+fn updating_batch(rows: &[(i64, i64, i8)]) -> RecordBatch {
+    RecordBatch::try_from_iter(vec![
+        (
+            "k",
+            Arc::new(Int64Array::from(vec![1; rows.len()])) as ArrayRef,
+        ),
+        (
+            "id",
+            Arc::new(Int64Array::from_iter_values(rows.iter().map(|row| row.0))),
+        ),
+        (
+            "score",
+            Arc::new(Int64Array::from_iter_values(rows.iter().map(|row| row.1))),
+        ),
+        (
+            ROW_KIND_COLUMN,
+            Arc::new(Int8Array::from_iter_values(rows.iter().map(|row| row.2))),
+        ),
+    ])
+    .unwrap()
+}
+
+#[test]
+fn updating_projected_rank_retains_the_overflow_group_and_continues_after_restore() {
+    let mut ranker = updating_ranker(true);
+    ranker
+        .push(&updating_batch(&[(3, 10, 0), (4, 20, 0), (5, 30, 0)]), 0)
+        .unwrap();
+    ranker.push(&updating_batch(&[(2, 15, 0)]), 0).unwrap();
+    assert_eq!(ranker.groups.iter().next().unwrap().1.len(), 4);
+    let snapshots = ranker
+        .snapshot_partitions(128)
+        .into_values()
+        .collect::<Vec<_>>();
+    let mut restored = UpdatableTopNRanker::restore_partitions(
+        vec![0],
+        vec![-1],
+        vec![0, 1],
+        vec![-1, -1],
+        vec![SortColumn {
+            index: 2,
+            ascending: true,
+            nulls_first: true,
+        }],
+        3,
+        true,
+        true,
+        &snapshots,
+        0,
+    );
+    let input = updating_batch(&[(5, 7, 2)]);
+    assert_eq!(
+        write_ipc(&ranker.push(&input, 0).unwrap()),
+        write_ipc(&restored.push(&input, 0).unwrap())
+    );
+    assert_eq!(restored.groups.iter().next().unwrap().1[0].stored_kind, 2);
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn updating_raw_codec_accepts_old_rows_and_preserves_new_row_kinds_with_bounds() {
+    use crate::state::RocksStateCodec;
+    let mut ranker = updating_ranker(true);
+    ranker
+        .push(&updating_batch(&[(3, 10, 0), (4, 20, 0)]), 0)
+        .unwrap();
+    let codec = UpdatableTopNStateCodec::new(ranker.converters.as_ref().unwrap());
+    let key = ranker.groups.iter().next().unwrap().0 .0.to_vec();
+    let partition = ranker.groups.get_mut(&key).unwrap();
+    let mut old = Vec::new();
+    codec.raw_write(partition, &mut old);
+    assert_eq!(codec.value_bytes(partition), old.len());
+    assert!(codec.from_raw(&old).iter().all(|row| row.stored_kind == 0));
+    partition[1].stored_kind = 2;
+    partition.first_rank_end = Some(FirstRankEnd {
+        value: 3,
+        written_at: 1234,
+    });
+    let mut new = Vec::new();
+    codec.raw_write(partition, &mut new);
+    assert_eq!(codec.value_bytes(partition), new.len());
+    assert_eq!(&new[..old.len()], &old);
+    let decoded = codec.from_raw(&new);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| row.stored_kind)
+            .collect::<Vec<_>>(),
+        vec![0, 2]
+    );
+    assert_eq!(decoded.first_rank_end.unwrap().written_at, 1234);
+}

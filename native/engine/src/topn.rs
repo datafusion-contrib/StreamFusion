@@ -1,5 +1,5 @@
 use crate::*;
-use arrow::array::{Float32Array, Float64Array};
+use arrow::array::{Float32Array, Float64Array, Int8Builder};
 
 mod append_top1;
 #[cfg(test)]
@@ -2986,8 +2986,9 @@ fn diff_top(
 /// Update-fast streaming Top-N — Flink's `UpdatableTopNFunction` (and `FastTop1Function` for
 /// a constant `limit == 1`): rows are replaced in place by a unique key containing the partition
 /// key, with a sort key the planner proved monotonic, so no retraction ever
-/// arrives — an update is just a new version of its row key. Constant bounds keep only the top-N
-/// rows. Variable bounds use Flink's 100-row admission threshold; with a projected rank, they
+/// arrives — an update is just a new version of its row key. Hidden-rank constant bounds keep
+/// only the top-N rows. Projected ranks also retain the first overflow sort group. Variable bounds
+/// use Flink's 100-row admission threshold; with a projected rank, they
 /// retain the first sort-key group beyond N as well. A retained row's later versions preserve its
 /// update identity even while outside the visible ranks. The emitted changelog is the per-input-row diff of the top-N before vs after the mutation — the
 /// retracting ranker's contract, materially identical to Flink's cascade. A tracked row whose sort
@@ -3002,6 +3003,7 @@ pub(crate) struct UpdatableRow {
     pub(crate) sort: OwnedRow,
     pub(crate) payload: Arc<OwnedRow>,
     pub(crate) row_key: ByteKey,
+    pub(crate) stored_kind: i8,
     /// Wall-clock millis of the entry's last write (Flink state-TTL); stays 0 while TTL is off.
     /// Granularity is the row key (Flink's `MapState<rowKey, …>` / the top-1 `ValueState`):
     /// refreshed by an in-place replace, a move, or an insert.
@@ -3069,6 +3071,10 @@ impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
             24
         } else {
             0
+        } + if value.iter().any(|entry| entry.stored_kind != 0) {
+            8 + value.len()
+        } else {
+            0
         } + value
             .iter()
             .map(|entry| {
@@ -3102,34 +3108,48 @@ impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
             out.extend_from_slice(&bound.value.to_le_bytes());
             out.extend_from_slice(&bound.written_at.to_le_bytes());
         }
+        if value.iter().any(|entry| entry.stored_kind != 0) {
+            out.extend_from_slice(b"UPKIND01");
+            out.extend(value.iter().map(|entry| entry.stored_kind as u8));
+        }
     }
     fn from_raw(&self, bytes: &[u8]) -> UpdatableTopNPartition {
         let mut cursor = RawListCursor::new(bytes);
         let sort_parser = self.sort.parser();
         let payload_parser = self.payload.parser();
-        let rows = (0..cursor.u32())
+        let mut rows: Vec<_> = (0..cursor.u32())
             .map(|_| UpdatableRow {
                 sort: sort_parser.parse(cursor.bytes()).owned(),
                 payload: Arc::new(payload_parser.parse(cursor.bytes()).owned()),
                 row_key: ByteKey::from(cursor.bytes()),
+                stored_kind: 0,
                 ts_ms: cursor.i64(),
             })
             .collect();
-        let first_rank_end = if cursor.bytes.is_empty() {
-            None
-        } else {
-            assert_eq!(cursor.bytes.len(), 24, "invalid first-bound state trailer");
-            assert_eq!(
-                &cursor.bytes[..8],
-                FIRST_BOUND_MAGIC,
-                "unknown first-bound state version"
-            );
+        let first_rank_end = if cursor.bytes.starts_with(FIRST_BOUND_MAGIC) {
             cursor.bytes = &cursor.bytes[8..];
             Some(FirstRankEnd {
                 value: cursor.i64(),
                 written_at: cursor.i64(),
             })
+        } else {
+            None
         };
+        if !cursor.bytes.is_empty() {
+            assert_eq!(
+                cursor.bytes.len(),
+                8 + rows.len(),
+                "invalid update row-kind trailer"
+            );
+            assert_eq!(
+                &cursor.bytes[..8],
+                b"UPKIND01",
+                "unknown update state trailer"
+            );
+            for (entry, kind) in rows.iter_mut().zip(&cursor.bytes[8..]) {
+                entry.stored_kind = *kind as i8;
+            }
+        }
         TopNPartition {
             rows,
             first_rank_end,
@@ -3343,6 +3363,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let arity = data_arity(batch);
+        let input_kinds = row_kind_column(batch);
         self.schema = Some(data_schema(batch));
         if self.converters.is_none() {
             self.converters = Some(TopNConverters::build(
@@ -3453,6 +3474,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                             sort: key_row.owned(),
                             payload: Arc::new(payloads.row(row).owned()),
                             row_key: ByteKey::from(row_keys.encode(row)),
+                            stored_kind: input_kinds.map_or(0, |kinds| kinds.value(row)),
                             ts_ms: stamp,
                         };
                         if track {
@@ -3469,6 +3491,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                             sort: key_row.owned(),
                             payload: Arc::new(payloads.row(row).owned()),
                             row_key: ByteKey::from(row_keys.encode(row)),
+                            stored_kind: input_kinds.map_or(0, |kinds| kinds.value(row)),
                             ts_ms: stamp,
                         };
                         if track {
@@ -3482,8 +3505,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                 let row_key = row_keys.encode(row);
                 match buffer.iter().position(|e| &*e.row_key.0 == row_key) {
                     Some(index) => {
-                        trim_overflow = rank_ends.is_some()
-                            && positional_updates
+                        trim_overflow = positional_updates
                             && index >= limit
                             && key_row < buffer[index].sort.row();
                         let old_payload = Arc::clone(&buffer[index].payload);
@@ -3496,6 +3518,8 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                                     - buffer[index].payload.row().as_ref().len() as isize;
                             }
                             buffer[index].payload = payload;
+                            buffer[index].stored_kind =
+                                input_kinds.map_or(0, |kinds| kinds.value(row));
                             buffer[index].ts_ms = stamp;
                         } else {
                             let previous = buffer.remove(index);
@@ -3509,6 +3533,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                                     sort: key_row.owned(),
                                     payload: Arc::new(payloads.row(row).owned()),
                                     row_key: previous.row_key,
+                                    stored_kind: input_kinds.map_or(0, |kinds| kinds.value(row)),
                                     ts_ms: stamp,
                                 },
                             );
@@ -3525,13 +3550,10 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                     }
                     None => {
                         let pos = buffer.partition_point(|e| e.sort.row() <= key_row);
-                        if rank_ends.is_some() {
-                            if buffer.len() >= 100
-                                && buffer.last().is_some_and(|last| key_row >= last.sort.row())
-                            {
-                                continue;
-                            }
-                        } else if pos >= limit {
+                        let admission = if rank_ends.is_some() { 100 } else { limit };
+                        if buffer.len() >= admission
+                            && buffer.last().is_some_and(|last| key_row >= last.sort.row())
+                        {
                             continue;
                         }
                         let input = Arc::new(payloads.row(row).owned());
@@ -3541,13 +3563,14 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                                 sort: key_row.owned(),
                                 payload: Arc::clone(&input),
                                 row_key: ByteKey::from(row_key),
+                                stored_kind: input_kinds.map_or(0, |kinds| kinds.value(row)),
                                 ts_ms: stamp,
                             },
                         );
                         if track {
                             delta += updatable_entry_bytes(&buffer[pos]) as isize;
                         }
-                        if rank_ends.is_some() && positional_updates {
+                        if positional_updates {
                             trim_overflow = true;
                         } else {
                             if buffer.len() > limit {
@@ -3687,6 +3710,10 @@ fn write_raw_updatable_snapshot_partition<'a>(
     let has_bounds = entries
         .iter()
         .any(|(_, state)| state.first_rank_end.is_some());
+    let has_kinds = entries
+        .iter()
+        .any(|(_, state)| state.iter().any(|row| row.stored_kind != 0));
+    let mut stored_kinds = Int8Builder::new();
     let mut bounds = Int64Builder::new();
     let mut bound_timestamps = Int64Builder::new();
     let mut keys = BinaryBuilder::new();
@@ -3696,6 +3723,7 @@ fn write_raw_updatable_snapshot_partition<'a>(
     let mut write_timestamps = Int64Builder::new();
     for (key, buffer) in entries {
         if buffer.is_empty() && buffer.first_rank_end.is_some() {
+            stored_kinds.append_value(0);
             keys.append_value(&key.0);
             sorts.append_null();
             row_keys.append_null();
@@ -3705,6 +3733,7 @@ fn write_raw_updatable_snapshot_partition<'a>(
             bound_timestamps.append_value(buffer.first_rank_end.unwrap().written_at);
         }
         for (index, entry) in buffer.iter().enumerate() {
+            stored_kinds.append_value(entry.stored_kind);
             let bound = buffer.first_rank_end.filter(|_| index == 0);
             bounds.append_option(bound.map(|bound| bound.value));
             bound_timestamps.append_option(bound.map(|bound| bound.written_at));
@@ -3721,6 +3750,9 @@ fn write_raw_updatable_snapshot_partition<'a>(
         Field::new(RAW_SNAPSHOT_ROW_KEY, DataType::Binary, has_bounds),
         Field::new(RAW_SNAPSHOT_ROW, DataType::Binary, has_bounds),
     ];
+    if has_kinds {
+        fields.push(Field::new("$stored_kind$", DataType::Int8, false));
+    }
     if ttl_on {
         fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
     }
@@ -3741,6 +3773,9 @@ fn write_raw_updatable_snapshot_partition<'a>(
         Arc::new(row_keys.finish()),
         Arc::new(rows.finish()),
     ];
+    if has_kinds {
+        columns.push(Arc::new(stored_kinds.finish()));
+    }
     if ttl_on {
         columns.push(Arc::new(write_timestamps.finish()));
     }
@@ -3882,6 +3917,12 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
             let sorts = column_binary(&batch, RAW_SNAPSHOT_SORT);
             let row_keys = column_binary(&batch, RAW_SNAPSHOT_ROW_KEY);
             let rows = column_binary(&batch, RAW_SNAPSHOT_ROW);
+            let stored_kinds = batch.column_by_name("$stored_kind$").map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<Int8Array>()
+                    .expect("update row kind")
+            });
             let write_timestamps = batch
                 .column_by_name(TTL_TS_COLUMN)
                 .is_some()
@@ -3920,6 +3961,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                     sort: sort_parser.parse(sorts.value(row)).owned(),
                     payload: Arc::new(payload_parser.parse(rows.value(row)).owned()),
                     row_key: ByteKey::from(row_keys.value(row)),
+                    stored_kind: stored_kinds.map_or(0, |kinds| kinds.value(row)),
                     ts_ms: write_timestamps
                         .as_ref()
                         .map_or(restored_at_ms, |ts| ts.value(row)),

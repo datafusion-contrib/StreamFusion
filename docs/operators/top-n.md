@@ -84,11 +84,13 @@ Also native: a projected rank number and both insert-only and retracting changel
 a projected or hidden rank. `RANK`/`DENSE_RANK` never reach the matcher at all —
 Flink itself rejects them in streaming, so that's parity, not a gap.
 
-An update-fast offset retains ranks 1 through rankEnd, including the hidden prefix, so unique-key
-updates can move rows across the visible boundary. Its output uses Flink's positional update
+An update-fast offset retains the hidden prefix, so unique-key updates can move rows across the
+visible boundary. Projected ranks and offsets also preserve the first overflow sort group visited
+by Flink's rank iteration. That group can own a unique key whose later version moves into view. Its output uses Flink's positional update
 cascades even when rank is not projected. An updated row moving into the hidden prefix retracts
 its former visible position before the remaining visible transitions. Checkpoints and canonical
-memory/RocksDB transitions retain the prefix and reapply the selected range on restore.
+memory/RocksDB transitions retain the prefix, overflow group and original row kinds, then reapply
+the selected range on restore. Kind-less legacy native snapshots still read as INSERT rows.
 
 A hidden-rank retracting offset follows the selected Flink backend's value-copy semantics.
 With heap state, a cascade mutates shared retained row kinds; later retractions compare those

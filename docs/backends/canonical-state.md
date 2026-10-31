@@ -87,3 +87,11 @@ before merging the next batch. Otherwise a non-resident value is mistaken for an
 and overwritten. The restore hook uses actual serialized keys and preserves raw TTL write ages;
 ordinary input reads continue to apply normal expiry checks. This is correctness groundwork for
 stock-compatible state projection; benchmarking remains deferred until that functionality is complete.
+
+Update-fast native checkpoint rows preserve their original INSERT/UPDATE_AFTER kind alongside
+payloads and unique keys. Memory snapshots add a kind column only when needed; typed RocksDB
+adds an optional tagged row-kind trailer after its existing rows and optional first-bound state.
+Readers accept older kind-less snapshots as INSERT rows, while all-INSERT values keep their
+previous representation. Projected fixed ranks also retain the first overflow sort group visited
+by Flink, so a later version of an already retained hidden key keeps its update identity after
+restore. These changes apply to ordinary native checkpoints as well as canonical handoff.
