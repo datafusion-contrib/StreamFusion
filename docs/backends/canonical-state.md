@@ -133,3 +133,12 @@ for decimal precision 18/19/38, millisecond/nanosecond timestamps, negative epoc
 nested generic rows and arrays. These controls pass against Flink 2.2.1 and 1.18.1. They do
 not establish cross-version savepoint interoperability. Benchmarking and tuning remain
 deferred until the full functional handoff is complete.
+
+The shared stock canonical capture helper freezes managed operator state alongside managed keyed
+state at the same synchronous barrier boundary. Both snapshot futures are captured before the temporary keyed view
+is cleared. A synchronous capture failure cancels both futures without replacing the original
+error. This preserves stock operator metadata such as UNION list distribution without an
+intermediate native snapshot. Window watermark support prepares the released `watermark` UNION
+list with its `LongSerializer` and minimum-on-restore rule, including Flink's maximum-value sentinel;
+it rejects unexpected operator/broadcast state and incompatible metadata. These foundations do not
+yet qualify native windows for stock savepoint interchange under #569.
