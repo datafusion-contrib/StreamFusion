@@ -24,6 +24,34 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class FlinkInferredNestedScalarSqlHarnessTest {
   @ParameterizedTest
+  @ValueSource(strings = {"nn-root", "nn-child"})
+  void nonNullOutputHintsKeepReleasedBehavior(String mode) {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var runs =
+          NativeFailureParity.run(
+              () -> environment(96, mode, metrics), "SELECT id,inferred(r) FROM inputs");
+      if (mode.equals("nn-root")) {
+        runs.assertFailure(
+            RuntimeException.class,
+            "Column 'EXPR$1' is NOT NULL",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
+      } else assertValues(runs, metrics);
+    }
+  }
+
+  @Test
+  void nonNullRootResultsKeepSuccessfulFilteredValues() {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      assertValues(
+          NativeFailureParity.run(
+              () -> environment(96, "nn-root", metrics),
+              "SELECT id,inferred(r) FROM inputs WHERE r IS NOT NULL"),
+          metrics);
+    }
+  }
+
+  @ParameterizedTest
   @ValueSource(
       strings = {
         "SELECT id,inferred(r) FROM inputs",
@@ -185,6 +213,12 @@ class FlinkInferredNestedScalarSqlHarnessTest {
   private static TableEnvironment register(TableEnvironment table, String mode) {
     ScalarFunction function;
     switch (mode) {
+      case "nn-root":
+        function = new NonNullRoot();
+        break;
+      case "nn-child":
+        function = new NonNullChild();
+        break;
       case "delegating":
         function = new FlinkNestedScalarSqlHarnessTest.CustomInference();
         break;
@@ -219,6 +253,30 @@ class FlinkInferredNestedScalarSqlHarnessTest {
       return TypeInference.newBuilder()
           .typedArguments(nestedType())
           .outputTypeStrategy(TypeStrategies.explicit(nestedType()))
+          .build();
+    }
+  }
+
+  public static class NonNullRoot extends Typed {
+    @Override
+    public TypeInference getTypeInference(DataTypeFactory factory) {
+      return TypeInference.newBuilder()
+          .typedArguments(nestedType())
+          .outputTypeStrategy(TypeStrategies.explicit(nestedType().notNull()))
+          .build();
+    }
+  }
+
+  public static class NonNullChild extends Typed {
+    @Override
+    public TypeInference getTypeInference(DataTypeFactory factory) {
+      var output =
+          DataTypes.ROW(
+              DataTypes.FIELD("value", DataTypes.BIGINT().notNull()),
+              DataTypes.FIELD("tags", DataTypes.ARRAY(DataTypes.STRING())));
+      return TypeInference.newBuilder()
+          .typedArguments(nestedType())
+          .outputTypeStrategy(TypeStrategies.explicit(output))
           .build();
     }
   }
