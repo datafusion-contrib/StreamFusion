@@ -5080,7 +5080,7 @@ final class RexExpression {
             || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(node.getType())
             || SqlTypeFamily.CHARACTER.contains(node.getType()))
         && (containsNonNullableDecimalArithmetic(node)
-            || containsNonNullableOverflowingDecimalCast(node));
+            || containsNonNullableDecimalNullProducer(node));
   }
 
   private static boolean containsNonNullableDecimalArithmetic(RexNode node) {
@@ -5093,9 +5093,9 @@ final class RexExpression {
         || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalArithmetic);
   }
 
-  private static boolean containsNonNullableOverflowingDecimalCast(RexNode node) {
+  private static boolean containsNonNullableDecimalNullProducer(RexNode node) {
     if (node instanceof RexFieldAccess) {
-      return containsNonNullableOverflowingDecimalCast(((RexFieldAccess) node).getReferenceExpr());
+      return containsNonNullableDecimalNullProducer(((RexFieldAccess) node).getReferenceExpr());
     }
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
@@ -5109,10 +5109,21 @@ final class RexExpression {
         // These consumers resolve the NULL flag rather than leaving a default result term.
         return false;
       default:
-        return !call.getType().isNullable() && decimalCastCanOverflow(call)
+        return !call.getType().isNullable()
+                && (decimalCastCanOverflow(call) || noncompactDecimalSignCanReturnNull(call))
             || call.getOperands().stream()
-                .anyMatch(RexExpression::containsNonNullableOverflowingDecimalCast);
+                .anyMatch(RexExpression::containsNonNullableDecimalNullProducer);
     }
+  }
+
+  private static boolean noncompactDecimalSignCanReturnNull(RexCall call) {
+    RelDataType type = call.getType();
+    return call.getOperator()
+            == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.SIGN
+        && call.getOperands().size() == 1
+        && type.getSqlTypeName() == SqlTypeName.DECIMAL
+        && type.getPrecision() > 18
+        && type.getPrecision() == type.getScale();
   }
 
   private static boolean decimalCastCanOverflow(RexCall call) {

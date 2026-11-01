@@ -1070,7 +1070,13 @@ when `p = s`. Direct inputs, typed literals/NULLs, same-scale lossless precision
 and nested admitted SIGN calls retain the resolved precision and scale without JVM evaluation.
 For `p > s`, the result is scaled `-1`, `0` or `1`. For noncompact `DECIMAL(p,p)`, nonzero
 values become NULL, zero remains scaled zero, and input NULLs remain NULL, matching released
-Flink. Arithmetic, precision narrowing, rescaling, other unverified producers and compact
+Flink. NOT NULL basic-type final consumers of that noncompact NULL-producing SIGN retain the
+complete generated projection write rule: stock can write `false`, `-1` or an empty string
+instead of exposing the intermediate NULL. Nullable consumers and retained NULL/truth tests
+keep their existing native rules; direct DECIMAL results still reach ERROR/DROP enforcement.
+This repairs [#584](https://github.com/datafusion-contrib/StreamFusion/issues/584) without
+changing the SIGN kernel or claiming new acceleration. Arithmetic, precision narrowing,
+rescaling, other unverified producers and compact
 `DECIMAL(p,p)` SIGN keep complete generated evaluation. Widening a compact SIGN intermediate
 does not make it eligible. Array evaluation allocates result values without mutating the
 input; ordinary-decimal validity is shared and noncompact `p = s` derives result validity.
@@ -1455,9 +1461,10 @@ already carry a probed native port of the legacy `Double.toString` spelling; mov
 float-to-string `CAST` onto that port instead of the upcall is a separate, tracked follow-up.)
 
 NOT NULL BOOLEAN, integer, approximate numeric and character projections containing
-NOT NULL DECIMAL arithmetic or potentially overflowing exact-numeric DECIMAL casts also
-keep their complete generated expression and original projection write rule. Overflow can
-set a runtime NULL flag even when the resolved input is NOT NULL. Released Flink can then
+NOT NULL DECIMAL arithmetic, potentially overflowing exact-numeric DECIMAL casts or
+noncompact `DECIMAL(p,p)` SIGN also keep their complete generated expression and original
+projection write rule. These operations can set a runtime NULL flag even when the resolved
+input is NOT NULL. Released Flink can then
 write a separate result term, such as
 `false` for a comparison, `-1` for a DECIMAL-to-INT/BIGINT cast, or an empty string for
 a comparison cast to STRING. A split Arrow evaluation instead exposes NULL and incorrectly
@@ -1467,15 +1474,16 @@ Nullable projections and WHERE conditions keep their NULL flags, and selected
 division-by-zero still fails. Direct overflowing DECIMAL outputs still reach ERROR/DROP
 enforcement; defaults are not substituted globally. Only affected projections use this
 correctness path. No option or acceleration claim is introduced. See
-[the arithmetic reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581)
-and [the explicit CAST reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/582).
+[the arithmetic reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581),
+[the explicit CAST reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/582)
+and [the SIGN reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/584).
 The CAST proof covers integer-to-DECIMAL conversions whose target cannot hold the source
 type's full integral range, and DECIMAL conversions that reduce integral capacity or can
 round into an extra integral digit without room for that carry. For example, `99.5` from
 `DECIMAL(3,1)` overflows `DECIMAL(2,0)` after rounding. Conversions with sufficient integral
 capacity, including an extra digit for rounding when needed, retain their existing native
 execution. Retained IS NULL/IS NOT NULL and truth-test consumers resolve the NULL flag
-themselves, so they do not require the new CAST protection. A truth test rewritten by
+themselves, so they do not require the CAST/SIGN protection. A truth test rewritten by
 Flink into an ordinary comparison still needs the comparison's projection contract.
 FLOAT/DOUBLE-to-DECIMAL casts also retain this protection because their values can exceed
 the target precision. Direct TRY_CAST retains its nullable result and preceding route.
