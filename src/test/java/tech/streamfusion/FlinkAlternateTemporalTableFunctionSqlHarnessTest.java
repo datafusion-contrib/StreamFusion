@@ -27,7 +27,7 @@ class FlinkAlternateTemporalTableFunctionSqlHarnessTest {
     return Stream.of(
         System.getProperty(
                 "temporal.bridge.cases",
-                "date-sql;time-integer;time-long;time-sql;timestamp-sql;ltz-integer;ltz-long;ltz-sql")
+                "date-sql;time-integer;time-long;time-sql;timestamp-sql;ltz-integer;ltz-long;ltz-sql;yearmonth-integer;daytime-long")
             .split(";"));
   }
 
@@ -145,7 +145,7 @@ class FlinkAlternateTemporalTableFunctionSqlHarnessTest {
               "Invalid value for NanoOfSecond",
               NativeFailureParity.Phase.COLLECTION,
               NativeFailureParity.Route.NATIVE);
-        } else if (!left && !bridge.startsWith("date-")) {
+        } else if (!left && (bridge.startsWith("timestamp-") || bridge.startsWith("ltz-"))) {
           runs.assertFailure(
               RuntimeException.class,
               "Column 'm' is NOT NULL",
@@ -298,6 +298,8 @@ class FlinkAlternateTemporalTableFunctionSqlHarnessTest {
   }
 
   static String kind(String bridge) {
+    if (bridge.startsWith("yearmonth-")) return "YEAR_MONTH";
+    if (bridge.startsWith("daytime-")) return "DAY_TIME";
     if (bridge.startsWith("date-")) return "DATE";
     if (bridge.startsWith("time-")) return "TIME";
     return bridge.startsWith("ltz-") ? "TIMESTAMP_LTZ(9)" : "TIMESTAMP(9)";

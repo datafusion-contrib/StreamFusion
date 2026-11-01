@@ -399,6 +399,14 @@ Container signatures admit these additional direct scalar argument and result co
 | TIME | `Integer`, `Long`, `java.sql.Time` | Milliseconds of day, nanoseconds of day, JDBC time |
 | TIMESTAMP | `java.sql.Timestamp` | JDBC timestamp with the released precision/zone behavior |
 | TIMESTAMP_LTZ | `Integer`, `Long`, `java.sql.Timestamp` | Epoch seconds, epoch milliseconds, JDBC timestamp |
+| INTERVAL YEAR/MONTH | `Integer` | Total months |
+| INTERVAL DAY/TIME | `Long` | Total milliseconds |
+
+The boxed interval increment adds 18 selected JUnit invocations on each supported Flink
+line, with zero failures/errors/skips. Positive/negative months and millisecond durations,
+NULLs, non-null metadata, Row/atomic results, LEFT padding, lifecycle/failures and repeated
+heap/RocksDB recovery use the same released-converter matrix. Primitive interval bridges
+and alternate bridges nested inside containers remain guarded.
 
 The same bridges work as external Row result fields and atomic results with nullable or
 non-null metadata. The existing released converters retain truncation, overflow, timestamp

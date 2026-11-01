@@ -96,6 +96,10 @@ final class TableFunctionMatcher {
         return conversion == Integer.class
             || conversion == Long.class
             || conversion == java.sql.Timestamp.class;
+      case INTERVAL_YEAR_MONTH:
+        return conversion == Integer.class;
+      case INTERVAL_DAY_TIME:
+        return conversion == Long.class;
       default:
         return false;
     }

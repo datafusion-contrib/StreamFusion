@@ -11,7 +11,8 @@ class AlternateTemporalTableFunctionBenchmark {
         System.getProperty(
                 "temporal.bridge.benchcases",
                 "date-sql:array;time-integer:array;time-long:array;time-sql:array;timestamp-sql:array;"
-                    + "ltz-integer:array;ltz-long:array;ltz-sql:array;date-sql:list;timestamp-sql:list")
+                + "ltz-integer:array;ltz-long:array;ltz-sql:array;date-sql:list;timestamp-sql:list;"
+                + "yearmonth-integer:array;daytime-long:array")
             .split(";")) {
       var parts = signature.split(":");
       UdfTypeBoundaryBenchmark.run(
