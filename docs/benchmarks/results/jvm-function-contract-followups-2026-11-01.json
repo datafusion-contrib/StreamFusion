@@ -3909,5 +3909,8 @@
       "errors": 0
     },
     "extended_fixture_sha256": "d5ea3d48276c7e98dbb08ff0a8e2cc69d9d101db0a4e7d5dc2a74df39bc748eb"
-  }
+  },
+  "rebased_production_revision": "c617ad52161478f7ebe4172d2c3faedea535d764",
+  "production_sources_identical_to_measured_revision": true,
+  "exact_measured_fixture_reproduction_patch": "docs/benchmarks/sources/jvm-contract-followup-measured-fixtures.patch"
 }

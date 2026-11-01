@@ -157,3 +157,10 @@ root-NULL sink failure, released non-null-child behavior and successful filtered
 The final selection passes 255 checks on 2.2.1 and 254 plus the existing ARRAY_SORT N/A on
 1.18.1. The artifact keeps the original measurement revision and records extended validation
 separately; the timed fixture bodies are unchanged.
+
+The follow-up measurement used a local pre-rebase commit. Production sources are identical
+to the rebased revision recorded in the artifact. For byte-for-byte fixture reproduction,
+check out that rebased revision and apply the [measured-fixture patch](sources/jvm-contract-followup-measured-fixtures.patch)
+before copying fixtures into the baseline and compiling. It removes only the later NOT NULL
+controls; verify the recorded fixture hashes. This preserves public reproduction after rebasing
+onto the parent coverage merge without changing measured production code.
