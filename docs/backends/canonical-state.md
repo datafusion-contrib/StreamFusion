@@ -143,6 +143,17 @@ list with its `LongSerializer` and minimum-on-restore rule, including Flink's ma
 it rejects unexpected operator/broadcast state and incompatible metadata. These foundations do not
 yet qualify native windows for stock savepoint interchange under #569.
 
+The native SESSION transfer primitive visits scalar accumulators and actual merged bounds
+directly from memory or typed RocksDB, in batches of at most 1,024 sessions. The persistent
+reader decodes bounded chunks rather than hydrating the full session map or serializing a
+native snapshot. Import validates schemas and rejects duplicate or still-overlapping sessions,
+including conflicts with earlier import batches; subsequent input can bridge restored sessions.
+NULL keys remain distinct from ordinary keys. Receiver failures leave the live state available
+for retry, and restored memory is reserved against the operator budget and released on close.
+The primitive rejects membership data views until their separate stock contract is installed.
+Native controls cover both stores, keyless state, bridging, malformed namespaces, bounded export
+and memory-limit cleanup. This foundation alone does not qualify the whole SESSION family.
+
 The native tumbling transfer primitive exposes running scalar accumulator fields, grouping keys
 and window bounds directly from memory or typed RocksDB. Transfer batches contain at most 1,024
 rows; the initial RocksDB reader uses its decoded state view after draining pending updates.

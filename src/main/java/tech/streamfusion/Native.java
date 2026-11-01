@@ -17,6 +17,13 @@ public final class Native {
 
   public static native void exportTumblingAggregatorCanonical(long handle, BatchReceiver receiver);
 
+  public static native void exportSessionAggregatorCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importSessionAggregatorCanonical(
+      long handle, int keyArity, long arrayAddress, long schemaAddress);
+
+  public static native void restoreSessionCanonicalWatermark(long handle, long watermark);
+
   public static native void importTumblingAggregatorCanonical(
       long handle, int keyArity, long arrayAddress, long schemaAddress);
 

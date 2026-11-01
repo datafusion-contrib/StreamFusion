@@ -1,6 +1,8 @@
 use crate::window_calendar::WindowCalendar;
 use crate::*;
 
+mod canonical;
+
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
 /// incremental accumulators folding in its rows. The start is the map key that holds it.
 pub(crate) struct Session {
