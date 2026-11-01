@@ -1232,3 +1232,19 @@ as an intermediate. Native checkpoint encoding remains separate from this stock-
 The complete stock bounded accumulator, buffer, counter and timer contract, legacy versions and
 upstream OVER UDF execution remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
+
+
+### Released bounded processing-time bookkeeping
+
+Released Flink 2.2.1 bounded ROWS state cannot always be reconstructed from the logical frame
+width or its retained row count. For a width-one frame, retracting the first input can leave
+`smallestTSState = Long.MAX_VALUE` before the next clock bucket is inserted. After inputs 1, 2, 3,
+the stock operator can retain the last two rows with SUM 5 and COUNT 2 while `processedCountState`
+remains 1. Replacing that minimum clock or deriving the processed counter from the buffer would
+change subsequent results. The canonical adapter must preserve the actual state protocol.
+
+Eight generated released-operator controls cover width-one and width-three frames, heap and
+RocksDB, repeated and advancing clocks, and stock canonical savepoint continuation. They resolve
+aggregate field order from the actual compiled plan. These are stock protocol controls, not
+bidirectional bounded-OVER qualification; the full contract remains required under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
