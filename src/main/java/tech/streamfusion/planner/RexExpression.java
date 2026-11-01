@@ -2694,9 +2694,15 @@ final class RexExpression {
       return emitBuiltinCall(call, 124);
     }
     if ("STARTSWITH".equals(functionName)) {
+      if (call.getOperands().size() == 2
+          && call.getOperands().stream().allMatch(arg -> SqlTypeFamily.BINARY.contains(arg.getType())))
+        return emitBuiltinCall(call, 235);
       return emitCharacterFunction(call, 100, 2, 2);
     }
     if ("ENDSWITH".equals(functionName)) {
+      if (call.getOperands().size() == 2
+          && call.getOperands().stream().allMatch(arg -> SqlTypeFamily.BINARY.contains(arg.getType())))
+        return emitBuiltinCall(call, 236);
       return emitCharacterFunction(call, 101, 2, 2);
     }
     if (call.getOperator()
@@ -4426,7 +4432,7 @@ final class RexExpression {
         return true;
       case "STARTSWITH":
       case "ENDSWITH":
-        return SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType());
+        return false;
       case "ELT":
         return input == SqlTypeName.INTEGER && SqlTypeFamily.BINARY.contains(call.getType());
       case "FROM_BASE64":

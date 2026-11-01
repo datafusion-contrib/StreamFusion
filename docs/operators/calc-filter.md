@@ -1698,15 +1698,27 @@ benchmark results and do not disable otherwise verified expressions.
 
 ### STARTSWITH
 
-Binary overloads of STARTSWITH and ENDSWITH use released Flink code through the batch JVM
-bridge. They compare bytes directly, retaining empty-prefix/suffix and NULL behavior, and never
-decode binary inputs as text. Literal and runtime binary operands are supported within the
-generated expression.
+On released Flink 2.2, binary `STARTSWITH` uses a native byte-comparison kernel for
+literal and runtime BINARY/VARBINARY operands, including mixtures of the two. It never
+decodes bytes as text. Empty prefixes match every non-NULL input; a longer prefix does
+not match, and either NULL operand returns NULL. Fixed-width bytes retain their padding;
+the comparison creates variable offsets without copying their values buffer. SQL casts
+that produce those bytes retain their separately documented admission rules. Scalar
+operands are evaluated once rather than expanded to a full batch. Sliced inputs retain
+their offsets and validity; empty filtered batches do not evaluate projections.
+These binary overloads are absent from released Flink 1.18 and are not an additional
+StreamFusion SQL extension. Binary ENDSWITH uses the same byte contract at the suffix boundary.
 
 Two character arguments, literal or column. Matches a literal prefix, including Unicode and
 empty strings; any NULL argument returns NULL. Wildcard characters have no special meaning.
 
 ### ENDSWITH
+
+On released Flink 2.2, BINARY/VARBINARY arguments use the native byte-comparison kernel
+described under STARTSWITH, comparing the trailing bytes. Empty suffixes, longer needles,
+NULLs, arbitrary byte values, fixed padding, scalar arguments and slices follow the same
+rules. No generated JVM evaluator is bound for either binary comparison. Released Flink
+1.18 does not register these binary overloads.
 
 Two character arguments with the same NULL and type rules as STARTSWITH. Matches a literal
 suffix; an empty suffix matches every non-NULL string. Wildcards have no special meaning.
