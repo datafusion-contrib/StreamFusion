@@ -159,10 +159,15 @@ public final class IntegralExpressionBenchmarkFunctions {
       case "BIGINT": return row % 17 == 0 ? Long.MIN_VALUE
           : (row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v);
       default:
-        if (!type.equals("DECIMAL(18,2)") && !type.equals("DECIMAL(38,18)"))
-          throw new IllegalArgumentException(type);
-        int precision = type.equals("DECIMAL(18,2)") ? 18 : 38;
-        int scale = type.equals("DECIMAL(18,2)") ? 2 : 18;
+        int precision;
+        int scale;
+        switch (type) {
+          case "DECIMAL(18,2)": precision = 18; scale = 2; break;
+          case "DECIMAL(19,19)": precision = 19; scale = 19; break;
+          case "DECIMAL(38,18)": precision = 38; scale = 18; break;
+          case "DECIMAL(38,38)": precision = 38; scale = 38; break;
+          default: throw new IllegalArgumentException(type);
+        }
         BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
         BigInteger unscaled = row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
             : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v));

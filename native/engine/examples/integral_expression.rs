@@ -167,11 +167,13 @@ fn main() {
         "SMALLINT" => Arc::new(Int16Array::from_iter(values.map(|v| v.map(|v| v as i16)))),
         "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
         "BIGINT" => Arc::new(Int64Array::from_iter(values)),
-        "DECIMAL(18,2)" | "DECIMAL(38,18)" => {
-            let (precision, scale) = if element == "DECIMAL(18,2)" {
-                (18, 2)
-            } else {
-                (38, 18)
+        "DECIMAL(18,2)" | "DECIMAL(19,19)" | "DECIMAL(38,18)" | "DECIMAL(38,38)" => {
+            let (precision, scale) = match element {
+                "DECIMAL(18,2)" => (18, 2),
+                "DECIMAL(19,19)" => (19, 19),
+                "DECIMAL(38,18)" => (38, 18),
+                "DECIMAL(38,38)" => (38, 38),
+                _ => unreachable!(),
             };
             let maximum = 10_i128.pow(precision as u32) - 1;
             let values = (0..rows).map(|row| {

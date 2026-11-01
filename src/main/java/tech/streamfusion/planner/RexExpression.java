@@ -4686,10 +4686,16 @@ final class RexExpression {
   }
 
   private static boolean nativeDecimalSignOperand(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL) return false;
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
     if (nativeDecimalSign(call)) return true;
+    if (isDecimalArithmetic(call)
+        && (call.getKind() == SqlKind.PLUS || call.getKind() == SqlKind.MINUS
+            || call.getKind() == SqlKind.TIMES)) {
+      return call.getOperands().stream().allMatch(RexExpression::nativeDecimalSignOperand);
+    }
     if (call.getKind() != SqlKind.CAST || call.getOperands().size() != 1) return false;
     var source = call.getOperands().get(0).getType();
     var target = call.getType();
