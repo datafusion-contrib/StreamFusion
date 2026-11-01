@@ -4508,7 +4508,7 @@ final class RexExpression {
                 != org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE
             || call.getType().getSqlTypeName() == SqlTypeName.INTEGER
             || call.getType().getSqlTypeName() == SqlTypeName.BIGINT)
-        && nativeIntegralRoundingOperand(call.getOperands().get(0));
+        && nativeIntegralRoundingOperand(call.getOperands().get(0), call.getOperator());
   }
 
   private static boolean nativeStringClassification(RexCall call) {
@@ -4535,19 +4535,22 @@ final class RexExpression {
         || call.getType().getSqlTypeName() != call.getOperands().get(0).getType().getSqlTypeName()
         || !(call.getOperands().get(1) instanceof RexLiteral)
         || call.getOperands().get(1).getType().getSqlTypeName() != SqlTypeName.INTEGER
-        || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return false;
+        || !nativeIntegralRoundingOperand(call.getOperands().get(0), call.getOperator())) return false;
     var position = (RexLiteral) call.getOperands().get(1);
     Integer value = position.getValueAs(Integer.class);
     return position.isNull() || value != null && value >= -38 && value <= 38;
   }
 
-  private static boolean nativeIntegralRoundingOperand(RexNode node) {
+  private static boolean nativeIntegralRoundingOperand(RexNode node, SqlOperator operation) {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
     if (nativeIntegralRounding(call)
         || nativeIntegralRoundPosition(call)
         || nativeIntegralTruncatePosition(call)) return true;
+    if (operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FLOOR
+        && nativeIntegralArithmetic(call, operand -> nativeIntegralRoundingOperand(operand, operation)))
+      return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())
@@ -4555,7 +4558,7 @@ final class RexExpression {
                 call.getOperands().get(0).getType().getSqlTypeName(),
                 call.getType().getSqlTypeName())
             >= 0
-        && nativeIntegralRoundingOperand(call.getOperands().get(0));
+        && nativeIntegralRoundingOperand(call.getOperands().get(0), operation);
   }
 
   private static boolean nativeDecimalSign(RexCall call) {

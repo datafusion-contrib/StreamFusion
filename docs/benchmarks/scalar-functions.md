@@ -4880,3 +4880,71 @@ Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, 
 `SF_INTEGRAL_EXPRESSION='SIGN((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
 `sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
 prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.
+
+## Integer FLOOR over arithmetic
+
+The existing native FLOOR implementation now admits recursively verified integer addition,
+subtraction and multiplication over its input/literal, lossless-widening and nested-function
+whitelist. Each arithmetic node keeps its resolved signed width and Java overflow wrapping.
+Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain
+the complete generated expression. No configuration switch is added.
+
+The [result record](results/integral-arithmetic-floor-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-floor-2026-11-01.csv.gz) retain all paired controls, warmups,
+measurements, allocation probes and complete-job samples. Release/default-feature/mimalloc,
+JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows per
+trial compare released generated Java on prepared GenericRowData/BinaryRowData with
+production Calc on matching Arrow. Native timers and equivalent checksum consumption are
+inside Rust; initial JNI/import/export and both perimeter transposes are outside this
+small-operation timer. Intrinsic previous JVM computation remains timed. The actual
+independently compiled preceding main encoder is required to bind an evaluator; the
+candidate requires the intended native function and empty JVM descriptors. Nullable/NOT NULL
+declarations match both inputs, including actual NULLs every seven rows where selected.
+
+Typed addition and nested multiplication cover every supported integer width and both row
+representations at 1,024 rows; INT/BIGINT addition also has 16-row controls. SIGN and TRUNCATE
+retain released Flink's direct narrow-integer compilation failures and use INT/BIGINT here.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.073-0.385x | 10.848-33.897x | 8 / 8 |
+| 1.18.1 | 1,024 | 1.526-11.036x | 11.725-85.888x | 0 / 32 |
+| 2.2.1 | 16 | 0.078-0.377x | 11.285-34.749x | 8 / 8 |
+| 2.2.1 | 1,024 | 1.568-12.272x | 10.653-90.189x | 0 / 32 |
+
+The bulk matrix has 0 slower cells out of 64;
+the tiny-batch matrix has 16 slower cells out of 16.
+Fixed Calc/result costs remain visible on small computations. Independent stock-control
+drift ranges from 0.592 to 1.601x; cross-process ratios do not isolate variability.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes. Parallelism is one, with two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty descriptors.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.123600 (0.122369-0.129598) | 0.151265 (0.137397-0.159724) | 0.126829 (0.118631-0.138255) | 0.164821 (0.157293-0.189417) |
+| 1.18.1 / nested | 0.125440 (0.118526-0.154963) | 0.140254 (0.138623-0.154078) | 0.127278 (0.122852-0.136469) | 0.163857 (0.157304-0.179982) |
+| 2.2.1 / add | 0.143825 (0.125135-0.170857) | 0.149311 (0.146698-0.163415) | 0.132833 (0.129114-0.141480) | 0.167962 (0.162157-0.214726) |
+| 2.2.1 / nested | 0.128320 (0.122758-0.130398) | 0.145575 (0.143623-0.154209) | 0.137148 (0.122207-0.147096) | 0.166432 (0.160759-0.177441) |
+
+Native/paired-stock elapsed-time ratios range from 1.038 to
+1.224; native/previous ratios range from
+0.856 to 0.918. Ratios above one are slower.
+Retain overlapping ranges, independent stock drift and unfavorable complete jobs. Prepared
+bulk qualification does not establish a universal or complete-job throughput improvement.
+Remaining small-batch and perimeter costs stay in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+All 132 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17.
+Runtime witnesses compare complete values, types, NULLs, cardinality and unique IDs across
+multiple batches, and require consumed native work, no fallback and empty JVM descriptors.
+Existing selected/unselected failures, empty filtered batches and unverified-producer guards
+remain covered. The unchanged released upstream method also passes on all four pairs; its
+local expression assertions supplement the independent runtime native-work witnesses.
+Both Java lines compile for release 11. No new Rust production code is introduced by this
+producer-admission change.
+
+Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, setting
+`SF_INTEGRAL_EXPRESSION='FLOOR((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
+`sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
+prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.

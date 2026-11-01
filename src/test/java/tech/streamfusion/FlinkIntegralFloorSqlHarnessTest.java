@@ -82,7 +82,7 @@ class FlinkIntegralFloorSqlHarnessTest {
   void unverifiedProducersKeepTheGeneratedProgram() {
     for (String expression :
         List.of(
-            "FLOOR(v+1)",
+            "FLOOR(v+MOD(v,2))",
             "FLOOR(-v)",
             "FLOOR(CAST(CAST(v AS SMALLINT) AS INT))",
             "FLOOR(1/(id-id))")) {

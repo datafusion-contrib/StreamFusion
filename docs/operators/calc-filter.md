@@ -1510,8 +1510,10 @@ value, resolved width and NULL. Verified direct inputs, typed literals, nested a
 integer rounding and recursive lossless integer widening reuse the operand's
 native expression without a JVM evaluator or
 floating-point conversion. This preserves signed minima and BIGINT values above 2^53.
-Arithmetic, narrowing and other unverified producers retain the enclosing generated rounding
-program, including its overflow, selected failures, lazy branches and empty-batch behavior.
+FLOOR also admits recursively verified integer addition, subtraction and multiplication;
+each node retains its resolved width and Java wrapping overflow. Other arithmetic producers
+for CEIL/CEILING, division, remainder, narrowing and unverified producers retain the enclosing
+generated rounding program, including its selected failures, lazy branches and empty-batch behavior.
 DECIMAL and temporal rounding keep their separate contracts below.
 
 Runtime regressions require consumed native work over 5,003 rows per integer width and
@@ -1519,6 +1521,8 @@ Runtime regressions require consumed native work over 5,003 rows per integer wid
 release controls beat stock and the preceding callback; 16-row and complete row-source
 jobs retain the measured limits in [Integer FLOOR](../benchmarks/scalar-functions.md#integer-floor)
 and [Integer CEIL / CEILING](../benchmarks/scalar-functions.md#integer-ceil-ceiling).
+The [FLOOR arithmetic controls](../benchmarks/scalar-functions.md#integer-floor-over-arithmetic)
+separately qualify the composed integer producers and retain complete-job costs.
 
 ### Single-argument integer ROUND
 
