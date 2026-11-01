@@ -11,6 +11,7 @@ import org.apache.flink.table.api.internal.TableImpl;
 import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.planner.operations.PlannerQueryOperation;
@@ -21,13 +22,14 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeParser;
 import tech.streamfusion.operator.NativeUdf;
 
-/** Actual released SQL/encoder controls for exact numeric expressions. */
+/** Actual released SQL/encoder controls for prepared scalar expressions. */
 public final class IntegralExpressionBenchmarkFunctions {
   private static NativeUdf.Binding binding;
   private static FlinkExpressionFunction stock;
   private static RowData[] rows;
   private static String type;
   private static boolean booleanOutput;
+  private static boolean stringOutput;
   private static volatile long consumed;
 
   private IntegralExpressionBenchmarkFunctions() {}
@@ -37,6 +39,9 @@ public final class IntegralExpressionBenchmarkFunctions {
     Thread.currentThread().setContextClassLoader(IntegralExpressionBenchmarkFunctions.class.getClassLoader());
     type = element;
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+    if (type.equals("BOOLEAN"))
+      table.getConfig().set("table.exec.legacy-cast-behaviour",
+          Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
     String declaration = type + (nullable ? "" : " NOT NULL");
     table.executeSql("CREATE TABLE inputs(v " + declaration + ") WITH ('connector'='datagen')");
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
@@ -46,13 +51,28 @@ public final class IntegralExpressionBenchmarkFunctions {
     LogicalType inputType = LogicalTypeParser.parse(declaration, getLoader());
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
+    stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
+        || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
         new LogicalType[] {inputType}, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
       @Override public ClassLoader getUserCodeClassLoader() { return getLoader(); }
     };
     stock.open(context);
-    var encoded = RexExpression.encodeProjections(project.getProjects(), List.of("v"));
+    var encoded = type.equals("BOOLEAN") ? null
+        : RexExpression.encodeProjections(project.getProjects(), List.of("v"));
+    if (type.equals("BOOLEAN")) {
+      var constructor = RexExpression.class.getDeclaredConstructor();
+      constructor.setAccessible(true);
+      encoded = constructor.newInstance();
+      var configure = RexExpression.class.getDeclaredMethod("configure", org.apache.flink.table.api.TableConfig.class);
+      configure.setAccessible(true);
+      configure.invoke(encoded, table.getConfig());
+      var emit = RexExpression.class.getDeclaredMethod("emit", org.apache.calcite.rex.RexNode.class);
+      emit.setAccessible(true);
+      if (!(Boolean) emit.invoke(encoded, project.getProjects().get(0)))
+        throw new IllegalStateException("Expected an admitted Boolean expression");
+    }
     if (encoded == null)
       throw new IllegalStateException("Expected an admitted integer expression");
     boolean previous = Boolean.getBoolean("sf.integral.previous");
@@ -71,7 +91,8 @@ public final class IntegralExpressionBenchmarkFunctions {
     return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
         "kinds", encoded.kinds(), "payload", encoded.payload(),
         "child_counts", encoded.childCounts(), "longs", constants,
-        "doubles", encoded.doubles(), "strings", encoded.strings(), "boolean_output", booleanOutput));
+        "doubles", encoded.doubles(), "strings", encoded.strings(),
+        "boolean_output", booleanOutput, "string_output", stringOutput));
   }
 
   private static ClassLoader getLoader() {
@@ -81,6 +102,7 @@ public final class IntegralExpressionBenchmarkFunctions {
   private static Object value(String type, int row) {
     long v = row * 7919L;
     switch (type) {
+      case "BOOLEAN": return row % 2 == 0;
       case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE : (byte) v;
       case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE : (short) v;
       case "INT": return row % 17 == 0 ? Integer.MIN_VALUE : (int) ((row % 2 == 0 ? -1L : 1L) * v);
@@ -106,6 +128,11 @@ public final class IntegralExpressionBenchmarkFunctions {
         RowData result = (RowData) stock.evalRow(input);
         if (result.isNullAt(0)) sum--;
         else if (booleanOutput) sum += result.getBoolean(0) ? 1 : 0;
+        else if (stringOutput) {
+          var value = (BinaryStringData) result.getString(0);
+          int length = value.getSizeInBytes();
+          sum += length + (length == 0 ? 0 : value.byteAt(0) + value.byteAt(length - 1));
+        }
         else switch (type) {
           case "TINYINT": sum += result.getByte(0); break;
           case "SMALLINT": sum += result.getShort(0); break;

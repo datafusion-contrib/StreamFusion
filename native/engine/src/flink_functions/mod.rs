@@ -55,6 +55,7 @@ mod array_timsort;
 mod ascii;
 mod binary_boundary;
 mod binary_strings;
+mod boolean_string;
 mod cardinality;
 mod charset;
 mod chr;
@@ -110,6 +111,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         241 => numeric_classification::alpha(),
         242 => numeric_classification::digit(),
         243 => numeric_classification::decimal(),
+        244 => boolean_string::function(),
         65 => sign::function(),
         67 => ascii::function(),
         81 => chr::function(),

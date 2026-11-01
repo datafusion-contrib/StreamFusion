@@ -1,6 +1,7 @@
 //! Release stock/previous/native integer-expression controls; native timers stay inside Rust.
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Decimal128Array, Int16Array, Int32Array, Int64Array, Int8Array,
+    StringArray,
 };
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -21,6 +22,8 @@ struct EncodedProgram {
     doubles: Vec<f64>,
     strings: Vec<Option<String>>,
     boolean_output: bool,
+    #[serde(default)]
+    string_output: bool,
 }
 
 macro_rules! java {
@@ -51,6 +54,20 @@ fn checksum(batch: &RecordBatch) -> i64 {
         DataType::Int16 => sum!(Int16Array),
         DataType::Int32 => sum!(Int32Array),
         DataType::Int64 => sum!(Int64Array),
+        DataType::Utf8 => batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .iter()
+            .map(|value| {
+                value.map_or(-1, |value| {
+                    value.len() as i64
+                        + value.as_bytes().first().map_or(0, |v| i64::from(*v))
+                        + value.as_bytes().last().map_or(0, |v| i64::from(*v))
+                })
+            })
+            .sum(),
         other => panic!("Unsupported exact-numeric-expression output {other}"),
     }
 }
@@ -69,6 +86,10 @@ fn main() {
         .unwrap_or_else(|_| "ABS(v+CAST(1 AS $TYPE))".into());
     let previous_option = format!("-Dsf.integral.previous={previous}");
     let expression_option = format!("-Dsf.integral.expression={expression}");
+    let legacy_option = format!(
+        "-Dsf.integral.legacy={}",
+        std::env::var("SF_INTEGRAL_LEGACY").is_ok()
+    );
     let cp = format!(
         "-Djava.class.path={}",
         std::env::var("SF_NATIVE_BENCH_CLASSPATH").unwrap()
@@ -83,6 +104,7 @@ fn main() {
         .option(&lib)
         .option(&previous_option)
         .option(&expression_option)
+        .option(&legacy_option)
         .option("-Xmx1g")
         .option("-Dstreamfusion.native.development=true")
         .option("--add-opens=java.base/java.nio=ALL-UNNAMED")
@@ -138,6 +160,9 @@ fn main() {
     };
     let values = (0..rows).map(|i| (!nullable || i % 7 != 0).then(|| value(i)));
     let input: ArrayRef = match element {
+        "BOOLEAN" => Arc::new(BooleanArray::from_iter(
+            (0..rows).map(|i| (!nullable || i % 7 != 0).then_some(i % 2 == 0)),
+        )),
         "TINYINT" => Arc::new(Int8Array::from_iter(values.map(|v| v.map(|v| v as i8)))),
         "SMALLINT" => Arc::new(Int16Array::from_iter(values.map(|v| v.map(|v| v as i16)))),
         "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
@@ -188,7 +213,9 @@ fn main() {
     assert_eq!(actual.num_rows(), rows);
     assert_eq!(
         actual.column(0).data_type(),
-        if program.boolean_output {
+        if program.string_output {
+            &DataType::Utf8
+        } else if program.boolean_output {
             &DataType::Boolean
         } else {
             batch.column(0).data_type()

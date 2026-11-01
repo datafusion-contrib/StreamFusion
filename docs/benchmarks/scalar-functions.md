@@ -5449,3 +5449,95 @@ Reproduce with `integral_expression`, for example
 `sf.integral.expression=IS_DECIMAL(v)`. Prepended independently compiled previous-encoder
 classes and `SF_INTEGRAL_PREVIOUS=true` select the preceding callback control. Remaining
 coverage stays in [the classification follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+## BOOLEAN CAST to character
+
+Direct BOOLEAN inputs/literals use a native formatter for STRING and bounded VARCHAR/CHAR.
+Modern mode emits uppercase text, truncates overlength values and pads bounded CHAR;
+legacy mode emits lowercase text without target-length enforcement. NULL remains NULL.
+Computed operands and BOOLEAN character TRY_CAST retain generated Flink evaluation.
+No production switch is added. Both modes use Flink's existing cast configuration.
+
+The [result record](results/boolean-string-cast-2026-11-01.json) and
+[raw trials](results/boolean-string-cast-2026-11-01.csv.gz) retain 152 configurations and
+15,200 main trials. Modern bulk cells cover STRING, VARCHAR(1/3/4/5/8) and
+CHAR(1/3/4/5/8/32); legacy cells cover STRING, VARCHAR(3) and CHAR(8), including their
+ignored target lengths. Both released lines use matching nullable/NOT NULL declarations,
+alternating true/false values and actual NULLs every seven rows where selected, with
+GenericRowData and BinaryRowData controls. Tiny STRING/CHAR(8) cells retain both modes.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial compare released generated Java on prebuilt RowData
+with production Calc on matching Arrow buffers. Both consume UTF-8 length and boundary
+bytes; Java uses BinaryStringData access without copying to a byte array. The Rust timer
+covers the native operation and equivalent consumption, excluding initial JNI/import/export
+and both perimeter transposes. Intrinsic previous JVM computation stays inside timing.
+The actual independently compiled preceding encoder must bind a JVM evaluator; the
+candidate requires the intended function and empty descriptors. Every checksum agrees.
+
+| Flink line | Mode | Batch rows | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1 | modern | 1024 | 48 | 1.626-11.810x | 9.879-19.183x | 0 |
+| 1.18.1 | modern | 16 | 8 | 0.190-1.836x | 22.304-24.939x | 4 |
+| 1.18.1 | legacy | 1024 | 12 | 6.949-17.607x | 12.056-20.007x | 0 |
+| 1.18.1 | legacy | 16 | 8 | 0.825-1.385x | 20.465-24.113x | 4 |
+| 2.2.1 | modern | 1024 | 48 | 1.551-10.159x | 10.185-19.556x | 0 |
+| 2.2.1 | modern | 16 | 8 | 0.198-1.764x | 21.865-23.653x | 4 |
+| 2.2.1 | legacy | 1024 | 12 | 8.237-11.477x | 12.273-17.424x | 0 |
+| 2.2.1 | legacy | 16 | 8 | 0.838-1.031x | 22.531-25.358x | 6 |
+
+Ratios above one favor native. All 120 bulk cells pass the prepared-operation gate;
+18 of 32 tiny cells remain slower than stock. Paired stock-control drift ranges from
+0.597 to 1.844x. Keep every range and unfavorable case rather than treating
+cross-process ratios as causal isolation.
+
+The initial row writer loses the modern cached-STRING probe. The
+[bitmap block technique](../optimizations/boolean-word-blocks.md) reduces the matched
+native median from 6.162 to 2.446 ns/row; paired stock/native moves from 0.657x to 1.601x.
+The [initial](results/boolean-string-cast-probe-2026-11-01.csv.gz) and
+[optimized](results/boolean-string-cast-blocks-probe-2026-11-01.csv.gz) diagnostics retain
+eight cells each, their stock drift and the untimed allocation/buffer observations.
+They remain separate from the main matrix. The output validity is shared; masked NULL
+positions can carry payload, so fewer requested bytes do not imply smaller output buffers.
+
+Separate million-row nullable BOOLEAN source/blackhole jobs retain production JNI,
+planning/startup and both transposes, parallelism one, two warmups and five measurements.
+They require consumed NativeCalc work, no fallback and empty candidate descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-string | 0.158820 (0.157408-0.167913) | 0.159093 (0.154768-0.173915) | 0.157794 (0.144974-0.175266) | 0.191205 (0.188041-0.197415) |
+| 1.18.1 / modern-varchar3 | 0.173374 (0.170471-0.180415) | 0.158684 (0.156780-0.167511) | 0.173464 (0.172478-0.178372) | 0.219246 (0.216342-0.222373) |
+| 1.18.1 / modern-char8 | 0.198373 (0.190325-0.201441) | 0.166334 (0.157919-0.168544) | 0.190850 (0.184823-0.195628) | 0.230782 (0.227496-0.245033) |
+| 1.18.1 / legacy-string | 0.183357 (0.172087-0.197666) | 0.169239 (0.158804-0.179719) | 0.186869 (0.176384-0.253488) | 0.190473 (0.182322-0.195269) |
+| 1.18.1 / legacy-char8 | 0.175425 (0.173670-0.219901) | 0.167376 (0.157756-0.171659) | 0.178774 (0.171553-0.242362) | 0.200614 (0.194548-0.215857) |
+| 2.2.1 / modern-string | 0.161098 (0.151663-0.162549) | 0.162494 (0.156651-0.167074) | 0.155657 (0.150932-0.157231) | 0.193431 (0.183526-0.199987) |
+| 2.2.1 / modern-varchar3 | 0.181900 (0.180263-0.197655) | 0.161911 (0.158735-0.177116) | 0.181335 (0.174057-0.184622) | 0.220254 (0.214121-0.229879) |
+| 2.2.1 / modern-char8 | 0.194581 (0.188651-0.204043) | 0.162995 (0.158961-0.171878) | 0.193474 (0.183651-0.200218) | 0.227816 (0.222634-0.248081) |
+| 2.2.1 / legacy-string | 0.170059 (0.169012-0.170231) | 0.161957 (0.159721-0.165669) | 0.178505 (0.172566-0.190951) | 0.189525 (0.187156-0.201872) |
+| 2.2.1 / legacy-char8 | 0.179689 (0.173855-0.195317) | 0.160113 (0.159534-0.168144) | 0.171615 (0.170076-0.182689) | 0.182692 (0.178134-0.195459) |
+
+Across these jobs, native/stock elapsed ratios range from 0.838
+to 1.009, and native/previous ratios range from
+0.715 to 0.889. Ratios above one are slower.
+These short full jobs retain startup and overlapping ranges; prepared bulk qualification
+does not establish universal complete-job acceleration.
+
+The initial 172 focused JVM invocations pass, including existing numeric and decimal-cast
+regressions. After the bitmap optimization, all 40 focused invocations pass on released
+Flink 1.18.1/2.2.1 with JDK 11/17, including added string consumers. Runtime-source
+witnesses compare complete 5,003-row outputs, resolved types, NULLs, cardinality and unique
+IDs across batches, and require consumed native work, no fallback and empty descriptors.
+The unchanged released CastRulesTest supplies 535 passing stock-oracle cases on each
+Flink/JDK pair; the separate runtime witnesses establish native execution. Four additional
+shared-state invocations pass. Twelve existing integer/predicate fixture smokes retain
+their types and checksums. Java compiles for release 11; release/default/mimalloc Rust core
+passes 1,019 tests with two pre-existing ignores, including every bitmap word and unaligned
+tail. Strict docs, formatting and source/privacy checks pass.
+
+Reproduce the prepared path with `integral_expression`, BOOLEAN input and
+`SF_INTEGRAL_EXPRESSION='CAST(v AS STRING)'`; set `SF_INTEGRAL_LEGACY=true` for the legacy
+control. Complete jobs use `IntegralExpressionPipelineBenchmark`, `SF_BENCHMARK=true`,
+`sf.integral.booleanInput=true`, `sf.integral.expression=CAST(v AS CHAR(8))` and
+`sf.integral.legacy=true` where selected. These are benchmark controls, not production
+options. Remaining cast coverage stays in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

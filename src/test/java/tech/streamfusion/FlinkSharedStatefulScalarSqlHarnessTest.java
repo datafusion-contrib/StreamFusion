@@ -54,6 +54,13 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
   }
 
   @Test
+  void booleanFormattingDoesNotDiscardStatefulArguments() throws Exception {
+    compare("SELECT id,CAST(tick(a)>0 AS STRING),tick(b) FROM src", 5003, false);
+    compare("SELECT id,CASE WHEN MOD(id,2)=0 THEN CAST(tick(a)>0 AS CHAR(8)) ELSE 'skip' END,tick(b) FROM src",
+        2051, true);
+  }
+
+  @Test
   void numericClassificationDoesNotDiscardStatefulArguments() throws Exception {
     for (String function : List.of("IS_ALPHA", "IS_DIGIT", "IS_DECIMAL")) {
       compare("SELECT id, IS_ALPHA(tick(a)), tick(b) FROM src".replace("IS_ALPHA", function), 5003, false);

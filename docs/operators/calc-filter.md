@@ -1107,9 +1107,15 @@ These scalar rules are separate from grouping-key equality and sort ordering.
 
 ## Casts
 
-BOOLEAN to STRING, bounded VARCHAR and CHAR runs Flink's cast executor through the batch JVM
-bridge inside native Calc. TRUE/FALSE use uppercase text, NULL stays NULL, and bounded targets
-retain Flink's truncation and CHAR padding. TRY_CAST follows the same released cast rules.
+`CAST` from a direct BOOLEAN input or literal to STRING, bounded VARCHAR or CHAR uses a
+native Arrow formatter. Modern mode emits uppercase `TRUE`/`FALSE`, truncates VARCHAR/CHAR
+and pads bounded CHAR with spaces. Legacy mode emits lowercase `true`/`false` and ignores
+the target's length and padding. NULL remains NULL in both modes. Computed operands and
+BOOLEAN-to-character `TRY_CAST` retain generated Flink evaluation.
+The [bitmap word technique](../optimizations/boolean-word-blocks.md) avoids per-row string
+objects and copies common spellings eight values at a time. See the
+[prepared and complete-job measurements](../benchmarks/scalar-functions.md#boolean-cast-to-character),
+including small batches and unfavorable full jobs.
 
 Native, unconditionally, with no host involvement:
 
@@ -1173,7 +1179,7 @@ encoder without table configuration declines this cast instead of guessing the m
 independently of legacy mode. It composes under NOT, COALESCE, AND/OR and filters.
 When its input expression can fail, the existing generated-expression callback preserves
 Flink's input evaluation errors: TRY_CAST only catches conversion failures. The reverse
-BOOLEAN-to-character casts use the host-exact path described above.
+BOOLEAN-to-character casts follow the direct-input and generated paths described above.
 
 ### Integer/string casts
 
@@ -3167,6 +3173,9 @@ subsets now avoid Java; see the [2026-10-26 comparison](../benchmarks/native-cer
 for current measurements and remaining evaluator routes. Verified DECIMAL SIGN also now uses
 the [typed native kernel](../benchmarks/scalar-functions.md#decimal-sign); its historical
 generated-helper row below does not describe the new implementation.
+Direct BOOLEAN character CAST also now uses the
+[native formatter](../benchmarks/scalar-functions.md#boolean-cast-to-character);
+the BOOLEAN-to-STRING row remains historical callback evidence.
 
 The generated functions above extend the expressions that can stay inside a columnar island.
 They are correctness/coverage work, not standalone scalar speedups: Flink still evaluates each

@@ -21,6 +21,7 @@ class IntegralExpressionPipelineBenchmark {
     int warmups = Integer.getInteger("integral.expression.warmups", 2);
     int runs = Integer.getInteger("integral.expression.runs", 5);
     boolean previous = Boolean.getBoolean("sf.integral.previous");
+    boolean booleanInput = Boolean.getBoolean("sf.integral.booleanInput");
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
         .replace("$TYPE", "INT");
     for (int trial = 0; trial < warmups + runs; trial++) {
@@ -29,11 +30,15 @@ class IntegralExpressionPipelineBenchmark {
         try (var metrics = new RecoveryExecutionMetrics()) {
           var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
           var table = StreamTableEnvironment.create(env);
+          if (booleanInput)
+            table.getConfig().set("table.exec.legacy-cast-behaviour",
+                Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
           var source = env.fromSequence(0, count - 1).map(i -> Row.of(i % 7 == 0 ? null
-              : i % 17 == 0 ? Integer.MIN_VALUE : (int) ((i % 2 == 0 ? -1 : 1) * i * 7919)))
-              .returns(Types.ROW_NAMED(new String[] {"v"}, Types.INT));
+              : booleanInput ? (Object) (i % 2 == 0)
+                  : i % 17 == 0 ? Integer.MIN_VALUE : (int) ((i % 2 == 0 ? -1 : 1) * i * 7919)))
+              .returns(Types.ROW_NAMED(new String[] {"v"}, booleanInput ? Types.BOOLEAN : Types.INT));
           table.createTemporaryView("inputs", source,
-              Schema.newBuilder().column("v", DataTypes.INT()).build());
+              Schema.newBuilder().column("v", booleanInput ? DataTypes.BOOLEAN() : DataTypes.INT()).build());
           var resultType = table.sqlQuery("SELECT " + expression + " FROM inputs")
               .getResolvedSchema().getColumnDataTypes().get(0).getLogicalType();
           table.executeSql("CREATE TABLE output_rows(v " + resultType.asSerializableString()

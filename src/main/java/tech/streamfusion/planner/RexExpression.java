@@ -3879,6 +3879,21 @@ final class RexExpression {
     }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
+    if (!tryCast
+        && source == SqlTypeName.BOOLEAN
+        && SqlTypeFamily.CHARACTER.contains(resultType)
+        && legacyCastBehaviour != null
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral)) {
+      add(KIND_CALL, 244, 3);
+      if (!emit(call.getOperands().get(0))) return false;
+      add(KIND_LIT_BOOL, longs.size(), 0);
+      longs.add(legacyCastBehaviour ? 1L : 0L);
+      add(KIND_LIT_INT, longs.size(), 0);
+      longs.add((long) (targetType == SqlTypeName.CHAR
+          ? -resultType.getPrecision() : resultType.getPrecision()));
+      return true;
+    }
     if (SqlTypeFamily.BINARY.contains(sourceType)
         && SqlTypeFamily.CHARACTER.contains(resultType)
         && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
