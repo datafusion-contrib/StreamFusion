@@ -341,6 +341,7 @@ impl TumblingAggregator {
         &mut self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.require_flushed_partial_buffer()?;
         self.validate_canonical_distinct_complete()?;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {

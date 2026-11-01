@@ -735,3 +735,79 @@ fn final_window_partials_merge_once_and_handoff_variable_prefix_bounds() {
         }
     }
 }
+
+#[test]
+fn buffered_partial_namespaces_survive_late_barriers_and_dormant_state_handoffs() {
+    for source_rocks in [false, true] {
+        for target_rocks in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let source_path = directory.path().join("source");
+            let target_path = directory.path().join("target");
+            let mut source = shared(
+                source_rocks.then_some(source_path.as_path()),
+                false,
+                true,
+                true,
+            );
+            let mut target = shared(
+                target_rocks.then_some(target_path.as_path()),
+                false,
+                true,
+                true,
+            );
+            source.set_window_offset(1250);
+            target.set_window_offset(1250);
+            source.enable_stock_partial_buffer(true);
+            target.enable_stock_partial_buffer(true);
+            let partial = |end, count| {
+                RecordBatch::try_from_iter(vec![
+                    ("key0", Arc::new(Int64Array::from(vec![7])) as ArrayRef),
+                    ("partial0", Arc::new(Int64Array::from(vec![count]))),
+                    ("slice_end", Arc::new(Int64Array::from(vec![end]))),
+                ])
+                .unwrap()
+            };
+            source.flush(4151).unwrap();
+            source.update_partial(&partial(5250, 1)).unwrap();
+            assert!(source.require_flushed_partial_buffer().is_err());
+            for mutation in 0..3 {
+                assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                    || match mutation {
+                        0 => source.set_window_offset(250),
+                        1 => source.set_assignment_offset(500),
+                        _ => source.set_final_windows(true),
+                    }
+                ))
+                .is_err());
+            }
+            assert!(source
+                .visit_canonical_state(|_| panic!("pending partial was exported"))
+                .is_err());
+            source.advance_stock_partials(5100, false).unwrap();
+            assert!(source.require_flushed_partial_buffer().is_err());
+            for watermark in [5101, 5251, 5651] {
+                assert_eq!(0, source.flush(watermark).unwrap().num_rows());
+            }
+            source.advance_stock_partials(i64::MIN, true).unwrap();
+            source.require_flushed_partial_buffer().unwrap();
+            assert_eq!(source.memory.state_bytes, source.computed_state_bytes());
+            let mut timers = 0;
+            source
+                .visit_canonical_timers(|batch| {
+                    timers += batch.num_rows();
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(0, timers, "late flush must not invent a cumulative trigger");
+            copy_shared(&mut source, &mut target, false);
+            assert_eq!(0, source.flush(i64::MAX).unwrap().num_rows());
+            target.update_partial(&partial(7250, 2)).unwrap();
+            target.advance_stock_partials(7250, false).unwrap();
+            let output = target.flush(7251).unwrap();
+            assert_eq!(1, output.num_rows());
+            assert_eq!(3, column_i64(&output, "result0").value(0));
+            assert_eq!(7250, column_i64(&output, "window_end").value(0));
+            assert_eq!(0, target.flush(i64::MAX).unwrap().num_rows());
+        }
+    }
+}

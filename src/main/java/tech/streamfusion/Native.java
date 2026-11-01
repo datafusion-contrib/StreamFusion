@@ -860,6 +860,10 @@ public final class Native {
   /** Final-window partials merge into their named end rather than every overlapping window. */
   public static native void setFixedWindowFinalWindows(long handle, boolean enabled);
 
+  public static native void setStockWindowPartialBuffer(long handle, boolean enabled);
+
+  public static native void flushStockWindowPartials(long handle, long watermark, boolean force);
+
   /**
    * Attaches released-Flink deadlines to local fixed-window bounds.
    * @param handle fixed-window handle, either heap or persistent

@@ -4,6 +4,7 @@ use arrow::array::UInt8Array;
 use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
 
 mod canonical;
+mod partial_buffer;
 mod shared;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -324,6 +325,7 @@ pub(crate) struct TumblingAggregator {
     assignment_offset_millis: i64,
     window_offset_millis: i64,
     final_windows: bool,
+    stock_partial_buffer: Option<partial_buffer::PartialBuffer>,
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
     shared_slices: bool,
@@ -399,6 +401,7 @@ impl TumblingAggregator {
             assignment_offset_millis: 0,
             window_offset_millis: 0,
             final_windows: false,
+            stock_partial_buffer: None,
             calendar: None,
             next_timer_deadline: i64::MIN,
             shared_slices: false,
@@ -428,6 +431,8 @@ impl TumblingAggregator {
     }
 
     pub(crate) fn set_calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.require_flushed_partial_buffer()
+            .expect("window calendar binding");
         assert_eq!(
             self.assignment_offset_millis, 0,
             "regional window assignment is local"
@@ -449,7 +454,10 @@ impl TumblingAggregator {
         };
         let offset = offset.rem_euclid(grid);
         assert!(
-            self.windows.is_empty() || offset == self.assignment_offset_millis,
+            (self.windows.is_empty()
+                && self.slice_timers.is_empty()
+                && self.require_flushed_partial_buffer().is_ok())
+                || offset == self.assignment_offset_millis,
             "cannot change the assignment grid of retained window state"
         );
         self.assignment_offset_millis = offset;
@@ -464,7 +472,9 @@ impl TumblingAggregator {
         };
         let offset = offset.rem_euclid(grid);
         assert!(
-            (self.windows.is_empty() && self.slice_timers.is_empty())
+            (self.windows.is_empty()
+                && self.slice_timers.is_empty()
+                && self.require_flushed_partial_buffer().is_ok())
                 || offset == self.window_offset_millis,
             "cannot change the SQL offset of retained window state"
         );
@@ -474,7 +484,9 @@ impl TumblingAggregator {
 
     pub(crate) fn set_final_windows(&mut self, enabled: bool) {
         assert!(
-            (self.windows.is_empty() && self.slice_timers.is_empty())
+            (self.windows.is_empty()
+                && self.slice_timers.is_empty()
+                && self.require_flushed_partial_buffer().is_ok())
                 || enabled == self.final_windows,
             "cannot change the meaning of retained window namespaces"
         );
@@ -555,6 +567,7 @@ impl TumblingAggregator {
         timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        self.require_flushed_partial_buffer()?;
         self.write_through_store()?;
         let watermark = self.current_watermark;
         self.store
@@ -600,18 +613,22 @@ impl TumblingAggregator {
     /// assert the incremental tracking does not drift).
     pub(crate) fn computed_state_bytes(&self) -> usize {
         let bytes = self
-            .windows
-            .values()
-            .map(|window| {
-                window
-                    .keys
-                    .iter()
-                    .map(|(key, accumulators)| {
-                        owned_row_bytes(key) + accumulators_bytes(accumulators)
-                    })
-                    .sum::<usize>()
-            })
-            .sum::<usize>()
+            .stock_partial_buffer
+            .as_ref()
+            .map_or(0, |buffer| buffer.bytes)
+            + self
+                .windows
+                .values()
+                .map(|window| {
+                    window
+                        .keys
+                        .iter()
+                        .map(|(key, accumulators)| {
+                            owned_row_bytes(key) + accumulators_bytes(accumulators)
+                        })
+                        .sum::<usize>()
+                })
+                .sum::<usize>()
             + self
                 .slice_timers
                 .values()
@@ -1466,6 +1483,13 @@ impl TumblingAggregator {
     /// Global half of two-phase aggregation: merges incoming partials
     /// `[key, partial0..partialN-1, slice_end]` into the window each slice belongs to.
     pub(crate) fn update_partial(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        if self.stock_partial_buffer.is_some() {
+            return self.buffer_stock_partial(batch);
+        }
+        self.merge_partial(batch)
+    }
+
+    fn merge_partial(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         self.snapshot_cache = None;
         if self.shared_slices {
             return self.update_shared_partial(batch);
@@ -1968,6 +1992,8 @@ impl TumblingAggregator {
     }
 
     fn snapshot_batch(&mut self) -> RecordBatch {
+        self.require_flushed_partial_buffer()
+            .expect("window snapshot barrier");
         let state_fields: Vec<Field> = self
             .aggregates
             .iter()

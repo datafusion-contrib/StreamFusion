@@ -13,14 +13,17 @@ impl TumblingAggregator {
             - self.effective_assignment_offset()
     }
 
-    fn slice_end_thresholds(&self, ends: impl IntoIterator<Item = i64>) -> BTreeMap<i64, i64> {
+    pub(super) fn slice_end_thresholds(
+        &self,
+        ends: impl IntoIterator<Item = i64>,
+    ) -> BTreeMap<i64, i64> {
         match &self.calendar {
             Some(calendar) => calendar.end_thresholds(ends),
             None => ends.into_iter().map(|end| (end, end)).collect(),
         }
     }
 
-    fn shared_assignments(&mut self, slice_ends: &[i64]) -> Vec<Option<(i64, i64)>> {
+    pub(super) fn shared_assignments(&mut self, slice_ends: &[i64]) -> Vec<Option<(i64, i64)>> {
         let last_end = |end| {
             if self.cumulative_prefix() {
                 self.shared_base(end) + self.window_millis
@@ -81,7 +84,7 @@ impl TumblingAggregator {
         Ok(added)
     }
 
-    fn persist_slice_timers(&mut self) -> Result<(), DataFusionError> {
+    pub(super) fn persist_slice_timers(&mut self) -> Result<(), DataFusionError> {
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut self.store {
             store.put_slice_timers(self.slice_timers.iter().flat_map(|(&end, keys)| {
@@ -92,7 +95,7 @@ impl TumblingAggregator {
         Ok(())
     }
 
-    fn clear_resident_slice_timers(&mut self) {
+    pub(super) fn clear_resident_slice_timers(&mut self) {
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.slice_timers.clear();
@@ -101,7 +104,7 @@ impl TumblingAggregator {
         }
     }
 
-    fn slice_key_group(&self, batch: &RecordBatch, row: usize) -> i32 {
+    pub(super) fn slice_key_group(&self, batch: &RecordBatch, row: usize) -> i32 {
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
             return store.key_group(binary_row_hash(
@@ -179,6 +182,20 @@ impl TumblingAggregator {
         batch: &RecordBatch,
     ) -> Result<(), DataFusionError> {
         let assignments = self.shared_assignments(column_i64(batch, "slice_end").values());
+        self.merge_shared_partial(
+            batch,
+            assignments
+                .into_iter()
+                .map(|assignment| assignment.map(|(target, timer)| (target, Some(timer))))
+                .collect(),
+        )
+    }
+
+    pub(super) fn merge_shared_partial(
+        &mut self,
+        batch: &RecordBatch,
+        assignments: Vec<Option<(i64, Option<i64>)>>,
+    ) -> Result<(), DataFusionError> {
         let key_arrays = key_arrays(batch);
         self.key_types = key_types(&key_arrays);
         let encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
@@ -232,7 +249,9 @@ impl TumblingAggregator {
                         .collect::<Vec<_>>(),
                 )?;
             }
-            self.add_slice_timer(timer, key, self.slice_key_group(batch, row))?;
+            if let Some(timer) = timer {
+                self.add_slice_timer(timer, key, self.slice_key_group(batch, row))?;
+            }
         }
         self.memory.set(self.computed_state_bytes());
         self.memory.account()?;

@@ -169,7 +169,7 @@ exceeds a step. Pane assignment, pending timers and import validation use the sa
 Ordinary native checkpoints preserve the offset and reject partitions with different grids.
 The legacy zero-offset checkpoint representation stays readable. Independent tumbling state
 has no shared timer ledger: its timer visitor is empty and shared-timer import is rejected.
-The native suite passes 1,047 controls (two existing ignores); sixty-four released-operator
+The native suite passes 1,050 controls (two existing ignores); sixty-four released-operator
 controls additionally compare offset continuations and exact DISTINCT counters across both
 state paths and four time zones. Full planner/process qualification remains part of #569;
 canonical export still visits live state directly, without an intermediate native snapshot.
@@ -180,7 +180,7 @@ start derived from the maximum-size grid and SQL offset. Direct canonical import
 these bounds before committing a batch, while native checkpoints retain the mode and reject
 mixed-mode partitions. Legacy slice-mode snapshots remain readable. The handoff control checks
 exact per-end counts, one/two/three-step cumulative bounds, rejected malformed prefixes and raw
-checkpoint continuation across memory and typed RocksDB. The full native suite passes 1,048
+checkpoint continuation across memory and typed RocksDB. The full native suite passes 1,050
 checks with two existing ignores. Canonical export remains a direct live-state visit; the new
 mode does not introduce an intermediate native snapshot or a performance gate.
 
@@ -207,3 +207,17 @@ without loading planner classes on workers. It produces binary rows for stock se
 no StreamFusion serializer is added to savepoint metadata. Controls compare bytes and hashes
 with released generated selectors across compact/non-compact types, nested values, writer reuse,
 row kinds, empty keys and multiword NULL bitmaps.
+
+The native deferred-partial API retains owned Arrow batches until its caller drains them on
+progress or a barrier. It selects namespaces at arrival, registers late-input timers immediately
+and leaves a past shared slice without a fabricated trigger when a buffer flush arrives late.
+A later input can make that retained slice contribute again. Buffer bytes count against the
+operator reservation; imported buffers and dictionary children are copied into native ownership.
+Snapshots reject pending partials and grid changes cannot reinterpret queued rows. Direct
+canonical visitors remain the export path; this adds no intermediate native snapshot.
+
+The full native regression passes 1,050 checks with two existing ignores. Twelve focused
+controls also pass in an isolated foundation checkout, including deferred namespace handoff,
+missing-drain rejection, immutable pending grids and dictionary ownership. Runtime integration
+and broader buffer-capacity qualification remain tracked by
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
