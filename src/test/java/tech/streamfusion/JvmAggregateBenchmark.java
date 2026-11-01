@@ -28,6 +28,8 @@ class JvmAggregateBenchmark {
     int values = Integer.getInteger("jvmagg.values", 0);
     int warmups = Integer.getInteger("jvmagg.warmup", 2);
     int runs = Integer.getInteger("jvmagg.runs", 5);
+    int miniBatchRows = Integer.getInteger("jvmagg.miniBatchRows", 0);
+    int parallelism = Integer.getInteger("jvmagg.parallelism", 1);
     String keyType = System.getProperty("jvmagg.keyType", "int");
     int prefixChars = Integer.getInteger("jvmagg.keyPrefixChars", 16);
     String prefix = prefixChars <= 0 ? "" : "é" + "x".repeat(prefixChars - 1);
@@ -125,10 +127,14 @@ class JvmAggregateBenchmark {
             String selectedEngine = System.getProperty("jvmagg.engine", "both");
             if (!selectedEngine.equals("both")
                 && !selectedEngine.equals(engine == 1 ? "native" : "flink")) continue;
-            var env = metrics.environment(new Configuration(), 1, 0);
-            env.setParallelism(1);
+            var env = metrics.environment(new Configuration(), parallelism, 0);
             var table = StreamTableEnvironment.create(env);
             table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+            table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatchRows > 0));
+            if (miniBatchRows > 0) {
+              table.getConfig().set("table.exec.mini-batch.size", Integer.toString(miniBatchRows));
+              table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+            }
             table.getConfig().setLocalTimeZone(java.time.ZoneOffset.UTC);
             var sequence = env.fromSequence(0, Math.max(0, rows - 1)).filter(i -> i < rows);
             org.apache.flink.streaming.api.datastream.DataStream<Row> source;
@@ -278,6 +284,10 @@ class JvmAggregateBenchmark {
                   "fallback control executed native operators");
             if (engine == 1 && (!jvm || expectedUdf)) {
               RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), groupOperator);
+              if (udf && miniBatchRows > 0) {
+                assertEquals(rows, metrics.counterValue("jvmMiniBatchRows"));
+                assertTrue(metrics.counterValue("jvmMiniBatchBundles") > 0);
+              }
               if (binaryElement || nestedElement)
                 RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
               if (expanded)

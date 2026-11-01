@@ -37,6 +37,7 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] timestampPrecisions;
   private final int[] compactTimestampColumns;
   private final boolean singleKeyGroup;
+  private final boolean projectedKeys;
 
   public NativeColumnarExchangeExecNode(
       ReadableConfig tableConfig,
@@ -46,6 +47,26 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
       int[] keyColumns,
       int[] timestampPrecisions,
       boolean singleKeyGroup) {
+    this(
+        tableConfig,
+        inputProperty,
+        outputType,
+        description,
+        keyColumns,
+        timestampPrecisions,
+        singleKeyGroup,
+        false);
+  }
+
+  public NativeColumnarExchangeExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      int[] keyColumns,
+      int[] timestampPrecisions,
+      boolean singleKeyGroup,
+      boolean projectedKeys) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-columnar-exchange_1"),
@@ -76,6 +97,7 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
                 })
             .toArray();
     this.singleKeyGroup = singleKeyGroup;
+    this.projectedKeys = projectedKeys;
   }
 
   @Override
@@ -113,7 +135,8 @@ public class NativeColumnarExchangeExecNode extends ExecNodeBase<ArrowBatch>
                 timestampPrecisions,
                 maxParallelism,
                 recoverable,
-                compactTimestampColumns),
+                compactTimestampColumns,
+                projectedKeys),
             NativeConfig.zeroCopyExchange(planner.getExecEnv())
                 ? ArrowBatchTypeInformation.ZERO_COPY
                 : ArrowBatchTypeInformation.INSTANCE,

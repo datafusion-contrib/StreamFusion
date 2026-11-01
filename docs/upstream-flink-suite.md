@@ -1342,6 +1342,12 @@ lines, including the 1.18 state contract inventory. These unchanged upstream
 fixtures complement runtime-source regressions for preserved string carriers
 and collection aggregate recovery.
 
+The unchanged SQL `AggregateITCase.testOverloadedAccumulator` requires consumed JVM
+group work for single-phase mini-batching on both supported lines and heap/RocksDB backends.
+The Flink 1.18 changelog-state variant retains explicit full fallback. Route scopes preserve
+each release's exact display names and contract variants; multi-phase, asynchronous and
+collection-result mini-batch exclusions are unchanged.
+
 
 Iceberg's native evidence inventory also requires nested source/sink and maintenance
 round-trips, nested schema evolution, nested equality-key/null-parent handling,

@@ -85,6 +85,28 @@ class StatefulSqlRescaleTest {
       boolean typedTable,
       boolean typedJvm)
       throws Exception {
+    groupedScenario(rocks, directory, jvm, savepoint, typedTable, typedJvm, false);
+  }
+
+  @ParameterizedTest(name = "mini-jvm-rescale-rocks={0}-savepoint={1}")
+  @CsvSource({"false,false", "true,false", "false,true", "true,true"})
+  @org.junit.jupiter.api.condition.DisabledIfSystemProperty(
+      named = "streamfusion.experimental.jvmGroupAggregates",
+      matches = "false")
+  void miniBatchJvmStateAcrossBothDirections(
+      boolean rocks, boolean savepoint, @TempDir Path directory) throws Exception {
+    groupedScenario(rocks, directory, true, savepoint, false, false, true);
+  }
+
+  private void groupedScenario(
+      boolean rocks,
+      Path directory,
+      boolean jvm,
+      boolean savepoint,
+      boolean typedTable,
+      boolean typedJvm,
+      boolean miniBatch)
+      throws Exception {
     List<Row> input = new ArrayList<>();
     String text = "long-duplicate-é🙂".repeat(128);
     for (int k = 0; k < 128; k++) {
@@ -113,7 +135,7 @@ class StatefulSqlRescaleTest {
     report.put("maxParallelism", 128);
     report.put("sourceOffsets", List.of(256, 512, 768));
     report.put("physicalBatchRows", 5);
-    report.put("logicalMiniBatchRows", jvm ? 0 : 3);
+    report.put("logicalMiniBatchRows", jvm && !miniBatch ? 0 : 3);
     report.put("jvmAggregate", jvm);
     report.put("typedJvmAggregate", typedJvm);
     report.put("snapshotFormat", savepoint ? "CANONICAL savepoint" : "externalized checkpoint");
@@ -123,7 +145,8 @@ class StatefulSqlRescaleTest {
             + (savepoint ? "savepoint-" : "")
             + (rocks ? "rocksdb" : "memory")
             + (typedTable ? "-typed-table" : "")
-            + (typedJvm ? "-typed-distinct" : ""),
+            + (typedJvm ? "-typed-distinct" : "")
+            + (miniBatch ? "-mini-batch" : ""),
         report);
     try {
       var reference =
@@ -139,6 +162,7 @@ class StatefulSqlRescaleTest {
               false,
               typedTable,
               typedJvm,
+              miniBatch,
               expected);
       report.put("reference", reference.evidence());
       List<Stage> stages = new ArrayList<>();
@@ -158,6 +182,7 @@ class StatefulSqlRescaleTest {
                 savepoint,
                 typedTable,
                 typedJvm,
+                miniBatch,
                 i == 2 ? expected : null);
         stages.add(stage);
         stageEvidence.add(stage.evidence());
@@ -259,6 +284,7 @@ class StatefulSqlRescaleTest {
       boolean savepoint,
       boolean typedTable,
       boolean typedJvm,
+      boolean miniBatch,
       Map<String, Long> expected)
       throws Exception {
     var type =
@@ -278,7 +304,7 @@ class StatefulSqlRescaleTest {
       var table = (StreamTableEnvironment) recovery.uninterrupted();
       if (typedTable) recovery.executionEnvironment().enableCheckpointing(1000);
       table.getConfig().set("streamfusion.transpose.batchRows", "5");
-      table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(!jvm));
+      table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(!jvm || miniBatch));
       table.getConfig().set("table.exec.mini-batch.size", "3");
       table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
       if (jvm) {
@@ -375,6 +401,10 @@ class StatefulSqlRescaleTest {
         if (nativeRun && typedTable)
           RecoveryExecutionMetrics.assertConsumed(
               recovery.nativeExecution(), "NativeTableFunction");
+        if (nativeRun && miniBatch) {
+          assertTrue(recovery.counterValue("jvmMiniBatchRows") > 0);
+          assertTrue(recovery.counterValue("jvmMiniBatchBundles") > 0);
+        }
         if (expected != null) {
           long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
           while (!expected.equals(materialized(output)) && System.nanoTime() < deadline)

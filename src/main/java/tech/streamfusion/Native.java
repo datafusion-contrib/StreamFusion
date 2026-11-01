@@ -618,6 +618,16 @@ public final class Native {
       int parallelism,
       boolean recoverable);
 
+  /** Uses released JVM key-projection layout for count-sensitive aggregate bundles. */
+  public static native long splitByProjectedKey(
+      long inArrayAddress,
+      long inSchemaAddress,
+      int[] keyColumns,
+      int[] timestampPrecisions,
+      int maxParallelism,
+      int parallelism,
+      boolean recoverable);
+
   /** Copies compact timestamp payloads as Flink's row-shuffle serializer does. */
   public static native void copyCompactTimestampFields(
       long inArrayAddress,

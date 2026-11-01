@@ -45,6 +45,69 @@ import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.ColumnarKeyGroupPartitioner;
 
 class SplitByKeyGroupOperatorTest {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @SuppressWarnings("unchecked")
+  void projectedKeysRetainReleasedCompositeNullSlotRouting(boolean recoverable) throws Exception {
+    var schema =
+        RowType.of(
+            new org.apache.flink.table.types.logical.DecimalType(38, 18),
+            new TimestampType(9),
+            new VarCharType(100),
+            new IntType());
+    int[] fields = {0, 1, 2};
+    var selector =
+        org.apache.flink.table.planner.plan.utils.KeySelectorUtil.getRowDataSelector(
+            getClass().getClassLoader(),
+            fields,
+            org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(schema));
+    var rows = new ArrayList<RowData>();
+    for (int i = 0; i < 96; i++)
+      rows.add(
+          GenericRowData.of(
+              i % 3 == 0
+                  ? null
+                  : org.apache.flink.table.data.DecimalData.fromBigDecimal(
+                      new java.math.BigDecimal(i - 48).movePointLeft(18), 38, 18),
+              i % 5 == 0 ? null : TimestampData.fromEpochMillis(i - 48, i * 997),
+              i % 7 == 0 ? null : StringData.fromString(i % 2 == 0 ? "Aa" : "BB"),
+              i));
+    try (var allocator = new RootAllocator();
+        var harness =
+            new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(
+                new SplitByKeyGroupOperator(
+                    fields, new int[] {-1, 9, -1}, 128, recoverable, new int[0], true),
+                new ArrowBatchSerializer())) {
+      ColumnarShuffleTestOutput.configure(harness, 3, 128, recoverable);
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(rows, schema, allocator))));
+      var seen = new java.util.HashSet<Integer>();
+      for (var item : harness.getOutput()) {
+        if (!(item instanceof StreamRecord<?>)) continue;
+        var batch = ((StreamRecord<ArrowBatch>) item).getValue();
+        try (var root = batch.root()) {
+          int last = -1;
+          int ordinal = 0;
+          for (var row : RowDataArrowConverter.read(root, schema)) {
+            int id = row.getInt(3);
+            assertTrue(seen.add(id));
+            assertTrue(id > last, "retain source order within each destination");
+            last = id;
+            int keyGroup =
+                KeyGroupRangeAssignment.computeKeyGroupForKeyHash(
+                    selector.getKey(rows.get(id)).hashCode(), 128);
+            if (recoverable) {
+              assertEquals(keyGroup, batch.keyGroup());
+              assertEquals(id, batch.rowOrdinals()[ordinal++]);
+            } else assertEquals(keyGroup * 3 / 128, batch.keyGroup() * 3 / 128);
+          }
+        }
+      }
+      assertEquals(96, seen.size());
+    }
+  }
   private static final RowType SCHEMA =
       RowType.of(new LogicalType[] {new BigIntType(), new IntType()}, new String[] {"k", "v"});
   private static final RowType NESTED_SCHEMA =

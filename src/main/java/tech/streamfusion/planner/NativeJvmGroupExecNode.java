@@ -96,40 +96,70 @@ public final class NativeJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
         new EqualiserCodeGenerator(values, planner.getFlinkContext().getClassLoader())
             .generateRecordEqualiser("ColumnarJvmAggEqualiser");
     long retention = stateTtlHint == null ? config.getStateRetentionTime() : stateTtlHint;
-    var function =
-        new GroupAggFunction(
-            handler, equaliser, accTypes, info.getIndexOfCountStar(), updateBefore, retention);
+    boolean miniBatch =
+        config.get(
+            org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED);
     var selector =
         KeySelectorUtil.getRowDataSelector(
             planner.getFlinkContext().getClassLoader(), grouping, InternalTypeInfo.of(inputType));
     // Generated projections reserve bytes for NULL non-compact decimals; the serializer and
     // native exchange omit that reservation. Select the same layout for routing and keyed state.
-    if (Arrays.stream(grouping)
-        .mapToObj(inputType::getTypeAt)
-        .anyMatch(
-            type ->
-                type instanceof org.apache.flink.table.types.logical.DecimalType
-                    && ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision()
-                        > 18))
+    if (!miniBatch
+        && Arrays.stream(grouping)
+            .mapToObj(inputType::getTypeAt)
+            .anyMatch(
+                type ->
+                    type instanceof org.apache.flink.table.types.logical.DecimalType
+                        && ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision()
+                            > 18))
       selector = new tech.streamfusion.operator.SerializedRowKeySelector(inputType, grouping);
     var keyType = grouping.length == 1 ? inputType.getTypeAt(grouping[0]).getTypeRoot() : null;
     if (keyType != org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER
         && keyType != org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT
         && keyType != org.apache.flink.table.types.logical.LogicalTypeRoot.VARCHAR) keyType = null;
+    NativeColumnarJvmGroupOperator operator;
+    if (miniBatch) {
+      var miniFunction =
+          new org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction(
+              handler,
+              equaliser,
+              accTypes,
+              inputType,
+              info.getIndexOfCountStar(),
+              updateBefore,
+              retention);
+      operator =
+          new NativeColumnarJvmGroupOperator(
+              inputType,
+              (RowType) getOutputType(),
+              miniFunction,
+              tech.streamfusion.compat.JvmAggregateCompat.miniBatchTrigger(config),
+              selector,
+              NativeConfig.transposeBatchRows(config),
+              keyType,
+              grouping.length == 1 ? grouping[0] : -1,
+              retention);
+    } else {
+      var function =
+          new GroupAggFunction(
+              handler, equaliser, accTypes, info.getIndexOfCountStar(), updateBefore, retention);
+      operator =
+          new NativeColumnarJvmGroupOperator(
+              inputType,
+              (RowType) getOutputType(),
+              function,
+              selector,
+              NativeConfig.transposeBatchRows(config),
+              Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0),
+              keyType,
+              grouping.length == 1 ? grouping[0] : -1,
+              retention);
+    }
     var transform =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta("native-jvm-group", config),
-            new NativeColumnarJvmGroupOperator(
-                inputType,
-                (RowType) getOutputType(),
-                function,
-                selector,
-                NativeConfig.transposeBatchRows(config),
-                Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0),
-                keyType,
-                grouping.length == 1 ? grouping[0] : -1,
-                retention),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
