@@ -165,6 +165,11 @@ before copying fixtures into the baseline and compiling. It removes only the lat
 controls; verify the recorded fixture hashes. This preserves public reproduction after rebasing
 onto the parent coverage merge without changing measured production code.
 
+The existing ARRAY/MAP inference controls additionally require positive native Calc work for
+delegating default converters, while retaining the internal MapData fallback. Their complete
+38-test regression selection is validated separately on each released line; this changes test
+expectations and coverage documentation, not production code or timed fixture bodies.
+
 The fixture reversal is stored as JSON to retain exact unified-diff context without
 introducing trailing whitespace into the documentation sources. Decode its `patch` field
 to a temporary file, then use `git apply` and verify the fixture SHA-256 from the artifact.

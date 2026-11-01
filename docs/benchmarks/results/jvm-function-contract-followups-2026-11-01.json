@@ -3908,7 +3908,26 @@
       "failures": 0,
       "errors": 0
     },
-    "extended_fixture_sha256": "d5ea3d48276c7e98dbb08ff0a8e2cc69d9d101db0a4e7d5dc2a74df39bc748eb"
+    "extended_fixture_sha256": "d5ea3d48276c7e98dbb08ff0a8e2cc69d9d101db0a4e7d5dc2a74df39bc748eb",
+    "existing_default_converter_regressions": {
+      "note": "Existing delegating ARRAY/MAP inference controls now require matching resolved types and positive NativeCalc input; internal MapData retains explicit fallback. No production or timed fixture changes.",
+      "flink_2_2_1": {
+        "passed": 38,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "flink_1_18_1": {
+        "passed": 38,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_sha256": {
+        "src/test/java/tech/streamfusion/FlinkArrayScalarUdfSqlHarnessTest.java": "ee83c1c550539fe81f5c714e0de294008f19a93657efe6f09267639832c752e7",
+        "src/test/java/tech/streamfusion/FlinkMapScalarUdfSemanticsTest.java": "9f0445f0b90cbada714d74deebd972a41f47d7e230e7a771a87c260ddaa6daaa"
+      }
+    }
   },
   "rebased_production_revision": "c617ad52161478f7ebe4172d2c3faedea535d764",
   "production_sources_identical_to_measured_revision": true,

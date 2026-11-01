@@ -88,7 +88,8 @@ is admitted when released inference selects default external Java conversions re
 for every argument and result. An override that delegates to Flink's default inference is
 also admitted. The existing logical-type, expression and consumer guards still apply.
 Specialization, non-default custom inference and internal Java conversion classes retain
-whole-query fallback. Only external `Row` signatures enter the new gate.
+whole-query fallback. The gate covers the existing external `Row`, ARRAY and MAP signature
+whitelists; it does not widen their logical types or Java method signatures.
 
 The custom-inference increment changes planning admission, not runtime conversion or ownership.
 The released Calc generator retains resolved types, NULLs, named Row field mapping, nested
@@ -103,6 +104,8 @@ RowData and alternate List children remain explicit whole-query fallback control
 this coverage uses the accepted UDF performance exception without an acceleration claim.
 The combined temporal/primitive/inference selection passes 255 checks on 2.2.1 and 254
 on 1.18.1, plus the existing ARRAY_SORT N/A, with zero failures/errors.
+Existing delegating ARRAY/MAP inference regressions also require native Calc input with
+matching values and resolved types; their internal `MapData` alternative retains fallback.
 
 Flink's released converters own external callback inputs and normalize mutable results before the
 next invocation. This retains named-row field mapping, reusable ROW/array results, NULLs, Java
