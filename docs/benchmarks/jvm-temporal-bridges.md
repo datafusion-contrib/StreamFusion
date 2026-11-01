@@ -93,3 +93,23 @@ artifact, prepare that revision's classes with the same profile, and set
 its hash and that the production native sources agree. Do not compile or run other tests
 concurrently with measurements. The retained revision hashes define the measured workload;
 additional bridge cases added later require their own named measurements.
+
+## Additional boxed interval bridges
+
+The [interval artifact](results/jvm-table-function-interval-bridges-2026-11-01.json) retains
+all trials for Integer months and Long milliseconds on both releases. It measures immutable
+`fa31713d` (integrated as `7c866310`) against unchanged `f5274a10`, with the same released DSO
+and complete-job boundaries. Each of the 18 selected correctness controls passes per line.
+The following 262,144-row jobs use ARRAY containers; medians and full measured ranges are seconds.
+
+| Flink / case | Stock in candidate JVM | Candidate native | Stock in previous JVM | Previous enabled fallback |
+| --- | --- | --- | --- | --- |
+| 2.2 / yearmonth-integer:array | 0.100 (0.091–0.102) | 0.202 (0.194–0.208) | 0.097 (0.085–0.100) | 0.095 (0.084–0.098) |
+| 2.2 / daytime-long:array | 0.100 (0.091–0.109) | 0.189 (0.183–0.193) | 0.097 (0.090–0.104) | 0.098 (0.093–0.100) |
+| 1.18 / yearmonth-integer:array | 0.098 (0.095–0.099) | 0.195 (0.191–0.196) | 0.096 (0.096–0.097) | 0.096 (0.090–0.098) |
+| 1.18 / daytime-long:array | 0.091 (0.089–0.101) | 0.178 (0.177–0.187) | 0.098 (0.090–0.099) | 0.098 (0.088–0.104) |
+
+Reproduce with the same benchmark command, selecting `AlternateTemporalTableFunctionBenchmark`
+and `-Dtemporal.bridge.benchcases=yearmonth-integer:array;daytime-long:array` (quote the
+property argument in a shell). Add `,flink-1.18` for that line. These slower native costs remain
+accepted UDF coverage, not an acceleration claim.

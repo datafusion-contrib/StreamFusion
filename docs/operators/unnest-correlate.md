@@ -423,10 +423,14 @@ kinds and two forced restores with heap/native RocksDB. ARRAY and List signature
 UTC, New York and Shanghai sessions for timestamp families. Inputs include negative epochs,
 SQL years 0001–9999, fractional timestamps and DST boundaries. Every successful populated
 case requires consumed native table-function input.
-The focused selection passes 147 JUnit invocations on each of released Flink 1.18.1 and
-2.2.1 with JDK 17 and a fresh release/mimalloc native library: 88 alternate-bridge checks,
+Before the interval increment, the focused selection passes 147 JUnit invocations on each
+of released Flink 1.18.1 and 2.2.1 with JDK 17 and a fresh release/mimalloc native library:
+88 alternate-bridge checks,
 14 nullable boxed-DATE checks, 21 DATE argument controls and 24 DATE result controls,
-with zero failures, errors or skips. These are scoped component/SQL results, not a claim
+with zero failures, errors or skips. After adding the boxed intervals, the combined
+selection passes 165 invocations per line (106 alternate temporal/interval, 14 boxed DATE,
+21 DATE argument and 24 DATE result controls), again without failures/errors/skips.
+These are scoped component/SQL results, not a claim
 of complete #237 coverage or a replacement for the unchanged upstream suite.
 
 NULL values emitted under NOT NULL metadata retain the released outcomes rather than
@@ -439,7 +443,7 @@ projection and atomic LEFT forms still execute.
 
 `AlternateTemporalTableFunctionBenchmark` retains complete production jobs with row sources,
 both perimeter transposes, callback conversion, owned output writes and a blackhole sink.
-It compares all eight bridges with ARRAY containers and additional JDBC DATE/TIMESTAMP List
+The original matrix compares eight bridges with ARRAY containers and additional JDBC DATE/TIMESTAMP List
 cases. Use `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
 -Dnative.build.skip=true -Dtest=AlternateTemporalTableFunctionBenchmark
 -Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5 surefire:test@default-test`;
