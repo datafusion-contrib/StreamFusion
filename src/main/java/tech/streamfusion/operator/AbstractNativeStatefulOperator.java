@@ -17,7 +17,7 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
-import tech.streamfusion.compat.FlinkStreamOperator;
+import tech.streamfusion.compat.FlinkCanonicalStreamOperator;
 import tech.streamfusion.compat.RuntimeCompat;
 import tech.streamfusion.state.CanonicalNativeState;
 import tech.streamfusion.state.RocksDBNativeKeyedStateBackend;
@@ -39,7 +39,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  * else (budget reservation, restore/snapshot plumbing, handle release) is identical across
  * operators and lives here.
  */
-public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkStreamOperator<OUT> {
+public abstract class AbstractNativeStatefulOperator<OUT> extends FlinkCanonicalStreamOperator<OUT> {
 
   private final String stateLabel;
   private final int[] keyTimestampPrecisions;

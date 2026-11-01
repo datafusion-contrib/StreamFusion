@@ -174,6 +174,15 @@ controls additionally compare offset continuations and exact DISTINCT counters a
 state paths and four time zones. Full planner/process qualification remains part of #569;
 canonical export still visits live state directly, without an intermediate native snapshot.
 
+Local windows already emit every pending partial before a checkpoint barrier. A dedicated
+stock-compatible local mode on Flink 2.2 now returns empty snapshot futures after that drain,
+so the stateless stage saves neither native keyed metadata nor serializer references. Missing
+the drain fails the snapshot without consuming the pending partials; it never emits them after
+the barrier. Scalar and counted-DISTINCT controls check all four managed/raw state collections,
+exact frequencies and continued input without replay. Stateful operators and the ordinary local
+mode retain the existing snapshot path by default. The version bridge keeps Flink 1.18's final
+snapshot lifecycle unchanged; this foundation does not establish 1.18 stock interoperability.
+
 When an adapter reconstructs a key from logical fields, ordinary row serialization is not the
 same operation as Flink's generated key projection. The projection reserves NULL variable slots
 for non-compact decimals and timestamps; omitting them changes binary equality and key-group
