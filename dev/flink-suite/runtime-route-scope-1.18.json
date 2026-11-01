@@ -820,20 +820,56 @@
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
-      "display_name": "testOverloadedAccumulator[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
       "count": 1,
+      "display_name": "testOverloadedAccumulator[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=HEAP]",
       "route_by_contract_variant": {
-        "miniBatch=true&aggMode=OFF&changelog=false": "native",
-        "miniBatch=true&aggMode=OFF&changelog=true": "full_fallback"
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
       }
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
-      "display_name": "testOverloadedAccumulator[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
       "count": 1,
+      "display_name": "testOverloadedAccumulator[LocalGlobal=OFF, MiniBatch=OFF, StateBackend=ROCKSDB]",
       "route_by_contract_variant": {
-        "miniBatch=true&aggMode=OFF&changelog=false": "native",
-        "miniBatch=true&aggMode=OFF&changelog=true": "full_fallback"
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "testOverloadedAccumulator[LocalGlobal=OFF, MiniBatch=ON, StateBackend=HEAP]",
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "testOverloadedAccumulator[LocalGlobal=ON, MiniBatch=ON, StateBackend=HEAP]",
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "testOverloadedAccumulator[LocalGlobal=OFF, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
+      }
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator",
+      "count": 1,
+      "display_name": "testOverloadedAccumulator[LocalGlobal=ON, MiniBatch=ON, StateBackend=ROCKSDB]",
+      "route_by_contract_variant": {
+        "changelog=false": "native",
+        "changelog=true": "full_fallback"
       }
     }
   ]

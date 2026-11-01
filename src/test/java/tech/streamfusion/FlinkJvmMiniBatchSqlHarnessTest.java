@@ -18,6 +18,64 @@ import org.junit.jupiter.params.provider.ValueSource;
     matches = "false")
 class FlinkJvmMiniBatchSqlHarnessTest {
   @ParameterizedTest
+  @CsvSource({"false,ONE_PHASE", "true,ONE_PHASE", "true,TWO_PHASE"})
+  void aggregateWithoutMergeRetainsItsActualSinglePhase(boolean enabled, String phase) {
+    for (String sql :
+        java.util.List.of(
+            "SELECT k,nonmerge_max(v) FROM inputs GROUP BY k",
+            "SELECT v,nonmerge_max(CAST(k AS STRING)) FROM inputs GROUP BY v")) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var runs =
+            NativeFailureParity.run(
+                () -> {
+                  var table = environment(7, metrics);
+                  table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(enabled));
+                  table.getConfig().set("table.optimizer.agg-phase-strategy", phase);
+                  table.createTemporarySystemFunction("nonmerge_max", new NoMergeMaximum());
+                  return table;
+                },
+                sql);
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+        assertFalse(runs.host().plan().contains("LocalGroupAggregate"), runs::toString);
+        assertFalse(runs.nativeRun().plan().contains("LocalGroupAggregate"), runs::toString);
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeJvmGroup");
+        assertEquals(enabled, metrics.counterValue("jvmMiniBatchRows") > 0);
+      }
+    }
+  }
+
+  public static class NoMergeMaximum
+      extends org.apache.flink.table.functions.AggregateFunction<Object, Row> {
+    @Override
+    public Row createAccumulator() {
+      return new Row(1);
+    }
+
+    @org.apache.flink.table.annotation.FunctionHint(
+        accumulator = @org.apache.flink.table.annotation.DataTypeHint("ROW<max BIGINT>"),
+        output = @org.apache.flink.table.annotation.DataTypeHint("BIGINT"))
+    public void accumulate(Row state, Long value) {
+      if (value != null && (state.getField(0) == null || value > (Long) state.getField(0)))
+        state.setField(0, value);
+    }
+
+    @org.apache.flink.table.annotation.FunctionHint(
+        accumulator = @org.apache.flink.table.annotation.DataTypeHint("ROW<max STRING>"),
+        output = @org.apache.flink.table.annotation.DataTypeHint("STRING"))
+    public void accumulate(Row state, String value) {
+      if (value != null
+          && (state.getField(0) == null || value.compareTo((String) state.getField(0)) > 0))
+        state.setField(0, value);
+    }
+
+    @Override
+    public Object getValue(Row state) {
+      return state.getField(0);
+    }
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"test_input", "cdc_input"})
   void sharedDistinctAndFilteredViewsRetainBundleChanges(String source) {
     var runs =
