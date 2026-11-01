@@ -1051,15 +1051,19 @@ operators because zero divisors produce IEEE infinity/NaN instead of an exceptio
 ## SIGN
 
 INT/BIGINT SIGN returns `-1`, `0` or `1` in the input's resolved integer width, including
-at INT_MIN and BIGINT_MIN. Direct inputs, typed literals, recursive lossless integer widening
-and nested admitted SIGN calls use Arrow unary kernels without JVM computation. Input values
+at INT_MIN and BIGINT_MIN. Direct inputs, typed literals, recursive lossless integer widening,
+nested admitted SIGN calls and recursively verified integer addition/subtraction/multiplication
+use Arrow unary kernels without JVM computation. Every arithmetic node keeps its resolved
+width and Java overflow wrapping. Input values
 remain owned by the input; result values are allocated and sliced validity is shared. Explicit
 TINYINT/SMALLINT-to-INT/BIGINT widening is covered. Direct TINYINT/SMALLINT SIGN retains
 released Flink's generated-code compilation failure (the numeric result cannot be assigned to `byte/short`).
-Arithmetic, narrowing casts and other unverified producers retain the complete generated SIGN
+Division, remainder, narrowing casts and other unverified producers retain the complete generated SIGN
 program so overflow, NULLs, lazy branches and selected failures do not change.
 This replaces computation inside an already-admitted native Calc without adding a switch.
 See the [release measurements and limits](../benchmarks/scalar-functions.md#integral-sign).
+The [arithmetic-producer comparison](../benchmarks/scalar-functions.md#integer-sign-over-arithmetic)
+retains stock and previous controls, slower tiny batches and complete jobs with both transposes.
 
 DECIMAL SIGN uses a typed Decimal128 kernel for `p > s`, and for precision 19 through 38
 when `p = s`. Direct inputs, typed literals/NULLs, same-scale lossless precision widening

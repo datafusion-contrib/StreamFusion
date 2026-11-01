@@ -24,11 +24,18 @@ class IntegralArithmeticProducerEncodingTest {
     assertVerifiedArithmetic(FlinkSqlOperatorTable.UNARY_MINUS);
   }
 
+  @Test
+  void signAdmitsOnlyRecursivelyVerifiedWrappingIntegerArithmetic() {
+    assertVerifiedArithmetic(FlinkSqlOperatorTable.SIGN);
+  }
+
   private void assertVerifiedArithmetic(SqlOperator function) {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     for (var name : List.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
         SqlTypeName.INTEGER, SqlTypeName.BIGINT)) {
+      if (function == FlinkSqlOperatorTable.SIGN
+          && name != SqlTypeName.INTEGER && name != SqlTypeName.BIGINT) continue;
       var type = types.createSqlType(name);
       RexNode input = rex.makeInputRef(type, 0);
       var one = rex.makeExactLiteral(BigDecimal.ONE, type);

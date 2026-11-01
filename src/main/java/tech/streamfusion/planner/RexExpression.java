@@ -4599,7 +4599,8 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralSign(call)) return true;
+    if (nativeIntegralSign(call)
+        || nativeIntegralArithmetic(call, RexExpression::nativeIntegralSignOperand)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())
