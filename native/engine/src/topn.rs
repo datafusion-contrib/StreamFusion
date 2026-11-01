@@ -1,6 +1,8 @@
 use crate::*;
 use arrow::array::{Float32Array, Float64Array, Int8Builder};
 
+mod window_canonical;
+
 mod append_top1;
 #[cfg(test)]
 mod first_bound_tests;

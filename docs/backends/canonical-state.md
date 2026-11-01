@@ -258,3 +258,15 @@ admission, input release on rejection and required rebinding after restore. Runt
 qualification is separate; this primitive alone does not establish complete SESSION coverage.
 Benchmarking remains deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+The native window Top-N transfer interface visits retained input rows directly, without first
+encoding a native checkpoint. It preserves rank/tie order within each window and partition and
+splits even a single large persisted list into batches of at most 1,024 rows. Memory and typed
+RocksDB use the same transfer schema. Import validates all rows of each batch before updating
+state, and callers install the exclusive firing frontier in the configured native time domain
+before importing rows, including for an empty savepoint. JNI controls verify buffer release on
+invalid input and receiver failure, unchanged retained rows on rejection, and complete retry in
+tie order after a failed export. These primitives leave ordinary checkpoint formats unchanged;
+stock state-schema and planner qualification remain separate parts of
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.

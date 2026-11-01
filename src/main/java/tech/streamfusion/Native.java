@@ -17,6 +17,13 @@ public final class Native {
 
   public static native void exportTumblingAggregatorCanonical(long handle, BatchReceiver receiver);
 
+  public static native void exportWindowRankerCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importWindowRankerCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void restoreWindowRankerCanonicalFrontier(long handle, long frontier);
+
   public static native void exportSessionAggregatorCanonical(long handle, BatchReceiver receiver);
 
   public static native void importSessionAggregatorCanonical(

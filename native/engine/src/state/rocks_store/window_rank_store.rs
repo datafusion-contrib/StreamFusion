@@ -398,14 +398,21 @@ impl RocksWindowRankStore {
                 cursor = rest;
             }
         }
-        if row_slices.is_empty() {
-            return Ok(counts.iter().map(|_| Vec::new()).collect());
+        let mut decoded = self.decode_rows(&row_slices)?.into_iter();
+        Ok(counts
+            .into_iter()
+            .map(|count| decoded.by_ref().take(count).collect())
+            .collect())
+    }
+
+    fn decode_rows(&self, rows: &[&[u8]]) -> Result<Vec<JoinRow>, DataFusionError> {
+        if rows.is_empty() {
+            return Ok(Vec::new());
         }
         let parser = self.row_converter.parser();
-        let parsed: Vec<_> = row_slices.iter().map(|bytes| parser.parse(bytes)).collect();
         let columns = self
             .row_converter
-            .convert_rows(parsed)
+            .convert_rows(rows.iter().map(|bytes| parser.parse(bytes)))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
         let timestamps = columns
             .iter()
@@ -417,24 +424,71 @@ impl RocksWindowRankStore {
                     .transpose()
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let mut buffers = Vec::with_capacity(counts.len());
-        let mut next = 0;
-        for count in counts {
-            let mut rows = Vec::with_capacity(count);
-            for _ in 0..count {
-                let mut scalars = Vec::with_capacity(columns.len());
-                for (column, timestamp) in columns.iter().zip(&timestamps) {
-                    scalars.push(match timestamp {
-                        Some(timestamp) => compact_timestamp_scalar(timestamp, next),
-                        None => ScalarValue::try_from_array(column, next)?,
-                    });
-                }
-                rows.push(scalars);
-                next += 1;
-            }
-            buffers.push(rows);
+        (0..rows.len())
+            .map(|index| {
+                columns
+                    .iter()
+                    .zip(&timestamps)
+                    .map(|(column, timestamp)| match timestamp {
+                        Some(timestamp) => Ok(compact_timestamp_scalar(timestamp, index)),
+                        None => ScalarValue::try_from_array(column, index),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Visits retained rows in each buffer's rank order without hydrating all persisted groups.
+    pub(crate) fn visit_rows(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<JoinRow>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        fn invalid() -> DataFusionError {
+            DataFusionError::Execution("invalid persisted window-rank buffer".into())
         }
-        Ok(buffers)
+        fn count(cursor: &mut &[u8]) -> Result<usize, DataFusionError> {
+            if cursor.len() < 4 {
+                return Err(invalid());
+            }
+            let value = u32::from_le_bytes(cursor[..4].try_into().unwrap()) as usize;
+            *cursor = &cursor[4..];
+            Ok(value)
+        }
+        if chunk_rows == 0 {
+            return Err(invalid());
+        }
+        for entry in self.db.iterator(IteratorMode::Start) {
+            let (key, value) = entry.map_err(re)?;
+            if key.as_ref() == WATERMARK_KEY || key.as_ref() == TIMER_DEADLINE_KEY {
+                continue;
+            }
+            if key.len() < KEY_PREFIX_LEN || value.len() < 4 {
+                return Err(invalid());
+            }
+            let mut cursor = value.as_ref();
+            let length = count(&mut cursor)?;
+            let mut rows = Vec::with_capacity(chunk_rows);
+            for _ in 0..length {
+                let length = count(&mut cursor)?;
+                if length == 0 || length > cursor.len() {
+                    return Err(invalid());
+                }
+                rows.push(&cursor[..length]);
+                cursor = &cursor[length..];
+                if rows.len() == chunk_rows {
+                    accept(self.decode_rows(&rows)?)?;
+                    rows.clear();
+                }
+            }
+            if !cursor.is_empty() {
+                return Err(invalid());
+            }
+            if !rows.is_empty() {
+                accept(self.decode_rows(&rows)?)?;
+            }
+        }
+        Ok(())
     }
 
     /// Persists the late-data watermark, then takes one native checkpoint — touched groups were
