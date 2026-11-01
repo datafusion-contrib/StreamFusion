@@ -108,6 +108,6 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedG
 org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestPrimitiveArrayFromTable	*	NativeColumnarUnnestOperator
 org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestObjectArrayFromTableWithFilter	*	NativeColumnarUnnestOperator
 
-# Released single-phase count bundles retain JVM aggregate work.
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	miniBatch=true&aggMode=OFF&changelog=false	NativeColumnarJvmGroupOperator
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	miniBatch=true&aggMode=OFF&changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+# OverloadedMax has no merge method; synchronous configurations retain one physical phase.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state

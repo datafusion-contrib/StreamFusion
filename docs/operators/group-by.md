@@ -993,7 +993,7 @@ claim. Collection aggregate mini-batching remains outside this scalar admission.
 The [release complete-job comparisons](../benchmarks/jvm-aggregates.md#single-phase-jvm-mini-batches-2026-11-01)
 retain stock and preceding-fallback controls, including the slower three-task STRING cases.
 
-The focused release selection passes 184 checks on Flink 2.2.1 and 181 with three
+The initial focused release selection passes 184 checks on Flink 2.2.1 and 181 with three
 release-specific exclusions on 1.18.1 (STATE_TTL hints). It covers 17 scalar argument/result
 families with append/retract input, count thresholds 1/3/17/1000, parallelism 1/3, nullable
 wide/colliding keys, shared DISTINCT/FILTER, managed ListViews, lifecycle failures and
@@ -1002,6 +1002,10 @@ barriers, controlled TTL clocks and watermarks, with and without restore, and mu
 borrowed input after handover. Heap/native-RocksDB jobs also pass two successive restores
 and checkpoint/canonical-savepoint rescaling through parallelisms 1 → 3 → 2 with verified
 source offsets, key-group ownership, stable operator identities and released memory.
+Three additional phase-selection controls cover an overloaded aggregate without a merge
+method. Released Flink keeps its physical plan single-phase for ordinary execution and for
+both ONE_PHASE and TWO_PHASE mini-batch requests; these cases require consumed JVM group
+input and matching raw changes/types. Actual local/global JVM merge/reset remains pending.
 
 ### Ordinary state and validation
 

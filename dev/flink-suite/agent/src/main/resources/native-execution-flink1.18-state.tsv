@@ -93,3 +93,7 @@ org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedG
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=true&aggMode=ON	!local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys
 org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestPrimitiveArrayFromTable	*	NativeColumnarUnnestOperator
 org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestObjectArrayFromTableWithFilter	*	NativeColumnarUnnestOperator
+
+# OverloadedMax remains single-phase; verify native work with changelog state disabled.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state

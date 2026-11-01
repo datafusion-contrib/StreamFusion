@@ -4421,5 +4421,26 @@
       "exit_code": 0,
       "end_utc": "2026-11-01T17:53:25Z"
     }
-  ]
+  ],
+  "post_benchmark_validation": {
+    "note": "Three additional controls verify actual single-phase planning for an overloaded aggregate without merge under ordinary, ONE_PHASE mini-batch and TWO_PHASE mini-batch requests. Expanded upstream selectors/scopes cover every released fixture parameter and include the 1.18 state inventory. Production and timed benchmark source bodies are unchanged.",
+    "new_phase_controls": {
+      "flink_1_18": {
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "flink_2_2": {
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "execution_contract_python_tests": 38,
+    "extended_test_source_sha256": {
+      "src/test/java/tech/streamfusion/FlinkJvmMiniBatchSqlHarnessTest.java": "0d857bb77e5b6fac44b37ae6f930b39980728a4e9e49bf8734268dfd1f98ed74"
+    }
+  }
 }
