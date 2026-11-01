@@ -12,6 +12,10 @@ pub(super) fn digit() -> ScalarUDF {
     classifier("flink_numeric_is_digit", true)
 }
 
+pub(super) fn decimal() -> ScalarUDF {
+    classifier("flink_numeric_is_decimal", true)
+}
+
 fn classifier(name: &'static str, integral_result: bool) -> ScalarUDF {
     ScalarUDF::new_from_impl(NumericClassification {
         name,
@@ -93,11 +97,11 @@ mod tests {
             ColumnarValue::Scalar(ScalarValue::Int64(Some(i64::MAX))),
             ColumnarValue::Scalar(ScalarValue::Decimal128(None, 38, 38)),
         ]);
-        for function in [alpha(), digit()] {
+        for function in [alpha(), digit(), decimal()] {
             for input in inputs.clone() {
                 let ty = input.data_type();
-                let expected =
-                    function.name().ends_with("digit") && !matches!(ty, DataType::Decimal128(_, _));
+                let expected = !function.name().ends_with("alpha")
+                    && !matches!(ty, DataType::Decimal128(_, _));
                 let rows = match &input {
                     ColumnarValue::Array(array) => array.len(),
                     _ => 3,
@@ -123,7 +127,7 @@ mod tests {
 
     #[test]
     fn unqualified_signatures_are_rejected_without_coercion() {
-        for function in [alpha(), digit()] {
+        for function in [alpha(), digit(), decimal()] {
             for types in [
                 vec![],
                 vec![DataType::Float64],

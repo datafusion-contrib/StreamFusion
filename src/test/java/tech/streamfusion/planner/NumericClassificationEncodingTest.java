@@ -16,7 +16,7 @@ class NumericClassificationEncodingTest {
   void exactNumericPredicatesKeepTheirOperandsWithoutAnEvaluator() {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
-    for (var function : List.of(FlinkSqlOperatorTable.IS_ALPHA, FlinkSqlOperatorTable.IS_DIGIT)) {
+    for (var function : List.of(FlinkSqlOperatorTable.IS_ALPHA, FlinkSqlOperatorTable.IS_DIGIT, FlinkSqlOperatorTable.IS_DECIMAL)) {
       for (var type : List.of(types.createSqlType(SqlTypeName.TINYINT),
           types.createSqlType(SqlTypeName.SMALLINT), types.createSqlType(SqlTypeName.INTEGER),
           types.createSqlType(SqlTypeName.BIGINT), types.createSqlType(SqlTypeName.DECIMAL, 18, 2),
@@ -30,7 +30,7 @@ class NumericClassificationEncodingTest {
             var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
             assertNotNull(encoded);
             assertEquals(6, encoded.kinds()[0]);
-            assertEquals(function == FlinkSqlOperatorTable.IS_ALPHA ? 241 : 242, encoded.payload()[0]);
+            assertEquals(function == FlinkSqlOperatorTable.IS_ALPHA ? 241 : function == FlinkSqlOperatorTable.IS_DIGIT ? 242 : 243, encoded.payload()[0]);
             assertEquals(1, encoded.childCounts()[0]);
             assertTrue(encoded.jvmFunctionCalls().isEmpty());
             assertTrue(encoded.nativeFunctionCalls().contains(function.getName()));
@@ -46,7 +46,7 @@ class NumericClassificationEncodingTest {
     var rex = new RexBuilder(types);
     var type = types.createSqlType(SqlTypeName.INTEGER);
     var input = rex.makeInputRef(type, 0);
-    for (var function : List.of(FlinkSqlOperatorTable.IS_ALPHA, FlinkSqlOperatorTable.IS_DIGIT)) {
+    for (var function : List.of(FlinkSqlOperatorTable.IS_ALPHA, FlinkSqlOperatorTable.IS_DIGIT, FlinkSqlOperatorTable.IS_DECIMAL)) {
       for (var operation : List.of(FlinkSqlOperatorTable.PLUS, FlinkSqlOperatorTable.MINUS,
           FlinkSqlOperatorTable.MULTIPLY, FlinkSqlOperatorTable.DIVIDE, FlinkSqlOperatorTable.MOD)) {
         var argument = rex.makeCall(type, operation, List.of(input, input));
@@ -65,13 +65,12 @@ class NumericClassificationEncodingTest {
   }
 
   @Test
-  void remainingNumericPredicatesAndFloatingSignaturesStayGenerated() {
+  void floatingSignaturesStayGenerated() {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     for (var function : List.of(FlinkSqlOperatorTable.IS_ALPHA,
         FlinkSqlOperatorTable.IS_DIGIT, FlinkSqlOperatorTable.IS_DECIMAL)) {
-      for (var name : List.of(SqlTypeName.INTEGER, SqlTypeName.DOUBLE)) {
-        if (function != FlinkSqlOperatorTable.IS_DECIMAL && name == SqlTypeName.INTEGER) continue;
+      for (var name : List.of(SqlTypeName.DOUBLE)) {
         var call = rex.makeCall(types.createSqlType(SqlTypeName.BOOLEAN), function,
             List.of(rex.makeInputRef(types.createSqlType(name), 0)));
         var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));

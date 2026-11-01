@@ -2740,6 +2740,9 @@ final class RexExpression {
     if ("IS_DECIMAL".equals(functionName) && nativeStringClassification(call)) {
       return emitCharacterFunction(call, 240, 1, 1);
     }
+    if ("IS_DECIMAL".equals(functionName) && nativeNumericClassification(call)) {
+      return emitNumericClassification(call, 243, true);
+    }
     if ("HEX".equals(functionName)) {
       return emitEncoding(call, 105, true, true);
     }
@@ -4473,7 +4476,6 @@ final class RexExpression {
       case "FROM_BASE64":
         return !nativeFromBase64(call);
       case "IS_DECIMAL":
-        return !nativeStringClassification(call);
       case "IS_DIGIT":
       case "IS_ALPHA":
         return !nativeStringClassification(call) && !nativeNumericClassification(call);

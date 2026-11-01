@@ -1952,10 +1952,10 @@ and row evaluation make no JVM calls. Replacing an isolated surrogate with `?` c
 these predicates, because both fail the letter/digit tests; existing sensitive-expression and arbitrary
 binary STRING boundaries retain their separate admission rules. Already-generated operands
 may still contain their own JVM evaluators.
-`IS_ALPHA` and `IS_DIGIT` also run natively for direct TINYINT, SMALLINT, INT, BIGINT and
+`IS_ALPHA`, `IS_DIGIT` and `IS_DECIMAL` also run natively for direct TINYINT, SMALLINT, INT, BIGINT and
 DECIMAL inputs/literals. `IS_ALPHA` returns nonnullable FALSE, including runtime/literal
-NULLs. `IS_DIGIT` returns nonnullable TRUE for integers regardless of sign, including
-runtime/literal NULLs; it returns FALSE for internal `DecimalData`, including NULL. Released
+NULLs. `IS_DIGIT` and `IS_DECIMAL` return nonnullable TRUE for integers regardless of sign, including
+runtime/literal NULLs; they return FALSE for internal `DecimalData`, including NULL. Released
 Flink boxes primitive defaults for nullable integers and does not treat `DecimalData` as a
 Java Number. These are the observed SQL/codegen semantics on both released Flink lines.
 The native call keeps the input in the expression. Recursively proven failure-free integer
@@ -1964,7 +1964,7 @@ evaluating unused intermediates. Division, remainder,
 narrowing, UDFs and unverified producers retain generated evaluation of the complete call,
 so exceptions and state changes are not discarded. Folded results are not evidence
 of executed predicate-kernel work. Conditional branches and empty filtered batches retain
-their existing guards. Floating classification signatures and noncharacter `IS_DECIMAL`
+their existing guards. Floating classification signatures and other unqualified object
 overloads remain generated.
 The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
 include stock Flink and the actual previous callback as well as complete row-source jobs.
@@ -1974,6 +1974,8 @@ The [numeric alpha measurements](../benchmarks/scalar-functions.md#numeric-is_al
 separate predicate execution, bounded folds, tiny batches and full jobs with both transposes.
 The [numeric digit measurements](../benchmarks/scalar-functions.md#numeric-is_digit)
 qualify that overload separately, including its integer-NULL and internal-DECIMAL behavior.
+The [numeric decimal measurements](../benchmarks/scalar-functions.md#numeric-is_decimal)
+retain independent predicate, fold, small-batch and complete-job controls.
 
 `IS_DECIMAL` on character arguments also runs in a native Arrow kernel, with nonnullable
 FALSE for NULL/empty strings. Its released meaning is successful Java integer, long or
@@ -1985,8 +1987,8 @@ digit value and the signed result to fit BIGINT, without trimming. ASCII integer
 BIGINT still succeed through double syntax, whereas Unicode-digit overflow fails.
 
 The worker snapshots a separate 32 KiB packed radix-10 digit-value table once. No row/batch
-JVM calls or floating conversion are needed to answer the predicate. Numeric and other
-noncharacter object overloads retain generated evaluation. Operand failures and conditional/
+JVM calls or floating conversion are needed to answer the predicate. Unqualified
+noncharacter overloads retain generated evaluation. Operand failures and conditional/
 empty-batch rules remain unchanged. See the [decimal classification measurements](../benchmarks/scalar-functions.md#string-is_decimal).
 
 ### UNHEX

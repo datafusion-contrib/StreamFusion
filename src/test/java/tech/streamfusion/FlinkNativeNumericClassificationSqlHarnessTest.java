@@ -21,7 +21,7 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkNativeNumericClassificationSqlHarnessTest {
   static java.util.stream.Stream<Arguments> functionsAndTypes() {
-    return java.util.stream.Stream.of("IS_ALPHA", "IS_DIGIT").flatMap(function ->
+    return java.util.stream.Stream.of("IS_ALPHA", "IS_DIGIT", "IS_DECIMAL").flatMap(function ->
         java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "DECIMAL(18,0)",
             "DECIMAL(18,2)", "DECIMAL(38,18)", "DECIMAL(38,38)")
             .map(type -> Arguments.of(function, type)));
@@ -41,7 +41,7 @@ class FlinkNativeNumericClassificationSqlHarnessTest {
           + ",IS_ALPHA(CAST(1 AS " + declaration + ")),NOT IS_ALPHA(v)"
           + ",CASE WHEN id>=0 THEN IS_ALPHA(v) ELSE TRUE END FROM src";
       sql = sql.replace("IS_ALPHA", function);
-      boolean expected = function.equals("IS_DIGIT") && !declaration.startsWith("DECIMAL");
+      boolean expected = !function.equals("IS_ALPHA") && !declaration.startsWith("DECIMAL");
       for (boolean nativeEnabled : new boolean[] {false, true}) {
         try (var metrics = new RecoveryExecutionMetrics()) {
           var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
@@ -84,7 +84,7 @@ class FlinkNativeNumericClassificationSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"IS_ALPHA", "IS_DIGIT"})
+  @ValueSource(strings = {"IS_ALPHA", "IS_DIGIT", "IS_DECIMAL"})
   void filtersGroupingAndComposedOperandsMatchReleasedSql(String function) throws Exception {
     for (String sql : List.of(
         "SELECT id,IS_ALPHA(v+1),IS_ALPHA(CAST(v AS DECIMAL(18,2))) FROM src",
@@ -96,7 +96,7 @@ class FlinkNativeNumericClassificationSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"IS_ALPHA", "IS_DIGIT"})
+  @ValueSource(strings = {"IS_ALPHA", "IS_DIGIT", "IS_DECIMAL"})
   void failingOperandsAreNotDiscardedAndUnselectedBranchesStayLazy(String function) throws Exception {
     BuiltinFunctionParity.assertParity(this::environment,
         "SELECT CASE WHEN id>=0 THEN IS_ALPHA(v) ELSE IS_ALPHA(v/(id-id)) END FROM src".replace("IS_ALPHA", function));

@@ -109,6 +109,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         240 => string_decimal::function(),
         241 => numeric_classification::alpha(),
         242 => numeric_classification::digit(),
+        243 => numeric_classification::decimal(),
         65 => sign::function(),
         67 => ascii::function(),
         81 => chr::function(),

@@ -55,7 +55,7 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
 
   @Test
   void numericClassificationDoesNotDiscardStatefulArguments() throws Exception {
-    for (String function : List.of("IS_ALPHA", "IS_DIGIT")) {
+    for (String function : List.of("IS_ALPHA", "IS_DIGIT", "IS_DECIMAL")) {
       compare("SELECT id, IS_ALPHA(tick(a)), tick(b) FROM src".replace("IS_ALPHA", function), 5003, false);
       compare(("SELECT id, CASE WHEN MOD(id,2)=0 THEN IS_ALPHA(tick(a)) ELSE FALSE END, tick(b) FROM src")
           .replace("IS_ALPHA", function), 2051, true);

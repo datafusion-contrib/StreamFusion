@@ -54,7 +54,7 @@ retain the same fold boundary and explicitly exclude NULL-fold samples from func
 ## Failure-free numeric classification operands
 
 Numeric `IS_ALPHA` returns FALSE from the released internal argument type, regardless of
-its value or NULL. Numeric `IS_DIGIT` likewise has a type-based result: TRUE for integers
+its value or NULL. Numeric `IS_DIGIT` and `IS_DECIMAL` likewise have a type-based result: TRUE for integers
 (including NULL) and FALSE for internal DECIMAL. A native call initially still materialized arithmetic arguments which
 the predicate never reads. Fold a composed integer operand only after the bounded integer
 producer proof excludes failures and state changes. Direct inputs retain the predicate
@@ -71,6 +71,8 @@ keeps the initial/folded probes, stock drift, full type matrix and complete-job 
 Folded samples are excluded from executed predicate-kernel qualification.
 The [numeric digit matrix](../benchmarks/scalar-functions.md#numeric-is_digit) applies the
 same proof and keeps its own predicate and fold controls separate.
+The [numeric decimal matrix](../benchmarks/scalar-functions.md#numeric-is_decimal) qualifies
+that overload independently with the same bounded producer proof.
 
 ## Per-row allocation cuts
 
