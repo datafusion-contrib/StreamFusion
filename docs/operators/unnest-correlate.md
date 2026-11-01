@@ -438,6 +438,10 @@ cases. Use `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
 add `,flink-1.18` for that release line. Copy only the new fixtures to the actual previous
 production revision and use `-Dboundary.expectNative=false` for its fallback control.
 Correctness-verified UDF admission retains the accepted performance exception.
+The [release cost matrix](../benchmarks/jvm-temporal-bridges.md) retains stock,
+actual previous production and native timings on both supported Flink lines, including
+larger-input runs, unfavorable results and observed stock-control drift. These standalone
+native jobs are slower; default admission is coverage under the UDF exception.
 
 ### Boxed DATE epoch days and containers (2026-11-01)
 
@@ -466,6 +470,8 @@ transposes. Reproduce after preparing release classes with `SF_BENCHMARK=true mv
 For the actual preceding revision, copy only the new test/benchmark fixtures and
 set `-Dboundary.expectNative=false`. UDF admission retains the accepted performance
 exception; this extension alone is not a throughput improvement claim.
+The same [release cost matrix](../benchmarks/jvm-temporal-bridges.md) includes the
+boxed DATE ARRAY/List comparisons and every retained trial.
 
 ### DATE epoch-day results and containers (2026-10-24)
 
