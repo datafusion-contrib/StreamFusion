@@ -1331,3 +1331,29 @@ frame and aggregate payload layouts are unchanged, and the reader still accepts 
 timer metadata. This native protocol is one part of #569. Stock descriptor binding, complete
 operator coverage and clean-process interchange remain subject to the issue's acceptance matrix.
 Benchmarking remains deferred under the maintainer's functionality-first instruction.
+
+
+### Released arithmetic RANGE canonical contract
+
+The 2.2 integration path can transfer a bounded event-time arithmetic RANGE operator through
+Flink's stock state descriptors. It copies original input buckets and generated raw accumulators,
+including independent SUM/AVG live counts and the hidden all-input count, without folding retained
+rows again. Full queued callback sets and input-map order accompany both processed frames and
+keys without frames. The stock key serializer and ordinary void timer namespace are retained;
+Stock Flink restore does not need a StreamFusion serializer or JAR.
+
+Canonical interchange validates descriptor ownership, key/time/INSERT consistency, required raw
+fields, hidden input counts and timer membership before installing native state. NULL arguments
+still occupy input rows. Retained-frame and pending-input bridges declare their RowKind field
+consistently, so importing one key's pending rows cannot change the schema required by another
+key's processed frame. Internal bound/aggregate constant slots retain argument positions while
+stock `inputState` contains only the original input row.
+
+The focused stock-operator matrix covers BIGINT, FLOAT, DOUBLE and DECIMAL(38,2), nullable and empty
+keys, heap/RocksDB in each engine, pending-only and processed frames, overflow/orphan callbacks and
+malformed state. Complete-job controls use unchanged stock compiled plans and isolated stock
+processes without StreamFusion dependencies, exercise both transposes, switch in both directions,
+re-export before new input and recover an ordinary native checkpoint before returning to stock.
+This is arithmetic RANGE coverage. Bounded ROWS bucket/counter protocols, additional views,
+complete automatic planner consolidation and the remaining #569 matrix are still required.
+Benchmarking remains deferred.

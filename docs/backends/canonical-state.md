@@ -320,3 +320,34 @@ emits completed RANGE data in timestamp order. Native RANGE checkpoint timer met
 a NULL cleanup deadline; prior non-NULL timer metadata remains readable. Frame payload layouts
 are unchanged. The stock operator adapter and complete #569 acceptance matrix require separate
 qualification; benchmarking remains deferred.
+
+
+### Stock-schema projections for native operators
+
+A bound operator restores released Flink canonical handles into a stock-keyed projection before
+allocating its native state. Descriptor kinds, key and namespace serializers, and timer queues
+are validated first. The runtime native backend keeps its batch-key serializer. Native checkpoint
+handles go through the ordinary backend and do not materialize the projection. Bindings match the
+complete native class and operator ID in Flink's subtask description; an unbound class that only
+shares a name prefix keeps its own handles.
+
+At a canonical savepoint barrier the operator visits live native state into that projection and
+uses Flink's canonical writer to capture keyed and managed operator state together. It then clears
+the temporary projection. It does not serialize and reread a native checkpoint. Projection cleanup
+belongs to the task backend lifetime, including failed initialization and native close failures;
+cleanup errors are retained without hiding the original failure. Ordinary processing and native
+checkpoints retain their normal state paths.
+
+The released 2.2 arithmetic event-time RANGE contract binds `accState`, `inputState`,
+`cleanupTsState`, `lastTriggeringTsState` and the stock void-namespace event timer queue. Input
+buckets contain full original rows under `ListSerializer<RowDataSerializer>`, with stock long
+bucket keys. Generated accumulator fields are copied as raw values. A generated hidden input
+count counts retained rows, including NULL aggregate arguments; it is independent of a visible
+`COUNT(value)`. All registered cleanup/data callbacks, pending-only keys and orphan last-trigger
+state transfer directly. Arrow RowKind field declarations agree across retained and pending rows.
+
+The integration fixtures cover heap/RocksDB in each engine, nullable and empty keys, complete and
+pending-only frames, invalid state, direct re-export, clean classpaths and ordinary native recovery.
+The automatic portable-plan binding is still under consolidation. Bounded ROWS counters/buckets,
+remaining RANGE views, the full version/rescale matrix and other #569 requirements remain open.
+Benchmarking and tuning remain deferred.

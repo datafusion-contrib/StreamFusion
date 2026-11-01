@@ -11,6 +11,15 @@ import org.apache.flink.util.function.FunctionWithException;
 
 /** Host construction parameters plus a factory that preserves all remaining delegate arguments. */
 public final class KeyedBackendContext<K> {
+  @FunctionalInterface
+  public interface StockBackendFactory {
+    CheckpointableKeyedStateBackend<org.apache.flink.table.data.RowData> create(
+        TypeSerializer<org.apache.flink.table.data.RowData> serializer,
+        Collection<KeyedStateHandle> handles)
+        throws Exception;
+  }
+
+  private StockBackendFactory stockBackendFactory;
   private final Environment environment;
   private final JobID jobId;
   private final String operatorIdentifier;
@@ -55,6 +64,19 @@ public final class KeyedBackendContext<K> {
 
   public Environment environment() {
     return environment;
+  }
+
+  public KeyedBackendContext<K> withStockBackendFactory(StockBackendFactory factory) {
+    stockBackendFactory = factory;
+    return this;
+  }
+
+  public StockBackendFactory stockBackendFactory() {
+    if (stockBackendFactory == null) {
+      throw new IllegalStateException(
+          "stock canonical import is unavailable on this Flink adapter");
+    }
+    return stockBackendFactory;
   }
 
   public JobID jobId() {

@@ -28,12 +28,28 @@ public final class OverConstantArguments {
 
   public static Optional<OverConstantArguments> create(List<RexLiteral> literals, boolean countStar)
       throws IOException {
+    return create(
+        literals,
+        countStar,
+        java.util.stream.IntStream.range(0, literals.size())
+            .boxed()
+            .collect(java.util.stream.Collectors.toSet()));
+  }
+
+  public static Optional<OverConstantArguments> create(
+      List<RexLiteral> literals, boolean countStar, java.util.Set<Integer> referenced)
+      throws IOException {
     var fields = new ArrayList<RowType.RowField>();
     var row = new GenericRowData(literals.size() + (countStar ? 1 : 0));
     for (int i = 0; i < literals.size(); i++) {
       var literal = literals.get(i);
       var type = FlinkTypeFactory.toLogicalType(literal.getType());
-      if (!type.is(LogicalTypeFamily.NUMERIC)) return Optional.empty();
+      if (!type.is(LogicalTypeFamily.NUMERIC)) {
+        if (referenced.contains(i)) return Optional.empty();
+        fields.add(new RowType.RowField("constant_" + i, new BigIntType(false)));
+        row.setField(i, 0L);
+        continue;
+      }
       fields.add(new RowType.RowField("constant_" + i, type));
       row.setField(i, literal.isNull() ? null : value(literal, type));
     }
