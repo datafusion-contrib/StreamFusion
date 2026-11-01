@@ -1352,6 +1352,17 @@ cast, with the rest of the expression tree still evaluated natively around it:
 - **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **DECIMAL → bounded VARCHAR/CHAR
   or from a computed DECIMAL operand**. Direct DECIMAL inputs/literals to unbounded STRING
   use the native formatter described above for both CAST and TRY_CAST.
+  For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
+  condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
+  until the original consumer observes them. For example, overflowing `DECIMAL(38,18)` multiplication
+  followed by a final `CAST(d*d AS STRING)` writes an empty string, while the same cast in a
+  WHERE comparison still carries a NULL flag. A nullable source or TRY_CAST returns SQL NULL.
+  Modern bounded CHAR/VARCHAR casts also retain the empty default on overflow, without padding
+  it. A nested CONCAT can instead produce an actual NULL and still reaches the sink's ERROR/DROP
+  constraint enforcer. These are generated Flink behaviors, not a global NULL-to-empty rewrite.
+  This correctness path uses the existing columnar JVM bridge; unrelated projections and verified
+  unary expressions keep their existing execution routes. It does not add JVM-free arithmetic formatting coverage
+  or make a performance claim. See [the overflow reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/577).
 - **Narrowing a `VARCHAR`** (truncation).
 - **String to `CHAR(n)`** (space-padding).
 - **`→ DECIMAL` from a `float`/`double`.**
