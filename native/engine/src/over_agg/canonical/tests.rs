@@ -1,7 +1,7 @@
 use super::*;
 use arrow::array::Float64Array;
 
-fn batch(keys: &[Option<i64>], values: &[Option<f64>]) -> RecordBatch {
+pub(super) fn batch(keys: &[Option<i64>], values: &[Option<f64>]) -> RecordBatch {
     RecordBatch::try_new(
         Arc::new(Schema::new(vec![
             Field::new("key", DataType::Int64, true),
@@ -17,7 +17,7 @@ fn batch(keys: &[Option<i64>], values: &[Option<f64>]) -> RecordBatch {
     .unwrap()
 }
 
-fn memory(keyless: bool, rows: bool, ttl: i64) -> OverWindowAggregator {
+pub(super) fn memory(keyless: bool, rows: bool, ttl: i64) -> OverWindowAggregator {
     OverWindowAggregator::new(
         vec![1, 1, 1, 1, 1],
         vec![0, 3, 4, 1, 2],
@@ -34,7 +34,7 @@ fn memory(keyless: bool, rows: bool, ttl: i64) -> OverWindowAggregator {
 }
 
 #[cfg(feature = "rocksdb-state")]
-fn operator(
+pub(super) fn operator(
     keyless: bool,
     rows: bool,
     ttl: i64,
@@ -144,7 +144,7 @@ fn raw_folds_continue_between_stores_without_replaying_float_sums_or_refreshing_
     }
 }
 
-fn rows_of(batches: &[RecordBatch]) -> Vec<String> {
+pub(super) fn rows_of(batches: &[RecordBatch]) -> Vec<String> {
     let mut rows = batches
         .iter()
         .flat_map(|batch| {

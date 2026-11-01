@@ -4,6 +4,8 @@ use jni::objects::JObject;
 const CHUNK_ROWS: usize = 1024;
 const STAMP: &str = "__over_retention_stamp";
 
+mod event;
+
 fn invalid(message: &str) -> DataFusionError {
     DataFusionError::Execution(format!("canonical OVER fold: {message}"))
 }

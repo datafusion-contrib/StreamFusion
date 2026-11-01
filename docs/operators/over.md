@@ -1097,13 +1097,13 @@ The raw unbounded-fold transfer interface visits resident or typed-RocksDB accum
 in batches of at most 1,024 keys, with original retention stamps. It preserves raw floating sums,
 independent AVG counts and nullable extrema; import never reconstructs them by replaying input.
 Frame/window-function state and DISTINCT membership require separate transfer contracts and are
-rejected by this fold-only interface. Pending input, timers, generated stock accumulator schemas
+rejected by this fold-only interface. Released stock accumulator/input schemas, timer queues
 and planner bindings remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 This primitive alone does not establish stock OVER savepoint interoperability.
 
 COUNT continues an imported signed-long boundary using wrapping addition/subtraction, matching
 Flink in debug and release builds. A boundary regression covers both directions; the full native
-regression passes 1,072 checks with two existing ignores. Benchmarking remains deferred until
+regression suite retains two existing ignores. Benchmarking remains deferred until
 functional interoperability coverage is complete.
 
 Nullable decimal SUM retains its selected NULL/value state. The existing running sum restarts
@@ -1129,3 +1129,20 @@ typed RocksDB, ROWS/RANGE, processing/event time, TTL, nullable keys/values, pen
 companions, input-buffer sharing and malformed-configuration cleanup. These component controls
 are distinct from stock-savepoint projection and complete portable-plan qualification under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+The native event-time unbounded-fold bridge now transfers buffered INSERT rows and armed
+processing-time cleanup deadlines separately from accumulators. Pending-only and late-only keys
+retain their deadlines without fabricated accumulator state. Both visitors are read-only, bounded
+to 1,024 rows per callback and retryable after a receiver failure; malformed timestamps, RowKind,
+partition types or deadline batches fail before installation.
+
+Ordinary native checkpoints retain every armed cleanup deadline, including keys with no
+accumulator. Memory key-group snapshots carry a separate typed-key deadline footer, with readers
+still accepting earlier snapshots without that footer. RocksDB checkpoints synchronize the same
+metadata into the existing stamp table; current deadline rows override older fold-prefix stamps
+on restore and cleared keys remove both. This also preserves immediate re-checkpoints after a
+canonical import. These are native component contracts; the released Flink event-time `inputState`,
+cleanup ValueState and timer queues still require the stock adapter, planner binding and full-job
+qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.

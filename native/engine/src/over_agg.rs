@@ -1,6 +1,7 @@
 use crate::*;
 
 mod canonical;
+mod cleanup;
 
 mod range_order;
 mod string_first_last;
@@ -2855,9 +2856,8 @@ impl OverWindowAggregator {
     /// `adopt_restored_stamps`: fold stamps read from the value prefixes (a pre-retention writer's
     /// `i64::MIN` stamped `restored_at + max`, the enable-flip migration), and the deferral counts
     /// re-derived from the pending table's payload (the pending key is the arrival sequence, so
-    /// only the payload's PARTITION BY columns identify the key). Pending-only keys deliberately
-    /// get no stamp, exactly as memory mode stamps only fold-state keys — deferral protects them
-    /// regardless.
+    /// only the payload's PARTITION BY columns identify the key). Separate deadline rows preserve
+    /// pending-only and late-only keys, overriding older fold-prefix deadlines when present.
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn adopt_store_retention(
         &mut self,
@@ -2932,6 +2932,20 @@ impl OverWindowAggregator {
                 self.cleanup_state.insert(ByteKey(fold.key), stamp);
             }
         }
+        // New checkpoints carry every armed deadline, including pending-only and late-only keys.
+        // The fold prefix remains the fallback for checkpoints written before that metadata existed.
+        let stamps = self
+            .store
+            .as_ref()
+            .expect("over rocksdb store")
+            .scan_stamps()?;
+        for (key, stamp) in stamps {
+            let key = ByteKey(key);
+            if !self.cleanup_state.contains_key(&key) {
+                self.retention_bytes += byte_key_bytes(&key.0);
+            }
+            self.cleanup_state.insert(key, stamp);
+        }
         if self.proctime {
             return Ok(()); // proctime buffers nothing pending — no deferral counts
         }
@@ -2975,6 +2989,12 @@ impl OverWindowAggregator {
         let state_count = self.store_state_types.len();
         let bounded = matches!(self.inner, OverInner::Bounded(_));
         for bytes in snapshots {
+            let (bytes, cleanup) = Self::split_cleanup(bytes);
+            for batch in read_ipc_if_present(cleanup) {
+                if self.deadline_cleaning() {
+                    self.write_store_cleanup(&batch)?;
+                }
+            }
             let (bytes, _) = Self::split_range_order(bytes);
             if bytes.len() < 12 {
                 continue;
@@ -3136,6 +3156,7 @@ impl OverWindowAggregator {
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
         let watermark = self.watermark;
+        self.sync_store_cleanup()?;
         self.store
             .as_mut()
             .expect("over rocksdb store")
@@ -3160,6 +3181,7 @@ impl OverWindowAggregator {
             self.store_tombstones.push(store.stamp_key(key_group, key));
         } else {
             self.store_tombstones.push(store.fold_key(key_group, key));
+            self.store_tombstones.push(store.stamp_key(key_group, key));
             for slot in 0..self.distinct_slots.len() {
                 self.store_range_deletes
                     .push(store.distinct_prefix(slot, key_group, key));
@@ -4205,7 +4227,13 @@ impl OverWindowAggregator {
         let accumulators = self.snapshot_accumulators();
         let buffer = self.snapshot_buffer();
         let range_order = self.snapshot_range_order();
-        Self::snapshot_parts(self.next_seq, accumulators, buffer, range_order)
+        Self::snapshot_parts(
+            self.next_seq,
+            accumulators,
+            buffer,
+            range_order,
+            self.snapshot_cleanup(),
+        )
     }
 
     /// The per-key state batch, with a trailing cleanup stamp for bounded RANGE or enabled TTL.
@@ -4374,6 +4402,7 @@ impl OverWindowAggregator {
     }
 
     fn split_range_order(bytes: &[u8]) -> (&[u8], &[u8]) {
+        let (bytes, _) = Self::split_cleanup(bytes);
         const TAG: &[u8; 8] = b"SFOVR001";
         if !bytes.ends_with(TAG) {
             return (bytes, &[]);
@@ -4391,6 +4420,7 @@ impl OverWindowAggregator {
         accumulators: Vec<u8>,
         buffer: Vec<u8>,
         range_order: Vec<u8>,
+        cleanup: Vec<u8>,
     ) -> Vec<u8> {
         // Prefix the proctime arrival counter so the sequence continues across a checkpoint.
         let mut out = next_seq.to_le_bytes().to_vec();
@@ -4402,6 +4432,12 @@ impl OverWindowAggregator {
             out.extend_from_slice(&range_order);
             out.extend_from_slice(&len.to_le_bytes());
             out.extend_from_slice(b"SFOVR001");
+        }
+        if !cleanup.is_empty() {
+            let len = u32::try_from(cleanup.len()).expect("cleanup metadata size");
+            out.extend_from_slice(&cleanup);
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(b"SFOVC001");
         }
         out
     }
@@ -4526,10 +4562,17 @@ impl OverWindowAggregator {
             max_parallelism,
             timestamp_precisions,
         );
+        let cleanup = Self::partition_snapshot(
+            &self.snapshot_cleanup(),
+            1,
+            max_parallelism,
+            timestamp_precisions,
+        );
         let mut groups: Vec<i32> = accumulators
             .keys()
             .chain(buffer.keys())
             .chain(range_order.keys())
+            .chain(cleanup.keys())
             .copied()
             .collect();
         groups.sort_unstable();
@@ -4549,6 +4592,10 @@ impl OverWindowAggregator {
                         .map(Self::merge_snapshot_batches)
                         .unwrap_or_default(),
                     range_order
+                        .get(&key_group)
+                        .map(Self::merge_snapshot_batches)
+                        .unwrap_or_default(),
+                    cleanup
                         .get(&key_group)
                         .map(Self::merge_snapshot_batches)
                         .unwrap_or_default(),
@@ -4657,6 +4704,7 @@ impl OverWindowAggregator {
             )
             .with_state_retention(min_retention_ms);
         }
+        let (bytes, cleanup) = Self::split_cleanup(bytes);
         let (bytes, range_order) = Self::split_range_order(bytes);
         let next_seq = i64::from_le_bytes(bytes[0..8].try_into().expect("next_seq"));
         let accumulators_len = u32::from_le_bytes(bytes[8..12].try_into().expect("len")) as usize;
@@ -4724,6 +4772,7 @@ impl OverWindowAggregator {
                 aggregator.buffered.push(batch);
             }
         }
+        aggregator.restore_cleanup(cleanup, &mut stamps);
         aggregator.adopt_restored_stamps(stamps, restored_at_ms);
         aggregator.restore_range_order(range_order);
         aggregator
@@ -4809,7 +4858,10 @@ impl OverWindowAggregator {
         let mut accumulator_batches = Vec::new();
         let mut buffer_batches = Vec::new();
         let mut range_batches = Vec::new();
+        let mut cleanup_batches = Vec::new();
         for bytes in snapshots {
+            let (bytes, cleanup) = Self::split_cleanup(bytes);
+            cleanup_batches.extend(read_ipc_if_present(cleanup));
             let (bytes, range_order) = Self::split_range_order(bytes);
             range_batches.extend(read_ipc_if_present(range_order));
             if bytes.len() < 12 {
@@ -4836,6 +4888,9 @@ impl OverWindowAggregator {
         let range_order = (!range_batches.is_empty())
             .then(|| Self::merge_snapshot_batches(&range_batches))
             .unwrap_or_default();
+        let cleanup = (!cleanup_batches.is_empty())
+            .then(|| Self::merge_snapshot_batches(&cleanup_batches))
+            .unwrap_or_default();
         OverWindowAggregator::restore(
             value_types,
             kinds,
@@ -4845,7 +4900,7 @@ impl OverWindowAggregator {
             frame_kind,
             frame_offset,
             proctime,
-            &Self::snapshot_parts(next_seq, accumulators, buffer, range_order),
+            &Self::snapshot_parts(next_seq, accumulators, buffer, range_order, cleanup),
             min_retention_ms,
             restored_at_ms,
         )

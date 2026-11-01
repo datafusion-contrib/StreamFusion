@@ -816,6 +816,43 @@ impl RocksOverAggStore {
             .map(Some)
     }
 
+    pub(crate) fn visit_pending(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 {
+            return Err(DataFusionError::Execution(
+                "zero OVER pending chunk size".into(),
+            ));
+        }
+        let mut rows: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, value) = row.map_err(re)?;
+            if key.len() != PENDING_KEY_LEN || key[4] != PENDING_TABLE {
+                continue;
+            }
+            if value.len() < 8 {
+                return Err(DataFusionError::Execution(
+                    "truncated OVER pending row".into(),
+                ));
+            }
+            rows.push(value[8..].into());
+            if rows.len() == chunk_rows {
+                accept(
+                    self.decode_payload(&self.payload_schema, rows.iter().map(|row| row.as_ref()))?,
+                )?;
+                rows.clear();
+            }
+        }
+        if !rows.is_empty() {
+            accept(
+                self.decode_payload(&self.payload_schema, rows.iter().map(|row| row.as_ref()))?,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Every committed fold — restore-time retention hydration and canonical savepoints.
     pub(crate) fn scan_folds(&self) -> Result<Vec<StoredOverFold>, DataFusionError> {
         let mut folds = Vec::new();

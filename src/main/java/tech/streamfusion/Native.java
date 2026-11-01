@@ -31,6 +31,17 @@ public final class Native {
       long handle, long arrayAddress, long schemaAddress);
 
 
+  /** Rowtime unbounded OVER input buffers and processing-time cleanup deadlines. */
+  public static native void exportOverPendingCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importOverPendingCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+  public static native void exportOverCleanupCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importOverCleanupCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
   public static native void exportSessionAggregatorCanonical(long handle, BatchReceiver receiver);
 
   public static native void importSessionAggregatorCanonical(
