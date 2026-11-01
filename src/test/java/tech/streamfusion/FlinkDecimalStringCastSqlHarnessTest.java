@@ -21,35 +21,52 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDecimalStringCastSqlHarnessTest {
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void decimalUnaryCastConsumersAndEvaluationBoundariesMatch(boolean legacy) throws Exception {
+  @CsvSource({"false,CAST", "true,CAST", "false,TRY_CAST", "true,TRY_CAST"})
+  void decimalUnaryCastConsumersAndEvaluationBoundariesMatch(boolean legacy, String operator)
+      throws Exception {
     java.util.function.Supplier<TableEnvironment> factory = () -> environment(18, 3, legacy);
     BuiltinFunctionParity.assertParity(factory,
-        "SELECT id,CHAR_LENGTH(CAST(ABS(d) AS CHAR(25))),CONCAT(CAST(-d AS VARCHAR(3)),'!'),"
-            + "CAST(ABS(d) AS CHAR(8)) LIKE '%0%',LTRIM(CAST(-d AS VARCHAR(80)),''),"
-            + "CASE WHEN id>=0 THEN CAST(ABS(d) AS CHAR(8)) "
-            + "ELSE CAST(ABS(d/(id-id)) AS CHAR(8)) END FROM src");
+        ("SELECT id,CHAR_LENGTH($CAST(ABS(d) AS CHAR(25))),CONCAT($CAST(-d AS VARCHAR(3)),'!'),"
+            + "$CAST(ABS(d) AS CHAR(8)) LIKE '%0%',LTRIM($CAST(-d AS VARCHAR(80)),''),"
+            + "CASE WHEN id>=0 THEN $CAST(ABS(d) AS CHAR(8)) "
+            + "ELSE CAST(ABS(d/(id-id)) AS CHAR(8)) END FROM src").replace("$CAST", operator));
     BuiltinFunctionParity.assertParity(factory,
-        "SELECT CAST(ABS(d) AS CHAR(8)),CAST(-(d/(id-id)) AS CHAR(8)) FROM src WHERE id<0");
+        "SELECT $CAST(ABS(d) AS CHAR(8)),CAST(-(d/(id-id)) AS CHAR(8)) FROM src WHERE id<0"
+            .replace("$CAST", operator));
     NativeParity.assertChangelogParity(factory,
-        "SELECT c,CHAR_LENGTH(c),CONCAT(c,'!'),COUNT(*) FROM "
-            + "(SELECT CAST(CAST(ABS(d) AS CHAR(8)) AS STRING) AS c FROM src) GROUP BY c");
+        ("SELECT c,CHAR_LENGTH(c),CONCAT(c,'!'),COUNT(*) FROM "
+            + "(SELECT CAST($CAST(ABS(d) AS CHAR(8)) AS STRING) AS c FROM src) GROUP BY c")
+            .replace("$CAST", operator));
   }
 
   @ParameterizedTest
-  @CsvSource({"1,1", "4,3", "18,0", "18,3", "18,18", "19,0", "38,18", "38,38"})
-  void decimalUnaryCastFormattingConsumesNativeWork(int precision, int scale) throws Exception {
-    String sql = "SELECT id,CAST(ABS(d) AS STRING),CAST(-d AS STRING),"
-        + "CAST(ABS(ABS(d)) AS VARCHAR(3)),CAST(-(-d) AS CHAR(44)),"
-        + "CAST(ABS(d) AS CHAR(8)),CAST(-d AS VARCHAR(3)),"
-        + "CAST(CAST(ABS(d) AS DECIMAL(38," + scale + ")) AS STRING),"
-        + "CAST(ABS(CAST(d AS DECIMAL(38," + scale + "))) AS CHAR(8)),"
-        + "CAST(-(CAST(d AS DECIMAL(38," + scale + "))) AS CHAR(44)) FROM src";
+  @CsvSource({"1,1,CAST", "4,3,CAST", "18,0,CAST", "18,3,CAST", "18,18,CAST",
+      "19,0,CAST", "38,18,CAST", "38,38,CAST", "1,1,TRY_CAST", "4,3,TRY_CAST",
+      "18,0,TRY_CAST", "18,3,TRY_CAST", "18,18,TRY_CAST", "19,0,TRY_CAST",
+      "38,18,TRY_CAST", "38,38,TRY_CAST"})
+  void decimalUnaryCastFormattingConsumesNativeWork(int precision, int scale, String operator)
+      throws Exception {
+    String sql = ("SELECT id,$CAST(ABS(d) AS STRING),$CAST(-d AS STRING),"
+        + "$CAST(ABS(ABS(d)) AS VARCHAR(3)),$CAST(-(-d) AS CHAR(44)),"
+        + "$CAST(ABS(d) AS CHAR(8)),$CAST(-d AS VARCHAR(3)),"
+        + "$CAST(CAST(ABS(d) AS DECIMAL(38," + scale + ")) AS STRING),"
+        + "$CAST(ABS(CAST(d AS DECIMAL(38," + scale + "))) AS CHAR(8)),"
+        + "$CAST(-(CAST(d AS DECIMAL(38," + scale + "))) AS CHAR(44)) FROM src")
+        .replace("$CAST", operator);
     for (boolean legacy : new boolean[] {false, true}) {
       for (boolean nullable : new boolean[] {false, true}) {
         assertRuntimeCasts(sql, precision, scale, legacy, nullable);
       }
     }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"false,CAST", "true,CAST", "false,TRY_CAST", "true,TRY_CAST"})
+  void decimalUnaryExactLengthTrimConsumersMatch(boolean legacy, String operator) throws Exception {
+    BuiltinFunctionParity.assertParity(() -> environment(18, 3, legacy),
+        ("SELECT id,LTRIM($CAST(ABS(d) AS CHAR(19)),''),RTRIM($CAST(-d AS CHAR(19)),''),"
+            + "LTRIM($CAST(ABS(d) AS VARCHAR(19)),''),RTRIM($CAST(-d AS VARCHAR(19)),'') "
+            + "FROM src WHERE id=0").replace("$CAST", operator));
   }
 
   @ParameterizedTest
@@ -247,13 +264,15 @@ class FlinkDecimalStringCastSqlHarnessTest {
 
   @Test
   void tryCastDoesNotCatchErrorsComputingAnUnverifiedOperand() {
-    var comparison = NativeFailureParity.run(() -> environment(18, 3, false),
-        "SELECT TRY_CAST(d/(id-id) AS STRING) FROM src");
-    for (var outcome : List.of(comparison.host(), comparison.nativeRun())) {
-      assertInstanceOf(ArithmeticException.class, outcome.rootCause());
-      assertEquals(NativeFailureParity.Phase.ROW_EVALUATION, outcome.phase());
+    for (String operand : List.of("d/(id-id)", "ABS(d/(id-id))", "-(d/(id-id))")) {
+      var comparison = NativeFailureParity.run(() -> environment(18, 3, false),
+          "SELECT TRY_CAST(" + operand + " AS STRING) FROM src");
+      for (var outcome : List.of(comparison.host(), comparison.nativeRun())) {
+        assertInstanceOf(ArithmeticException.class, outcome.rootCause());
+        assertEquals(NativeFailureParity.Phase.ROW_EVALUATION, outcome.phase());
+      }
+      assertEquals(NativeFailureParity.Route.FALLBACK, comparison.nativeRun().route());
     }
-    assertEquals(NativeFailureParity.Route.FALLBACK, comparison.nativeRun().route());
   }
 
   @ParameterizedTest

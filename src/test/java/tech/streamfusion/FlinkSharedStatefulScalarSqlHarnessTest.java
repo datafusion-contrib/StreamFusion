@@ -67,11 +67,13 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
 
   @Test
   void decimalFormattingDoesNotDiscardStatefulArguments() throws Exception {
-    compare("SELECT id,CAST(ABS(CAST(tick(a) AS DECIMAL(18,3))) AS CHAR(8)),tick(b) FROM src",
-        5003, false);
-    compare("SELECT id,CASE WHEN MOD(id,2)=0 "
-        + "THEN CAST(-CAST(tick(a) AS DECIMAL(18,3)) AS STRING) ELSE 'skip' END,tick(b) FROM src",
-        2051, true);
+    for (String operator : List.of("CAST", "TRY_CAST")) {
+      compare(("SELECT id,$CAST(ABS(CAST(tick(a) AS DECIMAL(18,3))) AS CHAR(8)),tick(b) FROM src")
+          .replace("$CAST", operator), 5003, false);
+      compare(("SELECT id,CASE WHEN MOD(id,2)=0 "
+          + "THEN $CAST(-CAST(tick(a) AS DECIMAL(18,3)) AS STRING) ELSE 'skip' END,tick(b) FROM src")
+          .replace("$CAST", operator), 2051, true);
+    }
   }
 
   @Test

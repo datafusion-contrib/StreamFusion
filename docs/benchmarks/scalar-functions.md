@@ -5851,7 +5851,9 @@ Direct DECIMAL inputs/literals reuse the exact native plain-text formatter. Mode
 VARCHAR truncates through LEFT; modern CHAR truncates or space-pads through RPAD.
 DECIMAL text is ASCII, so these existing kernels preserve released Flink character
 widths without a Unicode approximation. Legacy mode ignores target length; maximum-INT
-CHAR does not pad. Computed decimals and their metadata guards retain existing admission.
+CHAR does not pad. This direct-input TRY_CAST qualification does not measure computed
+decimals; the later unary-operand qualification is recorded separately below. Other
+computed decimals and their metadata guards retain existing admission.
 TRY_CAST uses the same total formatting operation and does not catch operand failures.
 
 The [result record](results/decimal-bounded-try-cast-2026-11-01.json) and
@@ -6140,5 +6142,85 @@ Source/DSO hashes and independently recompiled baseline classes are retained.
 Reproduce prepared qualification with `integral_expression`, DECIMAL input and
 `SF_INTEGRAL_EXPRESSION='CAST(ABS(v) AS STRING)'`. Complete jobs use
 `sf.integral.expression=CAST(ABS(v) AS STRING)` and
+`sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
+are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL unary TRY_CAST to character
+
+Verified DECIMAL ABS and unary minus, same-operator nesting, and same-scale
+precision widening reuse the native plain-text formatter and existing ASCII-safe
+LEFT/RPAD width kernels. Released Flink retains precision/scale in these unary
+operations. Modern/legacy spelling, trailing zeros, truncation/padding and NULLs
+remain unchanged. Other arithmetic, rounding metadata, SIGN, mixed unary trees,
+stateful/failing producers and unknown configuration keep their existing routes.
+No native kernel, JNI boundary, ownership contract or production switch changes.
+
+The [result record](results/decimal-unary-try-cast-2026-11-01.json) and
+[raw trials](results/decimal-unary-try-cast-2026-11-01.csv.gz) retain 64 configurations/6,400 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18) extrema and large signed coefficients
+match across GenericRowData/BinaryRowData and nullable/NOT NULL declarations.
+Representative bulk expressions are modern ABS(v) to STRING, modern -v
+to CHAR(8), and legacy ABS(v) to CHAR(44). Sixteen-row modern ABS-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder rejects this signature. Its prepared controls use released Java
+on RowData with Java-side timing, preserving the actual fallback reason. No JVM
+callback baseline is fabricated; the candidate must have no evaluator.
+The unchanged Rust decimal formatter, Calc and unary kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 3.215-8.503x | 3.728-8.758x | 0 |
+| 1.18.1 | tiny control | 8 | 1.302-3.462x | 1.356-3.734x | 0 |
+| 2.2.1 | bulk | 24 | 3.215-8.064x | 3.849-9.161x | 0 |
+| 2.2.1 | tiny control | 8 | 1.157-3.159x | 1.475-3.526x | 0 |
+
+All 48 bulk cells beat stock; 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.721-1.218x. All ranges are retained.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern DECIMAL(18,2) ABS-to-STRING,
+modern DECIMAL(38,18) negate-to-CHAR(8), and legacy DECIMAL(38,18) ABS-to-CHAR(44)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors. Previous
+jobs require actual planner fallback with zero native substitutions or work.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-abs | 0.264686 (0.250927-0.269670) | 0.209733 (0.206909-0.211031) | 0.209105 (0.203733-0.212599) | 0.210178 (0.207587-0.217686) |
+| 1.18.1 / modern-negate | 0.378330 (0.370410-0.386081) | 0.224428 (0.222141-0.229540) | 0.342058 (0.334649-0.342707) | 0.344431 (0.338319-0.346211) |
+| 1.18.1 / legacy-abs | 0.291547 (0.280389-0.335874) | 0.216920 (0.214796-0.218376) | 0.239804 (0.237483-0.253204) | 0.244747 (0.235303-0.253585) |
+| 2.2.1 / modern-abs | 0.259245 (0.252922-0.268575) | 0.206518 (0.201711-0.211899) | 0.204024 (0.195745-0.214377) | 0.215092 (0.194208-0.217394) |
+| 2.2.1 / modern-negate | 0.376024 (0.372521-0.391604) | 0.227104 (0.225205-0.233658) | 0.344694 (0.340141-0.350055) | 0.354460 (0.345592-0.365853) |
+| 2.2.1 / legacy-abs | 0.279563 (0.275328-0.306825) | 0.217126 (0.211098-0.219148) | 0.235848 (0.231293-0.247688) | 0.236468 (0.234912-0.251507) |
+
+Native/stock elapsed ratios span 0.593-0.797;
+native/previous ratios span 0.641-0.998. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+The modern ABS-to-STRING jobs overlap the previous fallback control: native/previous
+elapsed ratios are 0.998 on Flink 1.18 and 0.960 on Flink 2.2. Do not infer a robust
+whole-job improvement from these subsecond differences. Independent stock-process
+controls also differ; all paired samples remain available instead of selecting the
+more favorable control.
+
+All 300 focused JVM invocations, four additional shared-state invocations and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for eight DECIMAL precision/scale pairs from (1,1)
+through (38,38), nullable/NOT NULL declarations, modern/legacy mode, signed extrema,
+zeros and unit coefficients. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+Failing and stateful inputs keep their released behavior and exact previous routes.
+The unchanged released DecimalData formatting oracle, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='TRY_CAST(ABS(v) AS STRING)'`. Complete jobs use
+`sf.integral.expression=TRY_CAST(ABS(v) AS STRING)` and
 `sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
 are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

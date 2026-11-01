@@ -1154,7 +1154,7 @@ Native, unconditionally, with no host involvement:
   This can differ from rounding a decimal directly to FLOAT. Array casts convert the element
   buffers and preserve offsets, empty arrays, nullable containers/elements and declared types.
   Other changes of collection element type still require a separately supported cast.
-- **`CAST(d AS STRING)` and `TRY_CAST(d AS STRING)` for a direct DECIMAL input or literal** — a native Decimal128
+- **`CAST(d AS STRING)` and `TRY_CAST(d AS STRING)` for DECIMAL** — a native Decimal128
   formatter retains scale and trailing zeros, including zero and precision-38 coefficients.
   It uses ordinary decimal notation, so `DECIMAL(38,38)` with unscaled value 1 becomes
   `0.00000000000000000000000000000000000001`, without passing through floating point.
@@ -1163,15 +1163,17 @@ Native, unconditionally, with no host involvement:
   while computing an operand. Both CAST and TRY_CAST also admit direct DECIMAL inputs/literals to bounded
   VARCHAR/CHAR: modern mode truncates or pads the ASCII decimal text through native LEFT/RPAD;
   legacy mode ignores target length. CHAR with maximum INT length is not padded, matching
-  released Flink. CAST also admits verified DECIMAL ABS and unary minus, same-operator nesting,
+  released Flink. Both casts also admit verified DECIMAL ABS and unary minus, same-operator nesting,
   and same-scale precision widening before or after those operators. Their released-Flink result
   precision/scale stays unchanged, so the same formatter and ASCII width kernels apply. This
-  computed-operand extension does not yet include TRY_CAST. Unknown length configuration and
-  other computed DECIMAL operands retain their existing evaluator/admission rules. In particular,
+  computed-operand proof excludes failures while evaluating the operand; TRY_CAST does not catch
+  such failures. Unknown length configuration and other computed DECIMAL operands retain their
+  existing evaluator/admission rules. In particular,
   rounding-result metadata guards still apply;
   this does not replace their host-exact consumers. See the
   [direct DECIMAL formatting measurements](../benchmarks/scalar-functions.md#decimal-to-string)
-  and [unary CAST measurements](../benchmarks/scalar-functions.md#decimal-unary-cast-to-character).
+  and unary [CAST](../benchmarks/scalar-functions.md#decimal-unary-cast-to-character) /
+  [TRY_CAST measurements](../benchmarks/scalar-functions.md#decimal-unary-try_cast-to-character).
 - **`CHAR`/`VARCHAR` → `VARCHAR`** when the target length is ≥ the source length — an unpadded
   no-op (e.g. the common `COALESCE(s, 'x')` pattern).
 - **Widening timestamp precision** within `TIMESTAMP` or within `TIMESTAMP_LTZ` — Arrow stores both
@@ -1393,7 +1395,8 @@ filters, conditional consumers, grouping and aggregation across multiple batches
 Direct DECIMAL input references and literals also format to STRING/VARCHAR/CHAR through the
 native formatter described above. It preserves scale, plain notation and NULLs in modern
 and legacy modes without a JVM evaluator. Modern bounded targets truncate/pad; legacy ignores length.
-Computed DECIMAL operands keep their previous rules; in particular, TRY_CAST does not catch an error raised
+Verified ABS/unary-minus trees and same-scale precision widening also stay native. Other computed
+DECIMAL operands keep their previous rules; in particular, TRY_CAST does not catch an error raised
 while computing its input. See the [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast).
 
 Already-evaluated internal Flink decimals cross Arrow without another precision check. Flink's
@@ -1411,7 +1414,7 @@ cast, with the rest of the expression tree still evaluated natively around it:
 
 - **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **computed DECIMAL → character**.
   Direct DECIMAL inputs/literals use the native formatter for CAST and TRY_CAST to STRING/VARCHAR/CHAR.
-  CAST also keeps verified ABS/unary-minus trees and same-scale precision widening native;
+  Both casts also keep verified ABS/unary-minus trees and same-scale precision widening native;
   the other computed DECIMAL producers retain the host route or their existing fallback.
   For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
   condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
