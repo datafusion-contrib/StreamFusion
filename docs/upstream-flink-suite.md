@@ -15,6 +15,15 @@ native work and unexpected fallback fails. The exhaustive native Criterion smoke
 not a CI gate; see the [CI policy](ci.md#native-execution-checks-instead-of-exhaustive-benchmark-smoke).
 Native execution evidence does not measure throughput.
 
+Window witnesses register operators at their concrete or inherited `open()` implementation,
+then count completed Arrow input at the shared update boundary. The abstract window core
+has no `open()` override; instrumenting only that class misses every instance. Delegating
+attached-window overloads must not count the same input twice. With this instrumentation,
+the released event-time window restore suite passes its three single-phase, zero-offset
+TUMBLE/HOP/CUMULATE programs, including STRING DISTINCT state. Its other twenty-one programs
+still fail their required native-window witness; offsets, local/global stages and sessions
+remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
 The unchanged `AggregateITCase.testDistinctGroupBy` and `testDistinctWithMultiFilter`
 fixtures require consumed native group-aggregate work, including both local and global
 stages when their released fixture enables splitting. Runtime-route scopes retain every

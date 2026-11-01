@@ -205,6 +205,10 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
                 "tech.streamfusion.operator.NativeColumnarFirstNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
+                "tech.streamfusion.operator.NativeRowWindowOperatorCore",
+                "tech.streamfusion.operator.NativeColumnarWindowAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarLocalWindowAggregateOperator",
+                "tech.streamfusion.operator.NativeColumnarSessionWindowAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarGlobalWindowAggregateOperator"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) -> {
@@ -224,7 +228,14 @@ public final class StreamFusionSuiteAgent {
               if (type.getName().endsWith("NativeWindowOperatorCore")) {
                 return builder.visit(
                     Advice.to(RecordNativeBatch.class)
-                        .on(namedOneOf("updateColumnarInternal", "updateColumnarAttached")));
+                        .on(named("updateColumnarInternal")
+                            .or(named("updateColumnarAttached").and(takesArguments(7)))));
+              }
+              if (type.getName().endsWith("NativeRowWindowOperatorCore")
+                  || type.getName().endsWith("NativeColumnarWindowAggregateOperator")
+                  || type.getName().endsWith("NativeColumnarLocalWindowAggregateOperator")
+                  || type.getName().endsWith("NativeColumnarSessionWindowAggregateOperator")) {
+                return builder;
               }
               return builder.visit(
                   Advice.to(RecordNativeElement.class)
