@@ -79,6 +79,35 @@ mod buffered_count {
     }
 
     #[test]
+    fn fixed_deadlines_are_rebuilt_from_pending_state_without_new_input() {
+        for (size, cumulative) in [(1000, false), (5000, false), (5000, true)] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut reference = memory(size, cumulative);
+            let mut operator = persistent(directory.path(), size, cumulative);
+            let batch = input(32, 0, 8);
+            reference.update(&batch).unwrap();
+            operator.update(&batch).unwrap();
+            for threshold in [i64::MIN, 1000, 2000, 3000, 5000, 7000, i64::MAX] {
+                assert_eq!(
+                    rows(reference.flush(threshold).unwrap()),
+                    rows(operator.flush(threshold).unwrap())
+                );
+                assert_eq!(reference.next_timer_deadline, operator.next_timer_deadline);
+                if threshold == i64::MIN {
+                    assert_eq!(reference.next_timer_deadline, 999);
+                } else if threshold >= 7000 {
+                    assert_eq!(reference.next_timer_deadline, i64::MIN);
+                } else {
+                    assert!(
+                        reference.next_timer_deadline == i64::MIN
+                            || reference.next_timer_deadline >= threshold
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn pending_counts_are_reserved_and_survive_checkpoint_rescale_and_late_rows() {
         for (size, cumulative) in [(1000, false), (5000, false), (5000, true)] {
             let directory = tempfile::tempdir().unwrap();

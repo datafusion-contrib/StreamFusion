@@ -238,3 +238,12 @@ controls also pass in an isolated foundation checkout, including deferred namesp
 missing-drain rejection, immutable pending grids and dictionary ownership. Runtime integration
 and broader buffer-capacity qualification remain tracked by
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
+
+Fixed-window firing records the earliest remaining epoch deadline for UTC and fixed-offset
+state as well as regional calendars. Typed RocksDB firing combines persisted deadlines with
+pending buffered COUNT state; an idle restore must not require another record to discover its
+next timer. A focused native control compares all three fixed shapes between memory and the
+typed store through partial and complete firing. The integration native regression passes
+1,059 checks with two existing ignores. Processing-time stock-state import and automatic timer
+rearming remain part of the runtime qualification in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.

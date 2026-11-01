@@ -365,6 +365,7 @@ impl RocksWindowAggStore {
     ) -> Result<Vec<StoredWindowGroup>, DataFusionError> {
         let mut closed: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)> = Vec::new();
         let mut candidates = Vec::new();
+        self.next_exclusive_end = None;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for key_group in self.key_groups.clone() {
             let prefix = key_group.to_be_bytes();
@@ -386,6 +387,8 @@ impl RocksWindowAggStore {
                     continue;
                 }
                 if end > watermark {
+                    self.next_exclusive_end =
+                        Some(self.next_exclusive_end.map_or(end, |next| next.min(end)));
                     break;
                 }
                 let start = i64::from_le_bytes(value[..8].try_into().expect("window start"));
