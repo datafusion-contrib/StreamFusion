@@ -113,3 +113,63 @@ Reproduce with the same benchmark command, selecting `AlternateTemporalTableFunc
 and `-Dtemporal.bridge.benchcases=yearmonth-integer:array;daytime-long:array` (quote the
 property argument in a shell). Add `,flink-1.18` for that line. These slower native costs remain
 accepted UDF coverage, not an acceleration claim.
+
+## Primitive temporal bridges and custom scalar inference
+
+The [follow-up artifact](results/jvm-function-contract-followups-2026-11-01.json) records
+all warmup/measured trials for six primitive argument/Row-result bridges and two custom
+nested-scalar inference forms. It compares immutable `5fa5ceae` with pre-goal canonical
+`f5274a10` using identical fixture sources and the same release/mimalloc DSO. Previous
+production sources remain unchanged. Timed jobs use the same resources, alternating pairs,
+row source/blackhole and both transposes as above. The combined correctness selection passes
+252 checks on 2.2.1 and 251 plus the existing ARRAY_SORT N/A on 1.18.1, without failures/errors.
+
+These 262,144-row observations retain startup/JIT effects and sampled background activity.
+Native UDF costs are slower here; these are admitted under the accepted UDF performance
+exception. Independent stock controls remain separate rather than presenting their drift
+as an isolated effect. All measurements and unfavorable trials are retained.
+
+| Flink / case | Stock in candidate JVM | Candidate native | Stock in previous JVM | Previous enabled fallback |
+| --- | --- | --- | --- | --- |
+| 2.2 / inferred explicit | 0.373 (0.371–0.375) | 0.566 (0.560–0.569) | 0.371 (0.368–0.375) | 0.374 (0.367–0.374) |
+| 2.2 / inferred delegating | 0.376 (0.366–0.377) | 0.566 (0.563–0.585) | 0.376 (0.375–0.398) | 0.375 (0.374–0.375) |
+| 2.2 / primitive time-int | 0.090 (0.084–0.093) | 0.171 (0.165–0.173) | 0.087 (0.081–0.092) | 0.088 (0.085–0.098) |
+| 2.2 / primitive time-primitive-long | 0.088 (0.081–0.091) | 0.172 (0.168–0.174) | 0.090 (0.081–0.092) | 0.089 (0.080–0.091) |
+| 2.2 / primitive ltz-int | 0.082 (0.079–0.096) | 0.172 (0.162–0.178) | 0.087 (0.078–0.091) | 0.082 (0.080–0.091) |
+| 2.2 / primitive ltz-primitive-long | 0.084 (0.083–0.089) | 0.170 (0.169–0.178) | 0.084 (0.079–0.091) | 0.086 (0.081–0.098) |
+| 2.2 / primitive yearmonth-int | 0.091 (0.081–0.094) | 0.164 (0.163–0.166) | 0.083 (0.082–0.090) | 0.093 (0.086–0.111) |
+| 2.2 / primitive daytime-primitive-long | 0.085 (0.082–0.094) | 0.166 (0.164–0.172) | 0.084 (0.082–0.091) | 0.082 (0.080–0.092) |
+| 1.18 / inferred explicit | 0.382 (0.375–0.384) | 0.568 (0.565–0.575) | 0.370 (0.365–0.372) | 0.368 (0.366–0.372) |
+| 1.18 / inferred delegating | 0.383 (0.379–0.392) | 0.567 (0.564–0.568) | 0.373 (0.368–0.375) | 0.372 (0.370–0.374) |
+| 1.18 / primitive time-int | 0.088 (0.086–0.090) | 0.167 (0.167–0.170) | 0.085 (0.083–0.089) | 0.088 (0.084–0.093) |
+| 1.18 / primitive time-primitive-long | 0.090 (0.081–0.091) | 0.169 (0.166–0.169) | 0.089 (0.080–0.090) | 0.088 (0.080–0.090) |
+| 1.18 / primitive ltz-int | 0.090 (0.088–0.091) | 0.172 (0.162–0.174) | 0.089 (0.086–0.089) | 0.081 (0.079–0.090) |
+| 1.18 / primitive ltz-primitive-long | 0.088 (0.082–0.091) | 0.170 (0.162–0.174) | 0.089 (0.081–0.090) | 0.090 (0.089–0.091) |
+| 1.18 / primitive yearmonth-int | 0.091 (0.080–0.101) | 0.161 (0.159–0.168) | 0.091 (0.081–0.092) | 0.090 (0.080–0.091) |
+| 1.18 / primitive daytime-primitive-long | 0.083 (0.080–0.093) | 0.168 (0.162–0.172) | 0.090 (0.088–0.097) | 0.092 (0.089–0.094) |
+
+Reproduce with the same `-Pbench` command and `-Dtest=PrimitiveTemporalTableFunctionBenchmark,InferredNestedScalarBenchmark`.
+Add `,flink-1.18` for that line. For the baseline copy only the six test fixtures listed
+in the artifact and use `-Dboundary.expectNative=false`; leave production sources unchanged.
+
+A subsequent NOT NULL metadata check adds three controls without production changes: matching
+root-NULL sink failure, released non-null-child behavior and successful filtered non-null roots.
+The final selection passes 255 checks on 2.2.1 and 254 plus the existing ARRAY_SORT N/A on
+1.18.1. The artifact keeps the original measurement revision and records extended validation
+separately; the timed fixture bodies are unchanged.
+
+The follow-up measurement used a local pre-rebase commit. Production sources are identical
+to the rebased revision recorded in the artifact. For byte-for-byte fixture reproduction,
+check out that rebased revision and apply the [measured-fixture patch](sources/jvm-contract-followup-measured-fixtures.json)
+before copying fixtures into the baseline and compiling. It removes only the later NOT NULL
+controls; verify the recorded fixture hashes. This preserves public reproduction after rebasing
+onto the parent coverage merge without changing measured production code.
+
+The existing ARRAY/MAP inference controls additionally require positive native Calc work for
+delegating default converters, while retaining the internal MapData fallback. Their complete
+38-test regression selection is validated separately on each released line; this changes test
+expectations and coverage documentation, not production code or timed fixture bodies.
+
+The fixture reversal is stored as JSON to retain exact unified-diff context without
+introducing trailing whitespace into the documentation sources. Decode its `patch` field
+to a temporary file, then use `git apply` and verify the fixture SHA-256 from the artifact.

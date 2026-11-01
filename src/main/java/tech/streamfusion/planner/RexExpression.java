@@ -5571,7 +5571,8 @@ final class RexExpression {
                 .getClass()
                 .getMethod("getTypeInference", org.apache.flink.table.catalog.DataTypeFactory.class)
                 .getDeclaringClass()
-            != org.apache.flink.table.functions.ScalarFunction.class)
+            != org.apache.flink.table.functions.ScalarFunction.class
+            && !JvmFunctionConversions.defaults(call))
           return rejectUdfMethod(
               "nested UDF custom type inference requires unverified Java conversions");
       } catch (ReflectiveOperationException failure) {

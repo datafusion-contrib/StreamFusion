@@ -306,11 +306,19 @@ class FlinkAlternateTemporalTableFunctionSqlHarnessTest {
   }
 
   static Class<?> conversion(String bridge) {
+    if (bridge.endsWith("-int")) return int.class;
+    if (bridge.endsWith("-primitive-long")) return long.class;
     if (bridge.endsWith("-integer")) return Integer.class;
     if (bridge.endsWith("-long")) return Long.class;
     if (bridge.startsWith("date-")) return java.sql.Date.class;
     if (bridge.startsWith("time-")) return java.sql.Time.class;
     return java.sql.Timestamp.class;
+  }
+
+  static DataType bridgeType(String bridge) {
+    var scalar = FlinkMixedPrimitiveTableFunctionSqlHarnessTest.scalarType(kind(bridge));
+    if (conversion(bridge).isPrimitive()) scalar = scalar.notNull();
+    return scalar.bridgedTo(conversion(bridge));
   }
 
   public static class TemporalRows extends TableFunction<Row> {
@@ -330,9 +338,7 @@ class FlinkAlternateTemporalTableFunctionSqlHarnessTest {
 
     @Override
     public TypeInference getTypeInference(DataTypeFactory factory) {
-      DataType scalar =
-          FlinkMixedPrimitiveTableFunctionSqlHarnessTest.scalarType(kind(bridge))
-              .bridgedTo(conversion(bridge));
+      DataType scalar = bridgeType(bridge);
       return TypeInference.newBuilder()
           .typedArguments(
               nullable ? scalar : scalar.notNull(),
@@ -360,7 +366,9 @@ class FlinkAlternateTemporalTableFunctionSqlHarnessTest {
 
     public void eval(Object scalar, Object value) {
       if (result == null) throw new IllegalStateException("temporal bridge not open");
-      if (scalar != null && !conversion(bridge).isInstance(scalar))
+      Class<?> expected = conversion(bridge);
+      if (expected.isPrimitive()) expected = expected == int.class ? Integer.class : Long.class;
+      if (scalar != null && !expected.isInstance(scalar))
         throw new IllegalStateException("wrong temporal bridge class " + scalar.getClass());
       Object output = previous ? retained : value;
       retained = value;
@@ -427,9 +435,7 @@ class FlinkAlternateTemporalTableFunctionSqlHarnessTest {
 
     @Override
     public TypeInference getTypeInference(DataTypeFactory factory) {
-      var scalar =
-          FlinkMixedPrimitiveTableFunctionSqlHarnessTest.scalarType(kind(bridge))
-              .bridgedTo(conversion(bridge));
+      var scalar = bridgeType(bridge);
       if (notNull) scalar = scalar.notNull();
       return TypeInference.newBuilder()
           .typedArguments(
