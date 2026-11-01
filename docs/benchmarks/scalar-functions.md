@@ -5196,3 +5196,98 @@ from 2.392 to 7.203x. They measure production Calc result
 materialization and consumption after a bounded proof excludes operand failures; they
 do not establish executed function-kernel work. Division, remainder, narrowing and other
 unverified producers retain evaluation even when the position is NULL.
+
+## Numeric IS_ALPHA
+
+Released Flink receives boxed primitive integers or internal `DecimalData` in this overload.
+All admitted numeric arguments return FALSE, including runtime/literal NULLs.
+Direct inputs/literals keep a native type-based predicate. Only the recursively verified
+failure-free integer producer scope folds away unused arithmetic; division, remainder,
+narrowing, UDFs and other unverified producers retain the complete generated call, including
+failures and state changes. Floating signatures remain generated. This preserves the released
+behavior rather than inferring it from Java's public BigDecimal API.
+
+The final admission guard additionally keeps unverified producers generated. An untimed
+comparison on each Flink line confirms that all 28 distinct measured direct/add/nested
+signatures retain identical encoded programs and constant pools; the result record keeps
+both measured/final source hashes and final-guard correctness validation.
+
+The [result record](results/numeric-classification-alpha-2026-11-01.json) and
+[raw trials](results/numeric-classification-alpha-2026-11-01.csv.gz) retain 80 configurations and 8,000 main
+trials. Direct runtime arguments retain the native call; arithmetic fold controls are
+explicitly excluded from predicate-kernel qualification. The direct matrix covers four
+integer widths and DECIMAL(18,2)/(38,18), nullable/NOT NULL and GenericRowData/BinaryRowData
+at 1,024 rows. Tiny INT/BIGINT controls use 16 rows. Typed addition/nested multiplication
+provide separate fold diagnostics. No input values are converted to strings.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial compare actual released generated Java on prepared
+RowData with production Calc on matching Arrow. Native operation and equivalent Boolean
+result consumption are timed inside Rust; initial JNI/import/export and perimeter
+transposes are outside this small-operation timer. Intrinsic previous JVM computation
+stays inside. The actual independently compiled preceding-main encoder must bind an
+evaluator; the candidate requires empty descriptors and the intended function before the
+bounded fold. Both sides retain exact types, widths, signed boundaries and matching NULLs.
+
+| Flink line | Rows / measured work | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: |
+| 1.18.1 | 1,024 / predicate | 4.338-75.846x | 57.267-83.709x | 0 / 24 |
+| 1.18.1 | 16 / predicate | 0.132-0.177x | 29.727-32.708x | 8 / 8 |
+| 1.18.1 | 1,024 / fold control | 5.214-14.863x | 80.878-156.067x | 0 / 8 |
+| 2.2.1 | 1,024 / predicate | 4.378-74.153x | 56.493-174.781x | 0 / 24 |
+| 2.2.1 | 16 / predicate | 0.132-0.167x | 29.850-33.778x | 8 / 8 |
+| 2.2.1 | 1,024 / fold control | 5.669-10.663x | 82.630-211.918x | 0 / 8 |
+
+Ratios above one favor native. The type-based predicate returns a Boolean scalar which
+production Calc materializes to the batch length; the measurements do not claim a
+per-row character scan. Small-batch fixed Calc/result costs and every unfavorable sample
+remain in the record. Independent paired-stock drift ranges from
+0.474 to 4.622x; cross-process
+ratios are not causal isolation.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes, with parallelism one and two warmups/five measurements.
+Direct jobs retain the predicate. Add/nested jobs exercise the bounded fold and must not
+be cited as predicate-kernel work. All require consumed native Calc work, no fallback and
+empty candidate evaluator descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / direct | 0.144208 (0.139951-0.185509) | 0.158264 (0.155906-0.180063) | 0.150093 (0.140484-0.155497) | 0.190045 (0.184045-0.214745) |
+| 1.18.1 / add | 0.158886 (0.138947-0.184109) | 0.153646 (0.148057-0.187208) | 0.144336 (0.143366-0.162540) | 0.180045 (0.173658-0.223902) |
+| 1.18.1 / nested | 0.147116 (0.143477-0.157420) | 0.153543 (0.149247-0.156138) | 0.148057 (0.140475-0.163178) | 0.179666 (0.174594-0.195992) |
+| 2.2.1 / direct | 0.171778 (0.156760-0.184056) | 0.163535 (0.162832-0.170514) | 0.155110 (0.150512-0.163980) | 0.192114 (0.179358-0.216947) |
+| 2.2.1 / add | 0.159357 (0.151531-0.164622) | 0.151333 (0.150413-0.174848) | 0.152845 (0.150406-0.165735) | 0.190004 (0.185241-0.206299) |
+| 2.2.1 / nested | 0.155059 (0.149082-0.160268) | 0.150045 (0.143815-0.165674) | 0.170340 (0.152518-0.174406) | 0.191185 (0.188699-0.243760) |
+
+Across these jobs, native/stock elapsed-time ratios range from
+0.950 to 1.097; native/previous ratios range
+from 0.785 to 0.855. Ratios above one are
+slower. Retain overlapping ranges and independent stock drift; prepared bulk qualification
+does not establish universal whole-job acceleration.
+
+All 56 focused JVM invocations and unchanged released `IS_ALPHA` expression tests
+pass on Flink 1.18.1/2.2.1 with JDK 11/17. Eight numeric declarations, 5,003 rows, nullable
+and NOT NULL inputs, literal NULLs and Boolean consumers compare complete values, resolved
+types, cardinality and unique IDs across multiple batches. Direct runtime witnesses require
+consumed work, no fallback and empty descriptors. Separate failure/empty-batch tests and
+four additional shared-state invocations prove that arguments are not discarded. Java
+compiles for release 11; the release/default/mimalloc Rust core suite passes 1,017 tests
+with two pre-existing ignores.
+
+Reproduce with `integral_expression`, for example
+`SF_INTEGRAL_EXPRESSION='IS_ALPHA(v)'`, and `IntegralExpressionPipelineBenchmark` with
+`sf.integral.expression=IS_ALPHA(v)`. Prepended independently compiled previous-encoder
+classes and `SF_INTEGRAL_PREVIOUS=true` select the preceding callback control. Remaining
+coverage stays in [the classification follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/494).
+
+The initial nullable INT arithmetic probe loses to stock
+(0.882x stock/native).
+The bounded fold moves the matched native median from
+2.352 to 0.381 ns/row,
+with a paired stock/native ratio of
+5.815x after the change.
+The [initial](results/numeric-classification-alpha-probe-2026-11-01.csv.gz) and
+[folded](results/numeric-classification-alpha-fold-probe-2026-11-01.csv.gz) probe trials retain direct/tiny
+controls, allocation probes and independent process variation. They are optimizer
+diagnostics, separate from the direct predicate qualification.

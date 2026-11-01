@@ -34,7 +34,10 @@ class IntegralExpressionPipelineBenchmark {
               .returns(Types.ROW_NAMED(new String[] {"v"}, Types.INT));
           table.createTemporaryView("inputs", source,
               Schema.newBuilder().column("v", DataTypes.INT()).build());
-          table.executeSql("CREATE TABLE output_rows(v INT) WITH ('connector'='blackhole')");
+          var resultType = table.sqlQuery("SELECT " + expression + " FROM inputs")
+              .getResolvedSchema().getColumnDataTypes().get(0).getLogicalType();
+          table.executeSql("CREATE TABLE output_rows(v " + resultType.asSerializableString()
+              + ") WITH ('connector'='blackhole')");
           String sql = "INSERT INTO output_rows SELECT " + expression + " FROM inputs";
           var scan = nativeRun ? NativePlanner.install(table) : null;
           String plan = table.explainSql(sql);

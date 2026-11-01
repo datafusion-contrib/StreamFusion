@@ -1,5 +1,7 @@
 //! Release stock/previous/native integer-expression controls; native timers stay inside Rust.
-use arrow::array::{Array, ArrayRef, Int16Array, Int32Array, Int64Array, Int8Array};
+use arrow::array::{
+    Array, ArrayRef, BooleanArray, Decimal128Array, Int16Array, Int32Array, Int64Array, Int8Array,
+};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use jni::objects::JValue;
@@ -18,6 +20,7 @@ struct EncodedProgram {
     longs: Vec<i64>,
     doubles: Vec<f64>,
     strings: Vec<Option<String>>,
+    boolean_output: bool,
 }
 
 macro_rules! java {
@@ -43,11 +46,12 @@ fn checksum(batch: &RecordBatch) -> i64 {
         };
     }
     match batch.column(0).data_type() {
+        DataType::Boolean => sum!(BooleanArray),
         DataType::Int8 => sum!(Int8Array),
         DataType::Int16 => sum!(Int16Array),
         DataType::Int32 => sum!(Int32Array),
         DataType::Int64 => sum!(Int64Array),
-        other => panic!("Unsupported integer-expression output {other}"),
+        other => panic!("Unsupported exact-numeric-expression output {other}"),
     }
 }
 
@@ -137,7 +141,31 @@ fn main() {
         "TINYINT" => Arc::new(Int8Array::from_iter(values.map(|v| v.map(|v| v as i8)))),
         "SMALLINT" => Arc::new(Int16Array::from_iter(values.map(|v| v.map(|v| v as i16)))),
         "INT" => Arc::new(Int32Array::from_iter(values.map(|v| v.map(|v| v as i32)))),
-        _ => Arc::new(Int64Array::from_iter(values)),
+        "BIGINT" => Arc::new(Int64Array::from_iter(values)),
+        "DECIMAL(18,2)" | "DECIMAL(38,18)" => {
+            let (precision, scale) = if element == "DECIMAL(18,2)" {
+                (18, 2)
+            } else {
+                (38, 18)
+            };
+            let maximum = 10_i128.pow(precision as u32) - 1;
+            let values = (0..rows).map(|row| {
+                (!nullable || row % 7 != 0).then(|| match row % 17 {
+                    0 => maximum,
+                    1 => -maximum,
+                    _ => {
+                        (if row % 2 == 0 { -1 } else { 1 })
+                            * (9_007_199_254_740_993 + row as i128 * 7919)
+                    }
+                })
+            });
+            Arc::new(
+                Decimal128Array::from_iter(values)
+                    .with_precision_and_scale(precision, scale)
+                    .unwrap(),
+            )
+        }
+        _ => panic!("Unsupported exact-numeric-expression input {element}"),
     };
     let batch = RecordBatch::try_new(
         Arc::new(Schema::new(vec![Field::new(
@@ -158,7 +186,14 @@ fn main() {
     );
     let actual = native.run(batch.clone());
     assert_eq!(actual.num_rows(), rows);
-    assert_eq!(actual.column(0).data_type(), batch.column(0).data_type());
+    assert_eq!(
+        actual.column(0).data_type(),
+        if program.boolean_output {
+            &DataType::Boolean
+        } else {
+            batch.column(0).data_type()
+        }
+    );
     let expected = checksum(&actual).wrapping_mul(loops as i64);
     let (diagnostic, allocations) = measure(|| native.run(batch.clone()));
     report(

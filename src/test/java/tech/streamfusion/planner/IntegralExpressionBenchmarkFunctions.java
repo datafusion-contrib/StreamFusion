@@ -1,11 +1,14 @@
 package tech.streamfusion.planner;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import org.apache.calcite.rel.core.Project;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.internal.TableImpl;
+import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.functions.FunctionContext;
@@ -13,16 +16,18 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.planner.operations.PlannerQueryOperation;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeParser;
 import tech.streamfusion.operator.NativeUdf;
 
-/** Actual released SQL/encoder controls for integer expression producers. */
+/** Actual released SQL/encoder controls for exact numeric expressions. */
 public final class IntegralExpressionBenchmarkFunctions {
   private static NativeUdf.Binding binding;
   private static FlinkExpressionFunction stock;
   private static RowData[] rows;
   private static String type;
+  private static boolean booleanOutput;
   private static volatile long consumed;
 
   private IntegralExpressionBenchmarkFunctions() {}
@@ -40,6 +45,7 @@ public final class IntegralExpressionBenchmarkFunctions {
     var project = (Project) ((PlannerQueryOperation) query).getCalciteTree();
     LogicalType inputType = LogicalTypeParser.parse(declaration, getLoader());
     LogicalType outputType = FlinkTypeFactory.toLogicalType(project.getProjects().get(0).getType());
+    booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
         new LogicalType[] {inputType}, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
@@ -65,7 +71,7 @@ public final class IntegralExpressionBenchmarkFunctions {
     return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
         "kinds", encoded.kinds(), "payload", encoded.payload(),
         "child_counts", encoded.childCounts(), "longs", constants,
-        "doubles", encoded.doubles(), "strings", encoded.strings()));
+        "doubles", encoded.doubles(), "strings", encoded.strings(), "boolean_output", booleanOutput));
   }
 
   private static ClassLoader getLoader() {
@@ -80,7 +86,15 @@ public final class IntegralExpressionBenchmarkFunctions {
       case "INT": return row % 17 == 0 ? Integer.MIN_VALUE : (int) ((row % 2 == 0 ? -1L : 1L) * v);
       case "BIGINT": return row % 17 == 0 ? Long.MIN_VALUE
           : (row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v);
-      default: throw new IllegalArgumentException(type);
+      default:
+        if (!type.equals("DECIMAL(18,2)") && !type.equals("DECIMAL(38,18)"))
+          throw new IllegalArgumentException(type);
+        int precision = type.equals("DECIMAL(18,2)") ? 18 : 38;
+        int scale = type.equals("DECIMAL(18,2)") ? 2 : 18;
+        BigInteger maximum = BigInteger.TEN.pow(precision).subtract(BigInteger.ONE);
+        BigInteger unscaled = row % 17 == 0 ? maximum : row % 17 == 1 ? maximum.negate()
+            : BigInteger.valueOf((row % 2 == 0 ? -1L : 1L) * (9007199254740993L + v));
+        return DecimalData.fromBigDecimal(new BigDecimal(unscaled, scale), precision, scale);
     }
   }
 
@@ -91,6 +105,7 @@ public final class IntegralExpressionBenchmarkFunctions {
       for (RowData input : rows) {
         RowData result = (RowData) stock.evalRow(input);
         if (result.isNullAt(0)) sum--;
+        else if (booleanOutput) sum += result.getBoolean(0) ? 1 : 0;
         else switch (type) {
           case "TINYINT": sum += result.getByte(0); break;
           case "SMALLINT": sum += result.getShort(0); break;

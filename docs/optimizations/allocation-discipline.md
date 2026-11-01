@@ -51,6 +51,24 @@ qualification and complete jobs with both transposes. Separate
 [TRUNCATE controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
 retain the same fold boundary and explicitly exclude NULL-fold samples from function-work evidence.
 
+## Failure-free numeric classification operands
+
+Numeric `IS_ALPHA` returns FALSE from the released internal argument type, regardless of
+its value or NULL. A native call initially still materialized arithmetic arguments which
+the predicate never reads. Fold a composed integer operand only after the bounded integer
+producer proof excludes failures and state changes. Direct inputs retain the predicate
+kernel; division, remainder, narrowing, UDFs and unverified producers retain the complete
+generated call.
+This is not a general license to discard arguments of constant-result functions.
+
+A nullable 1,024-row INT nested-arithmetic probe moves from 2.352 to 0.381 ns/row;
+paired stock/native moves from 0.882x to 5.815x. Untimed Rust allocation requests drop
+from 96 to 13 per batch (18,560 to 782 requested bytes). These are separate warmed
+release/default-feature/mimalloc processes; JVM/other-thread allocations and retained memory
+are not measured. The [numeric classification record](../benchmarks/scalar-functions.md#numeric-is_alpha)
+keeps the initial/folded probes, stock drift, full type matrix and complete-job controls.
+Folded samples are excluded from executed predicate-kernel qualification.
+
 ## Per-row allocation cuts
 
 Grouped FIRST/LAST skips extracting an append-only FIRST value once its non-NULL result

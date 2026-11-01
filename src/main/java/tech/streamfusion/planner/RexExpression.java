@@ -2728,6 +2728,18 @@ final class RexExpression {
     if ("IS_ALPHA".equals(functionName) && nativeStringClassification(call)) {
       return emitCharacterFunction(call, 238, 1, 1);
     }
+    if ("IS_ALPHA".equals(functionName) && nativeNumericClassification(call)) {
+      RexNode operand = call.getOperands().get(0);
+      if (operand instanceof RexCall
+          && SqlTypeFamily.INTEGER.contains(operand.getType())
+          && nativeIntegralRoundingOperand(operand)) {
+        // This predicate is type-based, and the verified integer tree cannot fail or mutate state.
+        add(KIND_LIT_BOOL, longs.size(), 0);
+        longs.add(0L);
+        return true;
+      }
+      return emitBuiltinCall(call, 241);
+    }
     if ("IS_DIGIT".equals(functionName) && nativeStringClassification(call)) {
       return emitCharacterFunction(call, 239, 1, 1);
     }
@@ -4468,8 +4480,9 @@ final class RexExpression {
         return !nativeFromBase64(call);
       case "IS_DECIMAL":
       case "IS_DIGIT":
-      case "IS_ALPHA":
         return !nativeStringClassification(call);
+      case "IS_ALPHA":
+        return !nativeStringClassification(call) && !nativeNumericClassification(call);
       case "SHA2":
         return call.getOperands().size() == 2
             && (!(call.getOperands().get(1) instanceof RexLiteral)
@@ -4519,6 +4532,17 @@ final class RexExpression {
 
   private static boolean nativeStringClassification(RexCall call) {
     return call.getOperands().size() == 1 && isCharacter(call.getOperands().get(0));
+  }
+
+  private static boolean nativeNumericClassification(RexCall call) {
+    if (call.getOperands().size() != 1) return false;
+    RexNode operand = call.getOperands().get(0);
+    return (SqlTypeFamily.INTEGER.contains(operand.getType())
+            || operand.getType().getSqlTypeName() == SqlTypeName.DECIMAL)
+        && (operand instanceof RexInputRef
+            || operand instanceof RexLiteral
+            || SqlTypeFamily.INTEGER.contains(operand.getType())
+                && nativeIntegralRoundingOperand(operand));
   }
 
   private static boolean nativeIntegralRoundPosition(RexCall call) {

@@ -1951,12 +1951,24 @@ JNI setup uses a bounded local-reference frame and retains only immutable Rust b
 and row evaluation make no JVM calls. Replacing an isolated surrogate with `?` cannot change
 these predicates, because both fail the letter/digit tests; existing sensitive-expression and arbitrary
 binary STRING boundaries retain their separate admission rules. Already-generated operands
-may still contain their own JVM evaluators. Noncharacter overloads retain generated evaluation,
-including TRUE for integral numeric objects passed to `IS_DIGIT` regardless of sign.
+may still contain their own JVM evaluators.
+`IS_ALPHA` also runs natively for direct TINYINT, SMALLINT, INT, BIGINT and DECIMAL inputs/literals,
+returning nonnullable FALSE even for runtime or literal NULLs. Released Flink passes boxed
+integers or internal `DecimalData`, neither of which is a Java String. The native call keeps
+the input in the expression. Recursively proven failure-free integer trees (the bounded
+integer-rounding producer proof) fold to FALSE without evaluating unused intermediates. Division, remainder,
+narrowing, UDFs and unverified producers retain generated evaluation of the complete call,
+so exceptions and state changes are not discarded. Folded results are not evidence
+of executed predicate-kernel work. Conditional branches and empty filtered batches retain
+their existing guards. Floating IS_ALPHA signatures retain generated evaluation. Noncharacter `IS_DIGIT`/`IS_DECIMAL`
+overloads also remain generated, including TRUE for integral numeric objects passed to
+`IS_DIGIT` regardless of sign.
 The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
 include stock Flink and the actual previous callback as well as complete row-source jobs.
 The [digit measurements](../benchmarks/scalar-functions.md#string-is_digit) cover the separate
 digit corpora and preserve small-batch and complete-job costs.
+The [numeric alpha measurements](../benchmarks/scalar-functions.md#numeric-is_alpha)
+separate predicate execution, bounded folds, tiny batches and full jobs with both transposes.
 
 `IS_DECIMAL` on character arguments also runs in a native Arrow kernel, with nonnullable
 FALSE for NULL/empty strings. Its released meaning is successful Java integer, long or
