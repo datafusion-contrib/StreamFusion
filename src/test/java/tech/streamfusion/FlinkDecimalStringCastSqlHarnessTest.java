@@ -21,6 +21,37 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDecimalStringCastSqlHarnessTest {
   @ParameterizedTest
+  @CsvSource({"1,1", "4,3", "18,0", "18,3", "18,18", "19,0", "38,18", "38,38"})
+  void nullableDecimalArithmeticCastConsumesOnlyNativeWork(int precision, int scale)
+      throws Exception {
+    String sql = "SELECT id,CAST(d+d AS STRING),CAST(d-d AS STRING),CAST(d*d AS STRING),"
+        + "CAST((d+d)*d AS VARCHAR(3)),CAST(d*(d-d) AS CHAR(44)),"
+        + "CAST(ABS(d)+d AS CHAR(8)),CAST(d-(-d) AS VARCHAR(3)) FROM src";
+    for (boolean legacy : new boolean[] {false, true}) {
+      assertRuntimeCasts(sql, precision, scale, legacy, true);
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void nullableDecimalArithmeticCastKeepsConsumersAndLazyBranches(boolean legacy) throws Exception {
+    java.util.function.Supplier<TableEnvironment> factory = () -> environment(38, 18, legacy);
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT id,CONCAT(CAST(d*d AS STRING),'!'),CHAR_LENGTH(CAST(d+d AS CHAR(8))),"
+            + "CASE WHEN id>=0 THEN CAST(d*d AS STRING) ELSE CAST(d/(id-id) AS STRING) END FROM src");
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT id FROM src WHERE CAST(d*d AS STRING) LIKE '0%' OR CAST(d-d AS STRING) IS NULL");
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT CAST(d*d AS STRING),CAST(d/(id-id) AS STRING) FROM src WHERE id<0");
+    NativeParity.assertChangelogParity(factory,
+        "SELECT c,COUNT(*) FROM (SELECT CAST(d*d AS STRING) AS c FROM src) GROUP BY c");
+    BuiltinFunctionParity.assertParity(() -> environment(18, 3, legacy),
+        "SELECT id,LTRIM(CAST(d+d AS CHAR(5)),''),RTRIM(CAST(d+d AS VARCHAR(5)),''),"
+            + "LTRIM(CAST(d*d AS VARCHAR(8)),''),RTRIM(CAST(d*d AS CHAR(8)),'') "
+            + "FROM src WHERE id=2");
+  }
+
+  @ParameterizedTest
   @CsvSource({"false,CAST", "true,CAST", "false,TRY_CAST", "true,TRY_CAST"})
   void decimalUnaryCastConsumersAndEvaluationBoundariesMatch(boolean legacy, String operator)
       throws Exception {

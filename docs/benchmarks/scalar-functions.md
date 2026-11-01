@@ -6080,8 +6080,9 @@ Verified DECIMAL ABS and unary minus, same-operator nesting, and same-scale
 precision widening reuse the native plain-text formatter and existing ASCII-safe
 LEFT/RPAD width kernels. Released Flink retains precision/scale in these unary
 operations. Modern/legacy spelling, trailing zeros, truncation/padding and NULLs
-remain unchanged. Other arithmetic, rounding metadata, SIGN, mixed unary trees,
-stateful/failing producers and unknown configuration keep their existing routes.
+remain unchanged. Nullable arithmetic CAST is qualified separately below. Other
+arithmetic, rounding metadata, SIGN, mixed unary trees, stateful/failing producers
+and unknown configuration retain their existing routes.
 No native kernel, JNI boundary, ownership contract or production switch changes.
 
 The [result record](results/decimal-unary-cast-2026-11-01.json) and
@@ -6151,8 +6152,9 @@ Verified DECIMAL ABS and unary minus, same-operator nesting, and same-scale
 precision widening reuse the native plain-text formatter and existing ASCII-safe
 LEFT/RPAD width kernels. Released Flink retains precision/scale in these unary
 operations. Modern/legacy spelling, trailing zeros, truncation/padding and NULLs
-remain unchanged. Other arithmetic, rounding metadata, SIGN, mixed unary trees,
-stateful/failing producers and unknown configuration keep their existing routes.
+remain unchanged. Nullable arithmetic CAST is qualified separately below. Other
+arithmetic, rounding metadata, SIGN, mixed unary trees, stateful/failing producers
+and unknown configuration retain their existing routes.
 No native kernel, JNI boundary, ownership contract or production switch changes.
 
 The [result record](results/decimal-unary-try-cast-2026-11-01.json) and
@@ -6222,5 +6224,78 @@ Source/DSO hashes and independently recompiled baseline classes are retained.
 Reproduce prepared qualification with `integral_expression`, DECIMAL input and
 `SF_INTEGRAL_EXPRESSION='TRY_CAST(ABS(v) AS STRING)'`. Complete jobs use
 `sf.integral.expression=TRY_CAST(ABS(v) AS STRING)` and
+`sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
+are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## Nullable DECIMAL arithmetic CAST to character
+
+Nullable DECIMAL-only addition, subtraction and multiplication trees reuse the
+existing typed arithmetic kernels and exact character formatter. Each node retains
+its resolved precision/scale and overflow NULL. The proof also admits previously
+verified ABS/negate inputs; it excludes division, remainder, mixed numeric types,
+stateful/failing producers and unverified conversions. Both the computed source
+and the character result must be nullable. NOT NULL arithmetic retains the exact
+generated value/default/null-flag contract; arithmetic TRY_CAST keeps its prior
+route. No Rust kernel, JNI/ownership boundary or production option changes.
+
+The [result record](results/decimal-arithmetic-cast-2026-11-01.json) and
+[raw trials](results/decimal-arithmetic-cast-2026-11-01.csv.gz) retain 32 configurations/3,200 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18) extrema and large signed coefficients
+match across GenericRowData/BinaryRowData and nullable declarations.
+Representative bulk expressions are modern v+v to STRING, modern v*v
+to CHAR(8), and legacy (v+v)*v to CHAR(44). Sixteen-row modern v*v-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder must bind a JVM evaluator; the candidate must have no evaluator.
+The unchanged Rust decimal formatter, Calc and typed arithmetic kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 12 | 1.832-8.545x | 1.819-10.077x | 0 |
+| 1.18.1 | tiny control | 4 | 1.430-2.923x | 9.921-13.647x | 0 |
+| 2.2.1 | bulk | 12 | 1.799-8.606x | 1.772-10.408x | 0 |
+| 2.2.1 | tiny control | 4 | 1.459-2.968x | 9.659-13.076x | 0 |
+
+All 24 bulk cells beat stock; 0 of 8 tiny controls are slower.
+Independent stock-control drift spans 0.899-1.085x. All ranges are retained.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern DECIMAL(18,2) v+v-to-STRING,
+modern DECIMAL(38,18) v*v-to-CHAR(8), and legacy DECIMAL(38,18) (v+v)*v-to-CHAR(44)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-add | 0.256403 (0.240670-0.266953) | 0.219047 (0.215546-0.224134) | 0.254911 (0.244312-0.263866) | 0.285142 (0.278247-0.293991) |
+| 1.18.1 / modern-multiply | 0.378419 (0.360666-0.380856) | 0.244122 (0.239227-0.254304) | 0.366048 (0.359645-0.377322) | 0.346962 (0.340675-0.351597) |
+| 1.18.1 / legacy-nested | 0.331110 (0.329966-0.337205) | 0.261276 (0.254386-0.275251) | 0.327974 (0.316690-0.341677) | 0.308758 (0.299839-0.322865) |
+| 2.2.1 / modern-add | 0.247919 (0.246311-0.257852) | 0.217974 (0.212238-0.226258) | 0.260530 (0.251712-0.287248) | 0.285710 (0.282034-0.291648) |
+| 2.2.1 / modern-multiply | 0.374700 (0.372850-0.383431) | 0.250588 (0.242618-0.255825) | 0.385305 (0.381401-0.389040) | 0.326326 (0.320013-0.336114) |
+| 2.2.1 / legacy-nested | 0.337211 (0.328946-0.361897) | 0.252416 (0.249894-0.256505) | 0.344956 (0.331128-0.350719) | 0.303112 (0.294999-0.315260) |
+
+Native/stock elapsed ratios span 0.645-0.879;
+native/previous ratios span 0.704-0.846. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+All 640 focused JVM invocations (including the shared-state suite) and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for eight DECIMAL precision/scale pairs from (1,1)
+through (38,38), nullable declarations, modern/legacy mode, signed extrema,
+zeros and unit coefficients. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+NOT NULL arithmetic, failing/stateful producers and arithmetic TRY_CAST retain their
+preceding generated/fallback routes, with the overflow repair also revalidated.
+The unchanged released DecimalData formatting oracle, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='CAST(v+v AS STRING)'`. Complete jobs use
+`sf.integral.expression=CAST(v+v AS STRING)` and
 `sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
 are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

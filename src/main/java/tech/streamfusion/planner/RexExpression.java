@@ -3906,7 +3906,9 @@ final class RexExpression {
         && (nativeDecimalUnaryOperand(call.getOperands().get(0),
                 org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
             || nativeDecimalUnaryOperand(call.getOperands().get(0),
-                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS))) {
+                org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)
+            || !tryCast && sourceType.isNullable() && resultType.isNullable()
+                && nativeDecimalFormattingArithmetic(call.getOperands().get(0)))) {
       boolean bounded = Boolean.FALSE.equals(legacyCastBehaviour)
           && resultType.getPrecision() != Integer.MAX_VALUE;
       boolean pad = targetType == SqlTypeName.CHAR;
@@ -4752,6 +4754,22 @@ final class RexExpression {
         && call.getType().getPrecision() >= input.getPrecision()
         && call.getType().getScale() == input.getScale()
         && nativeDecimalUnaryOperand(call.getOperands().get(0), operator);
+  }
+
+  private static boolean nativeDecimalFormattingArithmetic(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL) return false;
+    if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    if (isDecimalArithmetic(call)
+        && (call.getKind() == SqlKind.PLUS || call.getKind() == SqlKind.MINUS
+            || call.getKind() == SqlKind.TIMES)) {
+      return call.getOperands().stream().allMatch(RexExpression::nativeDecimalFormattingArithmetic);
+    }
+    return nativeDecimalUnaryOperand(node,
+            org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
+        || nativeDecimalUnaryOperand(node,
+            org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS);
   }
 
   private static boolean nativeIntegralAbs(RexCall call) {
