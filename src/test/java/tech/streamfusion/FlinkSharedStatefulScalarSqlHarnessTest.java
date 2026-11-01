@@ -38,7 +38,8 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
         "SELECT id, COALESCE(tick(a), tick(b), 0), tick(a) FROM src",
         "SELECT id, tick(a), NOT(CAST(COALESCE(id,0) AS DECIMAL(1,0))>0), tick(b) FROM src",
         "SELECT id, tick(a), CAST(CAST(COALESCE(id,0) AS DECIMAL(38,18)) * "
-            + "99999999999999999999.999999999999999999 AS STRING), tick(b) FROM src",
+            + "CAST('99999999999999999999.999999999999999999' AS DECIMAL(38,18)) "
+            + "AS STRING), tick(b) FROM src",
         "SELECT id, tick(a), other_tick(b), tick(b) FROM src",
         "SELECT id, tick(a), tick(b) FROM src WHERE tick(a) < 0"
       })
