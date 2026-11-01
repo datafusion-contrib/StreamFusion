@@ -52,6 +52,8 @@ public final class IntegralExpressionBenchmarkFunctions {
     boolean previous = Boolean.getBoolean("sf.integral.previous");
     if (previous == encoded.jvmFunctionCalls().isEmpty())
       throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
+    if (!previous && encoded.nativeFunctionCalls().isEmpty())
+      throw new IllegalStateException("Expected the intended native function before constant folding");
     binding = encoded.udfBinding();
     long[] constants = binding.bind(encoded.longs(), context);
     var serializer = new RowDataSerializer(RowType.of(inputType));

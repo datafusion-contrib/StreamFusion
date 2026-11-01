@@ -1544,18 +1544,23 @@ The [arithmetic-producer controls](../benchmarks/scalar-functions.md#integer-abs
 also retain the initially slower native implementation and the cost of the removed casts.
 
 Integer unary minus on direct TINYINT/SMALLINT/INT/BIGINT inputs, typed literals, lossless
-integer widening and nested admitted negation executes a Rust Arrow kernel without a JVM
+integer widening, nested admitted negation and recursively verified integer addition,
+subtraction and multiplication executes a Rust Arrow kernel without a JVM
 evaluator. It retains the resolved width and wraps each signed minimum to itself, including
-scalar literals: verified input-reference chains reuse DataFusion's physical negative
+scalar literals: verified expressions containing input references reuse DataFusion's physical negative
 expression, while literal-rooted chains use wrapping scalar dispatch. DataFusion 54's ordinary
 negative expression checks scalar overflow, so it cannot represent both contracts alone.
 NULLs, sliced validity and ownership
 are preserved. The function route diagnostic includes unary minus; runtime witnesses require
 its native route and consumed batches, rather than interpreting an empty function list as
-evidence. Arithmetic, narrowing and other unverified producers retain generated evaluation
+evidence. Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain generated evaluation
 with their enclosing negation. [Release measurements](../benchmarks/scalar-functions.md#integral-unary-minus)
 compare prepared inputs with stock and the previous callback, and separately report the
 complete row-source job with both transposes.
+
+The [arithmetic-producer controls](../benchmarks/scalar-functions.md#integer-unary-minus-over-arithmetic)
+also cover both constant operand orders through production JNI on JDK 11/17, including
+empty batches, broadcast cardinality and output ownership after the input closes.
 
 DECIMAL ABS also uses the exact Rust kernel for direct input references, typed literals,
 nested admitted ABS and recursive precision widening at the same scale. It preserves

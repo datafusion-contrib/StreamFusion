@@ -16,7 +16,7 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkIntegralArithmeticSqlHarnessTest {
   static java.util.stream.Stream<Arguments> functionsAndTypes() {
-    return java.util.stream.Stream.of("ABS").flatMap(function ->
+    return java.util.stream.Stream.of("ABS", "-").flatMap(function ->
         java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
             .map(type -> Arguments.of(function, type)));
   }

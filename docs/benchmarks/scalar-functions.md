@@ -4746,3 +4746,69 @@ and prepends the actual preceding encoder to the classpath. Complete jobs use
 `IntegralExpressionPipelineBenchmark`, `SF_BENCHMARK=true` and the corresponding
 `sf.integral.expression` / `sf.integral.previous` properties. These are benchmark controls,
 not production switches.
+
+## Integer unary minus over arithmetic
+
+Unary minus now admits the same recursively verified integer addition, subtraction and
+multiplication producers as ABS. Every intermediate retains its resolved integer width
+and wrapping overflow. An input-containing tree uses the physical negative expression;
+a constant-only tree uses the wrapping scalar kernel because DataFusion's ordinary scalar
+negative checks overflow. Division, remainder, narrowing and unverified producers retain
+the complete generated expression.
+
+The prepared controls use the actual preceding main encoder and the production Calc,
+with the same timing boundaries, release/default-feature/mimalloc build and matching
+nullable/NOT NULL declarations as the ABS arithmetic matrix. Stock runs released generated
+Java on prepared GenericRowData/BinaryRowData; native runs matching Arrow with both timing
+and equal checksum consumption inside Rust. Intrinsic previous JVM work remains timed;
+entry JNI/import/export and both perimeter transposes remain outside this small-operation
+timer. The candidate requires an intended native function and empty JVM descriptors;
+the previous control must bind a JVM evaluator.
+
+JDK 17.0.12 on Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows
+per trial cover all four integer widths, NULL/NOT NULL, both row representations, typed
+addition and nested multiplication. INT/BIGINT addition also has 16-row controls.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range |
+| --- | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.073-0.323x | 10.525-29.251x |
+| 1.18.1 | 1,024 | 1.483-8.502x | 12.874-57.345x |
+| 2.2.1 | 16 | 0.073-0.337x | 10.747-30.518x |
+| 2.2.1 | 1,024 | 1.507-9.339x | 13.313-74.468x |
+
+All 64 bulk cells beat paired stock; all sixteen tiny-batch cells remain slower. Fixed
+Calc/result costs dominate tiny computations. Independent paired-stock controls drift
+by 0.663-1.353x. The [result record](results/integral-arithmetic-negate-2026-11-01.json)
+and [raw trials](results/integral-arithmetic-negate-2026-11-01.csv.gz) retain every
+measurement, including slower controls and allocation probes.
+
+Separate million-row nullable INT source/blackhole jobs keep production JNI, startup,
+planning and both transposes, with parallelism one, two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty evaluators.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / addition | 0.126943 (0.123006-0.136017) | 0.145248 (0.141566-0.159738) | 0.130385 (0.120768-0.146977) | 0.166026 (0.154087-0.170880) |
+| 1.18.1 / nested | 0.127378 (0.119838-0.136126) | 0.142236 (0.138390-0.162559) | 0.129773 (0.123038-0.134026) | 0.168336 (0.155652-0.171366) |
+| 2.2.1 / addition | 0.137106 (0.130255-0.147236) | 0.149406 (0.140301-0.164516) | 0.138002 (0.126575-0.175749) | 0.174674 (0.159422-0.202962) |
+| 2.2.1 / nested | 0.127712 (0.123361-0.134710) | 0.145771 (0.142729-0.152221) | 0.125265 (0.122946-0.132947) | 0.163662 (0.158853-0.182695) |
+
+Native medians improve 10.9-15.5% over previous StreamFusion, but remain 9.0-14.4%
+slower than paired stock. The 2.2 addition ranges overlap. This qualifies prepared bulk
+computation, not whole-job acceleration: fixed Calc, source/sink and perimeter costs
+remain in these bounded jobs. Tiny-batch/perimeter optimization stays in the
+[numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+Correctness checks pass 160 focused JVM invocations across released Flink 1.18.1/2.2.1
+and JDK 11/17, plus eight strengthened encoder checks. Consumed runtime jobs compare every
+ID, value, type and NULL across batches and require empty JVM descriptors and no fallback.
+Sixteen dedicated JVM-started JNI invocations additionally test four signed widths,
+both constant operand orders and zero/one/1,023 rows: all 96 batches preserve cardinality,
+types and wrapping signed minima after the input closes. The unchanged released upstream
+unary-plus/minus method passes on all four pairs. These local upstream assertions are
+separate from native-work evidence. Java compiles for release 11. No new Rust production
+code is added beyond the separately tested ABS identity-cast optimization.
+
+Reproduce with the same `integral_expression` fixture and preceding-encoder controls as
+the ABS matrix, using `SF_INTEGRAL_EXPRESSION='-((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'`.
+Complete jobs use the corresponding `sf.integral.expression` property.

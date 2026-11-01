@@ -2209,10 +2209,8 @@ final class RexExpression {
         return emitBuiltinCall(call, 219);
       }
       if (nativeIntegralNegate(call)) {
-        // The admitted unary chain has one leaf; input references guarantee array evaluation.
-        RexNode leaf = call.getOperands().get(0);
-        while (leaf instanceof RexCall) leaf = ((RexCall) leaf).getOperands().get(0);
-        return emitBuiltinCall(call, leaf instanceof RexInputRef ? 5 : 219);
+        boolean scalar = org.apache.calcite.plan.RelOptUtil.InputFinder.bits(call).isEmpty();
+        return emitBuiltinCall(call, scalar ? 219 : 5);
       }
       return emitFloatUnary(call, 5);
     }
@@ -4355,7 +4353,8 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralNegate(call)) return true;
+    if (nativeIntegralNegate(call)
+        || nativeIntegralArithmetic(call, RexExpression::nativeIntegralNegateOperand)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())

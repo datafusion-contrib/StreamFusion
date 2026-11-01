@@ -147,6 +147,8 @@ fn main() {
         vec![],
     );
     let actual = native.run(batch.clone());
+    assert_eq!(actual.num_rows(), rows);
+    assert_eq!(actual.column(0).data_type(), batch.column(0).data_type());
     let expected = checksum(&actual).wrapping_mul(loops as i64);
     let (diagnostic, allocations) = measure(|| native.run(batch.clone()));
     report(
