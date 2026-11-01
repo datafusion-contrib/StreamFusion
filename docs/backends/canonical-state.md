@@ -291,3 +291,12 @@ Native migration preserves known old fields and marks unrecorded arithmetic expl
 recover history an old implementation discarded. Direct stock bounded projection remains
 unqualified until the full released accumulator/view/buffer/counter/timer contract is installed;
 ordinary native checkpoint migration is not a stock conversion step.
+
+Bounded event-time RANGE also retains the complete registered timestamp set and last-fired
+timestamp independently of the current cleanup deadline and processed frame. Superseded cleanup
+timers can advance late admission without processing a row. Native memory/key-group snapshots
+and a separate key-group-prefixed RocksDB table preserve that protocol through recovery and
+rescaling; cleanup removes it with the key. Old native snapshots can seed their former cutoff,
+but cannot reconstruct missing historical timers. This closes an information-loss gap for the
+future stock adapter without qualifying bounded stock canonical import/export. Performance
+validation remains deferred for [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

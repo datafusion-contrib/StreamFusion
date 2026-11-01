@@ -89,6 +89,16 @@ keeps the full current frame. RANGE evicts values older than its key's latest ro
 Our orchestration remains the incremental streaming operator rather than Arroyo's per-instant
 DataFusion window execution plan, because the state must survive native and stock snapshots.
 
+Bounded event-time RANGE keeps Flink's registered data and cleanup timestamps separately from
+the retained frame. Replaced cleanup deadlines leave their older timers armed; those callbacks
+advance the per-key late cutoff even without a data row. A sorted, deduplicated timestamp vector
+and optional last-fired timestamp preserve this behavior across native checkpoints. Their owned
+capacity counts against the state budget, and RocksDB checkpoints persist them under the same
+key-group prefix as the frame. This follows Flink's timer protocol rather than Arroyo's
+per-instant execution lifetime. Native legacy restore cannot recover timers an older writer
+discarded. The stock bounded adapter remains pending in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
+
 Flink seeds `lastTriggeringTs = 0` in these operators and drops a row whose rowtime is
 `<= 0` as late. We preserve that rule and reject timestamps at or before the key's last firing,
 independently of the global watermark. The last retained frame row is also the admission marker,

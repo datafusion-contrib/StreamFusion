@@ -1,7 +1,7 @@
 use super::*;
 
 impl OverWindowAggregator {
-    fn cleanup_key_types(&self) -> Vec<DataType> {
+    pub(super) fn cleanup_key_types(&self) -> Vec<DataType> {
         if let Some(schema) = &self.input_schema {
             return self
                 .key_columns
@@ -17,6 +17,9 @@ impl OverWindowAggregator {
     }
 
     pub(super) fn snapshot_cleanup(&self) -> Vec<u8> {
+        if self.range_offset().is_some() {
+            return self.snapshot_range_timers();
+        }
         if !self.deadline_cleaning() || self.cleanup_state.is_empty() {
             return Vec::new();
         }
@@ -58,12 +61,12 @@ impl OverWindowAggregator {
     }
 
     pub(super) fn restore_cleanup(&mut self, bytes: &[u8], stamps: &mut HashMap<ByteKey, i64>) {
-        if !self.deadline_cleaning() {
+        if !self.deadline_cleaning() && self.range_offset().is_none() {
             return;
         }
         for batch in read_ipc_if_present(bytes) {
-            let arity = batch.num_columns() - 1;
-            assert_eq!(arity, self.key_columns.len(), "cleanup partition key count");
+            let arity = self.key_columns.len();
+            assert_eq!(batch.schema().field(arity).name(), CLEANUP_AT_COLUMN);
             let arrays = (0..arity)
                 .map(|column| batch.column(column))
                 .collect::<Vec<_>>();
@@ -80,6 +83,7 @@ impl OverWindowAggregator {
             for row in 0..batch.num_rows() {
                 stamps.insert(ByteKey::from(keys.row(row).data()), deadlines.value(row));
             }
+            self.restore_range_timer_batch(&batch, &keys);
             self.key_converter = converter;
         }
     }
@@ -120,12 +124,19 @@ impl OverWindowAggregator {
         self.store
             .as_mut()
             .expect("over rocksdb store")
-            .write_stamps(&entries)
+            .write_stamps(&entries)?;
+        if self.range_offset().is_some() {
+            self.restore_range_timer_batch(batch, &keys);
+            self.sync_store_range_timers()?;
+        }
+        Ok(())
     }
 
     #[cfg(feature = "rocksdb-state")]
     pub(super) fn sync_store_cleanup(&mut self) -> Result<(), DataFusionError> {
-        if self.retention_scheme() != RetentionScheme::Deadline {
+        if self.range_offset().is_some() {
+            self.sync_store_range_timers()?;
+        } else if self.retention_scheme() != RetentionScheme::Deadline {
             return Ok(());
         }
         self.flush_tombstones()?;

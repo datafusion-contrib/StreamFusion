@@ -15,6 +15,7 @@ mod distinct_tests;
 mod frame_inputs_tests;
 #[cfg(test)]
 mod pending_tests;
+mod range_timers;
 
 /// The OVER aggregate's DB holds one table per state shape, every key led by the PARTITION BY
 /// key's group (BinaryRow-hash routed — identical to the blob partitioner) so rescale clipping is
@@ -44,6 +45,7 @@ const STAMPS_TABLE: u8 = 3;
 const DISTINCT_TABLE_BASE: u8 = 4;
 // Bounded frames and unbounded DISTINCT folds never share a store.
 const FRAME_INPUTS_TABLE: u8 = 4;
+const RANGE_TIMERS_TABLE: u8 = 5;
 const KEY_GROUP_LEN: usize = 4;
 const KEY_PREFIX_LEN: usize = 5;
 const PENDING_KEY_LEN: usize = 13;
@@ -151,6 +153,7 @@ impl RocksOverAggStore {
         }
         if !frame_value_types.is_empty() {
             tables.push((Some(FRAME_INPUTS_TABLE), 0));
+            tables.push((Some(RANGE_TIMERS_TABLE), 0));
         }
         let opened = open_shared_db(&config, &tables)?;
         Self::attach(

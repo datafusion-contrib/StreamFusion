@@ -327,13 +327,21 @@ Bounded ROWS and RANGE frames instead compare against that partition's last-fire
 initially zero. Equality is late; an untouched partition can accept a positive timestamp behind
 the global watermark. Rows tied before their timer fires remain admissible together.
 
-The newest retained frame row preserves the last-fired timestamp through memory snapshots,
-RocksDB checkpoints, and backend transitions. A zero-width ROWS frame keeps one marker row,
-which is excluded from the next row's aggregate. RANGE eviction uses each partition's own
-last timestamp. Its event-time cleanup timer clears the whole partition and resets admission:
+ROWS preserves its last-fired timestamp in the newest retained frame row; a zero-width frame
+keeps one marker row, excluded from the next row's aggregate. RANGE separately retains its
+last-fired timestamp and the complete set of registered data and cleanup timestamps. An older
+cleanup timer remains registered when the deadline moves: firing it advances the late cutoff
+even if no input exists at that timestamp. The newest frame row alone cannot represent this.
+RANGE eviction uses each partition's own last processed rowtime. Its current event-time cleanup
+timer clears the whole partition and resets admission:
 Flink's deadline hysteresis registers `timestamp + floor(1.5 * interval) + 1` when the existing
-deadline precedes `timestamp + interval + 1`. Those deadlines are checkpointed alongside frames;
-pending-only partitions reconstruct them from their buffered arrivals on canonical restore.
+deadline precedes `timestamp + interval + 1`. Memory snapshots and RocksDB checkpoints preserve
+the deadline, last-fired timestamp and registered timers together, including pending-only keys
+and backend changes. Timer metadata follows key-group ownership during rescaling. Old native
+snapshots remain readable using their former frame-derived cutoff, but cannot recover discarded
+timer history. Stock bounded canonical projection remains unfinished under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); this native correction is
+not a cross-engine qualification. Benchmarking remains deferred.
 
 ## Proctime order
 
