@@ -160,7 +160,7 @@ Direct ARRAY arguments and direct result columns also support `java.util.List` w
 scalar element conversions, and `boolean[]`, `byte[]`, `short[]`, `int[]`, `long[]`, `float[]`
 and `double[]` with matching non-null element types. ARRAY parents can still be NULL or empty;
 Lists can contain NULL elements. Direct result fields and atomic ARRAY results additionally
-support `java.util.ArrayList` with default scalar element conversions, including both interval
+support `java.util.List` implementations with default scalar element conversions, including both interval
 families. This is result-only: released validation rejects concrete List subclass arguments.
 In signatures containing containers, direct non-null BOOLEAN, TINYINT, SMALLINT, INT, BIGINT,
 FLOAT and DOUBLE arguments may also use their corresponding
@@ -182,8 +182,8 @@ Released converters own these Java values, and the existing
 typed-array adapter supplies primitive conversion after nullable Arrow copies. FLOAT/DOUBLE
 retain signed zero and NaN payloads through chained function inputs and results.
 
-Released type inference determines the conversions. Other concrete/custom List result classes,
-alternate bridges nested inside a ROW/MAP argument or nested result column, Lists with
+Released type inference determines the conversions. Alternate bridges nested inside a
+ROW/MAP argument or nested result column, Lists with
 ARRAY/MAP/ROW elements, internal
 `ArrayData`/`MapData`/`RowData`, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
@@ -303,7 +303,7 @@ continues to require the table-function operator and both transposes.
 
 ### Concrete ArrayList results (2026-10-24)
 
-Direct external Row result fields and atomic ARRAY results can use `ArrayList` when their
+Direct external Row result fields and atomic ARRAY results can use List implementations when their
 elements use verified default scalar conversions. List arguments still use the exact
 `java.util.List` bridge. These are separate contracts: released Flink accepts List subclasses
 for external-to-internal result conversion, but rejects their internal-to-external argument
@@ -322,9 +322,15 @@ emitted NULLs), retained values across closed batches, empty inputs, failures, d
 collectors, DATE/int argument composition, and two forced restores with memory/native RocksDB.
 Nested ArrayList result fields and Lists/ArrayLists of containers retain fallback. Scalar
 membership uses Flink’s predefined logical-type family, so zero-field ROW elements remain
-containers even when wrapped in an AtomicDataType. Other concrete/custom List result classes
-remain outside this exact-class whitelist. Admission reuses Flink's result converter and the
+containers even when wrapped in an AtomicDataType. Admission reuses Flink's result converter and the
 existing owned Arrow writes; no runtime or native-memory path changes.
+
+The result gate now follows released Flink's assignable-List conversion, including `LinkedList`,
+`Vector` and custom List subclasses. The class only affects the external result passed to
+Flink's existing converter; it does not widen the element whitelist, nested bridge positions,
+internal containers or argument conversions. The converter invokes the result's actual
+`toArray(T[])`, preserving custom behavior and exceptions. Pending result objects and reused
+containers are copied into Arrow during collection, before later mutation or buffer closure.
 
 The [complete-job artifact](../benchmarks/results/jvm-table-function-arraylist-results-2026-10-24.json)
 records the exact final source/native hashes, all validation outcomes and 784 timing trials.
@@ -388,6 +394,52 @@ Reproduce with `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
 For the actual prior revision, copy the conversion, interval and benchmark test fixtures only
 and set `-Dboundary.expectNative=false`; the control still requires native work. Production
 sources must remain unchanged.
+
+### Additional List implementations (2026-11-01)
+
+The broader result gate passes 73 new checks plus 86 existing conversion/interval checks on
+each released Flink line, with no failures or skips. It covers LinkedList, Vector and a
+custom ArrayList subclass across 19 scalar element families, INNER/LEFT mutable fanout,
+atomic collectors, NULL/empty input, retained arguments across batches, chained exact
+floating bits, custom `toArray(T[])` failure and short-circuiting. Six heap/native-RocksDB
+changelog scenarios each force two restores and require consumed table-function input.
+Existing concrete-argument, nested-bridge, internal-container and container-element fallback
+controls remain in the selection.
+
+The [complete-job record](../benchmarks/results/jvm-concrete-list-results-2026-11-01.json)
+retains paired stock/previous/native samples, warmups, ranges, commands and source/library
+fingerprints. Release/mimalloc, Temurin 17 jobs use 262,144 runtime rows selecting 64 prebuilt
+arrays, one task, a 3 GiB heap and 1,024-row transpose batches. Every case and revision runs
+in a separate JVM, serially, with two warmups and five alternating measured pairs. Timing
+runs from submission through completion after symmetric EXPLAIN, retaining both transposes,
+production JNI, callbacks, List conversion, owned Arrow writes and the blackhole sink.
+Previous production is `2a613b07`, with only the two listed test fixtures copied in and the
+same unchanged release native library. It requires zero substitutions and no native work;
+the candidate requires consumed table-function input and both transposes.
+
+All medians are seconds. Every measured case is slower than its paired stock control;
+separate-JVM stock drift remains visible. These short jobs include startup/JIT and are UDF
+coverage under the accepted performance exception, without an acceleration claim.
+
+| Flink / result | Candidate stock | Previous stock | Previous fallback | Candidate |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / LinkedList STRING | 0.798467 | 0.606277 | 0.779458 | 1.681528 |
+| 1.18.1 / LinkedList DECIMAL(38,18) | 0.227363 | 0.221058 | 0.213436 | 0.376025 |
+| 1.18.1 / Vector TIMESTAMP(9) | 0.280691 | 0.278984 | 0.278836 | 0.355353 |
+| 1.18.1 / custom List STRING | 0.208494 | 0.201145 | 0.199109 | 0.378370 |
+| 2.2.1 / LinkedList STRING | 0.234050 | 0.210313 | 0.210874 | 0.383117 |
+| 2.2.1 / LinkedList DECIMAL(38,18) | 0.233400 | 0.221672 | 0.224614 | 0.383600 |
+| 2.2.1 / Vector TIMESTAMP(9) | 0.292426 | 0.292146 | 0.293807 | 0.389092 |
+| 2.2.1 / custom List STRING | 0.217536 | 0.216531 | 0.217363 | 0.386326 |
+
+Reproduce with `SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime
+-Dtest=ConcreteListTableFunctionBenchmark -Dboundary.rows=262144 -Dboundary.warmups=2
+-Dboundary.runs=5 -Dsf.testForks=1
+'-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false' test`.
+Use `-Pbench,flink-1.18` for that release. `boundary.concreteLists` selects the four cases
+recorded in the artifact. For previous production copy only the concrete-list harness and
+benchmark source, rebuild Java against unchanged production, and set
+`-Dboundary.expectNative=false`.
 
 ### Alternate direct temporal bridges (2026-11-01)
 
