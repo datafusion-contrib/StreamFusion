@@ -20,6 +20,9 @@ impl OverWindowAggregator {
         if self.range_offset().is_some() {
             return self.snapshot_range_timers();
         }
+        if self.processing_rows() {
+            return self.snapshot_proc_rows();
+        }
         if !self.deadline_cleaning() || self.cleanup_state.is_empty() {
             return Vec::new();
         }
@@ -61,7 +64,7 @@ impl OverWindowAggregator {
     }
 
     pub(super) fn restore_cleanup(&mut self, bytes: &[u8], stamps: &mut HashMap<ByteKey, i64>) {
-        if !self.deadline_cleaning() && self.range_offset().is_none() {
+        if !self.deadline_cleaning() && self.range_offset().is_none() && !self.processing_rows() {
             return;
         }
         for batch in read_ipc_if_present(bytes) {
@@ -79,7 +82,7 @@ impl OverWindowAggregator {
                 .as_any()
                 .downcast_ref::<Int64Array>()
                 .expect("cleanup deadlines");
-            if self.range_offset().is_none() {
+            if self.range_offset().is_none() && !self.processing_rows() {
                 assert_eq!(deadlines.null_count(), 0, "NULL cleanup deadline");
             }
             for row in 0..batch.num_rows() {
@@ -88,6 +91,7 @@ impl OverWindowAggregator {
                 }
             }
             self.restore_range_timer_batch(&batch, &keys);
+            self.restore_proc_rows_batch(&batch, &keys);
             self.key_converter = converter;
         }
     }
@@ -133,6 +137,10 @@ impl OverWindowAggregator {
             self.restore_range_timer_batch(batch, &keys);
             self.sync_store_range_timers()?;
         }
+        if self.processing_rows() {
+            self.restore_proc_rows_batch(batch, &keys);
+            self.sync_store_proc_rows()?;
+        }
         Ok(())
     }
 
@@ -140,7 +148,11 @@ impl OverWindowAggregator {
     pub(super) fn sync_store_cleanup(&mut self) -> Result<(), DataFusionError> {
         if self.range_offset().is_some() {
             self.sync_store_range_timers()?;
-        } else if self.retention_scheme() != RetentionScheme::Deadline {
+        }
+        if self.processing_rows() {
+            self.sync_store_proc_rows()?;
+        }
+        if self.range_offset().is_none() && self.retention_scheme() != RetentionScheme::Deadline {
             return Ok(());
         }
         self.flush_tombstones()?;

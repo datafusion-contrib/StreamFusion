@@ -82,12 +82,28 @@ rebuild multiplicity from retained values without reapplying the saved arithmeti
 
 Numeric MIN/MAX and other selections without retractable views still evaluate the reachable
 slice. String reductions retain their existing retractable membership and selection history.
-ROWS uses the slice through the current arrival; RANGE includes all peers up to the current
-rowtime. Arithmetic and string views retain the full `n + 1` prior ROWS frame needed for the next
+Event-time ROWS uses the slice through the current arrival; RANGE includes all peers up to the current
+rowtime. Arithmetic and string views retain the full `n + 1` prior event-time ROWS frame needed for the next
 retraction; value-only recomputation can retain `max(n, 1)`. Explicit original-input retention also
 keeps the full current frame. RANGE evicts values older than its key's latest rowtime minus offset.
 Our orchestration remains the incremental streaming operator rather than Arroyo's per-instant
 DataFusion window execution plan, because the state must survive native and stock snapshots.
+
+Processing-time bounded ROWS additionally follows Flink's clock-bucket eviction protocol rather
+than truncating an arrival slice. A per-key processed counter and minimum timestamp select the
+oldest element of the named bucket. When that bucket empties, the minimum is selected before
+appending the current row, with `Long.MAX_VALUE` for an empty map. This preserves Flink's
+width-one extra-row behavior and middle-frame eviction when clocks regress. Incremental arithmetic
+and string views retract the selected row; other selections evaluate only surviving membership.
+Each retained row owns its processing clock independently of the ordering sequence and original
+input payload. Native IPC carries an optional clock column; RocksDB uses a sibling frame-clock
+table. Separate counter/minimum metadata persists even without TTL and follows frame key groups
+through file restore and rescaling. Its owned memory counts toward the state budget. This keeps
+Arroyo's streaming/batch boundary while adopting Flink's persistent state machine; Arroyo's
+per-instant execution plan cannot express that restore contract. Older native snapshots can use
+legacy retained-frame bookkeeping but cannot reconstruct clocks their writers discarded. Stock
+canonical projection of these processing-time fields remains pending under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
 
 Bounded event-time RANGE keeps Flink's registered data and cleanup timestamps separately from
 the retained frame. Replaced cleanup deadlines leave their older timers armed; those callbacks

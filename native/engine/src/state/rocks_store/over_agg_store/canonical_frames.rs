@@ -50,6 +50,7 @@ impl RocksOverAggStore {
                     .pop()
                     .expect("frame value"),
                 input: self.read_frame_input(&key, true)?,
+                clock: self.read_frame_clock(&key)?,
             });
         }
         if !rows.is_empty() {

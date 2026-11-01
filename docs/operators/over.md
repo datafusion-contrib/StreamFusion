@@ -345,8 +345,23 @@ not a cross-engine qualification. Benchmarking remains deferred.
 
 ## Proctime order
 
-The running and bounded-ROWS frames are native on proctime as well: arrival order, eager emit, no
-wall-clock timer needed.
+The running and bounded-ROWS frames are native on proctime as well, with eager output in arrival
+order. Bounded ROWS follows the released Flink operator's processing-clock buckets, processed-row
+counter and smallest-bucket state. The counter stops increasing at the configured frame width.
+When retracting empties the selected bucket, Flink chooses the next minimum before inserting the
+current input, using `Long.MAX_VALUE` for an empty map. That sentinel can leave an additional row
+in a width-one frame; native execution preserves the resulting accumulator and future evictions.
+If processing clocks regress, the selected bucket can occur in the middle of arrival order.
+The materialized input time field is not used as a substitute for the processing clock.
+
+Memory snapshots and RocksDB file checkpoints retain each row's processing clock and the separate
+counter/minimum state, including when idle-state retention is disabled. Key-group rescaling clips
+this metadata with its frame. Older native checkpoints remain readable using their previous
+retained-frame counter and an internal fallback clock; they cannot recover discarded bucket
+history. Idle-state retention still uses the existing cleanup policy. This ordinary native
+checkpoint support does not complete the processing-time ROWS stock canonical adapter tracked in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Correctness takes priority;
+benchmarking remains deferred.
 
 A **bounded-RANGE frame over proctime** falls back — with processing time materialized as a fixed
 per-batch timestamp, a wall-clock-interval frame has no meaningful definition.

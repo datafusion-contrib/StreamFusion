@@ -9,14 +9,15 @@ use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
 use std::sync::Arc;
 
+mod canonical_frames;
 #[cfg(test)]
 mod distinct_tests;
 #[cfg(test)]
 mod frame_inputs_tests;
 #[cfg(test)]
 mod pending_tests;
+mod proc_rows;
 mod range_timers;
-mod canonical_frames;
 
 /// The OVER aggregate's DB holds one table per state shape, every key led by the PARTITION BY
 /// key's group (BinaryRow-hash routed — identical to the blob partitioner) so rescale clipping is
@@ -47,6 +48,8 @@ const DISTINCT_TABLE_BASE: u8 = 4;
 // Bounded frames and unbounded DISTINCT folds never share a store.
 const FRAME_INPUTS_TABLE: u8 = 4;
 const RANGE_TIMERS_TABLE: u8 = 5;
+const FRAME_CLOCKS_TABLE: u8 = 6;
+const PROC_ROWS_TABLE: u8 = 7;
 const KEY_GROUP_LEN: usize = 4;
 const KEY_PREFIX_LEN: usize = 5;
 const PENDING_KEY_LEN: usize = 13;
@@ -79,6 +82,7 @@ pub(crate) struct StoredFrameRow {
     pub(crate) seq: u64,
     pub(crate) values: Vec<ScalarValue>,
     pub(crate) input: Option<FrameInput>,
+    pub(crate) clock: Option<i64>,
 }
 
 /// Persistent backend for the OVER aggregate, every admitted shape. Rowtime: input rows append to
@@ -155,6 +159,8 @@ impl RocksOverAggStore {
         if !frame_value_types.is_empty() {
             tables.push((Some(FRAME_INPUTS_TABLE), 0));
             tables.push((Some(RANGE_TIMERS_TABLE), 0));
+            tables.push((Some(FRAME_CLOCKS_TABLE), 0));
+            tables.push((Some(PROC_ROWS_TABLE), 0));
         }
         let opened = open_shared_db(&config, &tables)?;
         Self::attach(
@@ -504,6 +510,7 @@ impl RocksOverAggStore {
         let mut positions: Vec<(i64, u64)> = Vec::new();
         let mut values: Vec<Box<[u8]>> = Vec::new();
         let mut inputs = Vec::new();
+        let mut clocks = Vec::new();
         let capture_inputs = self.frame_inputs_enabled()?;
         for (owner, prefix) in prefixes.iter().enumerate() {
             for row in self
@@ -521,20 +528,26 @@ impl RocksOverAggStore {
                 owners.push(owner);
                 positions.push((rt, seq));
                 inputs.push(self.read_frame_input(&db_key, capture_inputs)?);
+                clocks.push(self.read_frame_clock(&db_key)?);
                 values.push(value.into());
             }
         }
         let value_refs: Vec<&[u8]> = values.iter().map(|value| value.as_ref()).collect();
         let decoded = self.decode_frames(&value_refs)?;
         let mut out: Vec<Vec<StoredFrameRow>> = (0..prefixes.len()).map(|_| Vec::new()).collect();
-        for (((owner, (rt, seq)), values), input) in
-            owners.into_iter().zip(positions).zip(decoded).zip(inputs)
+        for ((((owner, (rt, seq)), values), input), clock) in owners
+            .into_iter()
+            .zip(positions)
+            .zip(decoded)
+            .zip(inputs)
+            .zip(clocks)
         {
             out[owner].push(StoredFrameRow {
                 rt,
                 seq,
                 values,
                 input,
+                clock,
             });
         }
         Ok(out)
@@ -613,6 +626,7 @@ impl RocksOverAggStore {
             let key = Self::frame_db_key(prefix, *rt, *seq);
             writes.delete(&key)?;
             writes.delete(Self::frame_input_key(&key))?;
+            writes.delete(Self::frame_clock_key(&key))?;
         }
         writes.finish()
     }
@@ -626,6 +640,7 @@ impl RocksOverAggStore {
         let mut positions: Vec<(i64, u64)> = Vec::new();
         let mut values: Vec<Box<[u8]>> = Vec::new();
         let mut inputs = Vec::new();
+        let mut clocks = Vec::new();
         let capture_inputs = self.frame_inputs_enabled()?;
         for row in self.db.iterator(IteratorMode::Start) {
             let (db_key, value) = row.map_err(re)?;
@@ -640,19 +655,25 @@ impl RocksOverAggStore {
                 u64::from_be_bytes(suffix[8..].try_into().expect("frame seq")),
             ));
             inputs.push(self.read_frame_input(&db_key, capture_inputs)?);
+            clocks.push(self.read_frame_clock(&db_key)?);
             values.push(value.into());
         }
         let value_refs: Vec<&[u8]> = values.iter().map(|value| value.as_ref()).collect();
         let decoded = self.decode_frames(&value_refs)?;
         let mut out: Vec<(Box<[u8]>, Vec<StoredFrameRow>)> = Vec::new();
-        for (((key, (rt, seq)), values), input) in
-            keys.into_iter().zip(positions).zip(decoded).zip(inputs)
+        for ((((key, (rt, seq)), values), input), clock) in keys
+            .into_iter()
+            .zip(positions)
+            .zip(decoded)
+            .zip(inputs)
+            .zip(clocks)
         {
             let row = StoredFrameRow {
                 rt,
                 seq,
                 values,
                 input,
+                clock,
             };
             match out.last_mut() {
                 Some((last, rows)) if *last == key => rows.push(row),

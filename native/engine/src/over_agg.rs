@@ -2,8 +2,10 @@ use crate::*;
 
 mod canonical;
 mod cleanup;
+mod proc_rows;
 mod range_flush;
 mod range_timers;
+use proc_rows::{ProcRowsState, PROC_ROW_CLOCK};
 use range_timers::RangeTimers;
 mod distinct_ttl;
 mod frame_inputs;
@@ -866,6 +868,7 @@ pub(crate) struct BufferedRow {
 #[derive(Clone, Default)]
 struct BufferedExtra {
     input: Option<FrameInput>,
+    clock: Option<i64>,
     texts: Option<Box<[Option<Arc<str>>]>>,
     caches: Option<Box<[Option<Arc<[u16]>>]>>,
     string_views: Option<Box<[StringView]>>,
@@ -886,6 +889,7 @@ impl BufferedRow {
                 && extra.string_views.is_none()
                 && extra.caches.is_none()
                 && extra.input.is_none()
+                && extra.clock.is_none()
             {
                 self.extra = None;
             }
@@ -975,6 +979,7 @@ impl BufferedRow {
                 && extra.string_views.is_none()
                 && extra.fold_state.is_none()
                 && extra.input.is_none()
+                && extra.clock.is_none()
         }) {
             self.extra = None;
         }
@@ -991,6 +996,19 @@ impl BufferedRow {
 
     fn input(&self) -> Option<&FrameInput> {
         self.extra.as_ref()?.input.as_ref()
+    }
+
+    fn processing_clock(&self) -> Option<i64> {
+        self.extra
+            .as_ref()
+            .and_then(|extra| extra.clock)
+            .or_else(|| self.input().map(|input| input.clock))
+    }
+
+    fn set_processing_clock(&mut self, clock: Option<i64>) {
+        if let Some(clock) = clock {
+            self.extra.get_or_insert_with(Default::default).clock = Some(clock);
+        }
     }
 
     fn set_input(&mut self, input: Option<FrameInput>) {
@@ -1086,6 +1104,7 @@ impl BufferedRow {
             extra: (texts.is_some() || fold.is_some()).then(|| {
                 Box::new(BufferedExtra {
                     input: None,
+                    clock: None,
                     texts,
                     caches: None,
                     string_views: None,
@@ -1310,6 +1329,16 @@ impl BoundedOverAggregator {
         serialized_strings: bool,
         persistent_strings: bool,
     ) -> RecordBatch {
+        self.update_with_proc_rows(batch, serialized_strings, persistent_strings, None)
+    }
+
+    fn update_with_proc_rows(
+        &mut self,
+        batch: &RecordBatch,
+        serialized_strings: bool,
+        persistent_strings: bool,
+        mut proc_rows: Option<(&mut HashMap<ByteKey, ProcRowsState>, i64)>,
+    ) -> RecordBatch {
         let rt = column_i64(batch, "rt");
         let num_agg = self.kinds.len();
         let value_columns: Vec<OverValueColumn> = (0..num_agg)
@@ -1367,6 +1396,7 @@ impl BoundedOverAggregator {
                     .then(|| {
                         Box::new(BufferedExtra {
                             input: None,
+                            clock: None,
                             texts: Some(
                                 value_columns
                                     .iter()
@@ -1395,6 +1425,12 @@ impl BoundedOverAggregator {
                     .unwrap()
                     .set_input(FrameInput::from_projected(batch, row));
             }
+            if let Some((_, clock)) = &proc_rows {
+                buffer
+                    .last_mut()
+                    .unwrap()
+                    .set_processing_clock(Some(*clock));
+            }
             buffer_index[row] = buffer.len() - 1;
             if track {
                 self.bytes += row_bytes + buffer.last().expect("appended frame row").text_bytes();
@@ -1411,6 +1447,7 @@ impl BoundedOverAggregator {
         let mut string_running: HashMap<ByteKey, (usize, usize, Vec<StringView>)> =
             HashMap::default();
         let mut old_view_bytes = 0;
+        let mut proc_live: HashMap<ByteKey, Vec<usize>> = HashMap::default();
         for &row in &order {
             let key = keys_encoded.row(row).data();
             let i = buffer_index[row];
@@ -1446,24 +1483,40 @@ impl BoundedOverAggregator {
             let cur_rt = buffer[i].rt;
             // ROWS counts physical rows up to and including this one; RANGE covers all rows within the
             // rowtime interval and shares one frame across rows of equal rowtime (ending at the last).
-            let (lower, upper) = if self.rows_frame {
+            let proc_expired = proc_rows.as_mut().map(|(states, clock)| {
+                let width = self
+                    .offset
+                    .checked_add(1)
+                    .expect("positive processing ROWS width");
+                let active = proc_live
+                    .entry(ByteKey::from(key))
+                    .or_insert_with(|| (0..i).collect());
+                states
+                    .entry(ByteKey::from(key))
+                    .or_insert_with(|| ProcRowsState::legacy(&buffer[..i], width, *clock))
+                    .advance(buffer, active, i, width)
+            });
+            let (lower, upper) = if proc_rows.is_some() {
+                (0, i)
+            } else if self.rows_frame {
                 (i.saturating_sub(self.offset as usize), i)
             } else {
                 let lo = buffer.partition_point(|r| r.rt < cur_rt - self.offset);
                 let hi = buffer.partition_point(|r| r.rt <= cur_rt) - 1;
                 (lo, hi)
             };
-            let mut expired_rows: Vec<usize> =
-                if !self.arithmetic_slots.is_empty() || !self.string_view_slots.is_empty() {
-                    let old_lower = running
-                        .get(key)
-                        .map(|cursor| cursor.0)
-                        .or_else(|| string_running.get(key).map(|cursor| cursor.0))
-                        .unwrap_or(0);
-                    (old_lower..lower).collect()
-                } else {
-                    Vec::new()
-                };
+            let mut expired_rows: Vec<usize> = if let Some(expired) = proc_expired {
+                expired.into_iter().collect()
+            } else if !self.arithmetic_slots.is_empty() || !self.string_view_slots.is_empty() {
+                let old_lower = running
+                    .get(key)
+                    .map(|cursor| cursor.0)
+                    .or_else(|| string_running.get(key).map(|cursor| cursor.0))
+                    .unwrap_or(0);
+                (old_lower..lower).collect()
+            } else {
+                Vec::new()
+            };
             if !expired_rows.is_empty() {
                 if let Some(maps) = &mut self.range_order {
                     let map = maps.get_mut(key).expect("RANGE timestamp map");
@@ -1596,7 +1649,10 @@ impl BoundedOverAggregator {
                 .map(|(slot, (&kind, ty))| (slot, OverAggState::new(kind, ty)))
                 .collect();
             if !aggs.is_empty() {
-                for r in &buffer[lower..=upper] {
+                for (index, r) in buffer.iter().enumerate().take(upper + 1).skip(lower) {
+                    if proc_rows.is_some() && proc_live[key].binary_search(&index).is_err() {
+                        continue;
+                    }
                     for (slot, agg) in &mut aggs {
                         if let Some(text) = r.text_value(*slot) {
                             if let Some(cache) = r.java_cache(*slot) {
@@ -1635,7 +1691,22 @@ impl BoundedOverAggregator {
         if self.track {
             self.bytes = self.bytes - old_view_bytes + new_view_bytes;
         }
-        self.evict();
+        if proc_rows.is_some() {
+            for (key, active) in proc_live {
+                let buffer = self.keys.get_mut(&key).unwrap();
+                let mut index = 0;
+                buffer.retain(|_| {
+                    let keep = active.binary_search(&index).is_ok();
+                    index += 1;
+                    keep
+                });
+            }
+            if self.track {
+                self.recompute_bytes();
+            }
+        } else {
+            self.evict();
+        }
 
         let cache_transport = has_string_caches(batch);
         let mut cache_columns = Vec::new();
@@ -1720,8 +1791,10 @@ impl BoundedOverAggregator {
         let mut fold_columns: Vec<Vec<ScalarValue>> = vec![Vec::new(); self.fold_types.len()];
         let mut stamps: Vec<i64> = Vec::new();
         let mut inputs: Vec<Option<Vec<u8>>> = Vec::new();
+        let mut clocks = Vec::new();
         for (key, buffer) in self.keys.iter() {
             for row in buffer {
+                clocks.push(row.processing_clock());
                 if self.capture_inputs {
                     inputs.push(row.input().map(FrameInput::encode));
                 }
@@ -1763,6 +1836,10 @@ impl BoundedOverAggregator {
             ));
             columns.push(scalars_to_array(scalars, &self.fold_types[column]));
         }
+        if clocks.iter().any(Option::is_some) {
+            fields.push(Field::new(PROC_ROW_CLOCK, DataType::Int64, true));
+            columns.push(Arc::new(Int64Array::from(clocks)));
+        }
         if self.capture_inputs {
             fields.push(Field::new(FRAME_INPUT_COLUMN, DataType::Binary, true));
             columns.push(Arc::new(BinaryArray::from_iter(
@@ -1791,6 +1868,12 @@ impl BoundedOverAggregator {
         let num_agg = aggregator.kinds.len();
         for batch in read_ipc(bytes) {
             let retention = retention_stamps(&batch);
+            let clocks = batch.column_by_name(PROC_ROW_CLOCK).map(|column| {
+                column
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("OVER processing clocks")
+            });
             let inputs = batch.column_by_name(FRAME_INPUT_COLUMN).map(|column| {
                 column
                     .as_any()
@@ -1825,6 +1908,7 @@ impl BoundedOverAggregator {
                 - num_agg
                 - fold_count
                 - retention.is_some() as usize
+                - clocks.is_some() as usize
                 - inputs.is_some() as usize;
             let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
             aggregator.key_types = key_types(&key_arrays);
@@ -1876,6 +1960,9 @@ impl BoundedOverAggregator {
                     &aggregator.kinds,
                     fold,
                 ));
+                buffer.last_mut().unwrap().set_processing_clock(
+                    clocks.and_then(|clocks| clocks.is_valid(row).then(|| clocks.value(row))),
+                );
                 if let Some(inputs) = inputs {
                     assert!(inputs.is_valid(row), "missing original OVER frame input");
                     buffer.last_mut().unwrap().set_input(Some(
@@ -2377,7 +2464,14 @@ impl OverInner {
                 inner.state_types().len() + inner.kinds.iter().filter(|&&kind| kind >= 100).count()
             }
             OverInner::Bounded(inner) => {
-                1 + inner.kinds.len() + inner.fold_types.len() + inner.capture_inputs as usize
+                1 + inner.kinds.len()
+                    + inner.fold_types.len()
+                    + inner.capture_inputs as usize
+                    + inner
+                        .keys
+                        .values()
+                        .flatten()
+                        .any(|row| row.processing_clock().is_some()) as usize
             }
             OverInner::WindowFunctions(inner) => inner
                 .kinds
@@ -2598,6 +2692,7 @@ pub(crate) struct OverWindowAggregator {
     /// and sweeps (divergences/28). Keyed like the inner fold state.
     cleanup_state: HashMap<ByteKey, i64>,
     range_timers: HashMap<ByteKey, RangeTimers>,
+    proc_rows: HashMap<ByteKey, ProcRowsState>,
     /// Per-key last-write wall clock for the proctime unbounded shape's per-value TTL
     /// (`StateTtlConfig`, OnCreateAndWrite / NeverReturnExpired — stamped on every processed row).
     last_write_ms: HashMap<ByteKey, i64>,
@@ -2669,6 +2764,7 @@ impl OverWindowAggregator {
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
             range_timers: HashMap::default(),
+            proc_rows: HashMap::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,
@@ -2808,6 +2904,9 @@ impl OverWindowAggregator {
         }
         if let Some(timers) = self.range_timers.remove(key) {
             self.retention_bytes -= byte_key_bytes(key) + timers.bytes();
+        }
+        if self.proc_rows.remove(key).is_some() {
+            self.retention_bytes -= byte_key_bytes(key) + std::mem::size_of::<ProcRowsState>();
         }
         if self.last_write_ms.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
@@ -3022,6 +3121,14 @@ impl OverWindowAggregator {
         &mut self,
         restored_at_ms: i64,
     ) -> Result<(), DataFusionError> {
+        if self.processing_rows() {
+            let before = self.proc_rows_bytes();
+            for (key, bytes) in self.store.as_ref().unwrap().scan_proc_rows()? {
+                self.proc_rows
+                    .insert(ByteKey(key), ProcRowsState::decode(&bytes)?);
+            }
+            self.retention_bytes = self.retention_bytes - before + self.proc_rows_bytes();
+        }
         if self.value_ttl_on() {
             // The proctime unbounded fold: the fold stamps are last-write clocks. A pre-TTL
             // writer's i64::MIN adopts the restore clock as a fresh last write, Flink's
@@ -3174,7 +3281,10 @@ impl OverWindowAggregator {
         for bytes in snapshots {
             let (bytes, cleanup) = Self::split_cleanup(bytes);
             for batch in read_ipc_if_present(cleanup) {
-                if self.deadline_cleaning() || self.range_offset().is_some() {
+                if self.deadline_cleaning()
+                    || self.range_offset().is_some()
+                    || self.processing_rows()
+                {
                     self.write_store_cleanup(&batch)?;
                 }
             }
@@ -3293,6 +3403,12 @@ impl OverWindowAggregator {
     #[cfg(feature = "rocksdb-state")]
     fn import_frame_batch(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         let stamps = retention_stamps(batch);
+        let clocks = batch.column_by_name(PROC_ROW_CLOCK).map(|column| {
+            column
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("OVER processing clocks")
+        });
         let inputs = batch
             .column_by_name(FRAME_INPUT_COLUMN)
             .map(|column| {
@@ -3326,6 +3442,7 @@ impl OverWindowAggregator {
             - 1
             - value_count
             - stamps.is_some() as usize
+            - clocks.is_some() as usize
             - inputs.is_some() as usize;
         let key_columns: Vec<usize> = (0..arity).collect();
         let key_arrays: Vec<&ArrayRef> = (0..arity).map(|j| batch.column(j)).collect();
@@ -3384,6 +3501,14 @@ impl OverWindowAggregator {
             }
         }
         store.write_frames(&writes, &value_columns)?;
+        if let Some(clocks) = clocks {
+            store.write_frame_clocks(
+                &writes,
+                &(0..batch.num_rows())
+                    .map(|row| clocks.is_valid(row).then(|| clocks.value(row)))
+                    .collect::<Vec<_>>(),
+            )?;
+        }
         store.write_stamps(&stamp_entries)
     }
 
@@ -3420,6 +3545,8 @@ impl OverWindowAggregator {
                 .push(store.frame_prefix(key_group, key));
             self.store_range_deletes
                 .push(store.frame_input_prefix(key_group, key));
+            self.store_range_deletes
+                .push(store.frame_clock_prefix(key_group, key));
             self.store_tombstones.push(store.stamp_key(key_group, key));
         } else {
             self.store_tombstones.push(store.fold_key(key_group, key));
@@ -4099,6 +4226,7 @@ impl OverWindowAggregator {
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
                         frame.set_input(row.input);
+                        frame.set_processing_clock(row.clock);
                         frame.restore_string_views(
                             inner.arithmetic_width,
                             &inner
@@ -4137,12 +4265,18 @@ impl OverWindowAggregator {
 
         let projected = self.keyed_subbatch(batch, Arc::new(rt.clone()));
         let serialized_strings = self.proctime && has_string_caches(&projected);
+        let proc_enabled = self.processing_rows();
+        let proc_bytes = self.proc_rows_bytes();
         let aggregates = match &mut self.inner {
-            OverInner::Bounded(inner) => {
-                inner.update_with_serialized_strings(&projected, serialized_strings, true)
-            }
+            OverInner::Bounded(inner) => inner.update_with_proc_rows(
+                &projected,
+                serialized_strings,
+                true,
+                proc_enabled.then_some((&mut self.proc_rows, self.frame_clock)),
+            ),
             _ => self.inner.update(&projected),
         };
+        self.retention_bytes = self.retention_bytes - proc_bytes + self.proc_rows_bytes();
 
         let OverInner::Bounded(inner) = &self.inner else {
             unreachable!("bounded store fold on a non-bounded shape");
@@ -4153,15 +4287,31 @@ impl OverWindowAggregator {
         let mut touched_out: Vec<(ByteKey, Vec<u8>, usize)> = Vec::with_capacity(touched.len());
         for (owner, (key, key_group)) in touched.iter().enumerate() {
             let kept = inner.keys.get(&*key.0).map_or(0, Vec::len);
+            let live = proc_enabled.then(|| {
+                inner.keys[&*key.0]
+                    .iter()
+                    .map(|row| row.rt)
+                    .collect::<ahash::HashSet<_>>()
+            });
             let full = loaded_meta[owner].len() + appended_meta[owner].len();
             let cut = full - kept;
-            for &(row_rt, seq) in loaded_meta[owner].iter().take(cut) {
-                deletes.push((prefixes[owner].clone(), row_rt, seq));
+            for (index, &(row_rt, seq)) in loaded_meta[owner].iter().enumerate() {
+                if live
+                    .as_ref()
+                    .map_or(index < cut, |live| !live.contains(&row_rt))
+                {
+                    deletes.push((prefixes[owner].clone(), row_rt, seq));
+                }
             }
             let appended_cut = cut.saturating_sub(loaded_meta[owner].len());
-            for &(row_rt, seq, row) in appended_meta[owner].iter().skip(appended_cut) {
-                writes.push((prefixes[owner].clone(), row_rt, seq));
-                write_rows.push(row);
+            for (index, &(row_rt, seq, row)) in appended_meta[owner].iter().enumerate() {
+                if live
+                    .as_ref()
+                    .map_or(index >= appended_cut, |live| live.contains(&row_rt))
+                {
+                    writes.push((prefixes[owner].clone(), row_rt, seq));
+                    write_rows.push(row);
+                }
             }
             let stamp_key = self
                 .store
@@ -4220,6 +4370,9 @@ impl OverWindowAggregator {
             store.write_frame_inputs(&writes, &original)?;
         }
         store.write_frames(&writes, &value_columns)?;
+        if proc_enabled {
+            store.write_frame_clocks(&writes, &vec![Some(self.frame_clock); writes.len()])?;
+        }
         store.delete_frames(&deletes)?;
         Ok((aggregates, touched_out))
     }
@@ -4367,9 +4520,23 @@ impl OverWindowAggregator {
         let n = batch.num_rows();
         let seq: Int64Array = (0..n as i64).map(|i| self.next_seq + i).collect();
         self.next_seq += n as i64;
-        let aggregates = self
-            .inner
-            .update(&self.keyed_subbatch(&batch, Arc::new(seq)));
+        let projected = self.keyed_subbatch(&batch, Arc::new(seq));
+        let aggregates = if self.processing_rows() {
+            let before = self.proc_rows_bytes();
+            let OverInner::Bounded(inner) = &mut self.inner else {
+                unreachable!()
+            };
+            let out = inner.update_with_proc_rows(
+                &projected,
+                false,
+                false,
+                Some((&mut self.proc_rows, now_ms)),
+            );
+            self.retention_bytes = self.retention_bytes - before + self.proc_rows_bytes();
+            out
+        } else {
+            self.inner.update(&projected)
+        };
         self.account()?;
         Ok(Self::append_aggregates(&batch, &aggregates))
     }
@@ -4763,6 +4930,7 @@ impl OverWindowAggregator {
                                 .then(|| row.values[inner.kinds.len()..].to_vec()),
                         );
                         frame.set_input(row.input);
+                        frame.set_processing_clock(row.clock);
                         frame.restore_string_views(
                             inner.arithmetic_width,
                             &inner
@@ -4866,7 +5034,11 @@ impl OverWindowAggregator {
         );
         let cleanup = Self::partition_snapshot(
             &self.snapshot_cleanup(),
-            if self.range_offset().is_some() { 3 } else { 1 },
+            if self.range_offset().is_some() || self.processing_rows() {
+                3
+            } else {
+                1
+            },
             max_parallelism,
             timestamp_precisions,
         );
@@ -5052,6 +5224,7 @@ impl OverWindowAggregator {
             max_retention_ms: 0,
             cleanup_state: HashMap::default(),
             range_timers: HashMap::default(),
+            proc_rows: HashMap::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,
@@ -5138,7 +5311,8 @@ impl OverWindowAggregator {
                 .keys()
                 .chain(self.pending_rows.keys())
                 .map(|key| byte_key_bytes(&key.0))
-                .sum();
+                .sum::<usize>()
+                + self.proc_rows_bytes();
         } else if self.value_ttl_on() {
             self.last_write_ms = stamps;
             if !(has_ttl_column && self.independent_distinct_ttl()) {
