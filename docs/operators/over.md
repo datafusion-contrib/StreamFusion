@@ -1103,10 +1103,16 @@ This primitive alone does not establish stock OVER savepoint interoperability.
 
 COUNT continues an imported signed-long boundary using wrapping addition/subtraction, matching
 Flink in debug and release builds. A boundary regression covers both directions; the full native
-regression passes 1,068 checks with two existing ignores. Benchmarking remains deferred until
+regression passes 1,072 checks with two existing ignores. Benchmarking remains deferred until
 functional interoperability coverage is complete.
 
 Nullable decimal SUM retains its selected NULL/value state. The existing running sum restarts
 from the next non-NULL input after decimal overflow, matching the released stock nullable sum.
 An unbounded ROWS/RANGE regression covers intervening NULL input and native snapshot/restore
 between overflow and continuation, for processing-time and event-time execution.
+
+Typed RocksDB pending rows accept an optional INSERT RowKind companion. They validate it before
+writing and reconstruct it when the caller requests a tagged payload. The pending bytes retain
+the existing logical-row codec, so earlier untagged checkpoints stay readable. Updating/NULL
+companions and unrelated extra fields are rejected rather than silently discarded. Three native
+controls compare legacy bytes, dual-schema reads and rejection before sequence/state changes.

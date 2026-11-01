@@ -3,9 +3,13 @@ use super::{
     FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
 };
 use crate::*;
+use arrow::array::Int8Array;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
 use std::sync::Arc;
+
+#[cfg(test)]
+mod pending_tests;
 
 /// The OVER aggregate's DB holds one table per state shape, every key led by the PARTITION BY
 /// key's group (BinaryRow-hash routed — identical to the blob partitioner) so rescale clipping is
@@ -721,9 +725,22 @@ impl RocksOverAggStore {
         key_timestamp_precisions: &[i32],
         rowtimes: &Int64Array,
     ) -> Result<(), DataFusionError> {
+        let tagged = self.payload_insert_companion(&batch.schema())?;
+        if tagged {
+            let kinds = batch
+                .column(self.payload_schema.fields().len())
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .expect("validated INSERT companion type");
+            if kinds.iter().any(|kind| kind != Some(0)) {
+                return Err(DataFusionError::Execution(
+                    "OVER pending input must contain only INSERT records".into(),
+                ));
+            }
+        }
         let rows = self
             .payload_converter
-            .convert_columns(batch.columns())
+            .convert_columns(&batch.columns()[..self.payload_schema.fields().len()])
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, key_timestamp_precisions);
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
@@ -871,13 +888,35 @@ impl RocksOverAggStore {
         schema: &SchemaRef,
         rows: impl Iterator<Item = &'a [u8]>,
     ) -> Result<RecordBatch, DataFusionError> {
+        let tagged = self.payload_insert_companion(schema)?;
         let parser = self.payload_converter.parser();
         let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let columns = self
+        let count = parsed.len();
+        let mut columns = self
             .payload_converter
             .convert_rows(parsed)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        if tagged {
+            columns.push(Arc::new(Int8Array::from(vec![0; count])));
+        }
         Ok(RecordBatch::try_new(schema.clone(), columns)?)
+    }
+
+    // INSERT-only OVER needs no stored tag; keep the existing pending-row codec unchanged.
+    fn payload_insert_companion(&self, schema: &SchemaRef) -> Result<bool, DataFusionError> {
+        let arity = self.payload_schema.fields().len();
+        if schema.fields().len() == arity {
+            return Ok(false);
+        }
+        if schema.fields().len() == arity + 1
+            && schema.field(arity).name() == ROW_KIND_COLUMN
+            && schema.field(arity).data_type() == &DataType::Int8
+        {
+            return Ok(true);
+        }
+        Err(DataFusionError::Execution(
+            "OVER pending payload has unowned companion fields".into(),
+        ))
     }
 
     fn decode_states(&self, values: &[&[u8]]) -> Result<Vec<Vec<ScalarValue>>, DataFusionError> {
