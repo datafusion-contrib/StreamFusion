@@ -1425,3 +1425,8 @@ tuning are deferred until functionality is complete.
 Window Top-N uses a separate native operator from ordinary Top-N. The execution agent instruments
 its successful `open` and consumed Arrow batches explicitly, so a window-rank restore contract
 requires work from window Top-N itself even when native aggregates or Calc also run in the plan.
+
+Window-deduplication restore programs require the shared native window-selection operator to
+consume input. Opening it without rows, or running an unrelated native Calc, cannot satisfy
+that gate. Dedicated witness controls cover these cases, retaining the original released
+fixture assertions alongside the native-family requirement.

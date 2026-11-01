@@ -25,6 +25,43 @@ class CanonicalRestoreExecutionTest {
       "changelog normalize: a pushed filter condition is not supported";
 
   @Test
+  void windowDeduplicationRequiresItsNativeSelectionOperator() {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream.WindowDeduplicateEventTimeRestoreTest",
+            new Object(),
+            "window-deduplicate-asc-tumble-first-row");
+    var operator = new NativeColumnarWindowRankOperator();
+    NativeExecution.opened(operator);
+    NativeExecution.completed(operator, 3);
+    assertDoesNotThrow(() -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void anotherNativeFamilyCannotProveWindowDeduplication() {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream.WindowDeduplicateEventTimeRestoreTest",
+            new Object(),
+            "window-deduplicate-asc-tumble-first-row");
+    var operator = new NativeCalcOperator();
+    NativeExecution.opened(operator);
+    NativeExecution.completed(operator, 3);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void openingWindowSelectionWithoutInputDoesNotProveDeduplication() {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream.WindowDeduplicateEventTimeRestoreTest",
+            new Object(),
+            "window-deduplicate-asc-tumble-first-row");
+    NativeExecution.opened(new NativeColumnarWindowRankOperator());
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
   void emptyInputFixtureRequiresCompletedNativeImportAndOpenedOperator() throws Exception {
     var scope = NativeExecution.beginRestore(JOIN, new Object(), RESTORE_ONLY_JOIN);
     NativeExecution.restored("NativeColumnarUpdatingJoinOperator", 3);
@@ -336,4 +373,6 @@ class CanonicalRestoreExecutionTest {
   private static final class NativeColumnarChangelogNormalizeOperator {}
 
   private static final class NativeColumnarUpdatingJoinOperator {}
+
+  private static final class NativeColumnarWindowRankOperator {}
 }

@@ -1,5 +1,6 @@
 # Released restore method<TAB>fixture selector<TAB>required native state family.
 # These are implementation gates: an unrelated native Calc cannot satisfy a state restore.
+org.apache.flink.table.planner.plan.nodes.exec.stream.WindowDeduplicateEventTimeRestoreTest#testRestore	*	NativeColumnarWindowRankOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.GroupAggregateRestoreTest#testRestore	*	NativeColumnarGroupAggregateOperator|NativeColumnarJvmGroupOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.DeduplicationRestoreTest#testRestore	*	NativeColumnarDeduplicateOperator|NativeColumnarKeepLastDeduplicateOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore	program=join_non_window_inner_join	NativeColumnarUpdatingJoinOperator
