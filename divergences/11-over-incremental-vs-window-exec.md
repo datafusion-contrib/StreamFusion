@@ -99,6 +99,14 @@ per-instant execution lifetime. Native legacy restore cannot recover timers an o
 discarded. The stock bounded adapter remains pending in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
 
+Direct bounded-frame transfer reads each partition's owned original rows and raw arithmetic
+separately. Import installs the saved arithmetic beside the last retained row without folding
+those inputs again. A partition batch includes the current native cleanup/RANGE protocol and
+timestamp-map reconstruction order; pending input rows remain a separate stream. This is a
+temporary Arrow bridge for the eventual stock-schema writer/reader, not a new native checkpoint
+format or a claim of completed stock bounded interchange. A partition may be materialized during
+conversion; canonical handoffs prioritize correctness and performance validation is deferred.
+
 Flink seeds `lastTriggeringTs = 0` in these operators and drops a row whose rowtime is
 `<= 0` as late. We preserve that rule and reject timestamps at or before the key's last firing,
 independently of the global watermark. The last retained frame row is also the admission marker,

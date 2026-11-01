@@ -1098,12 +1098,10 @@ impl BufferedRow {
 /// Bounded-frame event-time OVER (`ROWS BETWEEN n PRECEDING AND CURRENT ROW`, or `RANGE BETWEEN
 /// INTERVAL x PRECEDING AND CURRENT ROW`). Unlike the unbounded {@link OverAggregator}, which folds a
 /// single persistent accumulator per key, a bounded frame drops rows off its trailing edge — so the
-/// running value cannot be maintained incrementally for MIN/MAX (they would need a retractable
-/// multiset). This keeps a per-key sorted buffer of the rows still reachable by some future
-/// frame and **recomputes** each emitted row's aggregate over its frame slice with a fresh
-/// {@link RunningAgg}, sidestepping MIN/MAX retraction. Decimal arithmetic
-/// and floating SUM0 retain their raw fold beside the last frame row so retractions preserve
-/// overflow and rounding history; other aggregates continue to recompute. See divergences/11 for the RANGE backend-order gap.
+/// arithmetic fold retracts expired values while selections need their retained membership.
+/// Numeric SUM/SUM0/AVG and COUNT keep raw state beside the final frame row, preserving count,
+/// overflow and rounding history. Numeric selections recompute their reachable slice; string
+/// selections keep retractable views. See divergences/11 for the state and backend-order model.
 pub(crate) struct BoundedOverAggregator {
     capture_inputs: bool,
     kinds: Vec<i64>,
@@ -1299,7 +1297,7 @@ impl BoundedOverAggregator {
     }
 
     /// Folds the batch (`rt` i64, `value0..`, optional `key0..`) into the per-key buffer and returns
-    /// `[result0..]` per input row, each computed by recomputing the aggregate over that row's frame.
+    /// `[result0..]` per input row, retracting arithmetic and updating each selection's frame.
     /// Each aggregate reads its own `value{a}` column.
     fn update(&mut self, batch: &RecordBatch) -> RecordBatch {
         self.update_with_serialized_strings(batch, false, false)

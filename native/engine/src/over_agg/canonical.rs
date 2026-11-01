@@ -6,6 +6,7 @@ const STAMP: &str = "__over_retention_stamp";
 
 mod distinct;
 mod event;
+mod frame;
 
 fn invalid(message: &str) -> DataFusionError {
     DataFusionError::Execution(format!("canonical OVER fold: {message}"))

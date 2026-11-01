@@ -2,11 +2,26 @@ use super::*;
 
 impl OverWindowAggregator {
     fn canonical_event(&self) -> Result<(), DataFusionError> {
-        self.canonical_fold()?;
+        match &self.inner {
+            OverInner::Bounded(_) => {
+                self.canonical_frame()?;
+            }
+            _ => {
+                self.canonical_fold()?;
+            }
+        }
         if self.proctime {
             return Err(invalid("event-state transfer requires rowtime OVER"));
         }
         Ok(())
+    }
+
+    fn event_arguments(&self) -> (&[DataType], &[i64]) {
+        match &self.inner {
+            OverInner::Aggregates(inner) => (&inner.value_types, &inner.kinds),
+            OverInner::Bounded(inner) => (&inner.value_types, &inner.kinds),
+            _ => unreachable!("validated event OVER"),
+        }
     }
 
     fn event_key_types(&self) -> Result<Vec<DataType>, DataFusionError> {
@@ -24,14 +39,14 @@ impl OverWindowAggregator {
                 .map(|&column| schema.field(column).data_type().clone())
                 .collect());
         }
-        let inner = self.canonical_fold()?;
-        if inner.key_types.len() != self.key_columns.len() {
+        let types = self.cleanup_key_types();
+        if types.len() != self.key_columns.len() {
             return Err(invalid("partition key types are not initialized"));
         }
-        Ok(inner.key_types.clone())
+        Ok(types)
     }
 
-    fn visit_canonical_pending(
+    pub(super) fn visit_canonical_pending(
         &self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
@@ -49,7 +64,10 @@ impl OverWindowAggregator {
         Ok(())
     }
 
-    fn import_canonical_pending(&mut self, batch: RecordBatch) -> Result<(), DataFusionError> {
+    pub(super) fn import_canonical_pending(
+        &mut self,
+        batch: RecordBatch,
+    ) -> Result<(), DataFusionError> {
         self.canonical_event()?;
         if self.rt_column >= batch.num_columns()
             || self
@@ -63,13 +81,8 @@ impl OverWindowAggregator {
         {
             return Err(invalid("pending input columns are missing"));
         }
-        let inner = self.canonical_fold()?;
-        for ((&column, expected), &kind) in self
-            .value_columns
-            .iter()
-            .zip(&inner.value_types)
-            .zip(&inner.kinds)
-        {
+        let (value_types, kinds) = self.event_arguments();
+        for ((&column, expected), &kind) in self.value_columns.iter().zip(value_types).zip(kinds) {
             let values = batch.column(column);
             let actual = values.data_type();
             if kind != 3
@@ -123,8 +136,8 @@ impl OverWindowAggregator {
             .map(|&column| batch.column(column))
             .collect::<Vec<_>>();
         let types = key_types(&arrays);
-        let inner = self.canonical_fold()?;
-        if !inner.key_types.is_empty() && inner.key_types != types {
+        let expected_keys = self.cleanup_key_types();
+        if !expected_keys.is_empty() && expected_keys != types {
             return Err(invalid("pending partition key type changed"));
         }
         let mut converter = Some(key_row_converter_from_types(&types));
@@ -166,6 +179,11 @@ impl OverWindowAggregator {
     ) -> Result<(), DataFusionError> {
         self.canonical_event()?;
         self.ensure_canonical_distinct_ready()?;
+        if self.range_offset().is_some() {
+            return Err(invalid(
+                "RANGE cleanup belongs to the event-time frame protocol",
+            ));
+        }
         if self.cleanup_state.is_empty() {
             return Ok(());
         }
@@ -215,8 +233,8 @@ impl OverWindowAggregator {
             .map(|column| batch.column(column))
             .collect::<Vec<_>>();
         let types = key_types(&arrays);
-        let inner = self.canonical_fold()?;
-        if !inner.key_types.is_empty() && inner.key_types != types {
+        let expected_keys = self.cleanup_key_types();
+        if !expected_keys.is_empty() && expected_keys != types {
             return Err(invalid("cleanup partition key type changed"));
         }
         let mut converter = Some(key_row_converter_from_types(&types));

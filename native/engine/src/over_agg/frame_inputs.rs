@@ -12,14 +12,12 @@ pub(crate) struct FrameInput {
 }
 
 impl FrameInput {
-    pub(super) fn from_projected(batch: &RecordBatch, index: usize) -> Option<Self> {
-        let column = batch.schema().index_of(INPUT_COLUMN).ok()?;
-        let input = batch
-            .column(column)
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .expect("OVER input struct");
-        let columns = input
+    pub(in crate::over_agg) fn owned(
+        batch: &RecordBatch,
+        index: usize,
+        clock: i64,
+    ) -> Result<Self, DataFusionError> {
+        let columns = batch
             .columns()
             .iter()
             .map(|column| {
@@ -28,16 +26,34 @@ impl FrameInput {
                 owned.extend(0, index, index + 1);
                 own_array_data(owned.freeze(), false).map(make_array)
             })
-            .collect::<Result<Vec<_>, _>>()
-            .expect("owned OVER frame input");
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            row: RecordBatch::try_new(batch.schema(), columns)?,
+            clock,
+        })
+    }
+
+    pub(super) fn from_projected(batch: &RecordBatch, index: usize) -> Option<Self> {
+        let column = batch.schema().index_of(INPUT_COLUMN).ok()?;
+        let input = batch
+            .column(column)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .expect("OVER input struct");
         let schema = Arc::new(Schema::new_with_metadata(
             input.fields().clone(),
             batch.schema().field(column).metadata().clone(),
         ));
-        Some(Self {
-            row: RecordBatch::try_new(schema, columns).expect("OVER frame input row"),
-            clock: column_i64(batch, CLOCK_COLUMN).value(index),
-        })
+        let original = RecordBatch::try_new(schema, input.columns().to_vec())
+            .expect("OVER frame input schema");
+        Some(
+            Self::owned(
+                &original,
+                index,
+                column_i64(batch, CLOCK_COLUMN).value(index),
+            )
+            .expect("owned OVER frame input"),
+        )
     }
 
     pub(crate) fn encode(&self) -> Vec<u8> {

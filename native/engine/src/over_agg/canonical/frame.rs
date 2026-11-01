@@ -1,0 +1,641 @@
+use super::*;
+
+const TIME: &str = "__over_frame_time";
+const CLOCK: &str = "__over_frame_clock";
+const POSITION: &str = "__over_frame_position";
+const CLEANUP: &str = "__over_frame_cleanup";
+const LAST: &str = "__over_frame_last_trigger";
+const TIMERS: &str = "__over_frame_timers";
+const ORDER: &str = "__over_frame_map_order";
+const METADATA_COLUMNS: usize = 7;
+
+fn append_field(fields: &mut Vec<Field>, base: &str, ty: DataType, nullable: bool) {
+    let mut name = base.to_string();
+    while fields.iter().any(|field| field.name() == &name) {
+        name.push('_');
+    }
+    fields.push(Field::new(name, ty, nullable));
+}
+
+fn frame_schema(input: &Schema, fold: &[DataType]) -> SchemaRef {
+    let mut fields = input
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect::<Vec<_>>();
+    for name in [TIME, CLOCK, POSITION] {
+        append_field(&mut fields, name, DataType::Int64, false);
+    }
+    for (index, ty) in fold.iter().enumerate() {
+        append_field(
+            &mut fields,
+            &format!("__over_frame_fold{index}"),
+            ty.clone(),
+            true,
+        );
+    }
+    for name in [CLEANUP, LAST] {
+        append_field(&mut fields, name, DataType::Int64, true);
+    }
+    for name in [TIMERS, ORDER] {
+        append_field(
+            &mut fields,
+            name,
+            DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
+            true,
+        );
+    }
+    Arc::new(Schema::new_with_metadata(fields, input.metadata().clone()))
+}
+
+fn tail_list(values: Option<&[i64]>, rows: usize) -> ArrayRef {
+    let mut list = arrow::array::ListBuilder::new(arrow::array::Int64Builder::new());
+    for index in 0..rows {
+        if let Some(values) = values.filter(|_| index + 1 == rows) {
+            list.values().append_slice(values);
+            list.append(true);
+        } else {
+            list.append(false);
+        }
+    }
+    Arc::new(list.finish())
+}
+
+fn read_tail_list(batch: &RecordBatch, column: usize) -> Result<Option<Vec<i64>>, DataFusionError> {
+    let values = batch
+        .column(column)
+        .as_any()
+        .downcast_ref::<arrow::array::ListArray>()
+        .ok_or_else(|| invalid("frame protocol must contain BIGINT lists"))?;
+    if (0..batch.num_rows() - 1).any(|row| !values.is_null(row)) {
+        return Err(invalid("frame protocol must occur only on the final row"));
+    }
+    if values.is_null(batch.num_rows() - 1) {
+        return Ok(None);
+    }
+    let value = values.value(batch.num_rows() - 1);
+    let times = value
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .ok_or_else(|| invalid("frame protocol list type changed"))?;
+    if times.null_count() != 0 {
+        return Err(invalid("NULL frame protocol timestamp"));
+    }
+    Ok(Some(times.values().to_vec()))
+}
+
+impl OverWindowAggregator {
+    pub(super) fn canonical_frame(&self) -> Result<&BoundedOverAggregator, DataFusionError> {
+        let OverInner::Bounded(inner) = &self.inner else {
+            return Err(invalid("frame transfer requires a bounded OVER"));
+        };
+        if inner.arithmetic_slots.len() != inner.kinds.len() || !inner.string_view_slots.is_empty()
+        {
+            return Err(invalid("frame transfer requires complete raw arithmetic; selection views transfer separately"));
+        }
+        if self.proctime && !inner.rows_frame {
+            return Err(invalid("processing-time RANGE frame is not admitted"));
+        }
+        Ok(inner)
+    }
+
+    fn validate_frame_fold(
+        &self,
+        batch: &RecordBatch,
+        offset: usize,
+    ) -> Result<(), DataFusionError> {
+        let inner = self.canonical_frame()?;
+        let last = batch.num_rows() - 1;
+        let mut column = offset;
+        for (&kind, ty) in inner.kinds.iter().zip(&inner.value_types) {
+            let state = OverAggState::bounded(kind, ty);
+            if matches!(
+                &state.agg,
+                RunningAgg::Count(_)
+                    | RunningAgg::AvgInt { .. }
+                    | RunningAgg::AvgFloat { .. }
+                    | RunningAgg::ZeroSumF32(_)
+                    | RunningAgg::ZeroSumF64(_)
+                    | RunningAgg::ZeroSumInt { .. }
+            ) && batch.column(column).is_null(last)
+            {
+                return Err(invalid("NULL required frame accumulator"));
+            }
+            if state.has_count_state() && batch.column(column + 1).is_null(last) {
+                return Err(invalid("NULL frame aggregate count"));
+            }
+            column += state.state_types().len();
+        }
+        Ok(())
+    }
+
+    fn frame_map_order(
+        &self,
+        key: &[u8],
+        times: &[i64],
+    ) -> Result<Option<Vec<i64>>, DataFusionError> {
+        if self.range_offset().is_none() {
+            return Ok(None);
+        }
+        let inner = self.canonical_frame()?;
+        if let Some(maps) = &inner.range_order {
+            return maps
+                .get(key)
+                .map(|map| Some(map.keys()))
+                .ok_or_else(|| invalid("missing frame timestamp map order"));
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            let mut order = times
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            store.visit_pending(CHUNK_ROWS, |batch| {
+                let arrays = self
+                    .key_columns
+                    .iter()
+                    .map(|&column| batch.column(column))
+                    .collect::<Vec<_>>();
+                let mut converter = Some(key_row_converter_from_types(&self.store_key_types));
+                let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
+                let times = rt_to_millis(batch.column(self.rt_column));
+                for row in 0..batch.num_rows() {
+                    if keys.row(row).data() == key {
+                        order.insert(times.value(row));
+                    }
+                }
+                Ok(())
+            })?;
+            return Ok(Some(order.into_iter().collect()));
+        }
+        Err(invalid("missing frame timestamp map"))
+    }
+
+    fn canonical_frame_batch(
+        &self,
+        key: &[u8],
+        inputs: &[FrameInput],
+        times: Vec<i64>,
+        state: Vec<ScalarValue>,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let inner = self.canonical_frame()?;
+        let input_schema = inputs
+            .first()
+            .ok_or_else(|| invalid("empty retained frame"))?
+            .row
+            .schema();
+        if inputs.len() != times.len()
+            || state.len() != inner.fold_types.len()
+            || inputs
+                .iter()
+                .any(|input| input.row.num_rows() != 1 || input.row.schema() != input_schema)
+        {
+            return Err(invalid(
+                "retained frame schema or accumulator layout changed",
+            ));
+        }
+        let originals = concat_batches(&input_schema, inputs.iter().map(|input| &input.row))?;
+        let rows = inputs.len();
+        let order = self.frame_map_order(key, &times)?;
+        let mut columns = originals.columns().to_vec();
+        columns.push(Arc::new(Int64Array::from(times)));
+        columns.push(Arc::new(Int64Array::from(
+            inputs.iter().map(|input| input.clock).collect::<Vec<_>>(),
+        )));
+        columns.push(Arc::new(Int64Array::from_iter_values(0..rows as i64)));
+        for (value, ty) in state.into_iter().zip(&inner.fold_types) {
+            let mut values = vec![null_scalar(ty); rows];
+            values[rows - 1] = value;
+            columns.push(scalars_to_array(values, ty));
+        }
+        let protocol = self.range_timers.get(key);
+        for value in [
+            self.cleanup_state.get(key).copied(),
+            protocol.and_then(|timers| timers.last),
+        ] {
+            let mut values = vec![None; rows];
+            values[rows - 1] = value;
+            columns.push(Arc::new(Int64Array::from(values)));
+        }
+        columns.push(tail_list(
+            protocol.map(|timers| timers.armed.as_slice()),
+            rows,
+        ));
+        columns.push(tail_list(order.as_deref(), rows));
+        let batch = RecordBatch::try_new(frame_schema(&input_schema, &inner.fold_types), columns)?;
+        self.validate_frame_fold(&batch, originals.num_columns() + 3)?;
+        Ok(batch)
+    }
+
+    pub(in crate::over_agg) fn visit_canonical_frames(
+        &self,
+        mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.ensure_canonical_distinct_ready()?;
+        let inner = self.canonical_frame()?;
+        if !inner.capture_inputs {
+            return Err(invalid("original frame inputs are not bound"));
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            if !inner.keys.is_empty() {
+                return Err(invalid("persistent frame has undrained resident state"));
+            }
+            return store.visit_frames(|key, rows| {
+                let inputs = rows
+                    .iter()
+                    .map(|row| {
+                        row.input
+                            .clone()
+                            .ok_or_else(|| invalid("missing original frame input"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                accept(self.canonical_frame_batch(
+                    key,
+                    &inputs,
+                    rows.iter().map(|row| row.rt).collect(),
+                    rows.last().unwrap().values[inner.kinds.len()..].to_vec(),
+                )?)
+            });
+        }
+        for (key, rows) in &inner.keys {
+            let inputs = rows
+                .iter()
+                .map(|row| {
+                    row.input()
+                        .cloned()
+                        .ok_or_else(|| invalid("missing original frame input"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let state = rows
+                .last()
+                .and_then(BufferedRow::fold_state)
+                .ok_or_else(|| invalid("missing raw frame accumulator"))?
+                .to_vec();
+            accept(self.canonical_frame_batch(
+                &key.0,
+                &inputs,
+                rows.iter().map(|row| row.rt).collect(),
+                state,
+            )?)?;
+        }
+        Ok(())
+    }
+
+    pub(in crate::over_agg) fn import_canonical_frame(
+        &mut self,
+        batch: &RecordBatch,
+    ) -> Result<(), DataFusionError> {
+        let inner = self.canonical_frame()?;
+        let folds = inner.fold_types.clone();
+        let arity = batch
+            .num_columns()
+            .checked_sub(METADATA_COLUMNS + folds.len())
+            .ok_or_else(|| invalid("frame input schema is incomplete"))?;
+        if batch.num_rows() == 0 {
+            return Err(invalid("empty retained partition"));
+        }
+        if self
+            .key_columns
+            .iter()
+            .chain(&self.value_columns)
+            .any(|&column| column >= arity)
+            || self.rt_column >= arity
+        {
+            return Err(invalid("frame input columns are missing"));
+        }
+        let original = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(
+                batch.schema().fields()[..arity].to_vec(),
+                batch.schema().metadata().clone(),
+            )),
+            batch.columns()[..arity].to_vec(),
+        )?;
+        if batch.schema() != frame_schema(original.schema().as_ref(), &folds) {
+            return Err(invalid("frame bridge schema changed"));
+        }
+        if let Some(schema) = &self.input_schema {
+            if schema != &original.schema() {
+                return Err(invalid("original frame input schema changed"));
+            }
+        }
+        for ((&column, ty), &kind) in self
+            .value_columns
+            .iter()
+            .zip(&inner.value_types)
+            .zip(&inner.kinds)
+        {
+            if kind != 3
+                && original.column(column).data_type() != ty
+                && original.column(column).null_count() != original.num_rows()
+            {
+                return Err(invalid("frame aggregate argument type changed"));
+            }
+        }
+        if let Some(kinds) = original.column_by_name(ROW_KIND_COLUMN) {
+            let kinds = kinds
+                .as_any()
+                .downcast_ref::<arrow::array::Int8Array>()
+                .ok_or_else(|| invalid("frame RowKind must be TINYINT"))?;
+            if kinds.iter().any(|kind| kind != Some(0)) {
+                return Err(invalid("frame rows must be INSERT records"));
+            }
+        }
+        let metadata = (0..3)
+            .map(|column| {
+                batch
+                    .column(arity + column)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .filter(|values| values.null_count() == 0)
+                    .ok_or_else(|| invalid("NULL or non-BIGINT frame position/clock/time"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let times = metadata[0];
+        let clocks = metadata[1];
+        let positions = metadata[2];
+        if positions
+            .values()
+            .iter()
+            .enumerate()
+            .any(|(index, position)| *position != index as i64)
+            || times.values().windows(2).any(|pair| {
+                if self.proctime {
+                    pair[0] >= pair[1]
+                } else {
+                    pair[0] > pair[1]
+                }
+            })
+        {
+            return Err(invalid("frame positions or ordering changed"));
+        }
+        let next_seq = if self.proctime {
+            times
+                .value(batch.num_rows() - 1)
+                .checked_add(1)
+                .ok_or_else(|| invalid("frame arrival sequence overflow"))?
+        } else {
+            0
+        };
+        if self.proctime && times.values().iter().any(|time| *time < 0) {
+            return Err(invalid("negative frame arrival sequence"));
+        }
+        if !self.proctime {
+            let time = original.column(self.rt_column);
+            let original_times = if time.data_type() == &DataType::Int64 {
+                time.as_any().downcast_ref::<Int64Array>().unwrap().clone()
+            } else if streamfusion_bridge::timestamp::is_timestamp(time.data_type()) {
+                streamfusion_bridge::timestamp::TimestampColumn::try_new(time.as_ref())?
+                    .to_millis()?
+            } else {
+                return Err(invalid("frame rowtime type changed"));
+            };
+            if original_times.null_count() != 0
+                || original_times.values() != times.values()
+                || clocks.values() != times.values()
+            {
+                return Err(invalid("frame rowtime or sampled clock changed"));
+            }
+        }
+        let state_offset = arity + 3;
+        self.validate_frame_fold(batch, state_offset)?;
+        let last = batch.num_rows() - 1;
+        for column in state_offset..batch.num_columns() - 2 {
+            if (0..last).any(|row| !batch.column(column).is_null(row)) {
+                return Err(invalid("raw frame state must occur only on the final row"));
+            }
+        }
+        let cleanup_column = state_offset + folds.len();
+        let cleanup = (!batch.column(cleanup_column).is_null(last))
+            .then(|| column_at_i64(batch, cleanup_column).value(last));
+        let last_trigger = (!batch.column(cleanup_column + 1).is_null(last))
+            .then(|| column_at_i64(batch, cleanup_column + 1).value(last));
+        let timers = read_tail_list(batch, cleanup_column + 2)?;
+        let order = read_tail_list(batch, cleanup_column + 3)?;
+        let range = self.range_offset().is_some();
+        if cleanup.is_some() != (range || self.deadline_cleaning()) {
+            return Err(invalid("frame cleanup deadline is missing or unexpected"));
+        }
+        if range {
+            if last_trigger.is_none_or(|fired| fired < times.value(last))
+                || timers.is_none()
+                || order.is_none()
+            {
+                return Err(invalid("RANGE frame timer/cutoff/order state is missing"));
+            }
+            let timers = timers.as_ref().unwrap();
+            let order = order.as_ref().unwrap();
+            if !timers.windows(2).all(|pair| pair[0] < pair[1])
+                || timers.iter().any(|time| *time <= last_trigger.unwrap())
+                || !timers.contains(&cleanup.unwrap())
+                || order.iter().copied().collect::<ahash::HashSet<_>>().len() != order.len()
+                || times.values().iter().any(|time| !order.contains(time))
+            {
+                return Err(invalid(
+                    "RANGE frame timer ownership or map membership changed",
+                ));
+            }
+        } else if last_trigger.is_some() || timers.is_some() || order.is_some() {
+            return Err(invalid("ROWS frame contains RANGE protocol"));
+        }
+        let arrays = self
+            .key_columns
+            .iter()
+            .map(|&column| original.column(column))
+            .collect::<Vec<_>>();
+        let key_types = key_types(&arrays);
+        if !inner.key_types.is_empty() && inner.key_types != key_types {
+            return Err(invalid("frame key type changed"));
+        }
+        let mut converter = Some(key_row_converter_from_types(&key_types));
+        let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
+        let key = ByteKey::from(keys.row(0).data());
+        if keys.iter().any(|row| row.data() != key.0.as_ref()) || inner.keys.contains_key(&key) {
+            return Err(invalid("mixed or duplicate retained partition"));
+        }
+        let fold = (0..folds.len())
+            .map(|index| ScalarValue::try_from_array(batch.column(state_offset + index), last))
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = (0..batch.num_rows())
+            .map(|row| {
+                let values = self
+                    .value_columns
+                    .iter()
+                    .map(|&column| ScalarValue::try_from_array(original.column(column), row))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut frame = BufferedRow::from_scalars(
+                    times.value(row),
+                    &values,
+                    &inner.kinds,
+                    (row == last).then(|| fold.clone()),
+                );
+                frame.set_input(Some(FrameInput::owned(&original, row, clocks.value(row))?));
+                Ok(frame)
+            })
+            .collect::<Result<Vec<_>, DataFusionError>>()?;
+        #[cfg(feature = "rocksdb-state")]
+        let persistent = self.store.is_some();
+        #[cfg(not(feature = "rocksdb-state"))]
+        let persistent = false;
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            let group = store.key_group(binary_row_hash(
+                &original,
+                &self.key_columns,
+                0,
+                &self.key_timestamp_precisions,
+            ));
+            if !store.owns_group(group) || store.has_frame(&store.frame_prefix(group, &key.0))? {
+                return Err(invalid("unowned or duplicate retained partition"));
+            }
+        }
+        self.bind_canonical_frame_inputs()?;
+        self.inner.seed_key_codec(&key_types);
+        self.key_converter = converter;
+        self.input_schema = Some(original.schema());
+        #[cfg(feature = "rocksdb-state")]
+        if persistent {
+            self.write_canonical_frame(&key.0, &rows, &folds)?;
+        }
+        let OverInner::Bounded(inner) = &mut self.inner else {
+            unreachable!()
+        };
+        if !persistent {
+            inner.keys.insert(key.clone(), rows);
+        }
+        if let (Some(maps), Some(order)) = (&mut inner.range_order, order) {
+            maps.insert(key.clone(), HeapRangeOrder::canonical(&order));
+        }
+        if inner.track {
+            inner.recompute_bytes();
+        }
+        if let Some(deadline) = cleanup {
+            if self.cleanup_state.insert(key.clone(), deadline).is_none() {
+                self.retention_bytes += byte_key_bytes(&key.0);
+            }
+        }
+        if let Some(armed) = timers {
+            let protocol = RangeTimers {
+                last: last_trigger,
+                armed,
+            };
+            if let Some(previous) = self.range_timers.remove(&key) {
+                self.retention_bytes -= byte_key_bytes(&key.0) + previous.bytes();
+            }
+            self.retention_bytes += byte_key_bytes(&key.0) + protocol.bytes();
+            self.range_timers.insert(key, protocol);
+        }
+        if self.proctime {
+            self.next_seq = self.next_seq.max(next_seq);
+            #[cfg(feature = "rocksdb-state")]
+            if let Some(store) = &mut self.store {
+                store.adopt_next_seq(self.next_seq as u64);
+            }
+        }
+        self.account()
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    fn write_canonical_frame(
+        &mut self,
+        key: &[u8],
+        rows: &[BufferedRow],
+        folds: &[DataType],
+    ) -> Result<(), DataFusionError> {
+        let inner = self.canonical_frame()?;
+        let mut columns = inner
+            .value_types
+            .iter()
+            .zip(&inner.kinds)
+            .enumerate()
+            .map(|(slot, (ty, &kind))| {
+                scalars_to_array(
+                    rows.iter().map(|row| row.scalar(ty, kind, slot)).collect(),
+                    ty,
+                )
+            })
+            .collect::<Vec<_>>();
+        for (column, ty) in folds.iter().enumerate() {
+            columns.push(scalars_to_array(
+                rows.iter()
+                    .map(|row| row.fold_scalar(column, inner.arithmetic_width, ty))
+                    .collect(),
+                ty,
+            ));
+        }
+        let inputs = rows
+            .iter()
+            .map(|row| row.input().unwrap().clone())
+            .collect::<Vec<_>>();
+        let group = self.store_fold_key_group(key);
+        let store = self.store.as_mut().unwrap();
+        let prefix = store.frame_prefix(group, key);
+        let first = if self.proctime {
+            0
+        } else {
+            store.allocate_seqs(rows.len())
+        };
+        let entries = rows
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                (
+                    prefix.clone(),
+                    row.rt,
+                    if self.proctime {
+                        row.rt as u64
+                    } else {
+                        first + index as u64
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        store.write_frames(&entries, &columns)?;
+        store.write_frame_inputs(&entries, &inputs)
+    }
+}
+
+fn column_at_i64(batch: &RecordBatch, column: usize) -> &Int64Array {
+    batch
+        .column(column)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("validated frame schema")
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_exportOverCanonicalFrames<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    receiver: JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &*(handle as *const OverWindowAggregator) };
+        if let Err(error) = operator.visit_canonical_frames(|batch| {
+            crate::bridge::emit_record_batch(&mut env, &receiver, batch)
+        }) {
+            report(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_importOverCanonicalFrames<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    array: jlong,
+    schema: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        let result = operator.import_canonical_frame(&import_record_batch(array, schema));
+        if let Err(error) = result {
+            report(&mut env, error);
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests;

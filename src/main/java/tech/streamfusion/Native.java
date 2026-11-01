@@ -46,7 +46,13 @@ public final class Native {
 
   public static native void exportOverCanonicalFrameInputs(long handle, BatchReceiver receiver);
 
-  /** Rowtime unbounded OVER input buffers and processing-time cleanup deadlines. */
+  /** Complete retained arithmetic frames, with original rows and raw folds; pending rows transfer separately. */
+  public static native void exportOverCanonicalFrames(long handle, BatchReceiver receiver);
+
+  public static native void importOverCanonicalFrames(
+      long handle, long arrayAddress, long schemaAddress);
+
+  /** Rowtime OVER input buffers and processing-time cleanup deadlines. */
   public static native void exportOverPendingCanonical(long handle, BatchReceiver receiver);
 
   public static native void importOverPendingCanonical(

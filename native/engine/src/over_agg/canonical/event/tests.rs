@@ -563,32 +563,47 @@ fn older_native_snapshots_without_cleanup_footer_still_restore_fold_deadlines() 
 }
 
 #[test]
-fn event_state_transfer_rejects_processing_time_bounded_and_distinct_shapes() {
-    for (frame, distinct, proctime) in [
-        (3, false, true),
-        (0, false, true),
-        (1, false, false),
-        (2, false, false),
-        (3, true, false),
-        (0, true, false),
+fn event_state_transfer_rejects_processing_time_unbound_distinct_and_selection_views() {
+    for (frame, kind, proctime) in [
+        (3, 0, true),
+        (0, 0, true),
+        (1, 0, true),
+        (1, 1, false),
+        (2, 1, false),
+        (3, 100, false),
+        (0, 100, false),
     ] {
-        let mut target = OverWindowAggregator::new(
-            vec![1],
-            vec![if distinct { 100 } else { 0 }],
-            2,
-            vec![1],
-            vec![0],
-            frame,
-            2,
-            proctime,
-        )
-        .with_state_retention(1000);
+        let mut target =
+            OverWindowAggregator::new(vec![1], vec![kind], 2, vec![1], vec![0], frame, 2, proctime)
+                .with_state_retention(1000);
         let valid = timed(&[Some(1)], &[Some(1.0)], &[10]);
         assert!(target.import_canonical_pending(valid).is_err());
         assert!(target.visit_canonical_pending(|_| Ok(())).is_err());
         assert!(target.visit_canonical_cleanup(|_| Ok(())).is_err());
         assert!(target.buffered.is_empty());
         assert!(target.cleanup_state.is_empty());
+    }
+}
+
+#[test]
+fn arithmetic_bounded_pending_rows_can_be_staged_for_the_frame_adapter() {
+    for frame in [1, 2] {
+        let mut target =
+            OverWindowAggregator::new(vec![1], vec![0], 2, vec![1], vec![0], frame, 2, false);
+        target.bind_canonical_frame_inputs().unwrap();
+        let input = timed(&[Some(1)], &[Some(1.0)], &[10]);
+        target.import_canonical_pending(input.clone()).unwrap();
+        assert_eq!(pending(&target), vec![input]);
+        if frame == 2 {
+            assert!(
+                target.visit_canonical_cleanup(|_| Ok(())).is_err(),
+                "event-time RANGE deadlines cannot be exported as processing-time cleanup"
+            );
+        }
+        assert!(
+            target.inner.state_keys().is_empty(),
+            "staging pending input must not fold it"
+        );
     }
 }
 

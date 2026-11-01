@@ -16,6 +16,7 @@ mod frame_inputs_tests;
 #[cfg(test)]
 mod pending_tests;
 mod range_timers;
+mod canonical_frames;
 
 /// The OVER aggregate's DB holds one table per state shape, every key led by the PARTITION BY
 /// key's group (BinaryRow-hash routed — identical to the blob partitioner) so rescale clipping is

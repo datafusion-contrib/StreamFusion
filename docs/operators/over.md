@@ -1242,7 +1242,7 @@ clock and position. Metadata column names avoid collisions with original columns
 live state intact, supports retry after receiver failure, and does not create a native snapshot
 as an intermediate. Native checkpoint encoding remains separate from this stock-export path.
 The complete stock bounded accumulator, buffer, counter and timer contract, legacy versions and
-upstream OVER UDF execution remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+applicable unchanged upstream restore programs remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
 
 
@@ -1284,3 +1284,26 @@ The stock bounded accumulator/view/buffer/counter/timer adapter and its planner 
 remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 This change preserves native arithmetic; it does not claim complete bounded savepoint interchange.
 Benchmarking and tuning remain deferred.
+
+### Direct retained-frame transfer
+
+Arithmetic frames have a direct native import/export bridge. It visits one live partition at a
+time, carrying full original inputs and sampled clocks, explicit positions, raw sums/counts,
+cleanup deadlines and available RANGE timer/cutoff/map-order metadata. The raw fold appears only
+on the final row. Import installs that fold independently of the retained input values; it never
+replays those values into an accumulator. This preserves cancellation, widened AVG arithmetic,
+decimal overflow and NaN history even when the live count is zero. Input metadata names avoid
+collisions with original columns, and imported rows own their buffers after the Java owner closes.
+
+Import validates the complete bridge schema, ordering, INSERT tags, partition identity, raw
+required fields and RANGE protocol before changing frame state. Persistent import also checks
+key-group ownership and rejects duplicate retained partitions. The bridge covers frames in which
+every aggregate has retained raw arithmetic; selections and their views need separate transfer.
+Event-time pending rows use the separate direct pending-input visitor. A pending-only key's
+protocol is not represented by a retained-frame batch and still needs the complete operator
+adapter. Ordinary native checkpoint encodings retain their existing layouts.
+
+This is a native state-transfer foundation, not automatic stock bounded canonical restore.
+The released stock descriptors/serializers, processing-time bucket/counter protocol, remaining
+views and pending-only metadata, private planner binding and clean-process handoffs remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

@@ -300,3 +300,13 @@ rescaling; cleanup removes it with the key. Old native snapshots can seed their 
 but cannot reconstruct missing historical timers. This closes an information-loss gap for the
 future stock adapter without qualifying bounded stock canonical import/export. Performance
 validation remains deferred for [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+The direct bounded OVER frame bridge transfers original inputs and raw arithmetic in one
+partition batch, with the raw fold and per-key native protocol on its final row. Memory reads
+live frames; RocksDB visits one partition at a time. Neither path creates a native savepoint as
+an intermediate. Import owns input buffers, validates the schema/position/key/protocol before
+installing state, and never reconstructs a raw accumulator by replay. Persistent import rejects
+unowned key groups and duplicate partitions. Normal native checkpoint layouts are unchanged.
+This bridge does not yet write or read Flink's released bounded state descriptors: complete
+pending-only metadata, stock counters/views and automatic planner admission remain required by
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Performance work is deferred.
