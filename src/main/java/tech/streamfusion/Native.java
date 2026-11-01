@@ -52,6 +52,12 @@ public final class Native {
   public static native void importOverCanonicalFrames(
       long handle, long arrayAddress, long schemaAddress);
 
+  /** Event-time RANGE key protocol, including pending-only keys and empty callbacks. */
+  public static native void exportOverCanonicalRange(long handle, BatchReceiver receiver);
+
+  public static native void importOverCanonicalRange(
+      long handle, long arrayAddress, long schemaAddress);
+
   /** Rowtime OVER input buffers and processing-time cleanup deadlines. */
   public static native void exportOverPendingCanonical(long handle, BatchReceiver receiver);
 

@@ -425,11 +425,6 @@ fn inconsistent_range_timer_cutoff_and_map_membership_are_rejected() {
             tail_list(Some(&[1004, 1004, 1006]), 3),
         ),
         replaced(&batch, timer_column, tail_list(Some(&[1004]), 3)),
-        replaced(
-            &batch,
-            timer_column,
-            tail_list(Some(&[1001, 1004, 1006]), 3),
-        ),
         replaced(&batch, order_column, tail_list(Some(&[]), 3)),
         replaced(
             &batch,
@@ -444,6 +439,15 @@ fn inconsistent_range_timer_cutoff_and_map_membership_are_rejected() {
         assert_eq!(target.retention_bytes, 0);
         target.import_canonical_frame(&batch).unwrap();
     }
+    // Registering cleanup may wrap behind the last fired callback. A timer's numerical position
+    // alone cannot establish whether Flink registered it before or after that callback.
+    let with_earlier_timer = replaced(
+        &batch,
+        timer_column,
+        tail_list(Some(&[1001, 1004, 1006]), 3),
+    );
+    let mut target = memory(2, false, 0);
+    target.import_canonical_frame(&with_earlier_timer).unwrap();
 }
 
 #[cfg(feature = "rocksdb-state")]

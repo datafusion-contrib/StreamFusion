@@ -129,7 +129,7 @@ impl OverWindowAggregator {
         Ok(())
     }
 
-    fn frame_map_order(
+    pub(super) fn frame_map_order(
         &self,
         key: &[u8],
         times: &[i64],
@@ -142,6 +142,7 @@ impl OverWindowAggregator {
             return maps
                 .get(key)
                 .map(|map| Some(map.keys()))
+                .or_else(|| times.is_empty().then(|| Some(Vec::new())))
                 .ok_or_else(|| invalid("missing frame timestamp map order"));
         }
         #[cfg(feature = "rocksdb-state")]
@@ -311,7 +312,25 @@ impl OverWindowAggregator {
             )),
             batch.columns()[..arity].to_vec(),
         )?;
-        if batch.schema() != frame_schema(original.schema().as_ref(), &folds) {
+        let expected = frame_schema(original.schema().as_ref(), &folds);
+        if batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(expected.fields())
+            .any(|(actual, expected)| {
+                let same_type = match (actual.data_type(), expected.data_type()) {
+                    (DataType::List(left), DataType::List(right)) => {
+                        left.data_type() == right.data_type()
+                    }
+                    (left, right) => left == right,
+                };
+                actual.name() != expected.name()
+                    || actual.is_nullable() != expected.is_nullable()
+                    || actual.metadata() != expected.metadata()
+                    || !same_type
+            })
+        {
             return Err(invalid("frame bridge schema changed"));
         }
         if let Some(schema) = &self.input_schema {
@@ -426,7 +445,6 @@ impl OverWindowAggregator {
             let timers = timers.as_ref().unwrap();
             let order = order.as_ref().unwrap();
             if !timers.windows(2).all(|pair| pair[0] < pair[1])
-                || timers.iter().any(|time| *time <= last_trigger.unwrap())
                 || !timers.contains(&cleanup.unwrap())
                 || order.iter().copied().collect::<ahash::HashSet<_>>().len() != order.len()
                 || times.values().iter().any(|time| !order.contains(time))

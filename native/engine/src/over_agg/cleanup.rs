@@ -79,9 +79,13 @@ impl OverWindowAggregator {
                 .as_any()
                 .downcast_ref::<Int64Array>()
                 .expect("cleanup deadlines");
-            assert_eq!(deadlines.null_count(), 0, "NULL cleanup deadline");
+            if self.range_offset().is_none() {
+                assert_eq!(deadlines.null_count(), 0, "NULL cleanup deadline");
+            }
             for row in 0..batch.num_rows() {
-                stamps.insert(ByteKey::from(keys.row(row).data()), deadlines.value(row));
+                if !deadlines.is_null(row) {
+                    stamps.insert(ByteKey::from(keys.row(row).data()), deadlines.value(row));
+                }
             }
             self.restore_range_timer_batch(&batch, &keys);
             self.key_converter = converter;
@@ -117,7 +121,7 @@ impl OverWindowAggregator {
                 ));
                 (
                     store.stamp_key(group, keys.row(row).data()),
-                    Some(deadlines.value(row)),
+                    (!deadlines.is_null(row)).then(|| deadlines.value(row)),
                 )
             })
             .collect::<Vec<_>>();

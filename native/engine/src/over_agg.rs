@@ -2,6 +2,7 @@ use crate::*;
 
 mod canonical;
 mod cleanup;
+mod range_flush;
 mod range_timers;
 use range_timers::RangeTimers;
 mod distinct_ttl;
@@ -3621,10 +3622,10 @@ impl OverWindowAggregator {
         let Some(offset) = self.range_offset() else {
             return;
         };
-        let minimum = rt.saturating_add(offset).saturating_add(1);
+        let minimum = rt.wrapping_add(offset).wrapping_add(1);
         let maximum = rt
-            .saturating_add((offset as f64 * 1.5) as i64)
-            .saturating_add(1);
+            .wrapping_add((offset as f64 * 1.5) as i64)
+            .wrapping_add(1);
         let registered = match self.cleanup_state.get_mut(key) {
             Some(deadline) => {
                 if *deadline < minimum {
@@ -4411,11 +4412,7 @@ impl OverWindowAggregator {
     /// Emits the rows the watermark has completed (input columns + running aggregates) and keeps the
     /// rest buffered. Returns an empty batch when nothing is complete. `now_ms` is the host's
     /// processing-time reading — the cleanup-deadline clock.
-    pub(crate) fn flush(
-        &mut self,
-        watermark: i64,
-        now_ms: i64,
-    ) -> Result<RecordBatch, DataFusionError> {
+    fn flush_inner(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
         self.ensure_canonical_distinct_ready()?;
         self.watermark = self.watermark.max(watermark);
         if self.deadline_cleaning() {

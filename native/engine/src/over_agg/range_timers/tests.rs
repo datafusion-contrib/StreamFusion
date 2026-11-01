@@ -269,6 +269,82 @@ fn actual_legacy_frame_seeds_its_previous_cutoff_without_inventing_old_timers() 
 
 #[cfg(feature = "rocksdb-state")]
 #[test]
+fn wrapped_cleanup_drops_pending_rows_but_keeps_future_empty_callbacks() {
+    for keyless in [false, true] {
+        for persistent in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut op = operator(keyless, persistent, &dir.path().join("source"));
+            for time in [i64::MAX - 10, i64::MAX - 5] {
+                op.push(input(Some(1), time, 97), 0).unwrap();
+            }
+            assert!(op.cleanup_state.values().all(|time| *time < 0));
+            assert_eq!(op.flush(0, 0).unwrap().num_rows(), 0);
+            assert!(op.cleanup_state.is_empty());
+            assert_eq!(timers(&op)[0].1, None);
+            assert_eq!(timers(&op)[0].2, vec![i64::MAX - 10, i64::MAX - 5]);
+            for cutoff in [0, i64::MAX] {
+                assert_eq!(op.flush(cutoff, 0).unwrap().num_rows(), 0);
+                let snapshots = if persistent {
+                    op.canonical_partitions(8, if keyless { &[] } else { &[-1] })
+                        .unwrap()
+                } else {
+                    op.snapshot_partitions(8, if keyless { &[] } else { &[-1] })
+                }
+                .into_values()
+                .collect::<Vec<_>>();
+                for to_store in [false, true] {
+                    let mut restored = if to_store {
+                        let mut target =
+                            operator(keyless, true, &dir.path().join(format!("target-{cutoff}")));
+                        target.import_partitions(&snapshots).unwrap();
+                        target.adopt_store_retention(0).unwrap();
+                        target
+                    } else {
+                        OverWindowAggregator::restore_partitions(
+                            vec![0],
+                            vec![0],
+                            2,
+                            vec![1],
+                            if keyless { vec![] } else { vec![0] },
+                            2,
+                            32,
+                            false,
+                            &snapshots,
+                            0,
+                            0,
+                        )
+                        .with_memory_budget(64 << 20)
+                        .unwrap()
+                    };
+                    assert_eq!(timers(&restored), timers(&op));
+                    assert!(restored.cleanup_state.is_empty());
+                    assert_eq!(restored.flush(i64::MAX, 0).unwrap().num_rows(), 0);
+                    assert_eq!(timers(&restored)[0].1, Some(i64::MAX - 5));
+                    restored.push(input(Some(1), 1000, 1), 0).unwrap();
+                    assert_eq!(restored.late_drops, 1);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn range_outputs_follow_timer_timestamp_order_in_both_stores() {
+    for persistent in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut op = operator(false, persistent, dir.path());
+        for time in [1020, 1000, 1010] {
+            op.push(input(Some(1), time, time % 100), 0).unwrap();
+        }
+        let out = op.flush(1020, 0).unwrap();
+        let times = out.column(2).as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(times.values().as_ref(), &[1000, 1010, 1020]);
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
 fn timer_codec_rejects_truncation_versions_and_unsorted_or_duplicate_times() {
     let timers = RangeTimers {
         last: Some(1049),

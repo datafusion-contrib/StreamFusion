@@ -112,7 +112,7 @@ impl OverWindowAggregator {
         let mut last = Vec::with_capacity(keys.len());
         let mut armed = arrow::array::ListBuilder::new(arrow::array::Int64Builder::new());
         for (key, timers) in &self.range_timers {
-            deadlines.push(*self.cleanup_state.get(key).expect("RANGE cleanup deadline"));
+            deadlines.push(self.cleanup_state.get(key).copied());
             last.push(timers.last);
             for timestamp in &timers.armed {
                 armed.values().append_value(*timestamp);
@@ -120,7 +120,7 @@ impl OverWindowAggregator {
             armed.append(true);
         }
         let armed = armed.finish();
-        fields.push(Field::new(CLEANUP_AT_COLUMN, DataType::Int64, false));
+        fields.push(Field::new(CLEANUP_AT_COLUMN, DataType::Int64, true));
         fields.push(Field::new(RANGE_LAST, DataType::Int64, true));
         fields.push(Field::new(RANGE_ARMED, armed.data_type().clone(), false));
         columns.push(Arc::new(Int64Array::from(deadlines)));

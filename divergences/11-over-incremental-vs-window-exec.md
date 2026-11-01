@@ -405,3 +405,22 @@ This is state-information preservation, not stock bounded-contract admission. Fu
 accumulator/buffer/timer translation, planner binding and cross-engine qualification remain under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Performance work is deferred
 by the maintainer's functionality-first instruction.
+
+
+## Bounded RANGE timer callbacks
+
+Arroyo's window-function implementation splits timestamp-sorted batches and schedules timestamp
+buckets in a BTreeMap. StreamFusion keeps its existing incremental frame algorithm, and now emits
+completed bounded RANGE rows in timestamp order as the released Flink callbacks do. The reasons
+for retaining this algorithm remain unchanged: it owns the retractable raw accumulator and full
+retained rows needed for direct canonical interchange.
+
+Flink also uses wrapping Java long additions for cleanup deadlines and leaves superseded timers
+registered. An overflow can place cleanup before pending data; clearing state does not cancel
+future callbacks. The native wrapper splits only those cleanup boundaries that precede later
+callbacks or can coincide with data after overflow, clears the key's pending inputs and frame,
+and keeps future timers. Ordinary RANGE firings keep the bulk frame path. Orphan callbacks and
+the resulting last-trigger-only keys are retained in optional native timer metadata and the
+independent direct RANGE protocol. This follows the released Flink operator contract rather than
+Arroyo's generic window execution. No intermediate native snapshot is introduced. Performance
+measurement and tuning remain deferred for #569.

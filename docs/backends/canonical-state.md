@@ -308,5 +308,15 @@ an intermediate. Import owns input buffers, validates the schema/position/key/pr
 installing state, and never reconstructs a raw accumulator by replay. Persistent import rejects
 unowned key groups and duplicate partitions. Normal native checkpoint layouts are unchanged.
 This bridge does not yet write or read Flink's released bounded state descriptors: complete
-pending-only metadata, stock counters/views and automatic planner admission remain required by
+stock counters/views and complete automatic planner coverage remain required by
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Performance work is deferred.
+
+
+The direct event-time RANGE protocol also visits keys without processed frames. Typed keys,
+optional cleanup/last-trigger state, all queued timestamps and input-map membership are transferred
+independently of retained rows and raw arithmetic. This includes empty callbacks left behind by
+Flink's wrapping cleanup deadlines. Native firing preserves their later admission cutoff and
+emits completed RANGE data in timestamp order. Native RANGE checkpoint timer metadata can carry
+a NULL cleanup deadline; prior non-NULL timer metadata remains readable. Frame payload layouts
+are unchanged. The stock operator adapter and complete #569 acceptance matrix require separate
+qualification; benchmarking remains deferred.

@@ -1300,10 +1300,34 @@ required fields and RANGE protocol before changing frame state. Persistent impor
 key-group ownership and rejects duplicate retained partitions. The bridge covers frames in which
 every aggregate has retained raw arithmetic; selections and their views need separate transfer.
 Event-time pending rows use the separate direct pending-input visitor. A pending-only key's
-protocol is not represented by a retained-frame batch and still needs the complete operator
-adapter. Ordinary native checkpoint encodings retain their existing layouts.
+protocol is represented by the independent direct RANGE protocol bridge described below.
+Frame payload layouts are unchanged; RANGE timer metadata supports absent cleanup deadlines.
 
 This is a native state-transfer foundation, not automatic stock bounded canonical restore.
 The released stock descriptors/serializers, processing-time bucket/counter protocol, remaining
-views and pending-only metadata, private planner binding and clean-process handoffs remain in
+views, full private planner coverage and clean-process qualification remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+### RANGE callback order and keys without frames
+
+Bounded event-time RANGE emits completed rows in timestamp order, preserving arrival order among
+peers. Cleanup deadlines use the released Flink function's wrapping long arithmetic. When overflow
+places cleanup before data, cleanup discards that key's pending inputs and processed frame before
+later callbacks run. Other keys retain their pending rows. Future registered timestamps remain
+armed after cleanup; their empty callbacks can create a last-trigger timestamp without a frame,
+input rows or a cleanup deadline. This affects which later records the operator admits.
+
+The direct RANGE protocol bridge carries actual typed keys, optional cleanup and last-trigger
+values, all registered event timestamps and input-map membership order independently of frames.
+It covers pending-only keys and these timer-only or last-trigger-only states. Import checks types,
+unique keys, ordered timer sets, deadline ownership and map membership, including persistent
+key-group ownership. Receiver failure leaves live state available for retry. Full original rows
+still use the pending-input and retained-frame bridges; raw arithmetic is installed separately
+without replay. List child field names may differ across Arrow implementations; their timestamp
+types and actual non-NULL values remain checked.
+
+Native RANGE checkpoint timer metadata now permits an absent cleanup deadline for these states;
+frame and aggregate payload layouts are unchanged, and the reader still accepts prior non-NULL
+timer metadata. This native protocol is one part of #569. Stock descriptor binding, complete
+operator coverage and clean-process interchange remain subject to the issue's acceptance matrix.
+Benchmarking remains deferred under the maintainer's functionality-first instruction.
