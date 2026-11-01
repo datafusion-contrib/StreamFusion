@@ -21,9 +21,24 @@ alone does not register an instance when its lifecycle method is declared elsewh
 attached-window overloads count input only at the terminal call. Each of the twenty-four released
 event-time restore programs has an exact execution contract. Split programs require positive
 local input and separate global witnesses for slice merging and final-window merging; repeated
-subtasks of one mode cannot satisfy both. Eighteen programs pass their original assertions and
-these contracts, including all six complete split plans. Six SESSION programs still fail their
-required native witness under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+subtasks of one mode cannot satisfy both. The unmerged #569 integration passes all twenty-four
+original programs in both stock and StreamFusion runs: twenty require native window aggregates,
+three unpartitioned SESSION plans require both their unchanged stock session table function and
+native group aggregation, and one retracting SESSION program requires its stock window aggregate,
+positive native Calc work and the exact unsupported-native-session fallback. The released plans
+have different state owners; grouping an unpartitioned session separately by business key would
+change its semantics. Stock witnesses are registered only after their real state initializes and
+count completed input separately from native rows. Missing either side of a mixed route fails.
+
+A mixed contract can name `StockSessionTableFunction` alongside a native operator. A family
+fallback can append `&&NativeCalcOperator+StockSessionWindowAggregate` to require its actual stock
+state owner and an admitted native boundary as well as the exact reason and absent native family.
+These stock labels never satisfy native rows or restore-only evidence. Native evidence keeps its
+original four columns, an optional fifth native-import count column, and an optional sixth stock
+state-owner count column (with an empty fifth column when necessary). Both verifiers reject stock
+labels placed in the native-input column; the audit reports mixed paths separately. Use the
+portable `bin/canonical-savepoints.sh` entry point: it tests and packages the current agent before
+running either engine, so changed contracts cannot silently use an older agent JAR.
 
 The unchanged `AggregateITCase.testDistinctGroupBy` and `testDistinctWithMultiFilter`
 fixtures require consumed native group-aggregate work, including both local and global

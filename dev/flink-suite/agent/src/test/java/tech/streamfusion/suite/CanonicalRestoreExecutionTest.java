@@ -194,6 +194,127 @@ class CanonicalRestoreExecutionTest {
                 "new-unqualified-window-program"));
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "window-aggregate-session-event-time",
+        "window-aggregate-session-event-time-two-phase",
+        "window-aggregate-session-event-time-two-phase-distinct-split"
+      })
+  void unpartitionedSessionsRequireBothStockStateAndNativeGroupWork(String program)
+      throws Exception {
+    var scope = windowScope(program);
+    var aggregate = new NativeColumnarGroupAggregateOperator();
+    NativeExecution.opened(aggregate);
+    NativeExecution.completed(aggregate, 3);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+    var onlyStock = windowScope(program);
+    var tableFunction = new UnalignedWindowTableFunctionOperator();
+    NativeExecution.stockOpened(tableFunction);
+    NativeExecution.stockCompleted(tableFunction);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(onlyStock));
+    var both = windowScope(program);
+    NativeExecution.opened(aggregate);
+    NativeExecution.completed(aggregate, 3);
+    NativeExecution.stockOpened(tableFunction);
+    NativeExecution.stockCompleted(tableFunction);
+    assertDoesNotThrow(() -> NativeExecution.finish(both));
+    try (var files = java.nio.file.Files.list(reports)) {
+      assertTrue(
+          files.anyMatch(
+              path -> {
+                try {
+                  String[] fields =
+                      java.nio.file.Files.readString(path).stripTrailing().split("\t", -1);
+                  return fields.length == 6
+                      && fields[2].equals("NativeColumnarGroupAggregateOperator=3")
+                      && fields[5].equals("StockSessionTableFunction=1");
+                } catch (java.io.IOException failure) {
+                  throw new java.io.UncheckedIOException(failure);
+                }
+              }));
+    }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"reason", "stock", "calc", "unexpected", "none"})
+  void unsupportedRetractingSessionsRequireTheirRealOwnerAndExactFallback(String missing) {
+    var scope =
+        windowScope("window-aggregate-session-partition-event-time-two-phase-distinct-split");
+    if (!missing.equals("reason"))
+      NativeExecution.fallback("window aggregate: retracting state contract is not bound");
+    if (!missing.equals("calc")) {
+      var calc = new NativeCalcOperator();
+      NativeExecution.opened(calc);
+      NativeExecution.completed(calc, 3);
+    }
+    if (!missing.equals("stock")) {
+      var stock = new WindowAggOperator();
+      NativeExecution.stockOpened(stock);
+      NativeExecution.stockCompleted(stock);
+    }
+    if (missing.equals("unexpected")) {
+      var nativeWindow = new NativeColumnarSessionWindowAggregateOperator();
+      NativeExecution.opened(nativeWindow);
+      NativeExecution.completed(nativeWindow, 1);
+    }
+    if (missing.equals("none")) assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    else assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void stockSessionRowsCannotReplaceAnAdmittedNativeSessionAggregate() {
+    var scope = windowScope("window-aggregate-session-partition-event-time");
+    var stock = new WindowAggOperator();
+    NativeExecution.stockOpened(stock);
+    NativeExecution.stockCompleted(stock);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void stockWorkFromACompletedInvocationCannotProveTheNextInvocation() {
+    String program = "window-aggregate-session-event-time";
+    var first = windowScope(program);
+    var group = new NativeColumnarGroupAggregateOperator();
+    var stock = new UnalignedWindowTableFunctionOperator();
+    NativeExecution.opened(group);
+    NativeExecution.completed(group, 3);
+    NativeExecution.stockOpened(stock);
+    NativeExecution.stockCompleted(stock);
+    NativeExecution.finish(first);
+    var second = windowScope(program);
+    NativeExecution.opened(group);
+    NativeExecution.completed(group, 3);
+    NativeExecution.stockCompleted(stock);
+    assertThrows(AssertionError.class, () -> NativeExecution.finish(second));
+  }
+
+  private static NativeExecution.Scope windowScope(String program) {
+    return NativeExecution.beginRestore(
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.WindowAggregateEventTimeRestoreTest",
+        new Object(),
+        program);
+  }
+
+  private static final class SessionWindowAssigner {}
+
+  private static final class UnalignedWindowTableFunctionOperator {
+    private final Object windowAssigner = new SessionWindowAssigner();
+    private final Object windowState = new Object();
+    private final Object counterState = new Object();
+  }
+
+  private static final class WindowAggOperator {
+    private final Object windowProcessor = new UnsliceSyncStateWindowAggProcessor();
+  }
+
+  private static final class UnsliceSyncStateWindowAggProcessor {
+    private final Object windowState = new Object();
+  }
+
+  private static final class NativeColumnarSessionWindowAggregateOperator {}
+
   private static final class NativeColumnarLocalWindowAggregateOperator {}
 
   public static final class NativeColumnarGlobalWindowAggregateOperator {

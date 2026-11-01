@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 public final class NativeExecution {
   private static final Map<String, Map<String, String>> CONTRACTS = loadContracts();
   private static final Map<Object, Scope> OPERATORS = new WeakHashMap<>();
+  private static final Map<Object, StockBinding> STOCK_OPERATORS = new WeakHashMap<>();
   private static Scope active;
 
   private NativeExecution() {}
@@ -63,6 +64,11 @@ public final class NativeExecution {
             || fields[2].startsWith("!@") && !fields[2].matches("!@\\w+:.+")) {
           throw new IllegalStateException("Invalid native execution contract: " + line);
         }
+        if (fields[2].contains("&&")
+            && (!fields[2].startsWith("!@")
+                || !fields[2].split("&&", -1)[1].matches("\\w+(?:[+|]\\w+)*")
+                || fields[2].split("&&", -1).length != 2))
+          throw new IllegalStateException("Invalid stock state-owner contract: " + line);
         Map<String, String> variants =
             contracts.computeIfAbsent(fields[0], key -> new LinkedHashMap<>());
         if (variants.putIfAbsent(fields[1], fields[2]) != null) {
@@ -198,6 +204,46 @@ public final class NativeExecution {
     if (active != null && rows > 0) active.importedRows.merge(operator, (long) rows, Long::sum);
   }
 
+  public static synchronized void stockOpened(Object operator) {
+    if (active == null || !Boolean.getBoolean("streamfusion.flink-suite.canonical")) return;
+    String kind;
+    if (operator.getClass().getSimpleName().equals("UnalignedWindowTableFunctionOperator")) {
+      if (!field(operator, "windowAssigner")
+          .getClass()
+          .getSimpleName()
+          .equals("SessionWindowAssigner")) return;
+      if (field(operator, "windowState") == null || field(operator, "counterState") == null)
+        throw new AssertionError("Stock SESSION table-function state was not initialized");
+      kind = "StockSessionTableFunction";
+    } else {
+      Object processor = field(operator, "windowProcessor");
+      if (!processor.getClass().getSimpleName().equals("UnsliceSyncStateWindowAggProcessor"))
+        return;
+      if (field(processor, "windowState") == null)
+        throw new AssertionError("Stock unsliced window state was not initialized");
+      kind = "StockSessionWindowAggregate";
+    }
+    STOCK_OPERATORS.put(operator, new StockBinding(active, kind));
+  }
+
+  public static synchronized void stockCompleted(Object operator) {
+    StockBinding binding = STOCK_OPERATORS.get(operator);
+    if (binding != null && binding.scope == active)
+      active.stockRows.merge(binding.kind, 1L, Long::sum);
+  }
+
+  private static boolean workSatisfied(Scope scope, String contract) {
+    return Arrays.stream(contract.split("\\|"))
+        .anyMatch(
+            route ->
+                Arrays.stream(route.split("\\+"))
+                    .allMatch(
+                        operator ->
+                            (operator.startsWith("Stock") ? scope.stockRows : scope.rows)
+                                    .getOrDefault(operator, 0L)
+                                > 0));
+  }
+
   public static synchronized void fallback(String reason) {
     if (active != null) {
       active.fallbacks.add(reason);
@@ -260,6 +306,7 @@ public final class NativeExecution {
     }
     active = null;
     OPERATORS.values().removeIf(value -> value == scope);
+    STOCK_OPERATORS.values().removeIf(value -> value.scope == scope);
     String counts =
         scope.rows.entrySet().stream()
             .map(entry -> entry.getKey() + "=" + entry.getValue())
@@ -268,6 +315,10 @@ public final class NativeExecution {
     restored.keySet().retainAll(scope.opened);
     String restoredCounts =
         restored.entrySet().stream()
+            .map(entry -> entry.getKey() + "=" + entry.getValue())
+            .collect(Collectors.joining(","));
+    String stockCounts =
+        scope.stockRows.entrySet().stream()
             .map(entry -> entry.getKey() + "=" + entry.getValue())
             .collect(Collectors.joining(","));
     String reportDirectory = System.getProperty("streamfusion.flink-suite.native-reports");
@@ -289,7 +340,9 @@ public final class NativeExecution {
               + Base64.getEncoder()
                   .encodeToString(
                       String.join("\n", scope.fallbacks).getBytes(StandardCharsets.UTF_8))
-              + (restored.isEmpty() ? "" : "\t" + restoredCounts)
+              + (scope.stockRows.isEmpty()
+                  ? (restored.isEmpty() ? "" : "\t" + restoredCounts)
+                  : "\t" + restoredCounts + "\t" + stockCounts)
               + "\n");
       SqlInventory.contract(recordId, scope.test, scope.variant);
     } catch (IOException e) {
@@ -300,25 +353,24 @@ public final class NativeExecution {
     if (contract.startsWith("@restore:")) {
       satisfied =
           scope.rows.isEmpty()
+              && scope.stockRows.isEmpty()
               && scope.fallbacks.isEmpty()
               && restored.getOrDefault(contract.substring(9), 0L) > 0;
     } else if (contract.startsWith("!@")) {
-      String[] requirement = contract.substring(2).split(":", 2);
+      String[] clauses = contract.split("&&", 2);
+      String[] requirement = clauses[0].substring(2).split(":", 2);
       satisfied =
           scope.rows.getOrDefault(requirement[0], 0L) == 0
               && restored.getOrDefault(requirement[0], 0L) == 0
-              && scope.fallbacks.contains(requirement[1]);
+              && scope.fallbacks.contains(requirement[1])
+              && (clauses.length == 1 || workSatisfied(scope, clauses[1]));
     } else {
       satisfied =
           contract.startsWith("!")
               ? scope.rows.isEmpty()
                   && restored.isEmpty()
                   && scope.fallbacks.contains(contract.substring(1))
-              : Arrays.stream(contract.split("\\|"))
-                  .anyMatch(
-                      route ->
-                          Arrays.stream(route.split("\\+"))
-                              .allMatch(operator -> scope.rows.getOrDefault(operator, 0L) > 0));
+              : workSatisfied(scope, contract);
     }
     if (!satisfied) {
       throw new AssertionError(
@@ -333,6 +385,8 @@ public final class NativeExecution {
               + scope.rows
               + "; imported rows in opened native operators "
               + restored
+              + "; stock state-owner input rows "
+              + scope.stockRows
               + "; planner fallback reasons "
               + scope.fallbacks);
     }
@@ -354,6 +408,7 @@ public final class NativeExecution {
     private final String variant;
     private final Map<String, Long> rows = new TreeMap<>();
     private final Map<String, Long> importedRows = new TreeMap<>();
+    private final Map<String, Long> stockRows = new TreeMap<>();
     private final Set<String> opened = new LinkedHashSet<>();
     private final Set<String> fallbacks = new LinkedHashSet<>();
 
@@ -362,4 +417,6 @@ public final class NativeExecution {
       this.variant = variant;
     }
   }
+
+  private record StockBinding(Scope scope, String kind) {}
 }

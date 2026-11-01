@@ -103,14 +103,31 @@ public final class StreamFusionSuiteAgent {
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(Advice.to(RecordGeneratedPipeline.class).on(named("generate"))))
-        .type(named("org.apache.flink.table.planner.plan.nodes.exec.common.CommonExecSinkITCase$TestSource$1$1"))
-        .transform((builder,type,classLoader,module,protectionDomain) ->
-            System.getProperty("streamfusion.flink-suite.flink-line","2.2").equals("2.2")
-                ? CommonSinkSourceReadiness.instrument(builder) : builder)
+        .type(
+            named(
+                "org.apache.flink.table.planner.plan.nodes.exec.common.CommonExecSinkITCase$TestSource$1$1"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                System.getProperty("streamfusion.flink-suite.flink-line", "2.2").equals("2.2")
+                    ? CommonSinkSourceReadiness.instrument(builder)
+                    : builder)
         .type(named("org.apache.flink.runtime.jobmaster.JobResult"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(Advice.to(RecordJobResult.class).on(named("toJobExecutionResult"))))
+        .type(
+            namedOneOf(
+                "org.apache.flink.table.runtime.operators.window.tvf.operator.UnalignedWindowTableFunctionOperator",
+                "org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(
+                        Advice.to(BindStockWindowState.class)
+                            .on(named("open").and(takesArguments(0))))
+                    .visit(
+                        Advice.to(RecordStockWindowInput.class)
+                            .on(named("processElement").and(takesArguments(1)))))
         .type(named("org.apache.paimon.flink.FlinkTestBase"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -138,9 +155,12 @@ public final class StreamFusionSuiteAgent {
               }
               if (type.getName().equals("org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase")) {
                 // Inspect original locals before Advice remaps them for its exceptional-exit scope.
-                builder = builder
-                    .visit(Advice.to(PaimonChangelogCompletion.Scope.class).on(named("checkChangelogTestResult")))
-                    .visit(PaimonChangelogCompletion.adapter());
+                builder =
+                    builder
+                        .visit(
+                            Advice.to(PaimonChangelogCompletion.Scope.class)
+                                .on(named("checkChangelogTestResult")))
+                        .visit(PaimonChangelogCompletion.adapter());
               }
               return builder.visit(
                   Advice.to(WatchPaimonTest.class)
@@ -228,8 +248,9 @@ public final class StreamFusionSuiteAgent {
               if (type.getName().endsWith("NativeWindowOperatorCore")) {
                 return builder.visit(
                     Advice.to(RecordNativeBatch.class)
-                        .on(named("updateColumnarInternal")
-                            .or(named("updateColumnarAttached").and(takesArguments(7)))));
+                        .on(
+                            named("updateColumnarInternal")
+                                .or(named("updateColumnarAttached").and(takesArguments(7)))));
               }
               if (type.getName().endsWith("NativeRowWindowOperatorCore")
                   || type.getName().endsWith("NativeColumnarWindowAggregateOperator")
@@ -507,6 +528,20 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodExit
     static void exit(@Advice.This Object operator) {
       NativeExecution.opened(operator);
+    }
+  }
+
+  public static final class BindStockWindowState {
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object operator) {
+      NativeExecution.stockOpened(operator);
+    }
+  }
+
+  public static final class RecordStockWindowInput {
+    @Advice.OnMethodExit
+    static void exit(@Advice.This Object operator) {
+      NativeExecution.stockCompleted(operator);
     }
   }
 

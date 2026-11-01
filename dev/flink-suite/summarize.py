@@ -36,6 +36,10 @@ def execution_contracts(
             or fields[2].startswith("!@") and not re.fullmatch(r"!@\w+:.+", fields[2])
         ):
             raise ValueError(f"Invalid native execution contract: {line}")
+        if "&&" in fields[2]:
+            clauses = fields[2].split("&&")
+            if not fields[2].startswith("!@") or len(clauses) != 2 or not re.fullmatch(r"\w+(?:[+|]\w+)*", clauses[1]):
+                raise ValueError(f"Invalid stock state-owner contract: {line}")
         variants = contracts.setdefault(fields[0], {})
         if fields[1] in variants:
             raise ValueError(f"Duplicate native execution contract: {line}")
@@ -59,7 +63,7 @@ def check_execution(
         try:
             fields = path.read_text().rstrip("\n").split("\t")
             if (
-                len(fields) not in (4, 5)
+                len(fields) not in (4, 5, 6)
                 or fields[0] not in contracts
                 or fields[1] not in contracts[fields[0]]
             ):
@@ -77,20 +81,29 @@ def check_execution(
                     counts[operator] = int(count)
                 return counts
             counts = parse_counts(raw_counts)
-            restored = parse_counts(fields[4]) if len(fields) == 5 else {}
+            restored = parse_counts(fields[4]) if len(fields) >= 5 else {}
+            stock = parse_counts(fields[5]) if len(fields) == 6 else {}
+            if any(name.startswith("Stock") for name in counts):
+                raise ValueError("stock state-owner work cannot be reported as native input")
+            if any(name not in ("StockSessionTableFunction", "StockSessionWindowAggregate") for name in stock):
+                raise ValueError("unknown stock state-owner witness")
+            def work_satisfied(expression):
+                return any(all((stock if operator.startswith("Stock") else counts).get(operator, 0) > 0
+                    for operator in route.split("+")) for route in expression.split("|"))
             observed[test] += 1
             contract = contracts[test][variant]
             matched = False
             if contract.startswith("@restore:"):
                 operator = contract.removeprefix("@restore:")
-                if not counts and not reasons and restored.get(operator, 0) > 0:
+                if not counts and not stock and not reasons and restored.get(operator, 0) > 0:
                     proved += 1
                     matched = True
                 else:
                     problems.append(f"{test} [{variant}]: missing native canonical import; observed {restored}")
             elif contract.startswith("!@"):
-                operator, reason = contract[2:].split(":", 1)
-                if counts.get(operator, 0) == 0 and restored.get(operator, 0) == 0 and reason in reasons:
+                base_contract, separator, required = contract.partition("&&")
+                operator, reason = base_contract[2:].split(":", 1)
+                if counts.get(operator, 0) == 0 and restored.get(operator, 0) == 0 and reason in reasons and (not separator or work_satisfied(required)):
                     fallback += 1
                     matched = True
                 else:
@@ -105,10 +118,7 @@ def check_execution(
                     problems.append(
                         f"{test} [{variant}]: expected full fallback with reason {contract[1:]}"
                     )
-            elif any(
-                all(counts.get(operator, 0) > 0 for operator in route.split("+"))
-                for route in contract.split("|")
-            ):
+            elif work_satisfied(contract):
                 proved += 1
                 matched = True
             else:
@@ -118,7 +128,7 @@ def check_execution(
             if observations is not None:
                 native_work = any(count > 0 for count in counts.values())
                 route = (
-                    "mixed" if native_work and reasons else
+                    "mixed" if native_work and (reasons or stock) else
                     "native" if native_work else
                     "native_restore" if contract.startswith("@restore:") and matched else
                     "full_fallback" if reasons else "unclassified"
@@ -129,6 +139,7 @@ def check_execution(
                     "evidence_file": path.name,
                     "native_input_rows": counts,
                     "native_canonical_import_rows": restored,
+                    "stock_state_owner_rows": stock,
                     "fallback_reasons": reasons,
                     "observed_route": route,
                     "expected_contract": contract,

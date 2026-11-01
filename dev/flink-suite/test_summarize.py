@@ -334,16 +334,57 @@ class CanonicalRestoreSummaryTest(unittest.TestCase):
     TEST = "org.apache.flink.table.planner.plan.nodes.exec.stream.JoinRestoreTest#testRestore"
     FAMILY = "NativeColumnarUpdatingJoinOperator"
 
-    def check(self, contract, counts="", imported=None, reasons=""):
+    def check(self, contract, counts="", imported=None, reasons="", stock=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             encoded = base64.b64encode(reasons.encode()).decode()
             suffix = "" if imported is None else "\t" + imported
+            if stock is not None:
+                suffix = "\t" + (imported or "") + "\t" + stock
             (root / "one.tsv").write_text(f"{self.TEST}\t*\t{counts}\t{encoded}{suffix}\n")
             observations = []
             result = summarize.check_execution(root, Counter({self.TEST: 1}),
                 {self.TEST: {"*": contract}}, observations)
             return result, observations
+
+    def test_mixed_sessions_require_native_work_and_real_stock_state(self):
+        contract = "NativeColumnarGroupAggregateOperator+StockSessionTableFunction"
+        for counts, stock in (("", "StockSessionTableFunction=3"),
+                              ("NativeColumnarGroupAggregateOperator=3", ""),
+                              ("NativeColumnarGroupAggregateOperator=3", "StockSessionTableFunction=0")):
+            with self.subTest(counts=counts, stock=stock):
+                self.assertTrue(self.check(contract, counts=counts, stock=stock)[0][2])
+        result, observations = self.check(contract, counts="NativeColumnarGroupAggregateOperator=3",
+                                           stock="StockSessionTableFunction=2")
+        self.assertEqual((1, 0, []), result)
+        self.assertEqual({"StockSessionTableFunction": 2}, observations[0]["stock_state_owner_rows"])
+        self.assertNotIn("StockSessionTableFunction", observations[0]["native_input_rows"])
+        self.assertEqual("mixed", observations[0]["observed_route"])
+
+    def test_stock_work_cannot_be_counterfeited_as_native_rows(self):
+        result, _ = self.check("NativeColumnarGroupAggregateOperator+StockSessionTableFunction",
+            counts="NativeColumnarGroupAggregateOperator=3,StockSessionTableFunction=2")
+        self.assertTrue(result[2])
+
+    def test_session_fallback_requires_owner_calc_and_exact_reason(self):
+        absent = "NativeColumnarSessionWindowAggregateOperator"
+        reason = "window aggregate: retracting state contract is not bound"
+        contract = "!@" + absent + ":" + reason + "&&NativeCalcOperator+StockSessionWindowAggregate"
+        for counts, stock, reasons in (("", "StockSessionWindowAggregate=3", reason),
+                                      ("NativeCalcOperator=2", "", reason),
+                                      ("NativeCalcOperator=2", "StockSessionWindowAggregate=3", ""),
+                                      ("NativeCalcOperator=2," + absent + "=1", "StockSessionWindowAggregate=3", reason)):
+            with self.subTest(counts=counts, stock=stock, reasons=reasons):
+                self.assertTrue(self.check(contract, counts=counts, stock=stock, reasons=reasons)[0][2])
+        result, observations = self.check(contract, counts="NativeCalcOperator=2",
+            stock="StockSessionWindowAggregate=3", reasons=reason)
+        self.assertEqual((0, 1, []), result)
+        self.assertEqual("mixed", observations[0]["observed_route"])
+
+    def test_restore_only_proof_cannot_include_stock_input(self):
+        result, _ = self.check("@restore:" + self.FAMILY, imported=self.FAMILY + "=3",
+                               stock="StockSessionTableFunction=2")
+        self.assertTrue(result[2])
 
     def test_restore_only_evidence_is_separate_from_input_rows(self):
         result, observations = self.check("@restore:" + self.FAMILY, imported=self.FAMILY + "=3")
