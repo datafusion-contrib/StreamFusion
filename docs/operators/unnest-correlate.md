@@ -405,16 +405,38 @@ Container signatures admit these additional direct scalar argument and result co
 The boxed interval increment adds 18 selected JUnit invocations on each supported Flink
 line, with zero failures/errors/skips. Positive/negative months and millisecond durations,
 NULLs, non-null metadata, Row/atomic results, LEFT padding, lifecycle/failures and repeated
-heap/RocksDB recovery use the same released-converter matrix. Primitive interval bridges
-and alternate bridges nested inside containers remain guarded.
+heap/RocksDB recovery use the same released-converter matrix. Alternate bridges nested inside
+containers remain guarded. Direct primitive intervals use the separate verified boundary below.
 
 The same bridges work as external Row result fields and atomic results with nullable or
 non-null metadata. The existing released converters retain truncation, overflow, timestamp
 precision and zone behavior: an integer/long LTZ round trip is not a promise to preserve
 nanoseconds. JDBC values are copied into Arrow output before a callback can mutate them.
 This adds admission through the existing generated correlate, not custom temporal conversion,
-JNI or native-memory code. Nested alternate bridges, internal Java classes and primitive
-TIME/LTZ bridges in container signatures remain outside the whitelist.
+JNI or native-memory code. Nested alternate bridges and internal Java classes remain outside
+the whitelist. Direct primitive TIME/LTZ bridges use the separate verified boundary below.
+
+### Direct primitive temporal bridges
+
+Container signatures admit direct non-null TIME and TIMESTAMP_LTZ arguments and external Row
+result fields bridged to Java `int`/`long`, YEAR/MONTH intervals bridged to `int`, and DAY/TIME
+intervals bridged to `long`. Units match the boxed forms above. Nullable sources retain released
+primitive-argument validation; the matcher does not coerce their NULLs into a default primitive.
+Nested bridges and primitive ARRAY elements retain their previous guards.
+
+Atomic TIME/int and primitive interval results also execute. Released Flink's atomic
+TIME/long and LTZ/int/long collectors fail generated Java compilation with an Object-to-primitive
+cast, for both generic Object and typed Integer/Long TableFunctions. These are explicit matching
+initialization failures, not positive native coverage. External Row result fields for all six
+bridges have positive native checks. NULLs emitted under NOT NULL result metadata retain the
+same defaults or failures as stock Flink.
+
+Forty-two selected controls pass on each released line with JDK 17 and the release/mimalloc
+library, covering typed results, INNER/LEFT, nullable-source rejection, retained containers,
+empty input, lifecycle/failures and changelog through two heap/RocksDB restores. All successful
+populated paths require consumed native table-function input. `PrimitiveTemporalTableFunctionBenchmark`
+keeps complete stock/previous/native jobs and both transposes under the accepted UDF performance
+exception; support does not claim acceleration.
 
 `FlinkAlternateTemporalTableFunctionSqlHarnessTest` compares released values/types,
 nullable/non-null arguments, Row/atomic results, INNER/LEFT application, mutable JDBC

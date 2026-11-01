@@ -89,17 +89,23 @@ final class TableFunctionMatcher {
       case TIME_WITHOUT_TIME_ZONE:
         return conversion == Integer.class
             || conversion == Long.class
-            || conversion == java.sql.Time.class;
+            || conversion == java.sql.Time.class
+            || (!type.getLogicalType().isNullable()
+                && (conversion == int.class || conversion == long.class));
       case TIMESTAMP_WITHOUT_TIME_ZONE:
         return conversion == java.sql.Timestamp.class;
       case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
         return conversion == Integer.class
             || conversion == Long.class
-            || conversion == java.sql.Timestamp.class;
+            || conversion == java.sql.Timestamp.class
+            || (!type.getLogicalType().isNullable()
+                && (conversion == int.class || conversion == long.class));
       case INTERVAL_YEAR_MONTH:
-        return conversion == Integer.class;
+        return conversion == Integer.class
+            || (!type.getLogicalType().isNullable() && conversion == int.class);
       case INTERVAL_DAY_TIME:
-        return conversion == Long.class;
+        return conversion == Long.class
+            || (!type.getLogicalType().isNullable() && conversion == long.class);
       default:
         return false;
     }
