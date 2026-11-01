@@ -1116,3 +1116,16 @@ writing and reconstruct it when the caller requests a tagged payload. The pendin
 the existing logical-row codec, so earlier untagged checkpoints stay readable. Updating/NULL
 companions and unrelated extra fields are rejected rather than silently discarded. Three native
 controls compare legacy bytes, dual-schema reads and rejection before sequence/state changes.
+
+The OVER operator can rebuild numeric literal arguments and COUNT(*)'s non-NULL one from
+stock-encoded task configuration. It inserts their Arrow columns before hidden RowKind/string
+companions and removes them from output, sharing the original payload buffers. Internal names
+are isolated from user fields; no additional graph operators or savepoint state are needed.
+Configuration contains encoded bytes, and live RowData/schema caches are rebuilt after task
+serialization. The exec node can retain a supplied stock maximum parallelism.
+
+The 66 common controls cover ordinary and native-format canonical snapshots across memory and
+typed RocksDB, ROWS/RANGE, processing/event time, TTL, nullable keys/values, pending rows, UTF-16
+companions, input-buffer sharing and malformed-configuration cleanup. These component controls
+are distinct from stock-savepoint projection and complete portable-plan qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.

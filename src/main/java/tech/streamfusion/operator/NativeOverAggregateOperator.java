@@ -40,7 +40,11 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   private final boolean proctime;
   private final long stateTtlMillis;
   private final RowType rowType;
-  private final boolean mapListInput;
+  private RowType constantType;
+  private byte[] constantValues;
+  private transient RowType nativeRowType;
+  private transient org.apache.flink.table.data.RowData constantRow;
+  private transient boolean mapListInput;
   private transient Counter numLateRecordsDropped;
   private transient long reportedLateRecords;
 
@@ -68,15 +72,80 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     this.proctime = proctime;
     this.stateTtlMillis = stateTtlMillis;
     this.rowType = rowType;
-    this.mapListInput =
+  }
+
+  public NativeOverAggregateOperator withConstantArguments(RowType type, byte[] values) {
+    if (type == null || type.getFieldCount() == 0 || values == null || values.length == 0)
+      throw new IllegalArgumentException(
+          "OVER constant arguments require types and encoded values");
+    var fields = new java.util.ArrayList<RowType.RowField>();
+    var names = new java.util.HashSet<>(rowType.getFieldNames());
+    for (int i = 0; i < type.getFieldCount(); i++) {
+      String name = "__over_constant_" + i;
+      while (!names.add(name)) name += "_";
+      fields.add(new RowType.RowField(name, type.getTypeAt(i)));
+    }
+    constantType = new RowType(fields);
+    constantValues = values.clone();
+    nativeRowType = null;
+    constantRow = null;
+    return this;
+  }
+
+  private RowType nativeRowType() {
+    if (constantType == null) return rowType;
+    if (nativeRowType == null) {
+      var fields = new java.util.ArrayList<>(rowType.getFields());
+      fields.addAll(constantType.getFields());
+      nativeRowType = new RowType(fields);
+    }
+    return nativeRowType;
+  }
+
+  @Override
+  protected void beforeHandleCreation() {
+    super.beforeHandleCreation();
+    mapListInput =
         tech.streamfusion.arrow.MapListRepresentation.requiredForCounts(
-            rowType, valueColumns, aggregateKinds);
+            nativeRowType(), valueColumns, aggregateKinds);
+  }
+
+  private VectorSchemaRoot constantBatch(int rows, BufferAllocator allocator) {
+    if (constantRow == null) {
+      try {
+        constantRow =
+            new org.apache.flink.table.runtime.typeutils.RowDataSerializer(constantType)
+                .deserialize(
+                    new org.apache.flink.core.memory.DataInputDeserializer(constantValues));
+      } catch (java.io.IOException failure) {
+        throw new IllegalStateException("Cannot decode OVER constant arguments", failure);
+      }
+    }
+    return RowDataArrowConverter.write(
+        java.util.Collections.nCopies(rows, constantRow), constantType, allocator);
+  }
+
+  private VectorSchemaRoot withoutConstantArguments(VectorSchemaRoot root) {
+    if (constantType == null || root.getRowCount() == 0) return root;
+    int inputArity = rowType.getFieldCount();
+    int nativeArity = nativeRowType().getFieldCount();
+    if (root.getFieldVectors().size() < nativeArity) {
+      root.close();
+      throw new IllegalStateException("OVER output is missing constant argument columns");
+    }
+    var fields = new java.util.ArrayList<>(root.getFieldVectors().subList(0, inputArity));
+    fields.addAll(root.getFieldVectors().subList(nativeArity, root.getFieldVectors().size()));
+    var result = new VectorSchemaRoot(fields);
+    result.setRowCount(root.getRowCount());
+    // The remaining vectors move to result; only the internal arguments are released here.
+    for (int i = inputArity; i < nativeArity; i++) root.getVector(i).close();
+    return result;
   }
 
   @Override
   protected boolean usesDirectRocksDBState() {
     return withRowSchema(
-            rowType,
+            nativeRowType(),
             schemaAddress ->
                 Native.rocksdbOverAggregatorSupported(
                         valueTypes, aggregateKinds, frameKind, proctime, schemaAddress)
@@ -90,7 +159,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     long now = getProcessingTimeService().getCurrentProcessingTime();
     return withRowSchema(
-        rowType,
+        nativeRowType(),
         schemaAddress ->
             Native.createRocksDBOverAggregator(
                 valueTypes,
@@ -245,14 +314,24 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
     java.util.List<FieldVector> compactCopies = new java.util.ArrayList<>();
+    VectorSchemaRoot constants = null;
     VectorSchemaRoot prepared = in;
     try {
+      if (constantType != null) {
+        constants = constantBatch(in.getRowCount(), inAllocator);
+        int arity = rowType.getFieldCount();
+        var fields = new java.util.ArrayList<>(in.getFieldVectors().subList(0, arity));
+        fields.addAll(constants.getFieldVectors());
+        fields.addAll(in.getFieldVectors().subList(arity, in.getFieldVectors().size()));
+        prepared = new VectorSchemaRoot(fields);
+        prepared.setRowCount(in.getRowCount());
+      }
       java.util.List<FieldVector> columns = null;
       for (int a = 0; a < valueColumns.length; a++) {
         int code = valueTypes[a];
         int column = valueColumns[a];
         if (code < 1000 || code > 1003 || column < 0) continue;
-        if (columns == null) columns = new java.util.ArrayList<>(in.getFieldVectors());
+        if (columns == null) columns = new java.util.ArrayList<>(prepared.getFieldVectors());
         if (columns.get(column) instanceof TimeStampMilliVector) continue;
         FieldVector source = columns.get(column);
         var target = new TimeStampMilliVector(source.getName(), inAllocator);
@@ -296,7 +375,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
                 outArray.memoryAddress(),
                 outSchema.memoryAddress());
             VectorSchemaRoot out =
-                Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+                withoutConstantArguments(
+                    Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries));
             if (out.getRowCount() > 0) {
               ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
             } else {
@@ -315,6 +395,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       }
     } finally {
       for (FieldVector copy : compactCopies) copy.close();
+      if (constants != null) constants.close();
       in.close();
     }
     publishStateBytes();
@@ -350,7 +431,9 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
             array.memoryAddress(),
             schema.memoryAddress());
       }
-      VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
+      VectorSchemaRoot out =
+          withoutConstantArguments(
+              Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
       if (out.getRowCount() > 0) {
         ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
       } else {

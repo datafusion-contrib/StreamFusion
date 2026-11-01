@@ -1,8 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchTypeInformation;
-import tech.streamfusion.operator.NativeOverAggregateOperator;
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -16,6 +13,9 @@ import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTransl
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeOverAggregateOperator;
 
 /** Wraps the native columnar OVER aggregate operator into the plan; Arrow batches in and out. */
 public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
@@ -32,6 +32,9 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
   private final long frameOffset;
   private final boolean proctime;
   private final int[] keyTimestampPrecisions;
+  private int stateMaxParallelism = -1;
+  private RowType constantType;
+  private byte[] constantValues;
 
   public NativeOverAggExecNode(
       ReadableConfig tableConfig,
@@ -65,6 +68,18 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     this.keyTimestampPrecisions = keyTimestampPrecisions;
   }
 
+  public NativeOverAggExecNode withStateMaxParallelism(int maximum) {
+    if (maximum <= 0) throw new IllegalArgumentException("Invalid OVER maximum parallelism");
+    stateMaxParallelism = maximum;
+    return this;
+  }
+
+  public NativeOverAggExecNode withConstantArguments(RowType type, byte[] values) {
+    constantType = type;
+    constantValues = values.clone();
+    return this;
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
@@ -72,18 +87,32 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     int maxParallelism =
-        FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
+        stateMaxParallelism > 0
+            ? stateMaxParallelism
+            : FlinkKeyGroupUtils.maxParallelism(planner.getExecEnv(), input.getParallelism());
     // The job-wide retention only: Flink's StreamExecOverAggregate reads the config directly,
     // with no STATE_TTL hint support. The 1.5x max deadline horizon is derived natively.
     long stateTtlMillis = config.getStateRetentionTime();
+    var operator =
+        new NativeOverAggregateOperator(
+            timeColumn,
+            valueColumns,
+            keyColumns,
+            valueTypes,
+            aggregateKinds,
+            frameKind,
+            frameOffset,
+            proctime,
+            keyTimestampPrecisions,
+            stateTtlMillis,
+            (RowType) getInputEdges().get(0).getOutputType(),
+            maxParallelism);
+    if (constantType != null) operator.withConstantArguments(constantType, constantValues);
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
             createTransformationMeta(TRANSFORMATION, config),
-            new NativeOverAggregateOperator(
-                timeColumn, valueColumns, keyColumns, valueTypes, aggregateKinds, frameKind,
-                frameOffset, proctime, keyTimestampPrecisions, stateTtlMillis,
-                (RowType) getInputEdges().get(0).getOutputType(), maxParallelism),
+            operator,
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
