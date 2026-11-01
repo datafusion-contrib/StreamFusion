@@ -13,16 +13,23 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.runtime.typeutils.ExternalTypeInfo;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkNativeNumericClassificationSqlHarnessTest {
+  static java.util.stream.Stream<Arguments> functionsAndTypes() {
+    return java.util.stream.Stream.of("IS_ALPHA", "IS_DIGIT").flatMap(function ->
+        java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "DECIMAL(18,0)",
+            "DECIMAL(18,2)", "DECIMAL(38,18)", "DECIMAL(38,38)")
+            .map(type -> Arguments.of(function, type)));
+  }
+
   @ParameterizedTest
-  @ValueSource(strings = {"TINYINT", "SMALLINT", "INT", "BIGINT", "DECIMAL(18,0)",
-      "DECIMAL(18,2)", "DECIMAL(38,18)", "DECIMAL(38,38)"})
-  void numericInputsNullsAndBooleanConsumersMatchReleasedSql(String declaration) throws Exception {
+  @MethodSource("functionsAndTypes")
+  void numericInputsNullsAndBooleanConsumersMatchReleasedSql(String function, String declaration) throws Exception {
     for (boolean nullable : new boolean[] {false, true}) {
       var type = type(declaration);
       if (!nullable) type = type.notNull();
@@ -33,6 +40,8 @@ class FlinkNativeNumericClassificationSqlHarnessTest {
       String sql = "SELECT id,IS_ALPHA(v),IS_ALPHA(CAST(NULL AS " + declaration + "))"
           + ",IS_ALPHA(CAST(1 AS " + declaration + ")),NOT IS_ALPHA(v)"
           + ",CASE WHEN id>=0 THEN IS_ALPHA(v) ELSE TRUE END FROM src";
+      sql = sql.replace("IS_ALPHA", function);
+      boolean expected = function.equals("IS_DIGIT") && !declaration.startsWith("DECIMAL");
       for (boolean nativeEnabled : new boolean[] {false, true}) {
         try (var metrics = new RecoveryExecutionMetrics()) {
           var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
@@ -62,7 +71,8 @@ class FlinkNativeNumericClassificationSqlHarnessTest {
               assertFalse(seen[id], "duplicate id " + id);
               seen[id] = true;
               for (int field = 1; field < row.getArity(); field++)
-                assertEquals(field == 4, row.getField(field), declaration + " id=" + id + " field=" + field);
+                assertEquals(field == 4 ? !expected : expected, row.getField(field),
+                    function + " " + declaration + " id=" + id + " field=" + field);
               count++;
             }
           }
@@ -73,24 +83,26 @@ class FlinkNativeNumericClassificationSqlHarnessTest {
     }
   }
 
-  @Test
-  void filtersGroupingAndComposedOperandsMatchReleasedSql() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"IS_ALPHA", "IS_DIGIT"})
+  void filtersGroupingAndComposedOperandsMatchReleasedSql(String function) throws Exception {
     for (String sql : List.of(
         "SELECT id,IS_ALPHA(v+1),IS_ALPHA(CAST(v AS DECIMAL(18,2))) FROM src",
         "SELECT id FROM src WHERE IS_ALPHA(v)",
         "SELECT id FROM src WHERE NOT IS_ALPHA(v)",
         "SELECT IS_ALPHA(v),COUNT(*) FROM src GROUP BY IS_ALPHA(v)",
         "SELECT id,IS_ALPHA(v),v IS NULL FROM src WHERE id<0"))
-      BuiltinFunctionParity.assertParity(this::environment, sql);
+      BuiltinFunctionParity.assertParity(this::environment, sql.replace("IS_ALPHA", function));
   }
 
-  @Test
-  void failingOperandsAreNotDiscardedAndUnselectedBranchesStayLazy() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"IS_ALPHA", "IS_DIGIT"})
+  void failingOperandsAreNotDiscardedAndUnselectedBranchesStayLazy(String function) throws Exception {
     BuiltinFunctionParity.assertParity(this::environment,
-        "SELECT CASE WHEN id>=0 THEN IS_ALPHA(v) ELSE IS_ALPHA(v/(id-id)) END FROM src");
+        "SELECT CASE WHEN id>=0 THEN IS_ALPHA(v) ELSE IS_ALPHA(v/(id-id)) END FROM src".replace("IS_ALPHA", function));
     BuiltinFunctionParity.assertParity(this::environment,
-        "SELECT IS_ALPHA(v/(id-id)) FROM src WHERE id<0");
-    NativeFailureParity.run(this::environment, "SELECT IS_ALPHA(v/(id-id)) FROM src")
+        "SELECT IS_ALPHA(v/(id-id)) FROM src WHERE id<0".replace("IS_ALPHA", function));
+    NativeFailureParity.run(this::environment, "SELECT IS_ALPHA(v/(id-id)) FROM src".replace("IS_ALPHA", function))
         .assertCompetingFailures(NativeFailureParity::isDivisionByZero,
             NativeFailureParity.Phase.ROW_EVALUATION, NativeFailureParity.Route.NATIVE);
   }

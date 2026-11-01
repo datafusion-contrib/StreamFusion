@@ -5,19 +5,31 @@ use datafusion::logical_expr::{
 };
 
 pub(super) fn alpha() -> ScalarUDF {
-    ScalarUDF::new_from_impl(NumericAlpha {
+    classifier("flink_numeric_is_alpha", false)
+}
+
+pub(super) fn digit() -> ScalarUDF {
+    classifier("flink_numeric_is_digit", true)
+}
+
+fn classifier(name: &'static str, integral_result: bool) -> ScalarUDF {
+    ScalarUDF::new_from_impl(NumericClassification {
+        name,
+        integral_result,
         signature: Signature::any(1, Volatility::Immutable),
     })
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct NumericAlpha {
+struct NumericClassification {
+    name: &'static str,
+    integral_result: bool,
     signature: Signature,
 }
 
-impl ScalarUDFImpl for NumericAlpha {
+impl ScalarUDFImpl for NumericClassification {
     fn name(&self) -> &str {
-        "flink_numeric_is_alpha"
+        self.name
     }
 
     fn signature(&self) -> &Signature {
@@ -39,10 +51,13 @@ impl ScalarUDFImpl for NumericAlpha {
         let [input] = args.args.as_slice() else {
             return exec_err!("{} requires one exact numeric argument", self.name());
         };
-        self.return_type(&[input.data_type()])?;
-        // Flink receives boxed integers or DecimalData, neither of which is a String.
+        let ty = input.data_type();
+        self.return_type(&[ty.clone()])?;
+        // Nullable primitive arguments are boxed defaults; DecimalData is not a Number.
         // Keep the argument in the expression so failures are evaluated before this call.
-        Ok(ColumnarValue::Scalar(ScalarValue::Boolean(Some(false))))
+        Ok(ColumnarValue::Scalar(ScalarValue::Boolean(Some(
+            self.integral_result && !matches!(ty, DataType::Decimal128(_, _)),
+        ))))
     }
 }
 
@@ -54,8 +69,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn exact_numeric_arrays_scalars_nulls_and_slices_return_nonnull_false() {
-        let function = alpha();
+    fn exact_numeric_arrays_scalars_nulls_and_slices_return_the_released_type_result() {
         let integers = Arc::new(Int64Array::from(vec![
             Some(99),
             None,
@@ -79,42 +93,46 @@ mod tests {
             ColumnarValue::Scalar(ScalarValue::Int64(Some(i64::MAX))),
             ColumnarValue::Scalar(ScalarValue::Decimal128(None, 38, 38)),
         ]);
-        for input in inputs {
-            let ty = input.data_type();
-            let rows = match &input {
-                ColumnarValue::Array(array) => array.len(),
-                _ => 3,
-            };
-            let result = function
-                .invoke_with_args(ScalarFunctionArgs {
-                    args: vec![input],
-                    arg_fields: vec![Arc::new(Field::new("v", ty, true))],
-                    number_rows: rows,
-                    return_field: Arc::new(Field::new("result", DataType::Boolean, false)),
-                    config_options: Arc::new(Default::default()),
-                })
-                .unwrap();
-            assert!(matches!(
-                result,
-                ColumnarValue::Scalar(ScalarValue::Boolean(Some(false)))
-            ));
-            let array = result.into_array(rows).unwrap();
-            assert_eq!(array.len(), rows);
-            assert_eq!(array.null_count(), 0);
+        for function in [alpha(), digit()] {
+            for input in inputs.clone() {
+                let ty = input.data_type();
+                let expected =
+                    function.name().ends_with("digit") && !matches!(ty, DataType::Decimal128(_, _));
+                let rows = match &input {
+                    ColumnarValue::Array(array) => array.len(),
+                    _ => 3,
+                };
+                let result = function
+                    .invoke_with_args(ScalarFunctionArgs {
+                        args: vec![input],
+                        arg_fields: vec![Arc::new(Field::new("v", ty, true))],
+                        number_rows: rows,
+                        return_field: Arc::new(Field::new("result", DataType::Boolean, false)),
+                        config_options: Arc::new(Default::default()),
+                    })
+                    .unwrap();
+                assert!(
+                    matches!(result, ColumnarValue::Scalar(ScalarValue::Boolean(Some(actual))) if actual == expected)
+                );
+                let array = result.into_array(rows).unwrap();
+                assert_eq!(array.len(), rows);
+                assert_eq!(array.null_count(), 0);
+            }
         }
     }
 
     #[test]
     fn unqualified_signatures_are_rejected_without_coercion() {
-        let function = alpha();
-        for types in [
-            vec![],
-            vec![DataType::Float64],
-            vec![DataType::Utf8],
-            vec![DataType::Boolean],
-            vec![DataType::Int32, DataType::Int32],
-        ] {
-            assert!(function.return_type(&types).is_err());
+        for function in [alpha(), digit()] {
+            for types in [
+                vec![],
+                vec![DataType::Float64],
+                vec![DataType::Utf8],
+                vec![DataType::Boolean],
+                vec![DataType::Int32, DataType::Int32],
+            ] {
+                assert!(function.return_type(&types).is_err());
+            }
         }
     }
 }

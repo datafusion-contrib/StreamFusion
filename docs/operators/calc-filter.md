@@ -1952,23 +1952,28 @@ and row evaluation make no JVM calls. Replacing an isolated surrogate with `?` c
 these predicates, because both fail the letter/digit tests; existing sensitive-expression and arbitrary
 binary STRING boundaries retain their separate admission rules. Already-generated operands
 may still contain their own JVM evaluators.
-`IS_ALPHA` also runs natively for direct TINYINT, SMALLINT, INT, BIGINT and DECIMAL inputs/literals,
-returning nonnullable FALSE even for runtime or literal NULLs. Released Flink passes boxed
-integers or internal `DecimalData`, neither of which is a Java String. The native call keeps
-the input in the expression. Recursively proven failure-free integer trees (the bounded
-integer-rounding producer proof) fold to FALSE without evaluating unused intermediates. Division, remainder,
+`IS_ALPHA` and `IS_DIGIT` also run natively for direct TINYINT, SMALLINT, INT, BIGINT and
+DECIMAL inputs/literals. `IS_ALPHA` returns nonnullable FALSE, including runtime/literal
+NULLs. `IS_DIGIT` returns nonnullable TRUE for integers regardless of sign, including
+runtime/literal NULLs; it returns FALSE for internal `DecimalData`, including NULL. Released
+Flink boxes primitive defaults for nullable integers and does not treat `DecimalData` as a
+Java Number. These are the observed SQL/codegen semantics on both released Flink lines.
+The native call keeps the input in the expression. Recursively proven failure-free integer
+trees (the bounded integer-rounding producer proof) fold to their type-based result without
+evaluating unused intermediates. Division, remainder,
 narrowing, UDFs and unverified producers retain generated evaluation of the complete call,
 so exceptions and state changes are not discarded. Folded results are not evidence
 of executed predicate-kernel work. Conditional branches and empty filtered batches retain
-their existing guards. Floating IS_ALPHA signatures retain generated evaluation. Noncharacter `IS_DIGIT`/`IS_DECIMAL`
-overloads also remain generated, including TRUE for integral numeric objects passed to
-`IS_DIGIT` regardless of sign.
+their existing guards. Floating classification signatures and noncharacter `IS_DECIMAL`
+overloads remain generated.
 The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
 include stock Flink and the actual previous callback as well as complete row-source jobs.
 The [digit measurements](../benchmarks/scalar-functions.md#string-is_digit) cover the separate
 digit corpora and preserve small-batch and complete-job costs.
 The [numeric alpha measurements](../benchmarks/scalar-functions.md#numeric-is_alpha)
 separate predicate execution, bounded folds, tiny batches and full jobs with both transposes.
+The [numeric digit measurements](../benchmarks/scalar-functions.md#numeric-is_digit)
+qualify that overload separately, including its integer-NULL and internal-DECIMAL behavior.
 
 `IS_DECIMAL` on character arguments also runs in a native Arrow kernel, with nonnullable
 FALSE for NULL/empty strings. Its released meaning is successful Java integer, long or

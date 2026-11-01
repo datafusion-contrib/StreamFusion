@@ -5291,3 +5291,82 @@ The [initial](results/numeric-classification-alpha-probe-2026-11-01.csv.gz) and
 [folded](results/numeric-classification-alpha-fold-probe-2026-11-01.csv.gz) probe trials retain direct/tiny
 controls, allocation probes and independent process variation. They are optimizer
 diagnostics, separate from the direct predicate qualification.
+
+## Numeric IS_DIGIT
+
+Released Flink receives boxed primitive integers or internal `DecimalData` in this overload.
+Integral arguments return TRUE regardless of sign or runtime/literal NULL; internal DecimalData arguments return FALSE.
+Direct inputs/literals keep a native type-based predicate. Only the recursively verified
+failure-free integer producer scope folds away unused arithmetic; division, remainder,
+narrowing, UDFs and other unverified producers retain the complete generated call, including
+failures and state changes. Floating signatures remain generated. This preserves the released
+behavior rather than inferring it from Java's public BigDecimal API.
+
+The [result record](results/numeric-classification-digit-2026-11-01.json) and
+[raw trials](results/numeric-classification-digit-2026-11-01.csv.gz) retain 80 configurations and 8,000 main
+trials. Direct runtime arguments retain the native call; arithmetic fold controls are
+explicitly excluded from predicate-kernel qualification. The direct matrix covers four
+integer widths and DECIMAL(18,2)/(38,18), nullable/NOT NULL and GenericRowData/BinaryRowData
+at 1,024 rows. Tiny INT/BIGINT controls use 16 rows. Typed addition/nested multiplication
+provide separate fold diagnostics. No input values are converted to strings.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial compare actual released generated Java on prepared
+RowData with production Calc on matching Arrow. Native operation and equivalent Boolean
+result consumption are timed inside Rust; initial JNI/import/export and perimeter
+transposes are outside this small-operation timer. Intrinsic previous JVM computation
+stays inside. The actual independently compiled preceding-main encoder must bind an
+evaluator; the candidate requires empty descriptors and the intended function before the
+bounded fold. Both sides retain exact types, widths, signed boundaries and matching NULLs.
+
+| Flink line | Rows / measured work | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: |
+| 1.18.1 | 1,024 / predicate | 4.327-76.960x | 56.537-83.467x | 0 / 24 |
+| 1.18.1 | 16 / predicate | 0.146-0.207x | 29.999-32.504x | 8 / 8 |
+| 1.18.1 | 1,024 / fold control | 5.655-9.284x | 86.747-124.336x | 0 / 8 |
+| 2.2.1 | 1,024 / predicate | 4.403-52.638x | 48.010-73.082x | 0 / 24 |
+| 2.2.1 | 16 / predicate | 0.138-0.187x | 30.394-32.411x | 8 / 8 |
+| 2.2.1 | 1,024 / fold control | 5.822-9.055x | 68.054-78.744x | 0 / 8 |
+
+Ratios above one favor native. The type-based predicate returns a Boolean scalar which
+production Calc materializes to the batch length; the measurements do not claim a
+per-row character scan. Small-batch fixed Calc/result costs and every unfavorable sample
+remain in the record. Independent paired-stock drift ranges from
+0.585 to 9.993x; cross-process
+ratios are not causal isolation.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes, with parallelism one and two warmups/five measurements.
+Direct jobs retain the predicate. Add/nested jobs exercise the bounded fold and must not
+be cited as predicate-kernel work. All require consumed native Calc work, no fallback and
+empty candidate evaluator descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / direct | 0.147362 (0.143816-0.187192) | 0.165473 (0.163363-0.191847) | 0.155385 (0.145714-0.159703) | 0.188236 (0.181853-0.326542) |
+| 1.18.1 / add | 0.152047 (0.144916-0.158812) | 0.159139 (0.153293-0.174958) | 0.150465 (0.142756-0.192243) | 0.186863 (0.182414-0.205804) |
+| 1.18.1 / nested | 0.152921 (0.146317-0.182007) | 0.155172 (0.151606-0.171286) | 0.148784 (0.140122-0.150412) | 0.181575 (0.178331-0.194795) |
+| 2.2.1 / direct | 0.152754 (0.144340-0.183355) | 0.167731 (0.157047-0.171134) | 0.154388 (0.149800-0.160568) | 0.177077 (0.176169-0.203367) |
+| 2.2.1 / add | 0.159082 (0.157465-0.169012) | 0.158240 (0.151098-0.166858) | 0.158511 (0.149533-0.166617) | 0.180761 (0.176107-0.188447) |
+| 2.2.1 / nested | 0.154696 (0.144169-0.162562) | 0.152258 (0.149800-0.169870) | 0.155161 (0.145043-0.165499) | 0.185097 (0.180521-0.209116) |
+
+Across these jobs, native/stock elapsed-time ratios range from
+0.984 to 1.123; native/previous ratios range
+from 0.823 to 0.947. Ratios above one are
+slower. Retain overlapping ranges and independent stock drift; prepared bulk qualification
+does not establish universal whole-job acceleration.
+
+All 96 focused JVM invocations and unchanged released `IS_DIGIT` expression tests
+pass on Flink 1.18.1/2.2.1 with JDK 11/17. Eight numeric declarations, 5,003 rows, nullable
+and NOT NULL inputs, literal NULLs and Boolean consumers compare complete values, resolved
+types, cardinality and unique IDs across multiple batches. Direct runtime witnesses require
+consumed work, no fallback and empty descriptors. Separate failure/empty-batch tests and
+four additional shared-state invocations prove that arguments are not discarded. Java
+compiles for release 11; the release/default/mimalloc Rust core suite passes 1,017 tests
+with two pre-existing ignores.
+
+Reproduce with `integral_expression`, for example
+`SF_INTEGRAL_EXPRESSION='IS_DIGIT(v)'`, and `IntegralExpressionPipelineBenchmark` with
+`sf.integral.expression=IS_DIGIT(v)`. Prepended independently compiled previous-encoder
+classes and `SF_INTEGRAL_PREVIOUS=true` select the preceding callback control. Remaining
+coverage stays in [the classification follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/494).

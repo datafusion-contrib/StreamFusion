@@ -2729,19 +2729,13 @@ final class RexExpression {
       return emitCharacterFunction(call, 238, 1, 1);
     }
     if ("IS_ALPHA".equals(functionName) && nativeNumericClassification(call)) {
-      RexNode operand = call.getOperands().get(0);
-      if (operand instanceof RexCall
-          && SqlTypeFamily.INTEGER.contains(operand.getType())
-          && nativeIntegralRoundingOperand(operand)) {
-        // This predicate is type-based, and the verified integer tree cannot fail or mutate state.
-        add(KIND_LIT_BOOL, longs.size(), 0);
-        longs.add(0L);
-        return true;
-      }
-      return emitBuiltinCall(call, 241);
+      return emitNumericClassification(call, 241, false);
     }
     if ("IS_DIGIT".equals(functionName) && nativeStringClassification(call)) {
       return emitCharacterFunction(call, 239, 1, 1);
+    }
+    if ("IS_DIGIT".equals(functionName) && nativeNumericClassification(call)) {
+      return emitNumericClassification(call, 242, true);
     }
     if ("IS_DECIMAL".equals(functionName) && nativeStringClassification(call)) {
       return emitCharacterFunction(call, 240, 1, 1);
@@ -4479,8 +4473,8 @@ final class RexExpression {
       case "FROM_BASE64":
         return !nativeFromBase64(call);
       case "IS_DECIMAL":
-      case "IS_DIGIT":
         return !nativeStringClassification(call);
+      case "IS_DIGIT":
       case "IS_ALPHA":
         return !nativeStringClassification(call) && !nativeNumericClassification(call);
       case "SHA2":
@@ -4543,6 +4537,19 @@ final class RexExpression {
             || operand instanceof RexLiteral
             || SqlTypeFamily.INTEGER.contains(operand.getType())
                 && nativeIntegralRoundingOperand(operand));
+  }
+
+  private boolean emitNumericClassification(RexCall call, int opcode, boolean integralResult) {
+    RexNode operand = call.getOperands().get(0);
+    if (operand instanceof RexCall
+        && SqlTypeFamily.INTEGER.contains(operand.getType())
+        && nativeIntegralRoundingOperand(operand)) {
+      // This predicate is type-based, and the verified integer tree cannot fail or mutate state.
+      add(KIND_LIT_BOOL, longs.size(), 0);
+      longs.add(integralResult ? 1L : 0L);
+      return true;
+    }
+    return emitBuiltinCall(call, opcode);
   }
 
   private static boolean nativeIntegralRoundPosition(RexCall call) {
