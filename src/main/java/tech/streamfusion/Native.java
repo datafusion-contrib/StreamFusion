@@ -24,12 +24,22 @@ public final class Native {
 
   public static native void restoreWindowRankerCanonicalFrontier(long handle, long frontier);
 
-  /** Raw non-DISTINCT unbounded OVER folds; pending rows and timers need separate contracts. */
+  /** Raw unbounded OVER folds; DISTINCT memberships, pending rows and timers transfer separately. */
   public static native void exportOverFoldCanonical(long handle, BatchReceiver receiver);
 
   public static native void importOverFoldCanonical(
       long handle, long arrayAddress, long schemaAddress);
 
+
+  public static native void bindOverCanonicalDistinct(long handle, int aggregate);
+
+  public static native void exportOverCanonicalDistinct(
+      long handle, int aggregate, BatchReceiver receiver);
+
+  public static native void importOverCanonicalDistinct(
+      long handle, int aggregate, long arrayAddress, long schemaAddress);
+
+  public static native void finishOverCanonicalDistinct(long handle);
 
   /** Rowtime unbounded OVER input buffers and processing-time cleanup deadlines. */
   public static native void exportOverPendingCanonical(long handle, BatchReceiver receiver);

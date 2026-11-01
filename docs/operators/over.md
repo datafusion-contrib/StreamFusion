@@ -1096,8 +1096,8 @@ canonical memory/RocksDB transitions and aligned RocksDB recovery preserve these
 The raw unbounded-fold transfer interface visits resident or typed-RocksDB accumulators directly
 in batches of at most 1,024 keys, with original retention stamps. It preserves raw floating sums,
 independent AVG counts and nullable extrema; import never reconstructs them by replaying input.
-Frame/window-function state and DISTINCT membership require separate transfer contracts and are
-rejected by this fold-only interface. Released stock accumulator/input schemas, timer queues
+Frame/window-function state and unbound DISTINCT aggregates are rejected by the fold-only
+interface. Bound DISTINCT aggregates transfer their memberships separately before finalization. Released stock accumulator/input schemas, timer queues
 and planner bindings remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 This primitive alone does not establish stock OVER savepoint interoperability.
 
@@ -1165,3 +1165,21 @@ rewriting accumulator values or partition-key bytes. The migration is idempotent
 finite values and signed zeros. It does not reconstruct historical scalar results from old
 membership sets. Aligned and merged recovery controls cover both floating widths and retain
 the original serialized fold bytes.
+
+
+### Direct native DISTINCT membership transfer
+
+Unbounded DISTINCT folds can bind independent typed membership transfers alongside their raw
+accumulators. Memory and typed RocksDB visitors export at most 1,024 memberships per batch,
+without clearing live state or replaying input. Import validates types, NULLs, partition ownership
+and duplicate elements before installing a batch. Restored COUNT/AVG cardinalities and SUM, SUM0
+and extrema emptiness must agree with their membership sets. Incomplete imports cannot process
+input, export state or checkpoint. JNI releases imported Arrow ownership before propagating an
+error so buffer cleanup cannot swallow validation or memory-limit exceptions.
+
+The native contract covers processing-time folds with TTL disabled and event-time folds with
+their existing cleanup deadlines. Processing-time DISTINCT with value TTL still needs independent
+view lifetimes: released stock Flink can expire an accumulator while retaining its membership
+view. It remains outside this binding until that complete state contract is implemented under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). This native component is
+separate from full portable-job, connector and version qualification. Benchmarking is deferred.

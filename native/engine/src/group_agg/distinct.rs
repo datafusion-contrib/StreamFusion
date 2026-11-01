@@ -460,7 +460,7 @@ impl DistinctSet {
             _ => Self::Scalar(Multiplicities::new()),
         }
     }
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         each_map!(self, m, m.counts.len())
     }
     pub(crate) fn capacity_bytes(&self) -> usize {
@@ -501,6 +501,36 @@ impl DistinctSet {
             Self::Timestamp(m) => m.entries(|v| timestamp_scalar(*v)),
             Self::Scalar(m) => m.entries(|value| value.0.clone()),
         }
+    }
+    pub(crate) fn for_each_scalar(
+        &self,
+        mut consume: impl FnMut(ScalarValue, i64) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        macro_rules! visit {
+            ($map:expr, $scalar:expr) => {
+                for (key, &count) in &$map.counts {
+                    consume(($scalar)(key), count)?;
+                }
+            };
+        }
+        match self {
+            Self::I64(m) => visit!(m, |v: &i64| ScalarValue::Int64(Some(*v))),
+            Self::I32(m) => visit!(m, |v: &i32| ScalarValue::Int32(Some(*v))),
+            Self::I16(m) => visit!(m, |v: &i16| ScalarValue::Int16(Some(*v))),
+            Self::I8(m) => visit!(m, |v: &i8| ScalarValue::Int8(Some(*v))),
+            Self::F32(m) => visit!(m, |v: &u32| ScalarValue::Float32(Some(f32::from_bits(*v)))),
+            Self::F64(m) => visit!(m, |v: &u64| ScalarValue::Float64(Some(f64::from_bits(*v)))),
+            Self::Date(m) => visit!(m, |v: &i32| ScalarValue::Date32(Some(*v))),
+            Self::Time(m) => visit!(m, |v: &i32| ScalarValue::Time32Millisecond(Some(*v))),
+            Self::Decimal(m, p, s) => {
+                visit!(m, |v: &i128| ScalarValue::Decimal128(Some(*v), *p, *s))
+            }
+            Self::String(m) => visit!(m, |v: &String| ScalarValue::Utf8(Some(v.clone()))),
+            Self::Boolean(m) => visit!(m, |v: &bool| ScalarValue::Boolean(Some(*v))),
+            Self::Timestamp(m) => visit!(m, |v: &i128| timestamp_scalar(*v)),
+            Self::Scalar(m) => visit!(m, |v: &ValueKey| v.0.clone()),
+        }
+        Ok(())
     }
     #[cfg(feature = "rocksdb-state")]
     pub(super) fn drain_journal(&mut self) -> Vec<(ScalarValue, Option<i64>)> {

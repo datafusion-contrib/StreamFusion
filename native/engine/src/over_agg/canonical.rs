@@ -4,6 +4,7 @@ use jni::objects::JObject;
 const CHUNK_ROWS: usize = 1024;
 const STAMP: &str = "__over_retention_stamp";
 
+mod distinct;
 mod event;
 
 fn invalid(message: &str) -> DataFusionError {
@@ -17,7 +18,12 @@ impl OverWindowAggregator {
                 "operator has frame or window-function state, not an unbounded fold",
             ));
         };
-        if inner.kinds.iter().any(|kind| *kind >= 100) {
+        if inner
+            .kinds
+            .iter()
+            .enumerate()
+            .any(|(index, kind)| *kind >= 100 && !self.canonical_distinct.contains(&index))
+        {
             return Err(invalid(
                 "DISTINCT state also requires a membership-view transfer",
             ));
@@ -55,6 +61,7 @@ impl OverWindowAggregator {
         &self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.ensure_canonical_distinct_ready()?;
         let inner = self.canonical_fold()?;
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
@@ -212,6 +219,9 @@ impl OverWindowAggregator {
                     self.retention_bytes += bytes;
                 }
             }
+        }
+        if !self.canonical_distinct.is_empty() {
+            self.canonical_distinct_loading = true;
         }
         self.account()
     }

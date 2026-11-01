@@ -755,6 +755,59 @@ impl RocksOverAggStore {
         )
     }
 
+    pub(crate) fn visit_distinct(
+        &self,
+        slot: usize,
+        key_group: i32,
+        key: &[u8],
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<ScalarValue>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 {
+            return Err(DataFusionError::Execution(
+                "zero DISTINCT chunk size".into(),
+            ));
+        }
+        let prefix = self.distinct_prefix(slot, key_group, key);
+        let mut elements: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
+        for row in self
+            .db
+            .iterator(IteratorMode::From(&prefix, Direction::Forward))
+        {
+            let (db_key, _) = row.map_err(re)?;
+            if !db_key.starts_with(&prefix) {
+                break;
+            }
+            elements.push(db_key[prefix.len()..].into());
+            if elements.len() == chunk_rows {
+                let refs = elements
+                    .iter()
+                    .map(|value| value.as_ref())
+                    .collect::<Vec<_>>();
+                accept(
+                    Self::decode_rows(&self.distinct_converters[slot], &refs)?
+                        .into_iter()
+                        .map(|mut values| values.remove(0))
+                        .collect(),
+                )?;
+                elements.clear();
+            }
+        }
+        if !elements.is_empty() {
+            let refs = elements
+                .iter()
+                .map(|value| value.as_ref())
+                .collect::<Vec<_>>();
+            accept(
+                Self::decode_rows(&self.distinct_converters[slot], &refs)?
+                    .into_iter()
+                    .map(|mut values| values.remove(0))
+                    .collect(),
+            )?;
+        }
+        Ok(())
+    }
+
     /// Stages the range covering everything under `prefix` for deletion — a cleared key's frames
     /// or seen-set.
     pub(crate) fn delete_prefix_range(
