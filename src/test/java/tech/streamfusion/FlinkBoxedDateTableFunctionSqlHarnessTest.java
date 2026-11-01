@@ -89,6 +89,7 @@ class FlinkBoxedDateTableFunctionSqlHarnessTest {
           NativeFailureParity.run(
               () -> {
                 var table = environment(container, 193, metrics, false);
+                table.dropTemporarySystemFunction("boxed_days");
                 table.createTemporarySystemFunction("boxed_days", new PreviousDays(container));
                 return table;
               },
