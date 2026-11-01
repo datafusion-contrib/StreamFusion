@@ -1572,7 +1572,9 @@ cover wrapping arithmetic, literal positions, NULL folding and complete jobs wit
 `TRUNCATE(value)` over INT and BIGINT preserves the integer, its resolved width and NULL.
 Verified direct inputs, typed literals, recursive lossless widening and nested admitted
 integer rounding reuse the native operand expression without a JVM evaluator or a new
-values buffer. This removes released Flink's DECIMAL(38,18) intermediate only when the
+values buffer. Recursively verified integer addition/subtraction/multiplication also run
+natively, preserving every intermediate width and Java wrapping overflow.
+This removes released Flink's DECIMAL(38,18) intermediate only when the
 default zero scale provably leaves every input unchanged, including signed minima and
 exact BIGINTs above 2^53. Explicit positions use the bounded native path below;
 unverified positions and producers retain the complete generated program, including
@@ -1581,19 +1583,23 @@ TRUNCATE retain their separate paths. TINYINT/SMALLINT TRUNCATE still preserves 
 Flink's generated-compilation failure; explicitly widening them to INT/BIGINT is supported.
 [Release measurements](../benchmarks/scalar-functions.md#single-argument-integer-truncate)
 compare stock, the previous JVM route and candidate at both batch and complete-job boundaries.
+The [computed-operand controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
+also cover wrapping arithmetic and jobs with both transposes.
 
 ### Integer TRUNCATE with a literal position
 
 `TRUNCATE(value, literal_position)` over INT and BIGINT executes an Arrow primitive kernel
 for INT positions -38..38, including a typed NULL. Its verified producers are direct
-inputs/literals, lossless widening and nested admitted integer rounding.
+inputs/literals, lossless widening, nested admitted integer rounding and recursively verified
+integer addition/subtraction/multiplication.
 Negative positions truncate toward zero using integer remainder; a power larger than the
 input width yields zero. Nonnegative positions share the input buffers, NULL positions
-produce typed NULLs, and other results allocate values while retaining sliced validity.
+fold to typed NULLs after the operand proof excludes failures, and other results allocate
+values while retaining sliced validity.
 This removes Flink's DECIMAL(38,18) intermediate only in the verified domain, preserving
 resolved widths, signed minima and exact large BIGINTs without JVM computation.
 
-Runtime/extreme positions, arithmetic, narrowing and other unverified producers keep their
+Runtime/extreme positions, division, remainder, narrowing and other unverified producers keep their
 complete generated expression. In particular, nonzero input with position -2147483648
 keeps Flink's Underflow exception. Direct TINYINT/SMALLINT signatures still preserve
 released Flink's generated-compilation failure; explicit widening is supported. Conditional
@@ -1601,6 +1607,8 @@ branches and empty filtered batches retain their guards. No configuration switch
 [Release measurements](../benchmarks/scalar-functions.md#integer-truncate-with-a-literal-position)
 compare stock and the actual preceding scalar callback, including both transposes in
 complete jobs.
+The [arithmetic controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
+add computed operands, bounded positions and failure-safe NULL folding.
 
 ### Exact unary and integral functions
 

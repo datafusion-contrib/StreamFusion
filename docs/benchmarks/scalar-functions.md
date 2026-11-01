@@ -5112,3 +5112,87 @@ and [folded trials](results/integral-arithmetic-round-null-after-fold-2026-11-01
 All 116 additional shared typed-NULL encoding/SQL invocations pass across the same four
 version/JDK pairs, covering precision, nested fields, temporal types, unknown-type guards
 and partial final batches.
+
+## Integer TRUNCATE over arithmetic
+
+The existing native TRUNCATE implementation now admits recursively verified integer addition,
+subtraction and multiplication over its input/literal, lossless-widening and nested-function
+whitelist. Each arithmetic node keeps its resolved signed width and Java overflow wrapping.
+Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain
+the complete generated expression. No configuration switch is added.
+
+The [result record](results/integral-arithmetic-truncate-2026-11-01.json) and
+[raw trials](results/integral-arithmetic-truncate-2026-11-01.csv.gz) retain all paired controls, warmups,
+measurements, allocation probes and complete-job samples. Release/default-feature/mimalloc,
+JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups, nine measurements and 131,072 rows per
+trial compare released generated Java on prepared GenericRowData/BinaryRowData with
+production Calc on matching Arrow. Native timers and equivalent checksum consumption are
+inside Rust; initial JNI/import/export and both perimeter transposes are outside this
+small-operation timer. Intrinsic previous JVM computation remains timed. The actual
+independently compiled preceding main encoder is required to bind an evaluator; the
+candidate requires the intended native function and empty JVM descriptors. Nullable/NOT NULL
+declarations match both inputs, including actual NULLs every seven rows where selected.
+
+Typed addition and nested multiplication cover every supported integer width and both row
+representations at 1,024 rows; INT/BIGINT addition also has 16-row controls. TRUNCATE
+retains released Flink's direct narrow-integer compilation failures and uses INT/BIGINT here.
+
+Additional nullable Generic/Binary cells apply literal INT positions -1, -38 and 38 to the
+nested arithmetic expression over every admitted width. NULL-position cells are retained
+separately as constant-result controls and excluded from function-execution qualification.
+
+| Flink line | Batch rows | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16 | 0.978-8.364x | 12.298-41.801x | 1 / 8 |
+| 1.18.1 | 1,024 | 10.545-277.690x | 19.304-317.218x | 0 / 28 |
+| 2.2.1 | 16 | 0.970-7.944x | 12.495-40.313x | 1 / 8 |
+| 2.2.1 | 1,024 | 10.417-281.861x | 19.904-333.712x | 0 / 28 |
+
+The bulk matrix has 0 slower cells out of 56;
+the tiny-batch matrix has 2 slower cells out of 16.
+Fixed Calc/result costs remain visible on small computations. Independent stock-control
+drift ranges from 0.271 to 1.448x; cross-process ratios do not isolate variability.
+
+Separate million-row nullable INT source/blackhole jobs retain production JNI, planning,
+startup and both transposes. Parallelism is one, with two warmups and five measurements.
+Both native controls require consumed Calc work; the candidate requires empty descriptors.
+The position-add/position-nested job rows apply the explicit literal position -1.
+
+| Flink line / expression | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.193199 (0.183309-0.200168) | 0.148608 (0.138675-0.165526) | 0.190651 (0.188763-0.206507) | 0.261375 (0.241094-0.283575) |
+| 1.18.1 / nested | 0.200089 (0.190741-0.203405) | 0.151694 (0.145246-0.160465) | 0.200865 (0.188948-0.208953) | 0.251374 (0.248945-0.270095) |
+| 1.18.1 / position-add | 0.196940 (0.188253-0.201866) | 0.151558 (0.143435-0.181935) | 0.195267 (0.192303-0.203604) | 0.219569 (0.216203-0.231150) |
+| 1.18.1 / position-nested | 0.200262 (0.191257-0.219927) | 0.153747 (0.147628-0.165354) | 0.207347 (0.203120-0.215704) | 0.236552 (0.231091-0.247184) |
+| 2.2.1 / add | 0.192395 (0.188942-0.201869) | 0.152104 (0.145143-0.156501) | 0.189003 (0.181838-0.199292) | 0.268802 (0.263646-0.283940) |
+| 2.2.1 / nested | 0.206748 (0.196520-0.222838) | 0.144713 (0.142744-0.166039) | 0.205656 (0.198518-0.212245) | 0.250286 (0.236342-0.257092) |
+| 2.2.1 / position-add | 0.209153 (0.200628-0.220100) | 0.147064 (0.143148-0.172021) | 0.206633 (0.199655-0.210218) | 0.222729 (0.217287-0.230073) |
+| 2.2.1 / position-nested | 0.215521 (0.212657-0.222801) | 0.149474 (0.144635-0.154722) | 0.213070 (0.206850-0.220141) | 0.244035 (0.233602-0.270349) |
+
+Native/paired-stock elapsed-time ratios range from 0.694 to
+0.791; native/previous ratios range from
+0.566 to 0.690. Ratios above one are slower.
+These eight complete-job medians improve by 20.9-30.6% over paired stock and 31.0-43.4%
+over previous StreamFusion. Retain overlapping ranges and independent stock drift;
+the measured workloads do not establish a universal complete-job throughput improvement.
+Remaining small-batch and perimeter costs stay in [the numeric follow-up](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+All 236 focused JVM invocations pass across released Flink 1.18.1/2.2.1 and JDK 11/17.
+Runtime witnesses compare complete values, types, NULLs, cardinality and unique IDs across
+multiple batches, and require consumed native work, no fallback and empty JVM descriptors.
+Existing selected/unselected failures, empty filtered batches and unverified-producer guards
+remain covered. The unchanged released upstream method also passes on all four pairs; its
+local expression assertions supplement the independent runtime native-work witnesses.
+Both Java lines compile for release 11. No new Rust production code is introduced by this
+producer-admission change.
+
+Reproduce with `integral_expression` and `IntegralExpressionPipelineBenchmark`, setting
+`SF_INTEGRAL_EXPRESSION='TRUNCATE((v+CAST(1 AS $TYPE))*(v-CAST(1 AS $TYPE)))'` or the matching
+`sf.integral.expression` property. As in the ABS controls, the actual previous encoder is
+prepended to its own classpath and qualified with `SF_INTEGRAL_PREVIOUS=true`.
+
+The 8 constant-NULL fold controls have paired stock/native median ratios
+from 2.392 to 7.203x. They measure production Calc result
+materialization and consumption after a bounded proof excludes operand failures; they
+do not establish executed function-kernel work. Division, remainder, narrowing and other
+unverified producers retain evaluation even when the position is NULL.

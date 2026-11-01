@@ -16,9 +16,10 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkIntegralArithmeticSqlHarnessTest {
   static java.util.stream.Stream<Arguments> functionsAndTypes() {
-    return java.util.stream.Stream.of("ABS", "-", "SIGN", "FLOOR", "CEIL", "ROUND").flatMap(function ->
+    return java.util.stream.Stream.of("ABS", "-", "SIGN", "FLOOR", "CEIL", "ROUND", "TRUNCATE").flatMap(function ->
         java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
-            .filter(type -> !function.equals("SIGN") || type.equals("INT") || type.equals("BIGINT"))
+            .filter(type -> !(function.equals("SIGN") || function.equals("TRUNCATE"))
+                || type.equals("INT") || type.equals("BIGINT"))
             .map(type -> Arguments.of(function, type)));
   }
 
@@ -29,8 +30,10 @@ class FlinkIntegralArithmeticSqlHarnessTest {
   }
 
   static java.util.stream.Stream<Arguments> roundingFunctionsAndTypes() {
-    return java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
-        .map(type -> Arguments.of("ROUND", type));
+    return java.util.stream.Stream.of("ROUND", "TRUNCATE").flatMap(function ->
+        java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
+            .filter(type -> !function.equals("TRUNCATE") || type.equals("INT") || type.equals("BIGINT"))
+            .map(type -> Arguments.of(function, type)));
   }
 
   @ParameterizedTest

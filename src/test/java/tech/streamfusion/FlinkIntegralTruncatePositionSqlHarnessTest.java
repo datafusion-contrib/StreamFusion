@@ -100,6 +100,17 @@ class FlinkIntegralTruncatePositionSqlHarnessTest {
     BuiltinFunctionParity.assertParity(
         () -> environment("BIGINT", true),
         "SELECT CASE WHEN id<0 THEN TRUNCATE(v/(id-id),-1) ELSE TRUNCATE(v,-1) END FROM src");
+    BuiltinFunctionParity.assertParity(
+        () -> environment("BIGINT", true),
+        "SELECT TRUNCATE(v/(id-id),CAST(NULL AS INT)) FROM src WHERE id<0");
+    NativeFailureParity.run(
+            () -> environment("BIGINT", true),
+            "SELECT TRUNCATE(v/(id-id),CAST(NULL AS INT)) FROM src")
+        .assertFailure(
+            ArithmeticException.class,
+            "zero",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
     NativeFailureParity.run(
             () -> environment("BIGINT", true), "SELECT TRUNCATE(v/(id-id),-1) FROM src")
         .assertFailure(

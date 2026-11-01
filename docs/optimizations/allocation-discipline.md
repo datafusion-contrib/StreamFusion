@@ -27,10 +27,10 @@ paired stock/main controls and the qualified result after removing those copies.
 [integer ABS arithmetic](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
 for workload, timing boundaries, allocation requests and remaining small-batch costs.
 
-## Proven integer ROUND with a NULL position
+## Proven integer rounding with a NULL position
 
-A literal NULL position makes integer ROUND return a typed NULL. The planner folds this
-only after its recursive operand proof excludes failures: integer inputs/literals,
+A literal NULL position makes integer ROUND and INT/BIGINT TRUNCATE return a typed NULL.
+The planner folds this only after its recursive operand proof excludes failures: integer inputs/literals,
 lossless widening, admitted bounded rounding and wrapping addition/subtraction/multiplication.
 The fold avoids evaluating the arithmetic tree and allocating its intermediate arrays.
 Division, remainder, narrowing and unverified producers keep their generated evaluation,
@@ -46,8 +46,10 @@ They measure folded-result handling, not execution of a ROUND kernel. The
 untimed Rust allocation probe drops from 79-99 requests to 16 per batch; it excludes
 JVM/other-thread allocation and does not measure retained memory. The
 [arithmetic benchmark](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
-retains both probes, raw trials, stock drift and the independent nonconstant-function
-qualification and complete jobs with both transposes.
+retains both probes, raw trials, stock drift and the independent function
+qualification and complete jobs with both transposes. Separate
+[TRUNCATE controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
+retain the same fold boundary and explicitly exclude NULL-fold samples from function-work evidence.
 
 ## Per-row allocation cuts
 
