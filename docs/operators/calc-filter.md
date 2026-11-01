@@ -1376,6 +1376,20 @@ the cost of one JNI round-trip per cast column rather than per row family. (The 
 already carry a probed native port of the legacy `Double.toString` spelling; moving the
 float-to-string `CAST` onto that port instead of the upcall is a separate, tracked follow-up.)
 
+NOT NULL BOOLEAN, integer, approximate numeric and character projections containing
+NOT NULL DECIMAL arithmetic also keep their complete generated expression and original
+projection write rule. Arithmetic overflow can set a runtime NULL flag even when the
+resolved input is NOT NULL. Released Flink can then write a separate result term, such as
+`false` for a comparison, `-1` for a DECIMAL-to-INT/BIGINT cast, or an empty string for
+a comparison cast to STRING. A split Arrow evaluation instead exposes NULL and incorrectly
+fails or drops the row at the sink constraint enforcer. This includes enclosing
+comparison/NOT/logical/CASE and cast consumers, under modern and legacy cast modes.
+Nullable projections and WHERE conditions keep their NULL flags, and selected
+division-by-zero still fails. Direct overflowing DECIMAL outputs still reach ERROR/DROP
+enforcement; defaults are not substituted globally. Only affected projections use this
+correctness path. No option or acceleration claim is introduced. See
+[the projection-default reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581).
+
 Host cast executors compile under Flink's cast-rule library loader, restoring the calling
 thread's context loader afterward. Flink's shared Janino expression cache does not include a
 loader key; setting only the cast context's loader still lets Janino retain a per-job loader.

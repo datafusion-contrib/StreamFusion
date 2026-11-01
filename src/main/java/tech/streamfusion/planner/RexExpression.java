@@ -1430,8 +1430,9 @@ final class RexExpression {
   private boolean emit(RexNode node) {
     if (node instanceof RexCall
         && (node == projectionRoot || projectionRoot == null && kinds.size() == conditionRoot)
-        && requiresDecimalCastFusion(node)) {
-      if (legacyCastBehaviour == null) {
+        && (requiresDecimalCastFusion(node)
+            || node == projectionRoot && requiresDecimalProjectionDefaults(node))) {
+      if (requiresDecimalCastFusion(node) && legacyCastBehaviour == null) {
         return reject("Computed DECIMAL CAST requires the configured cast behavior");
       }
       return emitHostExpression((RexCall) node, true);
@@ -4905,14 +4906,34 @@ final class RexExpression {
     return call.getOperands().stream().anyMatch(RexExpression::requiresDecimalCastFusion);
   }
 
+  private static boolean requiresDecimalProjectionDefaults(RexNode node) {
+    return !node.getType().isNullable()
+        && (node.getType().getSqlTypeName() == SqlTypeName.BOOLEAN
+            || SqlTypeFamily.INTEGER.contains(node.getType())
+            || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(node.getType())
+            || SqlTypeFamily.CHARACTER.contains(node.getType()))
+        && containsNonNullableDecimalArithmetic(node);
+  }
+
+  private static boolean containsNonNullableDecimalArithmetic(RexNode node) {
+    if (node instanceof RexFieldAccess) {
+      return containsNonNullableDecimalArithmetic(((RexFieldAccess) node).getReferenceExpr());
+    }
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    return isDecimalArithmetic(call) && !call.getType().isNullable()
+        || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalArithmetic);
+  }
+
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers) {
     return emitHostExpression(call, fuseConsumers, true);
   }
 
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers, boolean tryFusion) {
-    boolean decimalCastFusion = requiresDecimalCastFusion(call);
+    boolean decimalProjectionDefaults = requiresDecimalCastFusion(call)
+        || call == projectionRoot && requiresDecimalProjectionDefaults(call);
     NativeStringFusion fusion =
-        tryFusion && !decimalCastFusion ? NativeStringFusion.match(call) : null;
+        tryFusion && !decimalProjectionDefaults ? NativeStringFusion.match(call) : null;
     if (fusion != null) {
       return emitCertifiedBuiltin(call, fusion.operation, fusion);
     }
@@ -4966,7 +4987,7 @@ final class RexExpression {
       if (expression instanceof RexCall && isExactDoubleTruncate(((RexCall) expression))) {
         function = FlinkExpressionGenerator.doubleTruncate(
             ((RexCall) expression), argumentTypes, temporalConfig, expressionClassLoader);
-      } else if (decimalCastFusion && call == projectionRoot) {
+      } else if (decimalProjectionDefaults && call == projectionRoot) {
         function = FlinkExpressionGenerator.generateProjection(
             expression, argumentTypes, temporalConfig, expressionClassLoader, binaryStringResult);
       } else {
