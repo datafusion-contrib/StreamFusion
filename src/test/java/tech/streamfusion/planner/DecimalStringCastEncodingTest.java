@@ -75,6 +75,52 @@ class DecimalStringCastEncodingTest {
   }
 
   @Test
+  void verifiedUnaryCastFormattingPreservesPrecisionScaleAndLengthRules() throws Exception {
+    var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
+    var rex = new RexBuilder(types);
+    for (int[] pair : new int[][] {{1, 1}, {4, 3}, {18, 0}, {18, 18}, {19, 0}, {38, 38}}) {
+      var type = types.createSqlType(SqlTypeName.DECIMAL, pair[0], pair[1]);
+      var wide = types.createSqlType(SqlTypeName.DECIMAL, 38, pair[1]);
+      var input = rex.makeInputRef(type, 0);
+      for (var unary : List.of(FlinkSqlOperatorTable.ABS, FlinkSqlOperatorTable.UNARY_MINUS)) {
+        var once = rex.makeCall(type, unary, List.of(input));
+        for (var operand : List.of(once, rex.makeCall(type, unary, List.of(once)),
+            rex.makeCall(wide, FlinkSqlOperatorTable.CAST, List.of(once)),
+            rex.makeCall(wide, unary,
+                List.of(rex.makeCall(wide, FlinkSqlOperatorTable.CAST, List.of(input)))))) {
+          for (boolean legacy : new boolean[] {false, true}) {
+            for (var name : List.of(SqlTypeName.CHAR, SqlTypeName.VARCHAR)) {
+              for (int length : new int[] {1, 8, 44, Integer.MAX_VALUE}) {
+                var call = rex.makeCall(types.createSqlType(name, length),
+                    FlinkSqlOperatorTable.CAST, List.of(operand));
+                var encoded = BooleanStringCastEncodingTest.configured(call, legacy);
+                assertTrue(encoded.jvmFunctionCalls().isEmpty(), call.toString());
+                assertEquals(legacy || length == Integer.MAX_VALUE ? 11 : 6, encoded.kinds()[0]);
+                assertEquals(legacy || length == Integer.MAX_VALUE ? 6
+                    : name == SqlTypeName.CHAR ? 129 : 126, encoded.payload()[0]);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @Test
+  void unaryTryCastRetainsItsExistingRouteUntilQualified() throws Exception {
+    var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
+    var rex = new RexBuilder(types);
+    var type = types.createSqlType(SqlTypeName.DECIMAL, 18, 3);
+    var input = rex.makeInputRef(type, 0);
+    for (var operator : List.of(FlinkSqlOperatorTable.ABS, FlinkSqlOperatorTable.UNARY_MINUS)) {
+      var unary = rex.makeCall(type, operator, List.of(input));
+      var call = rex.makeCall(types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE),
+          FlinkSqlOperatorTable.TRY_CAST, List.of(unary));
+      assertNull(RexExpression.encodeProjections(List.of(call), List.of("v")));
+    }
+  }
+
+  @Test
   void computedDecimalsKeepTheirExistingEvaluator() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);

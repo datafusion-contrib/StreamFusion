@@ -3904,7 +3904,12 @@ final class RexExpression {
         && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
             || legacyCastBehaviour != null)
         && (call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral)) {
+            || call.getOperands().get(0) instanceof RexLiteral
+            || !tryCast
+                && (nativeDecimalUnaryOperand(call.getOperands().get(0),
+                        org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
+                    || nativeDecimalUnaryOperand(call.getOperands().get(0),
+                        org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)))) {
       boolean bounded = Boolean.FALSE.equals(legacyCastBehaviour)
           && resultType.getPrecision() != Integer.MAX_VALUE;
       boolean pad = targetType == SqlTypeName.CHAR;

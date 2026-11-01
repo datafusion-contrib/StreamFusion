@@ -66,6 +66,15 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
   }
 
   @Test
+  void decimalFormattingDoesNotDiscardStatefulArguments() throws Exception {
+    compare("SELECT id,CAST(ABS(CAST(tick(a) AS DECIMAL(18,3))) AS CHAR(8)),tick(b) FROM src",
+        5003, false);
+    compare("SELECT id,CASE WHEN MOD(id,2)=0 "
+        + "THEN CAST(-CAST(tick(a) AS DECIMAL(18,3)) AS STRING) ELSE 'skip' END,tick(b) FROM src",
+        2051, true);
+  }
+
+  @Test
   void numericClassificationDoesNotDiscardStatefulArguments() throws Exception {
     for (String function : List.of("IS_ALPHA", "IS_DIGIT", "IS_DECIMAL")) {
       compare("SELECT id, IS_ALPHA(tick(a)), tick(b) FROM src".replace("IS_ALPHA", function), 5003, false);
