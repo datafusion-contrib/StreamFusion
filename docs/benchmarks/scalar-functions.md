@@ -5777,3 +5777,70 @@ Reproduce prepared qualification with `integral_expression`, BOOLEAN input and
 `sf.integral.booleanInput=true` and `sf.integral.expression=TRY_CAST(v IS TRUE AS CHAR(8))`.
 No production option is introduced. Remaining conversions are tracked in
 [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## Bounded DECIMAL CAST to character
+
+Direct DECIMAL inputs/literals reuse the exact native plain-text formatter. Modern
+VARCHAR truncates through LEFT; modern CHAR truncates or space-pads through RPAD.
+DECIMAL text is ASCII, so these existing kernels preserve released Flink character
+widths without a Unicode approximation. Legacy mode ignores target length; maximum-INT
+CHAR does not pad. Computed decimals and their metadata guards retain existing admission.
+Bounded TRY_CAST remains a separate qualification.
+
+The [result record](results/decimal-bounded-cast-2026-11-01.json) and
+[raw trials](results/decimal-bounded-cast-2026-11-01.csv.gz) retain 96 configurations/9600 trials.
+Release/default-feature/mimalloc, Oracle JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. DECIMAL(18,2)/(38,18), signed extrema and
+large signed coefficients match across GenericRowData/BinaryRowData and nullable/NOT NULL
+schemas. Modern targets are VARCHAR(3)/CHAR(8)/CHAR(44); legacy targets VARCHAR(3)/CHAR(8).
+All output checksums match. Candidate descriptors must be empty; the independently
+compiled preceding encoder must retain its actual JVM route. Tiny 16-row CHAR(8)
+controls remain separate from 1,024-row bulk qualification.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 40 | 3.076-9.964x | 4.247-11.757x | 0 |
+| 1.18.1 | tiny control | 8 | 1.421-3.349x | 10.676-13.234x | 0 |
+| 2.2.1 | bulk | 40 | 3.073-10.201x | 4.239-11.687x | 0 |
+| 2.2.1 | tiny control | 8 | 1.427-3.294x | 10.489-12.713x | 0 |
+
+All 80 bulk cells beat stock. 0 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.731-1.130x; all ranges remain in the record.
+
+Six complete million-row jobs retain source generation, planning/startup, production JNI
+and both perimeter transposes, using a rowwise source and blackhole at parallelism one.
+Each has two warmups/five measurements. Compact modern VARCHAR(3), wide modern CHAR(44)
+and wide legacy CHAR(8) require consumed NativeCalc, no fallback and no candidate evaluator.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-compact | 0.310117 (0.303876-0.311701) | 0.215852 (0.211178-0.227059) | 0.315230 (0.311484-0.321128) | 0.375995 (0.373839-0.383962) |
+| 1.18.1 / modern-wide | 0.566128 (0.550808-0.568562) | 0.270693 (0.266628-0.276478) | 0.554017 (0.540817-0.565504) | 0.621521 (0.619297-0.633610) |
+| 1.18.1 / legacy-wide | 0.278262 (0.263808-0.285093) | 0.218404 (0.214724-0.225595) | 0.272596 (0.267901-0.296278) | 0.310646 (0.304137-0.321228) |
+| 2.2.1 / modern-compact | 0.316695 (0.315670-0.330976) | 0.215533 (0.210773-0.216891) | 0.315654 (0.311846-0.325644) | 0.355857 (0.346658-0.382724) |
+| 2.2.1 / modern-wide | 0.565624 (0.549676-0.577944) | 0.263300 (0.249329-0.267397) | 0.555790 (0.545149-0.560500) | 0.622109 (0.613828-0.638969) |
+| 2.2.1 / legacy-wide | 0.277581 (0.270206-0.302031) | 0.216288 (0.210198-0.222025) | 0.280246 (0.269209-0.293993) | 0.308279 (0.306989-0.325054) |
+
+Native/stock elapsed ratios span 0.466-0.785;
+native/previous ratios span 0.423-0.703. Ratios above one are slower.
+Overlapping ranges and unfavorable whole-job results remain; prepared qualification
+does not establish universal end-to-end acceleration.
+
+All 132 focused encoding/runtime invocations (including existing unbounded/failure controls) pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row outputs verify declared types, NULLs, unique IDs
+and cardinality across batches with consumed native work and empty evaluator descriptors.
+Additional consumers, truncation/padding, lazy and empty-batch cases, selected operand
+failures and materialized aggregate results match stock. Flink 1.18 does not support
+MAX(CHAR); that boundary witness first widens the padded CHAR to STRING before MAX.
+Twelve existing integer/predicate fixture controls pass. The unchanged released
+CastRulesTest oracle retains its prior 535 stock cases per pair; the unchanged Rust
+DSO retains 1,019 core passes/two pre-existing ignores. Neither reused oracle substitutes
+for the new native execution witnesses. Source/DSO hashes and independently recompiled
+preceding encoder classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, DECIMAL input and
+`SF_INTEGRAL_EXPRESSION='CAST(v AS CHAR(8))'`. Complete jobs use
+`sf.integral.decimalPrecision=38`, `sf.integral.decimalScale=18` and the same expression.
+These are benchmark-only controls; no production option is introduced. Remaining work
+is tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

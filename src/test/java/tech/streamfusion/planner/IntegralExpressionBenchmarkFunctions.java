@@ -38,8 +38,9 @@ public final class IntegralExpressionBenchmarkFunctions {
       throws Exception {
     Thread.currentThread().setContextClassLoader(IntegralExpressionBenchmarkFunctions.class.getClassLoader());
     type = element;
+    boolean configuredCast = type.equals("BOOLEAN") || type.startsWith("DECIMAL(");
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
-    if (type.equals("BOOLEAN"))
+    if (configuredCast)
       table.getConfig().set("table.exec.legacy-cast-behaviour",
           Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
     String declaration = type + (nullable ? "" : " NOT NULL");
@@ -59,9 +60,9 @@ public final class IntegralExpressionBenchmarkFunctions {
       @Override public ClassLoader getUserCodeClassLoader() { return getLoader(); }
     };
     stock.open(context);
-    var encoded = type.equals("BOOLEAN") ? null
+    var encoded = configuredCast ? null
         : RexExpression.encodeProjections(project.getProjects(), List.of("v"));
-    if (type.equals("BOOLEAN")) {
+    if (configuredCast) {
       var constructor = RexExpression.class.getDeclaredConstructor();
       constructor.setAccessible(true);
       encoded = constructor.newInstance();
@@ -71,7 +72,7 @@ public final class IntegralExpressionBenchmarkFunctions {
       var emit = RexExpression.class.getDeclaredMethod("emit", org.apache.calcite.rex.RexNode.class);
       emit.setAccessible(true);
       if (!(Boolean) emit.invoke(encoded, project.getProjects().get(0)))
-        throw new IllegalStateException("Expected an admitted Boolean expression");
+        throw new IllegalStateException("Expected an admitted configured expression");
     }
     if (encoded == null)
       throw new IllegalStateException("Expected an admitted integer expression");

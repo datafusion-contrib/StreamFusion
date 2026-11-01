@@ -1152,7 +1152,10 @@ Native, unconditionally, with no host involvement:
   `0.00000000000000000000000000000000000001`, without passing through floating point.
   NULL stays NULL. Modern and legacy modes share this unbounded STRING conversion.
   TRY_CAST reuses the same non-failing formatting operation; it does not suppress failures
-  while computing an operand. Bounded CHAR/VARCHAR targets and computed DECIMAL operands retain their existing
+  while computing an operand. CAST also admits direct DECIMAL inputs/literals to bounded
+  VARCHAR/CHAR: modern mode truncates or pads the ASCII decimal text through native LEFT/RPAD;
+  legacy mode ignores target length. CHAR with maximum INT length is not padded, matching
+  released Flink. Bounded TRY_CAST targets and computed DECIMAL operands retain their existing
   evaluator/admission rules. In particular, rounding-result metadata guards still apply;
   this does not replace their host-exact consumers. See the
   [DECIMAL formatting measurements](../benchmarks/scalar-functions.md#decimal-to-string).
@@ -1393,9 +1396,9 @@ A second group of casts is **native by default, and this is not a fallback** —
 back into Flink's own cast machinery (`CastExecutor`/`CastRuleProvider`) for the one column being
 cast, with the rest of the expression tree still evaluated natively around it:
 
-- **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **DECIMAL → bounded VARCHAR/CHAR
-  or from a computed DECIMAL operand**. Direct DECIMAL inputs/literals to unbounded STRING
-  use the native formatter described above for both CAST and TRY_CAST.
+- **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **computed DECIMAL → character**.
+  Direct DECIMAL inputs/literals use the native formatter for CAST to STRING/VARCHAR/CHAR
+  and TRY_CAST to unbounded STRING. Bounded DECIMAL TRY_CAST keeps its existing admission.
   For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
   condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
   until the original consumer observes them. For example, overflowing `DECIMAL(38,18)` multiplication
@@ -1461,8 +1464,9 @@ STRING/CHAR/VARCHAR to DECIMAL; BOOLEAN or DECIMAL to CHAR/VARCHAR; and characte
 character. STRING to DECIMAL uses Flink's complete generated expression, including
 its catch-on-conversion-failure contract: malformed strings and overflow become NULL.
 Setting only the cast executor's legacy flag would still throw for malformed strings.
-BOOLEAN uses the host's legacy lowercase spelling; bounded/computed DECIMAL rendering uses the
-configured host executor, while direct DECIMAL inputs/literals to unbounded STRING use Rust.
+BOOLEAN uses the native formatter's legacy lowercase spelling within its verified operand scope.
+Computed DECIMAL rendering uses the configured host executor, while direct DECIMAL inputs/literals
+use Rust for CAST to STRING/VARCHAR/CHAR and TRY_CAST to unbounded STRING.
 Legacy character casts preserve the original text without applying default
 projection trimming or padding, including empty, overlength and surrogate-containing
 strings. Sink length and NOT NULL enforcement remain separate downstream contracts.

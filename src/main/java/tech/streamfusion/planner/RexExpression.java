@@ -3900,12 +3900,27 @@ final class RexExpression {
       return emitBuiltinCall(call, 237);
     }
     if (source == SqlTypeName.DECIMAL
-        && targetType == SqlTypeName.VARCHAR
-        && resultType.getPrecision() == Integer.MAX_VALUE
+        && SqlTypeFamily.CHARACTER.contains(resultType)
+        && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
+            || !tryCast && legacyCastBehaviour != null)
         && (call.getOperands().get(0) instanceof RexInputRef
             || call.getOperands().get(0) instanceof RexLiteral)) {
+      boolean bounded = Boolean.FALSE.equals(legacyCastBehaviour)
+          && resultType.getPrecision() != Integer.MAX_VALUE;
+      boolean pad = targetType == SqlTypeName.CHAR;
+      // DECIMAL text is ASCII, so LEFT/RPAD preserve Flink's character-width rules.
+      if (bounded) add(KIND_CALL, pad ? 129 : 126, pad ? 3 : 2);
       add(KIND_CAST, CAST_STRING, 1);
-      return emit(call.getOperands().get(0));
+      if (!emit(call.getOperands().get(0))) return false;
+      if (bounded) {
+        add(KIND_LIT_INT, longs.size(), 0);
+        longs.add((long) resultType.getPrecision());
+        if (pad) {
+          add(KIND_LIT_STRING, strings.size(), 0);
+          strings.add(" ");
+        }
+      }
+      return true;
     }
     if ((source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)
         && targetInteger >= 0
@@ -4031,7 +4046,7 @@ final class RexExpression {
       add(KIND_CAST_NARROW, narrowTarget, 1);
       return emit(call.getOperands().get(0));
     }
-    // Remaining formatting/parsing casts — floating/string, string-to-DECIMAL, bounded or
+    // Remaining formatting/parsing casts — floating/string, string-to-DECIMAL,
     // computed DECIMAL-to-character, narrowing/padding strings and inexact float/double→DECIMAL —
     // run Flink's own CastExecutor through the columnar JVM upcall, so
     // trailing zeros, scientific-notation thresholds, trim semantics, and failure behavior are the

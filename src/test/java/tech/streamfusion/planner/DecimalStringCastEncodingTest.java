@@ -41,18 +41,32 @@ class DecimalStringCastEncodingTest {
   }
 
   @Test
-  void boundedTargetsAndComputedDecimalsKeepTheirExistingEvaluator() throws Exception {
+  void boundedTargetsReuseFormattingAndCharacterWidthKernels() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     var type = types.createSqlType(SqlTypeName.DECIMAL, 18, 3);
     var input = rex.makeInputRef(type, 0);
-    for (var target : List.of(types.createSqlType(SqlTypeName.CHAR, 8),
-        types.createSqlType(SqlTypeName.VARCHAR, 4))) {
-      var call = rex.makeCall(target, FlinkSqlOperatorTable.CAST, List.of(input));
-      var encoded = configured(call);
-      assertNotNull(encoded);
-      assertEquals(17, encoded.kinds()[0]);
+    for (boolean legacy : new boolean[] {false, true}) {
+      for (var name : List.of(SqlTypeName.CHAR, SqlTypeName.VARCHAR)) {
+        for (int length : new int[] {1, 3, 8, 20, 44, 80, Integer.MAX_VALUE}) {
+          var call = rex.makeCall(types.createSqlType(name, length),
+              FlinkSqlOperatorTable.CAST, List.of(input));
+          var encoded = BooleanStringCastEncodingTest.configured(call, legacy);
+          assertTrue(encoded.jvmFunctionCalls().isEmpty());
+          assertEquals(legacy || length == Integer.MAX_VALUE ? 11 : 6, encoded.kinds()[0]);
+          assertEquals(legacy || length == Integer.MAX_VALUE ? 6
+              : name == SqlTypeName.CHAR ? 129 : 126, encoded.payload()[0]);
+        }
+      }
     }
+  }
+
+  @Test
+  void computedDecimalsKeepTheirExistingEvaluator() throws Exception {
+    var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
+    var rex = new RexBuilder(types);
+    var type = types.createSqlType(SqlTypeName.DECIMAL, 18, 3);
+    var input = rex.makeInputRef(type, 0);
     var sum = rex.makeCall(type, FlinkSqlOperatorTable.PLUS,
         List.of(input, rex.makeExactLiteral(BigDecimal.ONE, type)));
     var call = rex.makeCall(types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE),
