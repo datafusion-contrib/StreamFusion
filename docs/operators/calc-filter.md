@@ -1455,9 +1455,10 @@ already carry a probed native port of the legacy `Double.toString` spelling; mov
 float-to-string `CAST` onto that port instead of the upcall is a separate, tracked follow-up.)
 
 NOT NULL BOOLEAN, integer, approximate numeric and character projections containing
-NOT NULL DECIMAL arithmetic also keep their complete generated expression and original
-projection write rule. Arithmetic overflow can set a runtime NULL flag even when the
-resolved input is NOT NULL. Released Flink can then write a separate result term, such as
+NOT NULL DECIMAL arithmetic or potentially overflowing exact-numeric DECIMAL casts also
+keep their complete generated expression and original projection write rule. Overflow can
+set a runtime NULL flag even when the resolved input is NOT NULL. Released Flink can then
+write a separate result term, such as
 `false` for a comparison, `-1` for a DECIMAL-to-INT/BIGINT cast, or an empty string for
 a comparison cast to STRING. A split Arrow evaluation instead exposes NULL and incorrectly
 fails or drops the row at the sink constraint enforcer. This includes enclosing
@@ -1466,22 +1467,18 @@ Nullable projections and WHERE conditions keep their NULL flags, and selected
 division-by-zero still fails. Direct overflowing DECIMAL outputs still reach ERROR/DROP
 enforcement; defaults are not substituted globally. Only affected projections use this
 correctness path. No option or acceleration claim is introduced. See
-[the projection-default reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581).
-
-The same projection rule covers explicit numeric-to-DECIMAL CASTs that can overflow,
-including BIGINT and DECIMAL precision reduction. Reducing scale can also round into an
-extra integer digit: `CAST(9.99 AS DECIMAL(1,0))` overflows even though both types have
-one integer digit. The affected enclosing basic-type projection stays generated through
-its final write; `NOT(CAST(x AS DECIMAL(1,0))>0)` can therefore write `false` on overflow,
-just as the comparison itself does. Exact numeric casts with enough integer digits and
-rounding headroom retain their previous native route. Nullable results, WHERE consumers,
-TRY_CAST and direct DECIMAL sink enforcement retain their separate NULL contracts.
-Over exact numeric casts, retained NULL and truth tests consume the NULL flag themselves
-and keep their native route; a truth test rewritten by Flink into an ordinary comparison
-still uses that comparison's generated projection contract.
-Unrelated projections remain separate. This repairs
-[explicit CAST projection defaults](https://github.com/datafusion-contrib/StreamFusion/issues/582)
-through the existing evaluator and makes no new acceleration claim.
+[the arithmetic reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581)
+and [the explicit CAST reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/582).
+The CAST proof covers integer-to-DECIMAL conversions whose target cannot hold the source
+type's full integral range, and DECIMAL conversions that reduce integral capacity or can
+round into an extra integral digit without room for that carry. For example, `99.5` from
+`DECIMAL(3,1)` overflows `DECIMAL(2,0)` after rounding. Conversions with sufficient integral
+capacity, including an extra digit for rounding when needed, retain their existing native
+execution. Retained IS NULL/IS NOT NULL and truth-test consumers resolve the NULL flag
+themselves, so they do not require the new CAST protection. A truth test rewritten by
+Flink into an ordinary comparison still needs the comparison's projection contract.
+FLOAT/DOUBLE-to-DECIMAL casts also retain this protection because their values can exceed
+the target precision. Direct TRY_CAST retains its nullable result and preceding route.
 
 Host cast executors compile under Flink's cast-rule library loader, restoring the calling
 thread's context loader afterward. Flink's shared Janino expression cache does not include a
