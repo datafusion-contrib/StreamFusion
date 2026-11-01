@@ -8,6 +8,24 @@ allocations and redundant per-row work from specific hot loops: reuse instead of
 instead of clone, batch instead of loop, and — where the access pattern actually fits — a columnar
 kernel instead of a row loop at all.
 
+## Same-width integer expression results
+
+The planner retains explicit result casts after narrow integer arithmetic so Java's
+wrapping width survives DataFusion type coercion. A cast whose actual Arrow integer
+type already matches its target now shares the input array directly. It does not widen
+to BIGINT, scan the values and reconstruct an identical array. True narrowing,
+floating/decimal conversions and the previous scalar materialization stay unchanged.
+The fast path retains sliced offsets, validity and owned buffers, including empty arrays.
+This follows Comet's equal-type native cast shortcut; actual narrowing still follows
+Flink's primitive wrapping rules rather than Spark's ANSI overflow policy.
+
+This matters when native ABS consumes an arithmetic tree: the initially correct native
+`ABS((v+1)*(v-1))` still lost to stock Flink on INT because each result cast duplicated
+the work. The benchmark records preserve that initial implementation, independently
+paired stock/main controls and the qualified result after removing those copies. See
+[integer ABS arithmetic](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
+for workload, timing boundaries, allocation requests and remaining small-batch costs.
+
 ## Per-row allocation cuts
 
 Grouped FIRST/LAST skips extracting an append-only FIRST value once its non-NULL result

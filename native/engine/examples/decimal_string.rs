@@ -31,6 +31,8 @@ fn main() {
     let warmups: usize = args.get(7).map_or(12, |s| s.parse().unwrap());
     let runs: usize = args.get(8).map_or(9, |s| s.parse().unwrap());
     let previous = std::env::var("SF_DECIMAL_STRING_PREVIOUS").is_ok();
+    let try_cast = std::env::var("SF_DECIMAL_STRING_TRY_CAST").is_ok();
+    let fallback = previous && try_cast;
     let cp = format!(
         "-Djava.class.path={}",
         std::env::var("SF_NATIVE_BENCH_CLASSPATH").unwrap()
@@ -40,11 +42,13 @@ fn main() {
         std::env::var("SF_NATIVE_LIB_DIR").unwrap()
     );
     let previous_flag = format!("-Dsf.decimal.string.previous={previous}");
+    let try_flag = format!("-Dsf.decimal.string.tryCast={try_cast}");
     let options = jni::InitArgsBuilder::new()
         .version(jni::JNIVersion::V8)
         .option(&cp)
         .option(&lib)
         .option(&previous_flag)
+        .option(&try_flag)
         .option("-Xms256m")
         .option("-Xmx512m")
         .option("-Dstreamfusion.native.development=true")
@@ -105,15 +109,29 @@ fn main() {
     .with_precision_and_scale(precision, scale)
     .unwrap();
     let batch = RecordBatch::try_from_iter(vec![("v", Arc::new(values) as ArrayRef)]).unwrap();
-    let mut calc = CalcProgram::new(
-        vec![program[0], 0],
-        vec![program[1], 0],
-        vec![1, 0],
-        program[2..].to_vec(),
-        vec![],
-        vec![],
-    );
-    let expected = checksum(&calc.run(batch.clone())) * loops as i64;
+    let mut calc = (!fallback).then(|| {
+        CalcProgram::new(
+            vec![program[0], 0],
+            vec![program[1], 0],
+            vec![1, 0],
+            program[2..].to_vec(),
+            vec![],
+            vec![],
+        )
+    });
+    let expected = if let Some(calc) = &mut calc {
+        checksum(&calc.run(batch.clone())) * loops as i64
+    } else {
+        let result = env
+            .call_static_method(class, "measure", "(I)[J", &[JValue::Int(1)])
+            .unwrap()
+            .l()
+            .unwrap();
+        let mut pair = [0; 2];
+        env.get_long_array_region(jni::objects::JLongArray::from(result), 0, &mut pair)
+            .unwrap();
+        pair[1] * loops as i64
+    };
     for trial in 0..warmups + runs {
         for engine in (0..2).map(|i| (i + trial) % 2) {
             let name = if engine == 0 {
@@ -123,7 +141,7 @@ fn main() {
             } else {
                 "native"
             };
-            let (nanos, digest) = if engine == 0 {
+            let (nanos, digest) = if engine == 0 || fallback {
                 let result = env
                     .call_static_method(class, "measure", "(I)[J", &[JValue::Int(loops as i32)])
                     .unwrap()
@@ -137,7 +155,9 @@ fn main() {
                 let start = Instant::now();
                 let mut sum = 0;
                 for _ in 0..loops {
-                    sum += checksum(&black_box(calc.run(black_box(batch.clone()))));
+                    sum += checksum(&black_box(
+                        calc.as_mut().unwrap().run(black_box(batch.clone())),
+                    ));
                 }
                 (start.elapsed().as_nanos(), black_box(sum))
             };

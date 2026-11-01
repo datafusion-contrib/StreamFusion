@@ -11,6 +11,7 @@ import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
@@ -67,6 +68,20 @@ final class JsonStringIdentity {
     return false;
   }
 
+  private static boolean containsDecodedBinaryCast(RexNode expression) {
+    if (expression instanceof RexFieldAccess)
+      return containsDecodedBinaryCast(((RexFieldAccess) expression).getReferenceExpr());
+    if (!(expression instanceof RexCall)) return false;
+    var call = (RexCall) expression;
+    boolean decoded = (call.getKind() == SqlKind.CAST
+            || call.getOperator()
+                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
+        && SqlTypeFamily.CHARACTER.contains(call.getType())
+        && call.getOperands().size() == 1
+        && SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType());
+    return decoded || call.getOperands().stream().anyMatch(JsonStringIdentity::containsDecodedBinaryCast);
+  }
+
   static boolean crossesOperatorBoundary(RelNode root, boolean finalOutput) {
     return finalUnionJsonInputs(root, finalOutput) == null;
   }
@@ -86,7 +101,10 @@ final class JsonStringIdentity {
       var program = calc.getProgram();
       for (var projection : program.getProjectList()) {
         RexNode expression = program.expandLocalRef(projection);
-        if (containsCharacter(expression.getType()) && containsSensitiveString(expression)) {
+        // A decoded cast is Java-backed in Flink; Arrow UTF-8 alone cannot preserve its cache
+        // for representation-sensitive downstream comparators. Fused consumers stay in the Calc.
+        if (containsCharacter(expression.getType())
+            && (containsSensitiveString(expression) || containsDecodedBinaryCast(expression))) {
           if (!forwarding || !preservableJsonValue(expression)) return false;
           calcs.add(node);
         }

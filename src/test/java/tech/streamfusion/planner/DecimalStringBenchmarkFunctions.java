@@ -43,7 +43,8 @@ public final class DecimalStringBenchmarkFunctions {
         FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     return (RexCall) rex.makeCall(types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE),
-        FlinkSqlOperatorTable.CAST,
+        Boolean.getBoolean("sf.decimal.string.tryCast")
+            ? FlinkSqlOperatorTable.TRY_CAST : FlinkSqlOperatorTable.CAST,
         List.of(rex.makeInputRef(types.createSqlType(SqlTypeName.DECIMAL, precision, scale), 0)));
   }
 
@@ -64,9 +65,14 @@ public final class DecimalStringBenchmarkFunctions {
     configure.invoke(encoded, config());
     var emit = RexExpression.class.getDeclaredMethod("emit", RexNode.class);
     emit.setAccessible(true);
-    if (!(Boolean) emit.invoke(encoded, call(precision, scale)) || encoded.kinds().length != 2)
-      throw new IllegalStateException("Expected a direct decimal-to-STRING cast");
     boolean previous = Boolean.getBoolean("sf.decimal.string.previous");
+    boolean admitted = (Boolean) emit.invoke(encoded, call(precision, scale));
+    if (previous && Boolean.getBoolean("sf.decimal.string.tryCast")) {
+      if (admitted) throw new IllegalStateException("Previous TRY_CAST must use stock fallback");
+      return new long[] {-1, 0};
+    }
+    if (!admitted || encoded.kinds().length != 2)
+      throw new IllegalStateException("Expected a direct decimal-to-STRING cast");
     if (encoded.kinds()[0] != (previous ? 17 : 11)
         || !previous && encoded.payload()[0] != 6)
       throw new IllegalStateException("Unexpected decimal cast route");

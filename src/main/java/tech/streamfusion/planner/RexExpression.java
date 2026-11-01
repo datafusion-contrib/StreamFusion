@@ -2209,10 +2209,8 @@ final class RexExpression {
         return emitBuiltinCall(call, 219);
       }
       if (nativeIntegralNegate(call)) {
-        // The admitted unary chain has one leaf; input references guarantee array evaluation.
-        RexNode leaf = call.getOperands().get(0);
-        while (leaf instanceof RexCall) leaf = ((RexCall) leaf).getOperands().get(0);
-        return emitBuiltinCall(call, leaf instanceof RexInputRef ? 5 : 219);
+        boolean scalar = org.apache.calcite.plan.RelOptUtil.InputFinder.bits(call).isEmpty();
+        return emitBuiltinCall(call, scalar ? 219 : 5);
       }
       return emitFloatUnary(call, 5);
     }
@@ -2714,6 +2712,15 @@ final class RexExpression {
     }
     if ("BIN".equals(functionName)) {
       return emitEncoding(call, 104, true, false);
+    }
+    if ("IS_ALPHA".equals(functionName) && nativeStringClassification(call)) {
+      return emitCharacterFunction(call, 238, 1, 1);
+    }
+    if ("IS_DIGIT".equals(functionName) && nativeStringClassification(call)) {
+      return emitCharacterFunction(call, 239, 1, 1);
+    }
+    if ("IS_DECIMAL".equals(functionName) && nativeStringClassification(call)) {
+      return emitCharacterFunction(call, 240, 1, 1);
     }
     if ("HEX".equals(functionName)) {
       return emitEncoding(call, 105, true, true);
@@ -3848,8 +3855,14 @@ final class RexExpression {
     }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
-    if (!tryCast
-        && source == SqlTypeName.DECIMAL
+    if (SqlTypeFamily.BINARY.contains(sourceType)
+        && SqlTypeFamily.CHARACTER.contains(resultType)
+        && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
+            || Boolean.TRUE.equals(legacyCastBehaviour))) {
+      // Released Flink decodes with new String(bytes, UTF_8), including JDK error grouping.
+      return emitBuiltinCall(call, 237);
+    }
+    if (source == SqlTypeName.DECIMAL
         && targetType == SqlTypeName.VARCHAR
         && resultType.getPrecision() == Integer.MAX_VALUE
         && (call.getOperands().get(0) instanceof RexInputRef
@@ -4340,7 +4353,8 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralNegate(call)) return true;
+    if (nativeIntegralNegate(call)
+        || nativeIntegralArithmetic(call, RexExpression::nativeIntegralNegateOperand)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())
@@ -4440,7 +4454,7 @@ final class RexExpression {
       case "IS_DECIMAL":
       case "IS_DIGIT":
       case "IS_ALPHA":
-        return true;
+        return !nativeStringClassification(call);
       case "SHA2":
         return call.getOperands().size() == 2
             && (!(call.getOperands().get(1) instanceof RexLiteral)
@@ -4486,6 +4500,10 @@ final class RexExpression {
             || call.getType().getSqlTypeName() == SqlTypeName.INTEGER
             || call.getType().getSqlTypeName() == SqlTypeName.BIGINT)
         && nativeIntegralRoundingOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeStringClassification(RexCall call) {
+    return call.getOperands().size() == 1 && isCharacter(call.getOperands().get(0));
   }
 
   private static boolean nativeIntegralRoundPosition(RexCall call) {
@@ -4625,7 +4643,8 @@ final class RexExpression {
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeIntegralAbs(call)) return true;
+    if (nativeIntegralAbs(call)
+        || nativeIntegralArithmetic(call, RexExpression::nativeIntegralAbsOperand)) return true;
     return call.getKind() == SqlKind.CAST
         && call.getOperands().size() == 1
         && SqlTypeFamily.INTEGER.contains(call.getType())
@@ -4634,6 +4653,21 @@ final class RexExpression {
                 call.getType().getSqlTypeName())
             >= 0
         && nativeIntegralAbsOperand(call.getOperands().get(0));
+  }
+
+  private static boolean nativeIntegralArithmetic(
+      RexCall call, java.util.function.Predicate<RexNode> operand) {
+    if (call.getOperands().size() != 2 || !SqlTypeFamily.INTEGER.contains(call.getType()))
+      return false;
+    switch (call.getKind()) {
+      case PLUS:
+      case MINUS:
+      case TIMES:
+        return call.getOperands().stream()
+            .allMatch(node -> SqlTypeFamily.INTEGER.contains(node.getType()) && operand.test(node));
+      default:
+        return false;
+    }
   }
 
   private static boolean containsMetadataDependentDecimalRounding(RexNode node) {

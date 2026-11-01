@@ -26,8 +26,9 @@ class FlinkDecimalStringCastSqlHarnessTest {
       throws Exception {
     for (boolean legacy : new boolean[] {false, true}) {
       BuiltinFunctionParity.assertParity(() -> environment(precision, scale, legacy),
-          "SELECT id, CAST(d AS STRING), CONCAT(CAST(d AS STRING),'!'), "
-              + "CHAR_LENGTH(CAST(d AS STRING)) FROM src");
+          "SELECT id, CAST(d AS STRING), TRY_CAST(d AS STRING), "
+              + "CONCAT(CAST(d AS STRING),'!'), CONCAT(TRY_CAST(d AS STRING),'!'), "
+              + "CHAR_LENGTH(CAST(d AS STRING)), CHAR_LENGTH(TRY_CAST(d AS STRING)) FROM src");
     }
   }
 
@@ -43,7 +44,7 @@ class FlinkDecimalStringCastSqlHarnessTest {
           tech.streamfusion.compat.FlinkTestSources.fromData(env, input, ExternalTypeInfo.<Row>of(type)),
           org.apache.flink.table.api.Schema.newBuilder().fromRowDataType(type).build());
       var scan = NativePlanner.install(table);
-      String sql = "SELECT CAST(d AS STRING) FROM src";
+      String sql = "SELECT CAST(d AS STRING), TRY_CAST(d AS STRING) FROM src";
       assertTrue(table.explainSql(sql).contains("NativeCalc"));
       assertTrue(scan.functionExecutions().stream().anyMatch(route -> route.contains("jvm=[]")),
           scan.functionExecutions().toString());
@@ -51,7 +52,8 @@ class FlinkDecimalStringCastSqlHarnessTest {
       try (var output = table.executeSql(sql).collect()) {
         while (output.hasNext()) {
           BigDecimal value = (BigDecimal) input.get(count++).getField(1);
-          assertEquals(Row.of(value == null ? null : value.toPlainString()), output.next());
+          String expected = value == null ? null : value.toPlainString();
+          assertEquals(Row.of(expected, expected), output.next());
         }
       }
       assertEquals(input.size(), count);
@@ -85,6 +87,43 @@ class FlinkDecimalStringCastSqlHarnessTest {
       assertEquals(NativeFailureParity.Phase.ROW_EVALUATION, outcome.phase());
     }
     assertEquals(NativeFailureParity.Route.NATIVE, comparison.nativeRun().route());
+  }
+
+  @Test
+  void tryCastPreservesNonNullableInputsLazyBranchesAndEmptyBatches() throws Exception {
+    for (boolean legacy : new boolean[] {false, true}) {
+      BuiltinFunctionParity.assertParity(() -> {
+        var table = BuiltinFunctionParity.environment(
+            ROW(FIELD("d", DECIMAL(38, 38).notNull())),
+            List.of(Row.of(new BigDecimal("0." + "9".repeat(38))), Row.of(BigDecimal.ZERO)));
+        table.getConfig().getConfiguration().setString("table.exec.legacy-cast-behaviour",
+            legacy ? "ENABLED" : "DISABLED");
+        return table;
+      }, "SELECT TRY_CAST(d AS STRING) FROM src");
+      BuiltinFunctionParity.assertParity(() -> environment(18, 3, legacy),
+          "SELECT CASE WHEN id>=0 THEN TRY_CAST(d AS STRING) "
+              + "ELSE CAST(d/(id-id) AS STRING) END FROM src");
+      BuiltinFunctionParity.assertParity(() -> environment(18, 3, legacy),
+          "SELECT TRY_CAST(d AS STRING) FROM src WHERE id<0");
+    }
+  }
+
+  @Test
+  void tryCastDoesNotCatchErrorsComputingAnUnverifiedOperand() {
+    var comparison = NativeFailureParity.run(() -> environment(18, 3, false),
+        "SELECT TRY_CAST(d/(id-id) AS STRING) FROM src");
+    for (var outcome : List.of(comparison.host(), comparison.nativeRun())) {
+      assertInstanceOf(ArithmeticException.class, outcome.rootCause());
+      assertEquals(NativeFailureParity.Phase.ROW_EVALUATION, outcome.phase());
+    }
+    assertEquals(NativeFailureParity.Route.FALLBACK, comparison.nativeRun().route());
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void boundedTryCastTargetsRetainTheirExistingFallback(boolean legacy) throws Exception {
+    NativeParity.assertFallback(() -> environment(18, 3, legacy),
+        "SELECT TRY_CAST(d AS CHAR(2)), TRY_CAST(d AS VARCHAR(2)) FROM src");
   }
 
   private static TableEnvironment environment(int precision, int scale, boolean legacy) {

@@ -10,6 +10,7 @@ use datafusion::logical_expr::{ScalarUDF, Volatility};
 use std::sync::Arc;
 
 pub(crate) mod binary_cast;
+mod binary_character;
 pub(crate) mod binary_elt;
 pub(crate) mod calendar;
 mod calendar_round;
@@ -87,6 +88,8 @@ mod row_constructor;
 mod scalar;
 pub(crate) mod sha2_runtime;
 mod sign;
+mod string_classification;
+mod string_decimal;
 pub(crate) mod string_fusion;
 mod string_to_boolean;
 mod temporal_arithmetic;
@@ -100,6 +103,9 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
 pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
     Some(match op {
+        238 => string_classification::alpha(),
+        239 => string_classification::digit(),
+        240 => string_decimal::function(),
         65 => sign::function(),
         67 => ascii::function(),
         81 => chr::function(),
@@ -297,6 +303,7 @@ pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
         230 => integral_round::function(false),
         231 => integral_round::function(true),
         232 => from_base64::function(),
+        237 => binary_character::function(),
         _ => return None,
     })
 }

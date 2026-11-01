@@ -1102,12 +1102,13 @@ Native, unconditionally, with no host involvement:
   This can differ from rounding a decimal directly to FLOAT. Array casts convert the element
   buffers and preserve offsets, empty arrays, nullable containers/elements and declared types.
   Other changes of collection element type still require a separately supported cast.
-- **`CAST(d AS STRING)` for a direct DECIMAL input or literal** — a native Decimal128
+- **`CAST(d AS STRING)` and `TRY_CAST(d AS STRING)` for a direct DECIMAL input or literal** — a native Decimal128
   formatter retains scale and trailing zeros, including zero and precision-38 coefficients.
   It uses ordinary decimal notation, so `DECIMAL(38,38)` with unscaled value 1 becomes
   `0.00000000000000000000000000000000000001`, without passing through floating point.
   NULL stays NULL. Modern and legacy modes share this unbounded STRING conversion.
-  Bounded CHAR/VARCHAR targets, computed DECIMAL operands and TRY_CAST retain their existing
+  TRY_CAST reuses the same non-failing formatting operation; it does not suppress failures
+  while computing an operand. Bounded CHAR/VARCHAR targets and computed DECIMAL operands retain their existing
   evaluator/admission rules. In particular, rounding-result metadata guards still apply;
   this does not replace their host-exact consumers. See the
   [DECIMAL formatting measurements](../benchmarks/scalar-functions.md#decimal-to-string).
@@ -1228,6 +1229,30 @@ The parser fast path does not establish a speedup for noncanonical formats or co
 
 ### Binary casts and fixed-width generated expressions
 
+`CAST(binary_value AS STRING)` and `TRY_CAST(binary_value AS STRING)` use a native
+UTF-8 decoder on both released Flink lines. BINARY and VARBINARY inputs retain their
+actual bytes, including fixed padding, embedded zeros and sliced validity. Well-formed
+UTF-8 shares Arrow values/offsets/NULLs; fixed-size inputs construct offsets without copying
+their bytes. Malformed input uses the running JDK's released UTF-8 replacement contract:
+`ED A0 80`, for example, becomes one U+FFFD rather than three. This conversion is distinct
+from raw `FROM_BASE64` STRING transport and never exposes malformed Arrow Utf8.
+
+The unbounded conversion has the same decoding behavior in modern and legacy cast modes.
+Legacy bounded CHAR/VARCHAR casts also use this kernel because the released rule ignores
+their length. Modern bounded targets retain fallback: their UTF-16 truncation/padding can
+produce an isolated surrogate and is not equivalent to truncating Unicode code points.
+TRY_CAST catches conversion failures, not failures while computing its operand; binary UTF-8
+decoding itself replaces malformed input instead of throwing. CASE remains lazy and an
+empty filtered batch never evaluates the cast.
+
+Admitted value-only consumers such as length, HEX, equality, LIKE and re-encoding compose
+with the native conversion. Existing string-ordering and representation-sensitive trim
+rules remain in force. A decoded STRING feeding another relational operator retains
+fallback so its original Java-backed representation cannot be lost before a comparator
+observes it; a CAST delayed until the final projection by the released optimizer does not
+cross that boundary. The remaining bounded/boundary scope is tracked in
+[#493](https://github.com/datafusion-contrib/StreamFusion/issues/493).
+
 CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
 use a native byte-copy kernel when their operands do not require Flink's rowwise error handling.
 Default-mode BINARY(n) zero-pads or truncates
@@ -1305,6 +1330,12 @@ DECIMAL-to-DECIMAL TRY_CAST reuses the native exact rescaling kernel, including 
 NULL on narrowing overflow. Tests cover precision 38, invalid text, signs/exponents, whitespace,
 filters, conditional consumers, grouping and aggregation across multiple batches.
 
+Direct DECIMAL input references and literals also format to unbounded STRING through the
+native formatter described above. It preserves scale, plain notation and NULLs in modern
+and legacy modes without a JVM evaluator. Bounded character targets and computed DECIMAL
+operands keep their previous rules; in particular, TRY_CAST does not catch an error raised
+while computing its input. See the [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast).
+
 Already-evaluated internal Flink decimals cross Arrow without another precision check. Flink's
 compact text parser can retain a rounding carry (`999.995` to DECIMAL(5,2) yields `1000.00`);
 the bridge preserves that internal unscaled value and its non-NULL status. External BigDecimal
@@ -1318,7 +1349,9 @@ A second group of casts is **native by default, and this is not a fallback** —
 back into Flink's own cast machinery (`CastExecutor`/`CastRuleProvider`) for the one column being
 cast, with the rest of the expression tree still evaluated natively around it:
 
-- **FLOAT/DOUBLE/DECIMAL ↔ string, both directions** — including bounded VARCHAR/CHAR targets.
+- **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **DECIMAL → bounded VARCHAR/CHAR
+  or from a computed DECIMAL operand**. Direct DECIMAL inputs/literals to unbounded STRING
+  use the native formatter described above for both CAST and TRY_CAST.
 - **Narrowing a `VARCHAR`** (truncation).
 - **String to `CHAR(n)`** (space-padding).
 - **`→ DECIMAL` from a `float`/`double`.**
@@ -1344,8 +1377,9 @@ STRING/CHAR/VARCHAR to DECIMAL; BOOLEAN or DECIMAL to CHAR/VARCHAR; and characte
 character. STRING to DECIMAL uses Flink's complete generated expression, including
 its catch-on-conversion-failure contract: malformed strings and overflow become NULL.
 Setting only the cast executor's legacy flag would still throw for malformed strings.
-BOOLEAN uses the host's legacy lowercase spelling; DECIMAL rendering uses the configured
-host executor. Legacy character casts preserve the original text without applying default
+BOOLEAN uses the host's legacy lowercase spelling; bounded/computed DECIMAL rendering uses the
+configured host executor, while direct DECIMAL inputs/literals to unbounded STRING use Rust.
+Legacy character casts preserve the original text without applying default
 projection trimming or padding, including empty, overlength and surrogate-containing
 strings. Sink length and NOT NULL enforcement remain separate downstream contracts.
 Legacy FLOAT/DOUBLE to DECIMAL is admitted by default. A direct unary cast first tries a native
@@ -1493,29 +1527,40 @@ complete jobs.
 ### Exact unary and integral functions
 
 TINYINT, SMALLINT, INT and BIGINT ABS use a Rust Arrow unary kernel for direct inputs,
-typed literals, lossless integer widening of these inputs, and nested admitted ABS calls.
+typed literals, recursive lossless integer widening, nested admitted ABS calls and
+recursively verified integer addition, subtraction and multiplication of those producers.
+Each arithmetic node retains its resolved integer width and Java overflow wrapping;
+no floating conversion or JVM arithmetic callback is introduced. Same-width integer
+result casts share their Arrow array instead of widening and reconstructing it.
 Both nullable and NOT NULL inputs retain their width. NULL propagates; the minimum negative
 value remains negative, matching Flink's `SqlFunctionUtils.abs` and Java narrowing/wrapping
 rather than DataFusion's checked integer ABS. Input buffers and sliced validity remain owned
 by the input; the kernel allocates the result values and shares validity without a JVM callback.
-Arithmetic, casts outside that whitelist, and other composed ABS arguments retain generated
-Flink evaluation so their overflow, NULL and failure behavior does not change. This replaces
+Division, remainder, casts outside that whitelist, DECIMAL arithmetic and other unverified
+ABS producers retain the enclosing generated Flink evaluation. This replaces
 computation inside an already-admitted Calc and introduces no configuration switch.
 See the [release controls and small-batch limits](../benchmarks/scalar-functions.md#integral-abs).
+The [arithmetic-producer controls](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
+also retain the initially slower native implementation and the cost of the removed casts.
 
 Integer unary minus on direct TINYINT/SMALLINT/INT/BIGINT inputs, typed literals, lossless
-integer widening and nested admitted negation executes a Rust Arrow kernel without a JVM
+integer widening, nested admitted negation and recursively verified integer addition,
+subtraction and multiplication executes a Rust Arrow kernel without a JVM
 evaluator. It retains the resolved width and wraps each signed minimum to itself, including
-scalar literals: verified input-reference chains reuse DataFusion's physical negative
+scalar literals: verified expressions containing input references reuse DataFusion's physical negative
 expression, while literal-rooted chains use wrapping scalar dispatch. DataFusion 54's ordinary
 negative expression checks scalar overflow, so it cannot represent both contracts alone.
 NULLs, sliced validity and ownership
 are preserved. The function route diagnostic includes unary minus; runtime witnesses require
 its native route and consumed batches, rather than interpreting an empty function list as
-evidence. Arithmetic, narrowing and other unverified producers retain generated evaluation
+evidence. Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain generated evaluation
 with their enclosing negation. [Release measurements](../benchmarks/scalar-functions.md#integral-unary-minus)
 compare prepared inputs with stock and the previous callback, and separately report the
 complete row-source job with both transposes.
+
+The [arithmetic-producer controls](../benchmarks/scalar-functions.md#integer-unary-minus-over-arithmetic)
+also cover both constant operand orders through production JNI on JDK 11/17, including
+empty batches, broadcast cardinality and output ownership after the input closes.
 
 DECIMAL ABS also uses the exact Rust kernel for direct input references, typed literals,
 nested admitted ABS and recursive precision widening at the same scale. It preserves
@@ -1806,8 +1851,40 @@ consumer and relational restrictions remain tracked in
 
 ### IS_DECIMAL, IS_DIGIT and IS_ALPHA
 
-`IS_DECIMAL`, `IS_DIGIT` and `IS_ALPHA` use generated evaluation, preserving Flink syntax
-and Unicode classification, including non-nullable FALSE for NULL and empty input.
+`IS_ALPHA` and `IS_DIGIT` on character arguments use native Arrow kernels. They return non-nullable FALSE
+for NULL or empty input and require every UTF-16 `char` to satisfy the actual worker JDK's
+`Character.isLetter` or `Character.isDigit`, respectively. Supplementary letters/digits therefore
+return FALSE, as do isolated surrogates, combining marks and replacement characters. `IS_DIGIT`
+accepts BMP decimal digits such as Arabic-Indic and fullwidth digits, but rejects signs,
+decimal points, superscripts and Roman numerals. These kernels do not use Rust's Unicode version
+or code-point classification. ASCII letters/digits have specialized byte fast paths.
+
+Each JVM copies its own 8 KiB BMP property bitmap once per classifier when first compiled;
+workers obtain their own tables rather than inheriting the planner JDK's classification.
+JNI setup uses a bounded local-reference frame and retains only immutable Rust bytes. Batch
+and row evaluation make no JVM calls. Replacing an isolated surrogate with `?` cannot change
+these predicates, because both fail the letter/digit tests; existing sensitive-expression and arbitrary
+binary STRING boundaries retain their separate admission rules. Already-generated operands
+may still contain their own JVM evaluators. Noncharacter overloads retain generated evaluation,
+including TRUE for integral numeric objects passed to `IS_DIGIT` regardless of sign.
+The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
+include stock Flink and the actual previous callback as well as complete row-source jobs.
+The [digit measurements](../benchmarks/scalar-functions.md#string-is_digit) cover the separate
+digit corpora and preserve small-batch and complete-job costs.
+
+`IS_DECIMAL` on character arguments also runs in a native Arrow kernel, with nonnullable
+FALSE for NULL/empty strings. Its released meaning is successful Java integer, long or
+double parsing, not a Decimal SQL type check. Native ASCII lexical parsing accepts signs,
+fractions, decimal/hexadecimal exponents, floating suffixes, NaN and Infinity, including
+overflow to infinity. Only leading/trailing characters at or below U+0020 are trimmed on
+the double path. Non-ASCII integers require every UTF-16 unit to have a worker-JDK radix-10
+digit value and the signed result to fit BIGINT, without trimming. ASCII integers beyond
+BIGINT still succeed through double syntax, whereas Unicode-digit overflow fails.
+
+The worker snapshots a separate 32 KiB packed radix-10 digit-value table once. No row/batch
+JVM calls or floating conversion are needed to answer the predicate. Numeric and other
+noncharacter object overloads retain generated evaluation. Operand failures and conditional/
+empty-batch rules remain unchanged. See the [decimal classification measurements](../benchmarks/scalar-functions.md#string-is_decimal).
 
 ### UNHEX
 
@@ -3015,6 +3092,10 @@ bridge is retained to allow composition with existing native operators; future p
 claims require measuring that complete pipeline. Reproduce with `ScalarFunctionBenchmark`
 under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` and
 `-Dscalar.warmup=1 -Dscalar.runs=3`, selecting the corresponding `scalar.functions` names.
+
+The IS_ALPHA row records the previous generated evaluator. Current native alpha/digit
+coverage and paired measurements are documented in the classification section and scalar
+benchmark page; this historical table does not describe their current implementation.
 
 ## Flink 1.18 compatibility
 
