@@ -12,6 +12,14 @@ impl WindowCalendar {
     }
 
     pub(crate) fn reject_expired_merge(&self, start: i64, end: i64, clock: i64) {
+        self.reject_merge("rejectExpiredMerge", start, end, clock)
+    }
+
+    pub(crate) fn reject_expired_epoch_merge(&self, start: i64, end: i64, clock: i64) {
+        self.reject_merge("rejectExpiredEpochMerge", start, end, clock)
+    }
+
+    fn reject_merge(&self, method: &str, start: i64, end: i64, clock: i64) {
         let mut env = JVM
             .get()
             .expect("window calendar JVM")
@@ -21,7 +29,7 @@ impl WindowCalendar {
             .with_local_frame(2, |env| -> jni::errors::Result<Result<(), JavaException>> {
                 let called = env.call_method(
                     self.callback.as_obj(),
-                    "rejectExpiredMerge",
+                    method,
                     "(JJJ)V",
                     &[JValue::Long(start), JValue::Long(end), JValue::Long(clock)],
                 );

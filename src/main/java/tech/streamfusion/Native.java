@@ -24,6 +24,11 @@ public final class Native {
 
   public static native void restoreSessionCanonicalWatermark(long handle, long watermark);
 
+  public static native void configureSessionCanonicalAdmission(
+      long handle, long watermark, Object calendar, boolean epochBounds);
+
+  public static native void advanceSessionCanonicalAdmission(long handle, long watermark);
+
   public static native void bindSessionCanonicalDistinct(long handle, int aggregate);
 
   public static native void exportSessionCanonicalDistinct(

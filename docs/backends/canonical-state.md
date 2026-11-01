@@ -247,3 +247,14 @@ typed store through partial and complete firing. The integration native regressi
 1,059 checks with two existing ignores. Processing-time stock-state import and automatic timer
 rearming remain part of the runtime qualification in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
+
+The native SESSION primitive can bind a stock admission watermark independently of its firing
+frontier. Expired new sessions are dropped and expired merges retain the released host failure;
+fixed-offset native bounds are rendered in the stock local domain for diagnostics. The binding
+owns its JVM callback and is transient: callers rebind it from stock UNION state after native
+checkpoint restore, leaving existing checkpoint formats unchanged. Thirty-three direct JNI
+controls cover both stores, keyless state, four zones, inclusive MAX watermarks, monotonic
+admission, input release on rejection and required rebinding after restore. Runtime/planner
+qualification is separate; this primitive alone does not establish complete SESSION coverage.
+Benchmarking remains deferred under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
