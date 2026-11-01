@@ -9,6 +9,8 @@ use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
 use std::sync::Arc;
 
 #[cfg(test)]
+mod distinct_tests;
+#[cfg(test)]
 mod pending_tests;
 
 /// The OVER aggregate's DB holds one table per state shape, every key led by the PARTITION BY
@@ -220,6 +222,7 @@ impl RocksOverAggStore {
             }
         }
         writes.finish()?;
+        store.canonicalize_floating_distinct()?;
         Ok(store)
     }
 
@@ -241,7 +244,7 @@ impl RocksOverAggStore {
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        Ok(Self {
+        let mut store = Self {
             db: opened.db,
             _cache: opened.cache,
             max_parallelism: config.max_parallelism,
@@ -265,7 +268,9 @@ impl RocksOverAggStore {
             next_seq: 0,
             generation: 0,
             write_batch_size: opened.write_batch_size,
-        })
+        };
+        store.canonicalize_floating_distinct()?;
+        Ok(store)
     }
 
     pub(crate) fn with_frame_compatibility(
@@ -647,10 +652,58 @@ impl RocksOverAggStore {
         slot: usize,
         elements: &ArrayRef,
     ) -> Result<Vec<Vec<u8>>, DataFusionError> {
+        let elements = crate::flink_float::canonical_array(elements);
         let rows = self.distinct_converters[slot]
-            .convert_columns(std::slice::from_ref(elements))
+            .convert_columns(std::slice::from_ref(&elements))
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
         Ok(rows.iter().map(|row| row.data().to_vec()).collect())
+    }
+
+    fn canonicalize_floating_distinct(&mut self) -> Result<(), DataFusionError> {
+        let canonical = self
+            .distinct_element_types
+            .iter()
+            .enumerate()
+            .map(|(slot, ty)| {
+                let value = match ty {
+                    DataType::Float64 => ScalarValue::Float64(Some(f64::NAN)),
+                    DataType::Float32 => ScalarValue::Float32(Some(f32::NAN)),
+                    _ => return Ok(None),
+                };
+                self.encode_distinct_elements(slot, &value.to_array()?)
+                    .map(|mut rows| Some(rows.remove(0)))
+            })
+            .collect::<Result<Vec<_>, DataFusionError>>()?;
+        if canonical.iter().all(Option::is_none) {
+            return Ok(());
+        }
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = row.map_err(re)?;
+            if key.len() <= KEY_PREFIX_LEN || key[4] < DISTINCT_TABLE_BASE {
+                continue;
+            }
+            let slot = usize::from(key[4] - DISTINCT_TABLE_BASE);
+            let Some(Some(canonical)) = canonical.get(slot) else {
+                continue;
+            };
+            if key.len() < KEY_PREFIX_LEN + canonical.len() {
+                return Err(DataFusionError::Execution(
+                    "truncated floating OVER DISTINCT key".into(),
+                ));
+            }
+            let start = key.len() - canonical.len();
+            let decoded = Self::decode_rows(&self.distinct_converters[slot], &[&key[start..]])?;
+            if crate::flink_float::canonical_scalar(&decoded[0][0]).is_some()
+                && &key[start..] != canonical.as_slice()
+            {
+                let mut normalized = key[..start].to_vec();
+                normalized.extend_from_slice(canonical);
+                writes.put(normalized, [])?;
+                writes.delete(key)?;
+            }
+        }
+        writes.finish()
     }
 
     /// Presence probe for a batch's (key, element) pairs: one multi-get.

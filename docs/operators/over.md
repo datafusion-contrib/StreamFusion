@@ -1154,3 +1154,14 @@ existing Arrow payload buffers are shared, missing INSERT tags are rebuilt, and 
 caches remain cold as after stock row deserialization. Other schema changes fail before the
 existing pending rows or retention bookkeeping are modified. This applies to ordinary native
 checkpoint recovery as well as canonical imports.
+
+
+### Persistent DISTINCT floating identity
+
+Typed RocksDB OVER membership uses Java boxed FLOAT/DOUBLE equality: NaN payloads share
+one membership key, while positive and negative zero remain distinct. Opening an existing
+native store or merging checkpoint shards normalizes old NaN membership identifiers without
+rewriting accumulator values or partition-key bytes. The migration is idempotent and preserves
+finite values and signed zeros. It does not reconstruct historical scalar results from old
+membership sets. Aligned and merged recovery controls cover both floating widths and retain
+the original serialized fold bytes.
