@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkBooleanStringCastSqlHarnessTest {
@@ -45,15 +44,16 @@ class FlinkBooleanStringCastSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"TINYINT", "SMALLINT", "INT", "BIGINT"})
-  void integerComparisonCastsConsumeNativeWorkAcrossBatches(String type) throws Exception {
-    String sql = ("SELECT id,CAST(n=m AS STRING),CAST(n<>m AS VARCHAR(3)),"
-        + "CAST(n<m AS CHAR(8)),CAST(n<=m AS STRING),CAST(n>m AS VARCHAR(4)),"
-        + "CAST(n>=m AS CHAR(8)),CAST(NOT(n<m) AS STRING),"
-        + "CAST(n>=m OR n=m AS CHAR(8)),CAST((n<m) IS NULL AS STRING),"
-        + "CAST((n<m) AND (n>m OR n=m) AS CHAR(8)),"
-        + "CAST(n+CAST(1 AS $TYPE)<m-CAST(1 AS $TYPE) AS CHAR(8)),"
-        + "CAST(CAST(n AS BIGINT)<CAST(m AS BIGINT) AS STRING) FROM src").replace("$TYPE", type);
+  @MethodSource("integerComparisonModes")
+  void integerComparisonCastsConsumeNativeWorkAcrossBatches(String type, String operator) throws Exception {
+    String sql = ("SELECT id,FORMAT(n=m AS STRING),FORMAT(n<>m AS VARCHAR(3)),"
+        + "FORMAT(n<m AS CHAR(8)),FORMAT(n<=m AS STRING),FORMAT(n>m AS VARCHAR(4)),"
+        + "FORMAT(n>=m AS CHAR(8)),FORMAT(NOT(n<m) AS STRING),"
+        + "FORMAT(n>=m OR n=m AS CHAR(8)),FORMAT((n<m) IS NULL AS STRING),"
+        + "FORMAT((n<m) AND (n>m OR n=m) AS CHAR(8)),"
+        + "FORMAT(n+CAST(1 AS $TYPE)<m-CAST(1 AS $TYPE) AS CHAR(8)),"
+        + "FORMAT(CAST(n AS BIGINT)<CAST(m AS BIGINT) AS STRING) FROM src")
+        .replace("$TYPE", type).replace("FORMAT(", operator + "(");
     for (boolean legacy : new boolean[] {false, true}) {
       for (boolean nullable : new boolean[] {false, true}) {
         var integer = type.equals("TINYINT") ? TINYINT() : type.equals("SMALLINT") ? SMALLINT()
@@ -86,8 +86,8 @@ class FlinkBooleanStringCastSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void integerComparisonConsumersAndEmptyBranchesMatchFlink(boolean legacy) throws Exception {
+  @MethodSource("castModes")
+  void integerComparisonConsumersAndEmptyBranchesMatchFlink(String operator, boolean legacy) throws Exception {
     java.util.function.Supplier<TableEnvironment> factory = () -> {
       var table = environment();
       table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
@@ -97,8 +97,10 @@ class FlinkBooleanStringCastSqlHarnessTest {
         "SELECT n,CHAR_LENGTH(CAST(n<1 AS CHAR(8))),CONCAT(CAST(n>=1 AS STRING),'!') FROM src",
         "SELECT CAST(n<1 AS CHAR(8)),COUNT(*) FROM src GROUP BY CAST(n<1 AS CHAR(8))",
         "SELECT CAST(n<1 AS CHAR(8)) FROM src WHERE n=99",
+        "SELECT LTRIM(CAST(n>=1 AS CHAR(5)),''),RTRIM(CAST(n<1 AS CHAR(4)),'') FROM src",
+        "SELECT LTRIM(CAST(n>=1 AS STRING),CASE WHEN n=0 THEN '' WHEN n=1 THEN 'T' ELSE NULL END) FROM src",
         "SELECT CASE WHEN n>=0 THEN CAST(n<1 AS CHAR(8)) ELSE CAST(n/(n-n)>0 AS CHAR(8)) END FROM src")) {
-      BuiltinFunctionParity.assertParity(factory, sql);
+      BuiltinFunctionParity.assertParity(factory, sql.replace("CAST(", operator + "("));
     }
   }
 
@@ -233,5 +235,10 @@ class FlinkBooleanStringCastSqlHarnessTest {
   private static Stream<Arguments> castModes() {
     return Stream.of(Arguments.of("CAST", false), Arguments.of("CAST", true),
         Arguments.of("TRY_CAST", false), Arguments.of("TRY_CAST", true));
+  }
+
+  private static Stream<Arguments> integerComparisonModes() {
+    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
+        .flatMap(type -> Stream.of(Arguments.of(type, "CAST"), Arguments.of(type, "TRY_CAST")));
   }
 }

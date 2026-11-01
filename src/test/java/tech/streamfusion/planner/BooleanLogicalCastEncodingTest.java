@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 class BooleanLogicalCastEncodingTest {
   @Test
-  void castIntegerComparisonsUseTheNativeFormatter() throws Exception {
+  void bothCastsOfIntegerComparisonsUseTheNativeFormatter() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     for (var name : List.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
@@ -38,9 +38,8 @@ class BooleanLogicalCastEncodingTest {
               for (var cast : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
                 var expression = rex.makeCall(types.createSqlType(target, 8), cast, List.of(predicate));
                 var encoded = BooleanStringCastEncodingTest.configured(expression, legacy);
-                assertEquals(cast == FlinkSqlOperatorTable.CAST, encoded.jvmFunctionCalls().isEmpty(),
-                    expression.toString());
-                if (cast == FlinkSqlOperatorTable.CAST) assertEquals(244, encoded.payload()[0]);
+                assertTrue(encoded.jvmFunctionCalls().isEmpty(), expression.toString());
+                assertEquals(244, encoded.payload()[0]);
               }
             }
           }

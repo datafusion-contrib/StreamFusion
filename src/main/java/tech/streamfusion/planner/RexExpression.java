@@ -4539,10 +4539,10 @@ final class RexExpression {
   private static boolean nativeBooleanCharacterCast(RexCall call) {
     return call.getOperands().size() == 1
         && SqlTypeFamily.CHARACTER.contains(call.getType())
-        && nativeBooleanFormattingOperand(call.getOperands().get(0), call.getKind() == SqlKind.CAST);
+        && nativeBooleanFormattingOperand(call.getOperands().get(0));
   }
 
-  private static boolean nativeBooleanFormattingOperand(RexNode node, boolean integerComparisons) {
+  private static boolean nativeBooleanFormattingOperand(RexNode node) {
     if (node.getType().getSqlTypeName() != SqlTypeName.BOOLEAN) return false;
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
@@ -4551,9 +4551,8 @@ final class RexExpression {
       case IS_NULL:
       case IS_NOT_NULL:
         return call.getOperands().size() == 1
-            && (nativeBooleanFormattingOperand(call.getOperands().get(0), integerComparisons)
-                || integerComparisons
-                    && SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
+            && (nativeBooleanFormattingOperand(call.getOperands().get(0))
+                || SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
                     && nativeIntegralRoundingOperand(call.getOperands().get(0)));
       case NOT:
       case IS_TRUE:
@@ -4561,19 +4560,18 @@ final class RexExpression {
       case IS_FALSE:
       case IS_NOT_FALSE:
         return call.getOperands().size() == 1
-            && nativeBooleanFormattingOperand(call.getOperands().get(0), integerComparisons);
+            && nativeBooleanFormattingOperand(call.getOperands().get(0));
       case AND:
       case OR:
         return call.getOperands().size() >= 2
-            && call.getOperands().stream()
-                .allMatch(operand -> nativeBooleanFormattingOperand(operand, integerComparisons));
+            && call.getOperands().stream().allMatch(RexExpression::nativeBooleanFormattingOperand);
       case EQUALS:
       case NOT_EQUALS:
       case LESS_THAN:
       case LESS_THAN_OR_EQUAL:
       case GREATER_THAN:
       case GREATER_THAN_OR_EQUAL:
-        return integerComparisons && call.getOperands().size() == 2
+        return call.getOperands().size() == 2
             && call.getOperands().stream().allMatch(operand ->
                 SqlTypeFamily.INTEGER.contains(operand.getType())
                     && nativeIntegralRoundingOperand(operand));
