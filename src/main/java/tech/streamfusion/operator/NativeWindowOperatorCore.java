@@ -119,6 +119,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   private static final int KIND_MAX = 2;
 
   private final String timeZoneId;
+  private boolean finalWindows;
   protected final long slideMillis;
   protected final int[] aggregateKinds;
   // One value-column type per aggregate (positionally matching aggregateKinds), so a window can
@@ -296,6 +297,7 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   @Override
   public void open() throws Exception {
     super.open();
+    if (usesAlignedWindowAssignment()) Native.setFixedWindowFinalWindows(handle, finalWindows);
     zone = ZoneId.of(timeZoneId);
     fixedBoundaryOffset = zone.getRules().isFixedOffset();
     if (fixedBoundaryOffset) {
@@ -334,6 +336,16 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
 
   protected final long fixedGridStart(long epochMillis, long gridMillis) {
     return WindowTimeDomain.gridStart(epochMillis, gridMillis, fixedAssignmentOffsetMillis);
+  }
+
+  public final void setFinalWindows() {
+    if (handle != 0)
+      throw new IllegalStateException("Window mode must be bound before initialization");
+    finalWindows = true;
+  }
+
+  public final boolean isFinalWindow() {
+    return finalWindows;
   }
 
   @Override

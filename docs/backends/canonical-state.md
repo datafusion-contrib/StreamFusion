@@ -184,6 +184,12 @@ checkpoint continuation across memory and typed RocksDB. The full native suite p
 checks with two existing ignores. Canonical export remains a direct live-state visit; the new
 mode does not introduce an intermediate native snapshot or a performance gate.
 
+Window operators bind final-window mode before installing the time-zone calendar. This keeps
+regional calendar setup from re-enabling shared slices for a final HOP/CUMULATE merge. The job
+graph retains the mode on ordinary native checkpoint recovery; runtime evidence reads the same
+binding. Java/JNI recovery controls merge additional partials after restore and ensure that a
+closed end stays closed on both native memory and typed RocksDB.
+
 Local windows already emit every pending partial before a checkpoint barrier. A dedicated
 stock-compatible local mode on Flink 2.2 now returns empty snapshot futures after that drain,
 so the stateless stage saves neither native keyed metadata nor serializer references. Missing
