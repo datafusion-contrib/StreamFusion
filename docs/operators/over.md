@@ -1105,3 +1105,8 @@ COUNT continues an imported signed-long boundary using wrapping addition/subtrac
 Flink in debug and release builds. A boundary regression covers both directions; the full native
 regression passes 1,068 checks with two existing ignores. Benchmarking remains deferred until
 functional interoperability coverage is complete.
+
+Nullable decimal SUM retains its selected NULL/value state. The existing running sum restarts
+from the next non-NULL input after decimal overflow, matching the released stock nullable sum.
+An unbounded ROWS/RANGE regression covers intervening NULL input and native snapshot/restore
+between overflow and continuation, for processing-time and event-time execution.

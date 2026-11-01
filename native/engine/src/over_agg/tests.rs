@@ -387,6 +387,69 @@ fn decimal_average_result_overflow_does_not_replace_the_checkpointed_sum() {
 }
 
 #[test]
+fn unbounded_nullable_decimal_sum_restarts_after_overflow_and_restore() {
+    for proctime in [false, true] {
+        for frame in [0, 3] {
+            let mut over = OverWindowAggregator::new(
+                vec![5800],
+                vec![0],
+                1,
+                vec![3],
+                vec![0],
+                frame,
+                0,
+                proctime,
+            );
+            let prefix = reductions(
+                &[100, 200],
+                vec![None; 2],
+                vec![Some(DECIMAL128_MAX - 1), Some(1)],
+                38,
+                0,
+            );
+            let output = if proctime {
+                over.push_proctime(prefix, 0).unwrap()
+            } else {
+                over.push(prefix, 0).unwrap();
+                over.flush(200, 0).unwrap()
+            };
+            assert!(output.column(4).is_null(1));
+            let snapshots = over
+                .snapshot_partitions(8, &[-1])
+                .into_values()
+                .collect::<Vec<_>>();
+            let mut restored = OverWindowAggregator::restore_partitions(
+                vec![5800],
+                vec![0],
+                1,
+                vec![3],
+                vec![0],
+                frame,
+                0,
+                proctime,
+                &snapshots,
+                0,
+                0,
+            );
+            for operator in [&mut over, &mut restored] {
+                let suffix = reductions(&[300, 400], vec![None; 2], vec![None, Some(7)], 38, 0);
+                let output = if proctime {
+                    operator.push_proctime(suffix, 0).unwrap()
+                } else {
+                    operator.push(suffix, 0).unwrap();
+                    operator.flush(400, 0).unwrap()
+                };
+                assert!(output.column(4).is_null(0));
+                assert_eq!(
+                    ScalarValue::try_from_array(output.column(4), 1).unwrap(),
+                    ScalarValue::Decimal128(Some(7), 38, 0)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn decimal_extrema_and_first_last_keep_input_precision_through_every_frame_restore() {
     for (precision, scale) in [(12, 2), (38, 0), (38, 38)] {
         let code = 2000 + precision as i64 * 100 + scale as i64;
