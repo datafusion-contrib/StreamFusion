@@ -51,7 +51,7 @@ const STAMP_LEN: usize = 8;
 const FRAME_SUFFIX_LEN: usize = 16;
 const RT_SIGN_FLIP: u64 = 1 << 63;
 // Arrow row encodings start with a field validity marker, never this ASCII prefix.
-const FRAME_FOLD_VERSION: &[u8] = b"SFOV\x01";
+const FRAME_FOLD_MAGIC: &[u8] = b"SFOV";
 
 /// The late-data watermark and the pending arrival-sequence high-water mark, persisted at
 /// checkpoint under reserved keys whose leading bytes can never be a subtask's key group.
@@ -97,7 +97,8 @@ pub(crate) struct RocksOverAggStore {
     /// `Some` for the bounded shapes: the frame rows' per-aggregate value columns.
     frames_converter: Option<RowConverter>,
     frame_value_types: Vec<DataType>,
-    legacy_frames: Option<(RowConverter, Vec<Option<usize>>)>,
+    frame_version: u8,
+    legacy_frames: Vec<(u8, RowConverter, Vec<Option<usize>>)>,
     /// One element codec per DISTINCT aggregate slot, in gate order.
     distinct_converters: Vec<RowConverter>,
     distinct_element_types: Vec<DataType>,
@@ -110,6 +111,13 @@ pub(crate) struct RocksOverAggStore {
 }
 
 impl RocksOverAggStore {
+    #[cfg(test)]
+    pub(crate) fn insert_frame_fixture(&self, prefix: &[u8], rt: i64, seq: u64, value: &[u8]) {
+        self.db
+            .put(Self::frame_db_key(prefix, rt, seq), value)
+            .unwrap();
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         state_types: &[DataType],
@@ -268,7 +276,8 @@ impl RocksOverAggStore {
                 .then(|| converter(frame_value_types))
                 .transpose()?,
             frame_value_types: frame_value_types.to_vec(),
-            legacy_frames: None,
+            frame_version: 0,
+            legacy_frames: Vec::new(),
             distinct_converters: distinct_element_types
                 .iter()
                 .map(|element| converter(std::slice::from_ref(element)))
@@ -287,40 +296,58 @@ impl RocksOverAggStore {
 
     pub(crate) fn with_frame_compatibility(
         mut self,
-        legacy_types: Vec<DataType>,
-        mapping: Vec<Option<usize>>,
+        layouts: Vec<(u8, Vec<DataType>, Vec<Option<usize>>)>,
     ) -> Self {
-        if legacy_types != self.frame_value_types {
+        for (version, legacy_types, mapping) in layouts {
+            if legacy_types != self.frame_value_types {
+                self.frame_version = self.frame_version.max(version + 1);
+            }
             let converter =
                 RowConverter::new(legacy_types.into_iter().map(SortField::new).collect())
                     .expect("legacy OVER frame codec");
-            self.legacy_frames = Some((converter, mapping));
+            self.legacy_frames.push((version, converter, mapping));
         }
         self
     }
 
     fn decode_frames(&self, values: &[&[u8]]) -> Result<Vec<Vec<ScalarValue>>, DataFusionError> {
         let current = self.frames_converter.as_ref().expect("over frame codec");
-        let Some((legacy, mapping)) = &self.legacy_frames else {
+        if self.legacy_frames.is_empty() {
             return Self::decode_rows(current, values);
-        };
+        }
         let mut out = vec![Vec::new(); values.len()];
-        for old in [false, true] {
-            let selected: Vec<_> = values
-                .iter()
-                .enumerate()
-                .filter_map(
-                    |(index, value)| match value.strip_prefix(FRAME_FOLD_VERSION) {
-                        Some(value) if !old => Some((index, value)),
-                        None if old => Some((index, *value)),
-                        _ => None,
-                    },
+        let mut versions: BTreeMap<u8, Vec<(usize, &[u8])>> = BTreeMap::new();
+        for (index, value) in values.iter().enumerate() {
+            let (version, value) = match value.strip_prefix(FRAME_FOLD_MAGIC) {
+                Some([version, value @ ..]) => (*version, value),
+                Some([]) => {
+                    return Err(DataFusionError::Execution(
+                        "truncated OVER frame codec version".into(),
+                    ))
+                }
+                None => (0, *value),
+            };
+            versions.entry(version).or_default().push((index, value));
+        }
+        for (version, selected) in versions {
+            let legacy = if version == self.frame_version {
+                None
+            } else {
+                Some(
+                    self.legacy_frames
+                        .iter()
+                        .find(|(old, _, _)| *old == version)
+                        .ok_or_else(|| {
+                            DataFusionError::Execution(format!(
+                                "unsupported OVER frame codec version {version}"
+                            ))
+                        })?,
                 )
-                .collect();
+            };
             let bytes: Vec<_> = selected.iter().map(|(_, value)| *value).collect();
-            let decoded = Self::decode_rows(if old { legacy } else { current }, &bytes)?;
+            let decoded = Self::decode_rows(legacy.map_or(current, |(_, codec, _)| codec), &bytes)?;
             for ((index, _), row) in selected.into_iter().zip(decoded) {
-                out[index] = if old {
+                out[index] = if let Some((_, _, mapping)) = legacy {
                     mapping
                         .iter()
                         .zip(&self.frame_value_types)
@@ -558,9 +585,10 @@ impl RocksOverAggStore {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         let mut encoded = Vec::new();
         for ((prefix, rt, seq), row) in entries.iter().zip(rows.iter()) {
-            let value = if self.legacy_frames.is_some() {
+            let value = if self.frame_version > 0 {
                 encoded.clear();
-                encoded.extend_from_slice(FRAME_FOLD_VERSION);
+                encoded.extend_from_slice(FRAME_FOLD_MAGIC);
+                encoded.push(self.frame_version);
                 encoded.extend_from_slice(row.data());
                 encoded.as_slice()
             } else {

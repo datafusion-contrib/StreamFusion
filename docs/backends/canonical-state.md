@@ -281,3 +281,13 @@ for ordinary execution but cannot invent missing original rows. Direct canonical
 reads live inputs without producing a native snapshot first. This foundation does not yet admit
 stock bounded OVER canonical interchange: its complete stock state and timer projection remains
 part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Bounded OVER native arithmetic now retains primitive SUM's nullable sum and independent live
+count alongside SUM0, COUNT and widened AVG state. Native frame checkpoints carry those fields
+without serializing evaluated averages. The persistent reader accepts unmarked, version 1 and
+expanded version 2 frame values; memory readers accept the preceding fold-column layouts.
+Native migration preserves known old fields and marks unrecorded arithmetic explicitly. It cannot
+recover history an old implementation discarded. Direct stock bounded projection remains
+unqualified until the full released accumulator/view/buffer/counter/timer contract is installed;
+ordinary native checkpoint migration is not a stock conversion step.

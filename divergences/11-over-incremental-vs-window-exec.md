@@ -70,31 +70,24 @@ serialized for checkpointing, matching Flink's `OverAggregate` exactly. For
 `ROW_NUMBER` this is identical to DataFusion's own evaluator (`n+1`), so nothing is
 re-derived; for the others the logic is small and Flink-defined.
 
-## Bounded frame — recompute over the slice, not incremental retraction
-A bounded frame — `ROWS BETWEEN n PRECEDING AND CURRENT ROW` (by row count) or
-`RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` (by rowtime interval) — slides:
-rows fall off the trailing edge. The unbounded incremental accumulator above cannot
-serve it, because `MIN`/`MAX` are not retractable — once the running extreme leaves
-the frame there is no way to recover the new extreme without the underlying values.
-Flink's `RowTimeRowsBoundedPrecedingFunction` / `RowTimeRangeBoundedPrecedingFunction`
-solve this by keeping the frame's rows in `MapState` and a **retractable**
-accumulator, retracting each row as it leaves.
+## Bounded frame — retained rows and incremental arithmetic
 
-We take the model **RisingWave defaults to** instead: keep a per-key sorted buffer of
-the rows still reachable by some future frame and **recompute** each emitted row's
-aggregate over its frame slice with a fresh accumulator. The result is identical to
-Flink (both aggregate over the same frame extent), and recompute sidesteps the
-non-retractable-`MIN`/`MAX` problem entirely — the bounded path reuses the same
-`RunningAgg` fold the unbounded path uses, just folded fresh per row over the slice
-rather than once cumulatively. The slice is `buffer[i-n ..= i]` for ROWS; for RANGE it
-is `[first rt ≥ cur−offset, last rt ≤ cur]`, found by binary search, and rows of equal
-rowtime share one frame (ending at the last tied row), matching Flink's RANGE
-semantics. Cost is O(frame size) per row, fine for a bounded frame; the trailing edge
-is evicted (ROWS: keep the last `max(n, 1)` rows per key; RANGE: drop rows older than
-that key’s `lastRowtime − offset`) so memory stays bounded. This is an **algorithmic** divergence
-from Flink's retraction-based operator with **identical output** — chosen because it is
-simpler and correct where incremental retraction would need a MIN/MAX value multiset we
-do not keep.
+A bounded ROWS or RANGE frame retains a per-key sorted buffer. Numeric SUM/SUM0/AVG and COUNT
+keep raw incremental arithmetic beside the final retained row, retracting expired values before
+adding arrivals. Primitive SUM also retains its independent non-null count; an empty live count
+changes the result to NULL without resetting the raw sum. Recomputing the surviving slice loses
+FLOAT/DOUBLE rounding and NaN history, just as it loses decimal overflow history. AVG has its
+own widened sum and count, independent of SUM's input/result width. Numeric DISTINCT folds
+rebuild multiplicity from retained values without reapplying the saved arithmetic.
+
+Numeric MIN/MAX and other selections without retractable views still evaluate the reachable
+slice. String reductions retain their existing retractable membership and selection history.
+ROWS uses the slice through the current arrival; RANGE includes all peers up to the current
+rowtime. Arithmetic and string views retain the full `n + 1` prior ROWS frame needed for the next
+retraction; value-only recomputation can retain `max(n, 1)`. Explicit original-input retention also
+keeps the full current frame. RANGE evicts values older than its key's latest rowtime minus offset.
+Our orchestration remains the incremental streaming operator rather than Arroyo's per-instant
+DataFusion window execution plan, because the state must survive native and stock snapshots.
 
 Flink seeds `lastTriggeringTs = 0` in these operators and drops a row whose rowtime is
 `<= 0` as late. We preserve that rule and reject timestamps at or before the key's last firing,
@@ -107,13 +100,15 @@ watermark comparison. See the OVER coverage page for restore and expiry behavior
 
 ## Scope
 
-Decimal reductions add an exception to bounded recomputation. Its
-sum/count fold is retained beside the final frame row in the existing frame
-codec, and expired values retract before new values accumulate. SUM can replace a
-NULL overflowed buffer on a later value, while SUM0 and AVG retain NULL. Rebuilding
-each frame from its remaining rows loses that history. ROWS therefore keeps the
-full prior frame for its next retraction; the existing non-arithmetic path keeps
-its previous snapshot columns.
+Arithmetic fold columns preserve the exact current sum and independent counts. SUM can replace
+a NULL overflowed decimal buffer on later input; SUM0 and AVG retain NULL. The raw scalar remains
+independent of DISTINCT membership and of whether the evaluated result is NULL. Native memory
+checkpoints read the two earlier fold layouts. Persistent frame rows carry an explicit format
+version: expanded arithmetic uses version 2 while readers retain unmarked and version 1 codecs.
+Known historical fields keep their values, and absent old fields retain missing markers until the
+ordinary native reader seeds them from retained rows. This cannot reconstruct discarded history
+and is distinct from direct stock canonical export. Frozen fixtures from an independently built
+prior library verify historical layouts without depending on the current writer to recreate them.
 
 Released Flink's RANGE SUM also exposes state-backend iteration order after
 decimal overflow. For a 1,000-ms frame with `(time,value)` arrivals

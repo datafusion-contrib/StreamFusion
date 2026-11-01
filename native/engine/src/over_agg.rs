@@ -16,7 +16,27 @@ mod string_views;
 use string_views::StringView;
 
 #[cfg(test)]
+mod bounded_arithmetic_tests;
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+fn legacy_frame_fixture(name: &str) -> Vec<u8> {
+    use base64::Engine;
+    let fixtures: serde_json::Value =
+        serde_json::from_str(include_str!("over_agg/legacy_frame_fixtures.json")).unwrap();
+    assert_eq!(
+        fixtures["writer_commit"],
+        "0dd7e98bf246cd2c1e31dfdd438b085111b57473"
+    );
+    base64::engine::general_purpose::STANDARD
+        .decode(
+            fixtures["fixtures"][name]
+                .as_str()
+                .expect("historical OVER fixture"),
+        )
+        .unwrap()
+}
 
 struct HeapSnapshotProbe {
     object: jni::objects::GlobalRef,
@@ -261,6 +281,7 @@ fn over_buffer_value(kind: i64, scalar: &ScalarValue) -> Option<Num> {
 
 pub(crate) struct OverAggState {
     agg: RunningAgg,
+    retracting_sum: bool,
     non_null: i64,
     distinct: Option<DistinctSet>,
     distinct_payload_bytes: usize,
@@ -272,11 +293,26 @@ impl OverAggState {
         let distinct = kind >= 100;
         Self {
             agg: RunningAgg::new_over(if distinct { kind - 100 } else { kind }, value_type),
+            retracting_sum: false,
             non_null: 0,
             distinct: distinct.then(|| DistinctSet::new(value_type)),
             distinct_payload_bytes: 0,
             value_type: value_type.clone(),
         }
+    }
+
+    fn bounded(kind: i64, value_type: &DataType) -> Self {
+        let mut state = Self::new(kind, value_type);
+        state.retracting_sum = matches!(
+            state.agg,
+            RunningAgg::SumI8(_)
+                | RunningAgg::SumI16(_)
+                | RunningAgg::SumI32(_)
+                | RunningAgg::SumI64(_)
+                | RunningAgg::SumF32(_)
+                | RunningAgg::SumF64(_)
+        );
+        state
     }
 
     fn fold(&mut self, value: Num) {
@@ -429,13 +465,14 @@ impl OverAggState {
     }
 
     fn has_count_state(&self) -> bool {
-        matches!(
-            self.agg,
-            RunningAgg::AvgInt { .. }
-                | RunningAgg::AvgFloat { .. }
-                | RunningAgg::AvgDecimal { .. }
-                | RunningAgg::SumDecimal { .. }
-        )
+        self.retracting_sum
+            || matches!(
+                self.agg,
+                RunningAgg::AvgInt { .. }
+                    | RunningAgg::AvgFloat { .. }
+                    | RunningAgg::AvgDecimal { .. }
+                    | RunningAgg::SumDecimal { .. }
+            )
     }
 
     fn state_types(&self) -> Vec<DataType> {
@@ -1095,10 +1132,29 @@ impl BoundedOverAggregator {
             .iter()
             .map(|&code| value_data_type(code))
             .collect::<Vec<_>>();
-        let arithmetic_slots = Self::arithmetic_slots(&kinds, &value_types, false);
+        let arithmetic_slots = kinds
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, kind)| {
+                (matches!(kind % 100, 0 | 4 | 22)
+                    || *kind == 3
+                    || (*kind == 103
+                        && matches!(
+                            value_types[slot],
+                            DataType::Int8
+                                | DataType::Int16
+                                | DataType::Int32
+                                | DataType::Int64
+                                | DataType::Float32
+                                | DataType::Float64
+                                | DataType::Decimal128(_, _)
+                        )))
+                .then_some(slot)
+            })
+            .collect::<Vec<_>>();
         let mut fold_types: Vec<DataType> = arithmetic_slots
             .iter()
-            .flat_map(|&slot| OverAggState::new(kinds[slot], &value_types[slot]).state_types())
+            .flat_map(|&slot| OverAggState::bounded(kinds[slot], &value_types[slot]).state_types())
             .collect();
         let arithmetic_width = fold_types.len();
         let string_view_slots = kinds
@@ -1162,8 +1218,8 @@ impl BoundedOverAggregator {
 
     /// Old primitive SUM0 plans used SUM and did not persist a floating-point fold.
     /// Map those fields by aggregate slot, keeping any trailing string views aligned.
-    fn legacy_fold_layout(&self) -> (Vec<DataType>, Vec<Option<usize>>) {
-        let slots = Self::arithmetic_slots(&self.kinds, &self.value_types, true);
+    fn legacy_fold_layout(&self, before_float_zero: bool) -> (Vec<DataType>, Vec<Option<usize>>) {
+        let slots = Self::arithmetic_slots(&self.kinds, &self.value_types, before_float_zero);
         let mut legacy_types = Vec::new();
         let mut offsets = HashMap::default();
         for slot in slots {
@@ -1174,7 +1230,7 @@ impl BoundedOverAggregator {
         let string_offset = legacy_types.len();
         let mut mapping = Vec::new();
         for &slot in &self.arithmetic_slots {
-            let width = OverAggState::new(self.kinds[slot], &self.value_types[slot])
+            let width = OverAggState::bounded(self.kinds[slot], &self.value_types[slot])
                 .state_types()
                 .len();
             mapping
@@ -1433,7 +1489,7 @@ impl BoundedOverAggregator {
                             .arithmetic_slots
                             .iter()
                             .map(|&slot| {
-                                OverAggState::new(self.kinds[slot], &self.value_types[slot])
+                                OverAggState::bounded(self.kinds[slot], &self.value_types[slot])
                             })
                             .collect::<Vec<_>>();
                         if i > 0 {
@@ -1447,10 +1503,11 @@ impl BoundedOverAggregator {
                                 let width = state.state_types().len();
                                 let stored = &saved[column..column + width];
                                 let missing = stored.iter().all(ScalarValue::is_null)
-                                    && !matches!(
-                                        self.value_types[slot],
-                                        DataType::Decimal128(_, _)
-                                    );
+                                    && (self.kinds[slot] % 100 == 3
+                                        || !matches!(
+                                            self.value_types[slot],
+                                            DataType::Decimal128(_, _)
+                                        ));
                                 if missing {
                                     for previous in &buffer[..i] {
                                         if let Some(value) = previous.values[slot] {
@@ -1754,13 +1811,12 @@ impl BoundedOverAggregator {
             let mapping = if fold_count == aggregator.fold_types.len() {
                 (0..fold_count).map(Some).collect::<Vec<_>>()
             } else {
-                let (legacy_types, mapping) = aggregator.legacy_fold_layout();
-                assert_eq!(
-                    fold_count,
-                    legacy_types.len(),
-                    "bounded OVER checkpoint fold layout"
-                );
-                mapping
+                [false, true]
+                    .into_iter()
+                    .map(|old| aggregator.legacy_fold_layout(old))
+                    .find(|(types, _)| types.len() == fold_count)
+                    .expect("bounded OVER checkpoint fold layout")
+                    .1
             };
             // Trailing rt + one value column per agg (+ the optional retention stamp).
             let arity = batch.num_columns()
@@ -2902,17 +2958,23 @@ impl OverWindowAggregator {
             inner.capture_inputs |= store
                 .frame_inputs_enabled()
                 .expect("OVER frame input marker");
-            let (fold_types, fold_mapping) = inner.legacy_fold_layout();
             let count = inner.kinds.len();
-            let mut legacy_types = inner.value_types.clone();
-            legacy_types.extend(fold_types);
-            let mut mapping: Vec<_> = (0..count).map(Some).collect();
-            mapping.extend(
-                fold_mapping
-                    .into_iter()
-                    .map(|column| column.map(|column| column + count)),
-            );
-            store = store.with_frame_compatibility(legacy_types, mapping);
+            let layouts = [(0, true), (1, false)]
+                .into_iter()
+                .map(|(version, old)| {
+                    let (fold_types, fold_mapping) = inner.legacy_fold_layout(old);
+                    let mut types = inner.value_types.clone();
+                    types.extend(fold_types);
+                    let mut mapping: Vec<_> = (0..count).map(Some).collect();
+                    mapping.extend(
+                        fold_mapping
+                            .into_iter()
+                            .map(|column| column.map(|column| column + count)),
+                    );
+                    (version, types, mapping)
+                })
+                .collect();
+            store = store.with_frame_compatibility(layouts);
             inner.range_order = None;
         }
         self.store_state_types = self.inner.store_state_types();

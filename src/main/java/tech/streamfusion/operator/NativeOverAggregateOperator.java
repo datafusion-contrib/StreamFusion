@@ -284,7 +284,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
         if ((!proctime
                 && frameKind == 2
                 && ((valueTypes[i] >= 2000 && (kind == 0 || kind == 4 || kind == 22))
-                    || ((valueTypes[i] == 1 || valueTypes[i] == 6) && kind == 22)))
+                    || ((valueTypes[i] == 1 || valueTypes[i] == 6)
+                        && (kind == 0 || kind == 4 || kind == 22))))
             || (valueTypes[i] == 3
                 && (aggregateKinds[i] == 1
                     || aggregateKinds[i] == 2

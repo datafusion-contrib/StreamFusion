@@ -236,9 +236,12 @@ Select these profiles with `NonTimeRowNumberBenchmark` under `-Pbench` and
 ## Frame shapes
 
 Running checkpoints retain raw widened sums and non-null counts for AVG and decimal SUM.
-The evaluated average is never restored as a sum. Bounded decimal SUM/SUM0/AVG and floating
-SUM0 retract expired values before adding arrivals and retain their arithmetic history. This
-preserves decimal overflow and FLOAT/DOUBLE rounding rather than refolding the retained slice. Typed
+The evaluated average is never restored as a sum. Bounded numeric SUM/SUM0/AVG and COUNT
+retain their raw arithmetic state and retract expired values before adding arrivals. Primitive
+SUM includes an independent non-null count, so an empty frame emits NULL without normalizing
+its stored sum. Raw rounding/NaN history can affect a later nonempty frame. AVG keeps its own
+widened sum/count; a FLOAT SUM cannot substitute for its DOUBLE accumulator. Numeric DISTINCT
+reductions preserve arithmetic while reconstructing retained multiplicities. Typed
 extrema/selections retain the input decimal scale or both timestamp components. Precision 0/3
 values normalize to the released serializer's millisecond representation before aggregation;
 precision 6/9 values retain their fractional nanoseconds.
@@ -308,8 +311,9 @@ DECIMAL also admits DISTINCT SUM/SUM0/AVG; other DISTINCT aggregates retain the 
 
 ### Bounded `ROWS BETWEEN n PRECEDING AND CURRENT ROW`
 
-Retains the preceding row slice plus the current row. Decimal SUM/SUM0/AVG, floating SUM0
-and string reductions retract expired membership; other reductions fold the retained slice.
+Retains the preceding row slice plus the current row. Numeric SUM/SUM0/AVG, COUNT and string
+reductions retract expired membership; other reductions fold the retained slice. Non-numeric
+DISTINCT COUNT retains its existing frame recomputation path.
 
 ### Bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW`
 
@@ -1248,3 +1252,27 @@ RocksDB, repeated and advancing clocks, and stock canonical savepoint continuati
 aggregate field order from the actual compiled plan. These are stock protocol controls, not
 bidirectional bounded-OVER qualification; the full contract remains required under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+### Bounded arithmetic checkpoint layouts
+
+Native bounded frames now retain primitive SUM/count and AVG/count even when a query has no
+decimal or SUM0 aggregate. Retraction order for floating RANGE sums follows the backing
+MapState order, including heap snapshot reconstruction. Counts reaching zero change evaluated
+NULL results without discarding raw sums, signed zeros or NaN history. This closes the
+information gap that prevented a stock bounded accumulator from being projected directly.
+
+Native memory checkpoints accept the two preceding fold-column layouts. Typed RocksDB writes
+version 2 frame values when the expanded layout differs, and reads unmarked and version 1
+values in the same store. Known raw fields remain independent; older fields that were never
+recorded use explicit missing markers and the ordinary native restore path seeds them from
+the retained inputs. That migration cannot recover arithmetic history an earlier implementation
+discarded, and does not qualify older native checkpoints as exact stock canonical state.
+Forty-four frozen historical fixtures were generated with the independently built library from
+`0dd7e98b`; normal tests read them rather than regenerating an old format with the current writer.
+The generator validates the supplied historical library hash before explicit regeneration.
+
+The stock bounded accumulator/view/buffer/counter/timer adapter and its planner admission still
+remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+This change preserves native arithmetic; it does not claim complete bounded savepoint interchange.
+Benchmarking and tuning remain deferred.
