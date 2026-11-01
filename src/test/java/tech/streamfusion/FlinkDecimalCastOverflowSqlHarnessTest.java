@@ -94,7 +94,7 @@ class FlinkDecimalCastOverflowSqlHarnessTest {
     // TRY_CAST remains nullable; overflowing operands must not inherit CAST's empty default.
     for (String target : List.of("STRING", "VARCHAR(3)", "CHAR(8)")) {
       NativeFailureParity.run(factory, "SELECT id,TRY_CAST(d*d AS " + target + ") FROM src")
-          .assertSuccess(NativeFailureParity.Route.FALLBACK);
+          .assertSuccess(NativeFailureParity.Route.NATIVE);
     }
   }
 

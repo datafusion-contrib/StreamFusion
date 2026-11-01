@@ -3907,7 +3907,7 @@ final class RexExpression {
                 org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS)
             || nativeDecimalUnaryOperand(call.getOperands().get(0),
                 org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)
-            || !tryCast && sourceType.isNullable() && resultType.isNullable()
+            || (tryCast || sourceType.isNullable()) && resultType.isNullable()
                 && nativeDecimalFormattingArithmetic(call.getOperands().get(0)))) {
       boolean bounded = Boolean.FALSE.equals(legacyCastBehaviour)
           && resultType.getPrecision() != Integer.MAX_VALUE;

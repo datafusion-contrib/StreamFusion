@@ -33,6 +33,42 @@ class FlinkDecimalStringCastSqlHarnessTest {
   }
 
   @ParameterizedTest
+  @CsvSource({"1,1", "4,3", "18,0", "18,3", "18,18", "19,0", "38,18", "38,38"})
+  void decimalArithmeticTryCastPreservesOverflowNullsWithoutAnEvaluator(int precision, int scale)
+      throws Exception {
+    String sql = "SELECT id,TRY_CAST(d+d AS STRING),TRY_CAST(d-d AS STRING),"
+        + "TRY_CAST(d*d AS STRING),TRY_CAST((d+d)*d AS VARCHAR(3)),"
+        + "TRY_CAST(d*(d-d) AS CHAR(44)),TRY_CAST(ABS(d)+d AS CHAR(8)),"
+        + "TRY_CAST(d-(-d) AS VARCHAR(3)) FROM src";
+    for (boolean legacy : new boolean[] {false, true}) {
+      for (boolean nullable : new boolean[] {false, true}) {
+        assertRuntimeCasts(sql, precision, scale, legacy, nullable);
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void decimalArithmeticTryCastConsumersKeepNullFlags(boolean legacy) throws Exception {
+    java.util.function.Supplier<TableEnvironment> factory = () -> environment(38, 18, legacy);
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT id,CONCAT(TRY_CAST(d*d AS STRING),'!'),CHAR_LENGTH(TRY_CAST(d+d AS CHAR(8))),"
+            + "CASE WHEN id>=0 THEN TRY_CAST(d*d AS STRING) "
+            + "ELSE CAST(d/(id-id) AS STRING) END FROM src");
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT id FROM src WHERE TRY_CAST(d*d AS STRING) LIKE '0%' "
+            + "OR TRY_CAST(d-d AS STRING) IS NULL");
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT TRY_CAST(d*d AS STRING),CAST(d/(id-id) AS STRING) FROM src WHERE id<0");
+    NativeParity.assertChangelogParity(factory,
+        "SELECT c,COUNT(*) FROM (SELECT TRY_CAST(d*d AS STRING) AS c FROM src) GROUP BY c");
+    BuiltinFunctionParity.assertParity(() -> environment(18, 3, legacy),
+        "SELECT id,LTRIM(TRY_CAST(d+d AS CHAR(5)),''),RTRIM(TRY_CAST(d+d AS VARCHAR(5)),''),"
+            + "LTRIM(TRY_CAST(d*d AS VARCHAR(8)),''),RTRIM(TRY_CAST(d*d AS CHAR(8)),'') "
+            + "FROM src WHERE id=2");
+  }
+
+  @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void nullableDecimalArithmeticCastKeepsConsumersAndLazyBranches(boolean legacy) throws Exception {
     java.util.function.Supplier<TableEnvironment> factory = () -> environment(38, 18, legacy);
@@ -308,10 +344,10 @@ class FlinkDecimalStringCastSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  void boundedTryCastComputedDecimalsRetainTheirExistingFallback(boolean legacy) throws Exception {
+  void boundedTryCastUnverifiedComputedDecimalsRetainTheirExistingFallback(boolean legacy)
+      throws Exception {
     NativeParity.assertFallback(() -> environment(18, 3, legacy),
-        "SELECT TRY_CAST(d+CAST(1 AS DECIMAL(18,3)) AS CHAR(2)),"
-            + "TRY_CAST(d+CAST(1 AS DECIMAL(18,3)) AS VARCHAR(2)) FROM src");
+        "SELECT TRY_CAST(d+id AS CHAR(2)),TRY_CAST(d+id AS VARCHAR(2)) FROM src");
   }
 
   private static TableEnvironment environment(int precision, int scale, boolean legacy) {

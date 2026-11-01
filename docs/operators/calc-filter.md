@@ -1167,10 +1167,12 @@ Native, unconditionally, with no host involvement:
   and same-scale precision widening before or after those operators. Their released-Flink result
   precision/scale stays unchanged, so the same formatter and ASCII width kernels apply. This
   computed-operand proof excludes failures while evaluating the operand; TRY_CAST does not catch
-  such failures. CAST additionally admits nullable, DECIMAL-only addition, subtraction and
+  such failures. Both casts additionally admit DECIMAL-only addition, subtraction and
   multiplication trees, including already verified unary inputs. Every arithmetic node keeps its
-  resolved precision/scale, and overflow stays SQL NULL. The character result must also be nullable.
-  NOT NULL arithmetic retains the generated projection contract described below; TRY_CAST,
+  resolved precision/scale, and overflow stays SQL NULL. CAST requires a nullable computed source
+  and character result. TRY_CAST's character result is nullable, so it also admits NOT NULL
+  arithmetic inputs and retains overflow NULL instead of CAST's empty projection default.
+  NOT NULL arithmetic CAST retains the generated projection contract described below;
   division/remainder, mixed numeric operands and other producers keep their preceding routes.
   Unknown length configuration and other computed DECIMAL operands retain their existing
   evaluator/admission rules. In particular,
@@ -1179,7 +1181,8 @@ Native, unconditionally, with no host involvement:
   [direct DECIMAL formatting measurements](../benchmarks/scalar-functions.md#decimal-to-string)
   and unary [CAST](../benchmarks/scalar-functions.md#decimal-unary-cast-to-character) /
   [TRY_CAST measurements](../benchmarks/scalar-functions.md#decimal-unary-try_cast-to-character),
-  and [nullable arithmetic CAST measurements](../benchmarks/scalar-functions.md#nullable-decimal-arithmetic-cast-to-character).
+  and arithmetic [CAST](../benchmarks/scalar-functions.md#nullable-decimal-arithmetic-cast-to-character) /
+  [TRY_CAST measurements](../benchmarks/scalar-functions.md#decimal-arithmetic-try_cast-to-character).
 - **`CHAR`/`VARCHAR` → `VARCHAR`** when the target length is ≥ the source length — an unpadded
   no-op (e.g. the common `COALESCE(s, 'x')` pattern).
 - **Widening timestamp precision** within `TIMESTAMP` or within `TIMESTAMP_LTZ` — Arrow stores both
@@ -1401,9 +1404,12 @@ filters, conditional consumers, grouping and aggregation across multiple batches
 Direct DECIMAL input references and literals also format to STRING/VARCHAR/CHAR through the
 native formatter described above. It preserves scale, plain notation and NULLs in modern
 and legacy modes without a JVM evaluator. Modern bounded targets truncate/pad; legacy ignores length.
-Verified ABS/unary-minus trees and same-scale precision widening also stay native. Other computed
-DECIMAL operands keep their previous rules; in particular, TRY_CAST does not catch an error raised
-while computing its input. See the [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast).
+Verified ABS/unary-minus trees and same-scale precision widening also stay native. The DECIMAL-only
+addition/subtraction/multiplication proof also formats through TRY_CAST with nullable or NOT NULL
+sources. Its character result remains nullable and arithmetic overflow remains SQL NULL. Other
+computed DECIMAL operands keep their previous rules; in particular, TRY_CAST does not catch an
+error raised while computing its input. See the direct [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast)
+and [arithmetic qualification](../benchmarks/scalar-functions.md#decimal-arithmetic-try_cast-to-character).
 
 Already-evaluated internal Flink decimals cross Arrow without another precision check. Flink's
 compact text parser can retain a rounding carry (`999.995` to DECIMAL(5,2) yields `1000.00`);
@@ -1421,7 +1427,8 @@ cast, with the rest of the expression tree still evaluated natively around it:
 - **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **computed DECIMAL → character**.
   Direct DECIMAL inputs/literals use the native formatter for CAST and TRY_CAST to STRING/VARCHAR/CHAR.
   Both casts also keep verified ABS/unary-minus trees and same-scale precision widening native;
-  CAST also keeps the nullable DECIMAL-only addition/subtraction/multiplication proof above native.
+  CAST also keeps the nullable DECIMAL-only addition/subtraction/multiplication proof above native;
+  TRY_CAST admits the same arithmetic proof with nullable or NOT NULL inputs.
   Other computed DECIMAL producers retain the host route or their existing fallback.
   For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
   condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
