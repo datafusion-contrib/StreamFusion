@@ -2,6 +2,7 @@ use crate::*;
 
 mod canonical;
 mod cleanup;
+mod pending;
 
 mod range_order;
 mod string_first_last;
@@ -3272,6 +3273,7 @@ impl OverWindowAggregator {
         } else {
             batch
         };
+        self.align_pending_schema(&batch)?;
         self.input_schema = Some(batch.schema());
         let on_time = self.admission_mask(&batch, now_ms)?;
         let input_rows = batch.num_rows();

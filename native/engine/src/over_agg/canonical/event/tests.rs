@@ -591,3 +591,100 @@ fn event_state_transfer_rejects_processing_time_bounded_and_distinct_shapes() {
         assert!(target.cleanup_state.is_empty());
     }
 }
+
+#[test]
+fn restored_pending_rows_accept_optional_insert_and_string_cache_companions() {
+    use arrow::array::{Int8Array, StringArray};
+    use streamfusion_bridge::string_cache::{string_cache_array, string_cache_field};
+    for old_kind in [false, true] {
+        for new_kind in [false, true] {
+            for old_cache in [false, true] {
+                for new_cache in [false, true] {
+                    let make = |time: i64, kind: bool, cache: bool| {
+                        let original = timed(&[Some(1)], &[Some(2.0)], &[time]);
+                        let mut fields = original
+                            .schema()
+                            .fields()
+                            .iter()
+                            .map(|field| field.as_ref().clone())
+                            .collect::<Vec<_>>();
+                        let mut columns = original.columns().to_vec();
+                        fields.push(Field::new("payload", DataType::Utf8, false));
+                        columns.push(Arc::new(StringArray::from(vec!["😀"])));
+                        if kind {
+                            fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+                            columns.push(Arc::new(Int8Array::from(vec![0])));
+                        }
+                        if cache {
+                            let units = "😀".encode_utf16().collect::<Vec<_>>();
+                            let array = string_cache_array([Some(units.as_slice())]);
+                            fields.push(string_cache_field(3, array.data_type().clone()));
+                            columns.push(array);
+                        }
+                        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+                    };
+                    let mut target = memory(false, true, 1000);
+                    target.proctime = false;
+                    let restored = make(10, old_kind, old_cache);
+                    let address = restored.column(3).to_data().buffers()[1].as_ptr();
+                    target.import_canonical_pending(restored).unwrap();
+                    target.push(make(11, new_kind, new_cache), 100).unwrap();
+                    assert_eq!(
+                        target.buffered[0].column(3).to_data().buffers()[1].as_ptr(),
+                        address
+                    );
+                    let output = target.flush(11, 101).unwrap();
+                    assert_eq!(output.num_rows(), 2);
+                    assert_eq!(
+                        output
+                            .column(3)
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .unwrap()
+                            .value(0),
+                        "😀"
+                    );
+                    assert_eq!(
+                        output
+                            .column(4)
+                            .as_any()
+                            .downcast_ref::<arrow::array::Float64Array>()
+                            .unwrap()
+                            .values(),
+                        &[2.0, 4.0]
+                    );
+                    if new_cache && !old_cache {
+                        assert!(output.column_by_name("$string_java_3$").unwrap().is_null(0));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn pending_schema_change_rejects_logical_columns_before_touching_live_state() {
+    let mut target = memory(false, true, 1000);
+    target.proctime = false;
+    target
+        .import_canonical_pending(timed(&[Some(1)], &[Some(2.0)], &[10]))
+        .unwrap();
+    let before = pending(&target);
+    let invalid = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, true),
+            Field::new("value", DataType::Int64, true),
+            Field::new("time", DataType::Int64, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1])),
+            Arc::new(Int64Array::from(vec![2])),
+            Arc::new(Int64Array::from(vec![11])),
+        ],
+    )
+    .unwrap();
+    assert!(target.push(invalid, 100).is_err());
+    assert_eq!(pending(&target), before);
+    assert!(target.cleanup_state.is_empty());
+    assert_eq!(target.pending_rows.values().sum::<u32>(), 1);
+}

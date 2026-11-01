@@ -1146,3 +1146,11 @@ canonical import. These are native component contracts; the released Flink event
 cleanup ValueState and timer queues still require the stock adapter, planner binding and full-job
 qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking remains deferred.
+
+
+Restored native event-time buffers can accept live batches with different optional INSERT
+RowKind or Java string-cache companions. The logical columns must retain their order and types;
+existing Arrow payload buffers are shared, missing INSERT tags are rebuilt, and missing string
+caches remain cold as after stock row deserialization. Other schema changes fail before the
+existing pending rows or retention bookkeeping are modified. This applies to ordinary native
+checkpoint recovery as well as canonical imports.
