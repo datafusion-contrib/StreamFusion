@@ -2,6 +2,7 @@ use crate::*;
 
 mod canonical;
 mod cleanup;
+mod distinct_ttl;
 mod pending;
 
 mod range_order;
@@ -689,7 +690,10 @@ impl OverAggregator {
             .iter()
             .map(|kind| (kind >= &100).then(|| (vec![0], Vec::new())))
             .collect();
-        let mut stamps: Vec<i64> = Vec::new();
+        // A NULL clock retains a DISTINCT view without inventing an accumulator row.
+        let independent = retention.is_some_and(|(name, _)| name == TTL_TS_COLUMN)
+            && self.kinds.iter().any(|&kind| kind >= 100);
+        let mut stamps: Vec<Option<i64>> = Vec::new();
         for (key, states) in self.keys.iter() {
             keys.push(&key.0);
             let mut column = 0;
@@ -704,7 +708,9 @@ impl OverAggregator {
                 }
             }
             if let Some((_, per_key)) = retention {
-                stamps.push(per_key.get(key).copied().expect("over retention stamp"));
+                let stamp = per_key.get(key).copied();
+                assert!(independent || stamp.is_some(), "over retention stamp");
+                stamps.push(stamp);
             }
         }
         let mut fields = key_fields(&self.key_types);
@@ -736,7 +742,7 @@ impl OverAggregator {
             }
         }
         if let Some((name, _)) = retention {
-            fields.push(Field::new(name, DataType::Int64, false));
+            fields.push(Field::new(name, DataType::Int64, independent));
             columns.push(Arc::new(Int64Array::from(stamps)));
         }
         write_ipc(
@@ -796,7 +802,7 @@ impl OverAggregator {
                     }
                     distinct_column += 1;
                 }
-                if let Some(column) = retention {
+                if let Some(column) = retention.filter(|column| column.is_valid(row)) {
                     stamps.insert(ByteKey::from(key), column.value(row));
                 }
             }
@@ -2694,6 +2700,9 @@ impl OverWindowAggregator {
     /// rows pending a watermark) re-arms to `now + maxRetention` instead — Flink's fired timer
     /// re-registering.
     fn maybe_sweep(&mut self, now_ms: i64) {
+        if self.independent_distinct_ttl() {
+            return;
+        }
         if now_ms < self.last_sweep_ms.saturating_add(self.min_retention_ms) {
             return;
         }
@@ -2783,17 +2792,19 @@ impl OverWindowAggregator {
         for row in 0..batch.num_rows() {
             let key = keys_encoded.row(row).data();
             if ttl.enabled() {
-                match self.last_write_ms.get_mut(key) {
-                    Some(ts) => {
-                        if ttl.expired(*ts) {
-                            self.inner.clear_key(key);
-                        }
-                        *ts = now_ms;
-                    }
-                    None => {
-                        self.retention_bytes += byte_key_bytes(key);
-                        self.last_write_ms.insert(ByteKey::from(key), now_ms);
-                    }
+                if self
+                    .last_write_ms
+                    .get(key)
+                    .is_some_and(|&ts| ttl.expired(ts))
+                {
+                    self.expire_value_fold(key);
+                }
+                if self
+                    .last_write_ms
+                    .insert(ByteKey::from(key), now_ms)
+                    .is_none()
+                {
+                    self.retention_bytes += byte_key_bytes(key);
                 }
             } else {
                 self.expire_if_due(key, now_ms);
@@ -3058,6 +3069,7 @@ impl OverWindowAggregator {
         let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
         let store = self.store.as_mut().expect("over rocksdb store");
         let mut entries = Vec::with_capacity(batch.num_rows());
+        let mut present = Vec::with_capacity(batch.num_rows());
         let mut key_groups = Vec::with_capacity(batch.num_rows());
         for row in 0..batch.num_rows() {
             let key_group = store.key_group(binary_row_hash(
@@ -3067,14 +3079,19 @@ impl OverWindowAggregator {
                 &self.key_timestamp_precisions,
             ));
             key_groups.push(key_group);
+            if stamps.is_some_and(|stamps| stamps.is_null(row)) {
+                continue;
+            }
+            present.push(row as u32);
             entries.push((
                 store.fold_key(key_group, keys_encoded.row(row).data()),
                 stamps.map_or(i64::MIN, |stamps| stamps.value(row)),
             ));
         }
+        let indices = UInt32Array::from(present);
         let state_columns: Vec<ArrayRef> = (arity..arity + state_count)
-            .map(|column| batch.column(column).clone())
-            .collect();
+            .map(|column| take(batch.column(column), &indices, None))
+            .collect::<Result<_, _>>()?;
         store.write_folds(&entries, &state_columns)?;
         for slot in 0..self.distinct_slots.len() {
             let list = batch
@@ -4520,6 +4537,25 @@ impl OverWindowAggregator {
             }
             for slot in 0..self.distinct_slots.len() {
                 let agg = self.distinct_slots[slot];
+                if self.independent_distinct_ttl() {
+                    let mut members = Vec::new();
+                    self.store.as_ref().unwrap().visit_all_distinct(
+                        slot,
+                        &self.store_key_types,
+                        1024,
+                        |chunk| {
+                            members.extend(chunk);
+                            Ok(())
+                        },
+                    )?;
+                    let OverInner::Aggregates(inner) = &mut self.inner else {
+                        unreachable!()
+                    };
+                    for (key, element) in members {
+                        inner.states(&key)[agg].remember_distinct(element);
+                    }
+                    continue;
+                }
                 for fold in &folds {
                     let key_group = self.store_fold_key_group(&fold.key);
                     let elements = self
@@ -4686,10 +4722,11 @@ impl OverWindowAggregator {
     }
 
     fn merge_snapshot_batches(batches: &Vec<RecordBatch>) -> Vec<u8> {
-        write_ipc(
-            &concat_batches(&batches[0].schema(), batches.iter())
-                .expect("merge over raw partitions"),
-        )
+        let schema = Arc::new(
+            Schema::try_merge(batches.iter().map(|batch| batch.schema().as_ref().clone()))
+                .expect("compatible over raw partition schemas"),
+        );
+        write_ipc(&concat_batches(&schema, batches.iter()).expect("merge over raw partitions"))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -4728,6 +4765,13 @@ impl OverWindowAggregator {
             "truncated over snapshot"
         );
         let mut stamps: HashMap<ByteKey, i64> = HashMap::default();
+        let has_ttl_column = accumulators_len > 0
+            && arrow::ipc::reader::StreamReader::try_new(&bytes[12..12 + accumulators_len], None)
+                .expect("over accumulator schema")
+                .schema()
+                .fields()
+                .iter()
+                .any(|field| field.name() == TTL_TS_COLUMN);
         let inner = if accumulators_len == 0 {
             OverInner::new(value_types.clone(), kinds.clone(), frame_kind, frame_offset)
         } else {
@@ -4790,7 +4834,7 @@ impl OverWindowAggregator {
             }
         }
         aggregator.restore_cleanup(cleanup, &mut stamps);
-        aggregator.adopt_restored_stamps(stamps, restored_at_ms);
+        aggregator.adopt_restored_stamps(stamps, restored_at_ms, has_ttl_column);
         aggregator.restore_range_order(range_order);
         aggregator
     }
@@ -4801,7 +4845,12 @@ impl OverWindowAggregator {
     /// migration), a fresh last-write for the per-value TTL. With retention off any restored
     /// stamps are shed. Pending-row counts are never snapshotted; they re-derive from the
     /// restored buffer.
-    fn adopt_restored_stamps(&mut self, stamps: HashMap<ByteKey, i64>, restored_at_ms: i64) {
+    fn adopt_restored_stamps(
+        &mut self,
+        stamps: HashMap<ByteKey, i64>,
+        restored_at_ms: i64,
+        has_ttl_column: bool,
+    ) {
         if self.range_offset().is_some() {
             self.cleanup_state = stamps;
             self.retention_bytes = self
@@ -4828,8 +4877,10 @@ impl OverWindowAggregator {
                 .sum();
         } else if self.value_ttl_on() {
             self.last_write_ms = stamps;
-            for key in self.inner.state_keys() {
-                self.last_write_ms.entry(key).or_insert(restored_at_ms);
+            if !(has_ttl_column && self.independent_distinct_ttl()) {
+                for key in self.inner.state_keys() {
+                    self.last_write_ms.entry(key).or_insert(restored_at_ms);
+                }
             }
             self.retention_bytes = self
                 .last_write_ms
@@ -4893,7 +4944,28 @@ impl OverWindowAggregator {
                 12 + accumulator_len <= bytes.len(),
                 "truncated over raw key-group snapshot"
             );
-            accumulator_batches.extend(read_ipc_if_present(&bytes[12..12 + accumulator_len]));
+            for batch in read_ipc_if_present(&bytes[12..12 + accumulator_len]) {
+                let migrate_clock = proctime
+                    && min_retention_ms > 0
+                    && matches!(frame_kind, 0 | 3)
+                    && kinds.iter().any(|&kind| kind >= 100)
+                    && retention_stamps(&batch).is_none();
+                if migrate_clock {
+                    let mut fields = batch.schema().fields().to_vec();
+                    fields.push(Arc::new(Field::new(TTL_TS_COLUMN, DataType::Int64, true)));
+                    let mut columns = batch.columns().to_vec();
+                    columns.push(Arc::new(Int64Array::from(vec![
+                        restored_at_ms;
+                        batch.num_rows()
+                    ])));
+                    accumulator_batches.push(
+                        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
+                            .expect("migrated OVER TTL clock"),
+                    );
+                } else {
+                    accumulator_batches.push(batch);
+                }
+            }
             buffer_batches.extend(read_ipc_if_present(&bytes[12 + accumulator_len..]));
         }
         let accumulators = (!accumulator_batches.is_empty())

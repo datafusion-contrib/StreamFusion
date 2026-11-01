@@ -1,7 +1,7 @@
 use super::super::tests::{batch, rows_of};
 use super::*;
 
-fn input(keys: &[Option<i64>], values: &[Option<f64>], time: i64) -> RecordBatch {
+pub(super) fn input(keys: &[Option<i64>], values: &[Option<f64>], time: i64) -> RecordBatch {
     let old = batch(keys, values);
     RecordBatch::try_new(
         old.schema(),
@@ -15,7 +15,7 @@ fn input(keys: &[Option<i64>], values: &[Option<f64>], time: i64) -> RecordBatch
 }
 
 #[cfg(feature = "rocksdb-state")]
-fn operator(
+pub(super) fn operator(
     keyless: bool,
     rows: bool,
     proctime: bool,

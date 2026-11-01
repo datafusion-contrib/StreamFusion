@@ -112,3 +112,70 @@ fn legacy_nan_membership_keys_migrate_on_aligned_and_merged_restore_without_chan
         );
     }
 }
+
+#[test]
+fn membership_visitors_decode_composite_variable_keys_without_accumulator_rows() {
+    for keyless in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let key_types = if keyless {
+            vec![]
+        } else {
+            vec![DataType::Utf8, DataType::Decimal128(20, 2)]
+        };
+        let mut store = RocksOverAggStore::create(
+            config(directory.path()),
+            &[DataType::Int64],
+            &[],
+            &[DataType::Utf8],
+            schema(),
+            0..=7,
+        )
+        .unwrap();
+        let columns: Vec<ArrayRef> = if keyless {
+            vec![]
+        } else {
+            vec![
+                Arc::new(StringArray::from(vec![Some("a\0longé"), None])),
+                Arc::new(
+                    Decimal128Array::from(vec![Some(123), None])
+                        .with_precision_and_scale(20, 2)
+                        .unwrap(),
+                ),
+            ]
+        };
+        let converter = key_row_converter_from_types(&key_types);
+        let keys = encode_group_keys(&converter, &columns, if keyless { 1 } else { 2 });
+        let values: ArrayRef = Arc::new(StringArray::from(vec!["hello", "", "long\0é世界"]));
+        let encoded = store.encode_distinct_elements(0, &values).unwrap();
+        let mut writes = Vec::new();
+        let mut expected = Vec::new();
+        for key in keys.iter() {
+            for (i, value) in encoded.iter().enumerate() {
+                let mut entry = store.distinct_prefix(0, 1, key.data());
+                entry.extend(value);
+                writes.push(entry);
+                expected.push((
+                    key.data().to_vec(),
+                    ScalarValue::try_from_array(&values, i).unwrap().to_string(),
+                ));
+            }
+        }
+        store.write_distinct(&writes).unwrap();
+        assert!(store.scan_folds().unwrap().is_empty());
+        let mut actual = Vec::new();
+        store
+            .visit_all_distinct(0, &key_types, 2, |members| {
+                assert!(members.len() <= 2);
+                actual.extend(
+                    members
+                        .into_iter()
+                        .map(|(key, value)| (key.to_vec(), value.to_string())),
+                );
+                Ok(())
+            })
+            .unwrap();
+        actual.sort();
+        expected.sort();
+        assert_eq!(actual, expected);
+    }
+}

@@ -82,6 +82,9 @@ impl OverWindowAggregator {
         let mut states = Vec::with_capacity(CHUNK_ROWS);
         let mut stamps = Vec::with_capacity(CHUNK_ROWS);
         for (key, values) in &inner.keys {
+            if self.independent_distinct_ttl() && !self.last_write_ms.contains_key(key) {
+                continue;
+            }
             keys.push(key.0.as_ref());
             states.push(values.iter().flat_map(OverAggState::state).collect());
             stamps.push(self.fold_stamp(&key.0));

@@ -1172,14 +1172,31 @@ the original serialized fold bytes.
 Unbounded DISTINCT folds can bind independent typed membership transfers alongside their raw
 accumulators. Memory and typed RocksDB visitors export at most 1,024 memberships per batch,
 without clearing live state or replaying input. Import validates types, NULLs, partition ownership
-and duplicate elements before installing a batch. Restored COUNT/AVG cardinalities and SUM, SUM0
+and duplicate elements before installing a batch. Without value TTL, restored COUNT/AVG cardinalities and SUM, SUM0
 and extrema emptiness must agree with their membership sets. Incomplete imports cannot process
 input, export state or checkpoint. JNI releases imported Arrow ownership before propagating an
 error so buffer cleanup cannot swallow validation or memory-limit exceptions.
 
-The native contract covers processing-time folds with TTL disabled and event-time folds with
-their existing cleanup deadlines. Processing-time DISTINCT with value TTL still needs independent
-view lifetimes: released stock Flink can expire an accumulator while retaining its membership
-view. It remains outside this binding until that complete state contract is implemented under
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). This native component is
-separate from full portable-job, connector and version qualification. Benchmarking is deferred.
+Processing-time value TTL resets the scalar accumulators while retaining independent DISTINCT
+memberships, matching released stock Flink. Untouched raw accumulator ages survive capture;
+stock membership-only keys import and export without fabricating an accumulator. Scalar counts
+since expiry may be smaller than lifetime membership cardinality. Event-time folds retain their
+existing cleanup deadlines. This native contract is separate from full portable-job, connector
+and version qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking is deferred.
+
+
+### Native checkpoint presence for independent views
+
+Native memory checkpoints use a nullable TTL timestamp to distinguish an absent accumulator
+from its surviving DISTINCT memberships. A present timestamp retains its exact write age; NULL
+means no accumulator and never adopts a fresh restore timestamp. Older non-nullable clocks and
+pre-TTL rows remain readable, including mixed partitions: only pre-TTL rows acquire the restore
+clock. Persistent checkpoints preserve independent membership tables even when their fold row
+is absent. Full membership iteration decodes the existing combined key/value row encoding,
+including variable-width composite keys, rather than relying on fold rows as an index.
+
+On an expired persistent fold touch, deletion reaches the store before hydration. This also
+prevents non-DISTINCT folds from reloading an expired scalar between periodic sweeps. These
+changes preserve the ordinary native checkpoint path; direct stock canonical export still
+visits live state and uses stock serializers without an intermediate native snapshot.

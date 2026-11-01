@@ -22,11 +22,6 @@ impl OverWindowAggregator {
         if kind < 100 || !matches!(kind - 100, 0 | 1 | 2 | 3 | 4 | 22) {
             return Err(invalid("aggregate has no qualified DISTINCT membership"));
         }
-        if self.proctime && self.value_ttl_on() {
-            return Err(invalid(
-                "processing-time DISTINCT TTL requires independent view lifetime support",
-            ));
-        }
         self.canonical_distinct.insert(index);
         Ok(())
     }
@@ -81,15 +76,9 @@ impl OverWindowAggregator {
                 .iter()
                 .position(|&aggregate| aggregate == index)
                 .ok_or_else(|| invalid("DISTINCT store slot is missing"))?;
-            return store.visit_folds(CHUNK_ROWS, |folds| {
-                for fold in folds {
-                    let group = self.store_fold_key_group(&fold.key);
-                    store.visit_distinct(slot, group, &fold.key, CHUNK_ROWS, |values| {
-                        let keys = vec![fold.key.clone(); values.len()];
-                        accept(self.distinct_batch(index, &keys, values)?)
-                    })?;
-                }
-                Ok(())
+            return store.visit_all_distinct(slot, &self.store_key_types, CHUNK_ROWS, |members| {
+                let (keys, values): (Vec<_>, Vec<_>) = members.into_iter().unzip();
+                accept(self.distinct_batch(index, &keys, values)?)
             });
         }
         let mut keys = Vec::with_capacity(CHUNK_ROWS);
@@ -135,7 +124,8 @@ impl OverWindowAggregator {
                 "invalid DISTINCT membership schema or NULL element",
             ));
         }
-        if !self.canonical_distinct_loading {
+        let independent = self.independent_distinct_ttl();
+        if !self.canonical_distinct_loading && !independent {
             return Err(invalid("DISTINCT membership has no pending fold restore"));
         }
         let arrays = (0..arity)
@@ -143,7 +133,9 @@ impl OverWindowAggregator {
             .collect::<Vec<_>>();
         let types = key_types(&arrays);
         let inner = self.canonical_fold()?;
-        if types != inner.key_types {
+        if types != inner.key_types
+            && !(independent && inner.keys.is_empty() && inner.key_types.is_empty())
+        {
             return Err(invalid("DISTINCT partition key type changed"));
         }
         let mut converter = Some(key_row_converter_from_types(&types));
@@ -186,32 +178,39 @@ impl OverWindowAggregator {
                 entries.push(entry);
                 folds.push(store.fold_key(group, key));
             }
-            if store.get_folds(&folds)?.iter().any(Option::is_none) {
+            if !independent && store.get_folds(&folds)?.iter().any(Option::is_none) {
                 return Err(invalid("DISTINCT membership has no accumulator"));
             }
             if store.probe_distinct(&entries)?.iter().any(|seen| *seen) {
                 return Err(invalid("duplicate retained DISTINCT membership"));
             }
             self.store.as_mut().unwrap().write_distinct(&entries)?;
+            self.canonical_distinct_loading = true;
             return self.account();
         }
         for row in 0..batch.num_rows() {
             let state = inner
                 .keys
                 .get(keys.row(row).data())
-                .and_then(|states| states.get(index))
-                .ok_or_else(|| invalid("DISTINCT membership has no accumulator"))?;
-            if state.distinct.as_ref().unwrap().scalar_count(&values[row]) != 0 {
+                .and_then(|states| states.get(index));
+            if state.is_none() && !independent {
+                return Err(invalid("DISTINCT membership has no accumulator"));
+            }
+            if state.is_some_and(|state| {
+                state.distinct.as_ref().unwrap().scalar_count(&values[row]) != 0
+            }) {
                 return Err(invalid("duplicate retained DISTINCT membership"));
             }
         }
+        self.inner.seed_key_codec(&types);
         let OverInner::Aggregates(inner) = &mut self.inner else {
             unreachable!()
         };
         for (row, value) in values.into_iter().enumerate() {
-            inner.keys.get_mut(keys.row(row).data()).unwrap()[index].remember_distinct(value);
+            inner.states(keys.row(row).data())[index].remember_distinct(value);
         }
         inner.recompute_bytes();
+        self.canonical_distinct_loading = true;
         self.account()
     }
 
@@ -230,6 +229,27 @@ impl OverWindowAggregator {
             .map(|(&kind, ty)| OverAggState::new(kind, ty).state_types().len())
             .sum::<usize>();
         let kind = inner.kinds[index] - 100;
+        if self.independent_distinct_ttl() {
+            if matches!(kind, 3 | 4) {
+                let ScalarValue::Int64(Some(current)) = state[offset + usize::from(kind == 4)]
+                else {
+                    return Err(invalid("invalid DISTINCT count"));
+                };
+                if current < 0 || current as u64 > count as u64 {
+                    return Err(invalid("DISTINCT count exceeds lifetime membership"));
+                }
+            } else if count == 0 && kind != 22 && !state[offset].is_null() {
+                return Err(invalid("DISTINCT scalar has no lifetime membership"));
+            } else if count == 0
+                && kind == 22
+                && state[offset] != ScalarValue::new_zero(&state[offset].data_type())?
+            {
+                return Err(invalid(
+                    "DISTINCT zero-initialized sum disagrees with membership",
+                ));
+            }
+            return Ok(());
+        }
         if kind == 3 {
             if state[offset] != ScalarValue::Int64(Some(count as i64)) {
                 return Err(invalid("DISTINCT count disagrees with membership"));
@@ -291,7 +311,10 @@ impl OverWindowAggregator {
             self.canonical_distinct_loading = false;
             return self.account();
         }
-        for states in inner.keys.values() {
+        for (key, states) in &inner.keys {
+            if self.independent_distinct_ttl() && !self.last_write_ms.contains_key(key) {
+                continue;
+            }
             let scalars = states
                 .iter()
                 .flat_map(OverAggState::state)
@@ -391,3 +414,5 @@ pub extern "system" fn Java_tech_streamfusion_Native_finishOverCanonicalDistinct
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "rocksdb-state"))]
+mod ttl_tests;

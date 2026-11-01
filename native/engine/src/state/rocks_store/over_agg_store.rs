@@ -808,6 +808,60 @@ impl RocksOverAggStore {
         Ok(())
     }
 
+    pub(crate) fn visit_all_distinct(
+        &self,
+        slot: usize,
+        key_types: &[DataType],
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<(Box<[u8]>, ScalarValue)>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 || slot >= self.distinct_element_types.len() {
+            return Err(DataFusionError::Execution(
+                "invalid OVER membership visitor".into(),
+            ));
+        }
+        let mut types = if key_types.is_empty() {
+            vec![DataType::Boolean]
+        } else {
+            key_types.to_vec()
+        };
+        types.push(self.distinct_element_types[slot].clone());
+        let converter = RowConverter::new(types.into_iter().map(SortField::new).collect())?;
+        let key_converter = key_row_converter_from_types(key_types);
+        let mut encoded: Vec<Box<[u8]>> = Vec::with_capacity(chunk_rows);
+        let decode = |encoded: &mut Vec<Box<[u8]>>| {
+            let parser = converter.parser();
+            let columns = converter.convert_rows(encoded.iter().map(|row| parser.parse(row)))?;
+            let key_columns = columns[..key_types.len()].to_vec();
+            let keys = encode_group_keys(&key_converter, &key_columns, encoded.len());
+            let values = columns.last().unwrap();
+            let result = (0..encoded.len())
+                .map(|row| {
+                    Ok((
+                        keys.row(row).data().into(),
+                        ScalarValue::try_from_array(values, row)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, DataFusionError>>()?;
+            encoded.clear();
+            Ok::<_, DataFusionError>(result)
+        };
+        for row in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = row.map_err(re)?;
+            if key.len() <= KEY_PREFIX_LEN || key[4] != DISTINCT_TABLE_BASE + slot as u8 {
+                continue;
+            }
+            encoded.push(key[KEY_PREFIX_LEN..].into());
+            if encoded.len() == chunk_rows {
+                accept(decode(&mut encoded)?)?;
+            }
+        }
+        if !encoded.is_empty() {
+            accept(decode(&mut encoded)?)?;
+        }
+        Ok(())
+    }
+
     /// Stages the range covering everything under `prefix` for deletion — a cleared key's frames
     /// or seen-set.
     pub(crate) fn delete_prefix_range(

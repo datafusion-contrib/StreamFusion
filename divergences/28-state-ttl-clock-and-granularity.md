@@ -31,6 +31,18 @@ cached inner aggregates unchanged. Append-only duplicate reads do not refresh me
 setting another filter bit does. Retracting counters write on admitted updates. Native raw
 keyed snapshots preserve both the shared deadlines and cached values independently.
 
+## Unbounded OVER: independent accumulator and DISTINCT view lifetimes
+
+Released Flink 2.2.1 puts value TTL on the processing-time unbounded OVER accumulator but
+opens its DISTINCT MapViews without TTL. Native expiry therefore resets only scalar folds;
+existing memberships continue suppressing duplicates. Untouched raw scalar ages remain intact
+and membership-only keys need no synthetic accumulator. Memory checkpoints distinguish their
+absent scalar through a nullable TTL clock; persistent membership tables survive without a fold
+row. Old pre-TTL snapshots adopt the restore clock, while an explicitly absent accumulator does
+not. The stock canonical adapter keeps the released state schemas and serializers unchanged.
+This follows Flink's lifecycle within the existing incremental OVER architecture rather than
+Arroyo's per-timestamp window-execution retention. Benchmarking is deferred under #569.
+
 ## Temporal join and OVER: lazy check for the cleanup timer
 
 Flink retention-bounds the temporal join not with per-value TTL but with one per-key
