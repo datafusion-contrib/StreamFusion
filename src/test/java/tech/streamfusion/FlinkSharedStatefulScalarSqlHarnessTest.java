@@ -60,6 +60,8 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
           .replace("CAST(", operator + "("), 5003, false);
       compare("SELECT id,CASE WHEN MOD(id,2)=0 THEN CAST(tick(a)>0 AS CHAR(8)) ELSE 'skip' END,tick(b) FROM src"
           .replace("CAST(", operator + "("), 2051, true);
+      compare("SELECT id,CAST(NOT(tick(a)>0) AS CHAR(8)),tick(b) FROM src"
+          .replace("CAST(", operator + "("), 2051, true);
     }
   }
 

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkBooleanStringCastSqlHarnessTest {
@@ -27,12 +28,29 @@ class FlinkBooleanStringCastSqlHarnessTest {
         + "CAST(b AS CHAR(1)),CAST(b AS CHAR(3)),CAST(b AS CHAR(4)),CAST(b AS CHAR(5)),"
         + "CAST(b AS CHAR(8)),CAST(b AS CHAR(32)) FROM src";
     sql = sql.replace("CAST(", operator + "(");
+    assertRuntimeBooleanCasts(sql, legacy);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void logicalBooleanCastsConsumeNativeWorkAcrossBatches(boolean legacy) throws Exception {
+    assertRuntimeBooleanCasts(
+        "SELECT id,CAST(NOT b AS STRING),CAST(b AND c AS CHAR(8)),"
+            + "CAST(b OR c AS VARCHAR(3)),CAST(b IS TRUE AS STRING),"
+            + "CAST(b IS NOT TRUE AS CHAR(8)),CAST(b IS FALSE AS VARCHAR(4)),"
+            + "CAST(b IS NOT FALSE AS STRING),CAST(b IS NULL AS CHAR(8)),"
+            + "CAST(b IS NOT NULL AS STRING),CAST((NOT b) OR (c IS TRUE) AS CHAR(8)),"
+            + "CAST(b AND c AND (b OR NOT c) AS STRING) FROM src", legacy);
+  }
+
+  private static void assertRuntimeBooleanCasts(String sql, boolean legacy) throws Exception {
     for (boolean nullable : new boolean[] {false, true}) {
       var bool = nullable ? BOOLEAN() : BOOLEAN().notNull();
-      var rowType = ROW(FIELD("id", INT().notNull()), FIELD("b", bool));
+      var rowType = ROW(FIELD("id", INT().notNull()), FIELD("b", bool), FIELD("c", bool));
       var rows = new ArrayList<Row>();
       for (int id = 0; id < 5003; id++)
-        rows.add(Row.of(id, nullable && id % 7 == 0 ? null : id % 2 == 0));
+        rows.add(Row.of(id, nullable && id % 7 == 0 ? null : id % 2 == 0,
+            nullable && id % 5 == 0 ? null : id % 3 == 0));
       TreeMap<Integer, List<Object>> stock = null;
       List<org.apache.flink.table.types.DataType> stockTypes = null;
       for (boolean nativeRun : new boolean[] {false, true}) {
@@ -106,7 +124,20 @@ class FlinkBooleanStringCastSqlHarnessTest {
             .replace("CAST(", operator + "("));
     BuiltinFunctionParity.assertParity(factory,
         "SELECT CAST(n/(n-n)=1 AS STRING) FROM src WHERE n=99".replace("CAST(", operator + "("));
+    String shortCircuit = "SELECT CAST(n>=0 OR n/(n-n)=1 AS CHAR(8)) FROM src"
+        .replace("CAST(", operator + "(");
+    if (operator.equals("CAST"))
+      NativeParity.assertFallbackReasonContains(factory, shortCircuit,
+          "Fallible expressions under AND/OR");
+    else BuiltinFunctionParity.assertParity(factory, shortCircuit);
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT CAST(NOT(n/(n-n)=1) AS CHAR(8)) FROM src WHERE n=99"
+            .replace("CAST(", operator + "("));
     NativeFailureParity.run(factory, "SELECT CAST(n/(n-n)=1 AS STRING) FROM src"
+            .replace("CAST(", operator + "("))
+        .assertCompetingFailures(NativeFailureParity::isDivisionByZero,
+            NativeFailureParity.Phase.ROW_EVALUATION, NativeFailureParity.Route.NATIVE);
+    NativeFailureParity.run(factory, "SELECT CAST(NOT(n/(n-n)=1) AS CHAR(8)) FROM src"
             .replace("CAST(", operator + "("))
         .assertCompetingFailures(NativeFailureParity::isDivisionByZero,
             NativeFailureParity.Phase.ROW_EVALUATION, NativeFailureParity.Route.NATIVE);

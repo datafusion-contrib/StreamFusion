@@ -42,7 +42,7 @@ class BooleanStringCastEncodingTest {
   }
 
   @Test
-  void computedOperandsRetainTheirGeneratedEvaluation() throws Exception {
+  void unverifiedOperandsRetainTheirGeneratedEvaluation() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     var bool = types.createSqlType(SqlTypeName.BOOLEAN);
@@ -51,7 +51,8 @@ class BooleanStringCastEncodingTest {
     for (boolean legacy : new boolean[] {false, true}) {
       for (var operator : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
         var call = rex.makeCall(target, operator,
-            List.of(rex.makeCall(FlinkSqlOperatorTable.NOT, input)));
+            List.of(rex.makeCall(FlinkSqlOperatorTable.CASE, input, rex.makeLiteral(true),
+                rex.makeLiteral(false))));
         assertFalse(configured(call, legacy).jvmFunctionCalls().isEmpty());
       }
     }

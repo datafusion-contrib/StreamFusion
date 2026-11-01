@@ -5455,7 +5455,7 @@ coverage stays in [the classification follow-up](https://github.com/datafusion-c
 Direct BOOLEAN inputs/literals use a native formatter for STRING and bounded VARCHAR/CHAR.
 Modern mode emits uppercase text, truncates overlength values and pads bounded CHAR;
 legacy mode emits lowercase text without target-length enforcement. NULL remains NULL.
-Computed operands retain generated Flink evaluation; the independent TRY_CAST qualification follows below.
+Unverified computed operands retain generated Flink evaluation; independent TRY_CAST and logical-operand qualification follow below.
 No production switch is added. Both modes use Flink's existing cast configuration.
 
 The [result record](results/boolean-string-cast-2026-11-01.json) and
@@ -5547,7 +5547,7 @@ options. Remaining cast coverage stays in [#492](https://github.com/datafusion-c
 Direct BOOLEAN inputs/literals now use the same native STRING/VARCHAR/CHAR formatter for
 TRY_CAST as for CAST. Formatting cannot produce a conversion error. Modern and legacy
 spelling, truncation/padding and NULL behavior match the released generated code.
-Computed operands keep the complete generated expression; TRY_CAST must not swallow
+Unverified computed operands keep the complete generated expression; TRY_CAST must not swallow
 failures while evaluating an operand or drop shared stateful calls. An unconfigured
 encoder also keeps generated evaluation. No production option is added.
 
@@ -5620,4 +5620,82 @@ Reproduce with `SF_INTEGRAL_EXPRESSION='TRY_CAST(v AS STRING)'` and BOOLEAN inpu
 `integral_expression`; complete jobs use `sf.integral.booleanInput=true` and
 `sf.integral.expression=TRY_CAST(v AS CHAR(8))`. The existing benchmark-only legacy control
 selects the corresponding mode. Remaining casts stay in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## BOOLEAN CAST over logical operands
+
+The formatter accepts recursively verified BOOLEAN-only NOT, AND, OR, IS NULL,
+IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE over BOOLEAN references
+and literals. These operations cannot fail or mutate shared state. Other producers,
+including numeric comparisons, division, UDFs and CASE, keep their existing generated
+or short-circuit fallback routes. The proof never discards a computed operand.
+
+The [result record](results/boolean-logical-cast-2026-11-01.json) and
+[raw trials](results/boolean-logical-cast-2026-11-01.csv.gz) retain 76 configurations
+and 7,600 trials. Representative producers are NOT(v) and nullable
+v IS TRUE. The initial Flink 2.2 NOT NULL v IS TRUE control simplifies to v before encoding and
+is already native in the actual preceding encoder. NOT NULL truth-test cells are
+excluded from new-feature performance coverage on both lines.
+The initial strict previous-route assertion exposed that simplification rather than
+allowing it to count as callback removal. Its independent candidate-only
+[diagnostic](results/boolean-logical-cast-simplified-control-2026-11-01.csv.gz) retains
+all 50 samples separately. Correctness witnesses still cover both declarations.
+
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread, 16 warmups/nine
+measurements and 131,072 rows/trial use the prepared Rust/Arrow versus released
+Java/RowData boundary described above. Modern targets are STRING/VARCHAR(3)/CHAR(8);
+legacy targets are STRING/CHAR(8). Cached and binary RowData controls match logical
+values and NULLs. The actual preceding encoder must bind a JVM evaluator; candidate
+encoding must have none. Equivalent UTF-8 boundary consumption and every checksum agree.
+The identical production Rust kernel/DSO is reused, with source and DSO hashes checked.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | logical bulk | 30 | 1.456-11.667x | 11.497-20.919x | 0 |
+| 1.18.1 | tiny NOT control | 8 | 0.175-0.918x | 19.655-21.435x | 8 |
+| 2.2.1 | logical bulk | 30 | 1.460-10.751x | 12.686-17.764x | 0 |
+| 2.2.1 | tiny NOT control | 8 | 0.180-0.896x | 19.915-22.033x | 8 |
+
+All 60 bulk cells pass the prepared-operation gate;
+16 of 16 tiny cells are slower
+than stock. Ratios above one favor native. Independent stock-control drift spans
+0.573-1.499x. These measurements qualify the representative logical
+producers; they do not assert a speedup for every expression tree.
+
+Six million-row source/blackhole configurations retain planning/startup, production JNI
+and both transposes. Modern NOT-to-STRING, modern truth-test-to-CHAR(8) and legacy
+NOT-to-STRING run at parallelism one with two warmups/five measurements. Runtime witnesses
+require consumed native Calc work, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-not | 0.155199 (0.152203-0.180638) | 0.157988 (0.153672-0.165963) | 0.156686 (0.155055-0.184734) | 0.187435 (0.182388-0.190953) |
+| 1.18.1 / modern-truth | 0.239740 (0.234626-0.249306) | 0.193730 (0.190997-0.201901) | 0.240761 (0.235625-0.248413) | 0.275991 (0.274064-0.291803) |
+| 1.18.1 / legacy-not | 0.172859 (0.170668-0.216929) | 0.165043 (0.159584-0.165952) | 0.193202 (0.175767-0.262754) | 0.191391 (0.189054-0.218440) |
+| 2.2.1 / modern-not | 0.162671 (0.154038-0.169849) | 0.155008 (0.153929-0.162233) | 0.159649 (0.156157-0.168375) | 0.196254 (0.186756-0.199247) |
+| 2.2.1 / modern-truth | 0.251202 (0.245248-0.265937) | 0.206193 (0.203454-0.212622) | 0.245309 (0.244001-0.258694) | 0.269516 (0.266690-0.276784) |
+| 2.2.1 / legacy-not | 0.177856 (0.172548-0.199941) | 0.163611 (0.160215-0.168126) | 0.176808 (0.172573-0.188163) | 0.191048 (0.186868-0.204655) |
+
+Native/stock elapsed ratios span 0.808-1.018;
+native/previous ratios span 0.702-0.862.
+Ratios above one are slower. Retain overlapping ranges and all unfavorable cases;
+bulk qualification does not establish universal full-job acceleration.
+
+All 84 focused JVM invocations and four additional shared-state invocations pass on
+released Flink 1.18.1/2.2.1 with JDK 11/17. Runtime witnesses compare complete 5,003-row
+outputs, resolved types, NULLs, cardinality and unique IDs across batches; independent
+BOOLEAN columns cover AND/OR combinations and nesting. They require consumed native work,
+no fallback and empty descriptors for every admitted logical query. Failing comparisons
+under logical wrappers, lazy/empty branches and stateful producers retain their exact
+prior route and successful/exception behavior. The unchanged released
+ScalarFunctionsTest.testIsTrueIsFalse and ScalarOperatorsTest.testFunctionWithBooleanExpression
+also pass on all four pairs; they are separate from the new native execution witnesses.
+Java targets release 11. The unchanged kernel retains its prior 1,019 Rust core passes,
+two pre-existing ignores and released CastRules stock oracle. Strict docs, diff, source
+and privacy checks pass.
+
+Reproduce prepared qualification with `integral_expression`, BOOLEAN input and
+`SF_INTEGRAL_EXPRESSION='CAST(NOT v AS STRING)'`. Complete jobs use
+`sf.integral.booleanInput=true` and `sf.integral.expression=CAST(v IS TRUE AS CHAR(8))`.
+No production option is introduced. Remaining conversions are tracked in
 [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

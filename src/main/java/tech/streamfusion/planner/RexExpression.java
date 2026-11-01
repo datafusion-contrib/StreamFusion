@@ -3879,7 +3879,7 @@ final class RexExpression {
     }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
-    if (directBooleanCharacterCast(call) && legacyCastBehaviour != null) {
+    if (nativeBooleanCharacterCast(call) && legacyCastBehaviour != null) {
       add(KIND_CALL, 244, 3);
       if (!emit(call.getOperands().get(0))) return false;
       add(KIND_LIT_BOOL, longs.size(), 0);
@@ -4468,7 +4468,7 @@ final class RexExpression {
         return SqlTypeFamily.NUMERIC.contains(call.getOperands().get(0).getType());
       case "TRY_CAST":
         return input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType())
-            && !directBooleanCharacterCast(call);
+            && !nativeBooleanCharacterCast(call);
       case "REGEXP":
       case "REGEXP_REPLACE":
       case "REGEXP_COUNT":
@@ -4521,12 +4521,39 @@ final class RexExpression {
     }
   }
 
-  private static boolean directBooleanCharacterCast(RexCall call) {
+  private static boolean nativeBooleanCharacterCast(RexCall call) {
     return call.getOperands().size() == 1
         && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BOOLEAN
         && SqlTypeFamily.CHARACTER.contains(call.getType())
         && (call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral);
+            || call.getOperands().get(0) instanceof RexLiteral
+            || call.getOperator()
+                    == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
+                && nativeBooleanFormattingOperand(call.getOperands().get(0)));
+  }
+
+  private static boolean nativeBooleanFormattingOperand(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.BOOLEAN) return false;
+    if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    switch (call.getKind()) {
+      case NOT:
+      case IS_NULL:
+      case IS_NOT_NULL:
+      case IS_TRUE:
+      case IS_NOT_TRUE:
+      case IS_FALSE:
+      case IS_NOT_FALSE:
+        return call.getOperands().size() == 1
+            && nativeBooleanFormattingOperand(call.getOperands().get(0));
+      case AND:
+      case OR:
+        return call.getOperands().size() >= 2
+            && call.getOperands().stream().allMatch(RexExpression::nativeBooleanFormattingOperand);
+      default:
+        return false;
+    }
   }
 
   private static boolean nativeIntegralRounding(RexCall call) {
