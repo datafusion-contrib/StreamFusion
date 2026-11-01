@@ -416,28 +416,6 @@ This adds admission through the existing generated correlate, not custom tempora
 JNI or native-memory code. Nested alternate bridges and internal Java classes remain outside
 the whitelist. Direct primitive TIME/LTZ bridges use the separate verified boundary below.
 
-### Direct primitive temporal bridges
-
-Container signatures admit direct non-null TIME and TIMESTAMP_LTZ arguments and external Row
-result fields bridged to Java `int`/`long`, YEAR/MONTH intervals bridged to `int`, and DAY/TIME
-intervals bridged to `long`. Units match the boxed forms above. Nullable sources retain released
-primitive-argument validation; the matcher does not coerce their NULLs into a default primitive.
-Nested bridges and primitive ARRAY elements retain their previous guards.
-
-Atomic TIME/int and primitive interval results also execute. Released Flink's atomic
-TIME/long and LTZ/int/long collectors fail generated Java compilation with an Object-to-primitive
-cast, for both generic Object and typed Integer/Long TableFunctions. These are explicit matching
-initialization failures, not positive native coverage. External Row result fields for all six
-bridges have positive native checks. NULLs emitted under NOT NULL result metadata retain the
-same defaults or failures as stock Flink.
-
-Forty-two selected controls pass on each released line with JDK 17 and the release/mimalloc
-library, covering typed results, INNER/LEFT, nullable-source rejection, retained containers,
-empty input, lifecycle/failures and changelog through two heap/RocksDB restores. All successful
-populated paths require consumed native table-function input. `PrimitiveTemporalTableFunctionBenchmark`
-keeps complete stock/previous/native jobs and both transposes under the accepted UDF performance
-exception; support does not claim acceleration.
-
 `FlinkAlternateTemporalTableFunctionSqlHarnessTest` compares released values/types,
 nullable/non-null arguments, Row/atomic results, INNER/LEFT application, mutable JDBC
 values and result Rows, retained containers, empty input, callback failures, all changelog
@@ -476,6 +454,28 @@ The [release cost matrix](../benchmarks/jvm-temporal-bridges.md) retains stock,
 actual previous production and native timings on both supported Flink lines, including
 larger-input runs, unfavorable results and observed stock-control drift. These standalone
 native jobs are slower; default admission is coverage under the UDF exception.
+
+### Direct primitive temporal bridges
+
+Container signatures admit direct non-null TIME and TIMESTAMP_LTZ arguments and external Row
+result fields bridged to Java `int`/`long`, YEAR/MONTH intervals bridged to `int`, and DAY/TIME
+intervals bridged to `long`. Units match the boxed forms above. Nullable sources retain released
+primitive-argument validation; the matcher does not coerce their NULLs into a default primitive.
+Nested bridges and primitive ARRAY elements retain their previous guards.
+
+Atomic TIME/int and primitive interval results also execute. Released Flink's atomic
+TIME/long and LTZ/int/long collectors fail generated Java compilation with an Object-to-primitive
+cast, for both generic Object and typed Integer/Long TableFunctions. These are explicit matching
+initialization failures, not positive native coverage. External Row result fields for all six
+bridges have positive native checks. NULLs emitted under NOT NULL result metadata retain the
+same defaults or failures as stock Flink.
+
+Forty-two selected controls pass on each released line with JDK 17 and the release/mimalloc
+library, covering typed results, INNER/LEFT, nullable-source rejection, retained containers,
+empty input, lifecycle/failures and changelog through two heap/RocksDB restores. All successful
+populated paths require consumed native table-function input. `PrimitiveTemporalTableFunctionBenchmark`
+keeps complete stock/previous/native jobs and both transposes under the accepted UDF performance
+exception; support does not claim acceleration.
 
 ### Boxed DATE epoch days and containers (2026-11-01)
 
