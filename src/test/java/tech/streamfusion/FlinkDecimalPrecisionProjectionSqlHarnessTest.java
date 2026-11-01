@@ -17,6 +17,7 @@ import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDecimalPrecisionProjectionSqlHarnessTest {
@@ -37,7 +38,19 @@ class FlinkDecimalPrecisionProjectionSqlHarnessTest {
     "f,false,false",
     "f,false,true",
     "f,true,false",
-    "f,true,true"
+    "f,true,true",
+    "t,false,false",
+    "t,false,true",
+    "t,true,false",
+    "t,true,true",
+    "s,false,false",
+    "s,false,true",
+    "s,true,false",
+    "s,true,true",
+    "i,false,false",
+    "i,false,true",
+    "i,true,false",
+    "i,true,true"
   })
   void narrowingCastsKeepConsumerDefaultsAndEveryRow(
       String source, boolean nullable, boolean legacy) throws Exception {
@@ -188,6 +201,59 @@ class FlinkDecimalPrecisionProjectionSqlHarnessTest {
                 factory, "SELECT id,TRY_CAST(" + value + " AS " + target + ") FROM src")
             .assertSuccess(NativeFailureParity.Route.FALLBACK);
       }
+      var nullableCast =
+          NativeFailureParity.run(
+              factory,
+              "SELECT id,TRY_CAST("
+                  + source
+                  + " AS DECIMAL(1,0)),"
+                  + "TRY_CAST("
+                  + source
+                  + " AS DECIMAL(1,0))>0 FROM src");
+      nullableCast.assertSuccess(
+          source.equals("d")
+              ? NativeFailureParity.Route.NATIVE
+              : NativeFailureParity.Route.FALLBACK);
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"t", "s", "i", "x", "d", "r"})
+  void safeCastsAndNullAwareConsumersKeepNativeExecution(String source) throws Exception {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      java.util.function.Supplier<TableEnvironment> factory =
+          () -> {
+            var env = metrics.environment(new Configuration(), 1, 0);
+            var table = StreamTableEnvironment.create(env);
+            configure(table, false, false, "ERROR", env, 31);
+            return table;
+          };
+      String value = "CAST(" + source + " AS DECIMAL(1,0))";
+      String flag = "(" + value + ">0 OR CAST(NULL AS BOOLEAN))";
+      String target = source.equals("r") ? "DECIMAL(2,0)" : "DECIMAL(38,2)";
+      for (String sql :
+          List.of(
+              "SELECT id,CAST(" + source + " AS " + target + ")>0 FROM src",
+              "SELECT id,"
+                  + flag
+                  + " IS NULL,"
+                  + flag
+                  + " IS NOT NULL,"
+                  + flag
+                  + " IS NOT TRUE,"
+                  + flag
+                  + " IS FALSE FROM src")) {
+        var table = factory.get();
+        var scan = NativePlanner.install(table);
+        assertTrue(table.explainSql(sql).contains("NativeCalc"));
+        assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());
+        assertFalse(scan.functionExecutions().isEmpty(), scan.explainSummary());
+        assertTrue(
+            scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
+            scan.explainSummary());
+        BuiltinFunctionParity.assertParity(factory, sql);
+      }
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
     }
   }
 
@@ -231,7 +297,10 @@ class FlinkDecimalPrecisionProjectionSqlHarnessTest {
             FIELD("x", nullable ? BIGINT() : BIGINT().notNull()),
             FIELD("d", nullable ? DECIMAL(18, 2) : DECIMAL(18, 2).notNull()),
             FIELD("r", nullable ? DECIMAL(3, 2) : DECIMAL(3, 2).notNull()),
-            FIELD("f", nullable ? DOUBLE() : DOUBLE().notNull()));
+            FIELD("f", nullable ? DOUBLE() : DOUBLE().notNull()),
+            FIELD("t", nullable ? TINYINT() : TINYINT().notNull()),
+            FIELD("s", nullable ? SMALLINT() : SMALLINT().notNull()),
+            FIELD("i", nullable ? INT() : INT().notNull()));
     Long[] values = {99L, 1L, 0L, -99L, -1L, nullable ? null : 0L};
     var rows = new ArrayList<Row>();
     for (int i = 0; i < count; i++) {
@@ -241,7 +310,16 @@ class FlinkDecimalPrecisionProjectionSqlHarnessTest {
           value != null && Math.abs(value) == 99
               ? new BigDecimal(value < 0 ? "-9.99" : "9.99")
               : decimal;
-      rows.add(Row.of(i, value, decimal, rounding, value == null ? null : value.doubleValue()));
+      rows.add(
+          Row.of(
+              i,
+              value,
+              decimal,
+              rounding,
+              value == null ? null : value.doubleValue(),
+              value == null ? null : value.byteValue(),
+              value == null ? null : value.shortValue(),
+              value == null ? null : value.intValue()));
     }
     table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
     table.getConfig().set("table.exec.sink.not-null-enforcer", policy);

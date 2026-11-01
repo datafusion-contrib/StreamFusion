@@ -4912,18 +4912,40 @@ final class RexExpression {
             || SqlTypeFamily.INTEGER.contains(node.getType())
             || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(node.getType())
             || SqlTypeFamily.CHARACTER.contains(node.getType()))
-        && containsNonNullableDecimalOverflow(node);
+        && (containsNonNullableDecimalArithmetic(node)
+            || containsNonNullableOverflowingDecimalCast(node));
   }
 
-  private static boolean containsNonNullableDecimalOverflow(RexNode node) {
+  private static boolean containsNonNullableDecimalArithmetic(RexNode node) {
     if (node instanceof RexFieldAccess) {
-      return containsNonNullableDecimalOverflow(((RexFieldAccess) node).getReferenceExpr());
+      return containsNonNullableDecimalArithmetic(((RexFieldAccess) node).getReferenceExpr());
     }
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    return !call.getType().isNullable()
-            && (isDecimalArithmetic(call) || decimalCastCanOverflow(call))
-        || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalOverflow);
+    return isDecimalArithmetic(call) && !call.getType().isNullable()
+        || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalArithmetic);
+  }
+
+  private static boolean containsNonNullableOverflowingDecimalCast(RexNode node) {
+    if (node instanceof RexFieldAccess) {
+      return containsNonNullableOverflowingDecimalCast(((RexFieldAccess) node).getReferenceExpr());
+    }
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    switch (call.getKind()) {
+      case IS_NULL:
+      case IS_NOT_NULL:
+      case IS_TRUE:
+      case IS_NOT_TRUE:
+      case IS_FALSE:
+      case IS_NOT_FALSE:
+        // These consumers resolve the NULL flag rather than leaving a default result term.
+        return false;
+      default:
+        return !call.getType().isNullable() && decimalCastCanOverflow(call)
+            || call.getOperands().stream()
+                .anyMatch(RexExpression::containsNonNullableOverflowingDecimalCast);
+    }
   }
 
   private static boolean decimalCastCanOverflow(RexCall call) {

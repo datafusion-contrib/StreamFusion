@@ -51,6 +51,30 @@ class DecimalPrecisionProjectionEncodingTest {
   }
 
   @Test
+  void retainedNullAndTruthTestsKeepTheirNativeConsumers() {
+    var cast =
+        rex.makeCall(
+            types.createSqlType(SqlTypeName.DECIMAL, 1, 0),
+            FlinkSqlOperatorTable.CAST,
+            List.of(rex.makeInputRef(types.createSqlType(SqlTypeName.BIGINT), 0)));
+    for (var operator :
+        List.of(
+            FlinkSqlOperatorTable.IS_NULL,
+            FlinkSqlOperatorTable.IS_NOT_NULL,
+            FlinkSqlOperatorTable.IS_TRUE,
+            FlinkSqlOperatorTable.IS_NOT_TRUE,
+            FlinkSqlOperatorTable.IS_FALSE,
+            FlinkSqlOperatorTable.IS_NOT_FALSE)) {
+      var expression =
+          rex.makeCall(types.createSqlType(SqlTypeName.BOOLEAN), operator, List.of(positive(cast)));
+      var encoded = RexExpression.encodeProjections(List.of(expression), List.of("v"));
+      assertNotNull(encoded, operator.toString());
+      assertTrue(encoded.jvmFunctionCalls().isEmpty(), operator.toString());
+      assertFalse(encoded.requiresWholeStructInputs());
+    }
+  }
+
+  @Test
   void losslessCastsStayNativeButRoundingCarryKeepsTheConsumer() {
     for (var name :
         List.of(

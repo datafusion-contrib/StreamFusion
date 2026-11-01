@@ -1398,6 +1398,9 @@ its final write; `NOT(CAST(x AS DECIMAL(1,0))>0)` can therefore write `false` on
 just as the comparison itself does. Exact numeric casts with enough integer digits and
 rounding headroom retain their previous native route. Nullable results, WHERE consumers,
 TRY_CAST and direct DECIMAL sink enforcement retain their separate NULL contracts.
+Over exact numeric casts, retained NULL and truth tests consume the NULL flag themselves
+and keep their native route; a truth test rewritten by Flink into an ordinary comparison
+still uses that comparison's generated projection contract.
 Unrelated projections remain separate. This repairs
 [explicit CAST projection defaults](https://github.com/datafusion-contrib/StreamFusion/issues/582)
 through the existing evaluator and makes no new acceleration claim.
