@@ -213,6 +213,23 @@ public final class NativeExecution {
       Scope scope = OPERATORS.get(operator);
       if (scope != null && scope == active) {
         scope.rows.merge(operator.getClass().getSimpleName(), (long) rows, Long::sum);
+        String contract = CONTRACTS.get(scope.test).get(scope.variant);
+        if (operator
+                .getClass()
+                .getSimpleName()
+                .equals("NativeColumnarGlobalWindowAggregateOperator")
+            && (contract.contains("_Slice") || contract.contains("_Final"))) {
+          try {
+            boolean finalWindow =
+                (Boolean) operator.getClass().getMethod("isFinalWindow").invoke(operator);
+            scope.rows.merge(
+                "NativeColumnarGlobalWindowAggregateOperator" + (finalWindow ? "_Final" : "_Slice"),
+                (long) rows,
+                Long::sum);
+          } catch (ReflectiveOperationException failure) {
+            throw new AssertionError("Cannot verify the native global window mode", failure);
+          }
+        }
       }
     }
   }

@@ -16,13 +16,14 @@ not a CI gate; see the [CI policy](ci.md#native-execution-checks-instead-of-exha
 Native execution evidence does not measure throughput.
 
 Window witnesses register operators at their concrete or inherited `open()` implementation,
-then count completed Arrow input at the shared update boundary. The abstract window core
-has no `open()` override; instrumenting only that class misses every instance. Delegating
-attached-window overloads must not count the same input twice. With this instrumentation,
-the released event-time window restore suite passes its three single-phase, zero-offset
-TUMBLE/HOP/CUMULATE programs, including STRING DISTINCT state. Its other twenty-one programs
-still fail their required native-window witness; offsets, local/global stages and sessions
-remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+then count completed Arrow input at the shared update boundary. Instrumenting an abstract core
+alone does not register an instance when its lifecycle method is declared elsewhere. Delegating
+attached-window overloads count input only at the terminal call. Each of the twenty-four released
+event-time restore programs has an exact execution contract. Split programs require positive
+local input and separate global witnesses for slice merging and final-window merging; repeated
+subtasks of one mode cannot satisfy both. Eighteen programs pass their original assertions and
+these contracts, including all six complete split plans. Six SESSION programs still fail their
+required native witness under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 The unchanged `AggregateITCase.testDistinctGroupBy` and `testDistinctWithMultiFilter`
 fixtures require consumed native group-aggregate work, including both local and global

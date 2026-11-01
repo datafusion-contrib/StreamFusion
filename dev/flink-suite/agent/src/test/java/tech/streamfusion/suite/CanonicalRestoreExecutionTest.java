@@ -158,6 +158,56 @@ class CanonicalRestoreExecutionTest {
             new Object()));
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({"true,false", "false,true", "true,true"})
+  void splitWindowsRequireBothSliceAndFinalGlobalWork(boolean slice, boolean finalWindow) {
+    var scope =
+        NativeExecution.beginRestore(
+            "org.apache.flink.table.planner.plan.nodes.exec.stream.WindowAggregateEventTimeRestoreTest",
+            new Object(),
+            "window-aggregate-hop-event-time-two-phase-distinct-split");
+    var local = new NativeColumnarLocalWindowAggregateOperator();
+    NativeExecution.opened(local);
+    NativeExecution.completed(local, 4);
+    if (slice) {
+      var operator = new NativeColumnarGlobalWindowAggregateOperator(false);
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 3);
+    }
+    if (finalWindow) {
+      var operator = new NativeColumnarGlobalWindowAggregateOperator(true);
+      NativeExecution.opened(operator);
+      NativeExecution.completed(operator, 2);
+    }
+    if (slice && finalWindow) assertDoesNotThrow(() -> NativeExecution.finish(scope));
+    else assertThrows(AssertionError.class, () -> NativeExecution.finish(scope));
+  }
+
+  @Test
+  void unknownWindowProgramsCannotFallThroughToASubsetWitness() {
+    assertThrows(
+        AssertionError.class,
+        () ->
+            NativeExecution.beginRestore(
+                "org.apache.flink.table.planner.plan.nodes.exec.stream.WindowAggregateEventTimeRestoreTest",
+                new Object(),
+                "new-unqualified-window-program"));
+  }
+
+  private static final class NativeColumnarLocalWindowAggregateOperator {}
+
+  public static final class NativeColumnarGlobalWindowAggregateOperator {
+    private final boolean finalWindow;
+
+    public NativeColumnarGlobalWindowAggregateOperator(boolean value) {
+      finalWindow = value;
+    }
+
+    public boolean isFinalWindow() {
+      return finalWindow;
+    }
+  }
+
   private static final class NativeColumnarGroupAggregateOperator {}
 
   private static final class NativeCalcOperator {}
