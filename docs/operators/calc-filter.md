@@ -1390,6 +1390,18 @@ enforcement; defaults are not substituted globally. Only affected projections us
 correctness path. No option or acceleration claim is introduced. See
 [the projection-default reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581).
 
+The same projection rule covers explicit numeric-to-DECIMAL CASTs that can overflow,
+including BIGINT and DECIMAL precision reduction. Reducing scale can also round into an
+extra integer digit: `CAST(9.99 AS DECIMAL(1,0))` overflows even though both types have
+one integer digit. The affected enclosing basic-type projection stays generated through
+its final write; `NOT(CAST(x AS DECIMAL(1,0))>0)` can therefore write `false` on overflow,
+just as the comparison itself does. Exact numeric casts with enough integer digits and
+rounding headroom retain their previous native route. Nullable results, WHERE consumers,
+TRY_CAST and direct DECIMAL sink enforcement retain their separate NULL contracts.
+Unrelated projections remain separate. This repairs
+[explicit CAST projection defaults](https://github.com/datafusion-contrib/StreamFusion/issues/582)
+through the existing evaluator and makes no new acceleration claim.
+
 Host cast executors compile under Flink's cast-rule library loader, restoring the calling
 thread's context loader afterward. Flink's shared Janino expression cache does not include a
 loader key; setting only the cast context's loader still lets Janino retain a per-job loader.

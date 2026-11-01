@@ -92,8 +92,10 @@ class FlinkDecimalCastOverflowSqlHarnessTest {
     NativeParity.assertChangelogParity(factory,
         "SELECT c,COUNT(*) FROM (SELECT CAST(d*d AS STRING) AS c FROM src) GROUP BY c");
     // TRY_CAST remains nullable; overflowing operands must not inherit CAST's empty default.
-    NativeFailureParity.run(factory, "SELECT id,TRY_CAST(d*d AS STRING) FROM src")
-        .assertSuccess(NativeFailureParity.Route.FALLBACK);
+    for (String target : List.of("STRING", "VARCHAR(3)", "CHAR(8)")) {
+      NativeFailureParity.run(factory, "SELECT id,TRY_CAST(d*d AS " + target + ") FROM src")
+          .assertSuccess(NativeFailureParity.Route.FALLBACK);
+    }
   }
 
   @ParameterizedTest

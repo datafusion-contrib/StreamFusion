@@ -4912,17 +4912,34 @@ final class RexExpression {
             || SqlTypeFamily.INTEGER.contains(node.getType())
             || SqlTypeFamily.APPROXIMATE_NUMERIC.contains(node.getType())
             || SqlTypeFamily.CHARACTER.contains(node.getType()))
-        && containsNonNullableDecimalArithmetic(node);
+        && containsNonNullableDecimalOverflow(node);
   }
 
-  private static boolean containsNonNullableDecimalArithmetic(RexNode node) {
+  private static boolean containsNonNullableDecimalOverflow(RexNode node) {
     if (node instanceof RexFieldAccess) {
-      return containsNonNullableDecimalArithmetic(((RexFieldAccess) node).getReferenceExpr());
+      return containsNonNullableDecimalOverflow(((RexFieldAccess) node).getReferenceExpr());
     }
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    return isDecimalArithmetic(call) && !call.getType().isNullable()
-        || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalArithmetic);
+    return !call.getType().isNullable()
+            && (isDecimalArithmetic(call) || decimalCastCanOverflow(call))
+        || call.getOperands().stream().anyMatch(RexExpression::containsNonNullableDecimalOverflow);
+  }
+
+  private static boolean decimalCastCanOverflow(RexCall call) {
+    if (call.getKind() != SqlKind.CAST
+        || call.getType().getSqlTypeName() != SqlTypeName.DECIMAL
+        || call.getOperands().size() != 1) return false;
+    RelDataType input = call.getOperands().get(0).getType();
+    if (SqlTypeFamily.APPROXIMATE_NUMERIC.contains(input)) return true;
+    boolean decimal = input.getSqlTypeName() == SqlTypeName.DECIMAL;
+    if (!decimal && !SqlTypeFamily.INTEGER.contains(input)) return false;
+    int inputScale = decimal ? input.getScale() : 0;
+    int inputDigits = input.getPrecision() - inputScale;
+    int outputDigits = call.getType().getPrecision() - call.getType().getScale();
+    // Reducing scale can round into another integer digit even when the integer widths match.
+    return outputDigits < inputDigits
+        || outputDigits == inputDigits && call.getType().getScale() < inputScale;
   }
 
   private boolean emitHostExpression(RexCall call, boolean fuseConsumers) {
