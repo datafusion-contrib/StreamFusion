@@ -4548,7 +4548,8 @@ final class RexExpression {
     if (nativeIntegralRounding(call)
         || nativeIntegralRoundPosition(call)
         || nativeIntegralTruncatePosition(call)) return true;
-    if (operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FLOOR
+    if ((operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FLOOR
+            || operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CEIL)
         && nativeIntegralArithmetic(call, operand -> nativeIntegralRoundingOperand(operand, operation)))
       return true;
     return call.getKind() == SqlKind.CAST
