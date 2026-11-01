@@ -255,6 +255,17 @@ impl ScalarUDFImpl for DecimalBinary {
             source_scale(&right.data_type())?,
         )?;
         let inputs = (DecimalInput::new(left)?, DecimalInput::new(right)?);
+        if let (DecimalInput::Decimal(left), DecimalInput::Decimal(right)) = &inputs {
+            // Decimal arrays cannot fail legacy integer casts. Retain the exact iterator
+            // length so Arrow reserves once, without per-row type/error dispatch.
+            let output = left
+                .iter()
+                .zip(right.iter())
+                .map(|(left, right)| prepared.evaluate(left?, right?))
+                .collect::<Decimal128Array>()
+                .with_precision_and_scale(self.precision, self.scale)?;
+            return Ok(ColumnarValue::Array(Arc::new(output)));
+        }
         let limits = [left, right].map(|input| {
             legacy_integer_limit(
                 self.legacy_integer_cast,
@@ -739,6 +750,9 @@ mod tests {
                     for output_scale in [0, 6, 38] {
                         let function = DecimalBinary::new(op, 38, output_scale);
                         let prepared = PreparedBinary::new(&function, s1, s2).unwrap();
+                        let mut left_values = vec![Some(42)];
+                        let mut right_values = vec![Some(42)];
+                        let mut expected_values = Vec::new();
                         for a in [-max, -15, 0, 15, max] {
                             for b in [-max, -1, 0, 1, max] {
                                 let (raw, scale) = match op {
@@ -761,12 +775,59 @@ mod tests {
                                         )
                                     }
                                 };
+                                let expected = rescale_half_up(raw, scale, 38, output_scale);
                                 assert_eq!(
                                     prepared.evaluate(a, b),
-                                    rescale_half_up(raw, scale, 38, output_scale),
+                                    expected,
                                     "{op:?}: ({a}, {s1}), ({b}, {s2}) -> (38, {output_scale})"
                                 );
+                                left_values.push(Some(a));
+                                right_values.push(Some(b));
+                                expected_values.push(expected);
                             }
+                        }
+                        left_values.extend([None, Some(15), None]);
+                        right_values.extend([Some(15), None, None]);
+                        expected_values.extend([None, None, None]);
+                        let rows = expected_values.len();
+                        let left = Decimal128Array::from(left_values)
+                            .with_precision_and_scale(38, s1)
+                            .unwrap()
+                            .slice(1, rows);
+                        let right = Decimal128Array::from(right_values)
+                            .with_precision_and_scale(38, s2)
+                            .unwrap()
+                            .slice(1, rows);
+                        let expected = Decimal128Array::from(expected_values)
+                            .with_precision_and_scale(38, output_scale)
+                            .unwrap();
+                        for legacy in [false, true] {
+                            let function = DecimalBinary::new(op, 38, output_scale)
+                                .with_legacy_integer_cast(legacy);
+                            let arrays = |len| {
+                                vec![
+                                    ColumnarValue::Array(Arc::new(left.slice(0, len))),
+                                    ColumnarValue::Array(Arc::new(right.slice(0, len))),
+                                ]
+                            };
+                            let ColumnarValue::Array(output) =
+                                invoke(&function, arrays(rows), rows).unwrap()
+                            else {
+                                panic!("expected array")
+                            };
+                            output.to_data().validate_full().unwrap();
+                            assert_eq!(
+                                output.as_ref(),
+                                &expected,
+                                "{op:?}: scales {s1}, {s2} -> {output_scale}, legacy={legacy}"
+                            );
+                            let ColumnarValue::Array(empty) =
+                                invoke(&function, arrays(0), 0).unwrap()
+                            else {
+                                panic!("expected empty array")
+                            };
+                            assert_eq!(empty.len(), 0);
+                            assert_eq!(empty.data_type(), expected.data_type());
                         }
                     }
                 }

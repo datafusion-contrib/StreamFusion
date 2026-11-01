@@ -1557,6 +1557,13 @@ at their own precision and scale and permits that division. Both paths preserve 
 operand NULL guards, unselected branches and empty batches. Ordinary result overflow still
 returns NULL. No JVM callback or configuration switch is required for these conversions.
 
+When both operands are DECIMAL arrays, addition/subtraction/multiplication use typed
+Arrow iterators with an exact output capacity. This bypasses per-row input-type dispatch
+and inapplicable legacy integer-cast checks, while keeping each node's resolved
+precision/scale, rounding, overflow NULL and sliced validity. Scalar broadcasting and
+mixed integer operands retain the checked path. See the
+[typed-array implementation and measurements](../optimizations/scalar-function-kernels.md#typed-decimal-arithmetic).
+
 ### Integer FLOOR / CEIL / CEILING
 
 Single-argument FLOOR, CEIL and CEILING over TINYINT, SMALLINT, INT and BIGINT preserve the input
@@ -1703,16 +1710,26 @@ also cover both constant operand orders through production JNI on JDK 11/17, inc
 empty batches, broadcast cardinality and output ownership after the input closes.
 
 DECIMAL ABS also uses the exact Rust kernel for direct input references, typed literals,
-nested admitted ABS and recursive precision widening at the same scale. It preserves
+nested admitted ABS, recursive precision widening at the same scale and recursively
+verified DECIMAL-only addition, subtraction and multiplication of those producers. It preserves
 the declared precision (1 through 38), scale, NULLs and sliced validity; it never converts
 through floating point. Like Comet's decimal ABS, the kernel transforms the unscaled i128
-and explicitly retains its Arrow decimal type. Rescaling, precision narrowing, arithmetic
-and other unverified producers retain the enclosing generated expression. Existing
+and explicitly retains its Arrow decimal type. Each arithmetic node retains its own
+resolved precision/scale and overflow NULL. Division, remainder, mixed numeric operands,
+rescaling, precision narrowing, mixed ABS/negation chains and other unverified producers
+retain the enclosing generated expression. Existing
 value-dependent FLOOR/CEIL and runtime-scale rounding guards still apply before this matcher.
 The [DECIMAL ABS measurements](../benchmarks/scalar-functions.md#decimal-abs) compare
 stock, previous callback and native execution at prepared and complete-job boundaries.
+The [arithmetic-producer controls](../benchmarks/scalar-functions.md#decimal-abs-over-arithmetic)
+measure ABS through a nullable BOOLEAN consumer. NOT NULL basic-type final projections
+still retain their generated default/NULL-flag contract described above; direct DECIMAL
+overflow retains ERROR/DROP enforcement.
+Character CAST/TRY_CAST keep their separate producer whitelist: admitting arithmetic
+ABS does not by itself make every enclosing character conversion JVM-free. Remaining
+conversion signatures are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
 
-DECIMAL unary minus uses the same verified producer scope as decimal ABS: direct
+DECIMAL unary minus uses a narrower verified producer scope: direct
 inputs/literals, recursive same-scale precision widening and nested admitted negation.
 It uses Arrow's decimal numeric negation for arrays and direct i128 scalar dispatch,
 retaining precision, scale and NULL without a JVM evaluator. All legal DECIMAL extrema

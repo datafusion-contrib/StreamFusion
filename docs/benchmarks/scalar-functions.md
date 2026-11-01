@@ -6380,3 +6380,95 @@ Reproduce prepared qualification with `integral_expression`, DECIMAL input and
 `sf.integral.expression=TRY_CAST(v+v AS STRING)` and
 `sf.integral.decimalPrecision=18`, `sf.integral.decimalScale=2`. Remaining conversions
 are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## DECIMAL ABS over arithmetic
+
+Verified DECIMAL-only addition, subtraction and multiplication now stay in Arrow
+through ABS, including nested ABS and same-scale precision widening. Each arithmetic
+node retains its resolved precision/scale and overflow NULL. Division, remainder,
+mixed numeric operands, rescaling, narrowing, mixed ABS/negation and unverified
+producers keep generated evaluation. This extends producer coverage using the existing
+typed arithmetic and ABS rules. A typed DECIMAL-array loop removes per-row input-type
+and legacy integer-error dispatch, retaining exact iterator capacity for the output.
+There is no JNI/ownership or option change.
+The separate NOT NULL projection-default repairs remain active for affected basic-type
+consumers; they are not claimed as JVM-free acceleration.
+Character CAST/TRY_CAST keep their own producer whitelist in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492); this ABS extension
+does not claim every enclosing character conversion is JVM-free.
+
+The [result record](results/decimal-arithmetic-abs-2026-11-02.json) and
+[raw trials](results/decimal-arithmetic-abs-2026-11-02.csv.gz) retain 64 configurations
+and 6,400 trials. Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro,
+one thread, 16 warmups/nine measurements and 131,072 rows/trial compare released
+generated Java on prepared GenericRowData/BinaryRowData with production Calc on Arrow.
+Native timing stays inside Rust; initial JNI/C Data and perimeter transposes are
+excluded, while intrinsic previous callbacks remain inside. The independently
+recompiled actual preceding encoder includes the correctness repair; its retained
+preceding executable and DSO bind the real generated evaluator. The candidate requires empty evaluator descriptors and
+the intended native function work. Checksums match.
+
+DECIMAL(18,2)/(38,18), nullable/NOT NULL inputs, signed extrema, large coefficients,
+addition, multiplication and nested producers cover 1,024-row bulk batches;
+16-row multiplication controls remain separate. Every expression consumes ABS through
+`>0 OR CAST(NULL AS BOOLEAN)`, retaining overflow NULL even for NOT NULL sources.
+These timings measure arithmetic ABS through a BOOLEAN consumer, not final DECIMAL
+output. Untimed allocation probes retain requested bytes and output buffers separately.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.086-4.339x | 3.732-8.435x | 0 |
+| 1.18.1 | tiny control | 8 | 0.193-1.198x | 7.920-12.712x | 6 |
+| 2.2.1 | bulk | 24 | 1.065-3.979x | 3.684-7.591x | 0 |
+| 2.2.1 | tiny control | 8 | 0.171-1.171x | 8.148-12.954x | 6 |
+
+The initial 64-cell investigation retained 11 slower bulk cells;
+the [initial raw trials](results/decimal-arithmetic-abs-initial-2026-11-02.csv.gz)
+and full initial results remain in the record. A ten-second native stack sample
+located repeated arithmetic input/error dispatch and output-buffer growth.
+The typed-array loop removes those costs without changing arithmetic rules.
+Final native bulk timings improve by
+1.111-1.982x
+over the initial native attempt, with independent stock-process drift retained.
+
+All 48 final bulk cells beat stock and the actual preceding path; 12 of 16 tiny
+controls are slower than stock. Independent stock-process drift spans
+0.643-2.211x; every raw trial is retained.
+
+Six million-row row-source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Nullable DECIMAL(18,2) addition
+and DECIMAL(38,18) multiplication/nested producers use the same BOOLEAN consumers,
+parallelism one, two warmups/five measurements. Both versions require consumed
+NativeCalc work and no fallback; the candidate requires no evaluator and the actual
+preceding version requires its generated route. Seconds are median (min-max):
+
+| Flink / producer | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.156515 (0.149577-0.168454) | 0.181894 (0.177573-0.183620) | 0.172555 (0.170005-0.179224) | 0.206288 (0.201754-0.210439) |
+| 1.18.1 / multiply | 0.226769 (0.220124-0.239322) | 0.214279 (0.211862-0.224900) | 0.229178 (0.220161-0.240174) | 0.278883 (0.271642-0.300167) |
+| 1.18.1 / nested | 0.252536 (0.245212-0.256080) | 0.213737 (0.210284-0.232305) | 0.250923 (0.233308-0.260183) | 0.319663 (0.302313-0.334127) |
+| 2.2.1 / add | 0.156260 (0.149138-0.169494) | 0.179437 (0.175440-0.200563) | 0.163660 (0.155227-0.168385) | 0.211092 (0.204884-0.224814) |
+| 2.2.1 / multiply | 0.221233 (0.216625-0.238267) | 0.202235 (0.196252-0.205395) | 0.221499 (0.215712-0.227944) | 0.283277 (0.277864-0.290121) |
+| 2.2.1 / nested | 0.248131 (0.242918-0.252392) | 0.221560 (0.216796-0.230291) | 0.246680 (0.242554-0.248168) | 0.311119 (0.309095-0.319681) |
+
+Native/stock elapsed-time ratios span 0.846-1.162;
+native/previous ratios span 0.669-0.882. Ratios above one are slower.
+Unfavorable results, overlapping ranges and independent stock controls remain visible;
+prepared qualification does not establish universal complete-job acceleration.
+
+All 856 focused JVM invocations and 12 existing fixture smokes pass across released
+Flink 1.18.1/2.2.1 with JDK 11/17, compiled for Java release 11. Complete 5,003-row
+witnesses compare values, schema, NULLs, IDs and cardinality over 11 precision/scale
+pairs, including nullable extrema/overflow and safe NOT NULL values. They require
+consumed native work, no fallback and empty evaluators for admitted arithmetic ABS.
+Filters, grouping, lazy CASE branches, empty batches, selected failures, shared state
+and the #577/#581 projection-default regressions pass. Direct overflowing DECIMAL
+outputs retain stock ERROR/DROP behavior. The new release DSO passes a fresh
+1,019 core tests with two pre-existing ignores; source/DSO hashes, allocator aliases
+and independently recompiled baseline classes are recorded.
+
+Reproduce prepared qualification using `integral_expression`, DECIMAL inputs and
+`SF_INTEGRAL_EXPRESSION='ABS(v*v)>0 OR CAST(NULL AS BOOLEAN)'`. Complete jobs use
+the same `sf.integral.expression` with `sf.integral.decimalPrecision=38` and
+`sf.integral.decimalScale=18`. Remaining unary/rounding producers are tracked in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).

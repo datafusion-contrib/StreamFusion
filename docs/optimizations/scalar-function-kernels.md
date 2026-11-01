@@ -39,6 +39,29 @@ The final prepared-input measurements at 1,024 rows are 2.82–6.44x stock acros
 Flink lines. Sixteen-row results range from near parity to 2.36x; the smallest difference is
 within timing variability. See the [fixtures, raw trials and full-job diagnostics](../benchmarks/scalar-functions.md#decimal-to-string).
 
+## Typed DECIMAL arithmetic
+
+Two DECIMAL Arrow arrays use typed iterators for addition, subtraction and
+multiplication. Their exact iterator length reserves the output once; no per-row
+input enum or fallible legacy-integer dispatch is needed. Scalars and mixed integer
+operands retain their checked path. NULLs are skipped before arithmetic, sliced
+offsets remain valid, and every node keeps its existing resolved precision/scale,
+half-up rounding and overflow NULL. The batching structure follows typed Arrow
+arithmetic loops; released Flink supplies the semantic rules.
+
+A ten-second stack sample of the initial nested-arithmetic ABS control records
+1,421 exclusive samples in decimal input lookup and 512 in the inapplicable legacy
+integer check, against 5,095 samples in the selected native projection subtree.
+Counts locate a bottleneck; they are not elapsed-time percentages. The initial
+48 bulk controls include 11 slower cases. Final native
+bulk medians improve 1.111-1.982x
+over that initial attempt, with all trials and independent stock-process drift retained.
+All 48 final bulk medians beat stock, but 12/16 tiny controls remain slower.
+Prepared timing consumes ABS through a nullable BOOLEAN expression; it does not
+time final DECIMAL output or establish universal complete-job acceleration.
+
+See the [complete results and measured boundaries](../benchmarks/scalar-functions.md#decimal-abs-over-arithmetic).
+
 ## Certified string builtins
 
 A verified ASCII batch runs regex, LIKE ESCAPE and SIMILAR matching in Rust. Its original

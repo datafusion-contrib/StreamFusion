@@ -4730,16 +4730,41 @@ final class RexExpression {
 
   private static boolean nativeDecimalAbs(RexCall call) {
     return nativeDecimalUnary(
-        call, org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS);
+        call, org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS,
+        RexExpression::nativeDecimalAbsOperand);
   }
 
   private static boolean nativeDecimalUnary(RexCall call, SqlOperator operator) {
+    return nativeDecimalUnary(call, operator, node -> nativeDecimalUnaryOperand(node, operator));
+  }
+
+  private static boolean nativeDecimalUnary(
+      RexCall call, SqlOperator operator, java.util.function.Predicate<RexNode> operand) {
     return call.getOperator() == operator
         && call.getOperands().size() == 1
         && call.getType().getSqlTypeName() == SqlTypeName.DECIMAL
         && org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(
             call.getType(), call.getOperands().get(0).getType())
-        && nativeDecimalUnaryOperand(call.getOperands().get(0), operator);
+        && operand.test(call.getOperands().get(0));
+  }
+
+  private static boolean nativeDecimalAbsOperand(RexNode node) {
+    if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL) return false;
+    if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
+    if (!(node instanceof RexCall)) return false;
+    RexCall call = (RexCall) node;
+    if (nativeDecimalAbs(call)) return true;
+    if (isDecimalArithmetic(call)
+        && (call.getKind() == SqlKind.PLUS || call.getKind() == SqlKind.MINUS
+            || call.getKind() == SqlKind.TIMES)) {
+      return call.getOperands().stream().allMatch(RexExpression::nativeDecimalAbsOperand);
+    }
+    if (call.getKind() != SqlKind.CAST || call.getOperands().size() != 1) return false;
+    RelDataType input = call.getOperands().get(0).getType();
+    return input.getSqlTypeName() == SqlTypeName.DECIMAL
+        && call.getType().getPrecision() >= input.getPrecision()
+        && call.getType().getScale() == input.getScale()
+        && nativeDecimalAbsOperand(call.getOperands().get(0));
   }
 
   private static boolean nativeDecimalUnaryOperand(RexNode node, SqlOperator operator) {
