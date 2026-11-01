@@ -358,3 +358,52 @@ fn an_expired_persistent_fold_cannot_rehydrate_between_periodic_sweeps() {
         );
     }
 }
+
+#[test]
+fn current_distinct_counts_cannot_exceed_lifetime_membership() {
+    for persistent in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut source = ttl_operator(false, true, false, &dir.path().join("source"));
+        source
+            .push_proctime(
+                input(&[Some(1), Some(1)], &[Some(10.0), Some(20.0)], 0),
+                100,
+            )
+            .unwrap();
+        let mut target = ttl_operator(false, true, persistent, &dir.path().join("target"));
+        source
+            .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
+            .unwrap();
+        let mut remaining = Vec::new();
+        for index in [0, 1, 2] {
+            source
+                .visit_canonical_distinct(index, |batch| {
+                    assert_eq!(batch.num_rows(), 2);
+                    target.import_canonical_distinct(index, &batch.slice(0, 1))?;
+                    remaining.push((index, batch.slice(1, 1)));
+                    Ok(())
+                })
+                .unwrap();
+        }
+        assert!(target
+            .finish_canonical_distinct()
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds lifetime membership"));
+        assert!(target
+            .push_proctime(input(&[Some(1)], &[Some(30.0)], 0), 200)
+            .is_err());
+        for (index, batch) in remaining {
+            target.import_canonical_distinct(index, &batch).unwrap();
+        }
+        target.finish_canonical_distinct().unwrap();
+        assert_eq!(
+            count(
+                &target
+                    .push_proctime(input(&[Some(1)], &[Some(30.0)], 0), 200)
+                    .unwrap()
+            ),
+            3
+        );
+    }
+}

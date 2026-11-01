@@ -1200,3 +1200,10 @@ On an expired persistent fold touch, deletion reaches the store before hydration
 prevents non-DISTINCT folds from reloading an expired scalar between periodic sweeps. These
 changes preserve the ordinary native checkpoint path; direct stock canonical export still
 visits live state and uses stock serializers without an intermediate native snapshot.
+
+
+Independent lifetime validation still rejects a current DISTINCT COUNT or AVG count larger
+than its retained lifetime membership. A failed finalization leaves execution blocked; supplying
+the missing memberships can finish the same restore without changing its raw accumulators.
+Controlled native checks cover both stores and distinguish this invalid state from a valid
+smaller post-expiry scalar count.
