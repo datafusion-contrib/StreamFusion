@@ -139,6 +139,7 @@ nav:
       - Kafka to Iceberg results: benchmarks/kafka-iceberg-final-20261017/README.md
       - Basic type coverage: benchmarks/basic-type-coverage.md
       - JVM aggregate investigation: benchmarks/jvm-aggregates.md
+      - JVM temporal bridge costs: benchmarks/jvm-temporal-bridges.md
       - Floating GROUP BY: benchmarks/floating-group-by.md
       - Flink 1.18 compatibility: benchmarks/flink118-nexmark.md
   - Optimizations:

@@ -1,0 +1,1068 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-01",
+  "purpose": "Additional boxed interval coverage costs under the accepted UDF performance exception. No acceleration claim.",
+  "candidate_revision": "fa31713d61ae8d7cce0c88c66f62ff7dec9558bd",
+  "integration_cherry_pick": "7c866310",
+  "previous_revision": "f5274a10a373ed3a8081b4c5b9b6b46625966bef",
+  "native_sha256": "d1e7b4611e6d52f569b355e0aa255174da220462b8225c7fb6a1d91be9df5acb",
+  "fixture_sha256": {
+    "FlinkBoxedDateTableFunctionSqlHarnessTest.java": "fc4c35d1557b168535123a1d2cee03171404ececf43fa453d45dddb7cc251774",
+    "BoxedDateTableFunctionBenchmark.java": "64a8dd4f0885175051146ff9ddcfc82df823ae2682aee726009df85bdbfa350b",
+    "FlinkAlternateTemporalTableFunctionSqlHarnessTest.java": "880efa667da10a5f01e6705c3a487a7eaf172bb4db17886f9ac948cf283d0f99",
+    "AlternateTemporalTableFunctionBenchmark.java": "87238383566fbbcb712bd3b1866cb4f83bef7dac0122f16b95fa455bc43f4f34"
+  },
+  "environment": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "logical_cpus": 10,
+    "memory_bytes": 17179869184,
+    "jdk": "Temurin 17.0.17",
+    "heap": "2 GiB",
+    "native_profile": "release with mimalloc",
+    "parallelism": 1,
+    "transpose_batch_rows": 1024,
+    "warmup_pairs": 2,
+    "measured_pairs": 5
+  },
+  "method": "Same complete-job methodology as jvm-table-function-temporal-bridges-2026-11-01.json. Copy the interval benchmark fixtures only into previous production; leave its production sources unchanged. All candidate trials assert both transposes, no fallback and positive table-function input; previous enabled controls assert zero native substitutions/work.",
+  "correctness": {
+    "selected_interval_junit_invocations_per_line": 18,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "limitations": [
+    "Short jobs retain startup/JIT costs; CPU resources are not reserved.",
+    "Every trial and observed background CPU activity is retained. No optimization effect is claimed."
+  ],
+  "series": [
+    {
+      "variant": "candidate",
+      "flink_line": "1.18",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_yearmonth-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.098208542,
+            0.095356375,
+            0.0969645,
+            0.097848041,
+            0.098805042
+          ],
+          "enabled_seconds": [
+            0.195914417,
+            0.190697917,
+            0.195019584,
+            0.194633083,
+            0.194590208
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.301434
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.407621
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.19141
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.090675
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.098209
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.195914
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.190698
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095356
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.096965
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.19502
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.194633
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097848
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.098805
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.19459
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_daytime-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.101165083,
+            0.094835958,
+            0.08977575,
+            0.091483542,
+            0.089181917
+          ],
+          "enabled_seconds": [
+            0.183821667,
+            0.186699292,
+            0.177575042,
+            0.177645833,
+            0.176819625
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.095607
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.191804
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.186642
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.105117
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.101165
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.183822
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.186699
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.094836
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.089776
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.177575
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.177646
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.091484
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.089182
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.17682
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 1,
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 1,
+            "max_cpu_percent": 82.4
+          }
+        ]
+      }
+    },
+    {
+      "variant": "previous",
+      "flink_line": "1.18",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_yearmonth-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.0958285,
+            0.095834042,
+            0.096282666,
+            0.097105834,
+            0.095605041
+          ],
+          "enabled_seconds": [
+            0.089823584,
+            0.098416958,
+            0.093721083,
+            0.095776,
+            0.095924625
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.293935
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.09818
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.092342
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.094648
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095829
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.089824
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.098417
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095834
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.096283
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.093721
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095776
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097106
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095605
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095925
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_daytime-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.098024583,
+            0.097895584,
+            0.089610834,
+            0.09870875,
+            0.093882792
+          ],
+          "enabled_seconds": [
+            0.095192167,
+            0.098275666,
+            0.097749083,
+            0.087981958,
+            0.1040375
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.095753
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.096417
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.095658
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.100344
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.098025
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095192
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.098276
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097896
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.089611
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097749
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.087982
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.098709
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.093883
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.104038
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 1,
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 1,
+            "max_cpu_percent": 84.0
+          }
+        ]
+      }
+    },
+    {
+      "variant": "candidate",
+      "flink_line": "2.2",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_yearmonth-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.090624875,
+            0.100829667,
+            0.099482833,
+            0.101857542,
+            0.100216791
+          ],
+          "enabled_seconds": [
+            0.201828584,
+            0.201902958,
+            0.20605975,
+            0.194264416,
+            0.207520916
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.325381
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.32143
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.210251
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.097019
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.090625
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.201829
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.201903
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.10083
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.099483
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.20606
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.194264
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.101858
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.100217
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.207521
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_daytime-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.090991834,
+            0.095792541,
+            0.10000325,
+            0.109035958,
+            0.1068315
+          ],
+          "enabled_seconds": [
+            0.182627625,
+            0.191523917,
+            0.192814459,
+            0.183646292,
+            0.189288875
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.102035
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.18796
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.187981
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.095424
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.090992
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.182628
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.191524
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095793
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.100003
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.192814
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.183646
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.109036
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.106832
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.189289
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 1,
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 1,
+            "max_cpu_percent": 81.9
+          }
+        ]
+      }
+    },
+    {
+      "variant": "previous",
+      "flink_line": "2.2",
+      "exit_code": 0,
+      "cases": [
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_yearmonth-integer:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.08471425,
+            0.096877667,
+            0.096251417,
+            0.100429083,
+            0.100212541
+          ],
+          "enabled_seconds": [
+            0.083603833,
+            0.094657958,
+            0.098256875,
+            0.097204125,
+            0.088413167
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.333413
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.102067
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.08871
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.100041
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.084714
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.083604
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.094658
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.096878
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.096251
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.098257
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097204
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.100429
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.100213
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.088413
+            }
+          ]
+        },
+        {
+          "case": "JVM_TEMPORAL_BRIDGE_daytime-long:array",
+          "rows": 262144,
+          "stock_seconds": [
+            0.089765958,
+            0.097082083,
+            0.102007166,
+            0.1038205,
+            0.095532459
+          ],
+          "enabled_seconds": [
+            0.097621458,
+            0.097853542,
+            0.093034791,
+            0.099907875,
+            0.093124333
+          ],
+          "trials_in_execution_order": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.105646
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.104921
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.091274
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 262144,
+              "seconds_printed": 0.102255
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.089766
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097621
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097854
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.097082
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.102007
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.093035
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.099908
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.103821
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.095532
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 262144,
+              "seconds_printed": 0.093124
+            }
+          ]
+        }
+      ],
+      "host_observations": {
+        "samples": 1,
+        "processes_reaching_fifty_percent_cpu": [
+          {
+            "process": "mediaanalysisd",
+            "samples_at_or_above_five_percent": 1,
+            "max_cpu_percent": 86.3
+          }
+        ]
+      }
+    }
+  ],
+  "combined_correctness": {
+    "integration_revision": "7c866310",
+    "junit_invocations_per_line": 165,
+    "alternate_temporal_and_interval": 106,
+    "nullable_boxed_date": 14,
+    "date_arguments": 21,
+    "date_results": 24,
+    "flink_releases": [
+      "1.18.1",
+      "2.2.1"
+    ],
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  }
+}
