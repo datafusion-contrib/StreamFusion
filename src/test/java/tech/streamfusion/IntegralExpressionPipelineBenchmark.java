@@ -25,21 +25,21 @@ class IntegralExpressionPipelineBenchmark {
     boolean previous = Boolean.getBoolean("sf.integral.previous");
     boolean fallback = previous && Boolean.getBoolean("sf.integral.fallbackControl");
     boolean booleanInput = Boolean.getBoolean("sf.integral.booleanInput");
+    boolean bigintInput = Boolean.getBoolean("sf.integral.bigintInput");
     int decimalPrecision = Integer.getInteger("sf.integral.decimalPrecision", 0);
     int decimalScale = Integer.getInteger("sf.integral.decimalScale", 0);
     var inputType = decimalPrecision > 0 ? DataTypes.DECIMAL(decimalPrecision, decimalScale)
-        : booleanInput ? DataTypes.BOOLEAN() : DataTypes.INT();
+        : booleanInput ? DataTypes.BOOLEAN() : bigintInput ? DataTypes.BIGINT() : DataTypes.INT();
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
-        .replace("$TYPE", "INT");
+        .replace("$TYPE", bigintInput ? "BIGINT" : "INT");
     for (int trial = 0; trial < warmups + runs; trial++) {
       for (int turn = 0; turn < 2; turn++) {
         boolean nativeRun = ((trial + turn) & 1) == 1;
         try (var metrics = new RecoveryExecutionMetrics()) {
           var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
           var table = StreamTableEnvironment.create(env);
-          if (booleanInput || decimalPrecision > 0)
-            table.getConfig().set("table.exec.legacy-cast-behaviour",
-                Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
+          table.getConfig().set("table.exec.legacy-cast-behaviour",
+              Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
           BigInteger maximum = BigInteger.TEN.pow(decimalPrecision).subtract(BigInteger.ONE);
           var source = env.fromSequence(0, count - 1).map(i -> {
             Object value;
@@ -48,6 +48,8 @@ class IntegralExpressionPipelineBenchmark {
                   : BigInteger.valueOf((i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L));
               value = new BigDecimal(unscaled, decimalScale);
             } else if (booleanInput) value = i % 2 == 0;
+            else if (bigintInput) value = i % 17 == 0 ? Long.MIN_VALUE
+                : (i % 2 == 0 ? -1L : 1L) * (9007199254740993L + i * 7919L);
             else value = i % 17 == 0 ? Integer.MIN_VALUE : (int) ((i % 2 == 0 ? -1 : 1) * i * 7919);
             return Row.of(i % 7 == 0 ? null : value);
           }).returns(ExternalTypeInfo.<Row>of(DataTypes.ROW(DataTypes.FIELD("v", inputType))));

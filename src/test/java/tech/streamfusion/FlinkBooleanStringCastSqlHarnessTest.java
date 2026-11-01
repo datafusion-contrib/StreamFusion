@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkBooleanStringCastSqlHarnessTest {
@@ -43,6 +44,64 @@ class FlinkBooleanStringCastSqlHarnessTest {
                 .replace("CAST(", operator + "("), legacy);
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"TINYINT", "SMALLINT", "INT", "BIGINT"})
+  void integerComparisonCastsConsumeNativeWorkAcrossBatches(String type) throws Exception {
+    String sql = ("SELECT id,CAST(n=m AS STRING),CAST(n<>m AS VARCHAR(3)),"
+        + "CAST(n<m AS CHAR(8)),CAST(n<=m AS STRING),CAST(n>m AS VARCHAR(4)),"
+        + "CAST(n>=m AS CHAR(8)),CAST(NOT(n<m) AS STRING),"
+        + "CAST(n>=m OR n=m AS CHAR(8)),CAST((n<m) IS NULL AS STRING),"
+        + "CAST((n<m) AND (n>m OR n=m) AS CHAR(8)),"
+        + "CAST(n+CAST(1 AS $TYPE)<m-CAST(1 AS $TYPE) AS CHAR(8)),"
+        + "CAST(CAST(n AS BIGINT)<CAST(m AS BIGINT) AS STRING) FROM src").replace("$TYPE", type);
+    for (boolean legacy : new boolean[] {false, true}) {
+      for (boolean nullable : new boolean[] {false, true}) {
+        var integer = type.equals("TINYINT") ? TINYINT() : type.equals("SMALLINT") ? SMALLINT()
+            : type.equals("BIGINT") ? BIGINT() : INT();
+        if (!nullable) integer = integer.notNull();
+        var rowType = ROW(FIELD("id", INT().notNull()), FIELD("n", integer), FIELD("m", integer));
+        var rows = new ArrayList<Row>();
+        for (int id = 0; id < 5003; id++) {
+          rows.add(Row.of(id, nullable && id % 7 == 0 ? null : integerValue(type, id),
+              nullable && id % 5 == 0 ? null : integerValue(type, (id * 13 + 17) % 5003)));
+        }
+        assertRuntimeCasts(sql, legacy, rowType, rows);
+      }
+    }
+  }
+
+  private static Object integerValue(String type, int row) {
+    long value = (row % 2 == 0 ? -1L : 1L) * row * 7919L;
+    switch (type) {
+      case "TINYINT": return row % 17 == 0 ? Byte.MIN_VALUE
+          : row % 17 == 1 ? Byte.MAX_VALUE : (byte) value;
+      case "SMALLINT": return row % 17 == 0 ? Short.MIN_VALUE
+          : row % 17 == 1 ? Short.MAX_VALUE : (short) value;
+      case "INT": return row % 17 == 0 ? Integer.MIN_VALUE
+          : row % 17 == 1 ? Integer.MAX_VALUE : (int) value;
+      case "BIGINT": return row % 17 == 0 ? Long.MIN_VALUE
+          : row % 17 == 1 ? Long.MAX_VALUE : (row % 2 == 0 ? -1L : 1L) * (9007199254740993L + row * 7919L);
+      default: throw new IllegalArgumentException(type);
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void integerComparisonConsumersAndEmptyBranchesMatchFlink(boolean legacy) throws Exception {
+    java.util.function.Supplier<TableEnvironment> factory = () -> {
+      var table = environment();
+      table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
+      return table;
+    };
+    for (String sql : List.of(
+        "SELECT n,CHAR_LENGTH(CAST(n<1 AS CHAR(8))),CONCAT(CAST(n>=1 AS STRING),'!') FROM src",
+        "SELECT CAST(n<1 AS CHAR(8)),COUNT(*) FROM src GROUP BY CAST(n<1 AS CHAR(8))",
+        "SELECT CAST(n<1 AS CHAR(8)) FROM src WHERE n=99",
+        "SELECT CASE WHEN n>=0 THEN CAST(n<1 AS CHAR(8)) ELSE CAST(n/(n-n)>0 AS CHAR(8)) END FROM src")) {
+      BuiltinFunctionParity.assertParity(factory, sql);
+    }
+  }
+
   private static void assertRuntimeBooleanCasts(String sql, boolean legacy) throws Exception {
     for (boolean nullable : new boolean[] {false, true}) {
       var bool = nullable ? BOOLEAN() : BOOLEAN().notNull();
@@ -51,44 +110,49 @@ class FlinkBooleanStringCastSqlHarnessTest {
       for (int id = 0; id < 5003; id++)
         rows.add(Row.of(id, nullable && id % 7 == 0 ? null : id % 2 == 0,
             nullable && id % 5 == 0 ? null : id % 3 == 0));
-      TreeMap<Integer, List<Object>> stock = null;
-      List<org.apache.flink.table.types.DataType> stockTypes = null;
-      for (boolean nativeRun : new boolean[] {false, true}) {
-        try (var metrics = new RecoveryExecutionMetrics()) {
-          var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
-          var table = StreamTableEnvironment.create(env);
-          table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
-          table.createTemporaryView("src", tech.streamfusion.compat.FlinkTestSources.fromData(env,
-              rows, ExternalTypeInfo.<Row>of(rowType)),
-              Schema.newBuilder().fromRowDataType(rowType).build());
-          var scan = nativeRun ? NativePlanner.install(table) : null;
-          var types = table.sqlQuery(sql).getResolvedSchema().getColumnDataTypes();
-          if (nativeRun) {
-            assertEquals(stockTypes, types);
-            String plan = table.explainSql(sql);
-            assertTrue(plan.contains("NativeCalc"), plan);
-            assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
-            assertFalse(scan.functionExecutions().isEmpty());
-            assertTrue(scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
-                scan.functionExecutions().toString());
-          } else stockTypes = types;
-          var actual = new TreeMap<Integer, List<Object>>();
-          try (var output = table.executeSql(sql).collect()) {
-            while (output.hasNext()) {
-              Row row = output.next();
-              int id = (Integer) row.getField(0);
-              assertTrue(id >= 0 && id < rows.size());
-              var values = new ArrayList<Object>();
-              for (int field = 1; field < row.getArity(); field++) values.add(row.getField(field));
-              assertNull(actual.put(id, values), "duplicate id " + id);
-            }
+      assertRuntimeCasts(sql, legacy, rowType, rows);
+    }
+  }
+
+  private static void assertRuntimeCasts(String sql, boolean legacy,
+      org.apache.flink.table.types.DataType rowType, List<Row> rows) throws Exception {
+    TreeMap<Integer, List<Object>> stock = null;
+    List<org.apache.flink.table.types.DataType> stockTypes = null;
+    for (boolean nativeRun : new boolean[] {false, true}) {
+      try (var metrics = new RecoveryExecutionMetrics()) {
+        var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
+        var table = StreamTableEnvironment.create(env);
+        table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
+        table.createTemporaryView("src", tech.streamfusion.compat.FlinkTestSources.fromData(env,
+            rows, ExternalTypeInfo.<Row>of(rowType)),
+            Schema.newBuilder().fromRowDataType(rowType).build());
+        var scan = nativeRun ? NativePlanner.install(table) : null;
+        var types = table.sqlQuery(sql).getResolvedSchema().getColumnDataTypes();
+        if (nativeRun) {
+          assertEquals(stockTypes, types);
+          String plan = table.explainSql(sql);
+          assertTrue(plan.contains("NativeCalc"), plan);
+          assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+          assertFalse(scan.functionExecutions().isEmpty());
+          assertTrue(scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
+              scan.functionExecutions().toString());
+        } else stockTypes = types;
+        var actual = new TreeMap<Integer, List<Object>>();
+        try (var output = table.executeSql(sql).collect()) {
+          while (output.hasNext()) {
+            Row row = output.next();
+            int id = (Integer) row.getField(0);
+            assertTrue(id >= 0 && id < rows.size());
+            var values = new ArrayList<Object>();
+            for (int field = 1; field < row.getArity(); field++) values.add(row.getField(field));
+            assertNull(actual.put(id, values), "duplicate id " + id);
           }
-          assertEquals(rows.size(), actual.size());
-          if (nativeRun) {
-            assertEquals(stock, actual);
-            RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
-          } else stock = actual;
         }
+        assertEquals(rows.size(), actual.size());
+        if (nativeRun) {
+          assertEquals(stock, actual);
+          RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+        } else stock = actual;
       }
     }
   }

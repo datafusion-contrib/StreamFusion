@@ -5626,8 +5626,7 @@ selects the corresponding mode. Remaining casts stay in
 
 The formatter accepts recursively verified BOOLEAN-only NOT, AND, OR, IS NULL,
 IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE over BOOLEAN references
-and literals. These operations cannot fail or mutate shared state. Other producers,
-including numeric comparisons, division, UDFs and CASE, keep their existing generated
+and literals. These operations cannot fail or mutate shared state. At this logical-only qualification, numeric comparisons, division, UDFs and CASE kept their generated
 or short-circuit fallback routes. The proof never discards a computed operand.
 
 The [result record](results/boolean-logical-cast-2026-11-01.json) and
@@ -5922,3 +5921,80 @@ The preceding fallback control launches `IntegralExpressionBenchmarkFunctions` w
 expression, legacy mode, row format and trial counts. Complete previous jobs use
 the same fallback control. These controls never replace the actual rejected encoding
 with a synthetic native or callback program.
+
+## BOOLEAN CAST over integer comparisons
+
+Integer =, <>, <, <=, > and >= comparisons reuse the native BOOLEAN formatter.
+The recursive proof admits verified integer references/literals, wrapping addition,
+subtraction and multiplication, lossless widening and the existing integral rounding
+forms. BOOLEAN logical/null/truth wrappers remain native; integer IS NULL/IS NOT NULL
+also cover the optimizer's expansion of nullable comparisons. The proof excludes
+failing and stateful producers. DECIMAL, character, floating and temporal comparisons,
+division, remainder and other unverified producers keep their existing routes.
+Modern and legacy text/width rules are unchanged. No production switch is introduced.
+
+The [result record](results/boolean-integer-comparison-cast-2026-11-01.json) and
+[raw trials](results/boolean-integer-comparison-cast-2026-11-01.csv.gz) retain 64 configurations/6,400 trials.
+Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial use the prepared Rust/Arrow
+versus released Java/RowData boundary. INT/BIGINT extrema and values beyond 2^53
+match across GenericRowData/BinaryRowData and nullable/NOT NULL declarations.
+Representative bulk expressions are modern v>=0 to STRING, modern wrapping v+1<0
+to CHAR(8), and legacy v<0 to CHAR(8). Sixteen-row modern comparison-to-STRING
+controls remain separate. All checksums agree. The independently recompiled actual
+preceding encoder must bind a JVM evaluator; the candidate must have no evaluator.
+The unchanged Rust formatter, Calc and comparison kernels retain their exact DSO.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.571-9.760x | 11.270-14.952x | 0 |
+| 1.18.1 | tiny control | 8 | 0.123-0.162x | 14.109-15.029x | 8 |
+| 2.2.1 | bulk | 24 | 1.581-9.791x | 11.132-15.929x | 0 |
+| 2.2.1 | tiny control | 8 | 0.123-0.163x | 14.003-15.089x | 8 |
+
+All 48 bulk cells beat stock; 16 of 16 tiny controls are slower.
+Independent stock-control drift spans 0.650-1.393x. All ranges are retained.
+For the Flink 2.2 NOT NULL INT/GenericRowData comparison, untimed native allocation
+probes report 29 requests for both batch sizes: 10,534 requested bytes at 1,024 rows
+and 1,816 at 16 rows. Native medians rise from 2.315 to 33.023 ns/row while stock
+remains near 4.7 ns/row. Fixed per-batch work remains a small-batch limitation;
+removing the preceding JVM evaluator does not eliminate that cost.
+
+Six complete million-row source/blackhole configurations retain source generation,
+planning/startup, production JNI and both transposes. Modern INT comparison-to-STRING,
+modern BIGINT arithmetic comparison-to-CHAR(8), and legacy INT comparison-to-CHAR(8)
+run at parallelism one with two warmups/five measurements. Each native query requires
+consumed NativeCalc, no fallback and empty candidate evaluator descriptors.
+
+| Flink / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-comparison | 0.188399 (0.186934-0.194068) | 0.191475 (0.190601-0.197079) | 0.192767 (0.183027-0.197884) | 0.217869 (0.215422-0.238049) |
+| 1.18.1 / modern-arithmetic | 0.235702 (0.231248-0.249417) | 0.199672 (0.196615-0.223385) | 0.242474 (0.237011-0.247843) | 0.273772 (0.270471-0.284878) |
+| 1.18.1 / legacy-comparison | 0.208412 (0.200292-0.227803) | 0.188325 (0.185272-0.198546) | 0.212331 (0.208584-0.216080) | 0.223269 (0.220450-0.231086) |
+| 2.2.1 / modern-comparison | 0.185857 (0.181895-0.190989) | 0.187063 (0.184722-0.196945) | 0.187830 (0.180328-0.192330) | 0.219429 (0.215679-0.226802) |
+| 2.2.1 / modern-arithmetic | 0.225332 (0.219251-0.228684) | 0.190797 (0.190280-0.194885) | 0.229180 (0.218205-0.244467) | 0.258519 (0.251868-0.277756) |
+| 2.2.1 / legacy-comparison | 0.205362 (0.204444-0.214410) | 0.192941 (0.189956-0.201685) | 0.204743 (0.194486-0.218907) | 0.212190 (0.207976-0.218663) |
+
+Native/stock elapsed ratios span 0.847-1.016;
+native/previous ratios span 0.729-0.909. Ratios above one are slower.
+All unfavorable results and overlapping ranges remain. Prepared qualification does
+not establish universal end-to-end acceleration.
+
+All 268 focused JVM invocations, four additional shared-state invocations and
+12 existing fixture smokes pass on released Flink 1.18.1/2.2.1 with JDK 11/17
+(Java release 11). Complete 5,003-row witnesses compare all values, schema, NULLs,
+IDs and cardinality across batches for TINYINT/SMALLINT/INT/BIGINT, independent input
+columns, nullable/NOT NULL declarations, modern/legacy mode, signed extrema and BIGINT
+values beyond 2^53. They require consumed native work, no fallback and no evaluator.
+String consumers, grouping, lazy branches and empty filtered batches match stock.
+Failing and stateful inputs keep their released behavior and exact previous routes.
+Unchanged released boolean-expression/truth tests, 535 CastRules stock-oracle cases
+per pair, and the identical DSO's 1,019 core passes/two pre-existing ignores retain
+their preceding qualification; new runtime witnesses establish the changed route.
+Source/DSO hashes and independently recompiled baseline classes are retained.
+
+Reproduce prepared qualification with `integral_expression`, INT/BIGINT input and
+`SF_INTEGRAL_EXPRESSION='CAST(v>=CAST(0 AS $TYPE) AS STRING)'`. Complete jobs use
+`sf.integral.expression=CAST(v>=0 AS STRING)`; BIGINT controls additionally use
+`sf.integral.bigintInput=true`. Remaining conversions are tracked in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).

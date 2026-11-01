@@ -4539,28 +4539,44 @@ final class RexExpression {
   private static boolean nativeBooleanCharacterCast(RexCall call) {
     return call.getOperands().size() == 1
         && SqlTypeFamily.CHARACTER.contains(call.getType())
-        && nativeBooleanFormattingOperand(call.getOperands().get(0));
+        && nativeBooleanFormattingOperand(call.getOperands().get(0), call.getKind() == SqlKind.CAST);
   }
 
-  private static boolean nativeBooleanFormattingOperand(RexNode node) {
+  private static boolean nativeBooleanFormattingOperand(RexNode node, boolean integerComparisons) {
     if (node.getType().getSqlTypeName() != SqlTypeName.BOOLEAN) return false;
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     var call = (RexCall) node;
     switch (call.getKind()) {
-      case NOT:
       case IS_NULL:
       case IS_NOT_NULL:
+        return call.getOperands().size() == 1
+            && (nativeBooleanFormattingOperand(call.getOperands().get(0), integerComparisons)
+                || integerComparisons
+                    && SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
+                    && nativeIntegralRoundingOperand(call.getOperands().get(0)));
+      case NOT:
       case IS_TRUE:
       case IS_NOT_TRUE:
       case IS_FALSE:
       case IS_NOT_FALSE:
         return call.getOperands().size() == 1
-            && nativeBooleanFormattingOperand(call.getOperands().get(0));
+            && nativeBooleanFormattingOperand(call.getOperands().get(0), integerComparisons);
       case AND:
       case OR:
         return call.getOperands().size() >= 2
-            && call.getOperands().stream().allMatch(RexExpression::nativeBooleanFormattingOperand);
+            && call.getOperands().stream()
+                .allMatch(operand -> nativeBooleanFormattingOperand(operand, integerComparisons));
+      case EQUALS:
+      case NOT_EQUALS:
+      case LESS_THAN:
+      case LESS_THAN_OR_EQUAL:
+      case GREATER_THAN:
+      case GREATER_THAN_OR_EQUAL:
+        return integerComparisons && call.getOperands().size() == 2
+            && call.getOperands().stream().allMatch(operand ->
+                SqlTypeFamily.INTEGER.contains(operand.getType())
+                    && nativeIntegralRoundingOperand(operand));
       default:
         return false;
     }

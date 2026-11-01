@@ -1111,6 +1111,14 @@ These scalar rules are separate from grouping-key equality and sort ordering.
 native Arrow formatter. Both also admit recursively verified BOOLEAN-only NOT, AND, OR,
 IS NULL, IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE operands; their
 inputs must be BOOLEAN references/literals or the same failure-free logical operations.
+CAST additionally admits integer `=`, `<>`, `<`, `<=`, `>` and `>=` comparisons inside that
+logical proof. Each comparison operand must be an integer reference/literal or the verified
+wrapping-arithmetic, lossless-widening and integral-rounding tree described below. This removes
+the formatting evaluator without dropping comparison inputs. The same verified integer operands
+also admit IS NULL/IS NOT NULL, including the optimizer's expansion of nullable comparisons.
+TRY_CAST retains generated evaluation
+for these integer comparisons pending its separate qualification. DECIMAL, character, floating,
+temporal, division, remainder and stateful comparison operands keep their existing routes.
 Modern mode emits uppercase `TRUE`/`FALSE`, truncates VARCHAR/CHAR
 and pads bounded CHAR with spaces. Legacy mode emits lowercase `true`/`false` and ignores
 the target's length and padding. NULL remains NULL in both modes. BOOLEAN formatting cannot

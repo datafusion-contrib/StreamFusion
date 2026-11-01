@@ -14,6 +14,42 @@ import org.junit.jupiter.api.Test;
 
 class BooleanLogicalCastEncodingTest {
   @Test
+  void castIntegerComparisonsUseTheNativeFormatter() throws Exception {
+    var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
+    var rex = new RexBuilder(types);
+    for (var name : List.of(SqlTypeName.TINYINT, SqlTypeName.SMALLINT,
+        SqlTypeName.INTEGER, SqlTypeName.BIGINT)) {
+      var integer = types.createSqlType(name);
+      var input = rex.makeInputRef(integer, 0);
+      var other = rex.makeInputRef(integer, 1);
+      for (var operator : List.of(FlinkSqlOperatorTable.EQUALS, FlinkSqlOperatorTable.NOT_EQUALS,
+          FlinkSqlOperatorTable.LESS_THAN, FlinkSqlOperatorTable.LESS_THAN_OR_EQUAL,
+          FlinkSqlOperatorTable.GREATER_THAN, FlinkSqlOperatorTable.GREATER_THAN_OR_EQUAL)) {
+        var comparison = rex.makeCall(operator, input, other);
+        for (var predicate : List.of(comparison,
+            rex.makeCall(FlinkSqlOperatorTable.NOT, comparison),
+            rex.makeCall(FlinkSqlOperatorTable.OR,
+                rex.makeCall(FlinkSqlOperatorTable.IS_NULL, input),
+                rex.makeCall(FlinkSqlOperatorTable.IS_NULL, other)),
+            rex.makeCall(FlinkSqlOperatorTable.IS_NOT_NULL, input),
+            rex.makeCall(FlinkSqlOperatorTable.AND, comparison, rex.makeCall(operator, other, input)))) {
+          for (boolean legacy : new boolean[] {false, true}) {
+            for (var target : List.of(SqlTypeName.CHAR, SqlTypeName.VARCHAR)) {
+              for (var cast : List.of(FlinkSqlOperatorTable.CAST, FlinkSqlOperatorTable.TRY_CAST)) {
+                var expression = rex.makeCall(types.createSqlType(target, 8), cast, List.of(predicate));
+                var encoded = BooleanStringCastEncodingTest.configured(expression, legacy);
+                assertEquals(cast == FlinkSqlOperatorTable.CAST, encoded.jvmFunctionCalls().isEmpty(),
+                    expression.toString());
+                if (cast == FlinkSqlOperatorTable.CAST) assertEquals(244, encoded.payload()[0]);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @Test
   void failureFreeLogicalOperandsStayNativeForBothCasts() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
@@ -67,6 +103,13 @@ class BooleanLogicalCastEncodingTest {
           assertFalse(BooleanStringCastEncodingTest.configured(cast, legacy)
               .jvmFunctionCalls().isEmpty());
         }
+      }
+      for (var operator : List.of(FlinkSqlOperatorTable.IS_NULL, FlinkSqlOperatorTable.IS_NOT_NULL)) {
+        var operand = rex.makeCall(operator, division);
+        var cast = rex.makeCall(types.createSqlType(SqlTypeName.VARCHAR, 8),
+            FlinkSqlOperatorTable.CAST, List.of(operand));
+        assertFalse(BooleanStringCastEncodingTest.configured(cast, legacy)
+            .jvmFunctionCalls().isEmpty());
       }
     }
   }

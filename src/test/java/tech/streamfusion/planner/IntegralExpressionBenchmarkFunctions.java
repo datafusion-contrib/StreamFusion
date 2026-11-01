@@ -39,11 +39,9 @@ public final class IntegralExpressionBenchmarkFunctions {
       throws Exception {
     Thread.currentThread().setContextClassLoader(IntegralExpressionBenchmarkFunctions.class.getClassLoader());
     type = element;
-    boolean configuredCast = type.equals("BOOLEAN") || type.startsWith("DECIMAL(");
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
-    if (configuredCast)
-      table.getConfig().set("table.exec.legacy-cast-behaviour",
-          Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
+    table.getConfig().set("table.exec.legacy-cast-behaviour",
+        Boolean.getBoolean("sf.integral.legacy") ? "ENABLED" : "DISABLED");
     String declaration = type + (nullable ? "" : " NOT NULL");
     table.executeSql("CREATE TABLE inputs(v " + declaration + ") WITH ('connector'='datagen')");
     String expression = System.getProperty("sf.integral.expression", "ABS(v+CAST(1 AS $TYPE))")
@@ -55,6 +53,7 @@ public final class IntegralExpressionBenchmarkFunctions {
     booleanOutput = outputType.getTypeRoot() == LogicalTypeRoot.BOOLEAN;
     stringOutput = outputType.getTypeRoot() == LogicalTypeRoot.VARCHAR
         || outputType.getTypeRoot() == LogicalTypeRoot.CHAR;
+    boolean configuredCast = stringOutput || type.equals("BOOLEAN") || type.startsWith("DECIMAL(");
     stock = FlinkExpressionGenerator.generate(project.getProjects(), null,
         new LogicalType[] {inputType}, RowType.of(outputType), table.getConfig(), getLoader());
     var context = new FunctionContext(null) {
