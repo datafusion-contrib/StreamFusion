@@ -105,6 +105,14 @@ legacy retained-frame bookkeeping but cannot reconstruct clocks their writers di
 canonical projection of these processing-time fields remains pending under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
 
+The direct processing-time ROWS bridge visits counter/minimum/cleanup metadata separately from
+original frames and raw accumulators. The receiver installs complete frame rows, then validates
+the corresponding key's metadata before installing a counter. This preserves `Long.MAX_VALUE`
+even when the retained frame has other timestamp buckets. It avoids replay and intermediate
+native snapshots; stock descriptors and timer queues still require the Java adapter. Export
+rejects legacy frames whose exact scalar bookkeeping was never retained, rather than presenting
+inferred frame length/minimum as lossless state.
+
 Bounded event-time RANGE keeps Flink's registered data and cleanup timestamps separately from
 the retained frame. Replaced cleanup deadlines leave their older timers armed; those callbacks
 advance the per-key late cutoff even without a data row. A sorted, deduplicated timestamp vector

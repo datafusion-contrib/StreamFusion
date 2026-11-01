@@ -1,6 +1,17 @@
 use super::*;
 
 impl RocksOverAggStore {
+    pub(crate) fn frame_partition_keys(&self) -> Result<ahash::HashSet<Vec<u8>>, DataFusionError> {
+        let mut keys = ahash::HashSet::default();
+        for entry in self.db.iterator(IteratorMode::Start) {
+            let (key, _) = entry.map_err(re)?;
+            if key.len() >= KEY_PREFIX_LEN + FRAME_SUFFIX_LEN && key[4] == FRAMES_TABLE {
+                keys.insert(key[KEY_PREFIX_LEN..key.len() - FRAME_SUFFIX_LEN].to_vec());
+            }
+        }
+        Ok(keys)
+    }
+
     pub(crate) fn owns_group(&self, group: i32) -> bool {
         self.key_groups.contains(&group)
     }

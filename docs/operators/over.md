@@ -363,6 +363,16 @@ checkpoint support does not complete the processing-time ROWS stock canonical ad
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Correctness takes priority;
 benchmarking remains deferred.
 
+Direct processing-time ROWS transfer exports the counter, bucket minimum and cleanup owner
+separately from original retained rows and raw arithmetic. Import installs the frame first, then
+validates its metadata before installing any counters. Immediate re-export preserves the empty-map
+sentinel instead of deriving a minimum from retained rows. Duplicate/unowned keys, missing frames,
+wrong field types and invalid counts fail conversion. Legacy frames lacking exact counter/minimum
+metadata remain readable for ordinary recovery but cannot claim an exact canonical handoff.
+This is internal live-state transport; the stock descriptor/timer adapter and automatic planner
+binding for bounded processing-time ROWS remain unfinished under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
 A **bounded-RANGE frame over proctime** falls back — with processing time materialized as a fixed
 per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
 

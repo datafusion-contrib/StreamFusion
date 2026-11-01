@@ -7,6 +7,7 @@ const STAMP: &str = "__over_retention_stamp";
 mod distinct;
 mod event;
 mod frame;
+mod proc_rows;
 mod range;
 
 fn invalid(message: &str) -> DataFusionError {

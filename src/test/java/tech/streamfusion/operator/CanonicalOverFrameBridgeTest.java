@@ -64,7 +64,7 @@ class CanonicalOverFrameBridgeTest {
             100 + index);
       var before = dump(source);
       assertFalse(before.isEmpty());
-      transfer(source, target);
+      transfer(source, target, shape);
       assertEquals(baseline, NativeAllocator.SHARED.getAllocatedMemory());
       assertEquals(before, dump(target));
       for (int index = 3; index < 8; index++) {
@@ -87,6 +87,75 @@ class CanonicalOverFrameBridgeTest {
   static Stream<Arguments> modes() {
     return Stream.of(0, 1, 2)
         .flatMap(shape -> Stream.of(false, true).map(store -> Arguments.of(shape, store)));
+  }
+
+  static Stream<Arguments> processingProtocols() {
+    var cases = new ArrayList<Arguments>();
+    for (int offset : new int[] {0, 2})
+      for (int clock = 0; clock < 3; clock++)
+        for (boolean keyless : new boolean[] {false, true})
+          for (boolean from : new boolean[] {false, true})
+            for (boolean to : new boolean[] {false, true})
+              cases.add(Arguments.of(offset, clock, keyless, from, to));
+    return cases.stream();
+  }
+
+  @ParameterizedTest
+  @MethodSource("processingProtocols")
+  void processingMetadataAndOwnedFramesTransferWithoutAnIntermediateSnapshot(
+      int offset, int clock, boolean keyless, boolean from, boolean to) {
+    long baseline = NativeAllocator.SHARED.getAllocatedMemory();
+    long source = create(1, 0, keyless, from, 0, "source", 1 << 24, offset);
+    long target = create(1, 0, keyless, to, 0, "target", 1 << 24, offset);
+    long[] clocks =
+        clock == 0
+            ? new long[] {100, 100, 100, 100, 100, 100}
+            : clock == 1
+                ? new long[] {300, 200, 100, 400, 200, 500}
+                : new long[] {
+                  Long.MAX_VALUE,
+                  Long.MAX_VALUE,
+                  Long.MAX_VALUE,
+                  Long.MAX_VALUE,
+                  Long.MAX_VALUE,
+                  Long.MAX_VALUE
+                };
+    try {
+      Native.bindOverCanonicalFrameInputs(source);
+      int split = offset == 0 ? 2 : 4;
+      for (int i = 0; i < split; i++)
+        step(source, 1, 0, row(1, null, (long) i + 1, 1000 + i), clocks[i]);
+      transfer(source, target, 0);
+      assertEquals(baseline, NativeAllocator.SHARED.getAllocatedMemory());
+      assertEquals(dump(source), dump(target));
+      assertEquals(dumpProcessing(source), dumpProcessing(target));
+      for (int i = split; i < clocks.length; i++) {
+        var row = row(1, null, i == 4 ? null : (long) i + 1, 1000 + i);
+        assertEquals(step(source, 1, 0, row, clocks[i]), step(target, 1, 0, row, clocks[i]));
+        assertEquals(dumpProcessing(source), dumpProcessing(target));
+      }
+    } finally {
+      close(source, from);
+      close(target, to);
+    }
+    assertEquals(baseline, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  private static List<String> dumpProcessing(long handle) {
+    var rows = new ArrayList<String>();
+    Native.exportOverCanonicalProcessingRows(
+        handle,
+        (a, s) -> {
+          try (var array = ArrowArray.wrap(a);
+              var schema = ArrowSchema.wrap(s);
+              var root =
+                  Data.importVectorSchemaRoot(
+                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+            rows.addAll(values(root));
+          }
+        });
+    rows.sort(String::compareTo);
+    return rows;
   }
 
   static Stream<Arguments> nonfiniteModes() {
@@ -114,7 +183,7 @@ class CanonicalOverFrameBridgeTest {
       Number[] input = {Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, null, null, null};
       for (int index = 0; index < input.length; index++)
         step(source, code, shape, row(code, null, input[index], 1000 + index), 0);
-      transfer(source, target);
+      transfer(source, target, shape);
       var row = row(code, null, 1L, 1005);
       var expected = step(source, code, shape, row, 0);
       assertTrue(expected.get(0).contains("NaN"));
@@ -210,7 +279,7 @@ class CanonicalOverFrameBridgeTest {
       Native.bindOverCanonicalFrameInputs(source);
       step(source, 1, 0, row(1, null, 1L, 1000), 0);
       assertThrows(
-          tech.streamfusion.NativeMemoryLimitException.class, () -> transfer(source, target));
+          tech.streamfusion.NativeMemoryLimitException.class, () -> transfer(source, target, 0));
       assertEquals(baseline, NativeAllocator.SHARED.getAllocatedMemory());
     } finally {
       close(source, false);
@@ -242,13 +311,25 @@ class CanonicalOverFrameBridgeTest {
 
   private long create(
       int code, int shape, boolean keyless, boolean store, long ttl, String name, long budget) {
+    return create(code, shape, keyless, store, ttl, name, budget, 2);
+  }
+
+  private long create(
+      int code,
+      int shape,
+      boolean keyless,
+      boolean store,
+      long ttl,
+      String name,
+      long budget,
+      long offset) {
     int[] types = new int[8], values = new int[8];
     java.util.Arrays.fill(types, code);
     java.util.Arrays.fill(values, 1);
     int[] keys = keyless ? new int[0] : new int[] {0};
     if (!store)
       return Native.createOverAggregator(
-          types, KINDS, 2, values, keys, shape == 2 ? 2 : 1, 2, shape == 0, ttl, budget);
+          types, KINDS, 2, values, keys, shape == 2 ? 2 : 1, offset, shape == 0, ttl, budget);
     try (var root = RowDataArrowConverter.write(List.of(), input(code), NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportSchema(
@@ -260,7 +341,7 @@ class CanonicalOverFrameBridgeTest {
           values,
           keys,
           shape == 2 ? 2 : 1,
-          2,
+          offset,
           shape == 0,
           keyless
               ? new int[] {Native.STOCK_KEY_PROJECTION}
@@ -282,7 +363,7 @@ class CanonicalOverFrameBridgeTest {
     }
   }
 
-  private static void transfer(long source, long target) {
+  private static void transfer(long source, long target, int shape) {
     Native.exportOverCanonicalFrames(
         source,
         (a, s) -> {
@@ -294,6 +375,23 @@ class CanonicalOverFrameBridgeTest {
             importFrame(target, root);
           }
         });
+    if (shape == 0)
+      Native.exportOverCanonicalProcessingRows(
+          source,
+          (a, s) -> {
+            try (var array = ArrowArray.wrap(a);
+                var schema = ArrowSchema.wrap(s);
+                var root =
+                    Data.importVectorSchemaRoot(
+                        NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES);
+                var out = ArrowArray.allocateNew(NativeAllocator.SHARED);
+                var outSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+              Data.exportVectorSchemaRoot(
+                  NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, out, outSchema);
+              Native.importOverCanonicalProcessingRows(
+                  target, out.memoryAddress(), outSchema.memoryAddress());
+            }
+          });
   }
 
   private static void importFrame(long target, VectorSchemaRoot root) {

@@ -222,3 +222,171 @@ fn file_checkpoints_clip_processing_clocks_and_counters_with_their_frames() {
         assert_eq!(target.retention_bytes, 0);
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn direct_frame_and_processing_protocol_transfer_preserves_sentinel_and_middle_evictions() {
+    for keyless in [false, true] {
+        for offset in [0, 2] {
+            for clocks in [[100; 6], [300, 200, 100, 400, 200, 500], [i64::MAX; 6]] {
+                for from_store in [false, true] {
+                    for to_store in [false, true] {
+                        let dir = tempfile::tempdir().unwrap();
+                        let mut source =
+                            operator(keyless, offset, from_store, &dir.path().join("source"));
+                        source.bind_canonical_frame_inputs().unwrap();
+                        for (index, clock) in clocks[..4].iter().enumerate() {
+                            source
+                                .push_proctime(input(None, Some(index as i64 + 1)), *clock)
+                                .unwrap();
+                        }
+                        let mut frames = Vec::new();
+                        source
+                            .visit_canonical_frames(|batch| {
+                                frames.push(batch);
+                                Ok(())
+                            })
+                            .unwrap();
+                        let mut protocol = Vec::new();
+                        source
+                            .visit_canonical_processing_rows(|batch| {
+                                protocol.push(batch);
+                                Ok(())
+                            })
+                            .unwrap();
+                        let mut target =
+                            operator(keyless, offset, to_store, &dir.path().join("target"));
+                        target.bind_canonical_frame_inputs().unwrap();
+                        for batch in &frames {
+                            target.import_canonical_frame(batch).unwrap();
+                        }
+                        for batch in &protocol {
+                            target.import_canonical_processing_rows(batch).unwrap();
+                        }
+                        assert_eq!(metadata(&source), metadata(&target));
+                        let mut exported = Vec::new();
+                        target
+                            .visit_canonical_processing_rows(|batch| {
+                                exported.push(batch);
+                                Ok(())
+                            })
+                            .unwrap();
+                        assert_eq!(
+                            protocol, exported,
+                            "immediate re-export cannot derive the sentinel from membership"
+                        );
+                        assert!(target
+                            .import_canonical_processing_rows(&protocol[0])
+                            .is_err());
+                        for (value, clock) in [None, Some(2)].into_iter().zip(&clocks[4..]) {
+                            assert_eq!(
+                                source.push_proctime(input(None, value), *clock).unwrap(),
+                                target.push_proctime(input(None, value), *clock).unwrap()
+                            );
+                            assert_eq!(metadata(&source), metadata(&target));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn processing_protocol_rejects_missing_frames_and_legacy_counters_without_mutation() {
+    let mut source = memory(false, 0).with_memory_budget(64 << 20).unwrap();
+    source.bind_canonical_frame_inputs().unwrap();
+    source.push_proctime(input(None, Some(1)), 100).unwrap();
+    let mut protocol = Vec::new();
+    source
+        .visit_canonical_processing_rows(|batch| {
+            protocol.push(batch);
+            Ok(())
+        })
+        .unwrap();
+    let mut empty = memory(false, 0).with_memory_budget(64 << 20).unwrap();
+    empty.inner.seed_key_codec(&[DataType::Int64]);
+    assert!(empty
+        .import_canonical_processing_rows(&protocol[0])
+        .is_err());
+    assert!(empty.proc_rows.is_empty());
+    assert_eq!(empty.retention_bytes, 0);
+    source.proc_rows.clear();
+    assert!(source
+        .visit_canonical_processing_rows(|_| panic!("legacy metadata must not be emitted"))
+        .is_err());
+}
+
+#[test]
+fn malformed_processing_metadata_is_rejected_before_any_counter_is_installed() {
+    let mut source = memory(false, 0).with_memory_budget(64 << 20).unwrap();
+    source.bind_canonical_frame_inputs().unwrap();
+    source.push_proctime(input(None, Some(1)), 100).unwrap();
+    let mut frames = Vec::new();
+    source
+        .visit_canonical_frames(|batch| {
+            frames.push(batch);
+            Ok(())
+        })
+        .unwrap();
+    let mut protocol = Vec::new();
+    source
+        .visit_canonical_processing_rows(|batch| {
+            protocol.push(batch);
+            Ok(())
+        })
+        .unwrap();
+    let good = &protocol[0];
+    let mut target = memory(false, 0).with_memory_budget(64 << 20).unwrap();
+    target.bind_canonical_frame_inputs().unwrap();
+    target.import_canonical_frame(&frames[0]).unwrap();
+    let mut bad = Vec::new();
+    for (column, value) in [
+        (1, None),
+        (1, Some(0)),
+        (1, Some(2)),
+        (1, Some(-1)),
+        (2, None),
+        (3, Some(150)),
+    ] {
+        let mut columns = good.columns().to_vec();
+        columns[column] = Arc::new(Int64Array::from(vec![value]));
+        // Arrow allows nulls only when the declared field is nullable, so corrupt that declaration
+        // too and let the protocol validate the actual values instead of relying on field flags.
+        let mut fields = good
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| field.as_ref().clone())
+            .collect::<Vec<_>>();
+        fields[column] = fields[column].clone().with_nullable(true);
+        bad.push(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap());
+    }
+    let mut fields = good
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect::<Vec<_>>();
+    fields[1] = fields[1].clone().with_name("unknown_count");
+    bad.push(RecordBatch::try_new(Arc::new(Schema::new(fields)), good.columns().to_vec()).unwrap());
+    bad.push(arrow::compute::concat_batches(&good.schema(), [good, good]).unwrap());
+    let mut fields = good
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect::<Vec<_>>();
+    let mut columns = good.columns().to_vec();
+    fields[1] = Field::new(fields[1].name(), DataType::Float64, false);
+    columns[1] = Arc::new(arrow::array::Float64Array::from(vec![1.0]));
+    bad.push(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap());
+    let retained_bytes = target.retention_bytes;
+    for malformed in bad {
+        assert!(target.import_canonical_processing_rows(&malformed).is_err());
+        assert!(target.proc_rows.is_empty());
+        assert_eq!(target.retention_bytes, retained_bytes);
+    }
+    target.import_canonical_processing_rows(good).unwrap();
+    assert_eq!(metadata(&source), metadata(&target));
+}
