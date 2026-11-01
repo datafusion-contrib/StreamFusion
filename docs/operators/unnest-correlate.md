@@ -173,6 +173,8 @@ external Row result may also use those seven non-null primitive scalar classes a
 container result fields. Atomic results using those classes are supported too; Flink wraps
 them in a single inferred result field. Alternate bridges nested inside a result field
 retain fallback.
+Direct temporal argument/result fields also support the released JDBC date/time classes and
+boxed TIME/LTZ conversions listed in [alternate temporal bridges](#alternate-direct-temporal-bridges-2026-11-01).
 For these conversions on Flink 1.18, LEFT queries selecting a declared non-null field from
 an external Row result retain the release's SQL-to-rel nullability assertion. Container-only
 LEFT projections and atomic-result LEFT queries are verified to execute.
@@ -386,6 +388,56 @@ Reproduce with `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
 For the actual prior revision, copy the conversion, interval and benchmark test fixtures only
 and set `-Dboundary.expectNative=false`; the control still requires native work. Production
 sources must remain unchanged.
+
+### Alternate direct temporal bridges (2026-11-01)
+
+Container signatures admit these additional direct scalar argument and result conversions:
+
+| Logical type | Java bridge | Released conversion |
+| --- | --- | --- |
+| DATE | `java.sql.Date` | JDBC date |
+| TIME | `Integer`, `Long`, `java.sql.Time` | Milliseconds of day, nanoseconds of day, JDBC time |
+| TIMESTAMP | `java.sql.Timestamp` | JDBC timestamp with the released precision/zone behavior |
+| TIMESTAMP_LTZ | `Integer`, `Long`, `java.sql.Timestamp` | Epoch seconds, epoch milliseconds, JDBC timestamp |
+
+The same bridges work as external Row result fields and atomic results with nullable or
+non-null metadata. The existing released converters retain truncation, overflow, timestamp
+precision and zone behavior: an integer/long LTZ round trip is not a promise to preserve
+nanoseconds. JDBC values are copied into Arrow output before a callback can mutate them.
+This adds admission through the existing generated correlate, not custom temporal conversion,
+JNI or native-memory code. Nested alternate bridges, internal Java classes and primitive
+TIME/LTZ bridges in container signatures remain outside the whitelist.
+
+`FlinkAlternateTemporalTableFunctionSqlHarnessTest` compares released values/types,
+nullable/non-null arguments, Row/atomic results, INNER/LEFT application, mutable JDBC
+values and result Rows, retained containers, empty input, callback failures, all changelog
+kinds and two forced restores with heap/native RocksDB. ARRAY and List signatures use
+UTC, New York and Shanghai sessions for timestamp families. Inputs include negative epochs,
+SQL years 0001–9999, fractional timestamps and DST boundaries. Every successful populated
+case requires consumed native table-function input.
+The focused selection passes 147 JUnit invocations on each of released Flink 1.18.1 and
+2.2.1 with JDK 17 and a fresh release/mimalloc native library: 88 alternate-bridge checks,
+14 nullable boxed-DATE checks, 21 DATE argument controls and 24 DATE result controls,
+with zero failures, errors or skips. These are scoped component/SQL results, not a claim
+of complete #237 coverage or a replacement for the unchanged upstream suite.
+
+NULL values emitted under NOT NULL metadata retain the released outcomes rather than
+being normalized. A projected DATE field can expose epoch day -1; a projected TIME field
+can expose an invalid negative time and fail during collection; timestamp fields retain
+the release's sink constraint exception. The comparisons check matching root exception
+classes, expected failure messages and failure phases. Flink 1.18's external Row/LEFT non-null
+projection assertion remains a separately checked planning failure; its representable
+projection and atomic LEFT forms still execute.
+
+`AlternateTemporalTableFunctionBenchmark` retains complete production jobs with row sources,
+both perimeter transposes, callback conversion, owned output writes and a blackhole sink.
+It compares all eight bridges with ARRAY containers and additional JDBC DATE/TIMESTAMP List
+cases. Use `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+-Dnative.build.skip=true -Dtest=AlternateTemporalTableFunctionBenchmark
+-Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5 surefire:test@default-test`;
+add `,flink-1.18` for that release line. Copy only the new fixtures to the actual previous
+production revision and use `-Dboundary.expectNative=false` for its fallback control.
+Correctness-verified UDF admission retains the accepted performance exception.
 
 ### Boxed DATE epoch days and containers (2026-11-01)
 

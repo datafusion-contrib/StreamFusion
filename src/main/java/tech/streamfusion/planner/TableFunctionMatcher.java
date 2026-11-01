@@ -76,13 +76,29 @@ final class TableFunctionMatcher {
   }
 
   private static boolean verifiedArgumentConversion(DataType type) {
-    return verifiedConversion(type) || primitiveConversion(type) || epochDayConversion(type);
+    return verifiedConversion(type) || primitiveConversion(type) || temporalConversion(type);
   }
 
-  private static boolean epochDayConversion(DataType type) {
-    return type.getLogicalType().is(LogicalTypeRoot.DATE)
-        && (type.getConversionClass() == Integer.class
-            || (!type.getLogicalType().isNullable() && type.getConversionClass() == int.class));
+  private static boolean temporalConversion(DataType type) {
+    Class<?> conversion = type.getConversionClass();
+    switch (type.getLogicalType().getTypeRoot()) {
+      case DATE:
+        return conversion == Integer.class
+            || conversion == java.sql.Date.class
+            || (!type.getLogicalType().isNullable() && conversion == int.class);
+      case TIME_WITHOUT_TIME_ZONE:
+        return conversion == Integer.class
+            || conversion == Long.class
+            || conversion == java.sql.Time.class;
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+        return conversion == java.sql.Timestamp.class;
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return conversion == Integer.class
+            || conversion == Long.class
+            || conversion == java.sql.Timestamp.class;
+      default:
+        return false;
+    }
   }
 
   private static boolean verifiedOutputConversion(DataType type) {
@@ -92,7 +108,7 @@ final class TableFunctionMatcher {
   }
 
   private static boolean verifiedResultConversion(DataType type) {
-    if (verifiedConversion(type) || primitiveConversion(type) || epochDayConversion(type))
+    if (verifiedConversion(type) || primitiveConversion(type) || temporalConversion(type))
       return true;
     if (!type.getLogicalType().is(LogicalTypeRoot.ARRAY)
         || type.getConversionClass() != ArrayList.class) return false;
@@ -225,7 +241,7 @@ final class TableFunctionMatcher {
         + " ARRAY/MAP/ROW input, output and argument types with verified external Java"
         + " conversions (default containers, scalar Lists, scalar ArrayList results,"
         + " non-null primitive arrays or direct non-null boolean/numeric primitive scalar"
-        + " arguments or results, or DATE/Integer and non-null DATE/int arguments or results) and input"
+        + " arguments or results, direct verified temporal bridges or non-null DATE/int) and input"
         + " representation are verified";
   }
 
