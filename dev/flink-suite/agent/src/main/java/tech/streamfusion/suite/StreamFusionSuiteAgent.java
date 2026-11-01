@@ -223,6 +223,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarUpdatingJoinOperator",
                 "tech.streamfusion.operator.NativeColumnarTopNOperator",
+                "tech.streamfusion.operator.NativeColumnarWindowRankOperator",
                 "tech.streamfusion.operator.NativeColumnarFirstNOperator",
                 "tech.streamfusion.operator.NativeWindowOperatorCore",
                 "tech.streamfusion.operator.NativeRowWindowOperatorCore",

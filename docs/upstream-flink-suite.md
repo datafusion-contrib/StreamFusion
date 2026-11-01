@@ -1421,3 +1421,7 @@ python3 -m unittest discover -s dev/flink-suite -p test_summarize.py
 The state adapters and complete compatibility matrix remain tracked by
 [P0 #569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking and
 tuning are deferred until functionality is complete.
+
+Window Top-N uses a separate native operator from ordinary Top-N. The execution agent instruments
+its successful `open` and consumed Arrow batches explicitly, so a window-rank restore contract
+requires work from window Top-N itself even when native aggregates or Calc also run in the plan.
