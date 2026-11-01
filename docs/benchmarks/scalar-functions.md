@@ -6472,3 +6472,90 @@ Reproduce prepared qualification using `integral_expression`, DECIMAL inputs and
 the same `sf.integral.expression` with `sf.integral.decimalPrecision=38` and
 `sf.integral.decimalScale=18`. Remaining unary/rounding producers are tracked in
 [#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## DECIMAL negation over arithmetic
+
+DECIMAL-only addition, subtraction and multiplication now retain native unary
+minus, including same-operator nesting and same-scale precision widening. Each
+arithmetic node keeps its resolved precision/scale and overflow NULL. Negation
+uses the existing Arrow numeric kernel for arrays and exact i128 scalar dispatch;
+all legal DECIMAL coefficients have a representable negation. The batching
+structure follows Comet's Arrow negation; released Flink supplies the semantic
+rules. Rust, the release DSO, JNI/ownership and options are unchanged.
+
+Division, remainder, mixed numeric inputs, rescaling, narrowing, mixed ABS/negation
+and unverified producers retain generated evaluation. The existing projection-default
+repairs remain active for NOT NULL basic-type consumers and are not claimed as
+JVM-free acceleration. Direct overflowing DECIMAL outputs retain ERROR/DROP
+enforcement. Character CAST/TRY_CAST retain their separate producer whitelist;
+admitting arithmetic negation does not extend every enclosing conversion.
+
+The [result record](results/decimal-arithmetic-negate-2026-11-02.json) and
+[raw trials](results/decimal-arithmetic-negate-2026-11-02.csv.gz) retain 64 configurations
+and 6,400 trials. Release/default-feature/mimalloc, JDK 17.0.12, Apple M4 Pro,
+one thread, 16 warmups/nine measurements and 131,072 rows/trial compare released
+generated Java on matching prepared GenericRowData/BinaryRowData with production
+Calc on Arrow. Native timing stays inside Rust; initial JNI/C Data import/export
+and perimeter transposes are excluded, while intrinsic previous JVM callbacks
+remain inside. The independently recompiled actual preceding encoder includes
+the explicit CAST correctness repair and binds its real generated evaluator.
+Both versions use the identical, byte-verified preceding executable and DSO.
+The candidate requires empty descriptors and intended native work; checksums match.
+
+DECIMAL(18,2)/(38,18), nullable/NOT NULL sources, signed extrema and large coefficients
+cover `-(v+v)`, `-(v*v)` and `-((v+v)*v)` through
+`>0 OR CAST(NULL AS BOOLEAN)`. This nullable consumer retains overflow NULL even
+for NOT NULL inputs. Timings measure composed arithmetic negation through a
+BOOLEAN consumer, not final DECIMAL output. Bulk batches contain 1,024 rows;
+16-row multiplication controls remain separate. Untimed allocation probes retain
+requested bytes and output buffers separately.
+
+| Flink | Workload | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | bulk | 24 | 1.132-3.867x | 3.654-9.141x | 0 |
+| 1.18.1 | tiny control | 8 | 0.224-1.174x | 7.753-10.926x | 6 |
+| 2.2.1 | bulk | 24 | 1.089-4.076x | 3.694-8.399x | 0 |
+| 2.2.1 | tiny control | 8 | 0.228-1.135x | 7.319-10.605x | 6 |
+
+All 48 bulk cells beat stock and actual previous behavior; 12/16 tiny
+controls remain slower than stock. Independent stock-process drift spans
+0.565-2.730x; every trial is retained.
+
+Six million-row row-source/blackhole controls retain planning/startup, source
+generation, production JNI and both transposes. Nullable DECIMAL(18,2) addition
+and DECIMAL(38,18) multiplication/nested producers use the same BOOLEAN consumers,
+parallelism one, two warmups/five measurements. Both versions require consumed
+NativeCalc and no fallback; the candidate requires empty evaluators while the
+actual preceding control retains its generated route. Seconds are median (min-max):
+
+| Flink / producer | Candidate stock | Native | Previous stock | Previous |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / add | 0.159210 (0.154452-0.162179) | 0.183171 (0.182496-0.189683) | 0.165552 (0.158069-0.180885) | 0.211707 (0.201569-0.221333) |
+| 1.18.1 / multiply | 0.220525 (0.214375-0.243314) | 0.204681 (0.204143-0.217983) | 0.219037 (0.212691-0.241882) | 0.273960 (0.270173-0.283251) |
+| 1.18.1 / nested | 0.249028 (0.239493-0.252058) | 0.218595 (0.209154-0.219580) | 0.252982 (0.237527-0.265619) | 0.325243 (0.317213-0.337302) |
+| 2.2.1 / add | 0.156649 (0.152608-0.161492) | 0.177944 (0.177173-0.185652) | 0.166901 (0.157939-0.180192) | 0.216225 (0.209954-0.223065) |
+| 2.2.1 / multiply | 0.229529 (0.223492-0.241392) | 0.207194 (0.202259-0.210548) | 0.228994 (0.211501-0.237611) | 0.281756 (0.274132-0.290865) |
+| 2.2.1 / nested | 0.236939 (0.224113-0.247618) | 0.206135 (0.204783-0.215894) | 0.236026 (0.229298-0.253815) | 0.308385 (0.304602-0.325335) |
+
+Native/stock elapsed-time ratios span 0.870-1.151;
+native/previous ratios span 0.668-0.865. Ratios above one are slower.
+Overlapping ranges, unfavorable samples and independent stock controls remain
+visible; prepared qualification does not establish universal complete-job acceleration.
+
+All 1088 focused JVM invocations and 12 fixture smokes pass on released Flink
+1.18.1/2.2.1 and JDK 11/17, compiled for Java release 11. Complete 5,003-row
+witnesses compare values, types, NULLs, IDs and cardinality over eleven precision/scale
+pairs. Admitted arithmetic negation requires consumed native work, no fallback
+and empty evaluator descriptors. Filters, grouping, CASE, empty batches, selected
+failures, shared state, ABS controls and #577/#581/#582 defaults remain verified.
+Safe numeric CAST and retained NULL-aware consumers preserve their native routes.
+The unchanged release DSO retains the earlier fresh 1,019 Rust core passes and
+two pre-existing ignores; that run is reused rather than presented as a new run.
+Source/runtime hashes, allocator aliases and independently recompiled baseline
+classes are recorded.
+
+Reproduce prepared qualification using `integral_expression` and
+`SF_INTEGRAL_EXPRESSION='-(v*v)>0 OR CAST(NULL AS BOOLEAN)'`. Complete jobs use
+the same `sf.integral.expression`, `sf.integral.decimalPrecision=38` and
+`sf.integral.decimalScale=18`. Further unary/sign/rounding coverage remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).

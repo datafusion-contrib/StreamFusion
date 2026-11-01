@@ -28,7 +28,7 @@ class FlinkDecimalCastOverflowSqlHarnessTest {
     String sql = "SELECT id,CAST(d*d AS STRING),CAST(d*d AS CHAR(8)),CAST(d*d AS VARCHAR(3)),"
         + "CASE WHEN MOD(id,2)=0 THEN CAST(d*d AS STRING) ELSE 'other' END,"
         + "CASE WHEN MOD(id,2)=0 THEN CAST(d*d AS STRING) ELSE CAST(NULL AS STRING) END,"
-        + "CAST(ABS(d) AS STRING),CAST(ABS(d*d) AS STRING) FROM src";
+        + "CAST(ABS(d) AS STRING),CAST(ABS(d*d) AS STRING),CAST(-(d*d) AS STRING) FROM src";
     for (String policy : List.of("ERROR", "DROP")) {
       TreeMap<Integer, List<Object>> expected = null;
       List<DataType> expectedTypes = null;

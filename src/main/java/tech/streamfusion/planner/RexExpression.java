@@ -2216,8 +2216,7 @@ final class RexExpression {
       return emitHostExpression(call, false);
     }
     if (call.getKind() == SqlKind.MINUS_PREFIX) {
-      if (nativeDecimalUnary(
-          call, org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS)) {
+      if (nativeDecimalNegate(call)) {
         return emitBuiltinCall(call, 219);
       }
       if (nativeIntegralNegate(call)) {
@@ -4442,8 +4441,7 @@ final class RexExpression {
     if (call.getKind() == SqlKind.MINUS_PREFIX)
       return exact
           && !nativeIntegralNegate(call)
-          && !nativeDecimalUnary(
-              call, org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS);
+          && !nativeDecimalNegate(call);
     switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
       case "ABS":
         return exact && !nativeIntegralAbs(call) && !nativeDecimalAbs(call);
@@ -4729,9 +4727,18 @@ final class RexExpression {
   }
 
   private static boolean nativeDecimalAbs(RexCall call) {
-    return nativeDecimalUnary(
-        call, org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS,
-        RexExpression::nativeDecimalAbsOperand);
+    return nativeDecimalArithmeticUnary(
+        call, org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ABS);
+  }
+
+  private static boolean nativeDecimalNegate(RexCall call) {
+    return nativeDecimalArithmeticUnary(
+        call, org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.UNARY_MINUS);
+  }
+
+  private static boolean nativeDecimalArithmeticUnary(RexCall call, SqlOperator operator) {
+    return nativeDecimalUnary(call, operator,
+        node -> nativeDecimalArithmeticUnaryOperand(node, operator));
   }
 
   private static boolean nativeDecimalUnary(RexCall call, SqlOperator operator) {
@@ -4748,23 +4755,24 @@ final class RexExpression {
         && operand.test(call.getOperands().get(0));
   }
 
-  private static boolean nativeDecimalAbsOperand(RexNode node) {
+  private static boolean nativeDecimalArithmeticUnaryOperand(RexNode node, SqlOperator operator) {
     if (node.getType().getSqlTypeName() != SqlTypeName.DECIMAL) return false;
     if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
-    if (nativeDecimalAbs(call)) return true;
+    if (nativeDecimalArithmeticUnary(call, operator)) return true;
     if (isDecimalArithmetic(call)
         && (call.getKind() == SqlKind.PLUS || call.getKind() == SqlKind.MINUS
             || call.getKind() == SqlKind.TIMES)) {
-      return call.getOperands().stream().allMatch(RexExpression::nativeDecimalAbsOperand);
+      return call.getOperands().stream()
+          .allMatch(operand -> nativeDecimalArithmeticUnaryOperand(operand, operator));
     }
     if (call.getKind() != SqlKind.CAST || call.getOperands().size() != 1) return false;
     RelDataType input = call.getOperands().get(0).getType();
     return input.getSqlTypeName() == SqlTypeName.DECIMAL
         && call.getType().getPrecision() >= input.getPrecision()
         && call.getType().getScale() == input.getScale()
-        && nativeDecimalAbsOperand(call.getOperands().get(0));
+        && nativeDecimalArithmeticUnaryOperand(call.getOperands().get(0), operator);
   }
 
   private static boolean nativeDecimalUnaryOperand(RexNode node, SqlOperator operator) {

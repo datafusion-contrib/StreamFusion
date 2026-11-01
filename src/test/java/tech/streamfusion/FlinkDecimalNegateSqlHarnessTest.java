@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeMap;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
@@ -16,6 +17,101 @@ import org.junit.jupiter.params.provider.CsvSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkDecimalNegateSqlHarnessTest {
+  @ParameterizedTest
+  @CsvSource({"1,0", "1,1", "4,3", "18,0", "18,3", "18,18", "19,0", "19,19",
+      "38,0", "38,18", "38,38"})
+  void arithmeticBatchesPreserveAllValuesTypesAndOverflowNulls(int precision, int scale)
+      throws Exception {
+    String sql = "SELECT id,-(d+d),-(d-d),-(d*d),-((d+d)*d),-(-(d*d)+d),"
+        + "-(CAST(d AS DECIMAL(38," + scale + "))+d) FROM src";
+    for (boolean nullable : new boolean[] {false, true}) {
+      TreeMap<Integer, List<Object>> expected = null;
+      List<DataType> expectedTypes = null;
+      for (boolean nativeRun : new boolean[] {false, true}) {
+        try (var metrics = new RecoveryExecutionMetrics()) {
+          var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
+          var table = org.apache.flink.table.api.bridge.java.StreamTableEnvironment.create(env);
+          var type = inputType(precision, scale, nullable);
+          var input = rows(precision, scale, 5003, nullable);
+          // NOT NULL witnesses avoid overflow; nullable witnesses retain signed extrema/overflow.
+          if (!nullable) {
+            BigInteger[] values = {BigInteger.valueOf(-9), BigInteger.ONE.negate(),
+                BigInteger.ZERO, BigInteger.ONE, BigInteger.valueOf(9)};
+            input = new ArrayList<>();
+            for (int i = 0; i < 5003; i++) {
+              input.add(Row.of(i, new BigDecimal(values[i % values.length], scale)));
+            }
+          }
+          table.createTemporaryView("src", tech.streamfusion.compat.FlinkTestSources.fromData(env,
+              input, org.apache.flink.table.runtime.typeutils.ExternalTypeInfo.<Row>of(type)),
+              org.apache.flink.table.api.Schema.newBuilder().fromRowDataType(type).build());
+          var scan = nativeRun ? NativePlanner.install(table) : null;
+          var types = table.sqlQuery(sql).getResolvedSchema().getColumnDataTypes();
+          if (nativeRun) {
+            assertEquals(expectedTypes, types);
+            assertTrue(table.explainSql(sql).contains("NativeCalc"));
+            assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+            assertTrue(scan.functionExecutions().stream()
+                .anyMatch(route -> route.contains("native=[-")), scan.functionExecutions().toString());
+            assertTrue(scan.functionExecutions().stream().allMatch(route -> route.contains("jvm=[]")),
+                scan.functionExecutions().toString());
+          } else expectedTypes = types;
+          var actual = new TreeMap<Integer, List<Object>>();
+          try (var output = table.executeSql(sql).collect()) {
+            while (output.hasNext()) {
+              var row = output.next();
+              int id = (Integer) row.getField(0);
+              assertTrue(id >= 0 && id < input.size());
+              var fields = new ArrayList<Object>();
+              for (int i = 1; i < row.getArity(); i++) fields.add(row.getField(i));
+              assertNull(actual.put(id, fields), "duplicate id " + id);
+            }
+          }
+          assertEquals(input.size(), actual.size());
+          if (nativeRun) {
+            assertEquals(expected, actual);
+            RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+          } else expected = actual;
+        }
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"18,3", "38,18"})
+  void arithmeticConsumersKeepNullFlagsLazinessAndBoundaries(int precision, int scale)
+      throws Exception {
+    java.util.function.Supplier<TableEnvironment> factory = () -> environment(precision, scale, true);
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT id,CAST(-(d*d) AS STRING),-(d*d) IS NULL,-(d+d)>0,"
+            + "CASE WHEN id>=0 THEN -(d*d) ELSE -(d/(id-id)) END FROM src");
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT id,-(d*d) FROM src WHERE -(d+d)>0 OR -(d*d) IS NULL");
+    BuiltinFunctionParity.assertParity(factory,
+        "SELECT -(d*d),-(d/(id-id)) FROM src WHERE id<0");
+    NativeParity.assertChangelogParity(factory,
+        "SELECT v,COUNT(*) FROM (SELECT -(d*d) AS v FROM src) GROUP BY v");
+  }
+
+  @Test
+  void nonNullableOverflowStillReachesTheConstraintEnforcer() throws Exception {
+    for (String policy : List.of("ERROR", "DROP")) {
+      java.util.function.Supplier<TableEnvironment> factory = () -> {
+        var table = environment(38, 18, false);
+        table.getConfig().set("table.exec.sink.not-null-enforcer", policy);
+        return table;
+      };
+      String sql = "SELECT id,-(d*d) FROM src";
+      if (policy.equals("DROP")) BuiltinFunctionParity.assertParity(factory, sql);
+      else {
+        var runs = NativeFailureParity.run(factory, sql);
+        assertNotNull(runs.host().rootCause(), runs.toString());
+        runs.assertFailure(runs.host().rootCause().getClass(), "is NOT NULL",
+            NativeFailureParity.Phase.ROW_EVALUATION, NativeFailureParity.Route.NATIVE);
+      }
+    }
+  }
+
   @ParameterizedTest
   @CsvSource({
     "1,0", "1,1", "18,0", "18,3", "18,18", "19,0", "19,3", "19,19", "38,0", "38,18", "38,38"

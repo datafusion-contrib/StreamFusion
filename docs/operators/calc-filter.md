@@ -1726,14 +1726,19 @@ Character CAST/TRY_CAST keep their separate producer whitelist: admitting arithm
 ABS does not by itself make every enclosing character conversion JVM-free. Remaining
 conversion signatures are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
 
-DECIMAL unary minus uses a narrower verified producer scope: direct
-inputs/literals, recursive same-scale precision widening and nested admitted negation.
+DECIMAL unary minus admits direct inputs/literals, recursive same-scale precision widening,
+nested admitted negation and DECIMAL-only addition/subtraction/multiplication over those
+producers. Every arithmetic node retains its own resolved precision/scale and overflow NULL.
 It uses Arrow's decimal numeric negation for arrays and direct i128 scalar dispatch,
 retaining precision, scale and NULL without a JVM evaluator. All legal DECIMAL extrema
-have a representable negation. Arithmetic, rescaling, narrowing, mixed ABS/negation
-chains and other producers retain their whole generated expression; existing rounding
+have a representable negation. Division, remainder, mixed numeric operands, rescaling,
+narrowing, mixed ABS/negation chains and other producers retain their whole generated expression; existing rounding
 metadata guards remain unchanged. See the
 [DECIMAL unary-minus controls](../benchmarks/scalar-functions.md#decimal-unary-minus).
+The [arithmetic-producer controls](../benchmarks/scalar-functions.md#decimal-negation-over-arithmetic)
+measure negation through a nullable BOOLEAN consumer. Final NOT NULL basic-type defaults,
+direct DECIMAL ERROR/DROP enforcement and the separate character CAST/TRY_CAST producer
+whitelist retain their contracts; this arithmetic proof does not extend every enclosing cast.
 
 DECIMAL SIGN uses the bounded native coverage described above. Unverified integer rounding
 producers and positions use the same path, including per-row ROUND/TRUNCATE positions.
