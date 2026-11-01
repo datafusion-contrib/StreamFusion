@@ -1089,3 +1089,19 @@ or year-month interval arguments using the numeric membership carrier), validity
 typed default-or-NULL value before persistence. The original payload columns remain intact.
 Matching physical types retain the existing raw-column path. Checkpoint encoding is unchanged;
 canonical memory/RocksDB transitions and aligned RocksDB recovery preserve these counts.
+
+
+## Stock canonical state transfer groundwork
+
+The raw unbounded-fold transfer interface visits resident or typed-RocksDB accumulators directly
+in batches of at most 1,024 keys, with original retention stamps. It preserves raw floating sums,
+independent AVG counts and nullable extrema; import never reconstructs them by replaying input.
+Frame/window-function state and DISTINCT membership require separate transfer contracts and are
+rejected by this fold-only interface. Pending input, timers, generated stock accumulator schemas
+and planner bindings remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+This primitive alone does not establish stock OVER savepoint interoperability.
+
+COUNT continues an imported signed-long boundary using wrapping addition/subtraction, matching
+Flink in debug and release builds. A boundary regression covers both directions; the full native
+regression passes 1,068 checks with two existing ignores. Benchmarking remains deferred until
+functional interoperability coverage is complete.

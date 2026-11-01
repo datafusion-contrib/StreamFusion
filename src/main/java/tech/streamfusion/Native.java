@@ -24,6 +24,13 @@ public final class Native {
 
   public static native void restoreWindowRankerCanonicalFrontier(long handle, long frontier);
 
+  /** Raw non-DISTINCT unbounded OVER folds; pending rows and timers need separate contracts. */
+  public static native void exportOverFoldCanonical(long handle, BatchReceiver receiver);
+
+  public static native void importOverFoldCanonical(
+      long handle, long arrayAddress, long schemaAddress);
+
+
   public static native void exportSessionAggregatorCanonical(long handle, BatchReceiver receiver);
 
   public static native void importSessionAggregatorCanonical(

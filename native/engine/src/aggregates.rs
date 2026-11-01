@@ -1555,7 +1555,7 @@ impl RunningAgg {
             (SumF64(s), Num::F64(v)) => *s = Some(s.map_or(v, |sum| sum + v)),
             (MinF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| if v < x { v } else { x })),
             (MaxF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| if v > x { v } else { x })),
-            (Count(c), _) => *c += 1,
+            (Count(c), _) => *c = c.wrapping_add(1),
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal_sum(sum, overflow, v)
             }
@@ -1622,7 +1622,7 @@ impl RunningAgg {
             (SumI16(s), Num::I16(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumI8(s), Num::I8(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumF32(s), Num::F32(v)) => *s = Some(s.unwrap_or(0.0) - v),
-            (Count(c), _) => *c -= 1,
+            (Count(c), _) => *c = c.wrapping_sub(1),
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal_sum(sum, overflow, v.wrapping_neg())
             }
@@ -2198,5 +2198,14 @@ mod avg_tests {
         ])
         .unwrap();
         assert_eq!(avg.evaluate().unwrap(), ScalarValue::Int64(Some(i64::MIN)));
+    }
+
+    #[test]
+    fn retained_count_uses_java_wrapping_arithmetic_on_both_edges() {
+        let mut count = RunningAgg::Count(i64::MAX);
+        count.fold(Num::I64(0));
+        assert_eq!(count.emit(), ScalarValue::Int64(Some(i64::MIN)));
+        count.retract(Num::I64(0));
+        assert_eq!(count.emit(), ScalarValue::Int64(Some(i64::MAX)));
     }
 }

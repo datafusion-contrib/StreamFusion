@@ -801,7 +801,26 @@ impl RocksOverAggStore {
 
     /// Every committed fold — restore-time retention hydration and canonical savepoints.
     pub(crate) fn scan_folds(&self) -> Result<Vec<StoredOverFold>, DataFusionError> {
-        let mut folds: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::new();
+        let mut folds = Vec::new();
+        self.visit_folds(1024, |chunk| {
+            folds.extend(chunk);
+            Ok(())
+        })?;
+        Ok(folds)
+    }
+
+    /// Decode bounded fold chunks without hydrating the complete persisted state.
+    pub(crate) fn visit_folds(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<StoredOverFold>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        if chunk_rows == 0 {
+            return Err(DataFusionError::Execution(
+                "zero OVER fold chunk size".into(),
+            ));
+        }
+        let mut folds: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::with_capacity(chunk_rows);
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, value) = row.map_err(re)?;
             if key.as_ref() == WATERMARK_KEY
@@ -811,19 +830,40 @@ impl RocksOverAggStore {
             {
                 continue;
             }
+            if value.len() <= STAMP_LEN {
+                return Err(DataFusionError::Execution(
+                    "truncated OVER fold value".into(),
+                ));
+            }
             folds.push((
                 key[KEY_GROUP_LEN + 1..].into(),
                 i64::from_le_bytes(value[..STAMP_LEN].try_into().expect("fold stamp")),
                 value[STAMP_LEN..].into(),
             ));
+            if folds.len() == chunk_rows {
+                self.decode_fold_chunk(&mut folds, &mut accept)?;
+            }
         }
+        if !folds.is_empty() {
+            self.decode_fold_chunk(&mut folds, &mut accept)?;
+        }
+        Ok(())
+    }
+
+    fn decode_fold_chunk(
+        &self,
+        folds: &mut Vec<(Box<[u8]>, i64, Box<[u8]>)>,
+        accept: &mut impl FnMut(Vec<StoredOverFold>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         let states: Vec<&[u8]> = folds.iter().map(|(_, _, state)| state.as_ref()).collect();
         let states = self.decode_states(&states)?;
-        Ok(folds
-            .into_iter()
-            .zip(states)
-            .map(|((key, stamp, _), state)| StoredOverFold { key, stamp, state })
-            .collect())
+        accept(
+            folds
+                .drain(..)
+                .zip(states)
+                .map(|((key, stamp, _), state)| StoredOverFold { key, stamp, state })
+                .collect(),
+        )
     }
 
     fn decode_payload<'a>(

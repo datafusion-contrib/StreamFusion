@@ -1,5 +1,7 @@
 use crate::*;
 
+mod canonical;
+
 mod range_order;
 mod string_first_last;
 use range_order::HeapRangeOrder;
@@ -2252,7 +2254,6 @@ impl OverInner {
 
     /// Seeds the key codec from declared key types, so persisted fold keys decode before any
     /// batch arrives.
-    #[cfg(feature = "rocksdb-state")]
     fn seed_key_codec(&mut self, key_types: &[DataType]) {
         match self {
             OverInner::Aggregates(inner) => {
@@ -3516,7 +3517,6 @@ impl OverWindowAggregator {
     /// One key's persisted retention stamp for a fold write-back: the cleanup deadline (rowtime
     /// shapes), the last-write clock (the proctime per-value TTL), or `i64::MIN` while retention
     /// is off.
-    #[cfg(feature = "rocksdb-state")]
     fn fold_stamp(&self, key: &[u8]) -> i64 {
         if self.deadline_cleaning() {
             self.cleanup_state.get(key).copied().unwrap_or(i64::MIN)
