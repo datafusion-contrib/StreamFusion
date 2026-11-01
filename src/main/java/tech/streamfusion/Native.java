@@ -61,6 +61,13 @@ public final class Native {
   public static native void importOverCanonicalProcessingRows(
       long handle, long arrayAddress, long schemaAddress);
 
+  public static native void bindOverProcessingRowsCleanupTimers(long handle);
+
+  /** Empty or one deadline, so Long.MIN_VALUE remains a valid timer timestamp. */
+  public static native long[] nextOverProcessingRowsCleanup(long handle);
+
+  public static native void fireOverProcessingRowsCleanup(long handle, long timestamp);
+
   public static native void importOverCanonicalRange(
       long handle, long arrayAddress, long schemaAddress);
 

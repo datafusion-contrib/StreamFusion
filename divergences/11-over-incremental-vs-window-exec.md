@@ -101,15 +101,18 @@ table. Separate counter/minimum metadata persists even without TTL and follows f
 through file restore and rescaling. Its owned memory counts toward the state budget. This keeps
 Arroyo's streaming/batch boundary while adopting Flink's persistent state machine; Arroyo's
 per-instant execution plan cannot express that restore contract. Older native snapshots can use
-legacy retained-frame bookkeeping but cannot reconstruct clocks their writers discarded. Stock
-canonical projection of these processing-time fields remains pending under
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
+legacy retained-frame bookkeeping but cannot reconstruct clocks their writers discarded. The
+released stock processing-time ROWS contract projects these fields separately from raw arithmetic,
+using stock input serializers and a Void processing-time queue. Bounded views and event-time ROWS
+remain pending under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569);
+benchmarking is deferred.
 
 The direct processing-time ROWS bridge visits counter/minimum/cleanup metadata separately from
 original frames and raw accumulators. The receiver installs complete frame rows, then validates
 the corresponding key's metadata before installing a counter. This preserves `Long.MAX_VALUE`
 even when the retained frame has other timestamp buckets. It avoids replay and intermediate
-native snapshots; stock descriptors and timer queues still require the Java adapter. Export
+native snapshots. The Java adapter reuses the event-time RANGE frame machinery while selecting
+processing-time descriptors, counter/minimum checks and timer ownership. Export
 rejects legacy frames whose exact scalar bookkeeping was never retained, rather than presenting
 inferred frame length/minimum as lossless state.
 

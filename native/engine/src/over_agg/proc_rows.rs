@@ -87,6 +87,31 @@ impl ProcRowsState {
 }
 
 impl OverWindowAggregator {
+    pub(super) fn fire_processing_rows_cleanup(
+        &mut self,
+        timestamp: i64,
+    ) -> Result<(), DataFusionError> {
+        if !self.processing_rows() {
+            return Err(DataFusionError::Execution(
+                "processing cleanup requires bounded processing ROWS".into(),
+            ));
+        }
+        let due = self
+            .cleanup_state
+            .iter()
+            .filter(|(_, deadline)| **deadline <= timestamp)
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in due {
+            self.clear_key(&key.0);
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            self.flush_tombstones()?;
+        }
+        self.account()
+    }
+
     pub(super) fn processing_rows(&self) -> bool {
         self.proctime && matches!(&self.inner, OverInner::Bounded(inner) if inner.rows_frame)
     }
@@ -208,4 +233,66 @@ impl OverWindowAggregator {
             .collect::<Vec<_>>();
         self.store.as_mut().unwrap().replace_proc_rows(&entries)
     }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_bindOverProcessingRowsCleanupTimers<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        if !operator.processing_rows() {
+            let _ = env.throw_new(
+                "java/lang/IllegalStateException",
+                "processing cleanup requires bounded processing ROWS",
+            );
+            return;
+        }
+        operator.processing_rows_external_timers = true;
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_nextOverProcessingRowsCleanup<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jni::sys::jlongArray {
+    crate::bridge::jni_guard(env, move |env| {
+        let operator = unsafe { &*(handle as *const OverWindowAggregator) };
+        let deadlines = operator
+            .cleanup_state
+            .values()
+            .min()
+            .copied()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let output = env
+            .new_long_array(deadlines.len() as i32)
+            .expect("processing cleanup deadline");
+        env.set_long_array_region(&output, 0, &deadlines)
+            .expect("processing cleanup deadline value");
+        output.into_raw()
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_fireOverProcessingRowsCleanup<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    timestamp: jlong,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
+        if let Err(error) = operator.fire_processing_rows_cleanup(timestamp) {
+            if matches!(error, DataFusionError::ResourcesExhausted(_)) {
+                throw_memory_limit(&mut env, &error.to_string());
+            } else {
+                let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+            }
+        }
+    });
 }

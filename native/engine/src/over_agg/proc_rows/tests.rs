@@ -390,3 +390,33 @@ fn malformed_processing_metadata_is_rejected_before_any_counter_is_installed() {
     target.import_canonical_processing_rows(good).unwrap();
     assert_eq!(metadata(&source), metadata(&target));
 }
+
+#[test]
+fn external_cleanup_fires_without_input_and_preserves_a_pending_minimum_long_timer() {
+    let mut op = memory(false, 2)
+        .with_state_retention(1000)
+        .with_memory_budget(64 << 20)
+        .unwrap();
+    op.processing_rows_external_timers = true;
+    let now = i64::MAX - 1499;
+    op.push_proctime(input(None, Some(1)), now).unwrap();
+    assert_eq!(
+        op.cleanup_state.values().copied().collect::<Vec<_>>(),
+        vec![i64::MIN]
+    );
+    // No host timer fired between these two batches at the same processing-time tick.
+    let result = op.push_proctime(input(None, Some(2)), now).unwrap();
+    assert_eq!(
+        ScalarValue::try_from_array(result.column(2), 0).unwrap(),
+        ScalarValue::Int64(Some(3))
+    );
+    op.fire_processing_rows_cleanup(i64::MIN).unwrap();
+    assert!(op.proc_rows.is_empty());
+    assert!(op.cleanup_state.is_empty());
+    assert_eq!(op.retention_bytes, 0);
+    let result = op.push_proctime(input(None, Some(7)), 100).unwrap();
+    assert_eq!(
+        ScalarValue::try_from_array(result.column(2), 0).unwrap(),
+        ScalarValue::Int64(Some(7))
+    );
+}

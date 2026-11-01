@@ -47,6 +47,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   private transient boolean mapListInput;
   private transient Counter numLateRecordsDropped;
   private transient long reportedLateRecords;
+  private transient java.util.concurrent.ScheduledFuture<?> processingCleanup;
+  private transient long processingCleanupDeadline;
 
   public NativeOverAggregateOperator(
       int timeColumn,
@@ -260,6 +262,10 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
 
   @Override
   protected void closeHandle() {
+    if (processingCleanup != null) {
+      processingCleanup.cancel(false);
+      processingCleanup = null;
+    }
     if (directRocksDBState()) {
       Native.closeRocksDBOverAggregator(handle);
     } else {
@@ -306,6 +312,36 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     if (!proctime) {
       numLateRecordsDropped = getMetricGroup().counter("numLateRecordsDropped");
     }
+    if (processingCleanupEnabled()) {
+      Native.bindOverProcessingRowsCleanupTimers(handle);
+      armProcessingCleanup();
+    }
+  }
+
+  private boolean processingCleanupEnabled() {
+    return proctime && frameKind == 1 && stateTtlMillis > 1;
+  }
+
+  private void armProcessingCleanup() {
+    if (!processingCleanupEnabled()) return;
+    long[] next = Native.nextOverProcessingRowsCleanup(handle);
+    if (processingCleanup != null && next.length == 1 && processingCleanupDeadline == next[0])
+      return;
+    if (processingCleanup != null) processingCleanup.cancel(false);
+    processingCleanup = null;
+    if (next.length == 1) {
+      processingCleanupDeadline = next[0];
+      processingCleanup =
+          getProcessingTimeService().registerTimer(next[0], this::fireProcessingCleanup);
+    }
+  }
+
+  private void fireProcessingCleanup(long timestamp) {
+    if (processingCleanup == null || processingCleanupDeadline != timestamp) return;
+    processingCleanup = null;
+    Native.fireOverProcessingRowsCleanup(handle, timestamp);
+    publishStateBytes();
+    armProcessingCleanup();
   }
 
   @Override
@@ -400,6 +436,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       in.close();
     }
     publishStateBytes();
+    armProcessingCleanup();
     if (!proctime) {
       long lateRecords = Native.overAggregatorLateDrops(handle);
       if (lateRecords > reportedLateRecords) {

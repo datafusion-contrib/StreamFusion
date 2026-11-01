@@ -64,13 +64,25 @@ all sit above the watermark, while the backend only sees the keys the watermark 
 its next fire or the once-per-retention sweep — silent either way, since a fired deadline emits
 nothing and the expiry decision at the eventual fire uses the same deadline.
 
-The OVER aggregate's deadline shapes (rowtime frames and proctime bounded ROWS) make the same
-lazy + sweep substitution. Flink's fired timer defers a rowtime key that still has buffered rows
+The OVER aggregate's rowtime deadline shapes retain the same lazy + sweep substitution. Flink's fired timer defers a rowtime key that still has buffered rows
 awaiting a watermark, re-registering from the fire time (`fire + max`); our deferral re-arm runs
 at the next lazy check or sweep instead (`check-time now + max`), which keeps the state
 marginally longer — silent, and bounded by the lazy-check granularity. Bounded RANGE over rowtime
 takes no retention because Flink's own function accepts none: its cleanup is the event-time frame
 eviction derived from the frame bound, which the native buffer already applies.
+
+Processing-time bounded ROWS now uses host processing-time callbacks in the operator runtime.
+A single scheduled callback tracks the minimum of its native per-key cleanup deadlines; moving
+that minimum cancels the prior callback. Each callback clears all keys due at its timestamp,
+then re-arms the next deadline. This is equivalent to the released per-key queue because cleanup
+is silent and these admitted aggregates have no user cleanup callbacks. The native state retains
+all per-key deadlines, so native file/key-group restore and stock canonical import re-arm the
+correct timer without adding a second persisted global timer. A zero-or-one JNI deadline result
+keeps `Long.MIN_VALUE` valid. Callback-driven mode disables lazy touch/sweep expiration, preventing
+premature cleanup of a newly registered past timer at the same host clock tick. Original native
+standalone callers retain their lazy mode. The processing-time ROWS path also preserves Java's
+wrapping retention/deadline arithmetic. Its stock canonical adapter exports the actual cleanup
+ValueState and Void timer; idle state is already retired when a savepoint barrier arrives.
 
 ## Retracting Top-N: whole-buffer expiry
 

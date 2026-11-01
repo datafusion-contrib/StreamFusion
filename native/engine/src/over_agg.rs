@@ -2693,6 +2693,7 @@ pub(crate) struct OverWindowAggregator {
     cleanup_state: HashMap<ByteKey, i64>,
     range_timers: HashMap<ByteKey, RangeTimers>,
     proc_rows: HashMap<ByteKey, ProcRowsState>,
+    processing_rows_external_timers: bool,
     /// Per-key last-write wall clock for the proctime unbounded shape's per-value TTL
     /// (`StateTtlConfig`, OnCreateAndWrite / NeverReturnExpired — stamped on every processed row).
     last_write_ms: HashMap<ByteKey, i64>,
@@ -2765,6 +2766,7 @@ impl OverWindowAggregator {
             cleanup_state: HashMap::default(),
             range_timers: HashMap::default(),
             proc_rows: HashMap::default(),
+            processing_rows_external_timers: false,
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,
@@ -2815,10 +2817,15 @@ impl OverWindowAggregator {
     }
 
     /// Sets the idle-state retention (`table.exec.state.ttl`) in millis. The max deadline horizon
-    /// is derived natively as Flink's planner does — `minRetentionTime * 3 / 2`, saturating.
+    /// Processing ROWS preserves the planner's signed wrapping `minRetentionTime * 3 / 2`.
+    /// Other existing shapes retain their previous saturating migration horizon.
     pub(crate) fn with_state_retention(mut self, min_retention_ms: i64) -> Self {
         self.min_retention_ms = min_retention_ms.max(0);
-        self.max_retention_ms = self.min_retention_ms.saturating_mul(3) / 2;
+        self.max_retention_ms = if self.processing_rows() {
+            self.min_retention_ms.wrapping_mul(3) / 2
+        } else {
+            self.min_retention_ms.saturating_mul(3) / 2
+        };
         self
     }
 
@@ -2860,10 +2867,20 @@ impl OverWindowAggregator {
     /// Flink's `registerProcessingCleanupTimer`: the deadline moves to `now + maxRetention` only
     /// when the key has none, or the current one would land within a min-retention of now.
     fn register_cleanup(&mut self, key: &[u8], now_ms: i64) {
-        let armed = now_ms.saturating_add(self.max_retention_ms);
+        let (armed, minimum) = if self.processing_rows() {
+            (
+                now_ms.wrapping_add(self.max_retention_ms),
+                now_ms.wrapping_add(self.min_retention_ms),
+            )
+        } else {
+            (
+                now_ms.saturating_add(self.max_retention_ms),
+                now_ms.saturating_add(self.min_retention_ms),
+            )
+        };
         match self.cleanup_state.get_mut(key) {
             Some(deadline) => {
-                if now_ms.saturating_add(self.min_retention_ms) > *deadline {
+                if minimum > *deadline {
                     *deadline = armed;
                 }
             }
@@ -2933,7 +2950,7 @@ impl OverWindowAggregator {
     /// rows pending a watermark) re-arms to `now + maxRetention` instead — Flink's fired timer
     /// re-registering.
     fn maybe_sweep(&mut self, now_ms: i64) {
-        if self.independent_distinct_ttl() {
+        if self.processing_rows_external_timers || self.independent_distinct_ttl() {
             return;
         }
         if now_ms < self.last_sweep_ms.saturating_add(self.min_retention_ms) {
@@ -3040,7 +3057,9 @@ impl OverWindowAggregator {
                     self.retention_bytes += byte_key_bytes(key);
                 }
             } else {
-                self.expire_if_due(key, now_ms);
+                if !self.processing_rows_external_timers {
+                    self.expire_if_due(key, now_ms);
+                }
                 self.register_cleanup(key, now_ms);
             }
         }
@@ -5225,6 +5244,7 @@ impl OverWindowAggregator {
             cleanup_state: HashMap::default(),
             range_timers: HashMap::default(),
             proc_rows: HashMap::default(),
+            processing_rows_external_timers: false,
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
             last_sweep_ms: 0,

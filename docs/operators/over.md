@@ -358,10 +358,13 @@ Memory snapshots and RocksDB file checkpoints retain each row's processing clock
 counter/minimum state, including when idle-state retention is disabled. Key-group rescaling clips
 this metadata with its frame. Older native checkpoints remain readable using their previous
 retained-frame counter and an internal fallback clock; they cannot recover discarded bucket
-history. Idle-state retention still uses the existing cleanup policy. This ordinary native
-checkpoint support does not complete the processing-time ROWS stock canonical adapter tracked in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Correctness takes priority;
-benchmarking remains deferred.
+history. With retention enabled, the runtime registers the earliest native cleanup deadline with
+Flink's processing-time service, cancels it when the minimum changes, and silently clears every
+partition due at the callback. It re-arms after native or stock restore from the per-key saved
+deadlines, including `Long.MIN_VALUE`. This preserves idle cleanup before a savepoint and does not
+fire a newly registered past deadline until the host invokes its callback. Processing-time ROWS
+uses the released planner's signed wrapping arithmetic for retention horizons and deadlines.
+Correctness takes priority; benchmarking remains deferred.
 
 Direct processing-time ROWS transfer exports the counter, bucket minimum and cleanup owner
 separately from original retained rows and raw arithmetic. Import installs the frame first, then
@@ -369,9 +372,15 @@ validates its metadata before installing any counters. Immediate re-export prese
 sentinel instead of deriving a minimum from retained rows. Duplicate/unowned keys, missing frames,
 wrong field types and invalid counts fail conversion. Legacy frames lacking exact counter/minimum
 metadata remain readable for ordinary recovery but cannot claim an exact canonical handoff.
-This is internal live-state transport; the stock descriptor/timer adapter and automatic planner
-binding for bounded processing-time ROWS remain unfinished under
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+The Flink 2.2.1 stock adapter projects this state into `accState`, processing-clock `inputState`
+buckets, `processedCountState`, `smallestTSState`, and the optional
+`ProcTimeBoundedRowsOverCleanupTime` ValueState and Void processing-timer queue. It reuses the
+arithmetic frame conversion used by event-time RANGE. The hidden all-input count is independent
+of `COUNT(value)` and of the processed counter. Import preserves each bucket's row order and the
+saved raw SUM/AVG arithmetic without replay. The automatic portable-plan path binds plain numeric
+SUM/SUM0/COUNT/AVG bounded ROWS, including width one, while the public compiled plan remains stock.
+Bounded DISTINCT and selection/data-view contracts, event-time ROWS and the remaining full matrix
+are still required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 A **bounded-RANGE frame over proctime** falls back — with processing time materialized as a fixed
 per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
@@ -1379,6 +1388,7 @@ keys, heap/RocksDB in each engine, pending-only and processed frames, overflow/o
 malformed state. Complete-job controls use unchanged stock compiled plans and isolated stock
 processes without StreamFusion dependencies, exercise both transposes, switch in both directions,
 re-export before new input and recover an ordinary native checkpoint before returning to stock.
-This is arithmetic RANGE coverage. Bounded ROWS bucket/counter protocols, additional views,
-complete automatic planner consolidation and the remaining #569 matrix are still required.
+This is arithmetic RANGE coverage. Processing-time arithmetic ROWS now has its own stock
+counter/bucket/cleanup contract; event-time ROWS, additional bounded views, complete automatic
+planner consolidation and the remaining #569 matrix are still required.
 Benchmarking remains deferred.

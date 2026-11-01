@@ -330,17 +330,33 @@ class CanonicalBoundedRangeInteropTest {
     final RowType input, output, accumulator, keyType;
     final int[] keys, kinds, values, codes, widths;
     final int hiddenCount, timeColumn;
+    final boolean processingRows;
+    final int offset;
+    final long ttl;
     final RowDataKeySelector selector;
     final tech.streamfusion.planner.OverConstantArguments constants;
 
     Plan(String type, boolean keyless) throws Exception {
+      this(type, keyless, false, 32, 0);
+    }
+
+    Plan(String type, boolean keyless, boolean processingRows, int offset, long ttl)
+        throws Exception {
+      this.processingRows = processingRows;
+      this.offset = offset;
+      this.ttl = ttl;
       var config = new Configuration();
+      config.set(
+          org.apache.flink.table.api.config.ExecutionConfigOptions.IDLE_STATE_RETENTION,
+          java.time.Duration.ofMillis(ttl));
       config.setString("streamfusion.native.enabled", "false");
       var table = NativePlannerTestEnvironment.create(config);
       table.executeSql(
           "CREATE TABLE range_input(k BIGINT,v "
               + type
-              + ",rt TIMESTAMP(3),WATERMARK FOR rt AS rt) WITH ('connector'='datagen')");
+              + ",rt TIMESTAMP(3)"
+              + (processingRows ? ",pt AS PROCTIME()" : ",WATERMARK FOR rt AS rt")
+              + ") WITH ('connector'='datagen')");
       table.executeSql(
           "CREATE TABLE range_output(k BIGINT,v "
               + type
@@ -355,8 +371,10 @@ class CanonicalBoundedRangeInteropTest {
                   "INSERT INTO range_output SELECT k,v,rt,SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER"
                       + " w FROM range_input WINDOW w AS ("
                       + (keyless ? "" : "PARTITION BY k ")
-                      + "ORDER BY rt RANGE BETWEEN INTERVAL '0.032' SECOND PRECEDING AND CURRENT"
-                      + " ROW)")
+                      + (processingRows
+                          ? "ORDER BY pt ROWS BETWEEN " + offset + " PRECEDING AND CURRENT ROW)"
+                          : "ORDER BY rt RANGE BETWEEN INTERVAL '0.032' SECOND PRECEDING AND"
+                                + " CURRENT ROW)"))
               .asJsonString();
       planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
       var node = node();
@@ -373,8 +391,13 @@ class CanonicalBoundedRangeInteropTest {
       var operator =
           (KeyedProcessOperator<?, ?, ?>)
               ((SimpleOperatorFactory<?>) transformation.getOperatorFactory()).getOperator();
-      assertInstanceOf(RowTimeRangeBoundedPrecedingFunction.class, operator.getUserFunction());
-      var field = RowTimeRangeBoundedPrecedingFunction.class.getDeclaredField("accTypes");
+      var functionType =
+          processingRows
+              ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction
+                  .class
+              : RowTimeRangeBoundedPrecedingFunction.class;
+      assertInstanceOf(functionType, operator.getUserFunction());
+      var field = functionType.getDeclaredField("accTypes");
       field.setAccessible(true);
       accumulator = RowType.of((LogicalType[]) field.get(operator.getUserFunction()));
       var reader = CompiledPlanSerdeUtil.createJsonObjectReader(planner.createSerdeContext());
@@ -472,7 +495,22 @@ class CanonicalBoundedRangeInteropTest {
       return null;
     }
 
-    StockOverRangeStateContract contract() {
+    StockStateContract contract() {
+      if (processingRows)
+        return new StockOverProcessingRowsStateContract(
+            selector.getProducedType().toSerializer(),
+            keyType,
+            input,
+            accumulator,
+            keys,
+            timeColumn,
+            kinds,
+            widths,
+            hiddenCount,
+            constants.type(),
+            constants.encodedValues(),
+            offset + 1L,
+            ttl > 1);
       return new StockOverRangeStateContract(
           selector.getProducedType().toSerializer(),
           keyType,
@@ -533,13 +571,13 @@ class CanonicalBoundedRangeInteropTest {
               keys,
               codes,
               kinds,
-              2,
-              32,
-              false,
+              processingRows ? 1 : 2,
+              offset,
+              processingRows,
               keys.length == 0
                   ? new int[] {Native.STOCK_KEY_PROJECTION}
                   : new int[] {Native.STOCK_KEY_PROJECTION, -1},
-              0,
+              ttl,
               input,
               128);
       if (constants.type().getFieldCount() > 0)
