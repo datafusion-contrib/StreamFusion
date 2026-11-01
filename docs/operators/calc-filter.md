@@ -1531,26 +1531,32 @@ separately qualify the composed integer producers and retain complete-job costs.
 Verified direct inputs, typed literals, recursive lossless widening and nested admitted
 integer rounding reuse the native operand expression without a JVM evaluator, a floating
 conversion or a new values buffer. Signed minima, exact BIGINTs, NULLs and resolved widths
-are preserved. Arithmetic, narrowing and other unverified producers retain their complete
+are preserved. Recursively verified integer addition, subtraction and multiplication also
+run natively with their resolved intermediate widths and Java wrapping overflow.
+Division, remainder, narrowing and other unverified producers retain their complete
 generated rounding program. Explicit positions use the bounded native path below;
 unverified positions retain generated evaluation, including extreme-position failures.
 DECIMAL and floating ROUND are unchanged.
 [Release measurements](../benchmarks/scalar-functions.md#single-argument-integer-round)
 retain the slower small-batch and complete-job controls as well as the bulk-batch gains.
+The [arithmetic producer measurements](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
+separately cover computed integer operands, including their explicit-position forms.
 
 ### Integer ROUND with a literal position
 
 Integer `ROUND(value, literal_position)` runs in Rust for TINYINT, SMALLINT, INT and BIGINT
 with INT positions from -38 through 38, or a typed NULL position. Direct inputs/literals,
-recursive lossless widening and nested admitted integer rounding retain their declared width.
+recursive lossless widening, nested admitted integer rounding and recursively verified
+integer addition/subtraction/multiplication retain their declared width.
 Ties round away from zero; an overflowing rounded value wraps to the resolved Java width,
 including BIGINT values beyond 2^53 and rounding to 10^19. Nonnegative positions share the
-input array, a NULL position produces typed NULLs, and negative positions allocate values
+input array, a NULL position folds to typed NULLs only after the operand proof excludes
+failures, and negative positions allocate values
 while sharing sliced validity. The input remains unchanged.
 
 The kernel follows Comet's native-width/widened integer split, with Flink's HALF_UP and
 wrapping contract. It does not use floating point. Runtime positions, literals outside -38..38,
-arithmetic, narrowing and other unverified producers retain generated evaluation. In particular,
+division, remainder, narrowing and other unverified producers retain generated evaluation. In particular,
 released Flink throws for nonzero `ROUND(value, 2147483647)` while zero returns zero;
 the ordinary nonnegative-position identity must not erase that behavior. CASE and empty
 filtered batches retain their existing evaluation guards. This changes computation inside
@@ -1558,6 +1564,8 @@ an already-admitted Calc and adds no configuration switch.
 [Release measurements](../benchmarks/scalar-functions.md#integer-round-with-a-literal-position)
 include both Flink lines, the actual previous scalar callback, slower small-batch controls
 and a complete job retaining both transposes.
+The [computed-operand controls](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
+cover wrapping arithmetic, literal positions, NULL folding and complete jobs with position -1.
 
 ### Single-argument integer TRUNCATE
 
@@ -1577,8 +1585,8 @@ compare stock, the previous JVM route and candidate at both batch and complete-j
 ### Integer TRUNCATE with a literal position
 
 `TRUNCATE(value, literal_position)` over INT and BIGINT executes an Arrow primitive kernel
-for INT positions -38..38, including a typed NULL. The verified producer scope matches
-ROUND: direct inputs/literals, lossless widening and nested admitted integer rounding.
+for INT positions -38..38, including a typed NULL. Its verified producers are direct
+inputs/literals, lossless widening and nested admitted integer rounding.
 Negative positions truncate toward zero using integer remainder; a power larger than the
 input width yields zero. Nonnegative positions share the input buffers, NULL positions
 produce typed NULLs, and other results allocate values while retaining sliced validity.

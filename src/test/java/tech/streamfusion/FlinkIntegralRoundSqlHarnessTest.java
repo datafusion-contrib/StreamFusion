@@ -83,7 +83,7 @@ class FlinkIntegralRoundSqlHarnessTest {
   void unverifiedProducersKeepTheGeneratedProgram() {
     for (String expression :
         List.of(
-            "ROUND(v+1)",
+            "ROUND(v+MOD(v,2))",
             "ROUND(-v)",
             "ROUND(CAST(CAST(v AS SMALLINT) AS INT))",
             "ROUND(v, -39)",

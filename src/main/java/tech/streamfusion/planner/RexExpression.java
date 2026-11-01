@@ -1475,6 +1475,22 @@ final class RexExpression {
     return reject("unsupported expression node: " + node);
   }
 
+  private boolean emitTypedNull(RelDataType type) {
+    try {
+      var logicalType =
+          org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(type);
+      var schema =
+          tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
+              org.apache.flink.table.types.logical.RowType.of(logicalType));
+      add(KIND_LIT_TYPED_NULL, strings.size(), 0);
+      strings.add(Base64.getEncoder().encodeToString(schema.serializeAsMessage()));
+      return true;
+    } catch (org.apache.flink.table.api.TableException
+        | UnsupportedOperationException unsupportedType) {
+      return reject("unsupported NULL literal type: " + type);
+    }
+  }
+
   private boolean emitLiteral(RexLiteral literal) {
     SqlTypeName type = literal.getType().getSqlTypeName();
     int temporalType = temporalTypeCode(literal.getType());
@@ -1540,20 +1556,7 @@ final class RexExpression {
         add(KIND_LIT_NULL, -1, 0);
         return true;
       }
-      try {
-        var logicalType =
-            org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(
-                literal.getType());
-        var schema =
-            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
-                org.apache.flink.table.types.logical.RowType.of(logicalType));
-        add(KIND_LIT_TYPED_NULL, strings.size(), 0);
-        strings.add(Base64.getEncoder().encodeToString(schema.serializeAsMessage()));
-      } catch (org.apache.flink.table.api.TableException
-          | UnsupportedOperationException unsupportedType) {
-        return reject("unsupported NULL literal type: " + literal.getType());
-      }
-      return true;
+      return emitTypedNull(literal.getType());
     }
     switch (type) {
       case TINYINT:
@@ -2885,7 +2888,11 @@ final class RexExpression {
         || call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRUNCATE) {
       if (nativeIntegralRounding(call)) return emit(call.getOperands().get(0));
-      if (nativeIntegralRoundPosition(call)) return emitBuiltinCall(call, 230);
+      if (nativeIntegralRoundPosition(call)) {
+        // The operand proof excludes failures, so a NULL position needs no intermediate arrays.
+        if (((RexLiteral) call.getOperands().get(1)).isNull()) return emitTypedNull(call.getType());
+        return emitBuiltinCall(call, 230);
+      }
       if (nativeIntegralTruncatePosition(call)) return emitBuiltinCall(call, 231);
       if (!call.getOperands().isEmpty()
           && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.DECIMAL) {
@@ -4549,7 +4556,8 @@ final class RexExpression {
         || nativeIntegralRoundPosition(call)
         || nativeIntegralTruncatePosition(call)) return true;
     if ((operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.FLOOR
-            || operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CEIL)
+            || operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CEIL
+            || operation == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.ROUND)
         && nativeIntegralArithmetic(call, operand -> nativeIntegralRoundingOperand(operand, operation)))
       return true;
     return call.getKind() == SqlKind.CAST

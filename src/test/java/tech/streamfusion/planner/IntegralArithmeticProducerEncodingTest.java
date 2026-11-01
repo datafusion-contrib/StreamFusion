@@ -40,13 +40,18 @@ class IntegralArithmeticProducerEncodingTest {
   }
 
   @Test
+  void roundAdmitsOnlyRecursivelyVerifiedWrappingIntegerArithmetic() {
+    assertVerifiedArithmetic(FlinkSqlOperatorTable.ROUND);
+  }
+
+  @Test
   void otherRoundingArithmeticRemainsGeneratedUntilIndependentlyQualified() {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     var type = types.createSqlType(SqlTypeName.INTEGER);
     var operand = rex.makeCall(type, FlinkSqlOperatorTable.PLUS,
         List.of(rex.makeInputRef(type, 0), rex.makeExactLiteral(BigDecimal.ONE, type)));
-    for (var operation : List.of(FlinkSqlOperatorTable.ROUND, FlinkSqlOperatorTable.TRUNCATE)) {
+    for (var operation : List.of(FlinkSqlOperatorTable.TRUNCATE)) {
       var call = rex.makeCall(type, operation, List.of(operand));
       var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
       assertNotNull(encoded);

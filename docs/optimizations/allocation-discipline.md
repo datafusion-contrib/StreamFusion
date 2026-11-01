@@ -1,7 +1,8 @@
 # Allocation discipline on the per-row paths
 
 **Applies to:** windowed/session aggregation, [GROUP BY](../operators/group-by.md), [Top-N](../operators/top-n.md),
-the updating join, `OVER`, deduplication, [Calc string encoding](../benchmarks/scalar-functions.md#hex)
+the updating join, `OVER`, deduplication, [Calc string encoding](../benchmarks/scalar-functions.md#hex),
+[Calc integer expressions](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
 
 Beyond the arrow-row and mini-batch mechanisms covered elsewhere, a series of targeted fixes removed
 allocations and redundant per-row work from specific hot loops: reuse instead of realloc, move
@@ -25,6 +26,28 @@ the work. The benchmark records preserve that initial implementation, independen
 paired stock/main controls and the qualified result after removing those copies. See
 [integer ABS arithmetic](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
 for workload, timing boundaries, allocation requests and remaining small-batch costs.
+
+## Proven integer ROUND with a NULL position
+
+A literal NULL position makes integer ROUND return a typed NULL. The planner folds this
+only after its recursive operand proof excludes failures: integer inputs/literals,
+lossless widening, admitted bounded rounding and wrapping addition/subtraction/multiplication.
+The fold avoids evaluating the arithmetic tree and allocating its intermediate arrays.
+Division, remainder, narrowing and unverified producers keep their generated evaluation,
+so a failing argument is not silently discarded. This is a bounded purity proof, not a
+general NULL propagation rule for arbitrary functions or UDFs.
+
+Eight 1,024-row nullable GenericRowData/Arrow diagnostics on released Flink 1.18.1/2.2.1
+retain the rejected eager implementation and the fold. Native medians move from
+2.50-2.72 to 0.62-0.72 ns/row; paired stock/native ratios move from 0.65-0.71x to
+2.48-2.80x. These are separate warmed release/default-feature/mimalloc processes with
+nine measurements and a Rust timer around production Calc and result consumption.
+They measure folded-result handling, not execution of a ROUND kernel. The
+untimed Rust allocation probe drops from 79-99 requests to 16 per batch; it excludes
+JVM/other-thread allocation and does not measure retained memory. The
+[arithmetic benchmark](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
+retains both probes, raw trials, stock drift and the independent nonconstant-function
+qualification and complete jobs with both transposes.
 
 ## Per-row allocation cuts
 

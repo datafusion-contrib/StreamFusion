@@ -10,6 +10,16 @@ use streamfusion_benchmark_support::{measure, report, CountingAllocator};
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
+#[derive(serde::Deserialize)]
+struct EncodedProgram {
+    kinds: Vec<i64>,
+    payload: Vec<i64>,
+    child_counts: Vec<i64>,
+    longs: Vec<i64>,
+    doubles: Vec<f64>,
+    strings: Vec<Option<String>>,
+}
+
 macro_rules! java {
     ($env:ident, $call:expr) => {{
         let result = $call;
@@ -99,7 +109,7 @@ fn main() {
         .get_string(&jni::objects::JString::from(program))
         .unwrap()
         .into();
-    let program: Vec<Vec<i64>> = serde_json::from_str(&program).unwrap();
+    let program: EncodedProgram = serde_json::from_str(&program).unwrap();
     let value = |i: usize| {
         let v = (i as i64) * 7919;
         match element {
@@ -139,12 +149,12 @@ fn main() {
     )
     .unwrap();
     let mut native = CalcProgram::new(
-        program[0].clone(),
-        program[1].clone(),
-        program[2].clone(),
-        program[3].clone(),
-        vec![],
-        vec![],
+        program.kinds,
+        program.payload,
+        program.child_counts,
+        program.longs,
+        program.doubles,
+        program.strings,
     );
     let actual = native.run(batch.clone());
     assert_eq!(actual.num_rows(), rows);

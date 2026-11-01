@@ -16,7 +16,7 @@ import tech.streamfusion.planner.NativePlanner;
 
 class FlinkIntegralArithmeticSqlHarnessTest {
   static java.util.stream.Stream<Arguments> functionsAndTypes() {
-    return java.util.stream.Stream.of("ABS", "-", "SIGN", "FLOOR", "CEIL").flatMap(function ->
+    return java.util.stream.Stream.of("ABS", "-", "SIGN", "FLOOR", "CEIL", "ROUND").flatMap(function ->
         java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
             .filter(type -> !function.equals("SIGN") || type.equals("INT") || type.equals("BIGINT"))
             .map(type -> Arguments.of(function, type)));
@@ -25,6 +25,21 @@ class FlinkIntegralArithmeticSqlHarnessTest {
   @ParameterizedTest
   @MethodSource("functionsAndTypes")
   void consumesWrappingArithmeticAcrossBatchesWithNoJvmBinding(String function, String type) throws Exception {
+    assertArithmetic(function, type, false);
+  }
+
+  static java.util.stream.Stream<Arguments> roundingFunctionsAndTypes() {
+    return java.util.stream.Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
+        .map(type -> Arguments.of("ROUND", type));
+  }
+
+  @ParameterizedTest
+  @MethodSource("roundingFunctionsAndTypes")
+  void computedOperandsRetainValuesAndNullsWithExplicitPositions(String function, String type) throws Exception {
+    assertArithmetic(function, type, true);
+  }
+
+  private void assertArithmetic(String function, String type, boolean positions) throws Exception {
     for (boolean nullable : new boolean[] {false, true}) {
       DataType valueType = type.equals("TINYINT") ? TINYINT()
           : type.equals("SMALLINT") ? SMALLINT() : type.equals("INT") ? INT() : BIGINT();
@@ -47,6 +62,19 @@ class FlinkIntegralArithmeticSqlHarnessTest {
           + "CAST(ABS(v*w) AS STRING), CASE WHEN id<0 THEN ABS(v*w) ELSE ABS(v-w) END "
           + "FROM src WHERE id>=0";
       sql = sql.replace("ABS(", function + "(");
+      if (positions) {
+        List<String> expressions = new ArrayList<>();
+        for (String position : List.of("-1", "-38", "38", "CAST(NULL AS INT)")) {
+          for (String operand : List.of("v+w", "v-w", "v*w", "(v+w)*(w-" + one + ")",
+              "CAST(v+w AS BIGINT)")) {
+            expressions.add(function + "(" + operand + "," + position + ")");
+          }
+        }
+        expressions.add("CAST(" + function + "(v*w,-1) AS STRING)");
+        expressions.add("CASE WHEN id<0 THEN " + function + "(v*w,-38) ELSE "
+            + function + "(v-w,-1) END");
+        sql = "SELECT id," + String.join(",", expressions) + " FROM src WHERE id>=0";
+      }
       List<Row> expected = null;
       org.apache.flink.table.catalog.ResolvedSchema expectedSchema = null;
       for (boolean nativeEnabled : new boolean[] {false, true}) {

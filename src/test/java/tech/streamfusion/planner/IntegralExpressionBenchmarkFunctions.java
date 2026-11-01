@@ -1,7 +1,7 @@
 package tech.streamfusion.planner;
 
-import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.apache.calcite.rel.core.Project;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
@@ -47,8 +47,8 @@ public final class IntegralExpressionBenchmarkFunctions {
     };
     stock.open(context);
     var encoded = RexExpression.encodeProjections(project.getProjects(), List.of("v"));
-    if (encoded == null || encoded.strings().length != 0 || encoded.doubles().length != 0)
-      throw new IllegalStateException("Expected an integer expression with no text/float constants");
+    if (encoded == null)
+      throw new IllegalStateException("Expected an admitted integer expression");
     boolean previous = Boolean.getBoolean("sf.integral.previous");
     if (previous == encoded.jvmFunctionCalls().isEmpty())
       throw new IllegalStateException("Unexpected encoder route: " + encoded.jvmFunctionCalls());
@@ -62,8 +62,10 @@ public final class IntegralExpressionBenchmarkFunctions {
       RowData row = GenericRowData.of(nullable && i % 7 == 0 ? null : value(type, i));
       rows[i] = binary ? serializer.toBinaryRow(row).copy() : row;
     }
-    return Arrays.deepToString(new Object[] {
-        encoded.kinds(), encoded.payload(), encoded.childCounts(), constants});
+    return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
+        "kinds", encoded.kinds(), "payload", encoded.payload(),
+        "child_counts", encoded.childCounts(), "longs", constants,
+        "doubles", encoded.doubles(), "strings", encoded.strings()));
   }
 
   private static ClassLoader getLoader() {
