@@ -160,7 +160,11 @@ separately; the timed fixture bodies are unchanged.
 
 The follow-up measurement used a local pre-rebase commit. Production sources are identical
 to the rebased revision recorded in the artifact. For byte-for-byte fixture reproduction,
-check out that rebased revision and apply the [measured-fixture patch](sources/jvm-contract-followup-measured-fixtures.patch)
+check out that rebased revision and apply the [measured-fixture patch](sources/jvm-contract-followup-measured-fixtures.json)
 before copying fixtures into the baseline and compiling. It removes only the later NOT NULL
 controls; verify the recorded fixture hashes. This preserves public reproduction after rebasing
 onto the parent coverage merge without changing measured production code.
+
+The fixture reversal is stored as JSON to retain exact unified-diff context without
+introducing trailing whitespace into the documentation sources. Decode its `patch` field
+to a temporary file, then use `git apply` and verify the fixture SHA-256 from the artifact.

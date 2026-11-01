@@ -3912,5 +3912,5 @@
   },
   "rebased_production_revision": "c617ad52161478f7ebe4172d2c3faedea535d764",
   "production_sources_identical_to_measured_revision": true,
-  "exact_measured_fixture_reproduction_patch": "docs/benchmarks/sources/jvm-contract-followup-measured-fixtures.patch"
+  "exact_measured_fixture_reproduction_patch": "docs/benchmarks/sources/jvm-contract-followup-measured-fixtures.json"
 }
