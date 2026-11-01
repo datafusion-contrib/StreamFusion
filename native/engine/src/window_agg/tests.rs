@@ -1746,3 +1746,17 @@ fn fixed_offset_local_partials_merge_on_the_global_shifted_grid() {
         );
     }
 }
+
+#[test]
+fn sql_offsets_anchor_cumulative_prefixes_at_max_size_instead_of_step() {
+    let mut value = TumblingAggregator::new(3000, 1000, true, vec![0], vec![3]);
+    value.set_window_offset(1250);
+    let mut actual = Vec::new();
+    value.windows_for(0, &mut actual);
+    actual.sort();
+    assert_eq!(actual, vec![(-1750, 250), (-1750, 1250)]);
+    value.set_assignment_offset(750);
+    value.windows_for(-750, &mut actual);
+    actual.sort();
+    assert_eq!(actual, vec![(-2500, -500), (-2500, 500)]);
+}

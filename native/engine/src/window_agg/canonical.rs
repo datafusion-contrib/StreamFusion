@@ -72,6 +72,9 @@ impl TumblingAggregator {
         &self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        if !self.shared_slices {
+            return Ok(());
+        }
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
             let timers = store.slice_timers()?;
@@ -116,6 +119,9 @@ impl TumblingAggregator {
         batch: &RecordBatch,
         arity: usize,
     ) -> Result<(), DataFusionError> {
+        if !self.shared_slices {
+            return Err(invalid("independent windows have no shared timer ledger"));
+        }
         let schema = batch.schema();
         if batch.num_columns() != 1 + arity
             || schema.field(0).name() != "window_end"
@@ -149,7 +155,7 @@ impl TumblingAggregator {
             let end = ends.value(row);
             let key = keys.row(row).owned();
             if end
-                .checked_add(self.assignment_offset_millis)
+                .checked_add(self.effective_assignment_offset())
                 .is_none_or(|value| value.rem_euclid(self.slide_millis) != 0)
                 || !seen.insert((end, key.clone()))
                 || self
@@ -453,7 +459,7 @@ impl TumblingAggregator {
             let end = ends.value(row);
             if end.checked_sub(start) != Some(span)
                 || start
-                    .checked_add(self.assignment_offset_millis)
+                    .checked_add(self.effective_assignment_offset())
                     .is_none_or(|shifted| shifted.rem_euclid(span) != 0)
             {
                 return Err(invalid(

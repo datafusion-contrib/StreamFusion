@@ -527,3 +527,105 @@ fn successive_state_and_timer_batches_retain_the_original_key_converter() {
         }
     }
 }
+
+#[test]
+fn sql_offsets_survive_canonical_handoffs_across_window_shapes_and_stores() {
+    for shape in 0..3 {
+        for source_rocks in [false, true] {
+            for target_rocks in [false, true] {
+                for offset in [-1250, 1250] {
+                    for zone_shift in [0, 750] {
+                        let directory = tempfile::tempdir().unwrap();
+                        let source_path = directory.path().join("source");
+                        let target_path = directory.path().join("target");
+                        let make = |path: Option<&std::path::Path>| {
+                            let mut value = if shape == 0 {
+                                create(path, false, true)
+                            } else {
+                                shared(path, false, shape == 2, true)
+                            };
+                            value.set_assignment_offset(zone_shift);
+                            value.set_window_offset(offset);
+                            value
+                        };
+                        let mut source = make(source_rocks.then_some(source_path.as_path()));
+                        let mut target = make(target_rocks.then_some(target_path.as_path()));
+                        source.update(&input(false, true, 0, 45)).unwrap();
+                        source.flush(1000).unwrap();
+                        copy_shared(&mut source, &mut target, false);
+                        let suffix = input(false, true, 45, 50);
+                        source.update(&suffix).unwrap();
+                        target.update(&suffix).unwrap();
+                        for watermark in [1250, 1750, 2250, 3250, 6250, i64::MAX] {
+                            assert_eq!(
+                                rows(&source.flush(watermark).unwrap()),
+                                rows(&target.flush(watermark).unwrap()),
+                                "shape={shape} offset={offset} zone={zone_shift}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn sql_offsets_survive_raw_checkpoint_partitions_and_reject_mixed_grids() {
+    for shape in 0..3 {
+        let mut source = if shape == 0 {
+            create(None, false, true)
+        } else {
+            shared(None, false, shape == 2, true)
+        };
+        source.set_assignment_offset(750);
+        source.set_window_offset(-1250);
+        source.update(&input(false, true, 0, 45)).unwrap();
+        let snapshots = source
+            .snapshot_partitions(128, &[-1])
+            .into_values()
+            .collect::<Vec<_>>();
+        assert!(snapshots.len() > 1);
+        let size = if shape == 0 { 1000 } else { 3000 };
+        let mut restored = TumblingAggregator::restore_partitions(
+            size,
+            1000,
+            shape == 2,
+            vec![0],
+            vec![3],
+            &snapshots,
+        );
+        assert_eq!(source.window_offset_millis, restored.window_offset_millis);
+        assert_eq!(
+            source.assignment_offset_millis,
+            restored.assignment_offset_millis
+        );
+        if shape != 0 {
+            restored.enable_canonical_slicing(0).unwrap();
+        }
+        let suffix = input(false, true, 45, 20);
+        source.update(&suffix).unwrap();
+        restored.update(&suffix).unwrap();
+        assert_eq!(
+            rows(&source.flush(i64::MAX).unwrap()),
+            rows(&restored.flush(i64::MAX).unwrap())
+        );
+        let mut bad = snapshots;
+        let batch = read_ipc_if_present(&bad[0]).remove(0);
+        let mut metadata = batch.schema().metadata().clone();
+        metadata.insert("window_offset_millis".into(), "123".into());
+        let schema = Arc::new(batch.schema().as_ref().clone().with_metadata(metadata));
+        bad[0] = write_ipc(&RecordBatch::try_new(schema, batch.columns().to_vec()).unwrap());
+        assert!(
+            std::panic::catch_unwind(|| TumblingAggregator::restore_partitions(
+                size,
+                1000,
+                shape == 2,
+                vec![0],
+                vec![3],
+                &bad
+            ))
+            .is_err()
+        );
+    }
+}

@@ -8,9 +8,9 @@ impl TumblingAggregator {
     }
 
     fn shared_base(&self, end: i64) -> i64 {
-        (end + self.assignment_offset_millis - 1).div_euclid(self.window_millis)
+        (end + self.effective_assignment_offset() - 1).div_euclid(self.window_millis)
             * self.window_millis
-            - self.assignment_offset_millis
+            - self.effective_assignment_offset()
     }
 
     fn slice_end_thresholds(&self, ends: impl IntoIterator<Item = i64>) -> BTreeMap<i64, i64> {
@@ -124,10 +124,10 @@ impl TumblingAggregator {
             .values()
             .iter()
             .map(|time| {
-                (time + self.assignment_offset_millis).div_euclid(self.slide_millis)
+                (time + self.effective_assignment_offset()).div_euclid(self.slide_millis)
                     * self.slide_millis
                     + self.slide_millis
-                    - self.assignment_offset_millis
+                    - self.effective_assignment_offset()
             })
             .collect::<Vec<_>>();
         let assignments = if discard_closed_windows {

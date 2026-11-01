@@ -854,6 +854,9 @@ public final class Native {
   /** Assigns fixed-grid windows on the shifted local timeline, retaining epoch bounds in state. */
   public static native void setFixedWindowAssignmentOffset(long handle, long offsetMillis);
 
+  /** Binds the SQL window offset independently of the local-time-zone assignment shift. */
+  public static native void setFixedWindowOffset(long handle, long offsetMillis);
+
   /**
    * Attaches released-Flink deadlines to local fixed-window bounds.
    * @param handle fixed-window handle, either heap or persistent

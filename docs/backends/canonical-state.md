@@ -162,6 +162,18 @@ must remain associated with the converter that produced them. Regression control
 stores. These native controls establish the transfer primitive; stock planner and whole-job
 qualification are documented separately as they complete under #569. Benchmarking remains deferred.
 
+The native fixed-window transfer primitive keeps SQL offsets separate from time-zone shifts.
+Assignment uses their difference; inverse boundary rendering retains the time zone. CUMULATE
+normalizes the SQL offset by maximum size, preserving its prefix base even when the offset
+exceeds a step. Pane assignment, pending timers and import validation use the same grid.
+Ordinary native checkpoints preserve the offset and reject partitions with different grids.
+The legacy zero-offset checkpoint representation stays readable. Independent tumbling state
+has no shared timer ledger: its timer visitor is empty and shared-timer import is rejected.
+The native suite passes 1,047 controls (two existing ignores); sixty-four released-operator
+controls additionally compare offset continuations and exact DISTINCT counters across both
+state paths and four time zones. Full planner/process qualification remains part of #569;
+canonical export still visits live state directly, without an intermediate native snapshot.
+
 When an adapter reconstructs a key from logical fields, ordinary row serialization is not the
 same operation as Flink's generated key projection. The projection reserves NULL variable slots
 for non-compact decimals and timestamps; omitting them changes binary equality and key-group
