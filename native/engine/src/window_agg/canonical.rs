@@ -228,8 +228,9 @@ impl TumblingAggregator {
     fn validate_canonical_tumble(&self) -> Result<(), DataFusionError> {
         self.validate_canonical_scalar()?;
         if self.window_millis <= 0
-            || self.window_millis != self.slide_millis
-            || self.cumulative
+            || self.slide_millis <= 0
+            || self.window_millis % self.slide_millis != 0
+            || !self.final_windows && (self.window_millis != self.slide_millis || self.cumulative)
             || self.shared_slices
             || self.exact_panes
         {
@@ -251,7 +252,8 @@ impl TumblingAggregator {
 
     fn enable_canonical_slicing(&mut self, count_star: i32) -> Result<(), DataFusionError> {
         self.validate_canonical_scalar()?;
-        if self.slide_millis <= 0
+        if self.final_windows
+            || self.slide_millis <= 0
             || self.window_millis <= 0
             || self.window_millis % self.slide_millis != 0
             || count_star < -1
@@ -457,11 +459,19 @@ impl TumblingAggregator {
         for row in 0..batch.num_rows() {
             let start = starts.value(row);
             let end = ends.value(row);
-            if end.checked_sub(start) != Some(span)
-                || start
-                    .checked_add(self.effective_assignment_offset())
-                    .is_none_or(|shifted| shifted.rem_euclid(span) != 0)
-            {
+            let valid = if self.final_windows {
+                self.final_window_start(end) == Some(start)
+                    && end > start
+                    && end
+                        .checked_add(self.effective_assignment_offset())
+                        .is_some_and(|shifted| shifted.rem_euclid(self.slide_millis) == 0)
+            } else {
+                end.checked_sub(start) == Some(span)
+                    && start
+                        .checked_add(self.effective_assignment_offset())
+                        .is_some_and(|shifted| shifted.rem_euclid(span) == 0)
+            };
+            if !valid {
                 return Err(invalid(
                     "window namespace does not match its tumbling bounds",
                 ));

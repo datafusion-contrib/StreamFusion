@@ -323,6 +323,7 @@ pub(crate) struct TumblingAggregator {
     cumulative: bool,
     assignment_offset_millis: i64,
     window_offset_millis: i64,
+    final_windows: bool,
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
     shared_slices: bool,
@@ -397,6 +398,7 @@ impl TumblingAggregator {
             exact_panes,
             assignment_offset_millis: 0,
             window_offset_millis: 0,
+            final_windows: false,
             calendar: None,
             next_timer_deadline: i64::MIN,
             shared_slices: false,
@@ -430,7 +432,8 @@ impl TumblingAggregator {
             self.assignment_offset_millis, 0,
             "regional window assignment is local"
         );
-        self.shared_slices = self.cumulative || self.window_millis != self.slide_millis;
+        self.shared_slices =
+            !self.final_windows && (self.cumulative || self.window_millis != self.slide_millis);
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut self.store {
             store.set_shared_slices(self.shared_slices);
@@ -467,6 +470,32 @@ impl TumblingAggregator {
         );
         self.window_offset_millis = offset;
         self.snapshot_cache = None;
+    }
+
+    pub(crate) fn set_final_windows(&mut self, enabled: bool) {
+        assert!(
+            (self.windows.is_empty() && self.slice_timers.is_empty())
+                || enabled == self.final_windows,
+            "cannot change the meaning of retained window namespaces"
+        );
+        if enabled {
+            assert!(
+                !self.shared_slices,
+                "shared slices cannot be reinterpreted as final windows"
+            );
+            self.exact_panes = false;
+        }
+        self.final_windows = enabled;
+        self.snapshot_cache = None;
+    }
+
+    fn final_window_start(&self, end: i64) -> Option<i64> {
+        if !self.cumulative {
+            return end.checked_sub(self.window_millis);
+        }
+        let shift = i128::from(self.effective_assignment_offset());
+        let size = i128::from(self.window_millis);
+        i64::try_from((i128::from(end) + shift - 1).div_euclid(size) * size - shift).ok()
     }
 
     fn effective_assignment_offset(&self) -> i64 {
@@ -1565,6 +1594,17 @@ impl TumblingAggregator {
     /// start — the slice (rows in `(slice_end - step, slice_end]`) contributes to every cumulative
     /// window that ends at or after it.
     fn partial_windows(&self, slice_end: i64) -> Vec<(i64, i64)> {
+        if self.final_windows {
+            return if self.calendar.is_some() || slice_end > self.current_watermark {
+                vec![(
+                    self.final_window_start(slice_end)
+                        .expect("final window start"),
+                    slice_end,
+                )]
+            } else {
+                Vec::new()
+            };
+        }
         if self.cumulative {
             let local_end = slice_end
                 .checked_add(self.effective_assignment_offset())
@@ -2019,6 +2059,9 @@ impl TumblingAggregator {
                 self.assignment_offset_millis.to_string(),
             );
         }
+        if self.final_windows {
+            metadata.insert("final_windows".into(), "true".into());
+        }
         if self.window_offset_millis != 0 {
             metadata.insert(
                 "window_offset_millis".into(),
@@ -2125,6 +2168,13 @@ impl TumblingAggregator {
                     .map(|offset| offset.parse().expect("SQL window offset"))
                     .unwrap_or(0),
             );
+            aggregator.set_final_windows(
+                batch
+                    .schema()
+                    .metadata()
+                    .get("final_windows")
+                    .is_some_and(|value| value == "true"),
+            );
             // Columns are [window_end, window_start, key0..key{arity-1}, state fields...].
             let record_kinds = batch.column_by_name("window_record_kind").map(|column| {
                 column
@@ -2208,10 +2258,12 @@ impl TumblingAggregator {
         let schema = batches[0].schema();
         let offset = schema.metadata().get("assignment_offset_millis");
         let window_offset = schema.metadata().get("window_offset_millis");
+        let final_windows = schema.metadata().get("final_windows");
         assert!(
             batches.iter().all(
                 |batch| batch.schema().metadata().get("assignment_offset_millis") == offset
                     && batch.schema().metadata().get("window_offset_millis") == window_offset
+                    && batch.schema().metadata().get("final_windows") == final_windows
             ),
             "window snapshot assignment grids differ"
         );
@@ -2829,5 +2881,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_setFixedWindowOffset<'local
     crate::bridge::jni_guard(env, move |_env| {
         let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
         aggregator.set_window_offset(offset_millis);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_setFixedWindowFinalWindows<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    enabled: jboolean,
+) {
+    crate::bridge::jni_guard(env, move |_env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        aggregator.set_final_windows(enabled != 0);
     })
 }

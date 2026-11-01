@@ -174,6 +174,16 @@ controls additionally compare offset continuations and exact DISTINCT counters a
 state paths and four time zones. Full planner/process qualification remains part of #569;
 canonical export still visits live state directly, without an intermediate native snapshot.
 
+The native final-window merge mode gives each incoming partial only to the final end it names.
+It does not expand that end across overlapping HOP windows. CUMULATE retains the variable prefix
+start derived from the maximum-size grid and SQL offset. Direct canonical import validates
+these bounds before committing a batch, while native checkpoints retain the mode and reject
+mixed-mode partitions. Legacy slice-mode snapshots remain readable. The handoff control checks
+exact per-end counts, one/two/three-step cumulative bounds, rejected malformed prefixes and raw
+checkpoint continuation across memory and typed RocksDB. The full native suite passes 1,048
+checks with two existing ignores. Canonical export remains a direct live-state visit; the new
+mode does not introduce an intermediate native snapshot or a performance gate.
+
 Local windows already emit every pending partial before a checkpoint barrier. A dedicated
 stock-compatible local mode on Flink 2.2 now returns empty snapshot futures after that drain,
 so the stateless stage saves neither native keyed metadata nor serializer references. Missing

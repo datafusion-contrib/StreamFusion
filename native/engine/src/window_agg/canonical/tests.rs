@@ -629,3 +629,109 @@ fn sql_offsets_survive_raw_checkpoint_partitions_and_reject_mixed_grids() {
         );
     }
 }
+
+#[test]
+fn final_window_partials_merge_once_and_handoff_variable_prefix_bounds() {
+    for cumulative in [false, true] {
+        for source_rocks in [false, true] {
+            for target_rocks in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let source_path = directory.path().join("source");
+                let target_path = directory.path().join("target");
+                let make = |path: Option<&std::path::Path>| {
+                    let mut value = create(path, false, true);
+                    value.window_millis = 3000;
+                    value.cumulative = cumulative;
+                    value.set_window_offset(1250);
+                    value.set_final_windows(true);
+                    value
+                };
+                let mut source = make(source_rocks.then_some(source_path.as_path()));
+                let mut target = make(target_rocks.then_some(target_path.as_path()));
+                let partials = RecordBatch::try_from_iter(vec![
+                    ("key0", Arc::new(Int64Array::from(vec![7; 3])) as ArrayRef),
+                    ("partial0", Arc::new(Int64Array::from(vec![2, 3, 4]))),
+                    (
+                        "slice_end",
+                        Arc::new(Int64Array::from(vec![250, 1250, 2250])),
+                    ),
+                ])
+                .unwrap();
+                source.update_partial(&partials).unwrap();
+                let mut bad = None;
+                source
+                    .visit_canonical_tumble(|batch| {
+                        let mut columns = batch.columns().to_vec();
+                        let starts = column_i64(&batch, "window_start");
+                        columns[0] = Arc::new(Int64Array::from_iter_values(
+                            (0..batch.num_rows()).map(|i| starts.value(i) + 1000),
+                        ));
+                        bad = Some(RecordBatch::try_new(batch.schema(), columns).unwrap());
+                        target.import_canonical_tumble(&batch, 1)
+                    })
+                    .unwrap();
+                let mut rejected = make(None);
+                assert!(rejected.import_canonical_tumble(&bad.unwrap(), 1).is_err());
+                rejected
+                    .visit_canonical_tumble(|_| panic!("invalid bounds committed"))
+                    .unwrap();
+                let partitions = if source_rocks {
+                    source.canonical_partitions(128, &[-1]).unwrap()
+                } else {
+                    source.snapshot_partitions(128, &[-1])
+                };
+                let snapshots = partitions.into_values().collect::<Vec<_>>();
+                assert!(!snapshots.is_empty());
+                let mut restored = TumblingAggregator::restore_partitions(
+                    3000,
+                    1000,
+                    cumulative,
+                    vec![0],
+                    vec![3],
+                    &snapshots,
+                );
+                assert!(restored.final_windows);
+                let batch = read_ipc_if_present(&snapshots[0]).remove(0);
+                let mut metadata = batch.schema().metadata().clone();
+                metadata.remove("final_windows");
+                let schema = Arc::new(batch.schema().as_ref().clone().with_metadata(metadata));
+                let incompatible =
+                    write_ipc(&RecordBatch::try_new(schema, batch.columns().to_vec()).unwrap());
+                let mixed = vec![snapshots[0].clone(), incompatible];
+                assert!(
+                    std::panic::catch_unwind(|| TumblingAggregator::restore_partitions(
+                        3000,
+                        1000,
+                        cumulative,
+                        vec![0],
+                        vec![3],
+                        &mixed
+                    ))
+                    .is_err()
+                );
+                source.update_partial(&partials).unwrap();
+                target.update_partial(&partials).unwrap();
+                restored.update_partial(&partials).unwrap();
+                let actual = source.flush(i64::MAX).unwrap();
+                assert_eq!(rows(&actual), rows(&target.flush(i64::MAX).unwrap()));
+                assert_eq!(rows(&actual), rows(&restored.flush(i64::MAX).unwrap()));
+                assert_eq!(actual.num_rows(), 3);
+                let ends = column_i64(&actual, "window_end");
+                let starts = column_i64(&actual, "window_start");
+                let counts = column_i64(&actual, "result0");
+                for (index, end) in [250, 1250, 2250].into_iter().enumerate() {
+                    assert_eq!(ends.value(index), end);
+                    assert_eq!(counts.value(index), [4, 6, 8][index]);
+                    assert_eq!(
+                        starts.value(index),
+                        if cumulative {
+                            [-1750, -1750, 1250][index]
+                        } else {
+                            end - 3000
+                        }
+                    );
+                }
+            }
+        }
+    }
+}

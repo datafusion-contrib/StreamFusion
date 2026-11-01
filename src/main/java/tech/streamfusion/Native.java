@@ -857,6 +857,9 @@ public final class Native {
   /** Binds the SQL window offset independently of the local-time-zone assignment shift. */
   public static native void setFixedWindowOffset(long handle, long offsetMillis);
 
+  /** Final-window partials merge into their named end rather than every overlapping window. */
+  public static native void setFixedWindowFinalWindows(long handle, boolean enabled);
+
   /**
    * Attaches released-Flink deadlines to local fixed-window bounds.
    * @param handle fixed-window handle, either heap or persistent
