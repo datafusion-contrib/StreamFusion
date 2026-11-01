@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -13,17 +14,19 @@ import org.apache.flink.table.runtime.typeutils.ExternalTypeInfo;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class FlinkBooleanStringCastSqlHarnessTest {
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void runtimeBooleanCastsConsumeNativeWorkAcrossBatches(boolean legacy) throws Exception {
+  @MethodSource("castModes")
+  void runtimeBooleanCastsConsumeNativeWorkAcrossBatches(String operator, boolean legacy) throws Exception {
     String sql = "SELECT id,CAST(b AS STRING),CAST(b AS VARCHAR(1)),CAST(b AS VARCHAR(3)),"
         + "CAST(b AS VARCHAR(4)),CAST(b AS VARCHAR(5)),CAST(b AS VARCHAR(8)),"
         + "CAST(b AS CHAR(1)),CAST(b AS CHAR(3)),CAST(b AS CHAR(4)),CAST(b AS CHAR(5)),"
         + "CAST(b AS CHAR(8)),CAST(b AS CHAR(32)) FROM src";
+    sql = sql.replace("CAST(", operator + "(");
     for (boolean nullable : new boolean[] {false, true}) {
       var bool = nullable ? BOOLEAN() : BOOLEAN().notNull();
       var rowType = ROW(FIELD("id", INT().notNull()), FIELD("b", bool));
@@ -73,8 +76,8 @@ class FlinkBooleanStringCastSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void stringConsumersRetainTheReleasedRepresentationRules(boolean legacy) throws Exception {
+  @MethodSource("castModes")
+  void stringConsumersRetainTheReleasedRepresentationRules(String operator, boolean legacy) throws Exception {
     java.util.function.Supplier<TableEnvironment> factory = () -> {
       var table = BuiltinFunctionParity.environment(
           ROW(FIELD("b", BOOLEAN()), FIELD("n", INT()), FIELD("trim_set", STRING())),
@@ -83,25 +86,28 @@ class FlinkBooleanStringCastSqlHarnessTest {
       return table;
     };
     BuiltinFunctionParity.assertParity(factory,
-        "SELECT n,CHAR_LENGTH(CAST(b AS CHAR(8))),CHAR_LENGTH(CAST(b AS STRING)),"
+        ("SELECT n,CHAR_LENGTH(CAST(b AS CHAR(8))),CHAR_LENGTH(CAST(b AS STRING)),"
             + "CONCAT(CAST(b AS VARCHAR(3)),'!'),REPLACE(CAST(b AS STRING),'F','f'),"
             + "CAST(b AS STRING) LIKE '%R%',UPPER(CAST(b AS CHAR(8))),"
-            + "LTRIM(CAST(b AS STRING),trim_set),LTRIM(CAST(b AS STRING),'') FROM src");
+            + "LTRIM(CAST(b AS STRING),trim_set),LTRIM(CAST(b AS STRING),'') FROM src")
+                .replace("CAST(", operator + "("));
   }
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void computedFailingOperandsRemainLazyAndErrorsAreNotDiscarded(boolean legacy) throws Exception {
+  @MethodSource("castModes")
+  void computedFailingOperandsRemainLazyAndErrorsAreNotDiscarded(String operator, boolean legacy) throws Exception {
     java.util.function.Supplier<TableEnvironment> factory = () -> {
       var table = environment();
       table.getConfig().set("table.exec.legacy-cast-behaviour", legacy ? "ENABLED" : "DISABLED");
       return table;
     };
     BuiltinFunctionParity.assertParity(factory,
-        "SELECT CASE WHEN n>=0 THEN CAST(b AS CHAR(8)) ELSE CAST(n/(n-n)=1 AS CHAR(8)) END FROM src");
+        "SELECT CASE WHEN n>=0 THEN CAST(b AS CHAR(8)) ELSE CAST(n/(n-n)=1 AS CHAR(8)) END FROM src"
+            .replace("CAST(", operator + "("));
     BuiltinFunctionParity.assertParity(factory,
-        "SELECT CAST(n/(n-n)=1 AS STRING) FROM src WHERE n=99");
-    NativeFailureParity.run(factory, "SELECT CAST(n/(n-n)=1 AS STRING) FROM src")
+        "SELECT CAST(n/(n-n)=1 AS STRING) FROM src WHERE n=99".replace("CAST(", operator + "("));
+    NativeFailureParity.run(factory, "SELECT CAST(n/(n-n)=1 AS STRING) FROM src"
+            .replace("CAST(", operator + "("))
         .assertCompetingFailures(NativeFailureParity::isDivisionByZero,
             NativeFailureParity.Phase.ROW_EVALUATION, NativeFailureParity.Route.NATIVE);
   }
@@ -127,5 +133,10 @@ class FlinkBooleanStringCastSqlHarnessTest {
     return BuiltinFunctionParity.environment(
         ROW(FIELD("b", BOOLEAN()), FIELD("n", INT())),
         List.of(Row.of(true, 0), Row.of(false, 1), Row.of(null, 2)));
+  }
+
+  private static Stream<Arguments> castModes() {
+    return Stream.of(Arguments.of("CAST", false), Arguments.of("CAST", true),
+        Arguments.of("TRY_CAST", false), Arguments.of("TRY_CAST", true));
   }
 }

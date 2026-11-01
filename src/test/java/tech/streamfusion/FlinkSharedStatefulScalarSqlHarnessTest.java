@@ -55,9 +55,12 @@ class FlinkSharedStatefulScalarSqlHarnessTest {
 
   @Test
   void booleanFormattingDoesNotDiscardStatefulArguments() throws Exception {
-    compare("SELECT id,CAST(tick(a)>0 AS STRING),tick(b) FROM src", 5003, false);
-    compare("SELECT id,CASE WHEN MOD(id,2)=0 THEN CAST(tick(a)>0 AS CHAR(8)) ELSE 'skip' END,tick(b) FROM src",
-        2051, true);
+    for (String operator : List.of("CAST", "TRY_CAST")) {
+      compare("SELECT id,CAST(tick(a)>0 AS STRING),tick(b) FROM src"
+          .replace("CAST(", operator + "("), 5003, false);
+      compare("SELECT id,CASE WHEN MOD(id,2)=0 THEN CAST(tick(a)>0 AS CHAR(8)) ELSE 'skip' END,tick(b) FROM src"
+          .replace("CAST(", operator + "("), 2051, true);
+    }
   }
 
   @Test

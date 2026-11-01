@@ -1107,14 +1107,17 @@ These scalar rules are separate from grouping-key equality and sort ordering.
 
 ## Casts
 
-`CAST` from a direct BOOLEAN input or literal to STRING, bounded VARCHAR or CHAR uses a
+`CAST` and `TRY_CAST` from a direct BOOLEAN input or literal to STRING, bounded VARCHAR or CHAR use a
 native Arrow formatter. Modern mode emits uppercase `TRUE`/`FALSE`, truncates VARCHAR/CHAR
 and pads bounded CHAR with spaces. Legacy mode emits lowercase `true`/`false` and ignores
-the target's length and padding. NULL remains NULL in both modes. Computed operands and
-BOOLEAN-to-character `TRY_CAST` retain generated Flink evaluation.
+the target's length and padding. NULL remains NULL in both modes. BOOLEAN formatting cannot
+produce a conversion error, so TRY_CAST reuses the CAST kernel. Computed operands retain
+generated Flink evaluation, including their failures, laziness and shared function calls.
+When the encoder has no cast-mode configuration, TRY_CAST also retains generated evaluation.
 The [bitmap word technique](../optimizations/boolean-word-blocks.md) avoids per-row string
 objects and copies common spellings eight values at a time. See the
-[prepared and complete-job measurements](../benchmarks/scalar-functions.md#boolean-cast-to-character),
+[CAST](../benchmarks/scalar-functions.md#boolean-cast-to-character) and
+[TRY_CAST measurements](../benchmarks/scalar-functions.md#boolean-try_cast-to-character),
 including small batches and unfavorable full jobs.
 
 Native, unconditionally, with no host involvement:

@@ -3879,12 +3879,7 @@ final class RexExpression {
     }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
-    if (!tryCast
-        && source == SqlTypeName.BOOLEAN
-        && SqlTypeFamily.CHARACTER.contains(resultType)
-        && legacyCastBehaviour != null
-        && (call.getOperands().get(0) instanceof RexInputRef
-            || call.getOperands().get(0) instanceof RexLiteral)) {
+    if (directBooleanCharacterCast(call) && legacyCastBehaviour != null) {
       add(KIND_CALL, 244, 3);
       if (!emit(call.getOperands().get(0))) return false;
       add(KIND_LIT_BOOL, longs.size(), 0);
@@ -3893,6 +3888,9 @@ final class RexExpression {
       longs.add((long) (targetType == SqlTypeName.CHAR
           ? -resultType.getPrecision() : resultType.getPrecision()));
       return true;
+    }
+    if (tryCast && source == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(resultType)) {
+      return emitHostExpression(call, true);
     }
     if (SqlTypeFamily.BINARY.contains(sourceType)
         && SqlTypeFamily.CHARACTER.contains(resultType)
@@ -4469,7 +4467,8 @@ final class RexExpression {
       case "LOG2":
         return SqlTypeFamily.NUMERIC.contains(call.getOperands().get(0).getType());
       case "TRY_CAST":
-        return input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType());
+        return input == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(call.getType())
+            && !directBooleanCharacterCast(call);
       case "REGEXP":
       case "REGEXP_REPLACE":
       case "REGEXP_COUNT":
@@ -4520,6 +4519,14 @@ final class RexExpression {
       default:
         return false;
     }
+  }
+
+  private static boolean directBooleanCharacterCast(RexCall call) {
+    return call.getOperands().size() == 1
+        && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BOOLEAN
+        && SqlTypeFamily.CHARACTER.contains(call.getType())
+        && (call.getOperands().get(0) instanceof RexInputRef
+            || call.getOperands().get(0) instanceof RexLiteral);
   }
 
   private static boolean nativeIntegralRounding(RexCall call) {

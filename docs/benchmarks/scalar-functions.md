@@ -5455,7 +5455,7 @@ coverage stays in [the classification follow-up](https://github.com/datafusion-c
 Direct BOOLEAN inputs/literals use a native formatter for STRING and bounded VARCHAR/CHAR.
 Modern mode emits uppercase text, truncates overlength values and pads bounded CHAR;
 legacy mode emits lowercase text without target-length enforcement. NULL remains NULL.
-Computed operands and BOOLEAN character TRY_CAST retain generated Flink evaluation.
+Computed operands retain generated Flink evaluation; the independent TRY_CAST qualification follows below.
 No production switch is added. Both modes use Flink's existing cast configuration.
 
 The [result record](results/boolean-string-cast-2026-11-01.json) and
@@ -5541,3 +5541,83 @@ control. Complete jobs use `IntegralExpressionPipelineBenchmark`, `SF_BENCHMARK=
 `sf.integral.booleanInput=true`, `sf.integral.expression=CAST(v AS CHAR(8))` and
 `sf.integral.legacy=true` where selected. These are benchmark controls, not production
 options. Remaining cast coverage stays in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
+
+## BOOLEAN TRY_CAST to character
+
+Direct BOOLEAN inputs/literals now use the same native STRING/VARCHAR/CHAR formatter for
+TRY_CAST as for CAST. Formatting cannot produce a conversion error. Modern and legacy
+spelling, truncation/padding and NULL behavior match the released generated code.
+Computed operands keep the complete generated expression; TRY_CAST must not swallow
+failures while evaluating an operand or drop shared stateful calls. An unconfigured
+encoder also keeps generated evaluation. No production option is added.
+
+The [independent result record](results/boolean-try-string-cast-2026-11-01.json) and
+[raw trials](results/boolean-try-string-cast-2026-11-01.csv.gz) retain 152 configurations
+and 15,200 trials for TRY_CAST itself. The baseline is the actual preceding CAST encoder,
+which still binds a JVM evaluator for TRY_CAST; the candidate requires empty descriptors
+and the intended native function. Both configure the same released cast mode. The Rust
+kernel, release DSO and benchmark executable are unchanged from CAST qualification;
+source and DSO hashes are checked rather than rerunning the identical Rust suite.
+
+The prepared boundary and matching BOOLEAN/NULL/cached-or-binary RowData inputs are the
+same as CAST above: release/default/mimalloc, JDK 17.0.12, Apple M4 Pro, one thread,
+16 warmups/nine measurements and 131,072 rows/trial. Rust times the production operation
+and equivalent UTF-8 boundary consumption. Initial JNI/import/export and both perimeter
+transposes are outside this timer; intrinsic previous JVM calls remain timed. All
+checksums agree. Tiny controls and independent stock drift remain separate from bulk
+qualification.
+
+| Flink line | Mode | Batch rows | Cells | Stock/native median range | Previous/native median range | Slower than stock |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1.18.1 | modern | 1024 | 48 | 1.646-8.972x | 8.592-18.641x | 0 |
+| 1.18.1 | modern | 16 | 8 | 0.194-2.023x | 22.171-25.598x | 4 |
+| 1.18.1 | legacy | 1024 | 12 | 7.273-11.839x | 16.625-24.167x | 0 |
+| 1.18.1 | legacy | 16 | 8 | 0.807-1.134x | 23.742-26.719x | 4 |
+| 2.2.1 | modern | 1024 | 48 | 1.604-13.670x | 8.472-18.768x | 0 |
+| 2.2.1 | modern | 16 | 8 | 0.198-1.783x | 22.358-26.250x | 4 |
+| 2.2.1 | legacy | 1024 | 12 | 8.882-12.173x | 15.719-21.836x | 0 |
+| 2.2.1 | legacy | 16 | 8 | 0.846-1.052x | 23.919-27.109x | 6 |
+
+All 120 bulk cells pass the prepared-operation gate;
+18 of 32 tiny cells are slower
+than stock. Ratios above one favor native. Paired stock-control drift spans
+0.674-1.940x; cross-process ratios are not causal isolation.
+
+Ten million-row nullable BOOLEAN source/blackhole configurations retain production JNI,
+planning/startup and both transposes, parallelism one, two warmups/five measurements.
+They require consumed NativeCalc work, no fallback and empty candidate descriptors.
+
+| Flink line / input | Candidate stock median (range), s | Native median (range), s | Previous stock median (range), s | Previous median (range), s |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / modern-string | 0.164568 (0.152968-0.178889) | 0.155482 (0.154097-0.169737) | 0.163534 (0.150881-0.166770) | 0.178076 (0.175590-0.190067) |
+| 1.18.1 / modern-varchar3 | 0.172382 (0.168989-0.187415) | 0.163684 (0.158259-0.172744) | 0.182536 (0.172397-0.188274) | 0.205375 (0.204545-0.218700) |
+| 1.18.1 / modern-char8 | 0.199662 (0.192069-0.280178) | 0.159020 (0.156592-0.169004) | 0.193263 (0.188125-0.200050) | 0.224147 (0.213284-0.226749) |
+| 1.18.1 / legacy-string | 0.181813 (0.172095-0.202011) | 0.161006 (0.159682-0.172754) | 0.173408 (0.164714-0.192122) | 0.208225 (0.194695-0.216245) |
+| 1.18.1 / legacy-char8 | 0.179340 (0.176745-0.217252) | 0.166424 (0.164905-0.172886) | 0.183752 (0.171472-0.191367) | 0.205981 (0.200621-0.224427) |
+| 2.2.1 / modern-string | 0.167586 (0.155133-0.190176) | 0.164438 (0.157190-0.166998) | 0.155230 (0.150007-0.166039) | 0.181543 (0.179630-0.195766) |
+| 2.2.1 / modern-varchar3 | 0.176160 (0.168682-0.181995) | 0.163558 (0.160969-0.169159) | 0.174333 (0.167268-0.188351) | 0.207104 (0.199274-0.218739) |
+| 2.2.1 / modern-char8 | 0.195855 (0.191255-0.209562) | 0.158579 (0.157120-0.160678) | 0.192746 (0.189712-0.197713) | 0.216276 (0.211593-0.218344) |
+| 2.2.1 / legacy-string | 0.171966 (0.168650-0.194207) | 0.160860 (0.154903-0.172927) | 0.169731 (0.160435-0.179396) | 0.206011 (0.197393-0.216290) |
+| 2.2.1 / legacy-char8 | 0.175236 (0.169376-0.186207) | 0.159021 (0.156173-0.166410) | 0.174426 (0.166370-0.183576) | 0.193287 (0.187956-0.213551) |
+
+Native/stock elapsed ratios range from 0.796 to
+0.981; native/previous ratios range from
+0.709 to 0.906. Ratios above one are slower.
+Keep overlapping ranges and unfavorable outcomes; prepared qualification does not prove
+universal full-job acceleration.
+
+All 68 focused JVM invocations pass across Flink 1.18.1/2.2.1 and JDK 11/17, including
+CAST regression controls. Complete 5,003-row outputs, resolved types, cardinality, unique
+IDs and NULLs match stock across batches; direct runtime witnesses require consumed native
+work with no fallback or evaluator descriptor. Selected operand division errors, lazy
+branches, empty filtered batches, string consumers and unconfigured encoder behavior are
+covered. Four additional shared-state invocations pass. The unchanged released CastRules
+stock oracle (535 cases per pair) and 1,019 Rust core passes/two pre-existing ignores are
+reused from the identical kernel qualification; they are separate from the new native
+TRY_CAST witnesses. Java compiles for release 11. Strict docs, diff and privacy checks pass.
+
+Reproduce with `SF_INTEGRAL_EXPRESSION='TRY_CAST(v AS STRING)'` and BOOLEAN input for
+`integral_expression`; complete jobs use `sf.integral.booleanInput=true` and
+`sf.integral.expression=TRY_CAST(v AS CHAR(8))`. The existing benchmark-only legacy control
+selects the corresponding mode. Remaining casts stay in
+[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
